@@ -71,3 +71,38 @@ def capture_frame(
         detail = (result.stderr or "").strip().splitlines()
         raise CaptureError((detail[-1] if detail else "FFmpeg produced no image")[-240:])
     return target
+
+
+def preview_frame(source: Path, position: float, *, timeout: int = 12) -> bytes:
+    """Decode a small JPEG frame for the pre-cast scrubber, without writing files.
+
+    This runs only in a worker thread. A bounded output resolution and timeout
+    avoid decoding a full-resolution film frame on the GTK event loop.
+    """
+    source = Path(source).expanduser()
+    try:
+        info = source.stat()
+    except OSError as exc:
+        raise CaptureError(f"Source video is missing: {source.name}") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise CaptureError(f"Source is not a regular video file: {source.name}")
+    if not isinstance(position, (int, float)) or not math.isfinite(position):
+        raise CaptureError("Invalid preview position")
+    command = [
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        "-ss", str(max(0.0, position)), "-i", str(source),
+        "-an", "-sn", "-dn", "-frames:v", "1",
+        "-vf", "scale=640:360:force_original_aspect_ratio=decrease",
+        "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=timeout,
+                                check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise CaptureError("Frame preview timed out") from exc
+    except OSError as exc:
+        raise CaptureError(f"Cannot start FFmpeg: {exc}") from exc
+    if result.returncode or not result.stdout or not result.stdout.startswith(b"\xff\xd8"):
+        detail = result.stderr.decode("utf-8", errors="replace").strip().splitlines()
+        raise CaptureError((detail[-1] if detail else "No preview frame available")[-240:])
+    return result.stdout
