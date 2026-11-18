@@ -33,7 +33,12 @@ DIRECT_EXTS = {".mp4", ".m4v", ".mov"}
 DIRECT_VCODECS = {"h264"}
 DIRECT_ACODECS = {"aac", "mp3"}
 DIRECT_PIX_FMTS = {"yuv420p", "yuvj420p"}
-SUBTITLE_EXTS = {".srt", ".vtt", ".ttml"}
+SUBTITLE_EXTS = {".srt", ".vtt", ".ttml", ".ass", ".ssa"}
+CAST_SUBTITLE_EXTS = {".srt", ".vtt", ".ttml"}
+# FFmpeg's libass subtitles filter can decode these text formats. Bitmap
+# tracks (PGS/VobSub/DVB) need a separate overlay path and must not be
+# silently presented as supported text subtitles.
+TEXT_SUBTITLE_CODECS = frozenset({"subrip", "ass", "ssa", "webvtt", "mov_text", "text", "sami"})
 
 QUALITY_QP = {"high": 20, "balanced": 24, "saver": 28}
 QUALITY_LABELS = {
@@ -202,6 +207,44 @@ class StreamError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class SubtitleTrack:
+    """An embedded subtitle stream with a stream-relative FFmpeg si index."""
+    index: int
+    codec: str
+    language: str = ""
+    title: str = ""
+    default: bool = False
+    forced: bool = False
+
+    @property
+    def is_text(self) -> bool:
+        return self.codec in TEXT_SUBTITLE_CODECS
+
+    @property
+    def label(self) -> str:
+        parts = [self.language.upper() if self.language else "Undetermined", self.title or self.codec]
+        if self.forced:
+            parts.append("forced")
+        elif self.default:
+            parts.append("default")
+        if not self.is_text:
+            parts.append("image track — unsupported burn-in")
+        return " · ".join(parts)
+
+
+def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> SubtitleTrack | None:
+    """Select a text track; never silently substitute an unsupported PGS track."""
+    if selected >= 0:
+        return next((t for t in media.subtitle_tracks if t.index == selected and t.is_text), None)
+    text_tracks = [t for t in media.subtitle_tracks if t.is_text]
+    if not text_tracks:
+        return None
+    return min(text_tracks, key=lambda t: (
+        not t.forced, not t.default, t.language.lower() not in {"en", "eng", "english"}, t.index
+    ))
+
+
 @dataclass
 class MediaInfo:
     path: pathlib.Path
@@ -214,7 +257,7 @@ class MediaInfo:
     acodec: str = ""
     channels: int = 0
     audio_tracks: int = 0
-    subtitle_tracks: list = field(default_factory=list)
+    subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
     size: int = 0
     bitrate: int = 0
     direct_ok: bool = False
@@ -395,6 +438,7 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         media.bitrate = int(fmt.get("bit_rate") or 0)
     except (TypeError, ValueError):
         pass
+    subtitle_index = 0
     for stream in data.get("streams") or []:
         kind = stream.get("codec_type")
         if kind == "video" and not media.vcodec:
@@ -415,8 +459,16 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
                 media.channels = int(stream.get("channels") or 0)
         elif kind == "subtitle":
             tags = stream.get("tags") or {}
-            label = tags.get("language") or tags.get("title") or stream.get("codec_name")
-            media.subtitle_tracks.append(str(label))
+            disposition = stream.get("disposition") or {}
+            media.subtitle_tracks.append(SubtitleTrack(
+                index=subtitle_index,
+                codec=str(stream.get("codec_name") or "").lower(),
+                language=str(tags.get("language") or ""),
+                title=str(tags.get("title") or ""),
+                default=bool(disposition.get("default")),
+                forced=bool(disposition.get("forced")),
+            ))
+            subtitle_index += 1
     media.direct_ok, media.direct_reason = _direct_capable(media)
     return media
 
@@ -434,17 +486,31 @@ def _direct_capable(media: MediaInfo) -> tuple[bool, str]:
 
 
 def find_subtitles(path: pathlib.Path) -> pathlib.Path | None:
-    stem = path.stem.lower()
+    """Find only this movie's sidecars, not similarly named films.
+
+    Accept Film.srt, Film.en.srt, Film.forced.srt, Film.en.ass, etc.
+    Reject Film2.srt for Film.mkv. Prefer SRT for receiver compatibility.
+    """
+    stem = path.stem.casefold()
     try:
-        entries = sorted(path.parent.iterdir())
+        entries = list(path.parent.iterdir())
     except OSError:
         return None
-    for entry in entries:
-        if entry.is_dir():
-            continue
-        if entry.stem.lower().startswith(stem) and entry.suffix.lower() in SUBTITLE_EXTS:
-            return entry.resolve()
-    return None
+    candidates = [
+        entry for entry in entries if entry.is_file()
+        and entry.suffix.lower() in SUBTITLE_EXTS
+        and (entry.stem.casefold() == stem
+             or entry.stem.casefold().startswith(stem + "."))
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda entry: (
+        entry.stem.casefold() != stem,
+        entry.suffix.lower() not in CAST_SUBTITLE_EXTS,
+        entry.suffix.lower() != ".srt",
+        entry.name.casefold(),
+    ))
+    return candidates[0].resolve()
 
 
 def _port_open(port: int) -> bool:
