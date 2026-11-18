@@ -21,6 +21,22 @@ import version
 
 
 class CastctlTests(unittest.TestCase):
+    def test_find_catt_prefers_the_running_runtime(self):
+        # The launcher provisions catt in the running interpreter's scripts
+        # directory; that verified copy must win over a conflicting PATH catt.
+        with tempfile.TemporaryDirectory() as directory:
+            scripts = Path(directory)
+            (scripts / "catt").write_text("#!/bin/sh\n", encoding="utf-8")
+            with mock.patch.object(castctl.sys, "executable", str(scripts / "python")), \
+                 mock.patch.object(castctl.shutil, "which", return_value="/usr/bin/catt"):
+                self.assertEqual(castctl._find_catt(), str(scripts / "catt"))
+
+    def test_find_catt_falls_back_to_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(castctl.sys, "executable", str(Path(directory) / "python")), \
+                 mock.patch.object(castctl.shutil, "which", return_value="/opt/bin/catt"):
+                self.assertEqual(castctl._find_catt(), "/opt/bin/catt")
+
     def test_fmt_time(self):
         self.assertEqual(castctl.fmt_time(None), "--:--")
         self.assertEqual(castctl.fmt_time(0), "00:00")

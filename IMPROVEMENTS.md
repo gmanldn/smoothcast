@@ -167,6 +167,11 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #55 — catt resolved from the verified runtime:** `castctl._find_catt`
+  now checks the running interpreter's own scripts directory before PATH, so
+  the copy `setup` provisioned and verified wins over a conflicting, older
+  ambient install. Regression tests cover the preferred and PATH-fallback
+  paths. Cross-platform confirmation pending.
 - **P0 #51 — Non-destructive PID probes on Windows:** `streamer.pid_alive` no
   longer calls `os.kill(pid, 0)` on Windows, where that would terminate the
   process; it queries a `PROCESS_QUERY_LIMITED_INFORMATION` handle instead.

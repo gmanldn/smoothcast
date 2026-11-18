@@ -11,7 +11,17 @@ from dataclasses import dataclass
 
 
 def _find_catt() -> str:
-    """Locate the catt binary on PATH or in user-local locations."""
+    """Locate the catt binary, preferring the running interpreter's own scripts.
+
+    The launcher provisions catt inside the running interpreter's environment
+    (``pip install -e .``), so that copy is the version setup verified. Search
+    it before PATH, which may hold a conflicting, older ambient install.
+    """
+    scripts = pathlib.Path(sys.executable).parent
+    for name in ("catt", "catt.exe"):
+        candidate = scripts / name
+        if candidate.is_file():
+            return str(candidate)
     # 1. PATH (canonical: installed via `pip install -e .` / `pip install smoothcast`)
     found = shutil.which("catt")
     if found:
