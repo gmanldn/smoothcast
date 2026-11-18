@@ -97,9 +97,7 @@ class SessionMixin:
         burn = subs_path is not None and (
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
         )
-        # Direct play hands the file to the TV untouched, so it can only be used
-        # when no audio processing is wanted. Any dialogue/night profile needs
-        # the transcode pipeline to apply its filters.
+        # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
         # A device-native stream cannot apply ffmpeg speed/rotation filters.
@@ -362,9 +360,7 @@ class SessionMixin:
         session = self.session
         renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
-        # Cast and DLNA commands are asynchronous. Block all other transport
-        # operations until this one resolves, including shortcuts and seekbar
-        # signals that can fire even when buttons have been disabled.
+        # Serialize async transport, including queued shortcut/seek signals.
         self.busy = True
         self._refresh_controls()
 
