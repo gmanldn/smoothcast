@@ -1,0 +1,33 @@
+name: Verify SmoothCast
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable-tests:
+    name: Python syntax and GTK-free regression suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Check Python syntax without GTK
+        run: python -m compileall -q src scripts tests
+
+      - name: Run all portable regression tests
+        run: python -m unittest discover -s tests -v
