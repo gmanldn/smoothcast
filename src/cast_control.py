@@ -1348,6 +1348,16 @@ class MainWindow(Adw.ApplicationWindow):
         toolbar.append(self.autonext_switch)
         body.append(toolbar)
 
+        self.queue_search = Gtk.SearchEntry()
+        self.queue_search.set_placeholder_text("Search filenames or folders…")
+        self.queue_search.set_tooltip_text("Filter the queue without changing playback order (Ctrl+F)")
+        self.queue_search.connect("search-changed", self._on_queue_search)
+        body.append(self.queue_search)
+        self.queue_no_matches = Gtk.Label(label="No videos match your search.", xalign=0.0)
+        self.queue_no_matches.add_css_class("dim-label")
+        self.queue_no_matches.set_visible(False)
+        body.append(self.queue_no_matches)
+
         self.queue_summary = Gtk.Label(label="", xalign=0.0)
         self.queue_summary.add_css_class("caption")
         self.queue_summary.set_visible(False)
@@ -1367,6 +1377,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.queue_list.add_css_class("boxed-list")
         self.queue_list.connect("row-activated", self._on_queue_activated)
         self.queue_list.connect("row-selected", self._on_queue_selected)
+        self.queue_list.set_filter_func(self._queue_row_matches)
         scroller.set_child(self.queue_list)
         body.append(scroller)
 
@@ -1697,6 +1708,7 @@ class MainWindow(Adw.ApplicationWindow):
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("s", self.stop_stream)
+        add("<Control>f", lambda: self.queue_search.grab_focus())
         for digit in range(1, 10):
             add(str(digit), lambda d=digit: self._seek_percent(d))
         self.add_controller(controller)
@@ -3088,30 +3100,59 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ---------- queue ----------
 
+    def _queue_row_matches(self, row) -> bool:
+        return playlist_control.matches_query(
+            row.get_tooltip_text() or "", self.queue_search.get_text()
+        )
+
+    def _on_queue_search(self, _entry) -> None:
+        # Filtering never changes queue order or the current cast selection.
+        self.queue_list.invalidate_filter()
+        self._refresh_queue_visibility()
+
+    def _refresh_queue_visibility(self) -> None:
+        query = self.queue_search.get_text()
+        visible = [p for p in self.queue if playlist_control.matches_query(p, query)]
+        has_queue = bool(self.queue)
+        self.queue_search.set_visible(has_queue)
+        self.queue_empty.set_visible(not has_queue)
+        self.queue_no_matches.set_visible(has_queue and not visible)
+        self.queue_scroller.set_visible(bool(visible))
+        self.queue_summary.set_visible(has_queue)
+        if has_queue:
+            total = sum(self.queue_durations.get(p, 0.0) or 0.0 for p in visible)
+            known = all(self.queue_durations.get(p) for p in visible)
+            count = len(visible)
+            label = f"{count} video{'s' if count != 1 else ''}"
+            if query.strip():
+                label += f" of {len(self.queue)} in queue"
+            if total > 0:
+                label += f" · {fmt_time(total)}{'' if known else '+'}"
+            self.queue_summary.set_text(label)
+
     def _rebuild_queue(self) -> None:
+        # GTK emits row-selected(None) while clearing; preserve the source
+        # row index so a rebuild does not change the file selected for casting.
+        selected = (
+            self.queue[self.selected_index]
+            if self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
+            else None
+        )
         while self.queue_list.get_row_at_index(0) is not None:
             self.queue_list.remove(self.queue_list.get_row_at_index(0))
         for index, path in enumerate(self.queue):
             self.queue_list.append(self._queue_row(index, path))
-        self.queue_empty.set_visible(not self.queue)
-        self.queue_scroller.set_visible(bool(self.queue))
-        self.queue_list.set_visible(bool(self.queue))
-        if (self.selected_index is not None and 0 <= self.selected_index < len(self.queue)):
+        self.selected_index = self.queue.index(selected) if selected in self.queue else None
+        if self.selected_index is not None:
             row = self.queue_list.get_row_at_index(self.selected_index)
-            if row is not None:
+            if row is not None and self._queue_row_matches(row):
                 self.queue_list.select_row(row)
-        self.queue_summary.set_visible(bool(self.queue))
-        if self.queue:
-            total = sum(self.queue_durations.get(p, 0.0) or 0.0 for p in self.queue)
-            known = all(self.queue_durations.get(p) for p in self.queue)
-            text = f"{len(self.queue)} video{'s' if len(self.queue) != 1 else ''}"
-            if total > 0:
-                text += f" · {fmt_time(total)}{'' if known else '+'}"
-            self.queue_summary.set_text(text)
+        self._refresh_queue_visibility()
         self._refresh_controls()
 
     def _queue_row(self, index: int, path: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
+        row.set_tooltip_text(path)  # Stable source path for GTK filtering.
         row.add_css_class("queue-row")
         if path == self.now_playing:
             row.add_css_class("current")
@@ -3147,6 +3188,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._cast_path(pathlib.Path(self.queue[index]), None)
 
     def _on_queue_selected(self, _list, row) -> None:
+        if row is None and self.queue_search.get_text().strip():
+            return  # A hidden row must not change playback selection.
         self.selected_index = row.get_index() if row is not None else None
         if (self.selected_index is not None
                 and 0 <= self.selected_index < len(self.queue)
