@@ -1099,6 +1099,8 @@ class MainWindow(Adw.ApplicationWindow):
         recents = Gio.Menu()
         for index, path in enumerate(self.cfg["recents"][:8]):
             recents.append(pathlib.Path(path).name, f"app.recent-{index}")
+        if self.cfg["recents"]:
+            recents.append("Clear recent files", "app.clear-recents")
         menu.append_submenu("Open recent", recents)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
@@ -2755,6 +2757,12 @@ class MainWindow(Adw.ApplicationWindow):
         save_config(self.cfg)
         self.menu_button.set_menu_model(self._build_menu())
 
+    def _clear_recents(self) -> None:
+        self.cfg["recents"] = []
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast("Recent files cleared")
+
     def open_recent(self, index: int) -> None:
         recents = self.cfg["recents"]
         if 0 <= index < len(recents):
@@ -2970,6 +2978,7 @@ class CastControlApp(Adw.Application):
         simple("add-files", lambda *a: self._window().action_add_files())
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
+        simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
