@@ -1,7 +1,10 @@
 # Agent handbook — read by task, not in full
 
 The root [AGENTS.md](../../AGENTS.md) is the **only always-read entry point**.
-This is a routing page: open **only** the relevant child document.
+For a deterministic short recommendation, run
+`python3 scripts/agent_context.py route src/cast_av.py subtitles` from the
+repository root. This routing page is the human-readable fallback: open
+**only** the relevant child document.
 
 | Task | Read |
 | --- | --- |
