@@ -44,6 +44,16 @@ class SetupContractTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_windows_batch_preserves_nonzero_setup_exit_code(self):
+        batch = (ROOT / "setup" / "winsetup.bat").read_text(encoding="utf-8")
+        self.assertIn(':TRY_PYTHON', batch)
+        self.assertIn(':NO_PYTHON', batch)
+        # Percent-expansion of ERRORLEVEL inside a parenthesised CMD block can
+        # wrongly report success after bootstrap failure. Use straight-line
+        # commands plus immediate exit instead.
+        self.assertNotIn('if not errorlevel 1 (', batch)
+        self.assertEqual(batch.count('exit /b %errorlevel%'), 2)
+
     def test_dependency_matrix_explicit_on_all_three_platforms(self):
         self.assertIn("gir1.2-adw-1", bootstrap.LINUX_PACKAGES["apt-get"])
         self.assertIn("libadwaita", bootstrap.LINUX_PACKAGES["dnf"])
