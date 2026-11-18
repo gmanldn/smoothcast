@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.26`
+- Current: `1.0.32`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.26`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.32`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -90,6 +90,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 20. GTK4 action integrity: use `window.fullscreen()/unfullscreen()`, never GTK3-only `set_fullscreen()/set_keep_above()`. Window stacking is compositor-controlled; do not advertise an unsupported always-on-top action. Every `Gio.Menu` entry must correspond to a registered `Gio.SimpleAction`, including `app.clear-recents`.
 
 21. Screenshot capture: `src/screenshot.py` runs FFmpeg only in a background worker with a bounded timeout, no stdin, and a unique non-overwriting output path. Never reintroduce synchronous `subprocess.run` in `MainWindow._screenshot`. Regression tests: `tests/test_screenshot.py`.
+
+22. Real Loop and Sleep timer: `playback_state.next_media` repeats one item before `autonext`; cleanup completes before restarting the same track or auto-shutting down. The sleep timer stores a persisted wall-clock `sleep_timer_deadline` and polls every five seconds, stopping the SmoothCast-owned session. The GTK application must be running for the deadline to fire. Tests: `tests/test_playback_controls.py`.
 
 ## Pending work
 Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
