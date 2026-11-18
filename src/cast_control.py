@@ -1864,6 +1864,7 @@ class MainWindow(Adw.ApplicationWindow):
             return
         content = str((info or {}).get("content_id") or "")
         if f":{streamer.PORT}/" in content:
+            self.external = False  # Completed encoder; TV still owns our HLS.
             return
         self.external = True
         self.tracker.clear()
@@ -2218,7 +2219,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._syncing = False
         can_play_locally = (
             self.local_playback.available()
-            and not (self.session is not None and self.session.active())
+            and not (self.session is not None and self.session.state is not None)
             and self._selected_path() is not None
         )
         self.local_button.set_sensitive(can_play_locally and not busy)
@@ -2570,7 +2571,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("The position of an external stream is unknown", error=True)
             return
         session = self.session
-        if session is None or not session.active():
+        if session is None or session.state is None:
             if self.now_playing:
                 self._cast_path(pathlib.Path(self.now_playing), target)
             else:
@@ -2881,7 +2882,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _remove_queue(self, index: int) -> None:
         if index < len(self.queue):
             removed = self.queue.pop(index)
-            if removed == self.now_playing and not (self.session and self.session.active()):
+            if removed == self.now_playing and not (
+                self.session and self.session.state is not None
+            ):
                 self.now_playing = None
             self._rebuild_queue()
 
