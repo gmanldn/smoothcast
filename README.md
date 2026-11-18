@@ -65,22 +65,32 @@ The design follows GNOME's [Human Interface Guidelines on adaptive layout](https
 
 ## Inspect and scrub a film before casting
 
-Choose **Open** and select a local video. SmoothCast now probes the film with
-FFprobe, displays its full running time and shows an actual decoded frame above
-the timeline. Move across or drag the seek bar to inspect frames at different
-timestamps **without starting Chromecast playback**. The selected frame and
-timestamp update asynchronously; the preview is a low-resolution still image,
-not a second video player. Click **Cast** when ready: the chosen timeline
-position becomes the starting point on the TV. Existing saved resume positions
-are used as the initial preview position, and scrubbing overrides them.
+Choose **Open** and select a local film. FFprobe enumerates its full duration
+and codec details once; its metadata stays cached while the file size and
+modification timestamp match. You can drag the timeline to a particular scene
+without casting. The still-image scrubber extracts bounded frames with FFmpeg,
+off the GTK event loop.
 
-Frame capture runs FFmpeg in a worker with a short timeout, a small JPEG
-output and no scratch image files. Decode requests are throttled so fast
-scrubbing cannot start a swarm of FFmpeg processes. Failed or unsupported
-frames leave the metadata slate visible, without changing the selected film.
-These features require the normal FFmpeg and FFprobe dependencies installed
-by `setup/linuxsetup.sh`. A double-click on an item in the queue remains a
-shortcut for immediate casting.
+**Play** (or Space) now starts the movie **inside the preview panel**, with
+local audio. Play again to pause. The seek bar, jump buttons and number-key
+shortcuts change the local movie position; the playhead advances in real time
+without ever rerunning FFprobe on each scrub or tick. This preview works even
+when no Chromecast is connected. **Stop** resets only the local preview.
+
+Choose a Chromecast in the device selector, then press **Cast**. SmoothCast
+stops the local decoder, captures its most recent playback timestamp and starts
+casting at that position. After transfer, Play/Pause and seeking control the TV
+as before. The **Play preview** button does the same as the main Play control
+while no TV cast is active. Queue double-click remains an explicit immediate
+cast action.
+
+Embedded playback uses GTK4's native GStreamer media backend; still-frame
+scrubbing continues to use FFmpeg. On Debian/Ubuntu, install the media backend
+and codecs with `bash setup/linuxsetup.sh` (including
+`libgtk-4-media-gstreamer`, `gstreamer1.0-plugins-good` and
+`gstreamer1.0-libav`). If a codec is unsupported, a decoder error is reported
+and the still-frame preview remains available. Windows/macOS GTK media backend
+and real-device casting still require native smoke testing.
 
 ## Playback reliability
 
