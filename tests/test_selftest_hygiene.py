@@ -12,13 +12,20 @@ import ast
 from pathlib import Path
 import unittest
 
+from gui_source import combined_source, main_window_source
+
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+SOURCE = combined_source()
 TREE = ast.parse(SOURCE)
+MAIN_SOURCE = main_window_source()
+MAIN_TREE = ast.parse(MAIN_SOURCE)
+CONTROL_SOURCE = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+CONTROL_TREE = ast.parse(CONTROL_SOURCE)
 
 
 def _class(name: str) -> ast.ClassDef:
-    return next(node for node in TREE.body
+    tree = MAIN_TREE if name == "MainWindow" else CONTROL_TREE
+    return next(node for node in tree.body
                 if isinstance(node, ast.ClassDef) and node.name == name)
 
 
@@ -71,7 +78,7 @@ class SelfTestHygieneTests(unittest.TestCase):
     def test_selftest_skips_discovery_adoption_and_timers(self):
         init = next(node for node in _class("MainWindow").body
                     if isinstance(node, ast.FunctionDef) and node.name == "__init__")
-        segment = ast.get_source_segment(SOURCE, init)
+        segment = ast.get_source_segment(MAIN_SOURCE, init)
         self.assertIn("if not app.selftest:", segment)
         guarded = segment[segment.index("if not app.selftest:"):]
         for scheduled in ("self._tick", "_refresh_responsive_layout", "_meter_tick",
@@ -79,9 +86,9 @@ class SelfTestHygieneTests(unittest.TestCase):
             self.assertIn(scheduled, guarded)
 
     def test_selftest_failure_is_reported_as_nonzero(self):
-        main_fn = next(node for node in TREE.body
+        main_fn = next(node for node in CONTROL_TREE.body
                        if isinstance(node, ast.FunctionDef) and node.name == "main")
-        segment = ast.get_source_segment(SOURCE, main_fn)
+        segment = ast.get_source_segment(CONTROL_SOURCE, main_fn)
         self.assertIn("selftest_failed", segment)
         self.assertIn("return 1", segment)
         self.assertIn('print("SELFTEST OK")', segment)

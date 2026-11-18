@@ -72,9 +72,29 @@ Wayland session or desktop DBus.
 
 ## Navigation
 
-- UI/preview: `src/cast_control.py`, `src/responsive_layout.py`,
-  `src/local_playback.py`; media/transcoding: `src/streamer.py`,
-  `src/preflight.py`, `src/subtitle_encoding.py`
+The GTK window was split so a task reads one concern, not a 200 KB file.
+`src/cast_control.py` now holds only `MainWindow.__init__`, `CastControlApp` and
+`main`; `MainWindow` inherits its methods from these mixins:
+
+- `src/cast_ui.py` (`UiMixin`): card/menu/queue construction, theming, console,
+  now-playing and control refresh
+- `src/cast_queue.py` (`QueueMixin`): queue, file opening, device discovery and
+  cast/DLNA target selection
+- `src/cast_session.py` (`SessionMixin`): cast sessions, transport, seeking,
+  window modes, sleep timer
+- `src/cast_av.py` (`AvMixin`): audio tracks, volume, subtitles, local preview,
+  level meter
+- `src/cast_lifecycle.py` (`LifecycleMixin`): close/flush, menu actions, screenshot
+- `src/cast_widgets.py`: shared constants, config helpers, `SeekBar`, `LevelMeter`,
+  `PreviewScreen`
+
+Tests that assert on GUI source use `tests/gui_source.py` (`combined_source()`
+for substring checks, `main_window_methods()` for AST method lookups), so they
+do not need to know the module layout.
+
+- Media/transcoding: `src/streamer.py`, `src/preflight.py`,
+  `src/subtitle_encoding.py`; preview helpers: `src/responsive_layout.py`,
+  `src/local_playback.py`
 - Cast: `src/castctl.py`; DLNA: `src/dlna.py`; diagnostics:
   `src/diagnostics.py`; desktop/setup: `setup/`, `scripts/install_desktop.py`
 - Tests: `tests/`; CI: `.github/workflows/verify.yml`;

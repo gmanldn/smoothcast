@@ -3,24 +3,15 @@
 No GTK display is needed: inspect the exact MainWindow methods for unsafe
 side effects that have previously broken queue navigation and autoplay.
 """
-from pathlib import Path
-import ast
 import unittest
 
-SOURCE_FILE = Path(__file__).resolve().parents[1] / "src" / "cast_control.py"
+from gui_source import main_window_methods
 
 
 class PlayerActionSafetyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source = SOURCE_FILE.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(SOURCE_FILE))
-        window = next(node for node in tree.body
-                      if isinstance(node, ast.ClassDef) and node.name == "MainWindow")
-        cls.methods = {
-            node.name: ast.get_source_segment(source, node)
-            for node in window.body if isinstance(node, ast.FunctionDef)
-        }
+        cls.methods = main_window_methods()
 
     def test_busy_queue_next_does_not_preassign_current_media(self):
         for method in ("on_next", "on_prev", "_on_queue_activated"):

@@ -4,6 +4,9 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from gui_source import combined_source
+
 from playback_state import absolute_encoded_position, playback_ended, direct_session_matches, start_offset
 
 
@@ -39,7 +42,7 @@ class PlaybackStateTests(unittest.TestCase):
                 self.assertEqual(start_offset(None, value), 0.0)
 
     def test_queue_auto_next_starts_at_zero_not_saved_resume(self):
-        source = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text()
+        source = combined_source()
         self.assertIn("self._cast_path(next_path, 0.0)", source)
         self.assertIn("self._cast_path(pathlib.Path(self.now_playing), target)", source)
         self.assertIn("self._cast_path(path, None)", source)

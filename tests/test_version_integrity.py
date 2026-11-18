@@ -12,6 +12,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from gui_source import combined_source
+
 import version
 
 
@@ -78,7 +80,7 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), f"SmoothCast {version.label()}")
 
     def test_gtk_header_title_about_and_cli_share_the_module(self):
-        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        source = combined_source()
         self.assertIn('self.set_title(f"{APP_NAME} {version.label()}")', source)
         self.assertIn('title=f"{APP_NAME} {version.label()}"', source)
         self.assertIn('version=version.__version__', source)

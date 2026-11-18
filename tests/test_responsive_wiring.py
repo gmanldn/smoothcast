@@ -1,18 +1,17 @@
 """GTK4 responsive UI wiring checks that run without PyGObject or a display."""
-from pathlib import Path
 import ast
 import unittest
 
-GUI = Path(__file__).resolve().parents[1] / "src" / "cast_control.py"
+from gui_source import combined_source
 
 
 class ResponsiveGtkWiringTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = GUI.read_text(encoding="utf-8")
+        cls.source = combined_source()
 
     def test_main_module_parses(self):
-        ast.parse(self.source, filename=str(GUI))
+        ast.parse(self.source)
 
     def test_ui_uses_single_scrollable_page_not_fixed_paned(self):
         self.assertIn("self.page_scroller.set_child(self.page)", self.source)

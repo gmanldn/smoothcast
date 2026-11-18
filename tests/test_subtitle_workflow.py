@@ -1,21 +1,16 @@
 """GTK-independent checks for subtitle UI, cast and seek orchestration."""
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 from unittest import mock
 
+from gui_source import main_window_methods
+
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
-WINDOW = next(node for node in ast.parse(SOURCE).body
-              if isinstance(node, ast.ClassDef) and node.name == "MainWindow")
-METHODS = {
-    node.name: ast.get_source_segment(SOURCE, node)
-    for node in WINDOW.body if isinstance(node, ast.FunctionDef)
-}
+METHODS = main_window_methods()
 sys.path.insert(0, str(ROOT / "src"))
 import streamer
 

@@ -1,16 +1,11 @@
 """GTK-free checks that device dispatch does not mix DLNA and Google Cast."""
 from __future__ import annotations
 
-import ast
-from pathlib import Path
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
-window = next(node for node in ast.parse(source).body
-              if isinstance(node, ast.ClassDef) and node.name == "MainWindow")
-METHODS = {node.name: ast.get_source_segment(source, node)
-           for node in window.body if isinstance(node, ast.FunctionDef)}
+from gui_source import main_window_methods
+
+METHODS = main_window_methods()
 
 
 class DlnaGuiContracts(unittest.TestCase):

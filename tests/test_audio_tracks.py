@@ -14,6 +14,8 @@ import streamer
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from gui_source import combined_source
+
 
 class AudioTrackTests(unittest.TestCase):
     def media(self, root: Path) -> streamer.MediaInfo:
@@ -139,7 +141,7 @@ class AudioTrackTests(unittest.TestCase):
             self.assertEqual(session.state.audio_track_index, 1)
 
     def test_ui_carries_selection_through_cast_restart_and_previews(self):
-        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        source = combined_source()
         self.assertIn('"audio_track_by_file": {}', source)
         self.assertIn('self.audio_track_dropdown = dropdown_row(', source)
         self.assertIn('self._update_audio_choices(media)', source)

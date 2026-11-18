@@ -12,6 +12,9 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+from gui_source import main_window_methods
+
 import preflight
 import streamer
 
@@ -137,14 +140,7 @@ class PreflightTests(unittest.TestCase):
             ))
 
     def test_gui_preflight_precedes_any_previous_tv_stop(self):
-        source = (ROOT / "src" / "cast_control.py").read_text("utf-8")
-        window = next(
-            x for x in ast.parse(source).body
-            if isinstance(x, ast.ClassDef) and x.name == "MainWindow"
-        )
-        method = next(x for x in window.body
-                      if isinstance(x, ast.FunctionDef) and x.name == "_cast_path")
-        body = ast.get_source_segment(source, method)
+        body = main_window_methods()["_cast_path"]
         work = body.split("def work():", 1)[1].split("def done(", 1)[0]
         self.assertIn('path.suffix.lower() == ".mkv"', work)
         self.assertIn("preflight.fingerprint(", work)

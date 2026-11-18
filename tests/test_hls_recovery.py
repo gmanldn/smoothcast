@@ -1,11 +1,12 @@
 """GTK-free HLS finalisation, resumed casting and receiver-ownership safety."""
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+
+from gui_source import main_window_methods
 
 import playback_state
 import streamer
@@ -106,12 +107,7 @@ class OwnershipTests(unittest.TestCase):
                 self.assertFalse(playback_state.hls_session_matches(value, self.URL, "Film"))
 
     def test_gui_ownership_is_validated_in_worker_before_adoption(self):
-        src = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text()
-        cls = next(n for n in ast.parse(src).body
-                   if isinstance(n, ast.ClassDef) and n.name == "MainWindow")
-        method = next(n for n in cls.body
-                      if isinstance(n, ast.FunctionDef) and n.name == "_adopt_session")
-        text = ast.get_source_segment(src, method)
+        text = main_window_methods()["_adopt_session"]
         self.assertIn("state.device != self._device()", text)
         self.assertIn("session.recoverable_hls()", text)
         self.assertIn("playback_state.hls_session_matches(", text)

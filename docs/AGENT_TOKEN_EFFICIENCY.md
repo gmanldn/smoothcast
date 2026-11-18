@@ -25,6 +25,29 @@ Retrieve only the task-relevant reference sections; reading the archive
 every session forfeits the benefit. New architecture and process rules belong
 in compact root instructions or focused docs, not a growing global prompt.
 
+## Measured GUI module sizes
+
+The GTK window was one **200,282-byte (4,566-line)** `cast_control.py`, so a
+task that touched one concern still had to grep and read a whole-file region.
+It is now split by concern, with `MainWindow` inheriting the mixins:
+
+| Module | Lines | Bytes |
+| --- | --- | --- |
+| `cast_control.py` (`MainWindow.__init__`, `CastControlApp`, `main`) | 414 | 17,294 |
+| `cast_widgets.py` (shared constants, config, `SeekBar`, `LevelMeter`, `PreviewScreen`) | 698 | 25,798 |
+| `cast_ui.py` (`UiMixin`) | 1,161 | 54,438 |
+| `cast_queue.py` (`QueueMixin`) | 729 | 29,972 |
+| `cast_session.py` (`SessionMixin`) | 1,002 | 41,623 |
+| `cast_av.py` (`AvMixin`) | 562 | 22,256 |
+| `cast_lifecycle.py` (`LifecycleMixin`) | 302 | 11,285 |
+
+The largest file an agent can now be forced to read is **54 KB instead of
+200 KB**, and most tickets read one 20-30 KB module. This is a
+byte/character comparison, **not** a measured model-token count.
+`tests/test_agent_token_efficiency.py` fails if any GUI module regrows past
+its budget, and `tests/gui_source.py` lets source-asserting tests keep working
+without hard-coding the module layout.
+
 ## Workflow for coding agents
 
 1. Identify the task and affected module. Search relevant symbols/callers;

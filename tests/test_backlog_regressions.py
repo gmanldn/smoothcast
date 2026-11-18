@@ -4,20 +4,15 @@ These tests deliberately avoid importing GTK or opening a desktop window.
 """
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import re
 import sys
 import unittest
 
+from gui_source import main_window_methods
+
 ROOT = Path(__file__).resolve().parents[1]
-GUI = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
-APP = next(node for node in ast.parse(GUI).body
-           if isinstance(node, ast.ClassDef) and node.name == "MainWindow")
-METHODS = {
-    node.name: ast.get_source_segment(GUI, node)
-    for node in APP.body if isinstance(node, ast.FunctionDef)
-}
+METHODS = main_window_methods()
 sys.path.insert(0, str(ROOT / "src"))
 import castctl
 from playback_state import playback_ended

@@ -1,11 +1,12 @@
 """Playlist parsing, atomic saving and GTK menu wiring regression checks."""
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+
+from gui_source import combined_source, main_window_methods
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import playlist_control
@@ -79,7 +80,7 @@ class PlaylistTests(unittest.TestCase):
         self.assertFalse(playlist_control.matches_query(paths[0], "missing title"))
 
     def test_queue_filter_preserves_original_index_and_focus_shortcut(self):
-        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        source = combined_source()
         self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
         self.assertIn("self.queue_list.invalidate_filter()", source)
         self.assertIn("row.set_tooltip_text(path)", source)
@@ -101,12 +102,7 @@ class PlaylistTests(unittest.TestCase):
         self.assertIsNone(playlist_control.selection_after_remove(None, 0, 4))
 
     def test_filtered_row_commands_use_stable_paths_not_visual_indexes(self):
-        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        window = next(n for n in tree.body if isinstance(n, ast.ClassDef)
-                      and n.name == "MainWindow")
-        methods = {n.name: ast.get_source_segment(source, n)
-                   for n in window.body if isinstance(n, ast.FunctionDef)}
+        methods = main_window_methods()
         activated = methods["_on_queue_activated"]
         selected = methods["_on_queue_selected"]
         self.assertIn("row.get_tooltip_text()", activated)
@@ -117,14 +113,8 @@ class PlaylistTests(unittest.TestCase):
         self.assertIn("playlist_control.selection_after_remove(", methods["_remove_queue"])
 
     def test_actions_are_separate_and_load_uses_enqueue(self):
-        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        window = next(n for n in tree.body if isinstance(n, ast.ClassDef)
-                      and n.name == "MainWindow")
-        methods = {
-            n.name: ast.get_source_segment(source, n)
-            for n in window.body if isinstance(n, ast.FunctionDef)
-        }
+        source = combined_source()
+        methods = main_window_methods()
         self.assertIn("def _toggle_loop", methods["_toggle_loop"])
         self.assertIn('self.cfg["loop"]', methods["_toggle_loop"])
         self.assertNotIn('self.cfg["loop"]', methods["_load_playlist"])

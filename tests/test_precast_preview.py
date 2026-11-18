@@ -1,20 +1,11 @@
 """Source-level guards for local pre-cast film inspection (GTK-free)."""
 from __future__ import annotations
 
-import ast
-from pathlib import Path
 import unittest
 
+from gui_source import main_window_methods
 
-ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "src/cast_control.py").read_text(encoding="utf-8")
-TREE = ast.parse(SOURCE)
-WINDOW = next(node for node in TREE.body if isinstance(node, ast.ClassDef)
-              and node.name == "MainWindow")
-METHODS = {
-    node.name: ast.get_source_segment(SOURCE, node)
-    for node in WINDOW.body if isinstance(node, ast.FunctionDef)
-}
+METHODS = main_window_methods()
 
 
 class PreCastPreviewTests(unittest.TestCase):

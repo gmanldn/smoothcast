@@ -13,6 +13,9 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+
+from gui_source import GUI_MODULES, combined_source
+
 import ui_theme
 
 
@@ -31,11 +34,11 @@ def contrast(fg: str, bg: str) -> float:
 class VisualDesignTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "src" / "cast_control.py").read_text("utf-8")
+        cls.source = combined_source()
         cls.theme = ui_theme.CSS.decode("utf-8")
 
     def test_gtk_code_and_theme_are_valid_python(self):
-        for name in ("cast_control.py", "ui_theme.py"):
+        for name in (*GUI_MODULES, "ui_theme.py"):
             path = ROOT / "src" / name
             ast.parse(path.read_text("utf-8"), filename=str(path))
 

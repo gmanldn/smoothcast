@@ -1,21 +1,14 @@
 """Headless lifecycle tests: no GTK display or receiver is launched."""
 from __future__ import annotations
 
-import ast
-from pathlib import Path
 import textwrap
 import threading
 import unittest
 from unittest import mock
 
+from gui_source import main_window_methods
 
-SOURCE = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text()
-WINDOW = next(node for node in ast.parse(SOURCE).body
-              if isinstance(node, ast.ClassDef) and node.name == "MainWindow")
-METHODS = {
-    node.name: ast.get_source_segment(SOURCE, node)
-    for node in WINDOW.body if isinstance(node, ast.FunctionDef)
-}
+METHODS = main_window_methods()
 
 
 def lifecycle_type():
