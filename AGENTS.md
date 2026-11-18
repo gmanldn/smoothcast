@@ -4,7 +4,7 @@
 - **Commit after every meaningful change.** User loses work if not committed. Run `git add -A && git commit -m "..."` frequently.
 - **Commit at least every ~10,000 lines of code or so**, even if the change is small, so work is never lost.
 - Never ask the user for confirmation to commit — just do it.
-- **Version counter:** `src/version.py` holds `__version__` = `1.0.x`. Increment the patch number (`x`) on **every single commit**. This makes every build traceable to a specific commit.
+- **Version authority:** `src/version.py` alone defines MAJOR/MINOR/PATCH and `__version__`. Bump the semantic release once when publishing a coherent release; use the Git commit SHA to identify individual intermediate commits. Never duplicate a hardcoded *current* version in documentation, the launcher, GTK labels, or tests.
 - Keep responses short and technical. No preamble, no postamble.
 
 ## Project
@@ -69,10 +69,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
 - Path: `~/.config/cast-control/errors.log`.
 
-## Version
-- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.45`
-- Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+## Version — canonical source and release discipline
+- **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
+- **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
+- **User-visible:** `./smoothcast --version`, `./sc.py --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
+- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version; the update notice distinguishes that from a newer *downloaded* version and announces that a restart is required.
+- **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -81,12 +83,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Error handling: `main()` wraps `app.run()` in try/except; GApplication handles repeat activation.
 - Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
 - Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 1200x800 with default 1400x900, no fixed widths preventing scaling.
-- Version number shown on front page: header subtitle displays `device · vX.Y.Z`.
+- Version number is prominent in the window **title**, e.g. `SmoothCast vX.Y.Z`; the subtitle shows current device/state and a restart reminder only when updated files have been downloaded.
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.45`.
+3. Canonical version: `src/version.py` controls runtime/CLI/About strings; a separate Git SHA identifies the precise commit, and the release version is advanced at release cutover.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
