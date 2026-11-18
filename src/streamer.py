@@ -820,7 +820,7 @@ class Session:
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
         if (media.width > 1920 or media.height > 1080
-                or media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"}):
+                or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
         software = self.used_software_fallback
         args = [
