@@ -68,3 +68,22 @@ def layout_for_size(width: int, height: int) -> Layout:
         spacing=10 if compact else 14,
         preview_height=110 if height < 700 else (145 if compact else 190),
     )
+
+
+def remember_normal_size(
+    allocated_width: object, allocated_height: object,
+    previous: tuple[int, int], *, fullscreen: bool, maximized: bool,
+) -> tuple[int, int]:
+    """Save only an actual normal GTK allocation, never a fullscreen extent.
+
+    GTK's get_default_size() is a preferred/default size, not a reliable
+    measurement of a manually resized window.  Do not learn temporary
+    compositor allocations (fullscreen/maximised/hidden/zero-size).
+    """
+    if fullscreen or maximized:
+        return previous
+    width = _dimension(allocated_width, 0)
+    height = _dimension(allocated_height, 0)
+    if width < 320 or height < 300:
+        return previous
+    return width, height
