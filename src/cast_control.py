@@ -345,6 +345,11 @@ class CastControlApp(Adw.Application):
 
     def do_command_line(self, command_line) -> int:
         raw = command_line.get_arguments()[1:]
+        # For GApplication's forwarded command lines, get_cwd() refers to
+        # the invoking process, not the already-running GUI. Using Path.cwd()
+        # here could open a same-named decoy file from the checkout.
+        caller = command_line.get_cwd()
+        caller_dir = pathlib.Path(os.fsdecode(caller)) if caller else pathlib.Path.cwd()
         action = None
         paths: list[str] = []
         index = 0
@@ -359,9 +364,16 @@ class CastControlApp(Adw.Application):
                 if path:
                     paths.append(path)
             elif argument and not argument.startswith("-"):
-                candidate = pathlib.Path(argument).expanduser()
-                if candidate.is_file():
-                    paths.append(str(candidate.resolve()))
+                try:
+                    candidate = pathlib.Path(argument).expanduser()
+                    if not candidate.is_absolute():
+                        candidate = caller_dir / candidate
+                    if candidate.is_file():
+                        paths.append(str(candidate.resolve()))
+                except (OSError, RuntimeError, ValueError):
+                    # A malformed argument must not prevent a valid neighbour
+                    # from opening or cause a fallback to the checkout cwd.
+                    pass
             index += 1
         self.activate()
         window = self._window()
