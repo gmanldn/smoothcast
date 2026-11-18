@@ -142,6 +142,34 @@ class SetupContractTests(unittest.TestCase):
             path = bootstrap.download_verified_msys2()
             self.assertEqual(path.read_bytes(), binary)
 
+    def test_missing_catt_recovers_from_project_metadata_not_removed_requirements(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "bin" / "python"
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            catt_checks = 0
+
+            def installed(_python, code, *, env=None):
+                nonlocal catt_checks
+                if code == bootstrap.GUI_CHECK:
+                    return True
+                if code == bootstrap.CATT_CHECK:
+                    catt_checks += 1
+                    return catt_checks > 1
+                return False
+
+            with mock.patch.object(bootstrap, "venv_python", return_value=executable), \
+                 mock.patch.object(bootstrap, "works", side_effect=installed), \
+                 mock.patch.object(bootstrap, "check_tools", return_value=[]), \
+                 mock.patch.object(bootstrap, "checked_run") as run:
+                result = bootstrap.ensure_venv(Path(sys.executable), dict(), check=False)
+            self.assertEqual(result, executable)
+            run.assert_called_once()
+            command = run.call_args.args[0]
+            self.assertEqual(command[:4], [str(executable), "-m", "pip", "install"])
+            self.assertEqual(command[-2:], ["-e", str(ROOT)])
+            self.assertNotIn("requirements.txt", " ".join(command))
+
     def test_virtualenv_check_is_readonly(self):
         with mock.patch.object(bootstrap, "venv_python",
                                return_value=Path("/does/not/exist")):
