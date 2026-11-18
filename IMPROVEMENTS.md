@@ -220,14 +220,23 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
-- **P0 #59 — Closing during cast startup never leaves an orphan:**
-  `MainWindow` records `_closing` on `close-request`; the `_cast_path`
-  worker's `done()` callback now checks it before publishing. If the
-  window is gone it retires the new session (`send_stop=False`) unless
-  keep-streaming is on, in which case the saved session stays recoverable
-  on the next launch; `failed()` also stops touching a closed window.
-  Source-level regression test in `tests/test_player_action_safety.py`.
-  Real close-during-startup confirmation pending.
+- **P0 #58 — Retained HLS recovery after FFmpeg exits (CI pending):**
+  `Session.recoverable_hls` validates a finalised, local-only HLS playlist
+  with nonempty segments and a healthy local server; `hls_session_matches`
+  requires the receiving TV to report the **exact saved content URL**, plus a
+  compatible title, before reconnecting controls. A changed selected TV cannot
+  be adopted, and a temporarily unreachable receiver does not by itself
+  erase saved session metadata. Tests: `tests/test_hls_recovery.py`.
+  Real-receiver and full-CI confirmation remain outstanding.
+- **P0 #59 — Closing during cast startup is settled before GTK exits (CI pending):**
+  The window sets `_closing`, hides rather than destroys itself while a cast
+  worker runs, and temporarily holds `GApplication` until its completion
+  callback arrives. The normal close handler then stops the stream unless
+  Keep Streaming is enabled; a DLNA session always closes its local server.
+  New casts are not started after a close request. Headless tests exercise
+  repeated closing, stop/keep policies and DLNA teardown in
+  `tests/test_cast_shutdown.py`. A live GUI/receiver smoke test is still
+  required.
 - **P0 #60 — Completed one-segment HLS clips are accepted:**
   `Session._wait_for_segments` still waits for two segments while the
   encoder runs, but when the encoder exits successfully it now accepts a
