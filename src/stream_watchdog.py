@@ -94,6 +94,9 @@ class StreamWatchdog:
         receiver_stalled = (
             self._receiver_value is not None and
             self._receiver_advanced_at is not None and
+            self._encoder_value is not None and
+            self._encoder_advanced_at is not None and
+            now - self._encoder_advanced_at < self.encoder_timeout / 2 and
             now - self._receiver_advanced_at >= self.receiver_timeout and
             not encoder_stalled
         )
