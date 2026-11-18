@@ -50,7 +50,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         for file in files:
             with self.subTest(file=str(file.relative_to(ROOT))):
                 body = file.read_text("utf-8")
-                for target in re.findall(r"\\[[^\\]]+\\]\\(([^)]+)\\)", body):
+                for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", body):
                     if target.startswith(("https://", "http://", "#")):
                         continue
                     link_path = (file.parent / target.split("#")[0]).resolve()
