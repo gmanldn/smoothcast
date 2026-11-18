@@ -359,9 +359,18 @@ class SessionMixin:
             self.toast("Device is offline", error=True)
             return
         device = self._device()
+        session = self.session
         renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
-        self.tracker.set_state(want_play)
+        # Cast and DLNA commands are asynchronous. Block all other transport
+        # operations until this one resolves, including shortcuts and seekbar
+        # signals that can fire even when buttons have been disabled.
+        self.busy = True
+        self._refresh_controls()
+
+        def current():
+            return (not self._closing and self._device() == device
+                    and self.session is session)
 
         def work():
             if renderer is not None:
@@ -375,34 +384,51 @@ class SessionMixin:
             return castctl.pause(device)
 
         def done(result):
+            if not current():
+                return  # Closed or replaced cast: never mutate the new UI.
+            self.busy = False
             ok, message = result
-            if not ok:
-                self.toast(message or "Command failed", error=True)
-            if want_play:
-                self._resume_monitor()
+            if ok:
+                self.tracker.set_state(want_play)
+                if want_play:
+                    self._resume_monitor()
+                else:
+                    self._stop_monitor(reset=False)
             else:
-                self._stop_monitor(reset=False)
+                self.toast(message or "Command failed", error=True)
+            self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done)
+        def failed(message):
+            if not current():
+                return
+            self.busy = False
+            self.toast(f"Transport command failed: {message}", error=True)
+            self._refresh_controls()
+            self._poll_device()
+
+        Async.run(work, done=done, failed=failed)
 
 
     def seek_to(self, target: float) -> None:
+        # Check the command lock before moving the seekbar. GTK drag signals,
+        # keyboard shortcuts and programmatic actions can race a cast startup.
+        if self.busy:
+            self.toast("Hold on — finishing the last command")
+            return
+        if self.external:
+            self.toast("The position of an external stream is unknown", error=True)
+            return
         target = max(0.0, target)
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
         if self._preview_path and self.session is None and not self.external:
             duration = self.queue_durations.get(self._preview_path, duration)
         if duration:
             target = min(target, max(0.0, duration - 1.0))
-        # Move the scrubbing knob immediately so the user sees where they
-        # jumped to while the cast catches up in the background.
-        if self.seekbar is not None:
-            self.seekbar.set_state(target, duration, self.seekbar.buffered)
-        if self.external:
-            self.toast("The position of an external stream is unknown", error=True)
-            return
         session = self.session
         if session is None and self._preview_path is not None:
+            if self.seekbar is not None:
+                self.seekbar.set_state(target, duration, self.seekbar.buffered)
             self._preview_position = target
             stream = self._local_stream()
             if stream is not None:
@@ -419,42 +445,63 @@ class SessionMixin:
             else:
                 self.toast("Nothing is playing yet")
             return
-        if session.mode == "dlna":
-            renderer = self._dlna_renderer()
-            if renderer is None:
-                self.toast("DLNA receiver disappeared; rescan devices", error=True)
-                return
-            self.tracker.device_update(target, duration)
-            Async.run(
-                lambda: dlna.seek(renderer, target),
-                done=lambda _: self._poll_device(),
-                failed=lambda message: self.toast(f"DLNA seek failed: {message}", error=True),
-            )
+
+        device = self._device()
+        renderer = self._dlna_renderer(device) if session.mode == "dlna" else None
+        if session.mode == "dlna" and renderer is None:
+            self.toast("DLNA receiver disappeared; rescan devices", error=True)
             return
-        if session.mode == "direct" and castctl.is_seekable(self.device_info):
-            device = self._device()
+        # Optimistic seek is allowed only after all guards pass. If remote seek
+        # fails, the next receiver poll reconciles the displayed film clock.
+        if self.seekbar is not None:
+            self.seekbar.set_state(target, duration, self.seekbar.buffered)
+        if session.mode == "dlna" or (
+            session.mode == "direct" and castctl.is_seekable(self.device_info)
+        ):
+            self.busy = True
+            self._refresh_controls()
             self.tracker.device_update(target, duration)
+
+            def current():
+                return (not self._closing and self._device() == device
+                        and self.session is session)
+
+            def work():
+                if renderer is not None:
+                    dlna.seek(renderer, target)
+                    return True, ""
+                return castctl.seek(device, target)
 
             def done(result):
+                if not current():
+                    return
+                self.busy = False
                 ok, message = result
-                if not ok:
+                if ok:
+                    self.toast(f"Jumped to {fmt_time(target)}")
+                else:
                     self.toast(message or "Seek failed", error=True)
+                self._refresh_controls()
                 self._poll_device()
 
-            Async.run(lambda: castctl.seek(device, target), done=done)
-            self.toast(f"Jumped to {fmt_time(target)}")
+            def failed(message):
+                if not current():
+                    return
+                self.busy = False
+                self.toast(f"Seek failed: {message}", error=True)
+                self._refresh_controls()
+                self._poll_device()
+
+            Async.run(work, done=done, failed=failed)
             return
-        if self.busy:
-            self.toast("Hold on — finishing the last command")
-            return
+
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
-        # Update tracker immediately so the seekbar knob stays at the target
-        # while the transcode restarts in the background.
+        # Update the tracker immediately while HLS restarts; _restart_at
+        # persists the requested source-film time after a successful restart.
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
-
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None) -> None:
