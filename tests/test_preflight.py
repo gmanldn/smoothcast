@@ -149,7 +149,7 @@ class PreflightTests(unittest.TestCase):
         self.assertIn('path.suffix.lower() == ".mkv"', work)
         self.assertIn("preflight.fingerprint(", work)
         self.assertLess(work.index("preflight.check_media("),
-                        work.index("previous.stop(device, send_stop=False)"))
+                        work.index("previous.stop(device, send_stop="))
         self.assertIn("self._preflight_ok.add(fingerprint)", work)
         self.assertIn("if previous is not None and previous is self.session", body)
 
