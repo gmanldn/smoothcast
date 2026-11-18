@@ -18,6 +18,7 @@ Current rules in this file take precedence over outdated notes there.
 - Preserve local commits, worktrees, stashes and uncommitted user changes.
   Do not force-reset or overwrite work. Commit and push cohesive, tested work.
 - Canonical release version: `src/version.py`; never bump per commit.
+  Check the running release with `./smoothcast --version` (no GUI launch).
   Code commits have distinct Git SHAs. Update `IMPROVEMENTS.md` honestly;
   do not mark hardware-dependent behaviour verified without device testing.
 
