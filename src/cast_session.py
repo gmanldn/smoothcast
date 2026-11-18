@@ -746,20 +746,14 @@ class SessionMixin:
         if not session.active() and session.mode != "transcode":
             streamer.clear_session()
             return False
-        self.session = session
-        self.now_playing = state.file
-        if state.file not in self.queue:
-            self.queue.append(state.file)
-            self._rebuild_queue()
+        # This is an *untrusted candidate* until an exact receiver URL/title
+        # match and HLS availability are verified by the background worker.
+        # Publishing it now would enable Stop/seek on unrelated TV content.
+        if self.session is not None or getattr(self, "_adopting_session", None) is not None:
+            return False
+        self._adopting_session = session
         device = self._device()
-        # Immediate best estimate so the seek bar is not stuck at 0 while the
-        # accurate device position is fetched. Works for direct and transcode.
-        elapsed = max(0.0, time.time() - state.started_at) if state.started_at else 0.0
         rate = state.speed if session.mode == "transcode" else 1.0
-        self.tracker.start(
-            min(state.offset + elapsed * rate, state.duration or 1e18),
-            state.duration, True, rate=rate,
-        )
         def probe():
             current = 0.0
             info = None
@@ -782,8 +776,12 @@ class SessionMixin:
             return media, current, info
 
         def probed(result):
-            if self.session is not session:
-                return  # Another media command has replaced this saved session.
+            if getattr(self, "_adopting_session", None) is not session:
+                return  # A newer recovery attempt superseded this one.
+            self._adopting_session = None
+            if (self.session is not None or self.busy or self._cast_starting
+                    or self._closing or state.device != self._device()):
+                return  # User changed the target or started a different cast.
             media, current, info = result
             if media is None or (
                 session.mode == "direct" and not playback_state.direct_session_matches(
@@ -794,18 +792,27 @@ class SessionMixin:
                     info, state.stream_url, state.title,
                 )
             ):
-                self.session = None
-                self.now_playing = None
-                self.media = None
-                self.tracker.clear()
-                # An unreachable TV is not proof that the media ended.
-                # Keep the saved session for a later verified reconnection.
+                # Unreachable receivers are inconclusive: retain saved state
+                # for a later attempt. A definite mismatch is not ours.
                 if info is not None:
                     streamer.clear_session()
                 self.toast("Previous cast could not be verified")
                 self._refresh_controls()
                 self._poll_device()
                 return
+            # Only now publish ownership. No remote controls were exposed
+            # before the receiver verified the saved media identity.
+            self.session = session
+            self.external = False
+            self.now_playing = state.file
+            if state.file not in self.queue:
+                self.queue.append(state.file)
+                self._rebuild_queue()
+            elapsed = max(0.0, time.time() - state.started_at) if state.started_at else 0.0
+            self.tracker.start(
+                min(state.offset + elapsed * rate, state.duration or 1e18),
+                state.duration, True, rate=rate,
+            )
             self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
             self.media = media
             if current > 0:
@@ -835,10 +842,12 @@ class SessionMixin:
             self._set_now_playing_labels(media, session)
             self._poll_device()
 
-        Async.run(
-            probe, done=probed,
-            failed=lambda msg: self._console(f"Saved cast inspection failed: {msg}"),
-        )
+        def failed(message):
+            if getattr(self, "_adopting_session", None) is session:
+                self._adopting_session = None
+            self._console(f"Saved cast inspection failed: {message}")
+
+        Async.run(probe, done=probed, failed=failed)
         self._refresh_controls()
         self._poll_device()
         return False
