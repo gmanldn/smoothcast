@@ -2279,8 +2279,14 @@ class MainWindow(Adw.ApplicationWindow):
         # Direct play hands the file to the TV untouched, so it can only be used
         # when no audio processing is wanted. Any dialogue/night profile needs
         # the transcode pipeline to apply its filters.
-        use_direct = bool(cfg["direct"]) and cfg["audio"] == "original"
         speed = float(cfg.get("playback_speed", 1.0))
+        rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
+        # A device-native stream cannot apply ffmpeg speed/rotation filters.
+        # Always transcode when either transform is enabled, even for H.264/AAC.
+        use_direct = (
+            bool(cfg["direct"]) and cfg["audio"] == "original"
+            and speed == 1.0 and rotation == 0
+        )
 
         def work():
             media = streamer.ffprobe(path)
@@ -2307,7 +2313,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
-                    rotation=cfg["rotation"],
+                    rotation=rotation,
                 )
                 return session, media
             except Exception:
