@@ -82,12 +82,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
-- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`.
+- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts through `cli:main`. This GTK-free gate handles `--version` before importing PyGObject and lazy-loads `cast_control:main` for the GUI.
 - Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
 - Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
 - Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
 - All 18 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
-- `src/version.py` is the sole version authority; `pyproject.toml` reads it dynamically (`version = {attr = "version.__version__"}`) so the two can never drift.
+- `src/version.py` is the sole version authority; `[project] dynamic = ["version"]` and `[tool.setuptools.dynamic] version = {attr = "version.__version__"}` are required. The `cli:main` entry point exposes the running version without GTK.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
