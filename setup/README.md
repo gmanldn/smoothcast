@@ -45,10 +45,19 @@ packages. MSYS2 is installed under `C:\msys64` by default; set
 installs native binaries and may require administrator approval. A failed
 download, mismatched hash or package-manager error stops setup.
 
-On macOS, the standard Homebrew installer is used if `brew` is missing, in
-noninteractive mode. On Linux, `sudo` may request the user's password for
-native package installation. No blanket executable downloads or silently
-ignored package failures occur.
+On macOS, if `brew` is missing, setup downloads the upstream Homebrew
+`install.sh` from a **pinned immutable Git commit**, rejects empty/oversize
+downloads, compares a **reviewed SHA-256 digest**, and only then invokes Bash
+on a private, temporary script in noninteractive mode. If download or integrity
+validation fails, it never executes the installer. To upgrade this pinned
+installer, review the new upstream source and update both
+`HOMEBREW_INSTALL_COMMIT` and `HOMEBREW_INSTALL_SHA256` in
+`setup/bootstrap.py`; rerun `tests/test_homebrew_verify.py` before release.
+This verifies a reviewed artifact, not the trustworthiness of upstream code.
+
+On Linux, `sudo` may request the user's password for native package
+installation. No unverified shell-piped downloads or silently ignored
+package-manager failures are permitted.
 
 ## What this does **not** establish yet
 

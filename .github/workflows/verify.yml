@@ -105,3 +105,5 @@ jobs:
         run: python -m pip install 'pytest>=8,<10'
       - name: Verify persisted native runtime on this operating system
         run: python -m pytest -q tests/test_native_runtime_manifest.py
+      - name: Verify pinned Homebrew installer rejection and execution gating
+        run: python -m pytest -q tests/test_homebrew_verify.py
