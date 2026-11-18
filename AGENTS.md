@@ -9,7 +9,7 @@
 
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
-- Launcher: `./smoothcast` (creates `.venv`, installs catt, runs `src/cast_control.py`; GUI starts repair the user-level desktop launcher and themed icon).
+- Launcher: `./smoothcast` (creates `.venv`, installs catt, runs `src/cast_control.py`; GUI starts repair the user-level desktop launcher and themed icon). `./sc.py` is an executable alias that forwards arguments; repeat starts raise the existing GTK window, not kill/restart a cast.
 - Run directly: `DISPLAY=:99 .venv/bin/python src/cast_control.py`
 - Self-test: `.venv/bin/python src/cast_control.py --self-test`
 
@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.14`
+- Current: `1.0.15`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.14`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.15`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.

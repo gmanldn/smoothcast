@@ -25,6 +25,8 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 
 That's it. First run creates a `.venv` and installs `catt` automatically. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
 
+Optional executable shortcut: `./sc.py` delegates to the same launcher and forwards arguments. If SmoothCast is already running, GTK raises that window; it does not restart an active stream.
+
 ## Desktop launcher and dock
 
 SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The launcher uses the absolute path to this checkout, not an unavailable `smoothcast` executable on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
