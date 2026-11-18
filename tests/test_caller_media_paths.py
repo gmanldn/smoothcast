@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -24,7 +25,7 @@ def command_line_method():
                   if isinstance(n, ast.FunctionDef) and n.name == "do_command_line")
     # Only this method's source is needed; GTK-independent fake window.
     text = ast.get_source_segment(source, method)
-    code = "class TestApp:\n" + text
+    code = "class TestApp:\n" + textwrap.indent(textwrap.dedent(text), "    ")
     namespace = {"os": os, "pathlib": __import__("pathlib"), "GLib": mock.MagicMock()}
     exec(compile(code, "<real-command-line-handler>", "exec"), namespace)
     return namespace["TestApp"]
