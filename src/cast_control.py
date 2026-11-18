@@ -19,6 +19,7 @@ import castctl
 import streamer
 import audio_monitor
 import screenshot
+import responsive_layout
 import playback_state
 import url_control
 import update_control
@@ -260,6 +261,30 @@ Adw.Switch {
 
 Adw.Switch:checked {
     color: #4f8cff;
+}
+
+/* Density is driven by actual GTK allocation, not the monitor DPI or a
+   fixed forced window size.  The application toggles these classes at resize. */
+.compact .card {
+    padding: 12px;
+    border-radius: 12px;
+}
+.compact .big-play {
+    min-width: 58px;
+    min-height: 58px;
+    border-radius: 29px;
+}
+.compact .transport {
+    min-width: 38px;
+    min-height: 38px;
+    border-radius: 19px;
+}
+.compact .pill {
+    min-width: 42px;
+    padding: 4px 7px;
+}
+.compact button {
+    padding: 5px 9px;
 }
 """.encode()
 
@@ -892,30 +917,22 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
 
-        w = max(1400, int(self.cfg.get("window_width", 1600)))
-        h = max(900, int(self.cfg.get("window_height", 1000)))
-        self.set_default_size(w, h)
-        self.set_size_request(1400, 900)
-        try:
-            x = int(self.cfg.get("window_x", -1))
-            y = int(self.cfg.get("window_y", -1))
-            if x >= 0 and y >= 0:
-                display = Gdk.Display.get_default()
-                mon = display.get_monitor_at_point(x, y) if display else None
-                if mon is None and display:
-                    mon = display.get_primary_monitor() or (display.get_monitors()[0] if display.get_monitors() else None)
-                if mon:
-                    geom = mon.get_geometry()
-                    x = max(geom.x, min(x, geom.x + geom.width - w))
-                    y = max(geom.y, min(y, geom.y + geom.height - h))
-                if x >= 0 and y >= 0:
-                    self.move(x, y)
-                else:
-                    self._center_on_primary(w, h)
-        except Exception:
-            self._center_on_primary(w, h)
-            pass
+        # GTK4/Wayland controls window placement; avoid the removed Gtk3
+        # move()/get_position() APIs and never force a fullscreen-sized minimum.
+        display = Gdk.Display.get_default()
+        monitors = display.get_monitors() if display else None
+        monitor = monitors.get_item(0) if monitors and monitors.get_n_items() else None
+        geometry = monitor.get_geometry() if monitor else None
+        self._startup_width, self._startup_height = responsive_layout.window_size(
+            self.cfg.get("window_width"), self.cfg.get("window_height"),
+            geometry.width if geometry else None,
+            geometry.height if geometry else None,
+        )
+        self.set_default_size(self._startup_width, self._startup_height)
+        self.set_size_request(360, 320)
+        self._layout_state = None
         self._build_ui()
+        self._refresh_responsive_layout()
         self._flush_stale_state()
         self._refresh_direct_note()
         self.connect("close-request", self._on_close)
@@ -923,6 +940,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._apply_color_scheme()
         self._refresh_controls()
         GLib.timeout_add(500, self._tick)
+        GLib.timeout_add(200, self._refresh_responsive_layout)
         GLib.timeout_add(100, self._meter_tick)
         GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
         GLib.timeout_add(4000, self._poll_device)
@@ -952,43 +970,86 @@ class MainWindow(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay()
         toolbar = Adw.ToolbarView()
         toolbar.add_top_bar(header)
-        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        paned.set_wide_handle(True)
-        paned.set_resize_start_child(True)
-        paned.set_resize_end_child(True)
-        paned.set_shrink_start_child(True)
-        paned.set_shrink_end_child(True)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        left.set_hexpand(True)
-        left.set_vexpand(True)
-        left.append(self._build_now_playing())
-        left.append(self._build_live_levels())
-        left.append(self._build_queue())
-        right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        right_box.set_hexpand(False)
-        right_box.set_vexpand(True)
-        right_box.append(self._build_device_card())
-        right_box.append(self._build_settings_card())
-        right_box.append(self._build_console_card())
-        right_box.append(self._build_details_card())
-        right_scroller = Gtk.ScrolledWindow()
-        right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        right_scroller.set_vexpand(True)
-        right_scroller.set_child(right_box)
-        paned.set_start_child(left)
-        paned.set_end_child(right_scroller)
-        paned.set_position(640)
-        holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        holder.set_margin_top(14)
-        holder.set_margin_bottom(14)
-        holder.set_margin_start(14)
-        holder.set_margin_end(14)
-        holder.set_hexpand(True)
-        holder.set_vexpand(True)
-        holder.append(paned)
-        toolbar.set_content(holder)
+        # One full-height vertical scroller: neither column can disappear below
+        # the screen when its natural height exceeds the available allocation.
+        # Change this box's orientation at a breakpoint rather than forcing a
+        # 1400 px-wide Gtk.Paned that clips on laptop screens.
+        self.page = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        self.page.set_hexpand(True)
+        self.left_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.left_column.set_hexpand(True)
+        self.left_column.set_valign(Gtk.Align.START)
+        self.left_column.append(self._build_now_playing())
+        self.left_column.append(self._build_live_levels())
+        self.left_column.append(self._build_queue())
+        self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.right_column.set_valign(Gtk.Align.START)
+        self.right_column.append(self._build_device_card())
+        self.right_column.append(self._build_settings_card())
+        self.right_column.append(self._build_console_card())
+        self.right_column.append(self._build_details_card())
+        self.page.append(self.left_column)
+        self.page.append(self.right_column)
+        self.page_scroller = Gtk.ScrolledWindow()
+        self.page_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.page_scroller.set_propagate_natural_width(False)
+        self.page_scroller.set_propagate_natural_height(False)
+        self.page_scroller.set_hexpand(True)
+        self.page_scroller.set_vexpand(True)
+        self.page_scroller.set_child(self.page)
+        toolbar.set_content(self.page_scroller)
         self.toasts.set_child(toolbar)
         self.set_content(self.toasts)
+
+    def _refresh_responsive_layout(self) -> bool:
+        """Reflow once per actual size/mode change; never do I/O during resize."""
+        width = self.get_width() or self._startup_width
+        height = self.get_height() or self._startup_height
+        state = responsive_layout.layout_for_size(width, height)
+        if state == self._layout_state:
+            return True
+        self._layout_state = state
+
+        self.page.set_orientation(
+            Gtk.Orientation.VERTICAL if state.stacked else Gtk.Orientation.HORIZONTAL
+        )
+        self.page.set_spacing(state.spacing)
+        for side in (self.page, self.left_column, self.right_column):
+            side.set_margin_start(state.margin if side is self.page else 0)
+            side.set_margin_end(state.margin if side is self.page else 0)
+        self.page.set_margin_top(state.margin)
+        self.page.set_margin_bottom(state.margin)
+        self.left_column.set_spacing(state.spacing)
+        self.right_column.set_spacing(state.spacing)
+        self.right_column.set_hexpand(state.stacked)
+
+        if state.compact:
+            self.add_css_class("compact")
+        else:
+            self.remove_css_class("compact")
+        self.preview.set_size_request(-1, state.preview_height)
+        self.preview.set_vexpand(False)
+        self.play_image.set_pixel_size(24 if state.compact else 30)
+
+        # Gtk.Grid.detach/attach preserves the actual buttons, callbacks and
+        # accessibility labels while moving them between one and two rows.
+        for child in self.transport_controls:
+            self.transport_grid.remove(child)
+        if state.transport_wrapped:
+            positions = ((0, 0), (1, 1), (1, 0), (2, 0),
+                         (3, 0), (2, 1), (4, 0), (3, 1))
+        else:
+            positions = tuple((n, 0) for n in range(len(self.transport_controls)))
+        for button, (column, row) in zip(self.transport_controls, positions):
+            self.transport_grid.attach(button, column, row, 1, 1)
+
+        for child in self.action_controls:
+            self.action_grid.remove(child)
+        self.action_grid.set_column_homogeneous(state.actions_wrapped)
+        for n, child in enumerate(self.action_controls):
+            col, row = (n % 2, n // 2) if state.actions_wrapped else (n, 0)
+            self.action_grid.attach(child, col, row, 1, 1)
+        return True
 
     def _flush_stale_state(self) -> None:
         """Clear any leftover state from a previous run so the UI starts clean.
@@ -1157,8 +1218,9 @@ class MainWindow(Adw.ApplicationWindow):
         clock_row.append(self.remaining_label)
         body.append(clock_row)
 
-        transport = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        transport = Gtk.Grid(column_spacing=8, row_spacing=8)
         transport.set_halign(Gtk.Align.CENTER)
+        self.transport_grid = transport
         self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=20)
         self.back30_button = self._text_button("−30", "Back 30 seconds (Shift+←)", self._skip_back30)
         self.back10_button = self._text_button("−10", "Back 10 seconds (←)", self._skip_back10)
@@ -1174,10 +1236,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.fwd30_button = self._text_button("+30", "Forward 30 seconds (Shift+→)", self._skip_forward30)
         self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=20)
         self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport", self.stop_stream, size=20)
-        for widget in (self.prev_button, self.back30_button, self.back10_button,
-                       self.play_button, self.fwd10_button, self.fwd30_button,
-                       self.next_button, self.stop_button):
-            transport.append(widget)
+        self.transport_controls = (
+            self.prev_button, self.back30_button, self.back10_button,
+            self.play_button, self.fwd10_button, self.fwd30_button,
+            self.next_button, self.stop_button,
+        )
+        for index, widget in enumerate(self.transport_controls):
+            transport.attach(widget, index, 0, 1, 1)
         body.append(transport)
 
         volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -1202,7 +1267,9 @@ class MainWindow(Adw.ApplicationWindow):
         volume_row.append(self.volume_label)
         body.append(volume_row)
 
-        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        action_row = Gtk.Grid(column_spacing=8, row_spacing=8)
+        action_row.set_hexpand(True)
+        self.action_grid = action_row
         open_button = Gtk.Button(label="Open video…")
         open_button.set_icon_name("folder-open-symbolic")
         open_button.connect("clicked", lambda _b: self.open_video())
@@ -1220,10 +1287,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.cc_button = Gtk.ToggleButton(label="CC")
         self.cc_button.set_tooltip_text("Toggle captions on the TV")
         self.cc_button.connect("toggled", self._on_cc_toggled)
-        action_row.append(open_button)
-        action_row.append(self.cast_button)
-        action_row.append(self.stop_tv_button)
-        action_row.append(self.cc_button)
+        self.action_controls = (
+            open_button, self.cast_button, self.stop_tv_button, self.cc_button,
+        )
+        for index, button in enumerate(self.action_controls):
+            action_row.attach(button, index, 0, 1, 1)
         body.append(action_row)
         return card
 
@@ -1596,18 +1664,6 @@ class MainWindow(Adw.ApplicationWindow):
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
         if duration:
             self.seek_to(duration * tenth / 10.0)
-
-    def _center_on_primary(self, w: int, h: int) -> None:
-        try:
-            display = Gdk.Display.get_default()
-            mon = display.get_primary_monitor() if display else None
-            if mon is None and display and display.get_monitors():
-                mon = display.get_monitors()[0]
-            if mon:
-                g = mon.get_geometry()
-                self.move(g.x + max(0, (g.width - w) // 2), g.y + max(0, (g.height - h) // 2))
-        except Exception:
-            pass
 
     def _apply_color_scheme(self) -> None:
         if self.cfg.get("auto_theme"):
