@@ -3455,6 +3455,26 @@ class MainWindow(Adw.ApplicationWindow):
             self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
             self._rebuild_queue()
 
+    def _retire_unqueued_preview(self) -> None:
+        """Retire deleted local media without touching an owned TV session."""
+        if (self.session is not None or self.external or
+                self._preview_path is None or self._preview_path in self.queue):
+            return
+        self._preview_generation += 1
+        self._preview_pending = None
+        self._unload_local_video()
+        self._preview_path = None
+        self._preview_position = 0.0
+        self.preview_picture.set_visible(False)
+        self.media = None
+        self._update_audio_choices(None)
+        self.embedded_dropdown.set_visible(False)
+        self.seekbar.set_state(0.0, 0.0, 0.0)
+        self.elapsed_label.set_text("00:00")
+        self.remaining_label.set_text("--:--")
+        self.np_title.set_text("Ready to cast")
+        self.np_meta.set_text("Open a film to inspect and cast it")
+
     def _remove_queue(self, index: int) -> None:
         if 0 <= index < len(self.queue):
             removed = self.queue.pop(index)
@@ -3465,11 +3485,13 @@ class MainWindow(Adw.ApplicationWindow):
                 self.session and self.session.state is not None
             ):
                 self.now_playing = None
+            self._retire_unqueued_preview()
             self._rebuild_queue()
 
     def clear_queue(self) -> None:
         self.queue.clear()
         self.selected_index = None
+        self._retire_unqueued_preview()
         self._rebuild_queue()
         self.toast("Queue cleared")
 
