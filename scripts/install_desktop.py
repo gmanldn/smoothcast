@@ -26,23 +26,38 @@ def exec_argument(path: Path) -> str:
     return f'"{value}"'
 
 
-def desktop_entry(launcher, *, legacy: bool = False) -> bytes:
+def desktop_entry(launcher, *, legacy: bool = False, exec_name: str | None = None) -> bytes:
     """Build a desktop entry whose Exec is either a bare command name or a path.
 
     A bare name (e.g. ``smoothcast``) is used once the pip-installed console
     script is the canonical entry point; it relies on the user's PATH, which
     always includes ``~/.local/bin`` for GUI sessions after ``pip install``.
+
+    When ``launcher`` is a ``Path``, ``TryExec`` and ``Path`` are added for
+    better desktop integration (startup notification, working directory).
+
+    If ``exec_name`` is provided, it is used for the ``Exec`` field instead of
+    deriving it from ``launcher``. This allows a hybrid entry where ``Exec`` is
+    the bare console-script name (for the installed version) while ``TryExec``
+    and ``Path`` point to the project checkout (for development).
     """
     if isinstance(launcher, Path):
         exec_value = exec_argument(launcher)
+        try_exec = f"TryExec={launcher.resolve()}\n"
+        path_line = f"Path={launcher.resolve().parent}\n"
     else:
         exec_value = str(launcher)
+        try_exec = ""
+        path_line = ""
+    if exec_name is not None:
+        exec_value = exec_name
     body = (
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=SmoothCast\n"
         "Comment=Chromecast companion with live compressor metering\n"
         f"Exec={exec_value} %F\n"
+        f"{try_exec}{path_line}"
         f"Icon={APP_ID}\n"
         "Terminal=false\n"
         "StartupNotify=true\n"
@@ -104,10 +119,10 @@ def repair_gnome_favourites(*, pin: bool = False) -> bool:
 def install(*, data_home: Path | None = None, repair_pins: bool = True, pin: bool = False) -> bool:
     """Install the canonical desktop entry and icon; repair legacy pins.
 
-    The canonical launcher is the pip-installed ``smoothcast`` console script
-    (bare command name, resolved through the user's PATH). The legacy
-    ``smoothcast.desktop`` entry is still written (hidden) so existing dock
-    pins keep working until GNOME favourites are migrated.
+    The canonical launcher is the project's ``smoothcast`` script (resolved
+    through the checkout). The legacy ``smoothcast.desktop`` entry is still
+    written (hidden) so existing dock pins keep working until GNOME favourites
+    are migrated.
     """
     source_icon = ROOT / "data" / "cast-control.png"
     if not source_icon.is_file():
@@ -116,10 +131,11 @@ def install(*, data_home: Path | None = None, repair_pins: bool = True, pin: boo
     apps = base / "applications"
     icon = base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png"
     changed = write_if_changed(icon, source_icon.read_bytes())
-    # Canonical entry: bare command name (PATH resolves to the pip-installed script).
-    changed |= write_if_changed(apps / f"{APP_ID}.desktop", desktop_entry("smoothcast"))
+    # Canonical entry: project's smoothcast script (adds Path/TryExec for dock integration).
+    # Exec uses bare console-script name so installed version works; Path/TryExec point to checkout.
+    changed |= write_if_changed(apps / f"{APP_ID}.desktop", desktop_entry(ROOT / "smoothcast", exec_name="smoothcast"))
     # Shadow any system-wide legacy entry and keep existing legacy dock pins usable.
-    changed |= write_if_changed(apps / "smoothcast.desktop", desktop_entry("smoothcast", legacy=True))
+    changed |= write_if_changed(apps / "smoothcast.desktop", desktop_entry(ROOT / "smoothcast", legacy=True, exec_name="smoothcast"))
     # The originally shipped desktop ID was smoothcast.desktop; GNOME favourites
     # need updating to the real GTK app ID for dock grouping and window focusing.
     if repair_pins:
@@ -131,12 +147,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check desktop integration without modifying files")
-    parser.add_argument("--pin", action="store_true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
+    parser.add_argument("--pin", action="true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
     args = parser.parse_args()
     try:
         if args.check:
             base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share").expanduser()
-            ok = (base / "applications" / f"{APP_ID}.desktop").read_bytes() == desktop_entry("smoothcast")
+            ok = (base / "applications" / f"{APP_ID}.desktop").read_bytes() == desktop_entry(ROOT / "smoothcast")
             ok &= (base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png").read_bytes() == (ROOT / "data" / "cast-control.png").read_bytes()
             if not args.quiet:
                 print("SmoothCast desktop integration: OK" if ok else "SmoothCast desktop integration: needs repair")

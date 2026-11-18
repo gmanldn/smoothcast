@@ -736,6 +736,16 @@ class MainWindow(Adw.ApplicationWindow):
         self.console_lines: list[str] = []
         self.update_notice: str | None = None
         self.local_playback = local_playback.LocalPlayback()
+        # Pre-cast previews are independent of the Chromecast playback clock.
+        self._preview_path: str | None = None
+        self._preview_position = 0.0
+        self._preview_generation = 0
+        self._preview_pending: tuple[str, float, int] | None = None
+        self._preview_busy = False
+        self._preview_timer_id = 0
+        self._local_video_path: str | None = None
+        self._local_start_pending: float | None = None
+        self._media_cache: dict[str, tuple[tuple[int, int], streamer.MediaInfo]] = {}
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
         # move()/get_position() APIs and never force a fullscreen-sized minimum.
@@ -908,6 +918,12 @@ class MainWindow(Adw.ApplicationWindow):
         self.scan_busy = False
         self.queue = []
         self.queue_durations = {}
+        self._preview_generation += 1
+        self._preview_path = None
+        self._preview_position = 0.0
+        self._preview_pending = None
+        self._unload_local_video()
+        self.preview_picture.set_visible(False)
 
         # Reset tracker and position state.
         self.tracker.clear()
@@ -1037,7 +1053,22 @@ class MainWindow(Adw.ApplicationWindow):
         body.append(self.np_meta)
         # Preview screen above the scrubbing bar.
         self.preview = PreviewScreen()
-        body.append(self.preview)
+        self.preview_picture = Gtk.Picture()
+        self.preview_picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self.preview_picture.set_can_target(False)
+        self.preview_picture.set_visible(False)
+        self.preview_overlay = Gtk.Overlay()
+        self.preview_overlay.set_child(self.preview)
+        self.preview_overlay.add_overlay(self.preview_picture)
+        # Real video/audio playback is embedded into the existing preview panel.
+        self.local_video = Gtk.Video()
+        self.local_video.set_autoplay(False)
+        self.local_video.set_can_target(False)
+        self.local_video.set_visible(False)
+        self.local_video.set_hexpand(True)
+        self.local_video.set_vexpand(True)
+        self.preview_overlay.add_overlay(self.local_video)
+        body.append(self.preview_overlay)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
         clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -1651,6 +1682,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _seek_percent(self, tenth: int) -> None:
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if not duration and self._preview_path and self.session is None:
+            duration = self.queue_durations.get(self._preview_path, 0.0)
         if duration:
             self.seek_to(duration * tenth / 10.0)
 
@@ -1948,8 +1981,19 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- ticking ----------
 
     def _tick(self) -> bool:
+        previewing = self.session is None and not self.external and self._preview_path is not None
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        position = self.tracker.value()
+        if previewing and not duration:
+            duration = self.queue_durations.get(self._preview_path, 0.0)
+        position = self._preview_position if previewing else self.tracker.value()
+        if previewing:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                if stream.get_playing() and not self.seekbar.scrubbing:
+                    self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
+                    position = self._preview_position
+                if not duration and stream.get_duration() > 0:
+                    duration = stream.get_duration() / 1_000_000
         buffered = None
         if self.session and self.session.mode == "transcode" and self.session.state:
             progress = self.session.progress()
@@ -1974,22 +2018,78 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _update_transport_icon(self) -> None:
         playing = self.device_state in {"PLAYING", "BUFFERING"}
+        if self.session is None and not self.external:
+            stream = self._local_stream()
+            playing = bool(stream is not None and stream.get_playing())
         name = "media-playback-pause-symbolic" if playing else "media-playback-start-symbolic"
         if self._play_icon_name != name:
             self._play_icon_name = name
             self.play_image.set_from_icon_name(name)
 
     def _on_hover(self, hovering: bool, value: float) -> None:
+        previewing = self.session is None and not self.external and self._preview_path is not None
+        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if previewing and not duration:
+            duration = self.queue_durations.get(self._preview_path, 0.0)
         if hovering:
             self.elapsed_label.set_text(fmt_time(value))
-            if self.tracker.duration:
-                self.remaining_label.set_text(f"-{fmt_time(self.tracker.duration - value)}")
+            if duration:
+                self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - value))}")
+            if previewing and self._local_stream() is None:
+                self._queue_preview(value)
         else:
-            position = self.tracker.value()
+            position = self._preview_position if previewing else self.tracker.value()
             if position is not None:
                 self.elapsed_label.set_text(fmt_time(position))
-                if self.tracker.duration:
-                    self.remaining_label.set_text(f"-{fmt_time(self.tracker.duration - position)}")
+                if duration:
+                    self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - position))}")
+
+    def _queue_preview(self, position: float) -> None:
+        """Debounce frame decoding, with at most one FFmpeg worker at a time."""
+        if (self._preview_path is None or self.session is not None or self.external
+                or self._local_stream() is not None):
+            return
+        self._preview_pending = (self._preview_path, max(0.0, position),
+                                 self._preview_generation)
+        if not self._preview_timer_id and not self._preview_busy:
+            self._preview_timer_id = GLib.timeout_add(180, self._start_preview)
+
+    def _start_preview(self) -> bool:
+        self._preview_timer_id = 0
+        if self._preview_busy or self._preview_pending is None:
+            return False
+        path, position, generation = self._preview_pending
+        self._preview_pending = None
+        if path != self._preview_path or generation != self._preview_generation:
+            return False
+        self._preview_busy = True
+
+        def finish(frame=None):
+            self._preview_busy = False
+            latest = (path == self._preview_path
+                      and generation == self._preview_generation
+                      and self.session is None and not self.external
+                      and self._preview_pending is None)
+            # A finished decode must never overwrite a newer position the
+            # user selected while FFmpeg was still extracting the old frame.
+            if latest:
+                if frame is not None:
+                    try:
+                        texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(frame))
+                        self.preview_picture.set_paintable(texture)
+                        self.preview_picture.set_visible(True)
+                    except GLib.Error:
+                        self.preview_picture.set_visible(False)
+                else:
+                    self.preview_picture.set_visible(False)
+            if self._preview_pending is not None and not self._preview_timer_id:
+                self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
+
+        Async.run(
+            lambda: screenshot.preview_frame(pathlib.Path(path), position),
+            done=finish, failed=lambda _error: finish(),
+        )
+        return False
 
     def _update_header_subtitle(self) -> None:
         labels = {
@@ -2195,10 +2295,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.cast_button.remove_css_class("primary-action")
             self.open_button.add_css_class("primary-action")
         self.stop_tv_button.set_sensitive(active and not busy)
-        can_play = online and not busy and (active or self.now_playing is not None or self.selected_index is not None)
+        local_ready = self._preview_path is not None and self.session is None and not self.external
+        can_play = not busy and ((online and active) or local_ready)
         self.play_button.set_sensitive(can_play)
-        self.stop_button.set_sensitive(online and not busy and active)
-        can_seek = online and not busy and not self.external and self.tracker.known and active
+        self.stop_button.set_sensitive(not busy and ((online and active) or local_ready))
+        can_seek = not busy and ((online and not self.external and self.tracker.known and active)
+                                 or (local_ready and bool(self.media and self.media.duration)))
         for button in (self.back10_button, self.back30_button, self.fwd10_button, self.fwd30_button):
             button.set_sensitive(can_seek)
         has_queue = bool(self.queue)
@@ -2217,19 +2319,19 @@ class MainWindow(Adw.ApplicationWindow):
         self._syncing = True
         self.cc_button.set_active(has_subs and self.cfg["subs"] != "off")
         self._syncing = False
-        can_play_locally = (
-            self.local_playback.available()
-            and not (self.session is not None and self.session.state is not None)
-            and self._selected_path() is not None
-        )
-        self.local_button.set_sensitive(can_play_locally and not busy)
-        if self.local_playback.is_active():
-            self.local_button.set_label("Stop locally")
-            self.local_button.set_icon_name("media-playback-stop-symbolic")
+        self.local_button.set_sensitive(local_ready and not busy)
+        stream = self._local_stream()
+        if stream is not None and stream.get_playing():
+            self.local_button.set_label("Pause preview")
+            self.local_button.set_icon_name("media-playback-pause-symbolic")
         else:
-            self.local_button.set_label("Play locally")
+            self.local_button.set_label("Play preview")
             self.local_button.set_icon_name("media-playback-start-symbolic")
-        if self.device_state == "OFFLINE":
+        if self.session is None and not self.external and stream is not None and stream.get_playing():
+            self._set_chip("Playing locally", "playing")
+        elif local_ready:
+            self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
+        elif self.device_state == "OFFLINE":
             self._set_chip("Offline", "offline")
         elif self.busy:
             self._set_chip("Preparing…", "buffering")
@@ -2242,8 +2344,10 @@ class MainWindow(Adw.ApplicationWindow):
         elif paused:
             self._set_chip("Paused", "paused")
         else:
-            if self.local_playback.is_active():
+            if stream is not None and stream.get_playing():
                 self._set_chip("Playing locally", "playing")
+            elif local_ready:
+                self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
 
@@ -2304,14 +2408,13 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- transport ----------
 
     def toggle_play(self) -> None:
-        if self.device_state == "OFFLINE" or self.busy:
-            if self.device_state == "OFFLINE":
-                self.toast("Device is offline", error=True)
+        if self.busy:
             return
         if self.session is None and not self.external:
-            # No owned player exists yet: cast the selected local file rather
-            # than sending a 'resume' command to an unrelated TV receiver.
-            self.cast_selected()
+            self._toggle_local_preview()
+            return
+        if self.device_state == "OFFLINE":
+            self.toast("Device is offline", error=True)
             return
         device = self._device()
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
@@ -2340,6 +2443,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
             save_config(self.cfg)
         if self.busy:
+            return
+        if self.session is None and not self.external and self._preview_path is not None:
+            self._unload_local_video()
+            self._preview_position = 0.0
+            self._queue_preview(0.0)
+            self._refresh_controls()
             return
         self.busy = True
         self._refresh_controls()
@@ -2384,33 +2493,96 @@ class MainWindow(Adw.ApplicationWindow):
         if path is None:
             self.open_video()
             return
-        self._cast_path(pathlib.Path(path), None)
+        start_at = self._preview_position if path == self._preview_path and self.session is None else None
+        if path == self._local_video_path and self.session is None:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                start_at = max(0.0, stream.get_timestamp() / 1_000_000)
+        self._cast_path(pathlib.Path(path), start_at)
 
     def _selected_path(self) -> str | None:
+        if self.session is None and self._preview_path is not None:
+            return self._preview_path
         if self.now_playing:
             return self.now_playing
         if self.selected_index is not None and 0 <= self.selected_index < len(self.queue):
             return self.queue[self.selected_index]
         return None
 
-    def _play_locally(self) -> None:
-        """Play the selected file locally with ffplay, or stop local playback."""
-        if self.local_playback.is_active():
-            self.local_playback.stop()
-            self._refresh_controls()
-            self.toast("Stopped local playback")
+    def _local_stream(self):
+        return self.local_video.get_media_stream() if self._local_video_path else None
+
+    def _unload_local_video(self) -> None:
+        stream = self._local_stream()
+        if stream is not None:
+            stream.pause()
+        self._local_start_pending = None
+        self._local_video_path = None
+        if hasattr(self, "local_video"):
+            self.local_video.set_file(None)
+            self.local_video.set_visible(False)
+
+    def _on_local_prepared(self, stream, _param, path: str) -> None:
+        if path != self._local_video_path or not stream.is_prepared():
             return
-        path = self._selected_path()
-        if not path:
+        if self._local_start_pending is None:
+            return
+        stream.seek(int(self._local_start_pending * 1_000_000))
+        self._local_start_pending = None
+        stream.play()
+        self._refresh_controls()
+
+    def _on_local_error(self, stream, _param, path: str) -> None:
+        if path != self._local_video_path:
+            return
+        error = stream.get_error()
+        if error is not None:
+            self.toast(f"Local decoder failed: {error.message}", error=True)
+            self._unload_local_video()
+            self.preview_picture.set_visible(False)
+            self._queue_preview(self._preview_position)
+            self._refresh_controls()
+
+    def _toggle_local_preview(self) -> None:
+        """Play/pause locally in the embedded video panel, never on the TV."""
+        if self.session is not None or self.external:
+            return
+        path = self._preview_path
+        if path is None:
             self.open_video()
             return
-        try:
-            self.local_playback.start(path)
-        except FileNotFoundError as exc:
-            self.toast(str(exc))
+        stream = self._local_stream()
+        if stream is not None and stream.get_playing():
+            self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
+            stream.pause()
+            self._refresh_controls()
             return
+        if stream is not None and stream.get_error() is not None:
+            self.toast(f"Local preview decoder: {stream.get_error().message}", error=True)
+            self._unload_local_video()
+            return
+        if self._local_video_path != path:
+            self._unload_local_video()
+            self._local_start_pending = self._preview_position
+            self._local_video_path = path
+            self.local_video.set_file(Gio.File.new_for_path(path))
+            stream = self._local_stream()
+            if stream is None:
+                self._unload_local_video()
+                self.toast("Video backend unavailable; install GTK GStreamer media support", error=True)
+                return
+            stream.connect("notify::prepared", self._on_local_prepared, path)
+            stream.connect("notify::error", self._on_local_error, path)
+            if stream.is_prepared():
+                self._on_local_prepared(stream, None, path)
+        elif stream is not None and self._local_start_pending is None:
+            stream.play()
+        self.preview_picture.set_visible(False)
+        self.local_video.set_visible(True)
         self._refresh_controls()
-        self.toast("Playing locally")
+
+    def _play_locally(self) -> None:
+        self._toggle_local_preview()
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
         # None means "resume saved position"; explicit 0 is always rewind.
@@ -2421,9 +2593,16 @@ class MainWindow(Adw.ApplicationWindow):
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
-        # Local playback and casting share the machine's output; stop any local
-        # playback before starting a cast so they never overlap.
+        # Pause and release the local decoder before starting Chromecast.
+        if str(path) == self._local_video_path and self.session is None:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                offset = max(0.0, stream.get_timestamp() / 1_000_000)
+        self._unload_local_video()
         self.local_playback.stop()
+        self._preview_generation += 1
+        self._preview_pending = None
+        self._preview_position = offset
         self.busy = True
         self._refresh_controls()
         self._finished_handled = False
@@ -2561,6 +2740,8 @@ class MainWindow(Adw.ApplicationWindow):
     def seek_to(self, target: float) -> None:
         target = max(0.0, target)
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if self._preview_path and self.session is None and not self.external:
+            duration = self.queue_durations.get(self._preview_path, duration)
         if duration:
             target = min(target, max(0.0, duration - 1.0))
         # Move the scrubbing knob immediately so the user sees where they
@@ -2571,6 +2752,17 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("The position of an external stream is unknown", error=True)
             return
         session = self.session
+        if session is None and self._preview_path is not None:
+            self._preview_position = target
+            stream = self._local_stream()
+            if stream is not None:
+                if stream.is_prepared():
+                    stream.seek(int(target * 1_000_000))
+                else:
+                    self._local_start_pending = target
+            else:
+                self._queue_preview(target)
+            return
         if session is None or session.state is None:
             if self.now_playing:
                 self._cast_path(pathlib.Path(self.now_playing), target)
@@ -2787,7 +2979,8 @@ class MainWindow(Adw.ApplicationWindow):
         return True
 
     def _skip(self, delta: float) -> None:
-        position = self.tracker.value()
+        position = (self._preview_position if self.session is None and self._preview_path is not None
+                    and not self.external else self.tracker.value())
         if position is None:
             self.toast("Position unknown — nothing to skip in")
             return
@@ -2872,6 +3065,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_queue_selected(self, _list, row) -> None:
         self.selected_index = row.get_index() if row is not None else None
+        if (self.selected_index is not None
+                and 0 <= self.selected_index < len(self.queue)
+                and self.session is None and not self.external):
+            path = self.queue[self.selected_index]
+            if path != self._preview_path:
+                # Delay to avoid mutating a Gtk.ListBox during its selection signal.
+                GLib.idle_add(lambda: (self.set_selection(path), False)[1]
+                              if path != self._preview_path else False)
 
     def _move_queue(self, index: int, delta: int) -> None:
         target = index + delta
@@ -2969,7 +3170,6 @@ class MainWindow(Adw.ApplicationWindow):
         path = gfile.get_path()
         if path:
             self.set_selection(path)
-            self._cast_path(pathlib.Path(path), None)
 
     def set_selection(self, path: str) -> None:
         if path not in self.queue:
@@ -2982,20 +3182,80 @@ class MainWindow(Adw.ApplicationWindow):
             self.queue_list.select_row(row)
         if self.now_playing is None:
             self.np_title.set_text(pathlib.Path(path).name)
-        if self.session is None:
+        if self.session is None and not self.external:
+            if self._preview_path == path:
+                return  # A row re-selection must not reset the local playhead.
+            self._unload_local_video()
             self.media = None
+            self._preview_path = path
+            self._preview_generation += 1
+            self._preview_pending = None
+            self._preview_position = playback_state.start_offset(
+                None, (self.cfg.get("positions") or {}).get(path),
+            )
+            self.preview_picture.set_visible(False)
+            self.preview.set_video(pretty_title(path), "Reading film duration…")
+            self.np_meta.set_text("Inspect the film and scrub to a starting point, then press Cast.")
+            self.seekbar.set_state(0.0, 0.0, 0.0)
+
+        generation = self._preview_generation
+        try:
+            info = pathlib.Path(path).stat()
+            fingerprint = (info.st_size, info.st_mtime_ns)
+        except OSError:
+            fingerprint = None
+        cached = self._media_cache.get(path)
+        if cached is not None and cached[0] == fingerprint:
+            # Duration and codec details do not need to be re-probed when a
+            # film is reselected; the stat fingerprint invalidates changed files.
+            self.queue_durations[path] = cached[1].duration
+            self.media = cached[1]
+            self._preview_position = min(
+                self._preview_position, max(0.0, self.media.duration - 1.0)
+            ) if self.media.duration else 0.0
+            self.seekbar.set_state(self._preview_position, self.media.duration, 0.0)
+            self._queue_preview(self._preview_position)
+        else:
+            if fingerprint is None:
+                self.queue_durations.pop(path, None)
+            self.seekbar.set_state(self._preview_position,
+                                   self.queue_durations.get(path, 0.0), 0.0)
 
         def work():
             return path, streamer.ffprobe(pathlib.Path(path))
 
         def done(result):
             path_result, media = result
+            try:
+                info = pathlib.Path(path_result).stat()
+                current_fingerprint = (info.st_size, info.st_mtime_ns)
+            except OSError:
+                current_fingerprint = None
+            if current_fingerprint is not None:
+                self._media_cache[path_result] = (current_fingerprint, media)
             self.queue_durations[path_result] = media.duration
-            if self.now_playing is None and self.session is None:
+            if (generation == self._preview_generation
+                    and self.now_playing is None and self.session is None
+                    and not self.external and self._preview_path == path_result):
                 self.media = media
+                duration = media.duration
+                self._preview_position = min(self._preview_position, max(0.0, duration - 1.0)) if duration else 0.0
+                self.seekbar.set_state(self._preview_position, duration, 0.0)
+                self.elapsed_label.set_text(fmt_time(self._preview_position))
+                self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - self._preview_position))}" if duration else "--:--")
+                info = " · ".join(x for x in (media.resolution, media.vcodec, fmt_time(duration)) if x)
+                self.preview.set_video(pretty_title(path_result), info)
+                self._queue_preview(self._preview_position)
             self._rebuild_queue()
 
-        Async.run(work, done=done)
+        if cached is None or cached[0] != fingerprint:
+            Async.run(work, done=done)
+        else:
+            self.preview.set_video(pretty_title(path), " · ".join(
+                x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
+            ))
+            self.elapsed_label.set_text(fmt_time(self._preview_position))
+            self.remaining_label.set_text(f"-{fmt_time(max(0.0, self.media.duration - self._preview_position))}" if self.media.duration else "--:--")
         self._refresh_controls()
 
     def open_paths(self, paths: list[str]) -> None:
@@ -3330,6 +3590,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_close(self, _window) -> bool:
         self._stop_monitor()
+        self._unload_local_video()
         # Gtk4 tracks the normal window size separately from fullscreen and
         # maximized allocations. Save that instead of the temporary screen size.
         width, height = self.get_default_size()

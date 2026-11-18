@@ -11,6 +11,45 @@ import screenshot
 
 
 class ScreenshotTests(unittest.TestCase):
+    def test_preview_frame_is_bounded_and_stays_in_memory(self):
+        with tempfile.TemporaryDirectory() as name:
+            source = Path(name) / "video.mkv"
+            source.touch()
+            jpeg = bytes.fromhex("ffd8ffe0") + b"sample"
+            result = subprocess.CompletedProcess([], 0, jpeg, b"")
+            with mock.patch.object(screenshot.subprocess, "run", return_value=result) as run:
+                self.assertEqual(screenshot.preview_frame(source, 62.5), jpeg)
+            args = run.call_args.args[0]
+            self.assertEqual(args[args.index("-ss") + 1], "62.5")
+            self.assertIn("scale=640:360:force_original_aspect_ratio=decrease", args)
+            self.assertIn("pipe:1", args)
+            self.assertEqual(run.call_args.kwargs["timeout"], 12)
+            self.assertTrue(run.call_args.kwargs["capture_output"])
+
+    def test_preview_does_not_spawn_ffmpeg_for_missing_or_invalid_input(self):
+        with tempfile.TemporaryDirectory() as name:
+            source = Path(name) / "video.mkv"
+            with mock.patch.object(screenshot.subprocess, "run") as run:
+                with self.assertRaises(screenshot.CaptureError):
+                    screenshot.preview_frame(source, 3)
+                source.touch()
+                with self.assertRaisesRegex(screenshot.CaptureError, "Invalid preview"):
+                    screenshot.preview_frame(source, float("nan"))
+                run.assert_not_called()
+
+    def test_preview_rejects_empty_frames_and_times_out(self):
+        with tempfile.TemporaryDirectory() as name:
+            source = Path(name) / "video.mkv"
+            source.touch()
+            with mock.patch.object(screenshot.subprocess, "run", return_value=
+                                   subprocess.CompletedProcess([], 0, b"", b"")):
+                with self.assertRaisesRegex(screenshot.CaptureError, "No preview"):
+                    screenshot.preview_frame(source, 10)
+            with mock.patch.object(screenshot.subprocess, "run",
+                                   side_effect=subprocess.TimeoutExpired("ffmpeg", 12)):
+                with self.assertRaisesRegex(screenshot.CaptureError, "timed out"):
+                    screenshot.preview_frame(source, 10)
+
     def test_rejects_missing_file_without_launching_ffmpeg(self):
         with tempfile.TemporaryDirectory() as name:
             with mock.patch.object(screenshot.subprocess, "run") as run:

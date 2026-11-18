@@ -15,12 +15,19 @@ def _find_catt() -> str:
     found = shutil.which("catt")
     if found:
         return found
-    # 2. pipx / user-local
+    # 2. pipx / user-local (Unix)
     for candidate in (
         pathlib.Path.home() / ".local" / "bin" / "catt",
         pathlib.Path.home() / ".local" / "share" / "pipx" / "venvs" / "catt" / "bin" / "catt",
     ):
-        if candidate.exists():
+        if candidate.is_file():
+            return str(candidate)
+    # 3. Windows user-local (Scripts directory)
+    for candidate in (
+        pathlib.Path.home() / "AppData" / "Local" / "pipx" / "venvs" / "catt" / "Scripts" / "catt.exe",
+        pathlib.Path.home() / "AppData" / "Local" / "pipx" / "venvs" / "catt" / "Scripts" / "catt",
+    ):
+        if candidate.is_file():
             return str(candidate)
     return "catt"  # last resort — will fail with a clear error
 

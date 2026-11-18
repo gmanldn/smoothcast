@@ -9,7 +9,7 @@
 
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
-- Launcher: `smoothcast` (pip-installed console script running `cast_control:main`). `pip install -e .` is the canonical entry point; `setup.py` is a shim delegating to `pyproject.toml`. The legacy `./smoothcast` bash launcher and repo-local `.venv` have been removed — do not reintroduce them. `python3 src/cast_control.py` still runs directly.
+- Launcher: `smoothcast` (pip-installed console script running `cast_control:main`). `pip install -e .` is the canonical entry point; `setup.py` is a shim delegating to `pyproject.toml`. The legacy `./smoothcast` bash launcher and repo-local `.venv` have been removed — do not reintroduce them. Cross-platform bootstrap is now handled by `setup/` scripts. `python3 src/cast_control.py` still runs directly.
 - Run directly: `DISPLAY=:99 python3 src/cast_control.py`
 - Self-test: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`)
 
@@ -44,6 +44,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
 - `src/startup_cleanup.py` — primary-instance pre-window cleanup of orphaned SmoothCast subprocesses and scratch data
+- `setup/bootstrap.py` — standard-library dependency detection and native installation for supported OSes
+- `setup/{winsetup.bat,macsetup.sh,linuxsetup.sh}` — requested platform-specific setup entry points
+- `setup/launch.py` and `setup/shortcuts.py` — portable app launcher and user-local OS shortcuts
+- `setup/README.md` — install contract, safety and known portability gaps
 - `src/position_tracker.py` — authoritative source-time tracker with rate-aware pause/resume
 - `tests/` — pytest suite (runs without GTK/display)
 - `pytest.ini` — pytest config (testpaths, pythonpath=src)
@@ -64,6 +68,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
 - GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`).
 - All modules must `compileall` clean; self-test must print `SELFTEST OK`.
+- Installer contract: `python3 -m unittest discover -s tests -p 'test_setup_bootstrap.py' -v`; matrix must pass on Ubuntu, macOS and Windows without installing native GUI dependencies.
 
 ## Error log
 - Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
@@ -77,7 +82,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
-- `pip install -e .` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`. `catt` is the only pip dependency; GTK4/libadwaita and ffmpeg are system packages.
+- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`.
+- Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
+- Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
+- Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
 - All 18 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
 - `src/version.py` is the sole version authority; `pyproject.toml` reads it dynamically (`version = {attr = "version.__version__"}`) so the two can never drift.
 
@@ -128,6 +136,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 32. Playlist and control integrity (v1.0.47): `src/playlist_control.py` handles bounded local M3U files, relative entries, duplicates, missing media and atomic saves. The Load playlist action calls `_enqueue`; it must never call nonexistent `queue_draw()` on `MainWindow` or modify Loop. The `app.loop` action has its own `_toggle_loop()`. In `_cast_path`, `offset=None` means saved resume, while **explicit `0.0` means rewind**; playlist auto-next and manual Next/Previous start at zero. Direct-play resume must send an actual Chromecast seek or fall back to transcoding. Never set `now_playing` before a cast is accepted. After TV completion, mark the UI busy until old HLS server/file teardown finishes, and do not issue another STOP to a receiver already IDLE. Treat an existing HLS session as owned while TV drains encoded media even after FFmpeg exits. Regression tests: `tests/test_playlist_control.py`, `tests/test_playback_state.py`, `tests/test_player_action_safety.py`, `tests/test_streamer_reliability.py`.
 
+33. Python-first native setup (planned cross-platform beta): `setup/linuxsetup.sh`, `setup/macsetup.sh` and `setup/winsetup.bat` delegate to standard-library `setup/bootstrap.py`. Verify native GTK4/libadwaita, PyGObject, ffmpeg/ffprobe/ffplay, venv and catt >=0.12. Linux apt/dnf/pacman; macOS Homebrew (installed if absent); Windows official MSYS2 UCRT64 (verify SHA-256 of downloaded installer before execution). Preserve stale venvs rather than silently destroy them. `--check` must be read-only. Native per-user app shortcuts via `setup/shortcuts.py`. Test with `tests/test_setup_bootstrap.py` and the 3-OS CI setup-contract matrix. **Do not claim Windows/macOS feature parity until end-to-end GTK and Chromecast tests pass on real systems.**
+
 ## User's requests (pending)
 1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.
 2. ~~Add a bouncing line level meter for master so user can see how close to 0 the signal is.~~ Done: `LevelMeter._draw_master` draws a single vertical line whose height is the eased `out_rms` (post-compressor output), with 0 dBFS and -6 dB notches, colour-coded green/yellow/red, and a tip glow when within -3 dB.
@@ -147,4 +157,3 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 27. Video rotation (0/90/180/270): `streamer.rotation_filters` builds ffmpeg `transpose` chains for the HLS transcode; `Session.start_transcode` accepts `rotation`, forces a VAAPI download/upload round trip when rotating on the GPU path, and stores it in session state; the settings card exposes a rotation dropdown. Pure regression tests: `tests/test_rotation.py`.
 
 28. Local playback: `src/local_playback.py` manages an ffplay subprocess so a selected file can be played on this machine (in its own window) before deciding to cast. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts. Tests: `tests/test_local_playback.py`.
-

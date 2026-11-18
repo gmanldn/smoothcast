@@ -10,7 +10,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
-- **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
+- **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — auto-select, burn-in, or disable
@@ -18,31 +18,41 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
-## Quick start
+## Install — Python-first, all three desktops
 
-1. Install:
+**The only manual prerequisite is Python 3.10+**. Setup will check and, where necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and `catt`. The installer uses the host package manager and may request administrator permission. Internet access is required for missing packages.
 
-```sh
-pip install -e .
-# or from a release tarball
-pip install smoothcast
-```
+| OS | Setup command | Application shortcut |
+|---|---|---|
+| Debian/Ubuntu, Fedora, Arch | `bash setup/linuxsetup.sh` | Linux application menu / GNOME dock |
+| macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
+| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | Windows Start Menu |
 
-2. Run:
+The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which verifies an isolated `.venv` before registering the desktop shortcut. Rerunning setup checks for missing dependencies; `--check` performs read-only health checks. `--no-shortcuts` skips desktop integration. See [setup/README.md](setup/README.md) for platform-specific details and limitations.
 
-```sh
-smoothcast
-```
+On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms. Version lookup remains side-effect free: `smoothcast --version` (Unix) or `python src/version.py` (any OS).
 
-That's it. The `smoothcast` console script runs `cast_control:main`. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
+**Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI.
 
-## Interface and visual design
+### Development installs with pip
+
+For an environment where GTK4/libadwaita and FFmpeg are already available, the Python package can be installed with `python -m pip install -e .`. Plain `pip install` cannot provide the required native GTK stack; the platform setup scripts are the recommended first-install path.
 
 ## Interface and visual design
 
 SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The film preview is deliberately an illustrated metadata slate rather than a fake video screenshot. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
+
+## Inspect and scrub a film before casting
+
+Choose **Open** and select a local film. FFprobe enumerates its full duration and codec details once; its metadata stays cached while the file size and modification timestamp match. You can drag the timeline to a particular scene without casting. The still-image scrubber extracts bounded frames with FFmpeg, off the GTK event loop.
+
+**Play** (or Space) now starts the movie **inside the preview panel**, with local audio. Play again to pause. The seek bar, jump buttons and number-key shortcuts change the local movie position; the playhead advances in real time without ever rerunning FFprobe on each scrub or tick. This preview works even when no Chromecast is connected. **Stop** resets only the local preview.
+
+Choose a Chromecast in the device selector, then press **Cast**. SmoothCast stops the local decoder, captures its most recent playback timestamp and starts casting at that position. After transfer, Play/Pause and seeking control the TV as before. The **Play preview** button does the same as the main Play control while no TV cast is active. Queue double-click remains an explicit immediate cast action.
+
+Embedded playback uses GTK4's native GStreamer media backend; still-frame scrubbing continues to use FFmpeg. On Debian/Ubuntu, install the media backend and codecs with `bash setup/linuxsetup.sh` (including `libgtk-4-media-gstreamer`, `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`). If a codec is unsupported, a decoder error is reported and the still-frame preview remains available. Windows/macOS GTK media backend and real-device casting still require native smoke testing.
 
 ## Playback reliability
 
@@ -70,12 +80,19 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the bare `smoothcast` console script (resolved through the user's `PATH`, which always includes `~/.local/bin` after `pip install`). A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
-To repair or check the launcher explicitly from the checkout:
+To repair the existing Linux dock icon after pulling a new version (run from your SmoothCast checkout, without `sudo`):
 
 ```sh
-python3 scripts/install_desktop.py
+git pull --ff-only
+bash setup/linuxsetup.sh
+python3 scripts/install_desktop.py --pin
 python3 scripts/install_desktop.py --check
+gtk-launch local.cast-control
 ```
+
+The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. `gtk-launch` verifies the actual desktop entry rather than merely launching a terminal command.
+
+If `gtk-launch` cannot find the entry, log out and back in to refresh GNOME's application cache. If the window still fails, run `python3 sc.py` from the same checkout in a terminal to see dependency errors; on GNOME, also inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
@@ -99,13 +116,9 @@ Startup recovery reports its actions in the terminal and the application's activ
 
 ## Canonical version and build identity
 
-`src/version.py` is the **single authority** for the SmoothCast release:
-`MAJOR.MINOR.PATCH` is constructed once and imported throughout the running
-application. The exact Git commit SHA identifies individual development changes;
-do not treat each small commit as a separate release.
+`src/version.py` is the **single authority** for the SmoothCast release: `MAJOR.MINOR.PATCH` is constructed once and imported throughout the running application. The exact Git commit SHA identifies individual development changes; do not treat each small commit as a separate release.
 
-To inspect the installed version **without launching GTK, repairing the dock or
-starting the virtual environment**, run:
+To inspect the installed version **without launching GTK, repairing the dock or starting the virtual environment**, run:
 
 ```sh
 smoothcast --version
@@ -113,29 +126,17 @@ smoothcast --version
 # or python3 src/version.py
 ```
 
-The **window title** always shows the version of the **running** SmoothCast
-process; **About** uses exactly the same value. When an asynchronous git pull
-downloads a new release, the notice explicitly distinguishes the downloaded
-version from the still-running version, and the header displays a restart
-reminder. The new version takes effect only after closing and relaunching.
+The **window title** always shows the version of the **running** SmoothCast process; **About** uses exactly the same value. When an asynchronous git pull downloads a new release, the notice explicitly distinguishes the downloaded version from the still-running version, and the header displays a restart reminder. The new version takes effect only after closing and relaunching.
 
-CI includes `tests/test_version_integrity.py` to check the canonical source,
-CLI output, UI wiring and documentation; do not maintain a second
-hardcoded "Current: X.Y.Z" version elsewhere.
+CI includes `tests/test_version_integrity.py` to check the canonical source, CLI output, UI wiring and documentation; do not maintain a second hardcoded "Current: X.Y.Z" version elsewhere.
 
 ## Automatic updates without blocking startup
 
 Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
-## Requirements
+## Runtime dependencies
 
-- **Python 3.10+**
-- **GTK4 + libadwaita** (system packages, cannot be pip-installed):
-  - Debian/Ubuntu: `sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`
-  - Fedora: `sudo dnf install python3-gobject gtk4 libadwaita`
-  - Arch: `sudo pacman -S python-gobject gtk4 libadwaita`
-- **ffmpeg** (`sudo apt install ffmpeg` or equivalent)
-- **catt** — installed automatically by `pip install smoothcast` (or `pip install -e .`)
+Python 3.10+ is the only dependency users must install themselves. The platform setup scripts automatically detect or provision native GTK4, libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project virtual environment. This still requires network access, a supported system package manager and permission to install system packages. Verify without modifying anything using `--check`.
 
 ## Testing
 
@@ -160,6 +161,13 @@ DISPLAY=:99 smoothcast --self-test
 smoothcast/
 ├── pyproject.toml    # canonical packaging metadata + console-script entry points
 ├── setup.py          # shim delegating to pyproject.toml
+├── setup/              # Python-only bootstrap, native OS installers and launchers
+│   ├── winsetup.bat    # Windows/MSYS2 UCRT64 bootstrap
+│   ├── macsetup.sh     # macOS/Homebrew bootstrap
+│   ├── linuxsetup.sh   # apt/dnf/pacman bootstrap
+│   ├── bootstrap.py    # dependency installation and validation
+│   ├── launch.py       # portable non-mutating runtime launcher
+│   └── shortcuts.py    # native desktop integration
 ├── scripts/
 │   └── install_desktop.py # user XDG launcher/icon installer
 ├── src/

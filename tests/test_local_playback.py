@@ -99,6 +99,26 @@ class LocalPlaybackTests(unittest.TestCase):
         self.assertFalse(self.playback.is_active())
         self.assertIsNone(self.playback.proc)
 
+    def test_stop_reaps_process_after_terminate_timeout(self):
+        self._start()
+        self.proc.wait.side_effect = [
+            local_playback.subprocess.TimeoutExpired("ffplay", 4), 0
+        ]
+        self.playback.stop()
+        self.proc.terminate.assert_called_once()
+        self.proc.kill.assert_called_once()
+        self.assertEqual(self.proc.wait.call_count, 2)
+        self.assertIsNone(self.playback.proc)
+
+    def test_stop_reaps_already_exited_process_without_signalling(self):
+        self._start()
+        self.proc.poll.return_value = 0
+        self.playback.stop()
+        self.proc.terminate.assert_not_called()
+        self.proc.kill.assert_not_called()
+        self.proc.wait.assert_called_once()
+        self.assertIsNone(self.playback.proc)
+
     def test_stop_when_inactive_is_noop(self):
         self.playback.stop()
         self.assertFalse(self.playback.is_active())

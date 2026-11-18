@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import platform
 import socket
 import subprocess
 import sys
@@ -520,7 +521,9 @@ class Session:
         self.ffmpeg = None
         self.server = None
         self.caster = None
-        self.used_software_fallback = False
+        # VAAPI requires Linux's /dev/dri. Windows/macOS use libx264 from
+        # the first frame rather than stalling for 15 s on impossible VAAPI.
+        self.used_software_fallback = platform.system() != "Linux"
         self.audio_chain: list = []
 
     @property

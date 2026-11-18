@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import os
+import platform
 import shutil
 import signal
 import tempfile
@@ -135,6 +136,10 @@ def cleanup_before_window(
     Preserve a session explicitly kept streaming so it can be re-adopted.
     """
     report = CleanupReport()
+    # /proc and UID-owned process inspection are Linux-specific. Never try
+    # scanning/killing helpers on macOS or Windows using a Linux PID model.
+    if platform.system() != "Linux":
+        return report
     processes = discover(proc_root)
     state = streamer.load_session()
     by_pid = {p.pid: p for p in processes}

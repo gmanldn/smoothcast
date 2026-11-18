@@ -19,3 +19,7 @@ htmlcov/
 # Error log (ring buffer, gitignored)
 errors.log
 errors.log.tmp
+
+# Virtualenv created by platform setup scripts (see setup/)
+.venv/
+.venv-incompatible-*/
