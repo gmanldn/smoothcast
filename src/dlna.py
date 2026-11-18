@@ -503,6 +503,7 @@ class Session:
     def __init__(self):
         self.state = None
         self.renderer: Renderer | None = None
+        self._owns_renderer = False
         self.http: ProgressiveFileServer | None = None
         self.tmp: tempfile.TemporaryDirectory | None = None
         self.used_software_fallback = True
@@ -547,6 +548,7 @@ class Session:
                 )
             self.http = ProgressiveFileServer(path, receiver_ip=renderer.host)
             set_uri(renderer, self.http.url(local_ip), title)
+            self._owns_renderer = True
             play(renderer)
             if offset > 0:
                 seek(renderer, offset)
@@ -561,11 +563,11 @@ class Session:
                 started_at=time.time(),
             )
         except Exception:
-            self.stop(renderer.key, send_stop=True)
+            self.stop(renderer.key, send_stop=self._owns_renderer)
             raise
 
     def stop(self, _device: str, *, send_stop: bool = True) -> None:
-        if send_stop and self.renderer is not None:
+        if send_stop and self._owns_renderer and self.renderer is not None:
             try:
                 stop(self.renderer)
             except DlnaError:
@@ -577,4 +579,5 @@ class Session:
             self.tmp.cleanup()
             self.tmp = None
         self.state = None
+        self._owns_renderer = False
         self.renderer = None
