@@ -1,54 +1,43 @@
 #!/usr/bin/env bash
-# SmoothCast — cross-platform bootstrap launcher.
-# First run creates project .venv via setup/bootstrap.py, then delegates to setup/launch.py.
+# SmoothCast portable launcher. Python 3.10+ is the only manual prerequisite.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNTIME="$DIR/.venv/bin/python"
-TARGET="$DIR/.venv"
+PYTHON="${PYTHON:-python3}"
 
-# Handle version requests without bootstrapping.
-if [[ "$1" == "--version" || "$1" == "-V" ]]; then
+# Version queries never install anything or import GTK.
+if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
     exec "$PYTHON" "$DIR/src/version.py"
 fi
 
-# Ensure bootstrap has run and created the runtime.
-if [[ ! -x "$RUNTIME" ]]; then
-    echo "SmoothCast: bootstrapping runtime..."
-    "$DIR/setup/bootstrap.py" --target "$TARGET" || {
-        echo "SmoothCast: bootstrap failed" >&2
-        exit 1
-    }
+if ! "$PYTHON" -c 'import sys; assert sys.version_info >= (3, 10)' 2>/dev/null; then
+    echo "SmoothCast needs Python 3.10+; run the platform setup script first." >&2
+    exit 1
 fi
 
-# Validate catt version in the runtime.
-# Avoid importing catt at startup; use importlib.metadata.
-"$RUNTIME" -c '
-import re, sys
-import importlib.metadata as m
-try:
-    if tuple(map(int, re.findall(r"\d+",m.version("catt"))[:2])) < (0, 12):
-        sys.exit("catt >= 0.12 required")
-except Exception:
-    sys.exit("catt not found in runtime")
-' || {
-    echo "SmoothCast: catt >= 0.12 not found in runtime, re-running bootstrap..."
-    "$DIR/setup/bootstrap.py" --target "$TARGET" || {
-        echo "SmoothCast: bootstrap failed" >&2
-        exit 1
-    }
-}
+case "$(uname -s)" in
+    Linux) TARGET=linux ;;
+    Darwin) TARGET=macos ;;
+    *) echo "On Windows run setup/winsetup.bat and then python sc.py." >&2; exit 1 ;;
+esac
 
-# Check for required system tools.
+RUNTIME="$DIR/.venv/bin/python"
+NEEDS_SETUP=0
+if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m,re;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;v=[int(x) for x in re.findall(r"\d+",m.version("catt"))[:2]];assert tuple(v)>=(0,12)' >/dev/null 2>&1; then
+    NEEDS_SETUP=1
+fi
 for tool in ffmpeg ffprobe ffplay; do
-    command -v "$tool" >/dev/null || {
-        echo "SmoothCast: required tool '$tool' not found in PATH" >&2
-        exit 1
-    }
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        NEEDS_SETUP=1
+        break
+    fi
 done
+if [[ "$NEEDS_SETUP" -eq 1 ]]; then
+    "$PYTHON" "$DIR/setup/bootstrap.py" --target "$TARGET"
+fi
 
-# Delegate to the portable launcher.
-exec "$DIR/setup/launch.py" "$@"
-EOF
-chmod +x smoothcast
-cat smoothcast | head -25
+if [[ "$TARGET" == linux && -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" && " $* " != *" --self-test "* ]]; then
+    "$PYTHON" "$DIR/scripts/install_desktop.py" --quiet || true
+fi
+
+exec "$PYTHON" "$DIR/setup/launch.py" "$@"
