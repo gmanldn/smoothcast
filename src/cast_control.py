@@ -2252,7 +2252,8 @@ class MainWindow(Adw.ApplicationWindow):
         if media.size_label:
             meta.append(media.size_label)
         if session is not None and session.state:
-            meta.append("direct play" if session.mode == "direct" else "live transcode")
+            meta.append("DLNA/UPnP" if session.mode == "dlna" else (
+                "direct play" if session.mode == "direct" else "live transcode"))
         text = " · ".join(bit for bit in meta if bit)
         if self.np_title.get_text() != title:
             self.np_title.set_text(title)
@@ -2276,7 +2277,8 @@ class MainWindow(Adw.ApplicationWindow):
         mode_text = "—"
         encoder_text = "—"
         if session and session.state:
-            mode_text = "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"
+            mode_text = ("DLNA progressive MP4" if session.mode == "dlna" else (
+                "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"))
             if session.mode == "transcode":
                 progress = session.progress()
                 speed = progress.get("speed") or "—"
@@ -2284,7 +2286,7 @@ class MainWindow(Adw.ApplicationWindow):
                 engine = "libx264 (CPU)" if session.used_software_fallback else "h264 VAAPI"
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
-                encoder_text = "device-native"
+                encoder_text = "local MP4 preparation" if session.mode == "dlna" else "device-native"
         if self.external and info:
             title = f"{str(info.get('title') or 'external stream')} · external"
             if self.np_title.get_text() != title:
@@ -2777,6 +2779,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._refresh_controls()
         self._finished_handled = False
         device = self._device()
+        renderer = self._dlna_renderer(device)
+        if device.startswith("DLNA · ") and renderer is None:
+            self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
+            return
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
@@ -2822,10 +2828,24 @@ class MainWindow(Adw.ApplicationWindow):
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if previous is not None:
-                previous.stop(device, send_stop=False)
-            session = streamer.Session()
+                previous.stop(device, send_stop=previous.mode == "dlna")
+            session = dlna.Session() if renderer is not None else streamer.Session()
             title = pretty_title(path)
             try:
+                if renderer is not None:
+                    if speed != 1.0 or rotation != 0:
+                        raise dlna.DlnaError(
+                            "DLNA currently supports normal speed and unrotated video; reset these settings"
+                        )
+                    audio_choice = streamer.preferred_audio_track(media, audio_track)
+                    session.start(
+                        media, renderer=renderer,
+                        local_ip=streamer.host_ip(renderer.host),
+                        offset=offset, title=title, subtitle_file=subs_path,
+                        embedded_subtitle_index=embedded.index if embedded else None,
+                        audio_track=audio_choice.index if audio_choice else 0,
+                    )
+                    return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
                     try:
                         session.start_direct(
@@ -2879,7 +2899,8 @@ class MainWindow(Adw.ApplicationWindow):
                     hint += f" · +{gain:g} dB"
             else:
                 chain = []
-                hint = "Original audio (direct play)"
+                hint = ("DLNA progressive MP4 · original audio"
+                        if session.mode == "dlna" else "Original audio (direct play)")
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
             self.tracker.start(
@@ -3975,7 +3996,10 @@ class MainWindow(Adw.ApplicationWindow):
             self.cfg["window_width"] = width
             self.cfg["window_height"] = height
         save_config(self.cfg)
-        if not self.cfg["keep_streaming"] and self.session is not None:
+        # DLNA's local HTTP server is process-owned; unlike Chromecast's HLS
+        # keep-streaming path it cannot survive closing this application.
+        if self.session is not None and (
+                not self.cfg["keep_streaming"] or self.session.mode == "dlna"):
             session, self.session = self.session, None
             device = self._device()
             thread = threading.Thread(target=lambda: session.stop(device), daemon=False)
