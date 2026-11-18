@@ -14,6 +14,12 @@ class PlaybackStateTests(unittest.TestCase):
         self.assertEqual(absolute_encoded_position(0, 4.5, 1000), 4.5)
         self.assertIsNone(absolute_encoded_position(600, None))
 
+    def test_nonunit_speed_maps_hls_time_to_original_media(self):
+        self.assertEqual(absolute_encoded_position(45, 10, 120, speed=2.0), 65)
+        self.assertEqual(absolute_encoded_position(90, 20, 120, speed=2.0), 120)
+        self.assertEqual(absolute_encoded_position(45, 10, 120, speed=0.5), 50)
+        self.assertIsNone(absolute_encoded_position(0, 5, 100, speed=0))
+
     def test_only_device_completion_advances_the_queue(self):
         self.assertTrue(playback_ended("PLAYING", "IDLE", has_session=True, busy=False))
         self.assertTrue(playback_ended("PAUSED", "IDLE", has_session=True, busy=False))
