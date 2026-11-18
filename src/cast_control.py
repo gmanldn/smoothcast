@@ -1714,6 +1714,20 @@ class MainWindow(Adw.ApplicationWindow):
         if index == Gtk.INVALID_LIST_POSITION or model is None:
             return
         name = model.get_string(index)
+        if name and name != self.cfg["device"] and self.session is not None:
+            # An owned stream still targets its original TV. A device change
+            # mid-cast would stop the old encoder while sending 'stop' to the
+            # new, unrelated TV. Require an explicit stop before switching.
+            self._syncing = True
+            try:
+                for current_index in range(model.get_n_items()):
+                    if model.get_string(current_index) == self.cfg["device"]:
+                        dropdown.set_selected(current_index)
+                        break
+            finally:
+                self._syncing = False
+            self.toast("Stop the current cast before changing TV", error=True)
+            return
         if name and name != self.cfg["device"]:
             self.cfg["device"] = name
             save_config(self.cfg)
@@ -1729,15 +1743,33 @@ class MainWindow(Adw.ApplicationWindow):
             return True
         self.poll_busy = True
         device = self._device()
-        Async.run(
-            lambda: castctl.info(device),
-            done=self._poll_done,
-            failed=self._poll_failed,
-        )
+
+        def completed(info):
+            # Ignore an old TV's response if the target changed while the
+            # background catt query was running; immediately query the new TV.
+            if device != self._device():
+                self.poll_busy = False
+                self._poll_device()
+                return
+            self._poll_done(info)
+
+        def failed(message):
+            if device != self._device():
+                self.poll_busy = False
+                self._poll_device()
+                return
+            self._poll_failed(message)
+
+        Async.run(lambda: castctl.info(device), done=completed, failed=failed)
         return True
 
-    def _poll_failed(self, _message) -> None:
+    def _poll_failed(self, message) -> None:
         self.poll_busy = False
+        self.device_info = None
+        self.device_state = "OFFLINE"
+        self._set_device_badge("OFFLINE", "offline")
+        self._refresh_controls()
+        self._console(f"Device status unavailable: {message}")
 
     def _poll_done(self, info) -> None:
         self.poll_busy = False
@@ -1753,14 +1785,32 @@ class MainWindow(Adw.ApplicationWindow):
             self._set_device_badge("AVAILABLE", "online")
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
-            # Sync the tracker with the device for BOTH direct and transcode
-            # modes so the position pointer stays live and doesn't drift.
-            # Use current_time whenever available (not just is_seekable) because
-            # HLS streams report position but may not be seekable.
+            # Chromecast reports the *new HLS playlist's* current_time from
+            # zero after each seek. Convert it to source-file seconds, including
+            # the original -ss offset and any non-1× playback rate. Direct play
+            # already uses the source timeline and needs no conversion.
             current_time = info.get("current_time")
             duration = info.get("duration")
-            if current_time is not None and duration is not None:
-                self.tracker.device_update(float(current_time), float(duration))
+            if current_time is not None:
+                try:
+                    device_time = float(current_time)
+                    state = self.session.state
+                    if self.session.mode == "transcode" and state is not None:
+                        absolute = playback_state.absolute_encoded_position(
+                            state.offset, device_time, state.duration,
+                            speed=state.speed,
+                        )
+                        if absolute is not None:
+                            self.tracker.device_update(
+                                absolute, state.duration, rate=state.speed,
+                            )
+                    else:
+                        self.tracker.device_update(
+                            device_time, float(duration) if duration else None,
+                            rate=1.0,
+                        )
+                except (TypeError, ValueError, OverflowError):
+                    pass
         volume = castctl.volume_percent(info)
         if volume is not None and time.time() - self._volume_user_ts > 3:
             self._syncing = True
@@ -1868,7 +1918,8 @@ class MainWindow(Adw.ApplicationWindow):
         if self.session and self.session.mode == "transcode" and self.session.state:
             progress = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
-                self.session.state.offset, progress.get("out_time"), duration
+                self.session.state.offset, progress.get("out_time"), duration,
+                speed=self.session.state.speed,
             )
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
@@ -1984,6 +2035,7 @@ class MainWindow(Adw.ApplicationWindow):
             encoded = playback_state.absolute_encoded_position(
                 session.state.offset, progress.get("out_time"),
                 self.tracker.duration or (media.duration if media else 0.0),
+                speed=session.state.speed,
             )
             if encoded is not None and position is not None:
                 ahead = encoded - position
@@ -2084,7 +2136,10 @@ class MainWindow(Adw.ApplicationWindow):
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
         busy = self.busy
-        active = (self.session is not None and self.session.active()) or self.external
+        # FFmpeg may finish producing the HLS playlist while the Chromecast
+        # still plays buffered segments. Keep Stop/Pause/CC enabled until the
+        # *device* reports completion, not merely while the encoder PID lives.
+        active = bool(self.session is not None and self.session.state is not None) or self.external
         ready_to_cast = self.now_playing is not None or (
             self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
         )
@@ -2110,6 +2165,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
         self.volume_scale.set_sensitive(online)
         self.mute_button.set_sensitive(online)
+        self.device_dropdown.set_sensitive(not busy and self.session is None)
+        self.device_dropdown.set_tooltip_text(
+            "Stop your current cast before changing TVs" if self.session
+            else "Choose the Chromecast to control"
+        )
         self.cc_button.set_sensitive(active and not busy)
         has_subs = bool(self._active_subs()) or bool(self.session and self.session.state and self.session.state.subs)
         self._syncing = True
@@ -2332,8 +2392,14 @@ class MainWindow(Adw.ApplicationWindow):
         # Direct play hands the file to the TV untouched, so it can only be used
         # when no audio processing is wanted. Any dialogue/night profile needs
         # the transcode pipeline to apply its filters.
-        use_direct = bool(cfg["direct"]) and cfg["audio"] == "original"
         speed = float(cfg.get("playback_speed", 1.0))
+        rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
+        # A device-native stream cannot apply ffmpeg speed/rotation filters.
+        # Always transcode when either transform is enabled, even for H.264/AAC.
+        use_direct = (
+            bool(cfg["direct"]) and cfg["audio"] == "original"
+            and speed == 1.0 and rotation == 0
+        )
 
         def work():
             media = streamer.ffprobe(path)
@@ -2360,7 +2426,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
-                    rotation=cfg["rotation"],
+                    rotation=rotation,
                 )
                 return session, media
             except Exception:
@@ -2393,7 +2459,10 @@ class MainWindow(Adw.ApplicationWindow):
                 hint = "Original audio (direct play)"
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
-            self.tracker.start(started, media.duration, True)
+            self.tracker.start(
+                started, media.duration, True,
+                rate=session.state.speed if session.state else 1.0,
+            )
             self._add_recent(str(path))
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
@@ -2486,15 +2555,22 @@ class MainWindow(Adw.ApplicationWindow):
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
-    def _restart_at(self, session, target: float) -> None:
+    def _restart_at(self, session, target: float, *, speed_override: float | None = None) -> None:
         device = self._device()
         device_ip = self._device_host(device)
         state = session.state
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         quality = state.quality if state else self.cfg["quality"]
-        audio = state.audio if state else self.cfg["audio"]
-        speed = float(state.speed) if state and state.speed else float(self.cfg.get("playback_speed", 1.0))
+        audio = (
+            "original" if state and session.mode == "direct"
+            else state.audio if state else self.cfg["audio"]
+        )
+        speed = (
+            float(speed_override) if speed_override is not None
+            else float(state.speed) if state and state.speed
+            else float(self.cfg.get("playback_speed", 1.0))
+        )
         rotation = int(state.rotation) if state else self.cfg["rotation"]
         burn = bool(state.burn_subs) if state else False
         subs_path = None
@@ -2536,7 +2612,7 @@ class MainWindow(Adw.ApplicationWindow):
             if gain > 0:
                 hint += f" · +{gain:g} dB"
             self._set_levels_hint(hint)
-            self.tracker.start(target, media_result.duration, True)
+            self.tracker.start(target, media_result.duration, True, rate=speed)
             self._refresh_controls()
             self._poll_device()
 
@@ -2614,7 +2690,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.cfg["playback_speed"] = speed
         save_config(self.cfg)
         session = self.session
-        if session is not None and session.mode == "transcode" and session.active():
+        if session is not None and session.state is not None:
             if self.busy:
                 self.toast("Hold on — finishing the last command")
                 return
@@ -2623,7 +2699,9 @@ class MainWindow(Adw.ApplicationWindow):
             position = self.tracker.value() or 0.0
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
-            self._restart_at(session, position)
+            # The seekbar uses source-film time; preserve that position when
+            # changing pace and restart FFmpeg at the *new* requested speed.
+            self._restart_at(session, position, speed_override=speed)
             self.toast(f"Speed {speed}x — stream restarted")
         else:
             self.toast(f"Speed {speed}x")
@@ -3121,25 +3199,57 @@ class MainWindow(Adw.ApplicationWindow):
         # Immediate best estimate so the seek bar is not stuck at 0 while the
         # accurate device position is fetched. Works for direct and transcode.
         elapsed = max(0.0, time.time() - state.started_at) if state.started_at else 0.0
-        self.tracker.start(min(state.offset + elapsed, state.duration or 1e18), state.duration, True)
-        self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
-
+        rate = state.speed if session.mode == "transcode" else 1.0
+        self.tracker.start(
+            min(state.offset + elapsed * rate, state.duration or 1e18),
+            state.duration, True, rate=rate,
+        )
         def probe():
-            media = streamer.ffprobe(pathlib.Path(state.file))
             current = 0.0
+            info = None
             try:
                 info = castctl.info(device)
                 if info:
                     current = float(info.get("current_time") or 0.0)
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 current = 0.0
-            return media, current
+            if session.mode == "direct" and not playback_state.direct_session_matches(
+                info, state.title,
+            ):
+                return None, 0.0, info
+            media = streamer.ffprobe(pathlib.Path(state.file))
+            return media, current, info
 
         def probed(result):
-            media, current = result
+            if self.session is not session:
+                return  # Another media command has replaced this saved session.
+            media, current, info = result
+            if session.mode == "direct" and not playback_state.direct_session_matches(
+                info, state.title,
+            ):
+                self.session = None
+                self.now_playing = None
+                self.media = None
+                self.tracker.clear()
+                streamer.clear_session()
+                self.toast("Previous cast is no longer playing")
+                self._refresh_controls()
+                self._poll_device()
+                return
+            self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
             self.media = media
             if current > 0:
-                self.tracker.start(min(current, media.duration or current), media.duration, True)
+                absolute = (
+                    playback_state.absolute_encoded_position(
+                        state.offset, current, media.duration, speed=rate,
+                    )
+                    if session.mode == "transcode" else current
+                )
+                if absolute is not None:
+                    self.tracker.start(
+                        min(absolute, media.duration or absolute),
+                        media.duration, True, rate=rate,
+                    )
             gain = state.audio_gain_db
             if session.mode == "transcode":
                 chain = streamer.audio_filters(state.audio, gain)
@@ -3155,7 +3265,10 @@ class MainWindow(Adw.ApplicationWindow):
             self._set_now_playing_labels(media, session)
             self._poll_device()
 
-        Async.run(probe, done=probed, failed=lambda _msg: None)
+        Async.run(
+            probe, done=probed,
+            failed=lambda msg: self._console(f"Saved cast inspection failed: {msg}"),
+        )
         self._refresh_controls()
         self._poll_device()
         return False

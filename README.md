@@ -7,11 +7,11 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker); bounded metadata memory for long films and asynchronous FFmpeg shutdown
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
 - **Night mode** — stronger compression for late-night low-volume viewing
-- **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
+- **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
-- **Direct play** — untouched passthrough for compatible files
+- **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — auto-select, burn-in, or disable
 - **Queue / Up Next and repeat-one** — advance or loop the current video when the TV reports completion; old stream cleanup finishes before restarting
@@ -35,6 +35,14 @@ Optional executable shortcut: `./sc.py` delegates to the same launcher and forwa
 SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The film preview is deliberately an illustrated metadata slate rather than a fake video screenshot. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
+
+## Playback reliability
+
+Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
+
+Stop and Pause remain available while the TV consumes a completed HLS buffer. SmoothCast also rejects outdated device replies and avoids switching TV targets mid-cast. A saved direct cast is only reattached when the Chromecast still reports compatible playback.
+
+The portable unit tests and syntax checks now run on pushes and pull requests via [Verify SmoothCast](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml). Actual GTK rendering and real Chromecast playback still require a local smoke test.
 
 ## Responsive sizing
 

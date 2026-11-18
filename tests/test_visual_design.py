@@ -90,6 +90,14 @@ class VisualDesignTests(unittest.TestCase):
         self.assertIn('self.cast_button.add_css_class("primary-action")', self.source)
         self.assertIn('self.open_button.add_css_class("primary-action")', self.source)
 
+    def test_completed_encoder_does_not_disable_device_controls(self):
+        # Ownership is retained while Chromecast drains the encoded HLS
+        # playlist, even when the FFmpeg encoder has exited.
+        self.assertIn(
+            'active = bool(self.session is not None and self.session.state is not None) or self.external',
+            self.source,
+        )
+
     def test_responsiveness_is_not_sacrificed_for_styling(self):
         for snippet in (
             'self.page_scroller.set_child(self.page)',

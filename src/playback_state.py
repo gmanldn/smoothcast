@@ -6,13 +6,22 @@ import math
 PLAYING_STATES = frozenset({"PLAYING", "BUFFERING", "PAUSED"})
 
 
-def absolute_encoded_position(offset: float, elapsed: float | None, duration: float = 0.0) -> float | None:
-    """Convert FFmpeg -progress (relative to -ss) to media-absolute seconds."""
+def absolute_encoded_position(
+    offset: float, elapsed: float | None, duration: float = 0.0,
+    speed: float = 1.0,
+) -> float | None:
+    """Map HLS presentation seconds back to the source-file timeline.
+
+    The stream starts at source offset `-ss` but its clock restarts at zero.
+    For playback at 2×, ten seconds of HLS represents twenty seconds of source.
+    """
     if elapsed is None or not math.isfinite(elapsed):
+        return None
+    if not math.isfinite(speed) or speed <= 0:
         return None
     offset = offset if math.isfinite(offset) else 0.0
     duration = duration if math.isfinite(duration) else 0.0
-    position = max(0.0, offset) + max(0.0, elapsed)
+    position = max(0.0, offset) + max(0.0, elapsed) * speed
     return min(position, duration) if duration > 0 else position
 
 
@@ -51,3 +60,23 @@ def timer_expired(deadline: object, now: float) -> bool:
     except (ValueError, TypeError):
         return False
     return math.isfinite(value) and value > 0 and now >= value
+
+
+def direct_session_matches(info: dict | None, saved_title: str) -> bool:
+    """Only restore a saved direct cast when the TV still reports playback.
+
+    catt can exit successfully after initiating a cast, so checking its PID
+    cannot establish whether playback is ongoing after an app restart.
+    """
+    if not isinstance(info, dict):
+        return False
+    state = str(info.get("player_state") or "").upper()
+    if state not in PLAYING_STATES:
+        return False
+    # Some Chromecast receivers omit titles. Reject a known mismatch rather
+    # than attaching our media controls to another app's unrelated stream.
+    current_title = str(info.get("title") or "").strip()
+    saved_title = str(saved_title or "").strip()
+    if current_title and saved_title and current_title.casefold() != saved_title.casefold():
+        return False
+    return True

@@ -32,6 +32,7 @@ class StreamerReliabilityTests(unittest.TestCase):
                     media, 45.0, device="TV", device_ip="192.168.1.42",
                     quality="balanced", audio_profile="original",
                     subs_file=None, burn_subs=False, title="Film",
+                    speed=1.5, rotation=90,
                 )
             self.assertTrue(session.used_software_fallback)
             self.assertEqual([call.args[0] for call in wait.call_args_list], [15, 30])
@@ -41,7 +42,46 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertIn("-hwaccel", first_args)
             self.assertNotIn("-hwaccel", second_args)
             self.assertIn("libx264", second_args)
+            # Fallback is not allowed to silently revert user's transforms.
+            self.assertIn("-readrate", second_args)
+            self.assertEqual(second_args[second_args.index("-readrate") + 1], "1.5")
+            self.assertIn("setpts=PTS/1.5", ",".join(second_args))
+            self.assertIn("transpose=1", ",".join(second_args))
+            self.assertIn("atempo=1.5", ",".join(second_args))
+            self.assertEqual(session.state.speed, 1.5)
+            self.assertEqual(session.state.rotation, 90)
             self.assertIn("192.168.1.23:8767", session.state.stream_url)
+
+    def test_direct_cast_remains_active_after_successful_catt_exit(self):
+        session = streamer.Session()
+        session.state = streamer.SessionState(
+            file="movie.mp4", mode="direct", offset=0.0, duration=120,
+            device="TV", title="Film",
+        )
+        caster = mock.Mock()
+        caster.poll.return_value = 0  # catt exits on success, Chromecast keeps playing.
+        session.caster = caster
+        self.assertTrue(session.active())
+        session.state = None
+        self.assertFalse(session.active())
+
+    def test_direct_start_records_original_audio_for_transcode_resume(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            media = streamer.MediaInfo(path=root / "movie.mp4", duration=90.0)
+            session = streamer.Session()
+            proc = mock.MagicMock()
+            proc.poll.return_value = 0  # catt successfully sent the cast.
+            proc.returncode = 0
+            with mock.patch.object(streamer, "_save_session"), \
+                 mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=proc):
+                session.start_direct(
+                    media, device="TV", title="Film", subs_file=None,
+                    subs_disabled=True,
+                )
+            self.assertEqual(session.state.audio, "original")
 
     def test_cast_route_preferred_over_other_interfaces(self):
         fake = mock.MagicMock()

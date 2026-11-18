@@ -16,6 +16,7 @@ class PositionTracker:
     def __init__(self) -> None:
         self.known = False
         self.duration = 0.0
+        self.rate = 1.0
         self._base = 0.0
         self._epoch = time.monotonic()
         self._playing = False
@@ -27,9 +28,10 @@ class PositionTracker:
         self._device_pos: float | None = None
         self._device_epoch: float = 0.0
 
-    def start(self, base: float, duration: float, playing: bool = True) -> None:
+    def start(self, base: float, duration: float, playing: bool = True, rate: float = 1.0) -> None:
         self.known = True
         self.duration = duration or self.duration
+        self.rate = max(0.05, float(rate))
         self._base = max(0.0, base)
         self._epoch = time.monotonic()
         self._playing = playing
@@ -47,29 +49,37 @@ class PositionTracker:
             if self._pause_started is not None:
                 self._paused_accum += now - self._pause_started
                 self._pause_started = None
+            if self._device_pos is not None:
+                # While paused, the device reports a fixed position. Rebase
+                # extrapolation on resume rather than counting paused seconds.
+                self._device_epoch = now
         else:
             self._pause_started = now
         self._playing = playing
 
-    def device_update(self, current: float, duration: float | None) -> None:
+    def device_update(
+        self, current: float, duration: float | None, rate: float | None = None,
+    ) -> None:
         self.known = True
         self.duration = duration or self.duration
+        if rate is not None:
+            self.rate = max(0.05, float(rate))
         # Record the device's authoritative position; play state governs whether
         # it advances between polls so a paused stream does not creep forward.
         self._device_pos = max(0.0, current)
         self._device_epoch = time.monotonic()
 
     def rebase(self, value: float) -> None:
-        self.start(value, self.duration, self._playing)
+        self.start(value, self.duration, self._playing, self.rate)
 
     def value(self, now: float | None = None) -> float | None:
         if not self.known:
             return None
-        now = now or time.monotonic()
+        now = time.monotonic() if now is None else now
         if self._device_pos is not None:
             value = self._device_pos
             if self._playing:
-                value += now - self._device_epoch
+                value += (now - self._device_epoch) * self.rate
             if self.duration:
                 value = min(value, self.duration)
             return max(0.0, value)
@@ -77,7 +87,7 @@ class PositionTracker:
         paused = self._paused_accum
         if self._pause_started is not None:
             paused += now - self._pause_started
-        value = self._base + (now - self._epoch - paused)
+        value = self._base + (now - self._epoch - paused) * self.rate
         if self.duration:
             value = min(value, self.duration)
         return max(0.0, value)
@@ -85,6 +95,7 @@ class PositionTracker:
     def clear(self) -> None:
         self.known = False
         self.duration = 0.0
+        self.rate = 1.0
         self._playing = False
         self._paused_accum = 0.0
         self._pause_started = None

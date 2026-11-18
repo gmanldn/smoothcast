@@ -536,7 +536,10 @@ class Session:
 
     def active(self) -> bool:
         if self.mode == "direct":
-            return self.caster is not None and self.caster.poll() is None
+            # catt may exit 0 immediately after instructing the Chromecast
+            # to play. The cast keeps playing on the TV independently.
+            # A successful direct session remains owned until stop/end.
+            return self.state is not None
         if self.ffmpeg is not None and self.ffmpeg.poll() is None:
             return True
         return False
@@ -695,7 +698,9 @@ class Session:
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-progress", str(PROGRESS_FILE), "-nostats",
-            "-ss", str(max(0.0, offset)), "-re",
+            # Read source samples at the requested playback rate: a 2×
+            # setpts/atempo stream needs 2× input, otherwise the TV starves.
+            "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
         args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
@@ -752,6 +757,7 @@ class Session:
                     audio_profile=audio_profile, subs_file=subs_file,
                     burn_subs=burn_subs, title=title,
                     audio_gain_db=audio_gain_db, device_ip=device_ip,
+                    speed=speed, rotation=rotation,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -830,6 +836,7 @@ class Session:
         self.state = SessionState(
             file=str(media.path), mode="direct", offset=0.0,
             duration=media.duration, device=device, title=title,
+            audio="original",
             subs=str(subs_file or ""), burn_subs=False,
             started_at=time.time(),
             caster_pid=getattr(self.caster, "pid", 0),
