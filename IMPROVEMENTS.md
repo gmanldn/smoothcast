@@ -56,7 +56,8 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 50. Auto-update check + one-click update.
 
 ## Status
-- [ ] Not started (all). Implement one per commit, bump version each.
+- Check the Done list against the code before starting new work; some earlier completions were not recorded.
+- Commit improvements incrementally; advance the canonical version only when releasing a coherent change.
 
 ## Done
 - [x] 1. Picture-in-Picture (always-on-top toggle)
@@ -74,3 +75,7 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 - [x] 34. Resume from last position
 - [x] 37. Auto-shutdown after playlist ends
 - [x] 31. Theater mode
+
+- [x] 23. Playlist save/load (M3U)
+- [x] 25. Multi-file open and queue
+- [x] 27. Search within queue (case-insensitive terms, Ctrl+F, preserved ordering)
