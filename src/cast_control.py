@@ -1098,6 +1098,7 @@ class MainWindow(Adw.ApplicationWindow):
         action_row.set_hexpand(True)
         self.action_grid = action_row
         open_button = Gtk.Button(label="Open video")
+        self.open_button = open_button
         open_button.add_css_class("action-control")
         open_button.add_css_class("primary-action")
         open_button.set_icon_name("folder-open-symbolic")
@@ -2065,7 +2066,18 @@ class MainWindow(Adw.ApplicationWindow):
         paused = self.device_state == "PAUSED"
         busy = self.busy
         active = (self.session is not None and self.session.active()) or self.external
-        self.cast_button.set_sensitive(not busy)
+        ready_to_cast = self.now_playing is not None or (
+            self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
+        )
+        self.cast_button.set_sensitive(ready_to_cast and online and not busy)
+        # Make the next useful action unmistakable: Open when empty, Cast when
+        # a local video is ready. Avoid a bright, inert Cast button on startup.
+        if ready_to_cast:
+            self.open_button.remove_css_class("primary-action")
+            self.cast_button.add_css_class("primary-action")
+        else:
+            self.cast_button.remove_css_class("primary-action")
+            self.open_button.add_css_class("primary-action")
         self.stop_tv_button.set_sensitive(active and not busy)
         can_play = online and not busy and (active or self.now_playing is not None or self.selected_index is not None)
         self.play_button.set_sensitive(can_play)
