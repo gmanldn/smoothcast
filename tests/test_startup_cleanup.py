@@ -140,6 +140,30 @@ class StartupCleanupTests(unittest.TestCase):
             )
             kill.assert_not_called()
 
+    def test_verified_stale_process_gets_bounded_sigterm_and_sigkill(self):
+        proc = process(100, "encoder")
+        report = cleanup.CleanupReport()
+        with mock.patch.object(cleanup, "_same_process", return_value=True), \
+             mock.patch.object(cleanup.os, "kill") as kill:
+            cleanup._stop_orphans([proc], Path("/proc"), report, 0.0)
+        self.assertEqual(report.stopped, [100])
+        self.assertEqual(
+            [call.args[1] for call in kill.call_args_list],
+            [cleanup.signal.SIGTERM, cleanup.signal.SIGKILL],
+        )
+
+    def test_other_users_processes_are_never_inspected_or_signalled(self):
+        with TemporaryDirectory() as d:
+            pid = 55001
+            folder = Path(d) / str(pid)
+            folder.mkdir()
+            (folder / "cmdline").write_bytes(
+                b"ffmpeg\0-progress\0" + str(streamer.PROGRESS_FILE).encode() + b"\0"
+            )
+            (folder / "stat").write_text("irrelevant")
+            with mock.patch.object(cleanup.os, "getuid", return_value=-1):
+                self.assertIsNone(cleanup.inspect_process(pid, Path(d)))
+
     def test_proc_starttime_with_parentheses_in_command_name(self):
         with TemporaryDirectory() as d:
             root = Path(d)
