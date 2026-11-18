@@ -81,6 +81,34 @@ class DesktopIntegrationTests(unittest.TestCase):
             self.assertEqual(desktop.main(), 0)
         install.assert_called_once_with(repair_pins=True, pin=True)
 
+    def test_actual_cli_install_twice_then_check_from_spaced_checkout(self):
+        # The shipped CLI, not just install(), must be idempotent and agree
+        # with --check when launched from a checkout whose path has spaces and
+        # no `smoothcast` is available on PATH.
+        import subprocess
+        import sys
+        checkout = self.root  # "project with spaces" fixture from setUp
+        (checkout / "scripts").mkdir(exist_ok=True)
+        source = Path(__file__).resolve().parents[1] / "scripts" / "install_desktop.py"
+        (checkout / "scripts" / "install_desktop.py").write_bytes(source.read_bytes())
+        launcher = checkout / "smoothcast"
+        launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o755)
+        xdg = Path(self.tmp.name) / "cli-xdg"
+        env = dict(os.environ, XDG_DATA_HOME=str(xdg), PATH="/usr/bin:/bin")
+        cli = [sys.executable, str(checkout / "scripts" / "install_desktop.py")]
+        for _ in range(2):
+            result = subprocess.run([*cli, "--quiet"], capture_output=True,
+                                    text=True, env=env, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        check = subprocess.run([*cli, "--check", "--quiet"], capture_output=True,
+                               text=True, env=env, timeout=30)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        expected = f'Exec="{launcher}" %F'
+        for name in ("local.cast-control.desktop", "smoothcast.desktop"):
+            entry = (xdg / "applications" / name).read_text(encoding="utf-8")
+            self.assertIn(expected, entry)
+
     def test_quotes_desktop_exec_field(self):
         result = desktop.exec_argument(Path('/tmp/a $"%'+chr(96)+'b/smoothcast'))
         self.assertIn(r'\$', result)

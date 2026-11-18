@@ -167,6 +167,13 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #54 — Desktop installer exercised as users run it:** the shipped
+  `scripts/install_desktop.py` CLI is now covered end-to-end: two install
+  runs from a checkout whose path contains spaces, with no `smoothcast` on
+  `PATH`, then `--check` must pass, and both `local.cast-control.desktop`
+  and the hidden `smoothcast.desktop` alias must Exec that checkout.
+  `--pin` already used `store_true` and install/`--check` already shared
+  one launcher path.
 - **P0 #85 — Failed local preparation never stops the renderer:**
   `dlna.Session.start` resets renderer ownership before preparation, so an
   error such as insufficient disk cleans up scratch without sending Stop or
