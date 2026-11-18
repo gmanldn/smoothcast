@@ -31,6 +31,8 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', entry)
         self.assertIn("Icon=local.cast-control\n", entry)
         self.assertIn("StartupWMClass=local.cast-control\n", entry)
+        self.assertIn("Path=" + str(self.root) + "\n", entry)
+        self.assertIn("TryExec=" + str(self.root / "smoothcast") + "\n", entry)
         self.assertIn("StartupNotify=true\n", entry)
         self.assertNotIn("NoDisplay=true", entry)
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
@@ -46,6 +48,17 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         self.assertIn("Name=SmoothCast", (self.data_home / "applications/local.cast-control.desktop").read_text())
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
+
+    def test_launcher_recovers_partial_python_environment(self):
+        script = (Path(__file__).resolve().parents[1] / "smoothcast").read_text()
+        self.assertIn('RUNTIME="$DIR/.venv/bin/python"', script)
+        self.assertIn('m.version("catt")', script)
+        self.assertIn('"$DIR/setup/bootstrap.py" --target "$TARGET"', script)
+
+    def test_runtime_launcher_uses_project_root_for_dock_launch(self):
+        script = (Path(__file__).resolve().parents[1] / "setup/launch.py").read_text()
+        self.assertIn("os.chdir(ROOT)", script)
+        self.assertIn("os.execvpe(command[0], command, env)", script)
 
     def test_quotes_desktop_exec_field(self):
         result = desktop.exec_argument(Path('/tmp/a $"%'+chr(96)+'b/smoothcast'))
