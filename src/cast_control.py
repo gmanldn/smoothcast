@@ -1372,12 +1372,23 @@ class MainWindow(Adw.ApplicationWindow):
         badge.set_text(label)
 
     def _build_settings_card(self) -> Gtk.Box:
-        card, body = self._card("Playback settings")
+        card, body = self._card(
+            "Playback settings", "Optimise picture, sound and subtitles for your TV."
+        )
+        card.add_css_class("settings-card")
+        body.set_spacing(11)
         self._syncing = True
+
+        def group(title: str) -> None:
+            label = Gtk.Label(label=title, xalign=0.0)
+            label.add_css_class("setting-group")
+            body.append(label)
 
         def dropdown_row(label, options, current, tooltip=""):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row.add_css_class("setting-row")
             tag = Gtk.Label(label=label, xalign=0.0, hexpand=True)
+            tag.add_css_class("label-strong")
             dropdown = Gtk.DropDown.new_from_strings(options)
             dropdown.set_valign(Gtk.Align.CENTER)
             if tooltip:
@@ -1387,6 +1398,7 @@ class MainWindow(Adw.ApplicationWindow):
             body.append(row)
             return dropdown
 
+        group("VIDEO")
         self.quality_dropdown = dropdown_row(
             "Video quality",
             ["High", "Balanced", "Data saver"],
@@ -1396,6 +1408,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.quality_dropdown.set_selected({"high": 0, "balanced": 1, "saver": 2}.get(self.cfg["quality"], 1))
         self.quality_dropdown.connect("notify::selected", self._on_quality)
 
+        group("AUDIO")
         self.audio_dropdown = dropdown_row(
             "Sound profile",
             ["Original audio", "Dialogue auto-fix", "Night mode"],
@@ -1409,6 +1422,7 @@ class MainWindow(Adw.ApplicationWindow):
         gain_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         gain_text.set_hexpand(True)
         gain_title = Gtk.Label(label="Dialogue loudness boost", xalign=0.0)
+        gain_title.add_css_class("label-strong")
         gain_title.set_tooltip_text("Extra loudness for quiet dialogue — type a value in dB (0–24). Applies on the next (re)start.")
         gain_sub = Gtk.Label(label="Levels loud bangs vs quiet speech; add dB here if you want it louder", xalign=0.0, wrap=True)
         gain_sub.add_css_class("dim-label")
@@ -1430,6 +1444,7 @@ class MainWindow(Adw.ApplicationWindow):
         gain_row.append(gain_unit)
         body.append(gain_row)
 
+        group("SUBTITLES")
         self.subs_dropdown = dropdown_row(
             "Subtitles",
             ["Off", "Auto (matching file)", "Pick file…"],
@@ -1444,7 +1459,9 @@ class MainWindow(Adw.ApplicationWindow):
         body.append(self.subs_detail)
 
         burn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        burn_row.add_css_class("setting-row")
         burn_label = Gtk.Label(label="Burn subtitles into video", xalign=0.0, hexpand=True)
+        burn_label.add_css_class("label-strong")
         burn_label.set_tooltip_text("Slower CPU encode — only if the TV cannot show CC tracks")
         self.burn_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.burn_switch.set_active(bool(self.cfg["burn_subs"]))
@@ -1453,6 +1470,7 @@ class MainWindow(Adw.ApplicationWindow):
         burn_row.append(self.burn_switch)
         body.append(burn_row)
 
+        group("PLAYBACK")
         self.direct_switch = self._switch_row(
             body,
             "Direct play when possible",
@@ -1472,8 +1490,10 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _switch_row(self, body, label, subtitle, active, callback) -> Gtk.Switch:
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.add_css_class("setting-row")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         title = Gtk.Label(label=label, xalign=0.0)
+        title.add_css_class("label-strong")
         sub = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
         sub.add_css_class("dim-label")
         sub.add_css_class("caption")
