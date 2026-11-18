@@ -170,6 +170,16 @@ class SetupContractTests(unittest.TestCase):
             self.assertEqual(command[-2:], ["-e", str(ROOT)])
             self.assertNotIn("requirements.txt", " ".join(command))
 
+    def test_native_launcher_refuses_gui_tests_before_starting_python(self):
+        with mock.patch.object(launch, "python_path") as runtime, \
+             mock.patch.object(launch.subprocess, "call") as call:
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
+                self.assertEqual(launch.main(["--self-test"]), 2)
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "1"}):
+                self.assertEqual(launch.main([]), 2)
+            runtime.assert_not_called()
+            call.assert_not_called()
+
     def test_virtualenv_check_is_readonly(self):
         with mock.patch.object(bootstrap, "venv_python",
                                return_value=Path("/does/not/exist")):
