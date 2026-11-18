@@ -42,7 +42,7 @@ class BacklogPreservationTests(unittest.TestCase):
         archived = (ROOT / "docs" / "IMPROVEMENTS_ORIGINAL_50_20261118.md").read_text(
             encoding="utf-8"
         )
-        original_nums = [int(i) for i in re.findall(r"(?m)^(\\d+)\\. ", archived)]
+        original_nums = [int(i) for i in re.findall(r"(?m)^(\d+)\. ", archived)]
         self.assertEqual(original_nums[:50], list(range(1, 51)))
         self.assertIn("## Done", archived)
         workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
