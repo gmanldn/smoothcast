@@ -16,6 +16,7 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
+import subtitle_encoding
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
@@ -748,6 +749,7 @@ class Session:
             segment.unlink(missing_ok=True)
         for suffix in SUBTITLE_EXTS:
             (ROOT / f"burned_subs{suffix}").unlink(missing_ok=True)
+        (ROOT / "receiver_subs.srt").unlink(missing_ok=True)
         self.state = None
         self.ffmpeg = None
         self.server = None
@@ -774,20 +776,43 @@ class Session:
         self.server = None
         raise StreamError("The SmoothCast streaming server did not become ready")
 
-    def _stage_subs(self, subs_file: pathlib.Path | None) -> pathlib.Path | None:
+    def _stage_subs(
+        self, subs_file: pathlib.Path | None, *, receiver: bool = False,
+    ) -> pathlib.Path | None:
+        """Stage owned caption bytes in the private cache, never user media.
+
+        SRT is decoded and normalised to UTF-8 for both FFmpeg burn-in and
+        Cast receiver subtitles; other formats retain their original bytes.
+        A failed conversion never overwrites a previous valid staged file.
+        """
         if subs_file is None:
             return None
         extension = subs_file.suffix.lower()
         if extension not in SUBTITLE_EXTS:
             raise StreamError(f"Unsupported subtitle file format: {extension or 'unknown'}")
-        staged = ROOT / f"burned_subs{extension}"
+        if receiver and extension != ".srt":
+            raise StreamError("Only SRT supports receiver subtitle normalisation")
+        ROOT.mkdir(parents=True, exist_ok=True)
+        staged = ROOT / ("receiver_subs.srt" if receiver else f"burned_subs{extension}")
+        if extension == ".srt":
+            try:
+                subtitle_encoding.stage_srt(subs_file, staged)
+            except subtitle_encoding.SubtitleEncodingError as exc:
+                raise StreamError(str(exc)) from exc
+            return staged
         temporary = staged.with_name(f".{staged.name}.{os.getpid()}.tmp")
         try:
-            # Restrict memory use and disk writes for untrusted downloaded SRTs.
             size = subs_file.stat().st_size
             if size == 0 or size > 16 * 1024 * 1024:
                 raise StreamError("Subtitle file must be between 1 byte and 16 MiB")
-            temporary.write_bytes(subs_file.read_bytes())
+            # Keep all other staged subtitle formats private as well.
+            with temporary.open("wb") as handle:
+                os.chmod(temporary, 0o600)
+                with subs_file.open("rb") as source:
+                    data = source.read(16 * 1024 * 1024 + 1)
+                if len(data) > 16 * 1024 * 1024:
+                    raise StreamError("Subtitle file must be between 1 byte and 16 MiB")
+                handle.write(data)
             temporary.replace(staged)
         except OSError as exc:
             raise StreamError(f"Could not stage subtitles: {exc}") from exc
@@ -895,6 +920,11 @@ class Session:
             raise StreamError(f"Audio track {audio_track_index + 1} is unavailable in this file")
         audio_map = f"0:a:{track.index}" if track is not None else "0:a:0?"
         staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
+        receiver_subs = (
+            self._stage_subs(subs_file, receiver=True)
+            if not burn_subs and subs_file is not None and subs_file.suffix.lower() == ".srt"
+            else subs_file
+        )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
         if (media.width > 1920 or media.height > 1080
@@ -978,8 +1008,8 @@ class Session:
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
         url = f"http://{local_ip}:{PORT}/{HLS_NAME}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
-        if not burn_subs and subs_file is not None and subs_file.suffix.lower() in CAST_SUBTITLE_EXTS:
-            cast_args += ["-s", str(subs_file)]
+        if not burn_subs and receiver_subs is not None and receiver_subs.suffix.lower() in CAST_SUBTITLE_EXTS:
+            cast_args += ["-s", str(receiver_subs)]
         else:
             cast_args += ["--no-subs"]
         self.caster = subprocess.Popen(
@@ -1037,7 +1067,11 @@ class Session:
         if subs_disabled:
             args.append("--no-subs")
         elif subs_file is not None:
-            args += ["-s", str(subs_file)]
+            receiver_subs = (
+                self._stage_subs(subs_file, receiver=True)
+                if subs_file.suffix.lower() == ".srt" else subs_file
+            )
+            args += ["-s", str(receiver_subs)]
         args.append(str(media.path))
         self.caster = subprocess.Popen(
             [str(castctl.CATT), *args],
