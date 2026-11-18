@@ -43,6 +43,7 @@ DEFAULTS: dict = {
     "color_scheme": "prefer-dark",
     "auto_theme": False,
     "recents": [],
+    "positions": {},
     "loop": False,
     "playback_speed": 1.0,
     "sleep_timer_minutes": 0,
@@ -2162,6 +2163,10 @@ class MainWindow(Adw.ApplicationWindow):
         Async.run(work, done=done)
 
     def stop_stream(self) -> None:
+        pos = self.tracker.value()
+        if self.media is not None and pos is not None:
+            self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
+            save_config(self.cfg)
         if self.busy:
             return
         self.busy = True
@@ -2210,6 +2215,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._cast_path(pathlib.Path(path), 0.0)
 
     def _cast_path(self, path: pathlib.Path, offset: float) -> None:
+        if offset == 0.0:
+            saved = (self.cfg.get("positions") or {}).get(str(path))
+            if saved:
+                offset = float(saved)
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
