@@ -43,6 +43,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
+- `src/position_tracker.py` — authoritative source-time tracker with rate-aware pause/resume
 - `tests/` — pytest suite (runs without GTK/display)
 - `pytest.ini` — pytest config (testpaths, pythonpath=src)
 
@@ -68,7 +69,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.41`
+- Current: `1.0.42`
 - Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
@@ -83,7 +84,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.41`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.42`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -107,6 +108,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 23. Remote URL casting: `MainWindow._cast_remote_url` validates HTTP(S) addresses with `url_control.validate_media_url`, then calls `catt -d DEVICE cast --no-subs URL` in an `Async.run` worker. Never send network URLs to `streamer.ffprobe(Path(...))`. Tests: `tests/test_url_control.py`.
 
 25. Responsive GTK4 layout: `src/responsive_layout.py` clamps startup size to monitor geometry; `MainWindow._refresh_responsive_layout` checks allocated width/height every 200 ms and reflows cards from a two-column desktop page to a single-column layout below 1180 logical pixels. One outer `Gtk.ScrolledWindow` gives vertical access to every card on short screens. Transport/action controls reattach to compact GTK grids; long metadata wraps and preview text ellipsises. Never restore forced large window minima or GTK3 window-position APIs. See `tests/test_responsive_layout.py` and `tests/test_responsive_wiring.py`.
+
+28. Playback and lifecycle reliability (v1.0.42): the GUI seekbar always measures **source-film seconds**, including at non-1× speed. FFmpeg uses `-readrate speed`, `setpts=PTS/speed` and `atempo`; convert relative HLS and encoder times via `playback_state.absolute_encoded_position(offset, elapsed, duration, speed)`. `PositionTracker` extrapolates by `rate`, with pause/resume rebasing. `_restart_at(..., speed_override=...)` must apply live speed changes (including transitions from direct mode), and HLS software fallback MUST preserve both speed and rotation. Never allow native direct play for speed or rotation transforms. Tests: `tests/test_playback_rate.py`, `tests/test_playback_state.py`, `tests/test_streamer_reliability.py`.
+
+29. Device ownership and reconnection: `catt cast` may exit after starting TV playback; direct session ownership lasts until explicit stop or confirmed device completion. The transcoder may exit before buffered TV playback ends: do not disable Stop/Pause because the FFmpeg PID finished. Ignore stale responses for a previously selected TV; prohibit switching outputs while an owned session is live. Saved direct casts must pass `playback_state.direct_session_matches` before presenting them as reconnected. Portable CI syntax/tests: `.github/workflows/verify.yml`.
 
 ## Pending work
 - Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
