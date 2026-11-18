@@ -153,6 +153,16 @@ Stop and Pause remain available while the TV consumes a completed HLS buffer. Sm
 
 The portable unit tests and syntax checks now run on pushes and pull requests via [Verify SmoothCast](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml). Actual GTK rendering and real Chromecast playback still require a local smoke test.
 
+## Opening media from another directory
+
+Running `./smoothcast relative-film.mkv` from a media directory resolves
+the filename against that directory **before** the launcher changes into the
+checkout for dependency loading. When a second command reaches an already
+running instance, `GApplicationCommandLine.get_cwd()` supplies the original
+caller's directory. This also prevents a same-named file in the checkout from
+silently replacing a missing caller file. Absolute paths and `file://` media
+URIs keep their original meaning.
+
 ## Playlists, resume and safe playback transitions
 
 **Save playlist** writes an atomic local `smoothcast_playlist.m3u` under your home directory. **Load playlist** accepts M3U comments and relative paths, skips missing/unavailable entries and removes duplicates without changing the Loop setting. The Loop menu action independently toggles repeat-one.
