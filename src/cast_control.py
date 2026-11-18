@@ -2440,6 +2440,12 @@ class MainWindow(Adw.ApplicationWindow):
             save_config(self.cfg)
         if self.busy:
             return
+        if self.session is None and not self.external and self._preview_path is not None:
+            self._unload_local_video()
+            self._preview_position = 0.0
+            self._queue_preview(0.0)
+            self._refresh_controls()
+            return
         self.busy = True
         self._refresh_controls()
         device = self._device()
@@ -2536,6 +2542,10 @@ class MainWindow(Adw.ApplicationWindow):
             stream.pause()
             self._refresh_controls()
             return
+        if stream is not None and stream.get_error() is not None:
+            self.toast(f"Local preview decoder: {stream.get_error().message}", error=True)
+            self._unload_local_video()
+            return
         if self._local_video_path != path:
             self._unload_local_video()
             self._local_start_pending = self._preview_position
@@ -2576,6 +2586,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.local_playback.stop()
         self._preview_generation += 1
         self._preview_pending = None
+        self._preview_position = offset
         self.busy = True
         self._refresh_controls()
         self._finished_handled = False
