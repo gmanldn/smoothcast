@@ -2437,6 +2437,7 @@ class MainWindow(Adw.ApplicationWindow):
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
                             subs_disabled=(subs_mode == "off"), title=title,
+                            offset=offset,
                         )
                         return session, media
                     except streamer.StreamError:
