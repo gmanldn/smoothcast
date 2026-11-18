@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import os
 import pathlib
 import platform
@@ -10,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
@@ -251,6 +253,7 @@ class MediaInfo:
     duration: float = 0.0
     width: int = 0
     height: int = 0
+    fps: float = 0.0
     vcodec: str = ""
     vprofile: str = ""
     pix_fmt: str = ""
@@ -447,6 +450,11 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
             media.pix_fmt = str(stream.get("pix_fmt") or "")
             media.width = int(stream.get("width") or 0)
             media.height = int(stream.get("height") or 0)
+            try:
+                rate = float(Fraction(str(stream.get("avg_frame_rate") or "0")))
+                media.fps = rate if math.isfinite(rate) and rate > 0 else 0.0
+            except (ValueError, ZeroDivisionError, OverflowError):
+                media.fps = 0.0
             if not media.duration:
                 try:
                     media.duration = float(stream.get("duration") or 0)
@@ -716,7 +724,11 @@ class Session:
         """Output video codec args — must come AFTER -i (output options)."""
         qp = QUALITY_QP.get(quality, 24)
         if software:
-            return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(qp + 1)]
+            # 8-bit 4:2:0 H.264/AAC is decodable by older Google Cast models.
+            # Explicitly constrain output: a 10-bit HEVC/AV1 MKV must not
+            # accidentally produce unsupported H.264 10-bit or 4:4:4 video.
+            return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(qp + 1),
+                    "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.1"]
         return [
             "-c:v", "h264_vaapi", "-profile:v", "high", "-level:v", "4.1",
             "-qp", str(qp), "-g", "96",
@@ -735,7 +747,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None) -> list[str]:
         chain: list[str] = []
         if embedded_subtitle_index is not None and embedded_source is not None:
             chain.append(f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}")
@@ -744,6 +756,8 @@ class Session:
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
+        if software and video_size and (video_size[0] > 1920 or video_size[1] > 1080):
+            chain.append("scale=w=1920:h=1080:force_original_aspect_ratio=decrease")
         # VAAPI keeps frames on GPU unless burning subtitles, so a rotation
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
@@ -790,6 +804,11 @@ class Session:
                 raise StreamError("Selected MKV subtitle track cannot be burned into video")
             burn_subs = True
         staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
+        # The baseline Google Cast H.264 profile is capped at 1080p30; large
+        # frames and high bit-depth/4:4:4 sources require a software downscale.
+        if (media.width > 1920 or media.height > 1080
+                or media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"}):
+            self.used_software_fallback = True
         software = self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
@@ -805,6 +824,7 @@ class Session:
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
+            video_size=(media.width, media.height),
         )
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
@@ -823,6 +843,8 @@ class Session:
         self.audio_chain = filters
         if filters:
             args += ["-af", ",".join(filters)]
+        if media.fps > 30.01:
+            args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
             "-f", "hls", "-hls_time", "4", "-hls_list_size", "12",
