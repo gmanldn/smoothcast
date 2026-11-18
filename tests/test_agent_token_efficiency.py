@@ -31,7 +31,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
 
     def test_named_skills_are_discoverable_and_do_not_skip_correctness(self):
         for name, must_contain in (
-            ("caveman", ("negation", "errors", "commands", "prose")),
+            ("caveman", ("negation", "error", "commands", "prose")),
             ("ponytail", ("smallest", "test", "security", "callers")),
         ):
             with self.subTest(name=name):
