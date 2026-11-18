@@ -57,14 +57,22 @@ class LocalPlayback:
         )
 
     def stop(self) -> None:
-        if self.proc is None:
+        """Stop and reap ffplay; do not leave a zombie after forced termination."""
+        proc = self.proc
+        if proc is None:
             return
         try:
-            self.proc.terminate()
-            self.proc.wait(timeout=4)
-        except Exception:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait(timeout=4)
+        except (OSError, subprocess.TimeoutExpired):
             try:
-                self.proc.kill()
-            except Exception:
+                proc.kill()
+            except OSError:
+                pass  # The process may have exited between checks.
+            try:
+                proc.wait(timeout=4)
+            except (OSError, subprocess.TimeoutExpired):
                 pass
-        self.proc = None
+        finally:
+            self.proc = None
