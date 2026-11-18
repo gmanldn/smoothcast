@@ -1244,15 +1244,22 @@ class MainWindow(Adw.ApplicationWindow):
             self.meter.reset()
 
     def _build_queue(self) -> Gtk.Box:
-        card, body = self._card("Up Next")
-        card.set_vexpand(True)
+        card, body = self._card(
+            "Up Next", "A simple queue for whatever you want to watch next."
+        )
+        card.add_css_class("queue-card")
+        card.set_vexpand(False)
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        add_button = self._icon_button("list-add-symbolic", "Add videos…", "flat", self.add_files)
-        clear_button = self._icon_button("edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue)
+        add_button = Gtk.Button(label="Add videos")
+        add_button.set_icon_name("list-add-symbolic")
+        add_button.connect("clicked", lambda _b: self.add_files())
+        clear_button = self._icon_button(
+            "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
+        )
         toolbar.append(add_button)
         toolbar.append(clear_button)
         toolbar.append(Gtk.Box(hexpand=True))
-        auto_label = Gtk.Label(label="Auto-play next")
+        auto_label = Gtk.Label(label="Auto-play")
         auto_label.add_css_class("caption")
         self.autonext_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.autonext_switch.set_active(bool(self.cfg["autonext"]))
@@ -1260,15 +1267,18 @@ class MainWindow(Adw.ApplicationWindow):
         toolbar.append(auto_label)
         toolbar.append(self.autonext_switch)
         body.append(toolbar)
+
         self.queue_summary = Gtk.Label(label="", xalign=0.0)
-        self.queue_summary.add_css_class("dim-label")
         self.queue_summary.add_css_class("caption")
         self.queue_summary.set_visible(False)
         body.append(self.queue_summary)
+
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_vexpand(True)
-        scroller.set_min_content_height(120)
+        scroller.set_min_content_height(100)
+        scroller.set_max_content_height(270)
+        scroller.set_propagate_natural_height(True)
+        self.queue_scroller = scroller
         self.queue_list = Gtk.ListBox()
         self.queue_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.queue_list.add_css_class("boxed-list")
@@ -1276,9 +1286,28 @@ class MainWindow(Adw.ApplicationWindow):
         self.queue_list.connect("row-selected", self._on_queue_selected)
         scroller.set_child(self.queue_list)
         body.append(scroller)
-        self.queue_empty = Gtk.Label(label="Queue is empty — add videos to build a playlist", wrap=True)
-        self.queue_empty.add_css_class("dim-label")
-        body.append(self.queue_empty)
+
+        # A compact, purposeful empty state instead of a 300px vacant card.
+        empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        empty.add_css_class("empty-state")
+        empty.set_halign(Gtk.Align.FILL)
+        emblem = Gtk.Image.new_from_icon_name("view-list-symbolic")
+        emblem.set_pixel_size(28)
+        emblem.add_css_class("empty-icon")
+        emblem.set_halign(Gtk.Align.CENTER)
+        empty.append(emblem)
+        title = Gtk.Label(label="Your queue is ready")
+        title.add_css_class("empty-title")
+        empty.append(title)
+        subtitle = Gtk.Label(
+            label="Add a few videos; SmoothCast will line them up here.",
+            wrap=True,
+        )
+        subtitle.set_justify(Gtk.Justification.CENTER)
+        subtitle.add_css_class("empty-subtitle")
+        empty.append(subtitle)
+        self.queue_empty = empty
+        body.append(empty)
         self._rebuild_queue()
         return card
 
@@ -2486,6 +2515,7 @@ class MainWindow(Adw.ApplicationWindow):
         for index, path in enumerate(self.queue):
             self.queue_list.append(self._queue_row(index, path))
         self.queue_empty.set_visible(not self.queue)
+        self.queue_scroller.set_visible(bool(self.queue))
         self.queue_list.set_visible(bool(self.queue))
         if (self.selected_index is not None and 0 <= self.selected_index < len(self.queue)):
             row = self.queue_list.get_row_at_index(self.selected_index)
