@@ -69,3 +69,4 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 - [x] 38. Network stream open (URL)
 - [x] 4. Playback speed presets
 - [x] 36. Sleep timer
+- [x] 46. Auto theme by time
