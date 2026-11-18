@@ -11,7 +11,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
 - **Direct play** — untouched passthrough for compatible files
 - **Subtitle support** — auto-select, burn-in, or disable
-- **Queue / Up Next** — auto-play next after the TV finishes playback and prior stream cleanup completes; drag-reorder
+- **Queue / Up Next and repeat-one** — advance or loop the current video when the TV reports completion; old stream cleanup finishes before restarting
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
 ## Quick start (self-contained)
@@ -45,6 +45,10 @@ A second launcher click raises the existing window rather than silently exiting.
 The HLS server listens on port 8767 for Chromecast access, but exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
 Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
+
+## Sleep timer
+
+The Sleep timer menu now stops the active SmoothCast session after the selected interval (15–60 minutes). The deadline is saved across application restarts, and can be cancelled with **Off**. The application must remain running for the timer to fire; closing it with Keep streaming enabled does not leave a background scheduler running.
 
 ## Automatic updates without blocking startup
 

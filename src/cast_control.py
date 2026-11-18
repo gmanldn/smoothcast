@@ -49,6 +49,7 @@ DEFAULTS: dict = {
     "loop": False,
     "playback_speed": 1.0,
     "sleep_timer_minutes": 0,
+    "sleep_timer_deadline": 0.0,
     "window_width": 1400,
     "window_height": 900,
     "window_x": -1,
@@ -912,6 +913,7 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.timeout_add(4000, self._poll_device)
         GLib.timeout_add(400, self._initial_scan)
         GLib.timeout_add(600, self._adopt_session)
+        GLib.timeout_add_seconds(5, self._sleep_tick)
 
     def _build_ui(self) -> None:
         self.set_title(APP_NAME)
@@ -1744,33 +1746,45 @@ class MainWindow(Adw.ApplicationWindow):
         self._set_levels_hint("")
         item = self.now_playing
         session, self.session = self.session, None
-        if self.cfg["autonext"] and item in self.queue:
-            index = self.queue.index(item)
-            if index + 1 < len(self.queue):
-                next_path = pathlib.Path(self.queue[index + 1])
-                self.now_playing = str(next_path)
-                self.toast(f"Up next: {next_path.name}")
+        following = playback_state.next_media(
+            item, self.queue, repeat_current=bool(self.cfg.get("loop")),
+            auto_next=bool(self.cfg.get("autonext")),
+        )
+        if following:
+            next_path = pathlib.Path(following)
+            self.now_playing = str(next_path)
+            self.toast(
+                f"Repeating: {next_path.name}" if following == item
+                else f"Up next: {next_path.name}"
+            )
 
-                def advance(_result=None):
-                    # Do not start a new transcoder while the previous session
-                    # is still deleting segments/shutting down its server.
-                    self._cast_path(next_path, 0.0)
+            def advance(_result=None):
+                # Cleanup must finish before this new stream can replace it.
+                self._cast_path(next_path, 0.0)
 
-                if session is not None:
-                    device = self._device()
-                    Async.run(
-                        lambda: session.stop(device, send_stop=False),
-                        done=advance,
-                        failed=lambda msg: self._cast_failed(f"Queue cleanup: {msg}"),
-                    )
-                else:
-                    GLib.idle_add(lambda: (advance(), False)[1])
-                return
+            if session is not None:
+                device = self._device()
+                Async.run(
+                    lambda: session.stop(device, send_stop=False),
+                    done=advance,
+                    failed=lambda msg: self._cast_failed(f"Queue cleanup: {msg}"),
+                )
+            else:
+                GLib.idle_add(lambda: (advance(), False)[1])
+            return
+
         if session is not None:
             device = self._device()
-            threading.Thread(target=lambda: session.stop(device), daemon=True).start()
-        if self.cfg.get("auto_shutdown") and not (self.cfg["autonext"] and item in self.queue and self.queue.index(item)+1 < len(self.queue)):
-            GLib.timeout_add_seconds(2, lambda: (self.get_application().quit(), False)[1])
+            # Complete any cleanup before auto-closing the application.
+            Async.run(
+                lambda: session.stop(device),
+                done=lambda _r: self.close() if self.cfg.get("auto_shutdown") else None,
+                failed=lambda message: self.toast(
+                    f"Cleanup failed: {message}", error=True,
+                ),
+            )
+        elif self.cfg.get("auto_shutdown"):
+            GLib.idle_add(lambda: (self.close(), False)[1])
         self.tracker.clear()
         self.now_playing = None
         self.toast("Finished")
@@ -2471,9 +2485,32 @@ class MainWindow(Adw.ApplicationWindow):
         self.toast(f"Speed {speed}x")
 
     def _sleep_timer(self, minutes: int) -> None:
+        minutes = max(0, int(minutes))
         self.cfg["sleep_timer_minutes"] = minutes
+        self.cfg["sleep_timer_deadline"] = playback_state.sleep_deadline(
+            time.time(), minutes,
+        )
         save_config(self.cfg)
-        self.toast(f"Sleep timer: {minutes} min" if minutes else "Sleep timer off")
+        self.toast(
+            f"Sleep timer armed: {minutes} min" if minutes
+            else "Sleep timer cancelled"
+        )
+
+    def _sleep_tick(self) -> bool:
+        deadline = self.cfg.get("sleep_timer_deadline", 0.0)
+        if not playback_state.timer_expired(deadline, time.time()):
+            return True
+        if self.busy:
+            return True  # Do not interrupt an in-flight cast command.
+        self.cfg["sleep_timer_deadline"] = 0.0
+        self.cfg["sleep_timer_minutes"] = 0
+        save_config(self.cfg)
+        if self.session is not None:
+            self.toast("Sleep timer expired — stopping cast")
+            self.stop_stream()
+        else:
+            self.toast("Sleep timer expired")
+        return True
 
     def _skip(self, delta: float) -> None:
         position = self.tracker.value()
