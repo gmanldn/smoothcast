@@ -32,6 +32,7 @@ class StreamerReliabilityTests(unittest.TestCase):
                     media, 45.0, device="TV", device_ip="192.168.1.42",
                     quality="balanced", audio_profile="original",
                     subs_file=None, burn_subs=False, title="Film",
+                    speed=1.5, rotation=90,
                 )
             self.assertTrue(session.used_software_fallback)
             self.assertEqual([call.args[0] for call in wait.call_args_list], [15, 30])
@@ -41,6 +42,12 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertIn("-hwaccel", first_args)
             self.assertNotIn("-hwaccel", second_args)
             self.assertIn("libx264", second_args)
+            # Fallback is not allowed to silently revert user's transforms.
+            self.assertIn("setpts=PTS/1.5", ",".join(second_args))
+            self.assertIn("transpose=1", ",".join(second_args))
+            self.assertIn("atempo=1.5", ",".join(second_args))
+            self.assertEqual(session.state.speed, 1.5)
+            self.assertEqual(session.state.rotation, 90)
             self.assertIn("192.168.1.23:8767", session.state.stream_url)
 
     def test_cast_route_preferred_over_other_interfaces(self):
