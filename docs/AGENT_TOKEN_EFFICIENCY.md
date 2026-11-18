@@ -25,6 +25,20 @@ Retrieve only the task-relevant reference sections; reading the archive
 every session forfeits the benefit. New architecture and process rules belong
 in compact root instructions or focused docs, not a growing global prompt.
 
+## Current hierarchical handbook (18 November 2026)
+
+After the initial 3,625-character front door, the expanding root was trimmed
+again from **5,469 to 1,917 characters (40 lines)**, a further **64.9% fewer
+characters at agent startup**. Detailed rules now live under
+[docs/agents/](agents/README.md), organised by workflow, testing safety,
+architecture and efficiency. The complete older contract remains in
+[AGENT_REFERENCE.md](AGENT_REFERENCE.md) for selective historical lookup.
+
+The older 30,316-character baseline represents an **approximately 93.7%
+reduction** in what an agent reads if it loads only the current root.
+These are measured text sizes, not model token counts or a claim of reduced
+end-to-end bills; domain pages should be read only when needed.
+
 ## Measured GUI module sizes
 
 The GTK window was one **200,282-byte (4,566-line)** `cast_control.py`, so a
