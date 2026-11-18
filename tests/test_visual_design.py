@@ -64,7 +64,7 @@ class VisualDesignTests(unittest.TestCase):
             'card.add_css_class("device-card")',
             'card.add_css_class("diagnostics-card")',
             'self._set_device_badge("STREAMING", "online")',
-            'self.queue_scroller.set_visible(bool(self.queue))',
+            'self.queue_scroller.set_visible(bool(visible))',
             'self.console_empty.set_visible(not has_activity)',
             'self.preview = PreviewScreen()',
         ):
