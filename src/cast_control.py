@@ -67,6 +67,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False
         self.scan_busy = False
+        self._scan_again = False
         self.queue: list[str] = []
         self.queue_durations: dict[str, float] = {}
         self.now_playing: str | None = None
