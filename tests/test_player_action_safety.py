@@ -50,6 +50,27 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("def failed(message):", code)
         self.assertIn("done=cleaned, failed=failed", code)
 
+    def test_encoder_exit_does_not_release_cast_ownership(self):
+        # FFmpeg can finish writing the HLS stream while the Chromecast still
+        # consumes buffered segments. UI ownership must follow session state.
+        controls = self.methods["_refresh_controls"]
+        self.assertIn(
+            "not (self.session is not None and self.session.state is not None)",
+            controls,
+        )
+        self.assertIn(
+            "if session is None or session.state is None:",
+            self.methods["seek_to"],
+        )
+        self.assertIn(
+            "self.session and self.session.state is not None",
+            self.methods["_remove_queue"],
+        )
+        self.assertIn(
+            "self.external = False  # Completed encoder",
+            self.methods["_detect_external"],
+        )
+
     def test_explicit_start_and_resume_are_distinct(self):
         gui = self.methods["_cast_path"]
         self.assertIn("offset: float | None = None", gui)
