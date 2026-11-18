@@ -31,7 +31,7 @@ class CaptureClockTests(unittest.TestCase):
         )
         namespace = {"Async": FakeAsync, "pathlib": pathlib, "screenshot": screenshot}
         code = main_window_methods()["_screenshot"]
-        exec(compile("class Window:\\n" + textwrap.indent(code, "    "),
+        exec(compile("class Window:\n" + textwrap.indent(code, "    "),
                      "<screenshot-window>", "exec"), namespace)
         win = namespace["Window"]()
         win.media = SimpleNamespace(path=Path("/fixtures/film.mkv"),
