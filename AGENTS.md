@@ -40,6 +40,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/ui_theme.py` — contrast-conscious GTK4 colour/typography/design tokens and stylesheet
 - `src/utils.py` — pure text helpers (pretty_title)
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH)
+- `src/cli.py` — GTK-free console entry point; reports --version before importing the GUI
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
@@ -57,6 +58,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - All blocking I/O (castctl, ffmpeg, network) runs in background threads via `Async.run()` and is marshalled back to the main thread with `GLib.idle_add()`. The main thread never blocks — the UI stays responsive at all times.
 - The compressor (`acompressor` + `alimiter`) lives in `streamer.py:AUDIO_FILTERS` and is applied **only** in the ffmpeg transcode chain that produces the HLS stream sent to the Chromecast. It does **not** affect local machine audio, the original file, or any other application.
 - The audio monitor (`audio_monitor.py`) runs a separate read-only ffmpeg pass for metering; it never touches playback.
+- Audio track identity is relative to audio streams: `0:a:N`. `MediaInfo.audio_streams` records languages, titles, codecs, layouts; `SessionState.audio_track_index` carries an explicit per-file selection through HLS restart and VAAPI fallback. When explicitly chosen, do not use direct Cast passthrough; select the same track for the read-only audio meter.
 - UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
 - Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks the user to restart after playback. The network must never delay startup.
 - Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
@@ -86,7 +88,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
 - Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
 - Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
-- All 18 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
+- All 19 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
 - `src/version.py` is the sole version authority; `[project] dynamic = ["version"]` and `[tool.setuptools.dynamic] version = {attr = "version.__version__"}` are required. The `cli:main` entry point exposes the running version without GTK.
 
 ## UI features
