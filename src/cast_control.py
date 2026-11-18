@@ -21,6 +21,7 @@ import audio_monitor
 import screenshot
 import responsive_layout
 import playback_state
+import playlist_control
 import url_control
 import update_control
 import version
@@ -733,6 +734,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
+        self.update_notice: str | None = None
         self.local_playback = local_playback.LocalPlayback()
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
@@ -767,9 +769,15 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.timeout_add_seconds(5, self._sleep_tick)
 
     def _build_ui(self) -> None:
-        self.set_title(APP_NAME)
+        # Keep the *running* release in the prominent title, not an easily
+        # truncated device/status subtitle or a live on-disk git lookup.
+        self.set_title(f"{APP_NAME} {version.label()}")
         header = Adw.HeaderBar()
-        self.title_widget = Adw.WindowTitle(title=APP_NAME, subtitle=f"{self.cfg['device']}  ·  v{version.__version__}")
+        self.title_widget = Adw.WindowTitle(
+            title=f"{APP_NAME} {version.label()}",
+            subtitle=f"{self.cfg['device']} · idle",
+        )
+        self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.label()}")
         header.set_title_widget(self.title_widget)
         _icon_path = pathlib.Path(__file__).resolve().parent.parent / "data" / "cast-control.png"
         if _icon_path.exists():
@@ -1874,6 +1882,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._set_levels_hint("")
         item = self.now_playing
         session, self.session = self.session, None
+        # Completing a movie is still a lifecycle transition: the old
+        # session is tearing down its server and deleting shared HLS files.
+        # Block new commands until that cleanup has finished.
+        self.busy = session is not None
+        self._refresh_controls()
         following = playback_state.next_media(
             item, self.queue, repeat_current=bool(self.cfg.get("loop")),
             auto_next=bool(self.cfg.get("autonext")),
@@ -1887,7 +1900,9 @@ class MainWindow(Adw.ApplicationWindow):
             )
 
             def advance(_result=None):
-                # Cleanup must finish before this new stream can replace it.
+                # Release the guard only after the old HLS files and server
+                # are gone. The fresh _cast_path acquires it again.
+                self.busy = False
                 self._cast_path(next_path, 0.0)
 
             if session is not None:
@@ -1903,13 +1918,23 @@ class MainWindow(Adw.ApplicationWindow):
 
         if session is not None:
             device = self._device()
-            # Complete any cleanup before auto-closing the application.
+            def cleaned(_result):
+                self.busy = False
+                if self.cfg.get("auto_shutdown"):
+                    self.close()
+                else:
+                    self._refresh_controls()
+
+            def failed(message):
+                self.busy = False
+                self.toast(f"Cleanup failed: {message}", error=True)
+                self._refresh_controls()
+
+            # The receiver already reported IDLE. Never send an extra STOP
+            # that could interrupt another app's newly started playback.
             Async.run(
-                lambda: session.stop(device),
-                done=lambda _r: self.close() if self.cfg.get("auto_shutdown") else None,
-                failed=lambda message: self.toast(
-                    f"Cleanup failed: {message}", error=True,
-                ),
+                lambda: session.stop(device, send_stop=False),
+                done=cleaned, failed=failed,
             )
         elif self.cfg.get("auto_shutdown"):
             GLib.idle_add(lambda: (self.close(), False)[1])
@@ -1976,7 +2001,13 @@ class MainWindow(Adw.ApplicationWindow):
         state = labels.get(self.device_state, "idle")
         if self.external and state not in {"offline", "idle"}:
             state = "playing on TV"
-        self.title_widget.set_subtitle(f"{self._device()} · {state} · v{version.__version__}")
+        subtitle = f"{self._device()} · {state}"
+        tooltip = f"Running {APP_NAME} {version.label()}"
+        if self.update_notice:
+            subtitle += " · restart to update"
+            tooltip += f"\n{self.update_notice}"
+        self.title_widget.set_subtitle(subtitle)
+        self.title_widget.set_tooltip_text(tooltip)
 
     def _set_chip(self, label: str, kind: str) -> None:
         for existing in ("idle", "playing", "paused", "buffering", "offline", "error"):
@@ -2276,7 +2307,9 @@ class MainWindow(Adw.ApplicationWindow):
             if self.device_state == "OFFLINE":
                 self.toast("Device is offline", error=True)
             return
-        if not (self.session and self.session.active()) and not self.external and self.now_playing is None:
+        if self.session is None and not self.external:
+            # No owned player exists yet: cast the selected local file rather
+            # than sending a 'resume' command to an unrelated TV receiver.
             self.cast_selected()
             return
         device = self._device()
@@ -2350,7 +2383,7 @@ class MainWindow(Adw.ApplicationWindow):
         if path is None:
             self.open_video()
             return
-        self._cast_path(pathlib.Path(path), 0.0)
+        self._cast_path(pathlib.Path(path), None)
 
     def _selected_path(self) -> str | None:
         if self.now_playing:
@@ -2378,11 +2411,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._refresh_controls()
         self.toast("Playing locally")
 
-    def _cast_path(self, path: pathlib.Path, offset: float) -> None:
-        if offset == 0.0:
-            saved = (self.cfg.get("positions") or {}).get(str(path))
-            if saved:
-                offset = float(saved)
+    def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
+        # None means "resume saved position"; explicit 0 is always rewind.
+        # This avoids a seek-to-start silently jumping to a previous stop.
+        offset = playback_state.start_offset(
+            offset, (self.cfg.get("positions") or {}).get(str(path)),
+        )
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -2423,6 +2457,7 @@ class MainWindow(Adw.ApplicationWindow):
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
                             subs_disabled=(subs_mode == "off"), title=title,
+                            offset=offset,
                         )
                         return session, media
                     except streamer.StreamError:
@@ -2653,29 +2688,35 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.fullscreen()
 
+    def _toggle_loop(self) -> None:
+        """The Loop menu action changes only repeat-one, never playlist I/O."""
+        self.cfg["loop"] = not bool(self.cfg.get("loop", False))
+        save_config(self.cfg)
+        self.toast("Repeat current video on" if self.cfg["loop"] else "Repeat off")
+
     def _save_playlist(self) -> None:
-        if not self.queue:
-            self.toast("Queue is empty", error=True)
+        path = pathlib.Path.home() / "smoothcast_playlist.m3u"
+        try:
+            playlist_control.save_playlist(path, self.queue)
+        except playlist_control.PlaylistError as exc:
+            self.toast(str(exc), error=True)
             return
-        out = pathlib.Path.home() / "smoothcast_playlist.m3u"
-        out.write_text("#EXTM3U\n" + "\n".join(self.queue) + "\n")
-        self.toast(f"Playlist saved: {out.name}")
+        self.toast(f"Playlist saved: {path.name} ({len(self.queue)} videos)")
 
     def _load_playlist(self) -> None:
         path = pathlib.Path.home() / "smoothcast_playlist.m3u"
-        if not path.is_file():
-            self.toast("No saved playlist", error=True)
+        try:
+            loaded, skipped = playlist_control.load_playlist(path)
+        except playlist_control.PlaylistError as exc:
+            self.toast(str(exc), error=True)
             return
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                if line not in self.queue:
-                    self.queue.append(line)
-        self.queue_draw()
-        self.toast("Playlist loaded")
-        self.cfg["loop"] = not self.cfg.get("loop", False)
-        save_config(self.cfg)
-        self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
+        additions = [item for item in loaded if item not in self.queue]
+        if additions:
+            self._enqueue(additions)
+        self.toast(
+            f"Playlist: {len(additions)} added"
+            + (f", {skipped} missing or invalid" if skipped else "")
+        )
 
     def _toggle_theater(self) -> None:
         if self.is_maximized():
@@ -2755,8 +2796,9 @@ class MainWindow(Adw.ApplicationWindow):
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index > 0:
-                self.now_playing = self.queue[index - 1]
-                self._cast_path(pathlib.Path(self.now_playing), 0.0)
+                # Don't change now_playing until _cast_path actually succeeds;
+                # an in-flight command can reject a new cast as busy.
+                self._cast_path(pathlib.Path(self.queue[index - 1]), 0.0)
                 return
         if self.now_playing:
             self.seek_to(0.0)
@@ -2765,8 +2807,7 @@ class MainWindow(Adw.ApplicationWindow):
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index + 1 < len(self.queue):
-                self.now_playing = self.queue[index + 1]
-                self._cast_path(pathlib.Path(self.now_playing), 0.0)
+                self._cast_path(pathlib.Path(self.queue[index + 1]), 0.0)
 
     # ---------- queue ----------
 
@@ -2825,9 +2866,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_queue_activated(self, _list, row) -> None:
         index = row.get_index()
-        if index < len(self.queue):
-            self.now_playing = self.queue[index]
-            self._cast_path(pathlib.Path(self.now_playing), 0.0)
+        if 0 <= index < len(self.queue):
+            self._cast_path(pathlib.Path(self.queue[index]), None)
 
     def _on_queue_selected(self, _list, row) -> None:
         self.selected_index = row.get_index() if row is not None else None
@@ -2926,7 +2966,7 @@ class MainWindow(Adw.ApplicationWindow):
         path = gfile.get_path()
         if path:
             self.set_selection(path)
-            self._cast_path(pathlib.Path(path), 0.0)
+            self._cast_path(pathlib.Path(path), None)
 
     def set_selection(self, path: str) -> None:
         if path not in self.queue:
@@ -3107,7 +3147,7 @@ class MainWindow(Adw.ApplicationWindow):
             path = pathlib.Path(recents[index])
             if path.is_file():
                 self.set_selection(str(path))
-                self._cast_path(path, 0.0)
+                self._cast_path(path, None)
             else:
                 self.toast("That file has moved or been deleted", error=True)
 
@@ -3533,9 +3573,18 @@ class CastControlApp(Adw.Application):
             pathlib.Path(__file__).resolve().parent.parent,
         )
         if notice:
-            # All GTK work stays on the main loop.
-            GLib.idle_add(lambda: (self.window.toast(notice), False)[1]
-                          if self.window is not None else False)
+            # All GTK work stays on the main loop; the version displayed in
+            # the title remains the imported *running* release until restart.
+            GLib.idle_add(self._present_update_notice, notice)
+
+    def _present_update_notice(self, notice: str) -> bool:
+        window = self.window
+        if window is not None:
+            window.update_notice = notice
+            window._update_header_subtitle()
+            window._console(notice)
+            window.toast(notice)
+        return False
 
     def _selftest_quit(self) -> bool:
         print("SELFTEST: window built successfully")
@@ -3584,6 +3633,9 @@ class CastControlApp(Adw.Application):
 
 
 def main() -> int:
+    if sys.argv[1:] in (["--version"], ["-V"]):
+        print(f"{APP_NAME} {version.label()}")
+        return 0
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
 

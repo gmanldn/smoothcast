@@ -157,11 +157,14 @@ def cleanup_before_window(
     _stop_orphans([p for p in processes if p.pid not in protected],
                   proc_root, report, grace)
 
-    if not report.retained_stream:
-        # Never recursively remove the cache, logs, config or user media.
+    if not report.retained_stream or (state is not None and state.mode == "direct"):
+        # A retained direct cast needs session.json, but none of the obsolete
+        # HLS artefacts. Leave diagnostic logs and all user media untouched.
         root = streamer.ROOT
-        files = [streamer.SESSION_FILE, streamer.PROGRESS_FILE,
-                 root / streamer.HLS_NAME, *root.glob(streamer.SEGMENT_GLOB)]
+        files = [streamer.PROGRESS_FILE, root / streamer.HLS_NAME,
+                 *root.glob(streamer.SEGMENT_GLOB)]
+        if not report.retained_stream:
+            files.insert(0, streamer.SESSION_FILE)
         for file in files:
             try:
                 if file.is_file():
@@ -170,8 +173,9 @@ def cleanup_before_window(
             except OSError as exc:
                 report.errors.append(f"cleanup {file.name}: {exc}")
 
-    # Meter temp files are private but can remain after a forced exit. Do
-    # not touch recent directories or any referenced by a surviving monitor.
+    # A crash seconds before startup must not leave temporary meter debris.
+    # Only remove our own directories, never those referenced by a still-live
+    # monitor; never follow symlinks.
     scratch_root = temp_root if temp_root is not None else Path(tempfile.gettempdir())
     surviving = [p for p in processes if p.kind == "monitor"
                  and p.pid not in report.stopped]
@@ -179,12 +183,11 @@ def cleanup_before_window(
         candidates = list(scratch_root.glob("cast-mon-*"))[:256]
     except OSError:
         candidates = []
-    cutoff = time.time() - 120
     for folder in candidates:
         try:
             stat = folder.lstat()
             if (not folder.is_dir() or folder.is_symlink()
-                    or stat.st_uid != os.getuid() or stat.st_mtime > cutoff):
+                    or stat.st_uid != os.getuid()):
                 continue
             if any(str(folder) in " ".join(p.argv) for p in surviving):
                 continue

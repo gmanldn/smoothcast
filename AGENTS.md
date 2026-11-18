@@ -4,7 +4,7 @@
 - **Commit after every meaningful change.** User loses work if not committed. Run `git add -A && git commit -m "..."` frequently.
 - **Commit at least every ~10,000 lines of code or so**, even if the change is small, so work is never lost.
 - Never ask the user for confirmation to commit — just do it.
-- **Version counter:** `src/version.py` holds `__version__` = `1.0.x`. Increment the patch number (`x`) on **every single commit**. This makes every build traceable to a specific commit.
+- **Version authority:** `src/version.py` alone defines MAJOR/MINOR/PATCH and `__version__`. Bump the semantic release once when publishing a coherent release; use the Git commit SHA to identify individual intermediate commits. Never duplicate a hardcoded *current* version in documentation, the launcher, GTK labels, or tests.
 - Keep responses short and technical. No preamble, no postamble.
 
 ## Project
@@ -43,6 +43,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
+- `src/startup_cleanup.py` — primary-instance pre-window cleanup of orphaned SmoothCast subprocesses and scratch data
 - `src/position_tracker.py` — authoritative source-time tracker with rate-aware pause/resume
 - `tests/` — pytest suite (runs without GTK/display)
 - `pytest.ini` — pytest config (testpaths, pythonpath=src)
@@ -55,6 +56,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
 - Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks the user to restart after playback. The network must never delay startup.
 - Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
+- On a **new primary application startup only**, `startup_cleanup.cleanup_before_window()` runs synchronously with a bounded SIGTERM grace period **before** MainWindow creates session, meter and polling workers. It must be skipped for `--self-test`, existing-instance activation, and non-Linux process discovery. Never indiscriminately `pkill ffmpeg` or `pkill python`: match same-user `/proc` argv plus starttime to prevent PID reuse accidents. Preserve a verified stream when `keep_streaming` is enabled, and never send a startup stop command to the TV.
 - Graceful error handling: `main()` wraps `app.run()` in try/except.
 
 ## Testing (portable, GTK-free)
@@ -67,10 +69,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
 - Path: `~/.config/cast-control/errors.log`.
 
-## Version
-- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit. Keep `pyproject.toml` `version` in sync.
-- Current: `1.0.45`
-- Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+## Version — canonical source and release discipline
+- **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
+- **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
+- **User-visible:** `./smoothcast --version`, `./sc.py --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
+- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version; the update notice distinguishes that from a newer *downloaded* version and announces that a restart is required.
+- **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
 - `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`.
@@ -84,12 +88,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Error handling: `main()` wraps `app.run()` in try/except; GApplication handles repeat activation.
 - Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
 - Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 1200x800 with default 1400x900, no fixed widths preventing scaling.
-- Version number shown on front page: header subtitle displays `device · vX.Y.Z`.
+- Version number is prominent in the window **title**, e.g. `SmoothCast vX.Y.Z`; the subtitle shows current device/state and a restart reminder only when updated files have been downloaded.
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.43`.
+3. Canonical version: `src/version.py` controls runtime/CLI/About strings; a separate Git SHA identifies the precise commit, and the release version is advanced at release cutover.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -119,6 +123,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 29. Device ownership and reconnection: `catt cast` may exit after starting TV playback; direct session ownership lasts until explicit stop or confirmed device completion. The transcoder may exit before buffered TV playback ends: do not disable Stop/Pause because the FFmpeg PID finished. Ignore stale responses for a previously selected TV; prohibit switching outputs while an owned session is live. Saved direct casts must pass `playback_state.direct_session_matches` before presenting them as reconnected. Portable CI syntax/tests: `.github/workflows/verify.yml`.
 
 30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Reconfirm any prior `GtkBox min > natural` warnings on the running desktop before claiming full resolution.
+
+31. Clean startup recovery (v1.0.45): `CastControlApp.do_startup()` scans only the current user's verified old SmoothCast FFmpeg (HLS encoder and audio analysis), ffplay preview and HLS server commands before constructing a window. Recheck PID **start ticks and full argv** before signalling with bounded SIGTERM/SIGKILL. Remove stale playlist, segments, progress and orphaned `cast-mon-*` scratch directories without disturbing logs or user media. If `keep_streaming` is enabled, preserve saved live direct casts and verified HLS server/encoder processes for `_adopt_session()`. Single-instance repeat activation and self-tests MUST NEVER run cleanup. Tests: `tests/test_startup_cleanup.py`.
 
 ## User's requests (pending)
 1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.

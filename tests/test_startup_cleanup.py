@@ -117,6 +117,8 @@ class StartupCleanupTests(unittest.TestCase):
         with TemporaryDirectory() as d:
             root = Path(d)
             (root / "session.json").write_text("keep me")
+            (root / "movie.m3u8").write_text("old stream")
+            (root / "segment-00001.ts").write_text("old segment")
             state = streamer.SessionState(
                 file="/x", mode="direct", offset=0, duration=10,
                 device="TV", title="Film",
@@ -124,12 +126,16 @@ class StartupCleanupTests(unittest.TestCase):
             with mock.patch.object(cleanup, "discover", return_value=[]), \
                  mock.patch.object(streamer, "load_session", return_value=state), \
                  mock.patch.object(streamer, "ROOT", root), \
-                 mock.patch.object(streamer, "SESSION_FILE", root / "session.json"):
+                 mock.patch.object(streamer, "SESSION_FILE", root / "session.json"), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"):
                 report = cleanup.cleanup_before_window(
                     keep_streaming=True, temp_root=root,
                 )
             self.assertTrue(report.retained_stream)
             self.assertTrue((root / "session.json").exists())
+            self.assertFalse((root / "movie.m3u8").exists())
+            self.assertFalse((root / "segment-00001.ts").exists())
+            self.assertEqual(report.files_removed, 2)
 
     def test_pid_reuse_never_receives_a_signal(self):
         p = process(100, "server")
@@ -184,7 +190,7 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertEqual(found.start_ticks, 7319)
             self.assertEqual(found.kind, "encoder")
 
-    def test_only_old_owned_meter_directories_are_removed(self):
+    def test_only_owned_orphan_meter_directories_are_removed(self):
         with TemporaryDirectory() as d:
             root = Path(d)
             old = root / "cast-mon-old"
@@ -203,9 +209,9 @@ class StartupCleanupTests(unittest.TestCase):
                 report = cleanup.cleanup_before_window(
                     keep_streaming=False, temp_root=root,
                 )
-            self.assertEqual(report.temp_dirs_removed, 1)
+            self.assertEqual(report.temp_dirs_removed, 2)
             self.assertFalse(old.exists())
-            self.assertTrue(fresh.exists())
+            self.assertFalse(fresh.exists())
             self.assertTrue(unrelated.exists())
 
     def test_primary_only_startup_wiring_and_selftest_exclusion(self):

@@ -83,6 +83,43 @@ class StreamerReliabilityTests(unittest.TestCase):
                 )
             self.assertEqual(session.state.audio, "original")
 
+    def test_direct_resume_seeks_tv_and_records_real_offset(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            media = streamer.MediaInfo(path=Path(work) / "movie.mp4", duration=90.0)
+            session = streamer.Session()
+            caster = mock.MagicMock()
+            caster.poll.return_value = 0
+            caster.returncode = 0
+            with mock.patch.object(streamer, "_save_session"), \
+                 mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=caster), \
+                 mock.patch.object(streamer.castctl, "seek", return_value=(True, "")) as seek:
+                session.start_direct(
+                    media, device="TV", title="Film", subs_file=None,
+                    subs_disabled=True, offset=51.25,
+                )
+            seek.assert_called_once_with("TV", 51.25)
+            self.assertEqual(session.state.offset, 51.25)
+
+    def test_failed_direct_resume_can_fall_back_to_transcoder(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            media = streamer.MediaInfo(path=Path(work) / "movie.mp4", duration=90.0)
+            session = streamer.Session()
+            caster = mock.MagicMock()
+            caster.poll.return_value = 0
+            caster.returncode = 0
+            with mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=caster), \
+                 mock.patch.object(streamer.castctl, "seek", return_value=(False, "Not seekable")):
+                with self.assertRaisesRegex(streamer.StreamError, "Direct resume seek failed"):
+                    session.start_direct(
+                        media, device="TV", title="Film", subs_file=None,
+                        subs_disabled=True, offset=51.25,
+                    )
+            self.assertIsNone(session.state)  # caller may recover using HLS.
+
     def test_cast_route_preferred_over_other_interfaces(self):
         fake = mock.MagicMock()
         fake.__enter__.return_value = fake

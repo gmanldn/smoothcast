@@ -80,3 +80,17 @@ def direct_session_matches(info: dict | None, saved_title: str) -> bool:
     if current_title and saved_title and current_title.casefold() != saved_title.casefold():
         return False
     return True
+
+
+def start_offset(requested: float | None, saved: object = None) -> float:
+    """Resolve source timeline start without confusing explicit 0 with resume.
+
+    None requests a remembered resume position; any explicit number, including
+    0.0, overrides it. Treat malformed saved configuration as zero.
+    """
+    candidate = saved if requested is None else requested
+    try:
+        value = float(candidate)
+    except (ValueError, TypeError, OverflowError):
+        return 0.0
+    return max(0.0, value) if math.isfinite(value) else 0.0

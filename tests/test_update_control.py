@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import update_control
+import version
 
 
 class UpdateControlTests(unittest.TestCase):
@@ -28,6 +29,44 @@ class UpdateControlTests(unittest.TestCase):
                 self.assertIn("restart", update_control.refresh_checkout(repo))
                 self.assertEqual(run.call_args.kwargs["cwd"], repo)
                 self.assertEqual(run.call_args.kwargs["timeout"], 8)
+
+    def test_downloaded_release_is_distinct_from_running_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / ".git").mkdir()
+            (repo / "src").mkdir()
+            (repo / "src/version.py").write_text(
+                f"MAJOR = {version.MAJOR}\nMINOR = {version.MINOR}\n"
+                f"PATCH = {version.PATCH + 1}\n", encoding="utf-8",
+            )
+            result = subprocess.CompletedProcess(
+                ["git"], 0, "Updating abc..def\nFast-forward\n", "",
+            )
+            with mock.patch.object(update_control.subprocess, "run", return_value=result):
+                notice = update_control.refresh_checkout(repo)
+            self.assertIn(f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1} downloaded", notice)
+            self.assertIn(f"running {version.label()}", notice)
+            self.assertIn("Restart", notice)
+
+    def test_same_release_code_update_does_not_claim_new_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / ".git").mkdir()
+            (repo / "src").mkdir()
+            (repo / "src/version.py").write_text(
+                f"MAJOR = {version.MAJOR}\nMINOR = {version.MINOR}\n"
+                f"PATCH = {version.PATCH}\n", encoding="utf-8",
+            )
+            result = subprocess.CompletedProcess(
+                ["git"], 0, "Updating abc..def\nFast-forward\n", "",
+            )
+            with mock.patch.object(update_control.subprocess, "run", return_value=result):
+                notice = update_control.refresh_checkout(repo)
+            self.assertIn("code updated", notice)
+            self.assertIn(f"running {version.label()}", notice)
+            self.assertNotIn(
+                f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1}", notice,
+            )
 
     def test_already_current_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
