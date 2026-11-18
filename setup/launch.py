@@ -44,7 +44,7 @@ def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, 
     if target == "windows":
         root = (Path(str(record["prefix"])) if record else
                 Path(initial.get("MSYS2_ROOT") or
-                     initial.get("SystemDrive", "C:") + "\\\\msys64"))
+                     initial.get("SystemDrive", "C:") + "\\msys64"))
         ucrt = root / "ucrt64"
         if record and not (ucrt / "bin" / "python.exe").is_file():
             raise RuntimeError(
