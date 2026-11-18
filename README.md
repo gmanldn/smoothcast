@@ -178,10 +178,10 @@ git pull --ff-only
 bash setup/linuxsetup.sh
 python3 scripts/install_desktop.py --pin
 python3 scripts/install_desktop.py --check
-gtk-launch local.cast-control
+grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
-The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. `gtk-launch` verifies the actual desktop entry rather than merely launching a terminal command.
+The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. The read-only `--check` and `grep` commands validate the desktop entry **without launching a window or stealing focus**.
 
 To diagnose an old version or repeated launch, compare the checkout version with the dock's actual executable:
 
@@ -200,7 +200,7 @@ A dependency repair now installs from `pyproject.toml`, not a missing
 `requirements.txt`; repair failures print the actual error rather than
 pretending that the same release installed again.
 
-If `gtk-launch` cannot find the entry, log out and back in to refresh GNOME's application cache. If the window still fails, run `python3 sc.py` from the same checkout in a terminal to see dependency errors; on GNOME, also inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
+If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `python3 sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
