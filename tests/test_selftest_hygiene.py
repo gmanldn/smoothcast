@@ -59,6 +59,25 @@ class SelfTestHygieneTests(unittest.TestCase):
         ]
         self.assertTrue(finally_calls, "self.quit() must run in a finally block")
 
+    def test_isolated_runner_seeds_and_verifies_private_state(self):
+        # The opt-in Xvfb runner must plant a saved cast and an expired sleep
+        # timer in its private home and fail if --self-test touches either.
+        runner = (ROOT / "scripts" / "test_gui_isolated.py").read_text(encoding="utf-8")
+        self.assertIn("seed_isolated_state", runner)
+        self.assertIn("sleep_timer_deadline", runner)
+        self.assertIn("session.json", runner)
+        self.assertIn("touched seeded state", runner)
+
+    def test_selftest_skips_discovery_adoption_and_timers(self):
+        init = next(node for node in _class("MainWindow").body
+                    if isinstance(node, ast.FunctionDef) and node.name == "__init__")
+        segment = ast.get_source_segment(SOURCE, init)
+        self.assertIn("if not app.selftest:", segment)
+        guarded = segment[segment.index("if not app.selftest:"):]
+        for scheduled in ("self._tick", "_refresh_responsive_layout", "_meter_tick",
+                          "_poll_device", "_initial_scan", "_adopt_session", "_sleep_tick"):
+            self.assertIn(scheduled, guarded)
+
     def test_selftest_failure_is_reported_as_nonzero(self):
         main_fn = next(node for node in TREE.body
                        if isinstance(node, ast.FunctionDef) and node.name == "main")

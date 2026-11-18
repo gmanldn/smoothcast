@@ -53,6 +53,31 @@ def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) ->
     return env
 
 
+def seed_isolated_state(scratch: Path, env: dict[str, str]) -> dict[str, Path]:
+    """Plant a saved cast and an expired sleep timer in the private home.
+
+    The window must build without adopting the cast, scanning the LAN or
+    consuming the timer; the seeded files must be left byte-identical.
+    """
+    config_dir = Path(env["XDG_CONFIG_HOME"]) / "cast-control"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config = config_dir / "config.json"
+    config.write_text(
+        '{"device": "Seeded TV", "sleep_timer_minutes": 30,'
+        ' "sleep_timer_deadline": 1.0}\n',
+        encoding="utf-8",
+    )
+    session_dir = Path(env["HOME"]) / ".cache" / "cast-control"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session = session_dir / "session.json"
+    session.write_text(
+        '{"file": "/seeded/film.mkv", "mode": "transcode", "offset": 0,'
+        ' "duration": 10, "device": "Seeded TV", "title": "Seeded Film"}\n',
+        encoding="utf-8",
+    )
+    return {"config": config, "session": session}
+
+
 def main() -> int:
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
@@ -70,6 +95,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="smoothcast-xvfb-") as folder:
         scratch = Path(folder)
         env = isolated_environment(scratch)
+        seeded = seed_isolated_state(scratch, env)
+        before = {name: path.read_bytes() for name, path in seeded.items()}
         command = [
             shutil.which("xvfb-run"), "-a", "-s",
             "-screen 0 1280x800x24 -nolisten tcp",
@@ -82,13 +109,20 @@ def main() -> int:
             process = subprocess.Popen(command, cwd=ROOT, env=env,
                                        start_new_session=True)
             try:
-                return process.wait(timeout=MAX_SECONDS)
+                code = process.wait(timeout=MAX_SECONDS)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
                 print(f"GUI self-test exceeded {MAX_SECONDS}s; terminated.",
                       file=sys.stderr)
                 return 124
+            after = {name: path.read_bytes() for name, path in seeded.items()}
+            changed = [name for name in before if before[name] != after[name]]
+            if changed:
+                print("GUI self-test touched seeded state: " + ", ".join(changed),
+                      file=sys.stderr)
+                return 3
+            return code
         except OSError as exc:
             print(f"GUI self-test could not start: {exc}", file=sys.stderr)
             return 2

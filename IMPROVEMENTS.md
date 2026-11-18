@@ -220,6 +220,14 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #52 — The GTK self-test is isolated from real sessions:**
+  `MainWindow.__init__` already schedules polling, discovery, adoption,
+  responsive-layout, meter and sleep timers only under `if not
+  app.selftest:`. The opt-in `scripts/test_gui_isolated.py` runner now
+  seeds a saved cast (`session.json`) and an expired sleep timer in its
+  private home and fails (exit 3) if the self-test touches either, so a
+  bare `--self-test` cannot adopt, scan or consume the timer. Source-level
+  guards added in `tests/test_selftest_hygiene.py`.
 - **P0 #58 — HLS casts recover while final segments drain:** the existing
   `recoverable_hls()` path already requires a finalised playlist whose
   referenced `segment-N.ts` files exist and are non-empty, plus a healthy
