@@ -73,6 +73,14 @@ Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and 
 
 The Sleep timer menu now stops the active SmoothCast session after the selected interval (15–60 minutes). The deadline is saved across application restarts, and can be cancelled with **Off**. The application must remain running for the timer to fire; closing it with Keep streaming enabled does not leave a background scheduler running.
 
+## Clean startup and orphan recovery
+
+When a **new primary SmoothCast process** launches, it recovers from any old crashed session *before constructing the GTK window*. Linux process checks identify only this user's SmoothCast-owned HLS server, FFmpeg encoder, FFmpeg audio-monitor and ffplay preview helpers. The check verifies command-line signatures and process start times before sending SIGTERM, escalating only stubborn verified leftovers. This is not a blanket kill of other FFmpeg, Python or catt jobs.
+
+The recovery clears stale HLS playlist/segments, progress metadata and orphaned audio-meter scratch directories. Configuration, diagnostic logs and video files are retained. An existing cast deliberately left playing through **Keep streaming after closing** is preserved and reattached normally; a direct cast keeps its session record but drops unused HLS output. A second click on the dock simply raises the existing application and never repeats cleanup. `--self-test` also skips recovery to avoid disturbing your running session.
+
+Startup recovery reports its actions in the terminal and the application's activity console. Pure-Python regression checks: `python3 -m unittest tests.test_startup_cleanup -v` (or the complete suite with `python3 -m unittest discover -s tests -v`).
+
 ## Automatic updates without blocking startup
 
 Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
