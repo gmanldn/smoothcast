@@ -14,7 +14,8 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — auto-select, burn-in, or disable
-- **Queue / Up Next and repeat-one** — advance or loop the current video when the TV reports completion; old stream cleanup finishes before restarting
+- **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
+- **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
 ## Quick start (self-contained)
@@ -43,6 +44,14 @@ Speed and rotation selections are preserved if the VAAPI encoder stalls and rest
 Stop and Pause remain available while the TV consumes a completed HLS buffer. SmoothCast also rejects outdated device replies and avoids switching TV targets mid-cast. A saved direct cast is only reattached when the Chromecast still reports compatible playback.
 
 The portable unit tests and syntax checks now run on pushes and pull requests via [Verify SmoothCast](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml). Actual GTK rendering and real Chromecast playback still require a local smoke test.
+
+## Playlists, resume and safe playback transitions
+
+**Save playlist** writes an atomic local `smoothcast_playlist.m3u` under your home directory. **Load playlist** accepts M3U comments and relative paths, skips missing/unavailable entries and removes duplicates without changing the Loop setting. The Loop menu action independently toggles repeat-one.
+
+Opening a previously watched video can resume from its saved position. An intentional jump to **00:00** always goes to the start; automatic Up Next also starts the next film at zero. Direct Chromecast playback seeks to the remembered position, falling back to the transcoder if the receiver cannot seek.
+
+When one film finishes, the UI holds incoming cast commands until the old server and HLS files have been cleaned up, avoiding overlap between sessions. Once the TV reports that a movie ended, cleanup does not send an unnecessary second Stop command that might interrupt other playback.
 
 ## Responsive sizing
 
