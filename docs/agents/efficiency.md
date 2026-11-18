@@ -1,5 +1,8 @@
 # Agent efficiency — selective context and measurable cost
 
+Compare **provider tokens** and billed cost before claiming a measured saving;
+character-count reductions alone do not prove token efficiency.
+
 **First use the tiny built-in router**, which only processes the words passed
 to it (no network calls, GUI startup or repository-wide reads):
 
