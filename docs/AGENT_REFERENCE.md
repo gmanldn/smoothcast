@@ -5,6 +5,14 @@ task-specific retrieval. New sessions read the small root `AGENTS.md` first,
 then consult this file only for relevant implementation history or edge cases.
 Current root rules override outdated historical notes below.
 
+> **Historical archive notice (18 November 2026):** This unabridged source
+> documents the *former* `IMPROVEMENTS.md` workflow, which was migrated to
+> [GitHub Issues](https://github.com/gmanldn/smoothcast/issues). The live
+> backlog and agent issue-claiming rules now live in [ISSUES.md](ISSUES.md).
+> Any instruction below to append to or preserve the old root backlog is
+> superseded. Do **not** recreate that file; the historical text remains here
+> only to preserve its original context and the user's research.
+
 ---
 
 # AGENTS.md — SmoothCast
