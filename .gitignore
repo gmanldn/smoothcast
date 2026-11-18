@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 crashlog.txt
+errors.log
+errors.log.tmp

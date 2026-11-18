@@ -19,6 +19,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import castctl
 import streamer
 import audio_monitor
+import error_log
 
 APP_ID = "local.cast-control"
 APP_NAME = "Cast Control"
@@ -101,6 +102,7 @@ class Async:
             try:
                 result = work()
             except Exception as exc:
+                error_log.log("Async.run failure", exc_info=True)
                 if failed is not None:
                     GLib.idle_add(failed, str(exc))
                 return
@@ -2433,6 +2435,7 @@ class CastControlApp(Adw.Application):
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         GLib.set_prgname(APP_ID)
+        error_log.install_excepthook()
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
