@@ -2127,7 +2127,10 @@ class MainWindow(Adw.ApplicationWindow):
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
         busy = self.busy
-        active = (self.session is not None and self.session.active()) or self.external
+        # FFmpeg may finish producing the HLS playlist while the Chromecast
+        # still plays buffered segments. Keep Stop/Pause/CC enabled until the
+        # *device* reports completion, not merely while the encoder PID lives.
+        active = bool(self.session is not None and self.session.state is not None) or self.external
         ready_to_cast = self.now_playing is not None or (
             self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
         )
@@ -2634,7 +2637,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.cfg["playback_speed"] = speed
         save_config(self.cfg)
         session = self.session
-        if session is not None and session.active():
+        if session is not None and session.state is not None:
             if self.busy:
                 self.toast("Hold on — finishing the last command")
                 return
