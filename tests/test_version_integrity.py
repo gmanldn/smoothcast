@@ -55,7 +55,7 @@ class CanonicalVersionTests(unittest.TestCase):
     def test_cli_version_bypasses_gtk_and_venv(self):
         env = dict(os.environ, PYTHON=sys.executable)
         result = subprocess.run(
-            ["bash", str(ROOT / "smoothcast"), "--version"],
+            ["smoothcast", "--version"],
             env=env, text=True, capture_output=True, timeout=10,
             check=True,
         )
@@ -87,7 +87,7 @@ class CanonicalVersionTests(unittest.TestCase):
 
     def test_diagnostics_document_actual_running_version(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("./smoothcast --version", readme)
+        self.assertIn("smoothcast --version", readme)
         self.assertIn("running version", readme.lower())
 
 

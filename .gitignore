@@ -5,12 +5,6 @@ dist/
 smoothcast.egg-info/
 .eggs/
 
-# Virtualenv created by the legacy bash launcher (./smoothcast).
-# The canonical path is now `pip install -e .` / `pip install smoothcast`,
-# which installs into the user environment instead of a repo-local venv.
-# Keep .venv/ gitignored while the launcher still bootstraps it.
-.venv/
-
 # Python caches
 __pycache__/
 *.pyc

@@ -9,9 +9,9 @@
 
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
-- Launcher: `./smoothcast` (creates `.venv`, installs catt, runs `src/cast_control.py`; GUI starts repair the user-level desktop launcher and themed icon). `./sc.py` is an executable alias that forwards arguments; repeat starts raise the existing GTK window, not kill/restart a cast.
-- Run directly: `DISPLAY=:99 .venv/bin/python src/cast_control.py`
-- Self-test: `.venv/bin/python src/cast_control.py --self-test`
+- Launcher: `smoothcast` (pip-installed console script running `cast_control:main`). `pip install -e .` is the canonical entry point; `setup.py` is a shim delegating to `pyproject.toml`. The legacy `./smoothcast` bash launcher and repo-local `.venv` have been removed — do not reintroduce them. `python3 src/cast_control.py` still runs directly.
+- Run directly: `DISPLAY=:99 python3 src/cast_control.py`
+- Self-test: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`)
 
 ## Display / screenshots
 - Use `Xvfb :99 -screen 0 1280x800x24 -ac` for virtual display.
@@ -62,7 +62,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Testing (portable, GTK-free)
 - Run: `python3 -m pytest` (from repo root) — no display needed.
 - Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
-- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test`.
+- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`).
 - All modules must `compileall` clean; self-test must print `SELFTEST OK`.
 
 ## Error log
@@ -72,14 +72,14 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Version — canonical source and release discipline
 - **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
 - **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
-- **User-visible:** `./smoothcast --version`, `./sc.py --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
+- **User-visible:** `smoothcast --version`, `sc --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
 - **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version; the update notice distinguishes that from a newer *downloaded* version and announces that a restart is required.
 - **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
-- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`.
-- `./smoothcast` (bash launcher) remains for non-Python workflows; it bootstraps its own `.venv`. Do not remove it until it delegates to the installed entry point.
+- `pip install -e .` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`. `catt` is the only pip dependency; GTK4/libadwaita and ffmpeg are system packages.
 - All 18 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
+- `src/version.py` is the sole version authority; `pyproject.toml` reads it dynamically (`version = {attr = "version.__version__"}`) so the two can never drift.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -103,7 +103,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
 11. A non-blocking background `git pull --ff-only` runs after the first window is visible; a restart applies new Python code.
 12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
-13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; absolute `Exec` avoids PATH failures. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
+13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; the canonical `Exec` is the bare `smoothcast` console script (resolved through the user's PATH, which always includes `~/.local/bin` after `pip install`). A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
 14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
 15. Playback transitions: FFmpeg `-progress` timestamps begin at zero after `-ss` and must be converted to absolute time by `playback_state.absolute_encoded_position`. Queue progression is triggered by a real device PLAYING/PAUSED→IDLE transition, not an encoder/catt exit. Previous-session cleanup must finish before starting Up Next. Pure regression tests live in `tests/test_playback_state.py`.
 16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.

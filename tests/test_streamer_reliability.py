@@ -182,7 +182,7 @@ class StreamerReliabilityTests(unittest.TestCase):
         cases = (
             ("server", f"/usr/bin/python3\0{streamer.SERVER_SCRIPT}\0".encode()),
             ("encoder", f"ffmpeg\0-progress\0{streamer.PROGRESS_FILE}\0".encode()),
-            ("caster", b"/usr/bin/python3\0/opt/smoothcast/.venv/bin/catt\0-d\0TV\0cast\0"),
+            ("caster", b"/usr/bin/python3\0/usr/local/bin/catt\0-d\0TV\0cast\0"),
         )
         with mock.patch.object(streamer, "pid_alive", return_value=True):
             for role, command in cases:

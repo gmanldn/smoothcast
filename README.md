@@ -18,20 +18,9 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
-## Quick start (self-contained)
+## Quick start
 
-1. Unzip the release
-2. Run:
-
-```sh
-./smoothcast
-```
-
-That's it. First run creates a `.venv` and installs `catt` automatically. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
-
-Optional executable shortcut: `./sc.py` delegates to the same launcher and forwards arguments. If SmoothCast is already running, GTK raises that window; it does not restart an active stream.
-
-## Install via pip (recommended for Python workflows)
+1. Install:
 
 ```sh
 pip install -e .
@@ -39,7 +28,15 @@ pip install -e .
 pip install smoothcast
 ```
 
-Then run `smoothcast` or `sc` directly. The pip entry point is the canonical way forward; the `./smoothcast` bash launcher is a convenience for non-Python workflows and will delegate to the installed entry point in a future version.
+2. Run:
+
+```sh
+smoothcast
+```
+
+That's it. The `smoothcast` console script runs `cast_control:main`. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
+
+## Interface and visual design
 
 ## Interface and visual design
 
@@ -71,7 +68,7 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 ## Desktop launcher and dock
 
-SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The launcher uses the absolute path to this checkout, not an unavailable `smoothcast` executable on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
+SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the bare `smoothcast` console script (resolved through the user's `PATH`, which always includes `~/.local/bin` after `pip install`). A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
 To repair or check the launcher explicitly from the checkout:
 
@@ -111,8 +108,8 @@ To inspect the installed version **without launching GTK, repairing the dock or
 starting the virtual environment**, run:
 
 ```sh
-./smoothcast --version
-# or ./sc.py --version
+smoothcast --version
+# or sc --version
 # or python3 src/version.py
 ```
 
@@ -138,7 +135,7 @@ Git checkouts perform one background `git pull --ff-only` after the first window
   - Fedora: `sudo dnf install python3-gobject gtk4 libadwaita`
   - Arch: `sudo pacman -S python-gobject gtk4 libadwaita`
 - **ffmpeg** (`sudo apt install ffmpeg` or equivalent)
-- **catt** — installed automatically into the bundled venv on first run
+- **catt** — installed automatically by `pip install smoothcast` (or `pip install -e .`)
 
 ## Testing
 
@@ -151,7 +148,9 @@ python3 -m pytest
 The GTK UI is verified by the self-test (needs a display, e.g. Xvfb):
 
 ```sh
-DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test
+DISPLAY=:99 python3 -m pytest
+# or, after install:
+DISPLAY=:99 smoothcast --self-test
 # prints SELFTEST OK
 ```
 
@@ -159,8 +158,8 @@ DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test
 
 ```
 smoothcast/
-├── smoothcast          # bootstrap launcher (creates venv, installs catt, runs app)
-├── requirements.txt    # pip deps (catt)
+├── pyproject.toml    # canonical packaging metadata + console-script entry points
+├── setup.py          # shim delegating to pyproject.toml
 ├── scripts/
 │   └── install_desktop.py # user XDG launcher/icon installer
 ├── src/
@@ -169,12 +168,12 @@ smoothcast/
 │   ├── audio_monitor.py# fast precompute + lookup-by-position level analysis
 │   ├── castctl.py      # catt CLI wrapper
 │   ├── server.py       # HLS static file server
+│   ├── playlist_control.py # portable M3U playlist I/O
 │   ├── error_log.py    # ring-buffer error log (10k lines, gitignored)
 │   ├── position_tracker.py — playback position estimation (no GTK dep)
 │   └── utils.py        # pure text helpers (pretty_title)
 └── data/
-    ├── cast-control.png
-    └── (desktop entry generated into user XDG applications directory)
+    └── cast-control.png
 ```
 
 ## How the compressor meter works

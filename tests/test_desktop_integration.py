@@ -18,7 +18,6 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'project with spaces'
         (self.root / "data").mkdir(parents=True)
-        (self.root / "smoothcast").write_text("#!/bin/sh\n", encoding="utf-8")
         (self.root / "data/cast-control.png").write_bytes(b"PNG-fixture")
         self.data_home = Path(self.tmp.name) / "xdg"
         patcher = mock.patch.object(desktop, "ROOT", self.root)
@@ -28,7 +27,8 @@ class DesktopIntegrationTests(unittest.TestCase):
     def test_installs_matching_desktop_id_and_icon(self):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         entry = (self.data_home / "applications/local.cast-control.desktop").read_text()
-        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', entry)
+        # Canonical entry uses the bare pip-installed console script name.
+        self.assertIn('Exec=smoothcast %F', entry)
         self.assertIn("Icon=local.cast-control\n", entry)
         self.assertIn("StartupWMClass=local.cast-control\n", entry)
         self.assertIn("StartupNotify=true\n", entry)
@@ -36,7 +36,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
         legacy = (self.data_home / "applications/smoothcast.desktop").read_text()
         self.assertIn("NoDisplay=true\n", legacy)
-        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', legacy)
+        self.assertIn('Exec=smoothcast %F', legacy)
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
 
     def test_repairs_changed_launcher_and_icon_without_duplication(self):
