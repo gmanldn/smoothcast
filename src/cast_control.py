@@ -973,6 +973,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
+        self.master_meter: MasterMeter | None = None
         self.preview: PreviewScreen | None = None
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None
@@ -981,6 +982,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_default_size(self.cfg["window_width"], self.cfg["window_height"])
         self.set_size_request(880, 560)
         self._build_ui()
+        self._flush_stale_state()
         self._refresh_direct_note()
         self.connect("close-request", self._on_close)
         self._install_shortcuts()
@@ -1046,6 +1048,83 @@ class MainWindow(Adw.ApplicationWindow):
         toolbar.set_content(holder)
         self.toasts.set_child(toolbar)
         self.set_content(self.toasts)
+
+    def _flush_stale_state(self) -> None:
+        """Clear any leftover state from a previous run so the UI starts clean.
+
+        Ensures that sessions, meters, preview, tracker, and all UI labels are
+        reset to a fresh 'nothing playing' state. Changes made in the last run
+        (or leftover state from a crash) never persist into this launch.
+        """
+        # Stop any lingering audio analysis from a previous instance.
+        if self.monitor is not None:
+            try:
+                self.monitor.stop()
+            except Exception:
+                pass
+            self.monitor = None
+
+        # Clear session/media state.
+        self.session = None
+        self.media = None
+        self.device_info = None
+        self.now_playing = None
+        self.selected_index = None
+        self.external = False
+        self.busy = False
+        self.poll_busy = False
+        self.scan_busy = False
+        self.queue = []
+        self.queue_durations = {}
+
+        # Reset tracker and position state.
+        self.tracker.clear()
+        self._finished_handled = False
+        self._last_state = "IDLE"
+
+        # Reset UI widgets to clean defaults.
+        if self.np_title is not None:
+            self.np_title.set_text("Nothing selected")
+        if self.np_meta is not None:
+            self.np_meta.set_text("Choose a video to begin")
+        if self.state_chip is not None:
+            self.state_chip.set_text("Ready")
+            self.state_chip.remove_css_class("playing")
+            self.state_chip.remove_css_class("buffering")
+            self.state_chip.remove_css_class("paused")
+            self.state_chip.remove_css_class("offline")
+            self.state_chip.remove_css_class("error")
+            self.state_chip.add_css_class("idle")
+        if self.preview is not None:
+            self.preview.set_video("No video", "")
+        if self.seekbar is not None:
+            self.seekbar.set_state(0.0, 0.0, 0.0)
+        if self.elapsed_label is not None:
+            self.elapsed_label.set_text("0:00:00")
+        if self.remaining_label is not None:
+            self.remaining_label.set_text("--:--")
+
+        # Reset level meters.
+        if self.meter is not None:
+            self.meter.reset()
+        if self.master_meter is not None:
+            self.master_meter.reset()
+
+        # Reset details card labels.
+        if hasattr(self, "detail_labels"):
+            for key, label in self.detail_labels.items():
+                label.set_text("—")
+
+        # Clear levels hint.
+        if hasattr(self, "levels_hint") and self.levels_hint is not None:
+            self.levels_hint.set_text("")
+
+        # Clear any queued timer-based pending state.
+        self._volume_job = None
+        self._volume_user_ts = 0.0
+        self._syncing = False
+        self._subs_cache = ("", None)
+        self._hover_time = None
 
     def _build_menu(self) -> Gio.Menu:
         menu = Gio.Menu()
