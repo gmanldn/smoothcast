@@ -8,7 +8,7 @@ Do not load the entire handbook or
 
 ## Rules
 
-- **Issues are authoritative:** read and claim the GitHub issue before work;
+- **GitHub Issues are authoritative:** read and claim the GitHub issue before work;
   use an isolated branch/worktree, link PRs, and close only when all acceptance
   criteria (including hardware checks if required) are verified. See
   [workflow](docs/agents/workflow.md) and [issues](docs/ISSUES.md).
@@ -20,7 +20,7 @@ Do not load the entire handbook or
 - **Precise, concise output:** results, evidence and blockers; never hide
   errors or compress commands/code inaccurately.
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- **Release authority:** `src/version.py`, not every Git commit. Git SHA
+- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
   identifies a development revision; `./smoothcast --version` is GUI-free.
 
 ## Testing — no desktop focus
