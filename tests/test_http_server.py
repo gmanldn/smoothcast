@@ -66,9 +66,10 @@ class StreamServerTests(unittest.TestCase):
                 with self.subTest(path=path, method=method):
                     status, body, headers = self.request(path, method)
                     self.assertEqual(status, 200)
-                    self.assertEqual(headers.get("Content-Type"), content_type)
-                    self.assertEqual(int(headers["Content-Length"]), len(payload))
-                    self.assertEqual(headers["Cache-Control"], "no-store")
+                    headers_ci = {name.lower(): value for name, value in headers.items()}
+                    self.assertEqual(headers_ci.get("content-type"), content_type)
+                    self.assertEqual(int(headers_ci["content-length"]), len(payload))
+                    self.assertEqual(headers_ci["cache-control"], "no-store")
                     self.assertEqual(body, payload if method == "GET" else b"")
 
     def test_private_files_and_directory_traversal_are_rejected(self):
