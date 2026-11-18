@@ -427,14 +427,28 @@ def ensure_venv(python: Path, env: dict[str, str], *,
     if check:
         if not installed.is_file() or not works(installed, GUI_CHECK, env=env):
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
-    else:
-        if installed.is_file() and not works(installed, GUI_CHECK, env=env):
-            # The project-owned venv may have been created with an unrelated
-            # Python. Preserve it for inspection, then recreate with the
-            # native interpreter whose GTK imports we just verified.
-            backup = VENV.with_name(f".venv-incompatible-{int(time.time())}")
-            VENV.rename(backup)
-            say(f"Preserved stale environment at {backup}")
+        if not works(installed, CATT_CHECK, env=env):
+            raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
+        missing = check_tools(env)
+        if missing:
+            raise SetupError("Media dependencies are missing: " + ", ".join(missing))
+        return installed
+
+    # A failed rebuild must not strand an existing installation, including a
+    # partially populated project .venv whose Python executable is missing.
+    # Move it aside before attempting replacement; do not modify user files.
+    original_exists = VENV.exists() or VENV.is_symlink()
+    backup: Path | None = None
+    incompatible = (
+        original_exists and (
+            not installed.is_file() or not works(installed, GUI_CHECK, env=env)
+        )
+    )
+    if incompatible:
+        backup = VENV.with_name(f".venv-incompatible-{time.time_ns()}")
+        VENV.rename(backup)
+        say(f"Preserved stale environment at {backup}")
+    try:
         if not venv_python().is_file():
             say(f"Creating isolated virtual environment: {VENV}")
             checked_run([str(python), "-m", "venv", "--system-site-packages",
@@ -453,13 +467,33 @@ def ensure_venv(python: Path, env: dict[str, str], *,
             checked_run([str(installed), "-m", "pip", "install",
                          "--disable-pip-version-check", *PIP_PACKAGES,
                          "-e", str(ROOT)], env=env)
-    if not works(installed, CATT_CHECK, env=env):
-        raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
-    missing = check_tools(env)
-    if missing:
-        raise SetupError("Media dependencies are missing: " + ", ".join(missing))
-    return installed
-
+        if not works(installed, CATT_CHECK, env=env):
+            raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
+        missing = check_tools(env)
+        if missing:
+            raise SetupError("Media dependencies are missing: " + ", ".join(missing))
+        return installed
+    except Exception:
+        # Never delete a pre-existing environment. Only the replacement tree
+        # created after the backup (or a brand new install) is disposable.
+        if backup is not None or not original_exists:
+            try:
+                if VENV.is_symlink():
+                    VENV.unlink()
+                elif VENV.is_dir():
+                    shutil.rmtree(VENV)
+                elif VENV.exists():
+                    VENV.unlink()
+                if backup is not None:
+                    backup.rename(VENV)
+                    say(f"Rebuild failed; restored previous environment: {VENV}")
+            except OSError as restore_error:
+                raise SetupError(
+                    "SmoothCast setup failed and automatic rollback also failed. "
+                    f"Previous environment preserved at {backup}; "
+                    f"restore it manually to {VENV}: {restore_error}"
+                ) from restore_error
+        raise
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap SmoothCast from Python 3.10+")
