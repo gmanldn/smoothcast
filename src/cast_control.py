@@ -1912,7 +1912,9 @@ class MainWindow(Adw.ApplicationWindow):
             device = self._device()
             # Complete any cleanup before auto-closing the application.
             Async.run(
-                lambda: session.stop(device),
+                # The receiver already reported IDLE. Do not send an extra
+                # STOP that could interrupt content opened by another app.
+                lambda: session.stop(device, send_stop=False),
                 done=lambda _r: self.close() if self.cfg.get("auto_shutdown") else None,
                 failed=lambda message: self.toast(
                     f"Cleanup failed: {message}", error=True,
@@ -2289,7 +2291,9 @@ class MainWindow(Adw.ApplicationWindow):
             if self.device_state == "OFFLINE":
                 self.toast("Device is offline", error=True)
             return
-        if not (self.session and self.session.active()) and not self.external and self.now_playing is None:
+        if self.session is None and not self.external:
+            # No owned player exists yet: cast the selected local file rather
+            # than sending a 'resume' command to an unrelated TV receiver.
             self.cast_selected()
             return
         device = self._device()
