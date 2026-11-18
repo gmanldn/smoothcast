@@ -96,6 +96,51 @@ class StreamerTests(unittest.TestCase):
         self.assertIn("acompressor=", chain[1])
         self.assertIn("alimiter=", chain[-1])
 
+    def test_atempo_filters_normal_is_identity(self):
+        self.assertEqual(streamer.atempo_filters(1.0), [])
+        self.assertEqual(streamer.atempo_filters(1.00), [])
+
+    def test_atempo_filters_supported_range(self):
+        self.assertEqual(streamer.atempo_filters(0.5), ["atempo=0.5"])
+        self.assertEqual(streamer.atempo_filters(0.75), ["atempo=0.75"])
+        self.assertEqual(streamer.atempo_filters(1.25), ["atempo=1.25"])
+        self.assertEqual(streamer.atempo_filters(2.0), ["atempo=2"])
+
+    def test_atempo_filters_chained_out_of_range(self):
+        self.assertEqual(
+            streamer.atempo_filters(4.0), ["atempo=2.0", "atempo=2"])
+        self.assertEqual(
+            streamer.atempo_filters(8.0), ["atempo=2.0", "atempo=2.0", "atempo=2"])
+        self.assertEqual(
+            streamer.atempo_filters(0.25), ["atempo=0.5", "atempo=0.5"])
+
+    def test_filter_args_setpts_only(self):
+        vf = streamer.Session()._filter_args(False, None, False, 1.5)
+        self.assertEqual(vf, ["-vf", "setpts=PTS/1.5"])
+
+    def test_filter_args_setpts_with_subtitles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp) / "burned_subs.srt"
+            staged.write_bytes(b"x")
+            # Non-software + burned subs routes through hwdownload/hwupload.
+            vf = streamer.Session()._filter_args(True, staged, False, 2.0)
+        self.assertEqual(
+            vf, ["-vf",
+                 "hwdownload,format=nv12,subtitles=filename=burned_subs.srt,"
+                 "setpts=PTS/2,hwupload"])
+
+    def test_filter_args_software_chain(self):
+        vf = streamer.Session()._filter_args(True, Path("subs.srt"), True, 0.5)
+        self.assertEqual(
+            vf, ["-vf", "subtitles=filename=subs.srt,setpts=PTS/0.5"])
+
+    def test_session_state_speed_defaults_to_normal(self):
+        state = streamer.SessionState(
+            file="x.mp4", mode="transcode", offset=0.0, duration=100.0,
+            device="TV", title="x")
+        self.assertEqual(state.speed, 1.0)
+
+
     def test_direct_capable(self):
         m = streamer.MediaInfo(path=Path("movie.mp4"), vcodec="h264", acodec="aac",
                                pix_fmt="yuv420p")

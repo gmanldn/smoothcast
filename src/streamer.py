@@ -98,6 +98,28 @@ def audio_filters(profile: str, gain_db: float = 0.0) -> list:
     return [f"volume={float(gain_db):g}dB"] + filters
 
 
+def atempo_filters(speed: float) -> list:
+    """Build one or more ffmpeg ``atempo`` filters for a playback speed.
+
+    A single ``atempo`` only supports 0.5x–2.0x, so out-of-range speeds are
+    achieved by chaining filters (each multiplies the rate).  Returns an empty
+    list for normal 1.0x playback.
+    """
+    speed = max(0.05, float(speed))
+    if speed == 1.0:
+        return []
+    filters: list = []
+    remaining = speed
+    while remaining > 2.0:
+        filters.append("atempo=2.0")
+        remaining /= 2.0
+    while remaining < 0.5:
+        filters.append("atempo=0.5")
+        remaining /= 0.5
+    filters.append(f"atempo={remaining:g}")
+    return filters
+
+
 def measure_mean_volume(path: str, max_seconds: int = 60) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of audio.
 
@@ -434,6 +456,7 @@ class SessionState:
     audio_gain_db: float = 0.0
     subs: str = ""
     burn_subs: bool = False
+    speed: float = 1.0
     started_at: float = 0.0
     ffmpeg_pid: int = 0
     server_pid: int = 0
@@ -603,10 +626,12 @@ class Session:
             "-qp", str(qp), "-g", "96",
         ]
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float) -> list[str]:
         chain: list[str] = []
         if burn_subs and staged is not None:
             chain.append(f"subtitles=filename={staged.name}")
+        if speed != 1.0:
+            chain.append(f"setpts=PTS/{speed:g}")
         if not software and burn_subs and staged is not None:
             # Only download/upload when burning subtitles; otherwise frames
             # stay in GPU memory and the VAAPI encoder handles them directly.
@@ -628,9 +653,11 @@ class Session:
         title: str,
         audio_gain_db: float = 0.0,
         device_ip: str | None = None,
+        speed: float = 1.0,
     ) -> None:
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
+        speed = max(0.05, float(speed))
         ROOT.mkdir(parents=True, exist_ok=True)
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
@@ -646,7 +673,7 @@ class Session:
         args += self._hwaccel_args(software)
         args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
         args += self._codec_args(quality, software)
-        args += self._filter_args(burn_subs, staged, software)
+        args += self._filter_args(burn_subs, staged, software, speed)
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
             # Auto-trim the input so the compressor always engages, then apply
@@ -657,6 +684,10 @@ class Session:
             filters = audio_filters(audio_profile, effective_gain)
         else:
             effective_gain = 0.0
+        if speed != 1.0:
+            # Change the playback/transcode rate: video timestamps are scaled
+            # and audio is resampled with atempo so A/V stay in sync.
+            filters += atempo_filters(speed)
         self.audio_chain = filters
         if filters:
             args += ["-af", ",".join(filters)]
@@ -720,7 +751,7 @@ class Session:
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
-            subs=str(subs_file or ""), burn_subs=burn_subs,
+            subs=str(subs_file or ""), burn_subs=burn_subs, speed=speed,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,

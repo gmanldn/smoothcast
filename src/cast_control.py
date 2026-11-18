@@ -2308,6 +2308,7 @@ class MainWindow(Adw.ApplicationWindow):
         # when no audio processing is wanted. Any dialogue/night profile needs
         # the transcode pipeline to apply its filters.
         use_direct = bool(cfg["direct"]) and cfg["audio"] == "original"
+        speed = float(cfg.get("playback_speed", 1.0))
 
         def work():
             media = streamer.ffprobe(path)
@@ -2333,6 +2334,7 @@ class MainWindow(Adw.ApplicationWindow):
                     burn_subs=burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
+                    speed=speed,
                 )
                 return session, media
             except Exception:
@@ -2466,6 +2468,7 @@ class MainWindow(Adw.ApplicationWindow):
         title = state.title if state else (file_path.stem if file_path else "video")
         quality = state.quality if state else self.cfg["quality"]
         audio = state.audio if state else self.cfg["audio"]
+        speed = float(state.speed) if state and state.speed else float(self.cfg.get("playback_speed", 1.0))
         burn = bool(state.burn_subs) if state else False
         subs_path = None
         if state and state.subs:
@@ -2484,6 +2487,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
+                    speed=speed,
                 )
             except Exception:
                 try:
@@ -2578,9 +2582,23 @@ class MainWindow(Adw.ApplicationWindow):
         self.toast("Auto theme " + ("on" if self.cfg["auto_theme"] else "off"))
 
     def _set_speed(self, speed: float) -> None:
+        speed = max(0.05, min(40.0, float(speed)))
         self.cfg["playback_speed"] = speed
         save_config(self.cfg)
-        self.toast(f"Speed {speed}x")
+        session = self.session
+        if session is not None and session.mode == "transcode" and session.active():
+            if self.busy:
+                self.toast("Hold on — finishing the last command")
+                return
+            self.busy = True
+            self._refresh_controls()
+            position = self.tracker.value() or 0.0
+            duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+            self.tracker.device_update(position, duration)
+            self._restart_at(session, position)
+            self.toast(f"Speed {speed}x — stream restarted")
+        else:
+            self.toast(f"Speed {speed}x")
 
     def _sleep_timer(self, minutes: int) -> None:
         minutes = max(0, int(minutes))

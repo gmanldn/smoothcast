@@ -66,7 +66,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.35`
+- Current: `1.0.36`
 - Release tags mark releases, e.g. `v1.0.35`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
@@ -105,5 +105,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 23. Remote URL casting: `MainWindow._cast_remote_url` validates HTTP(S) addresses with `url_control.validate_media_url`, then calls `catt -d DEVICE cast --no-subs URL` in an `Async.run` worker. Never send network URLs to `streamer.ffprobe(Path(...))`. Tests: `tests/test_url_control.py`.
 
 ## Pending work
-- **Playback speed presets are not yet effective.** The current `_set_speed()` only saves configuration and shows a toast. Do not mark this implemented until the actual playback/transcode rate changes and is tested.
-- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming.
+- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
+
+## Completed work
+24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.
