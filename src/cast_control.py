@@ -927,9 +927,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
+        self.console_lines: list[str] = []
 
-        self.set_default_size(1120, 720)
-        self.set_size_request(700, 500)
+        self.set_default_size(1300, 850)
+        self.set_size_request(900, 650)
         self._build_ui()
         self._flush_stale_state()
         self._refresh_direct_note()
@@ -983,6 +984,7 @@ class MainWindow(Adw.ApplicationWindow):
         right_box.set_vexpand(True)
         right_box.append(self._build_device_card())
         right_box.append(self._build_settings_card())
+        right_box.append(self._build_console_card())
         right_box.append(self._build_details_card())
         right_scroller = Gtk.ScrolledWindow()
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -1205,11 +1207,18 @@ class MainWindow(Adw.ApplicationWindow):
         self.cast_button.add_css_class("suggested-action")
         self.cast_button.set_hexpand(True)
         self.cast_button.connect("clicked", lambda _b: self.cast_selected())
+        self.stop_tv_button = Gtk.Button(label="Stop TV")
+        self.stop_tv_button.set_icon_name("media-playback-stop-symbolic")
+        self.stop_tv_button.add_css_class("destructive-action")
+        self.stop_tv_button.set_hexpand(True)
+        self.stop_tv_button.set_sensitive(False)
+        self.stop_tv_button.connect("clicked", lambda _b: self.stop_stream())
         self.cc_button = Gtk.ToggleButton(label="CC")
         self.cc_button.set_tooltip_text("Toggle captions on the TV")
         self.cc_button.connect("toggled", self._on_cc_toggled)
         action_row.append(open_button)
         action_row.append(self.cast_button)
+        action_row.append(self.stop_tv_button)
         action_row.append(self.cc_button)
         body.append(action_row)
         return card
@@ -1224,12 +1233,56 @@ class MainWindow(Adw.ApplicationWindow):
         body.append(self.levels_hint)
         return card
 
+    def _build_console_card(self) -> Gtk.Box:
+        card, body = self._card("Live Cast Console")
+        body.set_vexpand(True)
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_vexpand(True)
+        self.console_list = Gtk.ListBox()
+        self.console_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.console_list.add_css_class("boxed-list")
+        scroller.set_child(self.console_list)
+        body.append(scroller)
+        clear = Gtk.Button(label="Clear console")
+        clear.set_halign(Gtk.Align.END)
+        clear.add_css_class("flat")
+        clear.connect("clicked", lambda _b: self._clear_console())
+        body.append(clear)
+        self._refresh_console()
+        return card
+
+    def _clear_console(self) -> None:
+        self.console_lines = []
+        self._refresh_console()
+
     # ---------- audio monitor lifecycle ----------
 
     def _set_levels_hint(self, text: str) -> None:
         hint = getattr(self, "levels_hint", None)
         if hint is not None:
             hint.set_text(text)
+
+    def _console(self, text: str) -> None:
+        """Append a timestamped line to the live casting status console."""
+        import datetime
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.console_lines.append(f"[{stamp}] {text}")
+        # Keep the console bounded so it never grows unboundedly.
+        if len(self.console_lines) > 200:
+            self.console_lines = self.console_lines[-200:]
+        if getattr(self, "console_list", None) is not None:
+            self._refresh_console()
+
+    def _refresh_console(self) -> None:
+        list_box = self.console_list
+        for child in list(list_box):
+            list_box.remove(child)
+        for line in self.console_lines:
+            row = Adw.ActionRow(title=line)
+            row.set_title_lines(1)
+            list_box.append(row)
+        list_box.show_all()
 
     def _meter_tick(self) -> bool:
         mon = self.monitor
@@ -1934,6 +1987,7 @@ class MainWindow(Adw.ApplicationWindow):
         busy = self.busy
         active = (self.session is not None and self.session.active()) or self.external
         self.cast_button.set_sensitive(not busy)
+        self.stop_tv_button.set_sensitive(active and not busy)
         can_play = online and not busy and (active or self.now_playing is not None or self.selected_index is not None)
         self.play_button.set_sensitive(can_play)
         self.stop_button.set_sensitive(online and not busy and active)
@@ -2074,6 +2128,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._stop_monitor()
             self._set_levels_hint("")
             self.toast("Stopped")
+            self._console("Stopped casting to TV")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()
@@ -2182,6 +2237,7 @@ class MainWindow(Adw.ApplicationWindow):
                 info = " · ".join(bit for bit in bits if bit)
                 self.preview.set_video(pretty_title(path), info)
             self.toast(f"Casting {pretty_title(path)} to {device}")
+            self._console(f"Casting {pretty_title(path)} to {device} ({session.mode})")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()
@@ -2199,6 +2255,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.tracker.clear()
             self._finished_handled = False
         self.toast(f"Cast failed: {message}", error=True)
+        self._console(f"Cast failed: {message}")
         self._refresh_controls()
 
     def _resolve_subs(self, video: pathlib.Path) -> pathlib.Path | None:
