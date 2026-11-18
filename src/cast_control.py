@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import sys
 import threading
 import time
+
+try:
+    import fcntl
+except Exception:  # pragma: no cover - non-Unix fallback
+    fcntl = None
 
 import gi
 
@@ -25,6 +31,7 @@ APP_ID = "local.cast-control"
 APP_NAME = f"Cast Control v{version.__version__}"
 CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+LOCK_FILE = CONFIG_DIR / "cast-control.lock"
 ICON_NAME = "cast-control"
 
 DEFAULTS: dict = {
@@ -43,6 +50,66 @@ DEFAULTS: dict = {
     "window_width": 1120,
     "window_height": 760,
 }
+
+
+def acquire_lock() -> bool:
+    """Try to acquire a single-instance lock file.
+
+    Returns True if this process holds the lock (first instance), False if
+    another instance is already running. Stale locks from dead processes are
+    cleaned up automatically. Never blocks.
+    """
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        fh = open(LOCK_FILE, "w")
+    except OSError:
+        # Config dir not writable — fall back to allowing the instance.
+        return True
+    if fcntl is None:
+        # No fcntl (non-Unix): best-effort check via PID file.
+        try:
+            existing = fh.read()
+            if existing:
+                pid = int(existing.strip())
+                if pid_alive(pid):
+                    fh.close()
+                    return False
+        except (ValueError, OSError):
+            pass
+        try:
+            fh.seek(0); fh.truncate(); fh.write(str(os.getpid())); fh.flush()
+        except OSError:
+            pass
+        return True
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        # Another process holds the lock.
+        fh.close()
+        return False
+    except OSError:
+        return True
+    # Write our PID so others can identify us.
+    try:
+        fh.seek(0); fh.truncate(); fh.write(str(os.getpid())); fh.flush()
+    except OSError:
+        pass
+    return True
+
+
+def pid_alive(pid: int) -> bool:
+    """Return True if *pid* is a running process."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 CSS = """
 window { font-size: 14px; }
@@ -2662,9 +2729,25 @@ class CastControlApp(Adw.Application):
 def main() -> int:
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
+
+    # Single-instance lock — never allow two running instances.
+    if not selftest and not acquire_lock():
+        try:
+            existing = LOCK_FILE.read_text().strip()
+            pid = int(existing)
+            msg = f"Cast Control is already running (PID {pid})."
+        except (OSError, ValueError):
+            msg = "Cast Control is already running."
+        print(msg, file=sys.stderr)
+        return 0
+
     app = CastControlApp()
     app.selftest = selftest
-    result = app.run(argv)
+    try:
+        result = app.run(argv)
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"Cast Control error: {exc}", file=sys.stderr)
+        return 1
     if selftest and result == 0:
         print("SELFTEST OK")
     return result

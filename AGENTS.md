@@ -42,6 +42,13 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - The compressor (`acompressor` + `alimiter`) lives in `streamer.py:AUDIO_FILTERS` and is applied **only** in the ffmpeg transcode chain that produces the HLS stream sent to the Chromecast. It does **not** affect local machine audio, the original file, or any other application.
 - The audio monitor (`audio_monitor.py`) runs a separate read-only ffmpeg pass for metering; it never touches playback.
 - UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
+- Single-instance: `acquire_lock()` uses a flock on `~/.config/cast-control/cast-control.lock`. Only one instance can run; a second launch prints a message and exits with code 0. Stale locks from dead processes are cleaned up automatically.
+
+## UI features
+- Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
+- Scrubbing knob moves immediately on seek/jump: `seek_to()` updates the seekbar directly, and `tracker.device_update()` is called immediately for both direct and transcode modes so `_tick()` doesn't override the knob while the cast catches up.
+- Casting status in details card: Buffer Health (ahead/behind time) and Segments (HLS segment count) rows show exact cast status.
+- Error handling: `main()` wraps `app.run()` in try/except; single-instance lock prevents duplicate instances.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -50,16 +57,18 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.6`
+- Current: `1.0.7`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.6`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.7`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
 7. UI responsiveness: all blocking I/O in background threads; main thread never blocks.
+8. Single-instance locking: `acquire_lock()` uses flock on lock file; second instance exits gracefully.
+9. Graceful error handling: `main()` wraps `app.run()` in try/except.
 
 ## Pending work
 None — all requested features implemented.
