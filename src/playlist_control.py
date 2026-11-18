@@ -68,7 +68,7 @@ def save_playlist(path: Path, items: list[str]) -> None:
     for item in items:
         # M3U is line-oriented: a newline in one source path would inject
         # an unrelated queued item into the exported playlist.
-        if any(char in str(item) for char in ("\\n", "\\r", "\\0")):
+        if any(char in str(item) for char in ("\n", "\r", "\0")):
             raise PlaylistError("Media path contains an invalid line or null character")
         media = Path(item).expanduser().resolve()
         try:
