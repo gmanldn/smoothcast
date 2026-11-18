@@ -3,13 +3,8 @@ __pycache__/
 *.pyc
 .DS_Store
 crashlog.txt
-<<<<<<< HEAD
 .coverage
 .coverage/*
 htmlcov/
 errors.log
 errors.log.tmp
-=======
-errors.log
-errors.log.tmp
->>>>>>> flicker-loganberry

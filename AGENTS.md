@@ -3,12 +3,8 @@
 ## Critical rules (read first)
 - **Commit after every meaningful change.** User loses work if not committed. Run `git add -A && git commit -m "..."` frequently.
 - **Commit at least every ~10,000 lines of code or so**, even if the change is small, so work is never lost.
-<<<<<<< HEAD
-- **Never ask the user for confirmation to commit** — just do it.
-- **Version counter:** `src/version.py` holds `__version__` = `1.0.x`. Increment the patch number (`x`) on **every single commit**. This makes every build traceable to a specific commit.
-=======
 - Never ask the user for confirmation to commit — just do it.
->>>>>>> flicker-loganberry
+- **Version counter:** `src/version.py` holds `__version__` = `1.0.x`. Increment the patch number (`x`) on **every single commit**. This makes every build traceable to a specific commit.
 - Keep responses short and technical. No preamble, no postamble.
 
 ## Project
@@ -37,9 +33,13 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/audio_monitor.py` — fast ffmpeg analysis of input/output levels
 - `src/streamer.py` — HLS transcode, direct play, ffmpeg chains, audio filters
 - `src/castctl.py` — catt CLI wrapper
-<<<<<<< HEAD
-- `src/server.py` — allowlisted HLS HTTP server (playlist, TS segments, health probe only; never serve session.json or logs)
+- `src/server.py` — HLS static file server / allowlisted HLS HTTP server (playlist, TS segments, health probe only; never serve session.json or logs)
+- `src/error_log.py` — ring-buffer error log (errors.log, 10k lines, gitignored)
+- `src/position_tracker.py` — playback position estimation (no GTK dep)
+- `src/utils.py` — pure text helpers (pretty_title)
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH, bump patch on every commit)
+- `tests/` — pytest suite (runs without GTK/display)
+- `pytest.ini` — pytest config (testpaths, pythonpath=src)
 
 ## Architecture
 - GTK4 + libadwaita UI runs on the main thread via `Adw.Application`.
@@ -51,6 +51,21 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
 - Graceful error handling: `main()` wraps `app.run()` in try/except.
 
+## Testing (portable, GTK-free)
+- Run: `python3 -m pytest` (from repo root) — no display needed.
+- Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
+- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test`.
+- All modules must `compileall` clean; self-test must print `SELFTEST OK`.
+
+## Error log
+- Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
+- Path: `~/.config/cast-control/errors.log`.
+
+## Version
+- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
+- Current: `1.0.32`
+- Release tags mark releases, e.g. `v1.0.32`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
 - Scrubbing knob moves immediately on seek/jump: `seek_to()` updates the seekbar directly, and `tracker.device_update()` is called immediately for both direct and transcode modes so `_tick()` doesn't override the knob while the cast catches up.
@@ -59,10 +74,6 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
 - Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 700x500 with default 1120x720, no fixed widths preventing scaling.
 - Version number shown on front page: header subtitle displays `device · vX.Y.Z`.
-
-## Version
-- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.32`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
@@ -77,54 +88,16 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
 11. Auto-pull from repo main on load: `auto_pull_on_load()` runs `git pull --ff-only` at startup.
 12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
-
 13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; absolute `Exec` avoids PATH failures. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
-
 14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
-
 15. Playback transitions: FFmpeg `-progress` timestamps begin at zero after `-ss` and must be converted to absolute time by `playback_state.absolute_encoded_position`. Queue progression is triggered by a real device PLAYING/PAUSED→IDLE transition, not an encoder/catt exit. Previous-session cleanup must finish before starting Up Next. Pure regression tests live in `tests/test_playback_state.py`.
-
 16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.
-
 17. Chromecast LAN selection: `host_ip(device_host)` picks the outbound interface using a no-packet UDP route to the discovered TV IP, with safe fallbacks. Never advertise loopback, link-local or multicast addresses as HLS URLs. Propagate the selected device IP through normal starts and software-encoder fallback/seek restarts. Regression cases are in `tests/test_streamer_reliability.py`.
-
 18. Startup responsiveness: automatic git updates must run once in a worker **after** GTK window presentation, never before `app.run()`. `--self-test` runs `Gio.ApplicationFlags.NON_UNIQUE` so it cannot activate a live user instance. `app.quit` actions close the window to preserve the normal keep-streaming and configuration lifecycle. Tests: `tests/test_update_control.py`.
-
 19. Encoder fallback: hardware VAAPI is allowed 15s to generate HLS media; software libx264 gets 30s. A stalled but live hardware FFmpeg process must be terminated before one software retry. No infinite fallback loops. `test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive` validates the failure mode.
-
 20. GTK4 action integrity: use `window.fullscreen()/unfullscreen()`, never GTK3-only `set_fullscreen()/set_keep_above()`. Window stacking is compositor-controlled; do not advertise an unsupported always-on-top action. Every `Gio.Menu` entry must correspond to a registered `Gio.SimpleAction`, including `app.clear-recents`.
-
 21. Screenshot capture: `src/screenshot.py` runs FFmpeg only in a background worker with a bounded timeout, no stdin, and a unique non-overwriting output path. Never reintroduce synchronous `subprocess.run` in `MainWindow._screenshot`. Regression tests: `tests/test_screenshot.py`.
-
 22. Real Loop and Sleep timer: `playback_state.next_media` repeats one item before `autonext`; cleanup completes before restarting the same track or auto-shutting down. The sleep timer stores a persisted wall-clock `sleep_timer_deadline` and polls every five seconds, stopping the SmoothCast-owned session. The GTK application must be running for the deadline to fire. Tests: `tests/test_playback_controls.py`.
 
 ## Pending work
-Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
-=======
-- `src/server.py` — HLS static file server
-- `src/error_log.py` — ring-buffer error log (errors.log, 10k lines, gitignored)
-- `src/position_tracker.py` — playback position estimation (no GTK dep)
-- `src/utils.py` — pure text helpers (pretty_title)
-- `tests/` — pytest suite (runs without GTK/display)
-- `pytest.ini` — pytest config (testpaths, pythonpath=src)
-
-## Testing (portable, GTK-free)
-- Run: `python3 -m pytest` (from repo root) — 61 tests, no display needed.
-- Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
-- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test`.
-- All modules must `compileall` clean; self-test must print `SELFTEST OK`.
-
-## Error log
-- Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
-- Path: `~/.config/cast-control/errors.log`.
-
-## Versioning
-- Tags mark releases, e.g. `v2.0.1`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
-
-## User's requests (completed)
-1. ✅ Compressor only affects playback (transcoded HLS via ffmpeg `-af`), never the host audio stack; direct play untouched; volume/mute via catt to device.
-2. ✅ Master bouncing-line meter added to `LevelMeter` (below PUMP strip; attack/release easing; 0/-6 dB notches; red/yellow/white by proximity to 0 dBFS).
-
-## Pending
-- None. Working tree clean on `flicker-loganberry`; merge to `main` and tag a release when ready.
->>>>>>> flicker-loganberry
+- Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
