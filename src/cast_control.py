@@ -13,7 +13,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 import castctl
 import streamer
@@ -867,19 +867,28 @@ class PreviewScreen(Gtk.DrawingArea):
         cr.rectangle(0.5, 0.5, width - 1.0, height - 1.0)
         cr.stroke()
 
-        # Title text.
+        # Cairo text needs ellipsising explicitly: narrow windows must not
+        # paint long film names outside the allocated preview.
+        limit = max(0.0, width - 32.0)
+
+        def clipped_text(value: str) -> str:
+            if cr.text_extents(value).width <= limit:
+                return value
+            value = value.rstrip()
+            while value and cr.text_extents(value + "…").width > limit:
+                value = value[:-1]
+            return value + "…" if value else ""
+
         cr.set_source_rgb(1.0, 1.0, 1.0)
         cr.select_font_face("Sans")
         cr.set_font_size(16)
         cr.move_to(16, height / 2 - 6)
-        cr.show_text(title)
-
-        # Info text.
+        cr.show_text(clipped_text(title))
         if info:
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.75)
             cr.set_font_size(11)
             cr.move_to(16, height / 2 + 12)
-            cr.show_text(info)
+            cr.show_text(clipped_text(info))
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -1198,6 +1207,8 @@ class MainWindow(Adw.ApplicationWindow):
         title_row.append(self.state_chip)
         body.append(title_row)
         self.np_meta = Gtk.Label(label="Choose a video to begin", xalign=0.0, wrap=True)
+        self.np_meta.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.np_meta.set_max_width_chars(72)
         self.np_meta.add_css_class("dim-label")
         self.np_meta.add_css_class("caption")
         body.append(self.np_meta)
@@ -1299,7 +1310,8 @@ class MainWindow(Adw.ApplicationWindow):
         card, body = self._card("Live Levels")
         self.meter = LevelMeter()
         body.append(self.meter)
-        self.levels_hint = Gtk.Label(label="")
+        self.levels_hint = Gtk.Label(label="", wrap=True)
+        self.levels_hint.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.levels_hint.add_css_class("caption")
         self.levels_hint.add_css_class("dim-label")
         body.append(self.levels_hint)
@@ -1438,7 +1450,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.queue_list.connect("row-selected", self._on_queue_selected)
         scroller.set_child(self.queue_list)
         body.append(scroller)
-        self.queue_empty = Gtk.Label(label="Queue is empty — add videos to build a playlist")
+        self.queue_empty = Gtk.Label(label="Queue is empty — add videos to build a playlist", wrap=True)
         self.queue_empty.add_css_class("dim-label")
         body.append(self.queue_empty)
         self._rebuild_queue()
@@ -1596,6 +1608,9 @@ class MainWindow(Adw.ApplicationWindow):
             key_label.add_css_class("detail-key")
             key_label.add_css_class("caption")
             value_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
+            value_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            value_label.set_max_width_chars(36)
+            value_label.set_width_chars(1)
             value_label.add_css_class("caption")
             value_label.add_css_class("detail-value")
             grid.attach(key_label, 0, index, 1, 1)
