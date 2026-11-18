@@ -56,7 +56,7 @@ jobs:
   media-integration:
     name: FFmpeg MKV/SRT runtime integration
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,7 +64,11 @@ jobs:
           python-version: '3.13'
       - name: Install FFmpeg without holding up the portable test suite
         run: |
-          sudo timeout 180 apt-get install -y --no-install-recommends ffmpeg
+          # Hosted mirrors sometimes take >180s for apt dependency downloads;
+          # keep actual decoder integration rather than hiding a failed job.
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo timeout 540 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 install -y --no-install-recommends ffmpeg
+          fi
           command -v ffmpeg
           command -v ffprobe
       - name: Verify required encoders and caption filter
@@ -78,7 +82,7 @@ jobs:
       - name: Install pytest
         run: python -m pip install 'pytest>=8,<10'
       - name: Run actual FFmpeg decoder and subtitle tests
-        run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py
+        run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py tests/test_dlna.py
 
   setup-contract:
     name: Setup contract (${{ matrix.os }})

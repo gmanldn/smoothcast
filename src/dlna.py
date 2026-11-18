@@ -517,9 +517,26 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     if free < max(512 * 1024 * 1024, source.stat().st_size * 2):
         raise DlnaError("Not enough free space to prepare a DLNA-compatible MP4")
 
-    compatible = (
+    audio_track = int(audio_track)
+    selected_audio = next(
+        (track for track in media.audio_streams if track.index == audio_track),
+        None,
+    )
+    if audio_track < 0 or (
+        media.audio_streams and selected_audio is None
+    ) or (audio_track != 0 and not media.audio_streams):
+        raise DlnaError("Selected DLNA audio track is no longer available")
+    # media.acodec describes a default/first stream; it is *not* necessarily
+    # the soundtrack selected from the UI. Copying selected DTS/FLAC into
+    # a TV-oriented MP4 can fail or yield a file without playable dialogue.
+    selected_codec = (
+        (selected_audio.codec or "").lower() if selected_audio is not None
+        else (media.acodec or "").lower()
+    )
+    has_audio = bool(media.audio_streams or media.acodec)
+    copy_audio = (not has_audio) or selected_codec in {"aac", "mp3"}
+    copy_video = (
         media.vcodec == "h264"
-        and (media.acodec in {"aac", "mp3", ""})
         and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
         and media.width <= 1920 and media.height <= 1080
         and media.fps <= 30.01
@@ -527,13 +544,12 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     )
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-y", "-i", str(source),
-            "-map", "0:v:0", "-map", f"0:a:{max(0, int(audio_track))}?"]
-    if compatible:
-        args += ["-c:v", "copy", "-c:a", "copy"]
+            "-map", "0:v:0", "-map", f"0:a:{audio_track}?"]
+    if copy_video:
+        args += ["-c:v", "copy"]
     else:
         args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-                 "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.1",
-                 "-c:a", "aac", "-b:a", "192k", "-ac", "2"]
+                 "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.1"]
         vf = Session()._filter_args(
             subtitle_file is not None, subtitle_file, True, 1.0,
             embedded_subtitle_index=embedded_subtitle_index,
@@ -543,6 +559,10 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         args += vf
         if media.fps > 30.01:
             args += ["-r", "30"]
+    if copy_audio:
+        args += ["-c:a", "copy"]
+    else:
+        args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
     args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
     # A full-film conversion is slow. Poll the child process so the UI's
     # Cancel/Stop button can abort immediately and no orphan FFmpeg remains.
