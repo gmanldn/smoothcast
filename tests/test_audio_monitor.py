@@ -5,6 +5,25 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from audio_monitor import AudioMonitor
+import audio_monitor
+from unittest import mock
+
+
+class AudioMonitorAudioSelectionTests(unittest.TestCase):
+    def test_selected_audio_stream_is_used_for_analysis(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as folder:
+            monitor = AudioMonitor()
+            with mock.patch.object(audio_monitor.subprocess, "Popen") as popen, \
+                 mock.patch.object(audio_monitor.threading, "Thread"):
+                popen.return_value.poll.return_value = 0
+                monitor.start(Path(folder) / "movie.mkv", [], offset=33,
+                              audio_track_index=1)
+                args = popen.call_args.args[0]
+                filtergraph = args[args.index("-filter_complex") + 1]
+                self.assertIn("[0:a:1]aformat=", filtergraph)
+                self.assertIn("-ss", args)
+                monitor.stop()
 
 
 class AudioMonitorPairingTests(unittest.TestCase):
