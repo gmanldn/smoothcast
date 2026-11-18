@@ -25,7 +25,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, compact)
         for historical in ("Startup responsiveness", "Audio track identity",
-                           "single-instance", "GtkBox min > natural"):
+                           "Single-instance", "GtkBox min > natural"):
             with self.subTest(historical=historical):
                 self.assertIn(historical, original)
 
