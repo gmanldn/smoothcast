@@ -3107,14 +3107,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_close(self, _window) -> bool:
         self._stop_monitor()
-        self.cfg["window_width"] = self.get_width()
-        self.cfg["window_height"] = self.get_height()
-        try:
-            x, y = self.get_position()
-            self.cfg["window_x"] = x
-            self.cfg["window_y"] = y
-        except Exception:
-            pass
+        # Gtk4 tracks the normal window size separately from fullscreen and
+        # maximized allocations. Save that instead of the temporary screen size.
+        width, height = self.get_default_size()
+        if width > 0 and height > 0:
+            self.cfg["window_width"] = width
+            self.cfg["window_height"] = height
         save_config(self.cfg)
         if not self.cfg["keep_streaming"] and self.session is not None:
             session, self.session = self.session, None
