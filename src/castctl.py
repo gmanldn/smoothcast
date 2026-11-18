@@ -1,6 +1,7 @@
 """Chromecast control via the catt CLI."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import pathlib
 import shutil
@@ -40,6 +41,23 @@ class CastError(RuntimeError):
     pass
 
 
+def validate_manual_target(address: str) -> str:
+    """Accept only unicast LAN IPv4 receivers for manual Cast connections.
+
+    This adds a target to the existing Google Cast backend. It is not a
+    generic DLNA/AirPlay connection and never tries to probe other protocols.
+    """
+    value = str(address).strip()
+    try:
+        ip = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError as exc:
+        raise ValueError("Enter a valid IPv4 address for a Google Cast receiver") from exc
+    if (ip.is_loopback or ip.is_multicast or ip.is_unspecified
+            or ip.is_link_local or ip.is_reserved or ip.is_global):
+        raise ValueError("Enter a private LAN IPv4 address for a Cast receiver")
+    return str(ip)
+
+
 @dataclass(frozen=True)
 class Device:
     name: str
@@ -64,15 +82,21 @@ def scan(timeout: float = 30) -> list[Device]:
         data = json.loads(result.stdout or "{}")
     except ValueError:
         raise CastError("device scan returned invalid output") from None
+    if not isinstance(data, dict):
+        raise CastError("device scan returned an unexpected payload")
     devices = []
     for name, item in sorted(data.items()):
         if not isinstance(item, dict):
             continue
+        try:
+            port = int(item.get("port") or 0)
+        except (TypeError, ValueError):
+            port = 0
         devices.append(
             Device(
-                name=name,
+                name=str(name),
                 host=str(item.get("host") or ""),
-                port=int(item.get("port") or 0),
+                port=port if 0 <= port <= 65535 else 0,
                 model=str(item.get("model_name") or ""),
                 manufacturer=str(item.get("manufacturer") or ""),
                 uuid=str(item.get("uuid") or ""),
