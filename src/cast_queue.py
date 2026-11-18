@@ -723,13 +723,23 @@ class QueueMixin:
                 self.now_playing = None
                 self.tracker.clear()
             return
-        if self.session and self.session.active():
-            self.external = False
-            return
-        content = str((info or {}).get("content_id") or "")
-        if f":{streamer.PORT}/" in content:
-            self.external = False  # Completed encoder; TV still owns our HLS.
-            return
+        state = self.session.state if self.session is not None else None
+        if state is not None:
+            if (state.mode == "transcode" and
+                    playback_state.hls_session_matches(
+                        info, state.stream_url, state.title,
+                    )):
+                self.external = False  # Exact saved HLS URL; encoder may be done.
+                return
+            if (state.mode == "direct" and
+                    playback_state.direct_session_matches(info, state.title)):
+                self.external = False
+                return
+            if state.mode not in {"transcode", "direct"} and self.session.active():
+                self.external = False
+                return
+        # A matching port, title or playlist suffix is NOT ownership proof.
+        # Without a matching saved stream the receiver is playing other media.
         self.external = True
         self.tracker.clear()
 

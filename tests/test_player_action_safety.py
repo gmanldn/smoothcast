@@ -60,7 +60,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
             self.methods["_remove_queue"],
         )
         self.assertIn(
-            "self.external = False  # Completed encoder",
+            "playback_state.hls_session_matches(",
             self.methods["_detect_external"],
         )
 
@@ -79,7 +79,8 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn(guard, code)
         self.assertIn("self._preview_path is not None", code)
         self.assertLess(code.index(guard), code.index("castctl.stop(device)"))
-        self.assertLess(code.index(guard), code.index("session.stop(device)"))
+        self.assertLess(code.index(guard), code.index("session.stop(device, send_stop=send_stop)"))
+        self.assertIn("playback_state.hls_session_matches(", code)
 
     def test_close_during_cast_startup_never_publishes_an_orphan(self):
         # _cast_path publishes its session in an async worker callback. If the
