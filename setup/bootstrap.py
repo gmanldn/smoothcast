@@ -48,9 +48,13 @@ LINUX_PACKAGES = {
     "apt-get": (
         "python3-gi", "python3-gi-cairo", "gir1.2-gtk-4.0",
         "gir1.2-adw-1", "python3-venv", "ffmpeg",
+        "libgtk-4-media-gstreamer", "gstreamer1.0-plugins-base",
+        "gstreamer1.0-plugins-good", "gstreamer1.0-libav",
     ),
-    "dnf": ("python3-gobject", "gtk4", "libadwaita", "python3-pip", "ffmpeg-free"),
-    "pacman": ("python-gobject", "gtk4", "libadwaita", "ffmpeg"),
+    "dnf": ("python3-gobject", "gtk4", "libadwaita", "python3-pip",
+            "ffmpeg-free", "gstreamer1-plugins-base", "gstreamer1-plugins-good"),
+    "pacman": ("python-gobject", "gtk4", "libadwaita", "ffmpeg",
+               "gst-plugins-base", "gst-plugins-good", "gst-libav"),
 }
 
 
@@ -124,6 +128,20 @@ def pick_runtime(candidates: list[Path | str], *,
     )
 
 
+def linux_media_ready(manager: str) -> bool:
+    """GTK's video decoder requires native media plugins, not just PyGObject."""
+    if manager == "apt-get":
+        try:
+            result = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Status}", "libgtk-4-media-gstreamer"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            return result.returncode == 0 and "install ok installed" in result.stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    return bool(shutil.which("gst-inspect-1.0"))
+
+
 def install_linux(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     candidates = [Path("/usr/bin/python3"), Path(sys.executable)]
     missing = check_tools()
@@ -134,8 +152,8 @@ def install_linux(*, check: bool = False) -> tuple[Path, dict[str, str]]:
             raise SetupError(f"Linux prerequisites missing: GTK={not bool(ready)}, "
                              f"tools={', '.join(missing) or 'none'}")
         return Path(ready), dict(os.environ)
-    if not ready or missing:
-        manager = manager_for_linux()
+    manager = manager_for_linux()
+    if not ready or missing or (manager is not None and not linux_media_ready(manager)):
         if not manager:
             raise SetupError(
                 "Unsupported Linux package manager; supported: apt-get, dnf, pacman."
@@ -190,7 +208,7 @@ def install_macos(*, check: bool = False) -> tuple[Path, dict[str, str]]:
                  if python_ok(p) and works(p, GUI_CHECK, env=env)), None)
     if not check and (good is None or missing):
         checked_run([brew, "install", "python", "pygobject3", "gtk4",
-                     "libadwaita", "ffmpeg"], env=env)
+                     "libadwaita", "ffmpeg", "gstreamer"], env=env)
     if check and (good is None or missing):
         raise SetupError(f"macOS prerequisites missing: GTK={not bool(good)}, "
                          f"tools={', '.join(missing) or 'none'}")
