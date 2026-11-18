@@ -694,6 +694,45 @@ def clear_session() -> None:
     SESSION_FILE.unlink(missing_ok=True)
 
 
+def _hls_playlist_ready(*, finalized: bool = False) -> bool:
+    """Validate only segment files referenced by the actual HLS playlist.
+
+    A completed very short film may legitimately contain one segment. A
+    partial or failed encode must not be mistaken for a playable stream.
+    """
+    try:
+        data = (ROOT / HLS_NAME).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    if not data.startswith("#EXTM3U"):
+        return False
+    if finalized and "#EXT-X-ENDLIST" not in data.splitlines():
+        return False
+    segments: list[pathlib.Path] = []
+    for line in data.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        # No remote URLs, traversal, stray files or absolute segment paths.
+        if not entry.startswith("segment-") or not entry.endswith(".ts"):
+            return False
+        number = entry[len("segment-"):-len(".ts")]
+        if not number.isdigit():
+            return False
+        segments.append(ROOT / entry)
+    if not segments:
+        return False
+    # While FFmpeg is live, require a buffer of at least two published
+    # segments; once the playlist has ended, one complete segment is valid.
+    if not finalized and len(segments) < 2:
+        return False
+    try:
+        return all(segment.is_file() and segment.stat().st_size > 0
+                   for segment in segments)
+    except OSError:
+        return False
+
+
 class Session:
     """A live casting session: HLS transcode (or direct play) plus cast."""
 
@@ -727,6 +766,19 @@ class Session:
         if self.ffmpeg is not None and self.ffmpeg.poll() is None:
             return True
         return False
+
+    def recoverable_hls(self) -> bool:
+        """Encoder exited cleanly but the receiver can still drain the HLS.
+
+        This is a local prerequisite, not proof of remote session ownership.
+        The caller MUST also match the TV's content ID to our saved URL
+        before adopting the session or sending any receiver commands.
+        """
+        if self.mode != "transcode" or self.state is None:
+            return False
+        if self.ffmpeg is not None and self.ffmpeg.poll() not in (0, None):
+            return False
+        return _server_healthy() and _hls_playlist_ready(finalized=True)
 
     def encoder_finished(self) -> bool:
         if self.mode == "transcode":
@@ -1077,12 +1129,15 @@ class Session:
         _save_session(self.state)
 
     def _wait_for_segments(self, timeout: float) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
-                return False
-            segments = list(ROOT.glob(SEGMENT_GLOB))
-            if (ROOT / HLS_NAME).exists() and len(segments) >= 2:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            exit_code = self.ffmpeg.poll() if self.ffmpeg is not None else None
+            if exit_code is not None:
+                # FFmpeg finalises the playlist just before exit. A successful
+                # one-segment HLS film is playable; an incomplete/failed
+                # encoder is not.
+                return exit_code == 0 and _hls_playlist_ready(finalized=True)
+            if _hls_playlist_ready():
                 return True
             time.sleep(0.25)
         return False
