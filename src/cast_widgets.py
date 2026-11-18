@@ -15,6 +15,7 @@ import pathlib
 import threading
 
 import castctl
+import config_control
 
 import audio_monitor
 
@@ -74,14 +75,13 @@ CSS = ui_theme.CSS
 
 
 def load_config() -> dict:
-    cfg = dict(DEFAULTS)
     try:
         raw = json.loads(CONFIG_FILE.read_text())
-        if isinstance(raw, dict):
-            cfg.update({k: v for k, v in raw.items() if k in DEFAULTS})
     except (OSError, ValueError):
-        pass
-    return cfg
+        raw = {}
+    # Validate every field before GTK consumes it; malformed neighbours
+    # must not lose valid preferences or share mutable DEFAULTS identities.
+    return config_control.sanitise_config(raw, DEFAULTS)
 
 
 def save_config(cfg: dict) -> None:
