@@ -57,3 +57,13 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 
 ## Status
 - [ ] Not started (all). Implement one per commit, bump version each.
+
+## Done
+- [x] 1. Picture-in-Picture (always-on-top toggle)
+- [x] 2. Keyboard shortcuts cheatsheet (menu)
+- [x] 3. Frame-accurate seek (comma/period 1s)
+- [x] 10. Screenshot capture
+- [x] 22. Loop toggle
+- [x] 26. Recent files clear
+- [x] 30. Fullscreen toggle
+- [x] 38. Network stream open (URL)

@@ -42,6 +42,7 @@ DEFAULTS: dict = {
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
     "recents": [],
+    "loop": False,
     "window_width": 1120,
     "window_height": 760,
     "window_x": -1,
@@ -1101,11 +1102,14 @@ class MainWindow(Adw.ApplicationWindow):
             recents.append(pathlib.Path(path).name, f"app.recent-{index}")
         if self.cfg["recents"]:
             recents.append("Clear recent files", "app.clear-recents")
+        menu.append("Open URL…", "app.open-url")
+        menu.append("Screenshot", "app.screenshot")
         menu.append_submenu("Open recent", recents)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Always on top", "app.always-on-top")
+        playback.append("Loop", "app.loop")
         menu.append_section(None, playback)
         scheme = Gio.Menu()
         for label, value in (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")):
@@ -2431,6 +2435,11 @@ class MainWindow(Adw.ApplicationWindow):
     def _toggle_always_on_top(self) -> None:
         self.set_keep_above(not self.get_keep_above())
 
+    def _toggle_loop(self) -> None:
+        self.cfg["loop"] = not self.cfg.get("loop", False)
+        save_config(self.cfg)
+        self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
+
     def _skip(self, delta: float) -> None:
         position = self.tracker.value()
         if position is None:
@@ -2787,7 +2796,38 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self.toast("That file has moved or been deleted", error=True)
 
-    # ---------- adoption ----------
+    def _open_url(self) -> None:
+        dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("https://...")
+        dialog.set_extra_child(entry)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("open", "Open")
+        dialog.set_default_response("open")
+        dialog.set_response_appearance("open", Adw.ResponseAppearance.SUGGESTED)
+        def on_resp(d, r):
+            if r == "open":
+                url = entry.get_text().strip()
+                if url:
+                    self.set_selection(url)
+        dialog.connect("response", on_resp)
+        dialog.present(self)
+
+    def _screenshot(self) -> None:
+        import subprocess
+        path = self.cfg.get("screenshot_dir", str(pathlib.Path.home() / "Pictures"))
+        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+        out = pathlib.Path(path) / f"smoothcast_{int(time.time())}.png"
+        pos = self.tracker.value() or 0.0
+        media = self.media
+        if media is None:
+            self.toast("No media loaded", error=True)
+            return
+        try:
+            subprocess.run(["ffmpeg", "-y", "-ss", str(pos), "-i", str(media.path), "-frames:v", "1", str(out)], check=True, capture_output=True)
+            self.toast(f"Screenshot saved: {out.name}")
+        except Exception as e:
+            self.toast(f"Screenshot failed: {e}", error=True)
 
     def _adopt_session(self) -> bool:
         state = streamer.load_session()
@@ -2993,8 +3033,10 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("always-on-top", lambda *a: self._window()._toggle_always_on_top())
+        simple("loop", lambda *a: self._window()._toggle_loop())
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
-        simple("clear-recents", lambda *a: self._window()._clear_recents())
+        simple("open-url", lambda *a: self._window()._open_url())
+        simple("screenshot", lambda *a: self._window()._screenshot())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
