@@ -89,12 +89,30 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The launcher uses the absolute path to this checkout, not an unavailable `smoothcast` executable on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
-To repair or check the launcher explicitly from the checkout:
+To repair the existing Linux dock icon after pulling a new version (run from
+your SmoothCast checkout, without `sudo`):
 
 ```sh
-python3 scripts/install_desktop.py
+git pull --ff-only
+bash setup/linuxsetup.sh
+python3 scripts/install_desktop.py --pin
 python3 scripts/install_desktop.py --check
+gtk-launch local.cast-control
 ```
+
+The installer refreshes `~/.local/share/applications/local.cast-control.desktop`
+and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`.
+The desktop entry launches this checkout's `smoothcast` script with a fixed
+working directory; a missing or incomplete project virtualenv is repaired
+on launch. `--pin` adds the canonical entry to GNOME favourites without
+duplicating or rearranging other favourites. `gtk-launch` verifies the
+actual desktop entry rather than merely launching a terminal command.
+
+If `gtk-launch` cannot find the entry, log out and back in to refresh
+GNOME's application cache. If the window still fails, run `./smoothcast`
+from the same checkout in a terminal to see dependency errors; on GNOME,
+also inspect `journalctl --user -b`. Do not use `sudo` for desktop
+integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
