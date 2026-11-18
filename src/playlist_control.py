@@ -78,3 +78,23 @@ def matches_query(path: str, query: str) -> bool:
     """Filter a queue by case-insensitive filename/folder terms, in any order."""
     haystack = str(path).casefold()
     return all(term in haystack for term in str(query).casefold().split())
+
+
+def selection_after_move(selected: int | None, source: int, target: int) -> int | None:
+    """Track the selected media identity when two queue entries swap."""
+    if selected == source:
+        return target
+    if selected == target:
+        return source
+    return selected
+
+
+def selection_after_remove(
+    selected: int | None, removed: int, remaining: int,
+) -> int | None:
+    """Keep the selected file, or select a neighbour when it is removed."""
+    if selected is None or remaining <= 0:
+        return None
+    if selected == removed:
+        return min(removed, remaining - 1)
+    return selected - 1 if selected > removed else selected
