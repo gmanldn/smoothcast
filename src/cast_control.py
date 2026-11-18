@@ -1881,6 +1881,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._set_levels_hint("")
         item = self.now_playing
         session, self.session = self.session, None
+        # Completing a movie is still a lifecycle transition: the old
+        # session is tearing down its server and deleting shared HLS files.
+        # Block new commands until that cleanup has finished.
+        self.busy = session is not None
+        self._refresh_controls()
         following = playback_state.next_media(
             item, self.queue, repeat_current=bool(self.cfg.get("loop")),
             auto_next=bool(self.cfg.get("autonext")),
@@ -1894,7 +1899,9 @@ class MainWindow(Adw.ApplicationWindow):
             )
 
             def advance(_result=None):
-                # Cleanup must finish before this new stream can replace it.
+                # Release the guard only after the old HLS files and server
+                # are gone. The fresh _cast_path acquires it again.
+                self.busy = False
                 self._cast_path(next_path, 0.0)
 
             if session is not None:
@@ -1910,15 +1917,23 @@ class MainWindow(Adw.ApplicationWindow):
 
         if session is not None:
             device = self._device()
-            # Complete any cleanup before auto-closing the application.
+            def cleaned(_result):
+                self.busy = False
+                if self.cfg.get("auto_shutdown"):
+                    self.close()
+                else:
+                    self._refresh_controls()
+
+            def failed(message):
+                self.busy = False
+                self.toast(f"Cleanup failed: {message}", error=True)
+                self._refresh_controls()
+
+            # The receiver already reported IDLE. Never send an extra STOP
+            # that could interrupt another app's newly started playback.
             Async.run(
-                # The receiver already reported IDLE. Do not send an extra
-                # STOP that could interrupt content opened by another app.
                 lambda: session.stop(device, send_stop=False),
-                done=lambda _r: self.close() if self.cfg.get("auto_shutdown") else None,
-                failed=lambda message: self.toast(
-                    f"Cleanup failed: {message}", error=True,
-                ),
+                done=cleaned, failed=failed,
             )
         elif self.cfg.get("auto_shutdown"):
             GLib.idle_add(lambda: (self.close(), False)[1])
