@@ -167,6 +167,12 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #85 — Failed local preparation never stops the renderer:**
+  `dlna.Session.start` resets renderer ownership before preparation, so an
+  error such as insufficient disk cleans up scratch without sending Stop or
+  SetAVTransportURI and leaves the renderer's own film playing. A regression
+  test covers the preparation-failure path (including a reused session).
+  Real-renderer confirmation pending.
 - **P0 #55 — catt resolved from the verified runtime:** `castctl._find_catt`
   now checks the running interpreter's own scripts directory before PATH, so
   the copy `setup` provisioned and verified wins over a conflicting, older

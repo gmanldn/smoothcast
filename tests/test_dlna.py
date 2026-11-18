@@ -257,5 +257,38 @@ class DlnaPrepareTests(unittest.TestCase):
             process.terminate.assert_called_once()
             self.assertFalse(output.exists())
 
+
+class DlnaSessionStartTests(unittest.TestCase):
+    def _renderer(self):
+        return dlna.Renderer(
+            name="TV",
+            host="192.168.12.25",
+            location=LOCATION,
+            transport_url="http://192.168.12.25/upnp/control/av",
+            transport_service="urn:schemas-upnp-org:service:AVTransport:1",
+        )
+
+    def test_preparation_failure_does_not_stop_the_renderer(self):
+        # A local preparation error must clean up scratch without sending a
+        # Stop (or SetAVTransportURI) to a renderer that is still playing its
+        # own content.
+        media = streamer.MediaInfo(path=Path("movie.mkv"), vcodec="hevc", acodec="eac3")
+        session = dlna.Session()
+        session._owns_renderer = True  # a reused session must not retain ownership
+        with mock.patch.object(dlna, "prepare_mp4",
+                               side_effect=OSError("disk full")) as prepare, \
+             mock.patch.object(dlna, "set_uri") as set_uri, \
+             mock.patch.object(dlna, "stop") as stop:
+            with self.assertRaises(OSError):
+                session.start(media, renderer=self._renderer(),
+                              local_ip="192.168.12.10", offset=0.0, title="Film")
+        prepare.assert_called_once()
+        set_uri.assert_not_called()
+        stop.assert_not_called()
+        self.assertFalse(session._owns_renderer)
+        self.assertIsNone(session.tmp)
+        self.assertIsNone(session.state)
+
+
 if __name__ == "__main__":
     unittest.main()

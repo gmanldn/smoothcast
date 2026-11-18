@@ -586,6 +586,10 @@ class Session:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
+        # Ownership begins only once SetAVTransportURI succeeds, so a failure
+        # during local preparation (e.g. insufficient disk) cleans up scratch
+        # without ever sending a Stop to a renderer still playing its own film.
+        self._owns_renderer = False
         try:
             path = Path(media.path)
             direct = (
