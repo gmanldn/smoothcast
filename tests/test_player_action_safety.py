@@ -29,10 +29,11 @@ class PlayerActionSafetyTests(unittest.TestCase):
                 self.assertNotIn("self.now_playing =", body)
                 self.assertIn("self._cast_path(", body)
 
-    def test_play_without_owned_session_starts_selected_media(self):
+    def test_play_without_owned_session_uses_local_preview_not_tv(self):
         code = self.methods["toggle_play"]
         self.assertIn("if self.session is None and not self.external:", code)
-        self.assertIn("self.cast_selected()", code)
+        self.assertIn("self._toggle_local_preview()", code)
+        self.assertNotIn("self.cast_selected()", code)
         self.assertIn("castctl.play(device)", code)  # only in the real session branch
 
     def test_completion_cleanup_does_not_stop_new_tv_content(self):
@@ -55,9 +56,10 @@ class PlayerActionSafetyTests(unittest.TestCase):
         # consumes buffered segments. UI ownership must follow session state.
         controls = self.methods["_refresh_controls"]
         self.assertIn(
-            "not (self.session is not None and self.session.state is not None)",
+            "active = bool(self.session is not None and self.session.state is not None) or self.external",
             controls,
         )
+        self.assertIn("local_ready = self._preview_path is not None and self.session is None", controls)
         self.assertIn(
             "if session is None or session.state is None:",
             self.methods["seek_to"],
