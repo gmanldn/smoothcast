@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smoothcast"
-version = "1.0.45"
+version = "1.0.47"
 description = "Chromecast companion app with GTK4/libadwaita UI"
 readme = "README.md"
 license = {text = "MIT"}
