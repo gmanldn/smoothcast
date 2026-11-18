@@ -104,7 +104,7 @@ def test_validated_bytes_are_executed_as_staged_file_without_shell_c():
          mock.patch.object(bootstrap, "pick_runtime",
                            return_value=Path("/opt/homebrew/bin/python3")):
         selected, env = bootstrap.install_macos(check=False)
-    assert str(selected) == "/opt/homebrew/bin/python3"
-    assert env["PATH"].split(bootstrap.os.pathsep)[0] == "/opt/homebrew/bin"
+    assert selected == Path("/opt/homebrew/bin/python3")
+    assert env["PATH"].split(bootstrap.os.pathsep)[0] == str(Path("/opt/homebrew/bin"))
     assert len(launched) == 1
     assert not launched[0].exists()  # Private staging is removed after execution.
