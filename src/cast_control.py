@@ -2460,10 +2460,14 @@ class MainWindow(Adw.ApplicationWindow):
             and self.session.state.embedded_subtitle_index >= 0
         )
         subtitle_burned = bool(self.session and self.session.state and self.session.state.burn_subs)
-        self.cc_button.set_sensitive(active and not busy and not subtitle_burned)
+        dlna_active = bool(self.session and self.session.mode == "dlna")
+        self.cc_button.set_sensitive(active and not busy and not subtitle_burned and not dlna_active)
         self.cc_button.set_tooltip_text(
-            "Captions are burned into video; change settings and recast to switch off"
-            if subtitle_burned else "Toggle subtitles on the receiver"
+            "DLNA captions are prepared in the MP4; recast to change them"
+            if dlna_active else (
+                "Captions are burned into video; change settings and recast to switch off"
+                if subtitle_burned else "Toggle subtitles on the receiver"
+            )
         )
         has_subs = (embedded_burned or bool(self._active_subs())
                     or bool(self.session and self.session.state and self.session.state.subs))
@@ -3574,6 +3578,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_cc_toggled(self, button) -> None:
         if self.busy or self._syncing:
+            return
+        if self._dlna_renderer() is not None:
+            self.toast("DLNA subtitles are burned into the prepared film; recast to change", error=True)
             return
         on = button.get_active()
         device = self._device()
