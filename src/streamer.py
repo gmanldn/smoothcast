@@ -366,9 +366,21 @@ def host_ip(device_host: str | None = None) -> str:
     raise StreamError("No usable LAN IPv4 address found for Chromecast streaming")
 
 
+_IS_WINDOWS = os.name == "nt"
+
+
 def pid_alive(pid: int | None) -> bool:
+    """Return True only if *pid* exists, without ever signalling it.
+
+    ``os.kill(pid, 0)`` is an existence probe on POSIX, but on Windows
+    ``os.kill`` maps to ``TerminateProcess`` for any signal, so probing a
+    stale saved PID would kill an unrelated process. Windows therefore uses a
+    query-only handle instead of ``os.kill``.
+    """
     if not pid or pid <= 0:
         return False
+    if _IS_WINDOWS:
+        return _pid_alive_windows(pid)
     try:
         os.kill(pid, 0)
         return True
@@ -376,6 +388,28 @@ def pid_alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
+
+
+def _pid_alive_windows(pid: int) -> bool:
+    """Query whether *pid* is running without terminating it (Win32 only)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+    except (ImportError, AttributeError):  # pragma: no cover - non-Windows
+        return False
+    process_query_limited_information = 0x1000
+    still_active = 259
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        return False
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _pid_is_ours(pid: int | None, role: str) -> bool:

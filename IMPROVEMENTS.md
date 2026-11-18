@@ -167,6 +167,11 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #51 — Non-destructive PID probes on Windows:** `streamer.pid_alive` no
+  longer calls `os.kill(pid, 0)` on Windows, where that would terminate the
+  process; it queries a `PROCESS_QUERY_LIMITED_INFORMATION` handle instead.
+  POSIX keeps the existence probe. A regression test proves `os.kill` is not
+  reached on the Windows path. Confirmation on a real Windows host pending.
 - **P0 #53 — Manual target entry is locked during playback:** `_add_cast_target`
   now applies the dropdown's ownership rule. While a session is live or a cast
   is starting, entering another IPv4 (via Return or Add IP) remembers the

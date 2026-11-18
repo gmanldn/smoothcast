@@ -180,6 +180,15 @@ class StreamerTests(unittest.TestCase):
         self.assertTrue(streamer.pid_alive(os.getpid()))
         self.assertFalse(streamer.pid_alive(999999999))
 
+    def test_pid_alive_never_calls_os_kill_on_windows(self):
+        # os.kill(pid, 0) is TerminateProcess on Windows: probing a stale PID
+        # must never signal it, so the Windows path must not reach os.kill.
+        from unittest import mock
+        with mock.patch.object(streamer, "_IS_WINDOWS", True), \
+             mock.patch.object(streamer.os, "kill") as kill:
+            streamer.pid_alive(4242)
+        kill.assert_not_called()
+
     def test_media_info_properties(self):
         m = streamer.MediaInfo(path=Path("a.mp4"), width=1920, height=1080,
                                size=1536000, bitrate=8000000)
