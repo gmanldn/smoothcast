@@ -27,7 +27,25 @@ jobs:
           python-version: '3.13'
 
       - name: Check Python syntax without GTK
-        run: python -m compileall -q src scripts tests
+        run: python -m compileall -q src scripts setup tests
 
       - name: Run all portable regression tests
         run: python -m unittest discover -s tests -v
+
+  setup-contract:
+    name: Setup contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check Python syntax
+        run: python -m compileall -q setup
+      - name: Exercise Python-only setup contracts without installing packages
+        run: python -m unittest discover -s tests -p "test_setup_bootstrap.py" -v
