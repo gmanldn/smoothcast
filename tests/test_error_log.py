@@ -113,7 +113,7 @@ def test_previous_hooks_run_exactly_once_when_log_storage_fails(tmp_path):
             exc_type=captured[0], exc_value=captured[1],
             exc_traceback=captured[2], thread=threading.current_thread(),
         )
-        with mock.patch.object(error_log.LOG, "_persist",
+        with mock.patch.object(error_log.LOG, "_append",
                                side_effect=OSError("disk full")):
             sys.excepthook(*captured)
             threading.excepthook(args)
@@ -156,3 +156,65 @@ def test_uncaught_thread_hook_logs_explicit_traceback_outside_except(tmp_path):
         threading.excepthook = old_thread
         error_log.LOG = old_log
 
+
+
+def test_oversized_existing_log_loads_bounded_tail_and_compacts(tmp_path):
+    path = tmp_path / "errors.log"
+    # Simulate the old logger having grown far beyond the new size bound.
+    with path.open("wb") as fh:
+        fh.write(b"stale entry\n" * 700000)
+        fh.write(b"newest preserved traceback: ValueError: boom\n")
+    size_before = path.stat().st_size
+    assert size_before > error_log.MAX_LOG_BYTES
+    logger = error_log.ErrorLog(path)
+    assert any("ValueError: boom" in row for row in logger.read())
+    assert logger._retained_bytes <= error_log.MAX_RETAIN_BYTES
+    assert len(logger.read()) <= error_log.MAX_LINES
+    logger.add("current failure")
+    assert path.stat().st_size <= error_log.MAX_RETAIN_BYTES
+    restored = error_log.ErrorLog(path)
+    assert any("ValueError: boom" in row for row in restored.read())
+    assert restored.read()[-1].endswith("current failure")
+
+
+def test_burst_is_append_only_and_compacts_infrequently(tmp_path):
+    path = tmp_path / "errors.log"
+    logger = error_log.ErrorLog(path)
+    with mock.patch.object(error_log, "MAX_LOG_BYTES", 1024), \
+         mock.patch.object(error_log, "MAX_RETAIN_BYTES", 512), \
+         mock.patch.object(error_log, "MAX_ENTRY_BYTES", 256), \
+         mock.patch.object(logger, "_persist", wraps=logger._persist) as compaction:
+        for index in range(1000):
+            logger.add(f"burst {index}: " + "x" * 55)
+            assert path.stat().st_size <= 1024
+        assert compaction.call_count < 160, "full history rewritten too frequently"
+        assert logger.read()[-1].endswith("x" * 55)
+        assert len(logger.read()) < 20
+        assert logger._retained_bytes <= 512
+
+
+def test_large_multiline_traceback_keeps_beginning_and_final_cause(tmp_path):
+    path = tmp_path / "errors.log"
+    logger = error_log.ErrorLog(path)
+    details = "first failure context\n" + ("frame: xxxxxxxxxxxxxxxxxxx\n" * 5000)
+    details += "last important cause: RuntimeError: final error"
+    logger.add(details)
+    assert path.stat().st_size <= error_log.MAX_ENTRY_BYTES + 8
+    restored = error_log.ErrorLog(path)
+    saved = "\n".join(restored.read())
+    assert "first failure context" in saved
+    assert "RuntimeError: final error" in saved
+    assert "oversized entry truncated" in saved
+
+
+def test_clear_after_reopening_is_atomic_and_stays_empty(tmp_path):
+    path = tmp_path / "errors.log"
+    path.write_text("old\nnew\n", encoding="utf-8")
+    logger = error_log.ErrorLog(path)
+    assert logger.read() == ["old", "new"]
+    logger.clear()
+    assert path.read_bytes() == b""
+    assert error_log.ErrorLog(path).read() == []
+    logger.add("fresh")
+    assert "old" not in path.read_text()
+    assert "fresh" in path.read_text()
