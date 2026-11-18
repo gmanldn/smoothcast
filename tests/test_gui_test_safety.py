@@ -24,6 +24,19 @@ spec.loader.exec_module(runner)
 
 
 class GuiTestSafetyTests(unittest.TestCase):
+    def test_current_pytest_process_cannot_connect_to_user_display(self):
+        # Under pytest, conftest has already removed real desktop handles,
+        # even if DISPLAY/Wayland/DBus were injected by the caller.
+        if os.environ.get("SMOOTHCAST_TEST_CONTEXT") != "1":
+            self.skipTest("Only pytest loads the pre-collection safety guard")
+        self.assertEqual(os.environ.get("GDK_BACKEND"), "x11")
+        for key in (
+            "DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+            "XAUTHORITY", "SMOOTHCAST_GUI_TEST_ISOLATED",
+        ):
+            with self.subTest(key=key):
+                self.assertNotIn(key, os.environ)
+
     def test_pytest_clears_inherited_desktop_display_channels(self):
         # Guard must be applied before test collection, not after tests have
         # had a chance to create GTK objects or spawn GUI subprocesses.
