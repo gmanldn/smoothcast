@@ -7,6 +7,7 @@ Only one explicit local file is served per session, under an unguessable URL.
 """
 from __future__ import annotations
 
+import atexit
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +35,29 @@ MAX_RENDERERS = 64
 CHUNK = 128 * 1024
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 MEDIA_TYPE = "video/mp4"
+
+_live_encoders: set[subprocess.Popen] = set()
+_encoder_lock = threading.Lock()
+
+
+def _stop_encoders_on_exit() -> None:
+    """Do not orphan an FFmpeg full-film conversion when the GUI exits."""
+    with _encoder_lock:
+        children = list(_live_encoders)
+    for proc in children:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+        except OSError:
+            pass
+
+
+atexit.register(_stop_encoders_on_exit)
 
 
 class DlnaError(RuntimeError):
@@ -497,23 +521,29 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         except OSError as exc:
             output.unlink(missing_ok=True)
             raise DlnaError(f"Cannot start FFmpeg: {exc}") from exc
+        with _encoder_lock:
+            _live_encoders.add(proc)
         deadline = time.monotonic() + min(7200, max(180, media.duration * 3 + 120))
         try:
-            while proc.poll() is None:
-                if cancel is not None and cancel.is_set():
-                    raise DlnaError("DLNA preparation cancelled")
-                if time.monotonic() > deadline:
-                    raise DlnaError("FFmpeg exceeded the DLNA preparation time limit")
-                time.sleep(0.2)
-        except BaseException:
             try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except (OSError, subprocess.TimeoutExpired):
-                proc.kill()
-                proc.wait(timeout=3)
-            output.unlink(missing_ok=True)
-            raise
+                while proc.poll() is None:
+                    if cancel is not None and cancel.is_set():
+                        raise DlnaError("DLNA preparation cancelled")
+                    if time.monotonic() > deadline:
+                        raise DlnaError("FFmpeg exceeded the DLNA preparation time limit")
+                    time.sleep(0.2)
+            except BaseException:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except (OSError, subprocess.TimeoutExpired):
+                    proc.kill()
+                    proc.wait(timeout=3)
+                output.unlink(missing_ok=True)
+                raise
+        finally:
+            with _encoder_lock:
+                _live_encoders.discard(proc)
         if proc.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
             output.unlink(missing_ok=True)
             error_log.seek(0, 2)
