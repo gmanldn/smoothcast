@@ -91,6 +91,16 @@ Relevant vendor documentation:
 49. **[P2 · M] Sandboxed subtitle and media-file handling.** Tighten temporary file limits, process timeouts, parser fuzz tests and secure cleanup of FFmpeg-produced files.
 50. **[P2 · M] Release qualification dashboard.** Track CI, GTK self-tests, real-device model matrix, installer checks, codec/subtitle samples and known failures per release.
 
+## Implementation progress (not hardware-qualified)
+
+- **P0 #13 — Multi-audio-track picker:** implemented and under CI verification.
+  FFprobe lists language, title, codec and channel layout; selected 0:a:N
+  is persisted per film, survives HLS software fallback and seek restart,
+  and can be changed while casting. Requires a physical receiver and
+  multilingual MKV smoke test before marking it fully done.
+- **Queue search:** delivered independently of this revised 50-item list;
+  Ctrl+F filters filename/folder terms without changing playback order.
+
 ## Delivery criteria
 
 A proposal is **done** only when its behaviour is implemented, source-level and
