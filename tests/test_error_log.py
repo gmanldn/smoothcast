@@ -162,8 +162,8 @@ def test_oversized_existing_log_loads_bounded_tail_and_compacts(tmp_path):
     path = tmp_path / "errors.log"
     # Simulate the old logger having grown far beyond the new size bound.
     with path.open("wb") as fh:
-        fh.write(b"stale entry\\n" * 700000)
-        fh.write(b"newest preserved traceback: ValueError: boom\\n")
+        fh.write(b"stale entry\n" * 700000)
+        fh.write(b"newest preserved traceback: ValueError: boom\n")
     size_before = path.stat().st_size
     assert size_before > error_log.MAX_LOG_BYTES
     logger = error_log.ErrorLog(path)
@@ -180,9 +180,9 @@ def test_oversized_existing_log_loads_bounded_tail_and_compacts(tmp_path):
 def test_burst_is_append_only_and_compacts_infrequently(tmp_path):
     path = tmp_path / "errors.log"
     logger = error_log.ErrorLog(path)
-    with mock.patch.object(error_log, "MAX_LOG_BYTES", 1024), \\
-         mock.patch.object(error_log, "MAX_RETAIN_BYTES", 512), \\
-         mock.patch.object(error_log, "MAX_ENTRY_BYTES", 256), \\
+    with mock.patch.object(error_log, "MAX_LOG_BYTES", 1024), \
+         mock.patch.object(error_log, "MAX_RETAIN_BYTES", 512), \
+         mock.patch.object(error_log, "MAX_ENTRY_BYTES", 256), \
          mock.patch.object(logger, "_persist", wraps=logger._persist) as compaction:
         for index in range(1000):
             logger.add(f"burst {index}: " + "x" * 55)
@@ -196,12 +196,12 @@ def test_burst_is_append_only_and_compacts_infrequently(tmp_path):
 def test_large_multiline_traceback_keeps_beginning_and_final_cause(tmp_path):
     path = tmp_path / "errors.log"
     logger = error_log.ErrorLog(path)
-    details = "first failure context\\n" + ("frame: xxxxxxxxxxxxxxxxxxx\\n" * 5000)
+    details = "first failure context\n" + ("frame: xxxxxxxxxxxxxxxxxxx\n" * 5000)
     details += "last important cause: RuntimeError: final error"
     logger.add(details)
     assert path.stat().st_size <= error_log.MAX_ENTRY_BYTES + 8
     restored = error_log.ErrorLog(path)
-    saved = "\\n".join(restored.read())
+    saved = "\n".join(restored.read())
     assert "first failure context" in saved
     assert "RuntimeError: final error" in saved
     assert "oversized entry truncated" in saved
@@ -209,7 +209,7 @@ def test_large_multiline_traceback_keeps_beginning_and_final_cause(tmp_path):
 
 def test_clear_after_reopening_is_atomic_and_stays_empty(tmp_path):
     path = tmp_path / "errors.log"
-    path.write_text("old\\nnew\\n", encoding="utf-8")
+    path.write_text("old\nnew\n", encoding="utf-8")
     logger = error_log.ErrorLog(path)
     assert logger.read() == ["old", "new"]
     logger.clear()
