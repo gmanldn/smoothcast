@@ -733,6 +733,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
+        self.update_notice: str | None = None
         self.local_playback = local_playback.LocalPlayback()
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
@@ -767,9 +768,15 @@ class MainWindow(Adw.ApplicationWindow):
         GLib.timeout_add_seconds(5, self._sleep_tick)
 
     def _build_ui(self) -> None:
-        self.set_title(APP_NAME)
+        # Keep the *running* release in the prominent title, not an easily
+        # truncated device/status subtitle or a live on-disk git lookup.
+        self.set_title(f"{APP_NAME} {version.label()}")
         header = Adw.HeaderBar()
-        self.title_widget = Adw.WindowTitle(title=APP_NAME, subtitle=f"{self.cfg['device']}  ·  v{version.__version__}")
+        self.title_widget = Adw.WindowTitle(
+            title=f"{APP_NAME} {version.label()}",
+            subtitle=f"{self.cfg['device']} · idle",
+        )
+        self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.label()}")
         header.set_title_widget(self.title_widget)
         _icon_path = pathlib.Path(__file__).resolve().parent.parent / "data" / "cast-control.png"
         if _icon_path.exists():
@@ -1975,7 +1982,13 @@ class MainWindow(Adw.ApplicationWindow):
         state = labels.get(self.device_state, "idle")
         if self.external and state not in {"offline", "idle"}:
             state = "playing on TV"
-        self.title_widget.set_subtitle(f"{self._device()} · {state} · v{version.__version__}")
+        subtitle = f"{self._device()} · {state}"
+        tooltip = f"Running {APP_NAME} {version.label()}"
+        if self.update_notice:
+            subtitle += " · restart to update"
+            tooltip += f"\n{self.update_notice}"
+        self.title_widget.set_subtitle(subtitle)
+        self.title_widget.set_tooltip_text(tooltip)
 
     def _set_chip(self, label: str, kind: str) -> None:
         for existing in ("idle", "playing", "paused", "buffering", "offline", "error"):
@@ -3532,9 +3545,18 @@ class CastControlApp(Adw.Application):
             pathlib.Path(__file__).resolve().parent.parent,
         )
         if notice:
-            # All GTK work stays on the main loop.
-            GLib.idle_add(lambda: (self.window.toast(notice), False)[1]
-                          if self.window is not None else False)
+            # All GTK work stays on the main loop; the version displayed in
+            # the title remains the imported *running* release until restart.
+            GLib.idle_add(self._present_update_notice, notice)
+
+    def _present_update_notice(self, notice: str) -> bool:
+        window = self.window
+        if window is not None:
+            window.update_notice = notice
+            window._update_header_subtitle()
+            window._console(notice)
+            window.toast(notice)
+        return False
 
     def _selftest_quit(self) -> bool:
         print("SELFTEST: window built successfully")
@@ -3583,6 +3605,9 @@ class CastControlApp(Adw.Application):
 
 
 def main() -> int:
+    if sys.argv[1:] in (["--version"], ["-V"]):
+        print(f"{APP_NAME} {version.label()}")
+        return 0
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
 
