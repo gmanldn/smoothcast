@@ -125,3 +125,5 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 27. Video rotation (0/90/180/270): `streamer.rotation_filters` builds ffmpeg `transpose` chains for the HLS transcode; `Session.start_transcode` accepts `rotation`, forces a VAAPI download/upload round trip when rotating on the GPU path, and stores it in session state; the settings card exposes a rotation dropdown. Pure regression tests: `tests/test_rotation.py`.
 
+28. Local playback: `src/local_playback.py` manages an ffplay subprocess so a selected file can be played on this machine (in its own window) before deciding to cast. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts. Tests: `tests/test_local_playback.py`.
+

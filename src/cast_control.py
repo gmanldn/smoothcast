@@ -26,6 +26,7 @@ import update_control
 import version
 import ui_theme
 import error_log
+import local_playback
 
 APP_ID = "local.cast-control"
 APP_NAME = "SmoothCast"
@@ -731,6 +732,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
+        self.local_playback = local_playback.LocalPlayback()
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
         # move()/get_position() APIs and never force a fullscreen-sized minimum.
@@ -948,6 +950,7 @@ class MainWindow(Adw.ApplicationWindow):
         menu = Gio.Menu()
         section = Gio.Menu()
         section.append("Open video…", "app.open")
+        section.append("Play locally", "app.play-locally")
         section.append("Add videos to queue…", "app.add-files")
         menu.append_section(None, section)
         recents = Gio.Menu()
@@ -1109,6 +1112,12 @@ class MainWindow(Adw.ApplicationWindow):
         self.cast_button.add_css_class("action-control")
         self.cast_button.set_hexpand(False)
         self.cast_button.connect("clicked", lambda _b: self.cast_selected())
+        self.local_button = Gtk.Button(label="Play locally")
+        self.local_button.set_icon_name("media-playback-start-symbolic")
+        self.local_button.add_css_class("action-control")
+        self.local_button.set_hexpand(False)
+        self.local_button.set_tooltip_text("Play the selected file locally before casting")
+        self.local_button.connect("clicked", lambda _b: self._play_locally())
         self.stop_tv_button = Gtk.Button(label="Stop TV")
         self.stop_tv_button.set_icon_name("media-playback-stop-symbolic")
         self.stop_tv_button.add_css_class("destructive-action")
@@ -1121,7 +1130,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.cc_button.set_tooltip_text("Toggle captions on the TV")
         self.cc_button.connect("toggled", self._on_cc_toggled)
         self.action_controls = (
-            open_button, self.cast_button, self.stop_tv_button, self.cc_button,
+            open_button, self.cast_button, self.local_button, self.stop_tv_button, self.cc_button,
         )
         for index, button in enumerate(self.action_controls):
             action_row.attach(button, index, 0, 1, 1)
@@ -2166,6 +2175,18 @@ class MainWindow(Adw.ApplicationWindow):
         self._syncing = True
         self.cc_button.set_active(has_subs and self.cfg["subs"] != "off")
         self._syncing = False
+        can_play_locally = (
+            self.local_playback.available()
+            and not (self.session is not None and self.session.active())
+            and self._selected_path() is not None
+        )
+        self.local_button.set_sensitive(can_play_locally and not busy)
+        if self.local_playback.is_active():
+            self.local_button.set_label("Stop locally")
+            self.local_button.set_icon_name("media-playback-stop-symbolic")
+        else:
+            self.local_button.set_label("Play locally")
+            self.local_button.set_icon_name("media-playback-start-symbolic")
         if self.device_state == "OFFLINE":
             self._set_chip("Offline", "offline")
         elif self.busy:
@@ -2179,7 +2200,10 @@ class MainWindow(Adw.ApplicationWindow):
         elif paused:
             self._set_chip("Paused", "paused")
         else:
-            self._set_chip("Ready", "idle")
+            if self.local_playback.is_active():
+                self._set_chip("Playing locally", "playing")
+            else:
+                self._set_chip("Ready", "idle")
 
     def _nudge_volume(self, delta: int) -> None:
         self.volume_scale.set_value(max(0, min(100, self.volume_scale.get_value() + delta)))
@@ -2318,6 +2342,32 @@ class MainWindow(Adw.ApplicationWindow):
             return
         self._cast_path(pathlib.Path(path), 0.0)
 
+    def _selected_path(self) -> str | None:
+        if self.now_playing:
+            return self.now_playing
+        if self.selected_index is not None and 0 <= self.selected_index < len(self.queue):
+            return self.queue[self.selected_index]
+        return None
+
+    def _play_locally(self) -> None:
+        """Play the selected file locally with ffplay, or stop local playback."""
+        if self.local_playback.is_active():
+            self.local_playback.stop()
+            self._refresh_controls()
+            self.toast("Stopped local playback")
+            return
+        path = self._selected_path()
+        if not path:
+            self.open_video()
+            return
+        try:
+            self.local_playback.start(path)
+        except FileNotFoundError as exc:
+            self.toast(str(exc))
+            return
+        self._refresh_controls()
+        self.toast("Playing locally")
+
     def _cast_path(self, path: pathlib.Path, offset: float) -> None:
         if offset == 0.0:
             saved = (self.cfg.get("positions") or {}).get(str(path))
@@ -2326,6 +2376,9 @@ class MainWindow(Adw.ApplicationWindow):
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
+        # Local playback and casting share the machine's output; stop any local
+        # playback before starting a cast so they never overlap.
+        self.local_playback.stop()
         self.busy = True
         self._refresh_controls()
         self._finished_handled = False
@@ -3362,6 +3415,7 @@ class CastControlApp(Adw.Application):
             self.add_action(action)
 
         simple("open", lambda *a: self._window().action_open())
+        simple("play-locally", lambda *a: self._window()._play_locally())
         simple("add-files", lambda *a: self._window().action_add_files())
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
