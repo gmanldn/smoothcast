@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,12 @@ GUI_CHECK = (
     "import gi; gi.require_version('Gtk','4.0'); "
     "gi.require_version('Adw','1'); "
     "from gi.repository import Gtk, Adw"
+)
+CATT_CHECK = (
+    "import importlib.metadata as m,re; "
+    "v=m.version('catt'); "
+    "parts=[int(x) for x in re.findall(r'\\d+',v)[:2]]; "
+    "assert tuple(parts) >= (0,12)"
 )
 WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
@@ -293,21 +300,29 @@ def ensure_venv(python: Path, env: dict[str, str], *,
         if not installed.is_file() or not works(installed, GUI_CHECK, env=env):
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
     else:
-        if not installed.is_file():
+        if installed.is_file() and not works(installed, GUI_CHECK, env=env):
+            # The project-owned venv may have been created with an unrelated
+            # Python. Preserve it for inspection, then recreate with the
+            # native interpreter whose GTK imports we just verified.
+            backup = VENV.with_name(f".venv-incompatible-{int(time.time())}")
+            VENV.rename(backup)
+            say(f"Preserved stale environment at {backup}")
+        if not venv_python().is_file():
             say(f"Creating isolated virtual environment: {VENV}")
             checked_run([str(python), "-m", "venv", "--system-site-packages",
                          str(VENV)], env=env)
+        installed = venv_python()
         if not works(installed, GUI_CHECK, env=env):
             raise SetupError(
-                f"{installed} cannot import GTK4/libadwaita. "
-                "Recreate the stale .venv using the system-managed Python."
+                f"{installed} cannot import GTK4/libadwaita after rebuild. "
+                "Review the native Python/PyGObject installation."
             )
-        checked_run([str(installed), "-m", "pip", "install",
-                     "--disable-pip-version-check", "-r", str(ROOT / "requirements.txt")],
-                    env=env)
-    if not works(installed, "import importlib.metadata as m; m.version('catt')",
-                 env=env):
-        raise SetupError("catt is not installed in the SmoothCast environment.")
+        if not works(installed, CATT_CHECK, env=env):
+            checked_run([str(installed), "-m", "pip", "install",
+                         "--disable-pip-version-check", "-r",
+                         str(ROOT / "requirements.txt")], env=env)
+    if not works(installed, CATT_CHECK, env=env):
+        raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
     missing = check_tools(env)
     if missing:
         raise SetupError("Media dependencies are missing: " + ", ".join(missing))
