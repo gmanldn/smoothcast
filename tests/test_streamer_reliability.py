@@ -43,6 +43,8 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertNotIn("-hwaccel", second_args)
             self.assertIn("libx264", second_args)
             # Fallback is not allowed to silently revert user's transforms.
+            self.assertIn("-readrate", second_args)
+            self.assertEqual(second_args[second_args.index("-readrate") + 1], "1.5")
             self.assertIn("setpts=PTS/1.5", ",".join(second_args))
             self.assertIn("transpose=1", ",".join(second_args))
             self.assertIn("atempo=1.5", ",".join(second_args))
