@@ -1,20 +1,27 @@
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
-crashlog.txt
-.coverage
-.coverage/*
-htmlcov/
-errors.log
-errors.log.tmp
+# Build artifacts (pip install -e . / setup.py)
 build/
 dist/
 *.egg-info/
 smoothcast.egg-info/
 .eggs/
 
-# Local virtualenv created by the legacy bash launcher (legacy path now
-# superseded by `pip install -e .` / `pip install smoothcast`).
+# Virtualenv created by the legacy bash launcher (./smoothcast).
+# The canonical path is now `pip install -e .` / `pip install smoothcast`,
+# which installs into the user environment instead of a repo-local venv.
+# Keep .venv/ gitignored while the launcher still bootstraps it.
 .venv/
 
+# Python caches
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+crashlog.txt
+.coverage
+.coverage/*
+htmlcov/
+
+# Error log (ring buffer, gitignored)
+errors.log
+errors.log.tmp
