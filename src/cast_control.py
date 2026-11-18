@@ -2040,14 +2040,21 @@ class MainWindow(Adw.ApplicationWindow):
 
         def finish(frame=None):
             self._preview_busy = False
-            if (frame is not None and path == self._preview_path
-                    and generation == self._preview_generation
-                    and self.session is None and not self.external):
-                try:
-                    texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(frame))
-                    self.preview_picture.set_paintable(texture)
-                    self.preview_picture.set_visible(True)
-                except GLib.Error:
+            latest = (path == self._preview_path
+                      and generation == self._preview_generation
+                      and self.session is None and not self.external
+                      and self._preview_pending is None)
+            # A finished decode must never overwrite a newer position the
+            # user selected while FFmpeg was still extracting the old frame.
+            if latest:
+                if frame is not None:
+                    try:
+                        texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(frame))
+                        self.preview_picture.set_paintable(texture)
+                        self.preview_picture.set_visible(True)
+                    except GLib.Error:
+                        self.preview_picture.set_visible(False)
+                else:
                     self.preview_picture.set_visible(False)
             if self._preview_pending is not None and not self._preview_timer_id:
                 self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
