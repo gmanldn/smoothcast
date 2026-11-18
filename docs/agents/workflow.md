@@ -6,7 +6,7 @@ The retired root `IMPROVEMENTS.md` is **not** an active backlog.
 
 1. Read the relevant GitHub issue and its acceptance criteria first; check
    related PRs, existing implementation and relevant logs. Prioritise P0/P1.
-2. **Claim the issue** in a comment before work; avoid duplicating another
+2. **claim the issue** in a comment before work; avoid duplicating another
    agent's active task. Use an isolated branch/worktree, not a dirty `main`.
 3. Locate the changed symbols, callers and tests. Choose a minimal **complete**
    fix; reuse helpers and standard library where sensible. Preserve validation,
