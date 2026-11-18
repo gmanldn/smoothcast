@@ -77,7 +77,7 @@ prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
 also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
 DLNA has automated protocol tests but **has not yet been verified on a real
 television**; device-specific MIME/codec negotiation is a follow-up in
-[IMPROVEMENTS.md](IMPROVEMENTS.md).
+[GitHub issue #8 (SC-001)](https://github.com/gmanldn/smoothcast/issues/8).
 
 **MKV/Matroska:** FFprobe detects embedded video/audio/subtitle streams.
 Common video codecs H.264, HEVC/H.265, VP9 and AV1 and audio codecs AAC,
@@ -357,3 +357,17 @@ The same bundle is available from the app menu under **Save diagnostics…**. It
 ## License
 
 MIT
+## Issues and improvement planning
+
+**All unfinished features, regressions, device qualification and suggested
+improvements live in [GitHub Issues](https://github.com/gmanldn/smoothcast/issues).**
+There is no root Markdown backlog. Use the original `SC-001`–`SC-132`
+identifiers to find migrated proposals and the `[P0]`, `[P1]` or `[P2]`
+prefix to prioritise them. Items with code implemented but pending physical
+TV/OS verification deliberately remain open.
+
+The complete [issue workflow, provenance and historical recovery guide](docs/ISSUES.md)
+explains where issues are stored, how to claim and verify them, and how to
+preserve earlier research. Contribute a new improvement using the
+[GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
+not by adding a second TODO document.

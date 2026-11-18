@@ -17,7 +17,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             ".kilo/skills/ponytail/SKILL.md",
             "docs/AGENT_TOKEN_EFFICIENCY.md",
             "src/version.py",
-            "IMPROVEMENTS.md",
+            "docs/ISSUES.md",
             "python3 -m pytest -q tests",
             "scripts/test_gui_isolated.py",
             "Do not launch/focus the real app",

@@ -24,26 +24,31 @@ from playback_state import playback_ended
 
 
 class BacklogPreservationTests(unittest.TestCase):
-    def test_original_50_preserved_and_linked_from_current_backlog(self):
-        archived = (ROOT / "docs" / "IMPROVEMENTS_ORIGINAL_50_20261118.md").read_text()
-        current = (ROOT / "IMPROVEMENTS.md").read_text()
-        original_nums = [int(i) for i in re.findall(r"(?m)^(\d+)\. ", archived)]
-        recovered_nums = [int(i) for i in re.findall(r"(?m)^(\d+)\. ", current)]
-        self.assertEqual(original_nums[:50], list(range(1, 51)))
-        self.assertEqual(recovered_nums[:132], list(range(1, 133)))
-        self.assertIn("docs/IMPROVEMENTS_ORIGINAL_50_20261118.md", current)
-        self.assertIn("7b8bd62c8a06", current)
-        self.assertIn("A–B segment repeat", current)
-        self.assertIn("10-band equaliser", current)
-        self.assertIn("Queue drag-and-drop reorder", current)
-        self.assertIn("Automatic theme by time", current)
+    def test_issues_are_canonical_and_old_root_backlog_is_absent(self):
+        self.assertFalse((ROOT / "IMPROVEMENTS.md").exists())
+        workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("https://github.com/gmanldn/smoothcast/issues", workflow)
+        self.assertIn("SC-001", workflow)
+        self.assertIn("SC-132", workflow)
+        self.assertIn("132 numbered proposals", workflow)
+        self.assertIn("b76579c12f6a202188cc7964a0de06c09bd5aa9e", workflow)
+        self.assertIn("docs/ISSUES.md", agents)
+        self.assertIn("docs/ISSUES.md", readme)
+        self.assertIn("GitHub Issues", agents)
 
-    def test_old_completion_markers_remain_historical_not_marked_verified(self):
-        archived = (ROOT / "docs" / "IMPROVEMENTS_ORIGINAL_50_20261118.md").read_text()
+    def test_original_fifty_are_still_archived_verbatim(self):
+        archived = (ROOT / "docs" / "IMPROVEMENTS_ORIGINAL_50_20261118.md").read_text(
+            encoding="utf-8"
+        )
+        original_nums = [int(i) for i in re.findall(r"(?m)^(\d+)\. ", archived)]
+        self.assertEqual(original_nums[:50], list(range(1, 51)))
         self.assertIn("## Done", archived)
-        current = (ROOT / "IMPROVEMENTS.md").read_text()
-        self.assertIn("historical claims", current)
-        self.assertIn("not evidence of current working behaviour", current)
+        workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
+        self.assertIn("IMPROVEMENTS_ORIGINAL_50_20261118.md", workflow)
+        self.assertIn("historical", workflow.lower())
+        self.assertIn("duplicate", workflow.lower())
 
 
 class ReceiverSafetyTests(unittest.TestCase):
