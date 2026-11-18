@@ -35,6 +35,10 @@ CATT_CHECK = (
     "parts=[int(x) for x in re.findall(r'\\d+',v)[:2]]; "
     "assert tuple(parts) >= (0,12)"
 )
+# pip dependencies installed into the isolated runtime. Keep in sync with the
+# `dependencies` list in pyproject.toml; there is deliberately no separate
+# requirements file (referencing a missing one aborts a fresh install).
+PIP_PACKAGES = ("catt>=0.12",)
 WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
     "mingw-w64-ucrt-x86_64-python-pip",
@@ -337,8 +341,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
             )
         if not works(installed, CATT_CHECK, env=env):
             checked_run([str(installed), "-m", "pip", "install",
-                         "--disable-pip-version-check", "-r",
-                         str(ROOT / "requirements.txt")], env=env)
+                         "--disable-pip-version-check", *PIP_PACKAGES], env=env)
     if not works(installed, CATT_CHECK, env=env):
         raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
     missing = check_tools(env)

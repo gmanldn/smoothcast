@@ -150,6 +150,33 @@ class SetupContractTests(unittest.TestCase):
                     bootstrap.ensure_venv(Path(sys.executable), {}, check=True)
                 run.assert_not_called()
 
+    def test_no_installer_references_a_missing_requirements_file(self):
+        # `catt` is the only pip dependency and there is deliberately no
+        # requirements.txt; `pip install -r` on a missing file aborts setup.
+        source = (ROOT / "setup" / "bootstrap.py").read_text(encoding="utf-8")
+        self.assertNotIn("requirements.txt", source)
+
+    def test_venv_installs_catt_without_a_requirements_file(self):
+        state = {"catt": False}
+
+        def fake_works(python, code, *, env=None):
+            return state["catt"] if "m.version" in code else True
+
+        def fake_run(command, **kwargs):
+            if "pip" in command and any("catt" in str(arg) for arg in command):
+                state["catt"] = True
+
+        with mock.patch.object(bootstrap, "venv_python",
+                               return_value=Path(sys.executable)), \
+             mock.patch.object(bootstrap, "works", side_effect=fake_works), \
+             mock.patch.object(bootstrap, "check_tools", return_value=[]), \
+             mock.patch.object(bootstrap, "checked_run", side_effect=fake_run) as run:
+            installed = bootstrap.ensure_venv(Path(sys.executable), {}, check=False)
+        self.assertEqual(installed, Path(sys.executable))
+        command = run.call_args.args[0]
+        self.assertIn("catt>=0.12", command)
+        self.assertNotIn("requirements.txt", command)
+
     def test_macos_application_bundle_has_valid_plist_and_executable(self):
         with tempfile.TemporaryDirectory() as directory:
             app = shortcuts.install_macos(home=Path(directory))
