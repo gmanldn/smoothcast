@@ -36,10 +36,12 @@ jobs:
         run: |
           command -v ffmpeg
           command -v ffprobe
-          ffmpeg -hide_banner -encoders | grep -q libx264
-          ffmpeg -hide_banner -encoders | grep -q mpeg4
-          ffmpeg -hide_banner -encoders | grep -q aac
-          ffmpeg -hide_banner -filters | grep -q subtitles
+          ffmpeg -hide_banner -encoders > "$RUNNER_TEMP/ffmpeg-encoders.txt"
+          ffmpeg -hide_banner -filters > "$RUNNER_TEMP/ffmpeg-filters.txt"
+          grep -q libx264 "$RUNNER_TEMP/ffmpeg-encoders.txt"
+          grep -q mpeg4 "$RUNNER_TEMP/ffmpeg-encoders.txt"
+          grep -q aac "$RUNNER_TEMP/ffmpeg-encoders.txt"
+          grep -q subtitles "$RUNNER_TEMP/ffmpeg-filters.txt"
 
       - name: Run all portable regression tests
         run: python -m pytest -q tests
