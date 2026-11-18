@@ -1,5 +1,5 @@
-import sys
-from pathlib import Path
+"""Pytest configuration.
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+Source roots are declared in pytest.ini (pythonpath = src); this file is kept
+empty so pytest.ini remains the single source of truth.
+"""

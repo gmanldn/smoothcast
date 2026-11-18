@@ -2,14 +2,14 @@
 
 import math
 import sys
-from pathlib import Path
 
 import pytest
 
 import castctl
 import audio_monitor
 import streamer
-import cast_control
+import position_tracker
+from utils import pretty_title
 
 
 # ── castctl.fmt_time ─────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ def test_is_seekable():
     assert castctl.is_seekable({"duration": 100, "current_time": None}) is False
 
 
-# ── cast_control.pretty_title ──────────────────────────────────────────────
+# ── pretty_title ──────────────────────────────────────────────
 
 class _FakePath:
     def __init__(self, name):
@@ -95,11 +95,11 @@ class _FakePath:
 
 
 def test_pretty_title_strips_dots_and_year():
-    assert cast_control.pretty_title(_FakePath("Show.Name.S01E02")) == "Show Name S01E02"
-    assert cast_control.pretty_title(_FakePath("Movie.2023")) == "Movie"
-    assert cast_control.pretty_title(_FakePath("Movie 2023")) == "Movie"
-    assert cast_control.pretty_title(_FakePath("NoYearHere")) == "NoYearHere"
-    assert cast_control.pretty_title(_FakePath("...only.dots...")) == "only dots"
+    assert pretty_title(_FakePath("Show.Name.S01E02")) == "Show Name S01E02"
+    assert pretty_title(_FakePath("Movie.2023")) == "Movie"
+    assert pretty_title(_FakePath("Movie 2023")) == "Movie"
+    assert pretty_title(_FakePath("NoYearHere")) == "NoYearHere"
+    assert pretty_title(_FakePath("...only.dots...")) == "only dots"
 
 
 # ── audio_monitor._db ──────────────────────────────────────────────────────
@@ -202,14 +202,14 @@ def test_effective_chain_applies_trim_plus_manual(monkeypatch):
 # ── PositionTracker ────────────────────────────────────────────────────────
 
 def test_position_tracker_unknown_returns_none():
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     assert t.value() is None
 
 
 def test_position_tracker_basic_advance(monkeypatch):
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.start(0.0, 100.0, playing=True)
     assert t.value() == 0.0
@@ -223,9 +223,9 @@ def test_position_tracker_basic_advance(monkeypatch):
 
 
 def test_position_tracker_pause_resume_accumulates(monkeypatch):
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.start(0.0, 100.0, playing=True)
     now[0] += 10.0
@@ -242,9 +242,9 @@ def test_position_tracker_pause_resume_accumulates(monkeypatch):
 
 def test_position_tracker_paused_does_not_drift_on_device_update(monkeypatch):
     """device_update while paused must not make the position creep forward."""
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.start(0.0, 100.0, playing=True)
     t.set_state(False)  # pause at t=1000, position 0
@@ -261,9 +261,9 @@ def test_position_tracker_paused_does_not_drift_on_device_update(monkeypatch):
 
 
 def test_position_tracker_device_update_advances_when_playing(monkeypatch):
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.start(0.0, 100.0, playing=True)  # mark as playing
     t.device_update(10.0, 100.0)  # device at 10s
@@ -277,9 +277,9 @@ def test_position_tracker_device_update_advances_when_playing(monkeypatch):
 
 
 def test_position_tracker_device_update_paused_stays_static(monkeypatch):
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.device_update(10.0, 100.0)
     t.set_state(False)  # pause
@@ -293,9 +293,9 @@ def test_position_tracker_device_update_paused_stays_static(monkeypatch):
 
 def test_position_tracker_estimated_mode_unaffected(monkeypatch):
     """start() (no device position) keeps the old estimated behaviour."""
-    t = cast_control.PositionTracker()
+    t = position_tracker.PositionTracker()
     now = [1000.0]
-    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
 
     t.start(0.0, 100.0, playing=True)
     now[0] += 7.5
