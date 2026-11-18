@@ -749,45 +749,6 @@ class SessionMixin:
         self._on_finished()
 
 
-    def _watch_hls_stream(self, snapshot: dict, position: float | None) -> None:
-        session = self.session
-        state = session.state if session is not None else None
-        if (session is None or session.mode != "transcode" or state is None):
-            self._stream_watchdog.reset()
-            return
-        info = self.device_info
-        owned = playback_state.hls_session_matches(
-            info, state.stream_url, state.title,
-        )
-        remaining = (
-            max(0.0, state.duration - position)
-            if state.duration and position is not None else None
-        )
-        outcome = self._stream_watchdog.observe(
-            session=session, epoch=state.started_at, now=time.monotonic(),
-            receiver_state=self.device_state,
-            owned=owned, busy=self.busy or self._closing or self._cast_starting,
-            encoder_seconds=snapshot.get("out_time"),
-            receiver_seconds=info.get("current_time") if info else None,
-            encoder_done=snapshot.get("progress") == "end",
-            seconds_remaining=remaining,
-        )
-        if outcome in {"encoder_stalled", "receiver_stalled"}:
-            # Restart is local/async and only permitted while the receiver
-            # reports our *exact* HLS URL. Never hijack unrelated TV content.
-            self.busy = True
-            self._refresh_controls()
-            reason = ("FFmpeg stopped advancing" if outcome == "encoder_stalled"
-                      else "the receiver stopped consuming HLS media")
-            self.toast("Playback stalled; attempting one safe restart", error=True)
-            self._console(f"Watchdog: {reason}; restarting owned HLS stream once")
-            target = max(0.0, position if position is not None else state.offset)
-            self._restart_at(session, target)
-        elif outcome == "recovery_exhausted":
-            self.toast("Playback remains stalled — automatic retries exhausted", error=True)
-            self._console("Watchdog: one restart already attempted; manual diagnosis required")
-
-
     def _tick(self) -> bool:
         previewing = self.session is None and not self.external and self._preview_path is not None
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
@@ -812,9 +773,8 @@ class SessionMixin:
                 self.session.state.offset, snapshot.get("out_time"), duration,
                 speed=self.session.state.speed,
             )
-        # All watchdog inputs are cached local progress/receiver samples:
-        # no blocking FFmpeg probe, network I/O or GUI window recreation.
-        self._watch_hls_stream(snapshot, position)
+        # Pure watchdog: no blocking I/O on the GTK tick.
+        stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
