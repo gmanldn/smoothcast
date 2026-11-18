@@ -1333,22 +1333,43 @@ class MainWindow(Adw.ApplicationWindow):
         return card
 
     def _build_device_card(self) -> Gtk.Box:
-        card, body = self._card("Device")
-        body.set_spacing(10)
+        card, body = self._card(
+            "Output device", "Select the Chromecast receiving your media."
+        )
+        card.add_css_class("device-card")
+        row_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
+        icon = Gtk.Image.new_from_icon_name("video-display-symbolic")
+        icon.set_pixel_size(20)
+        row_status.append(icon)
+        self.device_status_badge = Gtk.Label(label="DISCOVERING")
+        self.device_status_badge.add_css_class("device-badge")
+        row_status.append(self.device_status_badge)
+        row_status.append(Gtk.Box(hexpand=True))
+        body.append(row_status)
+
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]])
         self.device_dropdown.set_hexpand(True)
         self.device_dropdown.connect("notify::selected", self._on_device_selected)
-        refresh = self._icon_button("view-refresh-symbolic", "Scan the network", "flat", self.scan_devices)
+        refresh = self._icon_button(
+            "view-refresh-symbolic", "Scan the network", "flat", self.scan_devices,
+        )
         refresh.set_valign(Gtk.Align.CENTER)
         row.append(self.device_dropdown)
         row.append(refresh)
         body.append(row)
-        self.device_detail = Gtk.Label(label="Not scanned yet", xalign=0.0, wrap=True)
-        self.device_detail.add_css_class("dim-label")
-        self.device_detail.add_css_class("caption")
+        self.device_detail = Gtk.Label(label="Searching for Chromecast…", xalign=0.0, wrap=True)
+        self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
         return card
+
+    def _set_device_badge(self, label: str, state: str = "") -> None:
+        badge = self.device_status_badge
+        for previous in ("online", "offline"):
+            badge.remove_css_class(previous)
+        if state in ("online", "offline"):
+            badge.add_css_class(state)
+        badge.set_text(label)
 
     def _build_settings_card(self) -> Gtk.Box:
         card, body = self._card("Playback settings")
@@ -1607,15 +1628,23 @@ class MainWindow(Adw.ApplicationWindow):
         self.device_dropdown.set_model(Gtk.StringList.new(names))
         self.device_dropdown.set_selected(selected)
         self._syncing = False
-        if devices:
-            info = next((d for d in devices if d.name == self.cfg["device"]), devices[0])
-            self.device_detail.set_text(f"{info.model or 'Chromecast'} · {info.host}")
+        selected = next((d for d in devices if d.name == self.cfg["device"]), None)
+        if selected is not None:
+            self.device_detail.set_text(
+                f"{selected.model or 'Chromecast'} · {selected.host}"
+            )
+            self._set_device_badge("FOUND ON LAN")
         else:
-            self.device_detail.set_text("No Chromecasts found on this network")
+            self.device_detail.set_text(
+                "Selected device not found. Choose another device or rescan."
+                if devices else "No Chromecast found on this network."
+            )
+            self._set_device_badge("NOT FOUND", "offline")
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
         self.device_detail.set_text("Scan failed — is the network reachable?")
+        self._set_device_badge("SCAN FAILED", "offline")
         self.toast(str(message), error=True)
 
     def _on_device_selected(self, dropdown, _param) -> None:
@@ -1631,6 +1660,7 @@ class MainWindow(Adw.ApplicationWindow):
             save_config(self.cfg)
             self.title_widget.set_subtitle(name)
             self.toast(f"Now controlling {name}")
+            self._set_device_badge("CONNECTING")
             self._poll_device()
 
     # ---------- polling ----------
@@ -1657,6 +1687,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.device_state = castctl.player_state(info)
         if info is None:
             self.device_state = "OFFLINE"
+            self._set_device_badge("OFFLINE", "offline")
+        elif self.device_state in {"PLAYING", "BUFFERING"}:
+            self._set_device_badge("STREAMING", "online")
+        else:
+            self._set_device_badge("AVAILABLE", "online")
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
             # Sync the tracker with the device for BOTH direct and transcode
