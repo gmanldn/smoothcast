@@ -165,6 +165,59 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 99. **[P1 · S] Test the supported Python floor with the documented commands.** `verify.yml` runs a newer interpreter than the 3.10 floor, and unittest discovery misses pytest-style functions. Run the full portable pytest suite on the floor and primary CI interpreter; document installer-only unittest and actual GTK self-test as separate checks.
 100. **[P1 · M] Keep auto-update out of developer checkouts.** `update_control.refresh_checkout` checks only for `.git` and infers change from English pull output. In disposable local repos, skip dirty, detached and noneligible branches; on an eligible branch, show a restart notice only if HEAD changes, regardless of locale or release bump.
 
+## Historical recovery — original media-player proposals 101–132
+
+The original 50-idea media-player list was replaced by a separate
+compatibility-focused list on 18 November 2026. Its full wording and then-recorded
+completion markers are preserved **verbatim** in
+[docs/IMPROVEMENTS_ORIGINAL_50_20261118.md](docs/IMPROVEMENTS_ORIGINAL_50_20261118.md),
+taken from Git commit `7b8bd62c8a06`. Those checkmarks are historical claims,
+**not evidence of current working behaviour**. This section restores the
+distinct goals that the newer 1–100 list omitted or only partially covered.
+Avoid conflating this known Git content with any additional Astra session notes
+that were never committed.
+
+### Recovered functionality (historical numbers in parentheses)
+
+101. **[P1 · M] A–B segment repeat (original #8).** Mark arbitrary in/out points while previewing or casting, loop with millisecond-correct source time and retain the marks across pause/seek; cancel cleanly at end of file.
+102. **[P1 · L] 10-band equaliser with presets (original #15).** Apply independently to locally previewed and cast-transcoded audio; never alter system-wide sound, introduce clipping, or claim an unmeasured equalisation curve.
+103. **[P1 · M] Image adjustments (original #14).** Preview brightness, contrast, saturation and hue before applying encoder filters; support reset and persist settings per film or receiver.
+104. **[P1 · M] Audio delay/synchronisation (original #16).** Set positive/negative lip-sync delay, retain subtitle and soundtrack timing, and verify seeking and speed changes do not accumulate drift.
+105. **[P1 · M] Aspect-ratio override (original #19).** Offer original, 16:9, 4:3, fit, fill and crop with an explicit distortion warning and a reversible preview.
+106. **[P1 · M] Interactive zoom/pan and manual crop (original #11, #20).** Support 1×/2×/4× and arrow/keyframe panning, crop bounds validation and even encoded dimensions; do not substitute automatic crop detection (#45).
+107. **[P1 · M] Queue drag-and-drop reorder (original #24).** Persist the displayed and actual playback order, keep selection and preview stable and forbid reordering while a conflicting transfer is pending.
+108. **[P1 · M] User bookmarks and chapter favourites (original #9).** Save timestamped named markers in addition to MKV chapters (#30); support one-click return across restarts and file moves.
+109. **[P1 · M] Compact mini-player mode (original #29).** Offer a small responsive transport/thumbnail interface with all essential output and subtitle controls accessible; avoid unsupported Wayland window-stacking promises.
+110. **[P1 · S] Fullscreen idle-controls auto-hide (original #30).** Hide chrome after inactivity; restore on cursor, keyboard, focus and accessibility events; no controls trapped off-screen.
+111. **[P1 · M] On-screen transport feedback (original #32).** Display temporary seek, chapter, speed and volume OSD with low-latency updates without intercepting playback input.
+112. **[P2 · S] File favourites and pinned recent films (original #26).** Pin media paths, handle missing files and retain ordering without conflating receiver favourites (#43).
+113. **[P1 · M] Low-gap queue transitions (original #33).** Minimise next-item dead time in local preview and Cast, with a measurable target, cancellable prewarming and no early TV ownership transfer; complements but is distinct from #39.
+114. **[P1 · M] Timestamped watch history (original #35).** Store start, stop, completed and resumed timestamps, distinguish local preview from full cast and allow complete history deletion.
+115. **[P1 · M] Picture-in-picture / floating mini-preview (original #1).** Revisit the historical completion claim: implement only compositor-supported behaviour, explain GNOME/Wayland limitations and never claim an always-on-top API that does not exist.
+116. **[P2 · S] Searchable keyboard cheatsheet (original #2).** Verify the menu exists, stays synchronised with registered accelerators and documents preview versus TV action differences.
+117. **[P1 · S] Source-accurate frame stepping (original #3).** Replace the historical '1-second seek is frame-accurate' assumption with actual frame-step or frame-duration-aware jumps, including variable frame rate and local preview.
+118. **[P1 · S] Screenshot of the actual displayed frame (original #10).** Existing capture must use the local-preview time when idle, current embedded decoder time when playing, and TV source time during casting; test all three.
+119. **[P1 · S] Speed presets and custom rate (original #4).** Re-audit the shipped 0.5×–2× controls against local preview, HLS restart and position accounting; support custom valid rate and maintain paused state.
+120. **[P1 · S] Loop-all and shuffle (original #22).** Extend/verify loop-one with loop-all and deterministic playlist shuffle; keep queue display and skip semantics predictable.
+121. **[P2 · M] Now-playing cover and film art (original #28).** Use embedded artwork or a representative video frame with an opt-out; never confuse attached artwork with the motion-video stream (#64).
+122. **[P1 · M] User-authorised media URLs and supported site resolver (original #39).** Distinguish straightforward HTTP(S) media from site pages (such as YouTube); handle only permitted, supported sources and return actionable errors rather than claim universal site support.
+123. **[P1 · L] Simultaneous independent receiver sessions (original #40).** Send separate media streams to two or more receivers with isolated URLs, ownership, stop/seek and error states; separately scope synchronisation (#37).
+124. **[P1 · S] Time-series buffer health graph (original #44).** Present recent measured segment availability, queue depth and stalls; distinguish graph from text-only status console (#40).
+125. **[P2 · S] Automatic theme by time (original #46).** Verify the previously marked-done schedule, time-zone changes, manual override and application restarts; add opt-in sunset rules only with a reliable timezone source.
+126. **[P2 · M] User-selected accent colours (original #47).** Provide bounded accessible presets, calculate text contrast and restore defaults without editing global GTK themes.
+127. **[P2 · M] Compact/comfortable/spacious density (original #48).** Scale spacing and controls across responsive layouts without clipping at 360 px and under large fonts.
+128. **[P1 · S] Window geometry and fullscreen persistence (original #49).** Restore valid window dimensions safely on monitor changes/Wayland; never rely on prohibited global window positions.
+129. **[P1 · M] Safe one-click application update (original #50).** Add a non-disruptive review/install/restart workflow that protects uncommitted developer changes, verifies the candidate and never launches GTK in test context; complements #100.
+130. **[P1 · M] Measured EBU R128 loudness normalisation (original #17).** Optional programme/album targets, true-peak limiting, playback-consistent metering and no system-wide audio changes.
+131. **[P1 · S] Film-only screenshot, seek and control regression audit (original #3, #10, #34).** Check that selecting a queued film during an active cast does not silently replace its media metadata, screenshot target or resume offset (#70/#72).
+132. **[P1 · S] Historical feature verification suite (original #21, #23, #25, #27, #31, #36–38).** Check rotation, playlists, multi-file open, queue search, theatre mode, sleep timer, auto-shutdown and URL cast actually work, rather than treating former done checkmarks as validation.
+
+The remaining original ideas are covered by existing proposals or their explicit
+follow-ups: audio track #13, subtitle delay/styling #24–25, deinterlace/crop
+#45, HDR tone map #19, downmix #23, chapters #30, resume #33,
+audio-only #36, receiver quality #5/#38, diagnostics #40, and
+network-speed feedback #40. No original item is intentionally discarded.
+
 ## Implementation progress (not hardware-qualified)
 
 - **P0 #85 — Failed local preparation never stops the renderer:**

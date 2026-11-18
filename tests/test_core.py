@@ -51,6 +51,11 @@ class CastctlTests(unittest.TestCase):
         self.assertEqual(castctl.player_state({"player_state": "PLAYING"}), "PLAYING")
         self.assertEqual(castctl.player_state({"player_state": "buffering"}), "BUFFERING")
         self.assertEqual(castctl.player_state({"player_state": "paused"}), "PAUSED")
+        # Partial status updates must not look like an idle/ended film.
+        self.assertEqual(castctl.player_state({"volume_level": 0.5}), "UNKNOWN")
+        self.assertEqual(castctl.player_state({"player_state": None, "title": "Film"}), "UNKNOWN")
+        self.assertEqual(castctl.player_state({"player_state": "BAD_STATE"}), "UNKNOWN")
+        self.assertEqual(castctl.player_state({"player_state": " idle "}), "IDLE")
 
     def test_is_playing(self):
         self.assertFalse(castctl.is_playing(None))
