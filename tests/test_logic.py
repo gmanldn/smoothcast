@@ -238,3 +238,70 @@ def test_position_tracker_pause_resume_accumulates(monkeypatch):
     t.set_state(True)  # resume at t=1015
     now[0] += 5.0
     assert t.value() == 15.0  # 10s played + 5s after resume
+
+
+def test_position_tracker_paused_does_not_drift_on_device_update(monkeypatch):
+    """device_update while paused must not make the position creep forward."""
+    t = cast_control.PositionTracker()
+    now = [1000.0]
+    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+
+    t.start(0.0, 100.0, playing=True)
+    t.set_state(False)  # pause at t=1000, position 0
+
+    # Device reports position 0 at t=1000 while paused.
+    t.device_update(0.0, 100.0)
+    now[0] += 4.0  # 4s later, still paused
+    assert t.value() == 0.0  # paused: no drift
+
+    # Device still at 0 at t=1004 while paused.
+    t.device_update(0.0, 100.0)
+    now[0] += 4.0
+    assert t.value() == 0.0  # still paused: no drift
+
+
+def test_position_tracker_device_update_advances_when_playing(monkeypatch):
+    t = cast_control.PositionTracker()
+    now = [1000.0]
+    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+
+    t.start(0.0, 100.0, playing=True)  # mark as playing
+    t.device_update(10.0, 100.0)  # device at 10s
+    now[0] += 3.0
+    assert t.value() == 13.0  # playing: advances from device position
+
+    # Fresh device report rebases.
+    t.device_update(20.0, 100.0)
+    now[0] += 2.0
+    assert t.value() == 22.0
+
+
+def test_position_tracker_device_update_paused_stays_static(monkeypatch):
+    t = cast_control.PositionTracker()
+    now = [1000.0]
+    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+
+    t.device_update(10.0, 100.0)
+    t.set_state(False)  # pause
+    now[0] += 5.0
+    assert t.value() == 10.0  # paused: holds device position
+
+    t.set_state(True)  # resume
+    now[0] += 5.0
+    assert t.value() == 20.0  # advances from paused device position
+
+
+def test_position_tracker_estimated_mode_unaffected(monkeypatch):
+    """start() (no device position) keeps the old estimated behaviour."""
+    t = cast_control.PositionTracker()
+    now = [1000.0]
+    monkeypatch.setattr(cast_control.time, "monotonic", lambda: now[0])
+
+    t.start(0.0, 100.0, playing=True)
+    now[0] += 7.5
+    assert t.value() == 7.5  # estimated: advances from base
+
+    t.set_state(False)
+    now[0] += 4.0
+    assert t.value() == 7.5  # paused: holds
+
