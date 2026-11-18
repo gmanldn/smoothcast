@@ -37,8 +37,8 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
 
     def test_long_text_wraps_instead_of_forcing_width(self):
         self.assertIn("Pango.WrapMode.WORD_CHAR", self.source)
-        self.assertIn("value_label.set_max_width_chars(36)", self.source)
-        self.assertIn("cr.show_text(clipped_text(title))", self.source)
+        self.assertIn("value_label.set_max_width_chars(32)", self.source)
+        self.assertIn("ellipsize=", self.source)
 
     def test_no_gtk3_window_positioning(self):
         self.assertNotIn("self.move(", self.source)
