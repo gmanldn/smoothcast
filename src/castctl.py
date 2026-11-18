@@ -115,6 +115,22 @@ def scan(timeout: float = 30) -> list[Device]:
     return devices
 
 
+def uniquely_named_device(uuid: str, devices: list[Device]) -> Device | None:
+    """Return a discovered physical receiver only with unambiguous identity.
+
+    A friendly name is mutable and may be shared by several TVs. Never
+    silently migrate a saved target when its UUID or chosen name collides.
+    Devices omitting UUID are deliberately excluded from auto-migration.
+    """
+    if not isinstance(uuid, str) or not uuid:
+        return None
+    matches = [d for d in devices if d.uuid == uuid and d.name]
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    return match if sum(d.name == match.name for d in devices) == 1 else None
+
+
 def info(device: str, timeout: float = 8) -> dict | None:
     """Full device/media status. None when offline or unreachable."""
     try:

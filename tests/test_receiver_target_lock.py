@@ -86,6 +86,7 @@ def window():
             self._volume_job = None
             self._volume_target = None
             self.devices = []
+            self._dlna_by_key = {}  # Real window builds this before device selection.
             self.title_widget = mock.Mock()
             self.messages = []
             self.scans = 0
