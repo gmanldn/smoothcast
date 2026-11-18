@@ -19,9 +19,10 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import castctl
 import streamer
 import audio_monitor
+import version
 
 APP_ID = "local.cast-control"
-APP_NAME = "Cast Control"
+APP_NAME = f"Cast Control v{version.__version__}"
 CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ICON_NAME = "cast-control"
@@ -646,6 +647,65 @@ class LevelMeter(Gtk.DrawingArea):
         cr.close_path()
 
 
+class PreviewScreen(Gtk.DrawingArea):
+    """Video preview screen shown above the scrubbing bar.
+
+    Shows a colored placeholder with video title/info when no thumbnail is
+    available.  Keeps the UI responsive — all drawing is local, no blocking
+    I/O on the main thread.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_hexpand(True)
+        self.set_vexpand(True)
+        self.set_size_request(-1, 180)
+        self.set_draw_func(self._draw)
+        self._lock = threading.Lock()
+        self._title = "No video"
+        self._info = ""
+        self._color = (0.15, 0.15, 0.20)
+
+    def set_video(self, title: str, info: str, color: tuple = (0.15, 0.15, 0.20)) -> None:
+        """Update the preview with video metadata."""
+        with self._lock:
+            self._title = title
+            self._info = info
+            self._color = color
+        self.queue_draw()
+
+    def _draw(self, _widget, cr, width, height) -> None:
+        with self._lock:
+            title = self._title
+            info = self._info
+            color = self._color
+
+        # Placeholder background.
+        cr.set_source_rgb(*color)
+        cr.rectangle(0, 0, width, height)
+        cr.fill()
+
+        # Border ring.
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.15)
+        cr.set_line_width(1.0)
+        cr.rectangle(0.5, 0.5, width - 1.0, height - 1.0)
+        cr.stroke()
+
+        # Title text.
+        cr.set_source_rgb(1.0, 1.0, 1.0)
+        cr.select_font_face("Sans")
+        cr.set_font_size(16)
+        cr.move_to(16, height / 2 - 6)
+        cr.show_text(title)
+
+        # Info text.
+        if info:
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.75)
+            cr.set_font_size(11)
+            cr.move_to(16, height / 2 + 12)
+            cr.show_text(info)
+
+
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
@@ -674,6 +734,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
+        self.preview: PreviewScreen | None = None
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
@@ -801,6 +862,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.np_meta.add_css_class("dim-label")
         self.np_meta.add_css_class("caption")
         body.append(self.np_meta)
+        # Preview screen above the scrubbing bar.
+        self.preview = PreviewScreen()
+        body.append(self.preview)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
         clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -1119,7 +1183,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.detail_labels: dict[str, Gtk.Label] = {}
         rows = [
             ("state", "State"), ("mode", "Mode"), ("encoder", "Encoder"),
-            ("position", "Position"), ("resolution", "Video"), ("audio", "Audio"),
+            ("position", "Position"), ("buffer", "Buffer Health"), ("segments", "Segments"),
+            ("resolution", "Video"), ("audio", "Audio"),
             ("subs", "Subtitles"), ("file", "File"), ("url", "Stream URL"),
         ]
         for index, (key, label) in enumerate(rows):
@@ -1489,6 +1554,26 @@ class MainWindow(Adw.ApplicationWindow):
         position_text = "unknown" if position is None else f"{fmt_time(position)} of {fmt_time(self.tracker.duration)}"
         if self.tracker.known and session and session.mode == "transcode":
             position_text += " (estimated)"
+        # Buffer health — how far ahead the encoder is from playback position.
+        buffer_text = "—"
+        if session and session.mode == "transcode" and session.active():
+            progress = session.progress()
+            out_time = progress.get("out_time")
+            if isinstance(out_time, (int, float)) and position is not None:
+                ahead = out_time - position
+                if ahead >= 0:
+                    buffer_text = f"{fmt_time(ahead)} ahead"
+                else:
+                    buffer_text = f"{fmt_time(-ahead)} behind"
+        # Segment count for HLS streams.
+        segments_text = "—"
+        if session and session.mode == "transcode":
+            seg_dir = streamer.ROOT
+            try:
+                seg_count = len(list(seg_dir.glob(streamer.SEGMENT_GLOB)))
+                segments_text = f"{seg_count} segment{'s' if seg_count != 1 else ''}"
+            except Exception:
+                segments_text = "—"
         subtitle_text = "—"
         if session and session.state:
             if session.state.subs:
@@ -1522,6 +1607,8 @@ class MainWindow(Adw.ApplicationWindow):
             "mode": mode_text,
             "encoder": encoder_text,
             "position": position_text,
+            "buffer": buffer_text,
+            "segments": segments_text,
             "resolution": media_text,
             "audio": audio_text,
             "subs": subtitle_text,
