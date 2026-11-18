@@ -88,7 +88,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
 - Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
 - Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
-- All 20 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
+- Every module under `src/` is listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
 - `src/version.py` is the sole version authority; `[project] dynamic = ["version"]` and `[tool.setuptools.dynamic] version = {attr = "version.__version__"}` are required. The `cli:main` entry point exposes the running version without GTK.
 
 ## UI features
@@ -147,7 +147,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - External `.srt/.vtt/.ttml` may be passed to catt or burned by FFmpeg; `.ass/.ssa` require burn-in. Embedded MKV **text** tracks are selectable and burned by the libass subtitle filter; **PGS/VobSub/DVB bitmap streams are not yet supported**. Do not silently mark them as available.
 - Preserve embedded subtitle index in `SessionState` and across restart/seek; do not send duplicate sidecar tracks when captions are burned into the video. Resolve user-picked paths only if valid; bound temporary staging.
 - In-window Play/Pause uses `Gtk.Video`, not a separate ffplay window. Local playhead and cached duration are independent of Cast session time. Cast explicitly hands off at the local timestamp.
-- `IMPROVEMENTS.md` is the prioritised list of **50 proposals**. Never present backlog proposals as shipping features; require tests and real-device verification for protocol claims.
+- `IMPROVEMENTS.md` is the prioritised improvement backlog. Never present backlog proposals as shipping features; require tests and real-device verification for protocol claims.
 
 ## User's requests (pending)
 1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.
