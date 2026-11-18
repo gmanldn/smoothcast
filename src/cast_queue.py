@@ -514,9 +514,16 @@ class QueueMixin:
         if unlocked and saved_uuid:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
+                # A scheduled volume write and cached status still belong to
+                # the old selection; do not carry either into a renamed target.
+                if self._volume_job is not None:
+                    GLib.source_remove(self._volume_job)
+                    self._volume_job = None
+                self._volume_target = None
                 self.cfg["device"] = matched.name
                 save_config(self.cfg)
                 self.toast(f"Reconnected renamed Cast receiver: {matched.name}")
+                self._poll_device()
         names = list(dict.fromkeys(
             [d.name for d in cast_devices]
             + list(self._dlna_by_key)
