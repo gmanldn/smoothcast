@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
+import version
+
 
 def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
     """Pull a git checkout from a worker after the initial window is visible.
@@ -25,4 +27,13 @@ def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
     output = result.stdout.strip()
     if not output or "Already up to date." in output or "Already up-to-date." in output:
         return None
-    return "SmoothCast update downloaded; restart after playback to apply."
+    # A pull changes files on disk; never claim a new release is *running*
+    # until the process actually restarts and imports that checkout.
+    downloaded = version.read_checkout_version(repo / "src" / "version.py")
+    running = version.__version__
+    if downloaded and downloaded != running:
+        return (
+            f"SmoothCast v{downloaded} downloaded; running v{running}. "
+            "Restart after playback to apply."
+        )
+    return f"SmoothCast code updated (running v{running}); restart to apply."
