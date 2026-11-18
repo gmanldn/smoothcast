@@ -10,7 +10,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
-- **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
+- **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — auto-select, burn-in, or disable
@@ -18,28 +18,44 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
-## Quick start (self-contained)
+## Install — Python-first, all three desktops
 
-1. Unzip the release
-2. Run:
+**The only manual prerequisite is Python 3.10+**. Setup will check and, where
+necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and
+`catt`. The installer uses the host package manager and may request
+administrator permission. Internet access is required for missing packages.
 
-```sh
-./smoothcast
-```
+| OS | Setup command | Application shortcut |
+|---|---|---|
+| Debian/Ubuntu, Fedora, Arch | `bash setup/linuxsetup.sh` | Linux application menu / GNOME dock |
+| macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
+| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | Windows Start Menu |
 
-That's it. First run creates a `.venv` and installs `catt` automatically. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
+The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which
+verifies an isolated `.venv` before registering the desktop shortcut.
+Rerunning setup checks for missing dependencies; `--check` performs read-only
+health checks. `--no-shortcuts` skips desktop integration. See
+[setup/README.md](setup/README.md) for platform-specific details and limitations.
 
-Optional executable shortcut: `./sc.py` delegates to the same launcher and forwards arguments. If SmoothCast is already running, GTK raises that window; it does not restart an active stream.
+On Linux/macOS, `./smoothcast` also performs first-run setup automatically.
+`python3 sc.py` launches the configured runtime across platforms. Version
+lookup remains side-effect free: `./smoothcast --version` (Unix) or
+`python src/version.py` (any OS).
 
-## Install via pip (recommended for Python workflows)
+**Cross-platform status:** Linux is the existing working implementation.
+The Windows and macOS native setup/bootstrap paths are now implemented and
+covered by portable tests, but have **not** yet passed end-to-end GUI and
+Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python
+extension packaging differs from official CPython; the `catt` installation
+may require follow-up dependency work. Both systems initially use software
+libx264 rather than Linux VAAPI.
 
-```sh
-pip install -e .
-# or from a release tarball
-pip install smoothcast
-```
+### Development installs with pip
 
-Then run `smoothcast` or `sc` directly. The pip entry point is the canonical way forward; the `./smoothcast` bash launcher is a convenience for non-Python workflows and will delegate to the installed entry point in a future version.
+For an environment where GTK4/libadwaita and FFmpeg are already available,
+the Python package can be installed with `python -m pip install -e .`.
+Plain `pip install` cannot provide the required native GTK stack; the
+platform setup scripts are the recommended first-install path.
 
 ## Interface and visual design
 
@@ -130,15 +146,14 @@ hardcoded "Current: X.Y.Z" version elsewhere.
 
 Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
-## Requirements
+## Runtime dependencies
 
-- **Python 3.10+**
-- **GTK4 + libadwaita** (system packages, cannot be pip-installed):
-  - Debian/Ubuntu: `sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`
-  - Fedora: `sudo dnf install python3-gobject gtk4 libadwaita`
-  - Arch: `sudo pacman -S python-gobject gtk4 libadwaita`
-- **ffmpeg** (`sudo apt install ffmpeg` or equivalent)
-- **catt** — installed automatically into the bundled venv on first run
+Python 3.10+ is the only dependency users must install themselves. The
+platform setup scripts automatically detect or provision native GTK4,
+libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project
+virtual environment. This still requires network access, a supported
+system package manager and permission to install system packages.
+Verify without modifying anything using `--check`.
 
 ## Testing
 
@@ -160,7 +175,14 @@ DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test
 ```
 smoothcast/
 ├── smoothcast          # bootstrap launcher (creates venv, installs catt, runs app)
-├── requirements.txt    # pip deps (catt)
+├── requirements.txt    # isolated pip dependencies (catt)
+├── setup/              # Python-only bootstrap, native OS installers and launchers
+│   ├── winsetup.bat    # Windows/MSYS2 UCRT64 bootstrap
+│   ├── macsetup.sh     # macOS/Homebrew bootstrap
+│   ├── linuxsetup.sh   # apt/dnf/pacman bootstrap
+│   ├── bootstrap.py    # dependency installation and validation
+│   ├── launch.py       # portable non-mutating runtime launcher
+│   └── shortcuts.py    # native desktop integration
 ├── scripts/
 │   └── install_desktop.py # user XDG launcher/icon installer
 ├── src/
