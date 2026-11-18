@@ -24,6 +24,20 @@ spec.loader.exec_module(runner)
 
 
 class GuiTestSafetyTests(unittest.TestCase):
+    def test_pytest_clears_inherited_desktop_display_channels(self):
+        # Guard must be applied before test collection, not after tests have
+        # had a chance to create GTK objects or spawn GUI subprocesses.
+        source = (ROOT / "tests" / "conftest.py").read_text("utf-8")
+        ast.parse(source)
+        self.assertIn('os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"', source)
+        self.assertIn('os.environ["GDK_BACKEND"] = "x11"', source)
+        for name in (
+            "DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+            "XAUTHORITY", "SMOOTHCAST_GUI_TEST_ISOLATED",
+        ):
+            self.assertIn(f'"{name}"', source)
+        self.assertIn("os.environ.pop(name, None)", source)
+
     def test_live_desktop_refused_even_when_selftest_argument_explicit(self):
         for env in (
             {},
