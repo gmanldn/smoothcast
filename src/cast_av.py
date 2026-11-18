@@ -361,20 +361,40 @@ class AvMixin:
     def _on_cc_toggled(self, button) -> None:
         if self.busy or self._syncing:
             return
+        on = button.get_active()
         if self._dlna_renderer() is not None:
+            self._restore_cc_toggle(not on)
             self.toast("DLNA subtitles are burned into the prepared film; recast to change", error=True)
             return
-        on = button.get_active()
         device = self._device()
+        previous = self.cfg["subs"]
 
         def work():
             return castctl.subs_on(device) if on else castctl.subs_off(device)
 
         def done(result):
             ok, message = result
+            if ok:
+                # Persist the receiver's acknowledged state so the next status
+                # refresh cannot re-derive the toggle from subtitle presence.
+                self.cfg["subs"] = (
+                    (previous if previous != "off" else "auto") if on else "off"
+                )
+                save_config(self.cfg)
+            else:
+                self._restore_cc_toggle(not on)
             self.toast("Captions on" if on and ok else ("Captions off" if ok else (message or "Caption toggle failed")))
 
         Async.run(work, done=done)
+
+
+    def _restore_cc_toggle(self, active: bool) -> None:
+        """Put the CC toggle back without emitting a fresh receiver command."""
+        self._syncing = True
+        try:
+            self.cc_button.set_active(active)
+        finally:
+            self._syncing = False
 
 
     def _start_preview(self) -> bool:

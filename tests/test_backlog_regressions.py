@@ -113,6 +113,23 @@ class ReceiverSafetyTests(unittest.TestCase):
         self.assertGreater(reject.index("finally:"),
                            reject.index("self.volume_scale.set_value(known)"))
 
+    def test_cc_toggle_persists_acknowledged_state_and_reverts_failures(self):
+        toggle = METHODS["_on_cc_toggled"]
+        restore = METHODS["_restore_cc_toggle"]
+        # An acknowledged Off must be recorded, or the next status refresh
+        # would derive the toggle from subtitle presence and switch it back on.
+        self.assertIn('self.cfg["subs"] = (', toggle)
+        self.assertIn('else "off"', toggle)
+        self.assertIn("save_config(self.cfg)", toggle)
+        # A failed or refused command restores the prior toggle without
+        # emitting another receiver command.
+        self.assertGreaterEqual(toggle.count("self._restore_cc_toggle(not on)"), 2)
+        self.assertIn("self.cc_button.set_active(active)", restore)
+        self.assertIn("self._syncing = True", restore)
+        refresh = METHODS["_refresh_controls"]
+        self.assertIn('self.cfg["subs"] != "off"', refresh)
+        self.assertIn("subtitle_burned", refresh)
+
     def test_active_receiver_media_not_replaced_by_queue_selection(self):
         selection = METHODS["set_selection"]
         self.assertIn("self.session is not None or self.external or self.busy", selection)
