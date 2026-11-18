@@ -743,6 +743,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._preview_pending: tuple[str, float, int] | None = None
         self._preview_busy = False
         self._preview_timer_id = 0
+        self._local_video_path: str | None = None
+        self._local_start_pending: float | None = None
+        self._media_cache: dict[str, tuple[tuple[int, int], streamer.MediaInfo]] = {}
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
         # move()/get_position() APIs and never force a fullscreen-sized minimum.
@@ -919,6 +922,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._preview_path = None
         self._preview_position = 0.0
         self._preview_pending = None
+        self._unload_local_video()
         self.preview_picture.set_visible(False)
 
         # Reset tracker and position state.
@@ -1056,6 +1060,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.preview_overlay = Gtk.Overlay()
         self.preview_overlay.set_child(self.preview)
         self.preview_overlay.add_overlay(self.preview_picture)
+        # Real video/audio playback is embedded into the existing preview panel.
+        self.local_video = Gtk.Video()
+        self.local_video.set_autoplay(False)
+        self.local_video.set_can_target(False)
+        self.local_video.set_visible(False)
+        self.local_video.set_hexpand(True)
+        self.local_video.set_vexpand(True)
+        self.preview_overlay.add_overlay(self.local_video)
         body.append(self.preview_overlay)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
@@ -1972,6 +1984,14 @@ class MainWindow(Adw.ApplicationWindow):
         if previewing and not duration:
             duration = self.queue_durations.get(self._preview_path, 0.0)
         position = self._preview_position if previewing else self.tracker.value()
+        if previewing:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                if stream.get_playing() and not self.seekbar.scrubbing:
+                    self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
+                    position = self._preview_position
+                if not duration and stream.get_duration() > 0:
+                    duration = stream.get_duration() / 1_000_000
         buffered = None
         if self.session and self.session.mode == "transcode" and self.session.state:
             progress = self.session.progress()
@@ -1996,6 +2016,9 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _update_transport_icon(self) -> None:
         playing = self.device_state in {"PLAYING", "BUFFERING"}
+        if self.session is None and not self.external:
+            stream = self._local_stream()
+            playing = bool(stream is not None and stream.get_playing())
         name = "media-playback-pause-symbolic" if playing else "media-playback-start-symbolic"
         if self._play_icon_name != name:
             self._play_icon_name = name
@@ -2269,10 +2292,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.cast_button.remove_css_class("primary-action")
             self.open_button.add_css_class("primary-action")
         self.stop_tv_button.set_sensitive(active and not busy)
-        can_play = online and not busy and (active or self.now_playing is not None or self.selected_index is not None)
+        local_ready = self._preview_path is not None and self.session is None and not self.external
+        can_play = not busy and ((online and active) or local_ready)
         self.play_button.set_sensitive(can_play)
-        self.stop_button.set_sensitive(online and not busy and active)
-        can_seek = online and not busy and not self.external and self.tracker.known and active
+        self.stop_button.set_sensitive(not busy and ((online and active) or local_ready))
+        can_seek = not busy and ((online and not self.external and self.tracker.known and active)
+                                 or (local_ready and bool(self.media and self.media.duration)))
         for button in (self.back10_button, self.back30_button, self.fwd10_button, self.fwd30_button):
             button.set_sensitive(can_seek)
         has_queue = bool(self.queue)
@@ -2291,17 +2316,13 @@ class MainWindow(Adw.ApplicationWindow):
         self._syncing = True
         self.cc_button.set_active(has_subs and self.cfg["subs"] != "off")
         self._syncing = False
-        can_play_locally = (
-            self.local_playback.available()
-            and not (self.session is not None and self.session.state is not None)
-            and self._selected_path() is not None
-        )
-        self.local_button.set_sensitive(can_play_locally and not busy)
-        if self.local_playback.is_active():
-            self.local_button.set_label("Stop locally")
-            self.local_button.set_icon_name("media-playback-stop-symbolic")
+        self.local_button.set_sensitive(local_ready and not busy)
+        stream = self._local_stream()
+        if stream is not None and stream.get_playing():
+            self.local_button.set_label("Pause preview")
+            self.local_button.set_icon_name("media-playback-pause-symbolic")
         else:
-            self.local_button.set_label("Play locally")
+            self.local_button.set_label("Play preview")
             self.local_button.set_icon_name("media-playback-start-symbolic")
         if self.device_state == "OFFLINE":
             self._set_chip("Offline", "offline")
@@ -2316,8 +2337,10 @@ class MainWindow(Adw.ApplicationWindow):
         elif paused:
             self._set_chip("Paused", "paused")
         else:
-            if self.local_playback.is_active():
+            if stream is not None and stream.get_playing():
                 self._set_chip("Playing locally", "playing")
+            elif local_ready:
+                self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
 
@@ -2378,14 +2401,13 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- transport ----------
 
     def toggle_play(self) -> None:
-        if self.device_state == "OFFLINE" or self.busy:
-            if self.device_state == "OFFLINE":
-                self.toast("Device is offline", error=True)
+        if self.busy:
             return
         if self.session is None and not self.external:
-            # No owned player exists yet: cast the selected local file rather
-            # than sending a 'resume' command to an unrelated TV receiver.
-            self.cast_selected()
+            self._toggle_local_preview()
+            return
+        if self.device_state == "OFFLINE":
+            self.toast("Device is offline", error=True)
             return
         device = self._device()
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
