@@ -7,6 +7,9 @@ An interrupted session, paused film or unverified receiver cannot restart.
 from __future__ import annotations
 
 import math
+import time
+
+import playback_state
 
 
 class StreamWatchdog:
@@ -110,3 +113,45 @@ class StreamWatchdog:
         self.restarts += 1
         self._encoder_advanced_at = self._receiver_advanced_at = now
         return "encoder_stalled" if encoder_stalled else "receiver_stalled"
+
+
+def recover_window(window, snapshot: dict, position: float | None) -> None:
+    """Apply pure health verdicts to the current GTK window without blocking."""
+    session = window.session
+    state = session.state if session is not None else None
+    if (session is None or session.mode != "transcode" or state is None):
+        window._stream_watchdog.reset()
+        return
+    info = window.device_info
+    owned = playback_state.hls_session_matches(
+        info, state.stream_url, state.title,
+    )
+    remaining = (
+        max(0.0, state.duration - position)
+        if state.duration and position is not None else None
+    )
+    outcome = window._stream_watchdog.observe(
+        session=session, epoch=state.started_at, now=time.monotonic(),
+        receiver_state=window.device_state,
+        owned=owned, busy=window.busy or window._closing or window._cast_starting,
+        encoder_seconds=snapshot.get("out_time"),
+        receiver_seconds=info.get("current_time") if info else None,
+        encoder_done=snapshot.get("progress") == "end",
+        seconds_remaining=remaining,
+    )
+    if outcome in {"encoder_stalled", "receiver_stalled"}:
+        # Restart is local/async and only permitted while the receiver
+        # reports our *exact* HLS URL. Never hijack unrelated TV content.
+        window.busy = True
+        window._refresh_controls()
+        reason = ("FFmpeg stopped advancing" if outcome == "encoder_stalled"
+                  else "the receiver stopped consuming HLS media")
+        window.toast("Playback stalled; attempting one safe restart", error=True)
+        window._console(f"Watchdog: {reason}; restarting owned HLS stream once")
+        target = max(0.0, position if position is not None else state.offset)
+        window._restart_at(session, target)
+    elif outcome == "recovery_exhausted":
+        window.toast("Playback remains stalled — automatic retries exhausted", error=True)
+        window._console("Watchdog: one restart already attempted; manual diagnosis required")
+
+
