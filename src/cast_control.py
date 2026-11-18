@@ -1112,7 +1112,6 @@ class MainWindow(Adw.ApplicationWindow):
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
-        playback.append("Always on top", "app.always-on-top")
         playback.append("Loop", "app.loop")
         playback.append("Auto theme by time", "app.auto-theme")
         speed = Gio.Menu()
@@ -2457,10 +2456,11 @@ class MainWindow(Adw.ApplicationWindow):
         self._skip(30)
 
     def _toggle_fullscreen(self) -> None:
-        self.set_fullscreen(not self.is_fullscreen())
-
-    def _toggle_always_on_top(self) -> None:
-        self.set_keep_above(not self.get_keep_above())
+        # Gtk4 exposes fullscreen()/unfullscreen(), not set_fullscreen().
+        if self.is_fullscreen():
+            self.unfullscreen()
+        else:
+            self.fullscreen()
 
     def _toggle_loop(self) -> None:
         self.cfg["loop"] = not self.cfg.get("loop", False)
@@ -3075,7 +3075,6 @@ class CastControlApp(Adw.Application):
         simple("add-files", lambda *a: self._window().action_add_files())
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
-        simple("always-on-top", lambda *a: self._window()._toggle_always_on_top())
         simple("loop", lambda *a: self._window()._toggle_loop())
         simple("auto-theme", lambda *a: self._window()._toggle_auto_theme())
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
@@ -3085,6 +3084,7 @@ class CastControlApp(Adw.Application):
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
+        simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
