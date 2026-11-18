@@ -897,9 +897,23 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_default_size(w, h)
         self.set_size_request(1200, 800)
         try:
-            if int(self.cfg.get("window_x", -1)) >= 0 and int(self.cfg.get("window_y", -1)) >= 0:
-                self.move(int(self.cfg["window_x"]), int(self.cfg["window_y"]))
+            x = int(self.cfg.get("window_x", -1))
+            y = int(self.cfg.get("window_y", -1))
+            if x >= 0 and y >= 0:
+                display = Gdk.Display.get_default()
+                mon = display.get_monitor_at_point(x, y) if display else None
+                if mon is None and display:
+                    mon = display.get_primary_monitor() or (display.get_monitors()[0] if display.get_monitors() else None)
+                if mon:
+                    geom = mon.get_geometry()
+                    x = max(geom.x, min(x, geom.x + geom.width - w))
+                    y = max(geom.y, min(y, geom.y + geom.height - h))
+                if x >= 0 and y >= 0:
+                    self.move(x, y)
+                else:
+                    self._center_on_primary(w, h)
         except Exception:
+            self._center_on_primary(w, h)
             pass
         self._build_ui()
         self._flush_stale_state()
@@ -1582,6 +1596,18 @@ class MainWindow(Adw.ApplicationWindow):
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
         if duration:
             self.seek_to(duration * tenth / 10.0)
+
+    def _center_on_primary(self, w: int, h: int) -> None:
+        try:
+            display = Gdk.Display.get_default()
+            mon = display.get_primary_monitor() if display else None
+            if mon is None and display and display.get_monitors():
+                mon = display.get_monitors()[0]
+            if mon:
+                g = mon.get_geometry()
+                self.move(g.x + max(0, (g.width - w) // 2), g.y + max(0, (g.height - h) // 2))
+        except Exception:
+            pass
 
     def _apply_color_scheme(self) -> None:
         if self.cfg.get("auto_theme"):
