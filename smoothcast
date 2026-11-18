@@ -13,6 +13,12 @@ if ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,10) else 1)' 2>/
     exit 1
 fi
 
+# --version must work on headless systems, before desktop repair, GTK, venv
+# creation or any audio/casting side effects. Always read src/version.py.
+if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
+    exec "$PYTHON" "$DIR/src/version.py"
+fi
+
 # Repair the desktop launcher/icon for this user on interactive GUI starts.
 # Idempotent: no sudo, no shell PATH dependency, no duplicate visible launcher.
 if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && [[ " $* " != *" --self-test "* ]]; then
