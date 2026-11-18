@@ -1890,6 +1890,13 @@ class MainWindow(Adw.ApplicationWindow):
             self.tracker.start(started, media.duration, True)
             self._add_recent(str(path))
             self._set_now_playing_labels(media, session)
+            # Update preview screen with video info.
+            if self.preview is not None and media:
+                bits = [media.resolution, media.vcodec]
+                if media.size_label:
+                    bits.append(media.size_label)
+                info = " · ".join(bit for bit in bits if bit)
+                self.preview.set_video(pretty_title(path), info)
             self.toast(f"Casting {pretty_title(path)} to {device}")
             self._rebuild_queue()
             self._refresh_controls()
