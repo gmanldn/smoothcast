@@ -69,7 +69,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.42`
+- Current: `1.0.43`
 - Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
@@ -84,7 +84,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.42`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.43`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -112,6 +112,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 28. Playback and lifecycle reliability (v1.0.42): the GUI seekbar always measures **source-film seconds**, including at non-1× speed. FFmpeg uses `-readrate speed`, `setpts=PTS/speed` and `atempo`; convert relative HLS and encoder times via `playback_state.absolute_encoded_position(offset, elapsed, duration, speed)`. `PositionTracker` extrapolates by `rate`, with pause/resume rebasing. `_restart_at(..., speed_override=...)` must apply live speed changes (including transitions from direct mode), and HLS software fallback MUST preserve both speed and rotation. Never allow native direct play for speed or rotation transforms. Tests: `tests/test_playback_rate.py`, `tests/test_playback_state.py`, `tests/test_streamer_reliability.py`.
 
 29. Device ownership and reconnection: `catt cast` may exit after starting TV playback; direct session ownership lasts until explicit stop or confirmed device completion. The transcoder may exit before buffered TV playback ends: do not disable Stop/Pause because the FFmpeg PID finished. Ignore stale responses for a previously selected TV; prohibit switching outputs while an owned session is live. Saved direct casts must pass `playback_state.direct_session_matches` before presenting them as reconnected. Portable CI syntax/tests: `.github/workflows/verify.yml`.
+
+30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Reconfirm any prior `GtkBox min > natural` warnings on the running desktop before claiming full resolution.
 
 ## Pending work
 - Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).

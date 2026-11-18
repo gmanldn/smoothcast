@@ -1172,7 +1172,10 @@ class MainWindow(Adw.ApplicationWindow):
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(84)
         scroller.set_max_content_height(230)
-        scroller.set_propagate_natural_height(True)
+        # Only the outer page should negotiate natural vertical size.
+        # Inner list contents change asynchronously and can otherwise give
+        # GtkBox contradictory min/natural height requests during relayout.
+        scroller.set_propagate_natural_height(False)
         self.console_scroller = scroller
         self.console_list = Gtk.ListBox()
         self.console_list.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -1309,7 +1312,10 @@ class MainWindow(Adw.ApplicationWindow):
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         scroller.set_min_content_height(100)
         scroller.set_max_content_height(270)
-        scroller.set_propagate_natural_height(True)
+        # Only the outer page should negotiate natural vertical size.
+        # Inner list contents change asynchronously and can otherwise give
+        # GtkBox contradictory min/natural height requests during relayout.
+        scroller.set_propagate_natural_height(False)
         self.queue_scroller = scroller
         self.queue_list = Gtk.ListBox()
         self.queue_list.set_selection_mode(Gtk.SelectionMode.SINGLE)

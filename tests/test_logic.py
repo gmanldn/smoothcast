@@ -286,9 +286,9 @@ def test_position_tracker_device_update_paused_stays_static(monkeypatch):
     now[0] += 5.0
     assert t.value() == 10.0  # paused: holds device position
 
-    t.set_state(True)  # resume
+    t.set_state(True)  # resume — extrapolation rebases on resume
     now[0] += 5.0
-    assert t.value() == 20.0  # advances from paused device position
+    assert t.value() == 15.0  # advances only since resume, not by paused duration
 
 
 def test_position_tracker_estimated_mode_unaffected(monkeypatch):
