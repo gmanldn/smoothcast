@@ -14,14 +14,16 @@ if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
     exec "$PYTHON" "$DIR/src/version.py"
 fi
 
-# Automatically bootstrap a fresh checkout on Linux/macOS. Once installed,
-# launching does not re-run pip or system package managers.
-if [[ ! -f "$DIR/.venv/bin/python" && ! -f "$DIR/.venv/bin/python.exe" ]]; then
-    case "$(uname -s)" in
-        Darwin) TARGET=macos ;;
-        Linux) TARGET=linux ;;
-        *) echo "Use setup/winsetup.bat on Windows." >&2; exit 1 ;;
-    esac
+# A previous interrupted installation can leave a venv executable behind
+# without working GTK/catt dependencies. Detect that instead of silently
+# failing when the application is launched from a graphical dock.
+case "$(uname -s)" in
+    Darwin) TARGET=macos ;;
+    Linux) TARGET=linux ;;
+    *) echo "Use setup/winsetup.bat on Windows." >&2; exit 1 ;;
+esac
+RUNTIME="$DIR/.venv/bin/python"
+if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;m.version("catt")' >/dev/null 2>&1; then
     "$PYTHON" "$DIR/setup/bootstrap.py" --target "$TARGET"
 fi
 
