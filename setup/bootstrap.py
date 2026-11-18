@@ -42,6 +42,15 @@ CATT_CHECK = (
 PIP_PACKAGES = ("catt>=0.12",)
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
+# Reviewed immutable Homebrew installer (2026-11-18); update commit and digest
+# together only after reviewing the new upstream script. Never execute HEAD.
+HOMEBREW_INSTALL_COMMIT = "eaa2af62ca1d5349c9743f82b1b0c4e5d365fb2d"
+HOMEBREW_INSTALL_SHA256 = "8fd2f1a5287a7c2e3d7362924c677edcc04c5a0e16448c77132d056bc88cf1ed"
+HOMEBREW_INSTALL_MAX_BYTES = 256 * 1024
+HOMEBREW_INSTALL_URL = (
+    "https://raw.githubusercontent.com/Homebrew/install/"
+    f"{HOMEBREW_INSTALL_COMMIT}/install.sh"
+)
 
 WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
@@ -234,19 +243,42 @@ def find_brew() -> str | None:
     ))
 
 
+def download_verified_homebrew() -> bytes:
+    """Download a pinned Homebrew installer with bounded size and SHA-256.
+
+    Returns verified bytes; never writes or executes untrusted partial data.
+    Offline tests replace urlopen, and a failed check never reaches Bash.
+    """
+    request = urllib.request.Request(
+        HOMEBREW_INSTALL_URL, headers={"User-Agent": "SmoothCast-bootstrap"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            script = response.read(HOMEBREW_INSTALL_MAX_BYTES + 1)
+    except (OSError, ValueError) as exc:
+        raise SetupError(f"Homebrew installer download failed: {exc}") from exc
+    if not script or len(script) > HOMEBREW_INSTALL_MAX_BYTES:
+        raise SetupError("Homebrew installer is empty or exceeds safe download size")
+    if hashlib.sha256(script).hexdigest() != HOMEBREW_INSTALL_SHA256:
+        raise SetupError("Homebrew installer SHA-256 mismatch; refusing execution")
+    if not script.startswith(b"#!/bin/bash\n"):
+        raise SetupError("Verified Homebrew installer lacks the expected Bash header")
+    return script
+
+
 def install_macos(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     brew = find_brew()
     if not brew and not check:
-        # Homebrew's documented, noninteractive installer; requires network
-        # and can ask the OS for administrator approval.
-        if not shutil.which("curl"):
-            raise SetupError("curl is needed to install Homebrew on macOS.")
-        say("Homebrew is absent; installing from the official installer.")
-        checked_run([
-            "/bin/bash", "-c",
-            'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL '
-            'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-        ])
+        # Never pipe mutable network content into Bash. Download, bound,
+        # compare against the reviewed SHA-256 and only then invoke a file.
+        say("Homebrew is absent; downloading checksum-verified pinned installer.")
+        verified_script = download_verified_homebrew()
+        with tempfile.TemporaryDirectory(prefix="smoothcast-homebrew-") as directory:
+            script = Path(directory) / "install.sh"
+            script.write_bytes(verified_script)
+            install_env = dict(os.environ)
+            install_env["NONINTERACTIVE"] = "1"
+            checked_run(["/bin/bash", str(script)], env=install_env)
         brew = find_brew()
     if not brew:
         raise SetupError("Homebrew not found. Install it from https://brew.sh/.")
