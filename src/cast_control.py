@@ -2903,8 +2903,12 @@ class MainWindow(Adw.ApplicationWindow):
                     if len(self._preflight_ok) >= 256:
                         self._preflight_ok.clear()
                     self._preflight_ok.add(fingerprint)
+            if self._closing:
+                raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
+            if self._closing:
+                raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             session = dlna.Session() if renderer is not None else streamer.Session()
             title = pretty_title(path)
             try:
