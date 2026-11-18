@@ -836,6 +836,7 @@ class Session:
         self.state = SessionState(
             file=str(media.path), mode="direct", offset=0.0,
             duration=media.duration, device=device, title=title,
+            audio="original",
             subs=str(subs_file or ""), burn_subs=False,
             started_at=time.time(),
             caster_pid=getattr(self.caster, "pid", 0),
