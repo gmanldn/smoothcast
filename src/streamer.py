@@ -728,6 +728,19 @@ class Session:
             return True
         return False
 
+    def recoverable_hls(self) -> bool:
+        """Completed local HLS media can outlive its encoder.
+
+        This only proves the server has a finalized, readable playlist.
+        The GUI must separately confirm that the receiver still reports
+        our exact saved stream URL before reclaiming media ownership.
+        """
+        if self.mode != "transcode" or self.state is None:
+            return False
+        if self.ffmpeg is not None and self.ffmpeg.poll() is None:
+            return False
+        return self._playlist_is_complete(ROOT / HLS_NAME) and _server_healthy()
+
     def encoder_finished(self) -> bool:
         if self.mode == "transcode":
             if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
@@ -1104,6 +1117,12 @@ class Session:
         if not names:
             return False
         for name in names:
+            # Only files the HLS HTTP server is permitted to expose can
+            # establish recoverability. Do not follow playlist traversal,
+            # absolute paths or unrelated temporary files.
+            if not (name.startswith("segment-") and name.endswith(".ts")
+                    and name[len("segment-"):-len(".ts")].isdigit()):
+                return False
             try:
                 segment = ROOT / name
                 if not segment.is_file() or segment.stat().st_size == 0:
