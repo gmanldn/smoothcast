@@ -54,6 +54,24 @@ class StreamServerTests(unittest.TestCase):
         status, body, _ = self.request("/segment-00000.ts", "HEAD")
         self.assertEqual((status, body), (200, b""))
 
+    def test_hls_content_types_and_lengths_are_stable_for_get_and_head(self):
+        samples = (
+            ("/movie.m3u8", "application/vnd.apple.mpegurl",
+             (self.root / "movie.m3u8").read_bytes()),
+            ("/segment-00000.ts", "video/mp2t", b"mpeg-ts"),
+        )
+        # Test the actual HTTP handler, not just a platform MIME lookup.
+        for path, content_type, payload in samples:
+            for method in ("GET", "HEAD"):
+                with self.subTest(path=path, method=method):
+                    status, body, headers = self.request(path, method)
+                    self.assertEqual(status, 200)
+                    headers_ci = {name.lower(): value for name, value in headers.items()}
+                    self.assertEqual(headers_ci.get("content-type"), content_type)
+                    self.assertEqual(int(headers_ci["content-length"]), len(payload))
+                    self.assertEqual(headers_ci["cache-control"], "no-store")
+                    self.assertEqual(body, payload if method == "GET" else b"")
+
     def test_private_files_and_directory_traversal_are_rejected(self):
         for path in (
             "/", "/session.json", "/ffmpeg.log", "/burned_subs.srt",

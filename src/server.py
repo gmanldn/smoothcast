@@ -28,6 +28,15 @@ class H(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def guess_type(self, path: str) -> str:
+        """Use stable Cast/HLS MIME types, independent of OS MIME tables."""
+        suffix = Path(path).suffix.lower()
+        if suffix == ".m3u8":
+            return "application/vnd.apple.mpegurl"
+        if suffix == ".ts":
+            return "video/mp2t"
+        return super().guess_type(path)
+
     def end_headers(self):
         if public_resource(self.path):
             self.send_header("Access-Control-Allow-Origin", "*")
