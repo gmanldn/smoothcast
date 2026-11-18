@@ -2247,7 +2247,11 @@ class MainWindow(Adw.ApplicationWindow):
                 segments_text = "—"
         subtitle_text = "—"
         if session and session.state:
-            if session.state.subs:
+            if session.state.embedded_subtitle_index >= 0:
+                track = next((t for t in media.subtitle_tracks
+                              if t.index == session.state.embedded_subtitle_index), None) if media else None
+                subtitle_text = f"{track.label if track else 'MKV'} (burned in)"
+            elif session.state.subs:
                 subtitle_text = pathlib.Path(session.state.subs).name + (" (burned in)" if session.state.burn_subs else "")
             else:
                 subtitle_text = "off"
@@ -2315,7 +2319,6 @@ class MainWindow(Adw.ApplicationWindow):
             found = self._cached_subs(self.now_playing)
             if found:
                 return f"Found next to video: {pathlib.Path(found).name}"
-            return "No matching subtitle file next to the video"
         if self.media is not None and self.media.subtitle_tracks:
             chosen = streamer.preferred_embedded_subtitle(self.media)
             if chosen is not None:
@@ -2375,8 +2378,18 @@ class MainWindow(Adw.ApplicationWindow):
             "Stop your current cast before changing TVs" if self.session
             else "Choose the Chromecast to control"
         )
-        self.cc_button.set_sensitive(active and not busy)
-        has_subs = bool(self._active_subs()) or bool(self.session and self.session.state and self.session.state.subs)
+        embedded_burned = bool(
+            self.session and self.session.state
+            and self.session.state.embedded_subtitle_index >= 0
+        )
+        subtitle_burned = bool(self.session and self.session.state and self.session.state.burn_subs)
+        self.cc_button.set_sensitive(active and not busy and not subtitle_burned)
+        self.cc_button.set_tooltip_text(
+            "Captions are burned into video; change settings and recast to switch off"
+            if subtitle_burned else "Toggle subtitles on the receiver"
+        )
+        has_subs = (embedded_burned or bool(self._active_subs())
+                    or bool(self.session and self.session.state and self.session.state.subs))
         self._syncing = True
         self.cc_button.set_active(has_subs and self.cfg["subs"] != "off")
         self._syncing = False
