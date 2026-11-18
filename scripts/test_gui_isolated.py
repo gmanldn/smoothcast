@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import signal
 import shutil
 import subprocess
 import sys
@@ -66,12 +67,19 @@ def main() -> int:
             sys.executable, str(ROOT / "src" / "cast_control.py"), "--self-test",
         ]
         try:
-            return subprocess.run(command, cwd=ROOT, env=env, check=False,
-                                  timeout=MAX_SECONDS).returncode
-        except subprocess.TimeoutExpired:
-            print(f"GUI self-test exceeded {MAX_SECONDS}s; terminated.",
-                  file=sys.stderr)
-            return 124
+            # Separate process group: on timeout kill both the child UI and
+            # its Xvfb server. subprocess.run(timeout=...) only kills the
+            # immediate xvfb-run shell and can leave children behind.
+            process = subprocess.Popen(command, cwd=ROOT, env=env,
+                                       start_new_session=True)
+            try:
+                return process.wait(timeout=MAX_SECONDS)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                print(f"GUI self-test exceeded {MAX_SECONDS}s; terminated.",
+                      file=sys.stderr)
+                return 124
         except OSError as exc:
             print(f"GUI self-test could not start: {exc}", file=sys.stderr)
             return 2
