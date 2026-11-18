@@ -13,7 +13,13 @@ not a preinstalled pip environment.
 
 The installer checks the native packages and creates a project-local `.venv`
 with access to the system GTK bindings. It installs `catt` using pip in that
-environment. It then verifies that the actual environment can import GTK4 and
+environment. If a prior `.venv` is unusable, setup moves it to an
+inspectable `.venv-incompatible-*` backup before rebuilding. A failure during
+native venv creation, pip installation or media verification removes only the
+new partial replacement and **restores the prior directory**. Brand-new
+partial installs are cleaned up on failure. Compatible venvs repaired in place,
+native OS packages, shortcuts and uninstall are not yet fully transactional;
+see P0 issue SC-018 (#25). It then verifies that the actual environment can import GTK4 and
 libadwaita, that stable `catt >= 0.12` is installed (prerelease builds
 below that floor are rejected even with `python -O`), and that `ffmpeg`,
 `ffprobe`, and `ffplay` **actually start and return success** from bounded
