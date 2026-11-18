@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import math
 from types import SimpleNamespace
-import textwrap
 from unittest import mock
 
 from gui_source import main_window_methods
@@ -93,11 +92,7 @@ URL = "http://192.168.1.10:8767/movie.m3u8"
 
 
 def fake_window():
-    source = main_window_methods()["_watch_hls_stream"]
-    ns = {"playback_state": playback_state, "time": SimpleNamespace(monotonic=lambda: clock[0])}
-    code = "class Window:\n" + textwrap.indent(textwrap.dedent(source), "    ")
-    exec(compile(code, "<hls-watchdog-wiring>", "exec"), ns)
-    w = ns["Window"]()
+    w = SimpleNamespace()
     state = SimpleNamespace(mode="transcode", stream_url=URL, title="Film",
                             duration=140.0, offset=0.0, started_at=42.0)
     session = SimpleNamespace(mode="transcode", state=state)
@@ -115,51 +110,54 @@ def fake_window():
         setattr(w, method, mock.Mock())
     return w, session
 
-
 clock = [0.0]
 
 
 def test_gui_wiring_restarts_own_hls_once_at_source_clock_and_never_blocks():
     w, session = fake_window()
-    clock[0] = 0
-    w._watch_hls_stream({"out_time": 8, "progress": "continue"}, 75)
-    clock[0] = 21
-    w._watch_hls_stream({"out_time": 8, "progress": "continue"}, 75)
-    assert w.busy
-    w._restart_at.assert_called_once_with(session, 75)
-    w._console.assert_called_once()
-    clock[0] = 50
-    w._watch_hls_stream({"out_time": 8, "progress": "continue"}, 75)
+    with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
+        clock[0] = 0
+        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
+        clock[0] = 21
+        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
+        assert w.busy
+        w._restart_at.assert_called_once_with(session, 75)
+        w._console.assert_called_once()
+        clock[0] = 50
+        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
     w._restart_at.assert_called_once()
+
 
 
 def test_gui_wiring_refuses_remote_takeover_of_unrelated_content():
     w, _ = fake_window()
     w.device_info["content_id"] = "http://192.168.1.10:8767/other.m3u8"
-    clock[0] = 0
-    w._watch_hls_stream({"out_time": 8}, 20)
-    clock[0] = 100
-    w._watch_hls_stream({"out_time": 8}, 20)
+    with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
+        clock[0] = 0
+        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        clock[0] = 100
+        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
     w._restart_at.assert_not_called()
     assert not w.busy
 
 
 def test_gui_wiring_never_restarts_completed_or_paused_movie():
     w, _ = fake_window()
-    clock[0] = 0
-    w._watch_hls_stream({"out_time": 8}, 20)
-    w.device_state = "PAUSED"
-    clock[0] = 100
-    w._watch_hls_stream({"out_time": 8}, 20)
-    w.device_state = "PLAYING"
-    clock[0] = 101
-    w._watch_hls_stream({"out_time": 8, "progress": "end"}, 130)
+    with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
+        clock[0] = 0
+        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        w.device_state = "PAUSED"
+        clock[0] = 100
+        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        w.device_state = "PLAYING"
+        clock[0] = 101
+        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "end"}, 130)
     w._restart_at.assert_not_called()
 
 
 def test_existing_ui_tick_calls_watchdog_without_new_timer_or_cast():
     source = main_window_methods()["_tick"]
-    assert "self._watch_hls_stream(snapshot, position)" in source
+    assert "stream_watchdog.recover_window(self, snapshot, position)" in source
     init_source = main_window_methods()["__init__"]
     assert "self._stream_watchdog = stream_watchdog.StreamWatchdog()" in init_source
     assert "GLib.timeout_add(500, self._tick)" in init_source
