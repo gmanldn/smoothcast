@@ -40,6 +40,16 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("session.stop(device, send_stop=False)", code)
         self.assertNotIn("lambda: session.stop(device),", code)
 
+    def test_end_of_playback_teardown_blocks_new_cast_until_finished(self):
+        code = self.methods["_on_finished"]
+        self.assertIn("self.busy = session is not None", code)
+        self.assertIn("self._refresh_controls()", code)
+        self.assertIn("def advance(_result=None):", code)
+        self.assertIn("self.busy = False\n                self._cast_path(next_path, 0.0)", code)
+        self.assertIn("def cleaned(_result):", code)
+        self.assertIn("def failed(message):", code)
+        self.assertIn("done=cleaned, failed=failed", code)
+
     def test_explicit_start_and_resume_are_distinct(self):
         gui = self.methods["_cast_path"]
         self.assertIn("offset: float | None = None", gui)
