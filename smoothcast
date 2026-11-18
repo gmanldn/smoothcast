@@ -5,6 +5,16 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 
+# GUI testing is never permitted through the ordinary launcher: it could
+# bootstrap dependencies or show a window on the developer's active desktop.
+# The isolated Xvfb runner invokes src/cast_control.py directly instead.
+for arg in "$@"; do
+    if [[ "$arg" == "--self-test" ]]; then
+        echo "Refusing direct GUI self-test. Run: python3 scripts/test_gui_isolated.py" >&2
+        exit 2
+    fi
+done
+
 # Version queries never install anything or import GTK.
 if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
     exec "$PYTHON" "$DIR/src/version.py"
