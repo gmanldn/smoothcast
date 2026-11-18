@@ -1296,7 +1296,16 @@ class MainWindow(Adw.ApplicationWindow):
             self._mon_path = pathlib.Path(media_path)
             self._mon_chain = list(chain)
             self.monitor = audio_monitor.AudioMonitor()
-            self.monitor.start(self._mon_path, self._mon_chain, offset=max(0.0, offset))
+            track_index = -1
+            if self.media is not None and self.media.path == self._mon_path:
+                chosen = (self.session.state.audio_track_index
+                          if self.session is not None and self.session.state is not None else -1)
+                track = streamer.preferred_audio_track(self.media, chosen)
+                track_index = track.index if track is not None else 0
+            self.monitor.start(
+                self._mon_path, self._mon_chain, offset=max(0.0, offset),
+                audio_track_index=track_index,
+            )
         except Exception:
             self.monitor = None
 
