@@ -14,6 +14,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
+- **Searchable queue** — Ctrl+F filters filenames and folder paths without changing cast order or the selected file
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
@@ -55,8 +56,12 @@ Common video codecs H.264, HEVC/H.265, VP9 and AV1 and audio codecs AAC,
 AC-3/E-AC-3, DTS, Opus and FLAC can be decoded and *transcoded* by a suitably
 built FFmpeg into H.264 8-bit 4:2:0/AAC HLS for Cast. In software mode the
 output is bounded to 1080p and high-frame-rate sources to 30 fps for older
-receiver compatibility. The first audio track is used; choosing among
-multiple audio tracks is still a planned improvement. Actual playback
+receiver compatibility. **Playback settings → Film audio track** lists
+FFprobe-detected audio languages, titles, codecs and channel layouts.
+Choose Auto or a specific track before casting. Explicit selection disables
+direct passthrough and uses transcoded HLS; changing the track while casting
+restarts the stream at the current source-film position. Per-film choices
+persist through seeks and codec fallback. Actual playback
 depends on the installed FFmpeg build and receiver; DRM-protected files
 and some unusual encodings are not guaranteed.
 
