@@ -63,6 +63,25 @@ SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
 
+## Inspect and scrub a film before casting
+
+Choose **Open** and select a local video. SmoothCast now probes the film with
+FFprobe, displays its full running time and shows an actual decoded frame above
+the timeline. Move across or drag the seek bar to inspect frames at different
+timestamps **without starting Chromecast playback**. The selected frame and
+timestamp update asynchronously; the preview is a low-resolution still image,
+not a second video player. Click **Cast** when ready: the chosen timeline
+position becomes the starting point on the TV. Existing saved resume positions
+are used as the initial preview position, and scrubbing overrides them.
+
+Frame capture runs FFmpeg in a worker with a short timeout, a small JPEG
+output and no scratch image files. Decode requests are throttled so fast
+scrubbing cannot start a swarm of FFmpeg processes. Failed or unsupported
+frames leave the metadata slate visible, without changing the selected film.
+These features require the normal FFmpeg and FFprobe dependencies installed
+by `setup/linuxsetup.sh`. A double-click on an item in the queue remains a
+shortcut for immediate casting.
+
 ## Playback reliability
 
 Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
