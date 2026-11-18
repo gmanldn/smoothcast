@@ -418,6 +418,25 @@ def _terminate(proc) -> None:
             pass
 
 
+def _duration_seconds(raw: object) -> float:
+    """Parse FFprobe format/stream duration, including MKV DURATION tags."""
+    if raw is None:
+        return 0.0
+    try:
+        value = str(raw).strip()
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) != 3:
+                return 0.0
+            hours, minutes, seconds = map(float, parts)
+            value_seconds = hours * 3600 + minutes * 60 + seconds
+        else:
+            value_seconds = float(value)
+        return value_seconds if math.isfinite(value_seconds) and value_seconds > 0 else 0.0
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 def ffprobe(path: pathlib.Path) -> MediaInfo:
     media = MediaInfo(path=path)
     try:
@@ -433,10 +452,7 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         raise StreamError("ffprobe could not read this file")
     data = json.loads(result.stdout or "{}")
     fmt = data.get("format") or {}
-    try:
-        media.duration = float(fmt.get("duration") or 0)
-    except (TypeError, ValueError):
-        pass
+    media.duration = _duration_seconds(fmt.get("duration"))
     try:
         media.bitrate = int(fmt.get("bit_rate") or 0)
     except (TypeError, ValueError):
@@ -456,10 +472,17 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
             except (ValueError, ZeroDivisionError, OverflowError):
                 media.fps = 0.0
             if not media.duration:
-                try:
-                    media.duration = float(stream.get("duration") or 0)
-                except (TypeError, ValueError):
-                    pass
+                media.duration = (
+                    _duration_seconds(stream.get("duration"))
+                    or _duration_seconds((stream.get("tags") or {}).get("DURATION"))
+                )
+                if not media.duration:
+                    try:
+                        duration_ts = int(stream.get("duration_ts") or 0)
+                        time_base = Fraction(str(stream.get("time_base") or "0"))
+                        media.duration = _duration_seconds(float(duration_ts * time_base))
+                    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+                        pass
         elif kind == "audio":
             media.audio_tracks += 1
             if not media.acodec:
