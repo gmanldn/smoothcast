@@ -65,6 +65,7 @@ class GuiTestSafetyTests(unittest.TestCase):
         env = dict(os.environ)
         env.update(DISPLAY=":0", WAYLAND_DISPLAY="wayland-0",
                    SMOOTHCAST_GUI_TEST_ISOLATED="0",
+                   SMOOTHCAST_TEST_CONTEXT="0",
                    PYTHONPATH=str(ROOT / "src"))
         result = subprocess.run(
             [sys.executable, "-m", "cli", "--self-test"], cwd=ROOT, env=env,
@@ -85,21 +86,25 @@ class GuiTestSafetyTests(unittest.TestCase):
         self.assertNotIn("Installing", result.stdout)
 
     def test_one_shot_runner_never_inherits_user_display_or_bus(self):
-        with mock.patch.object(runner.sys, "platform", "linux"), \
+        process = mock.Mock()
+        process.wait.return_value = 0
+        with mock.patch.dict(runner.os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}), \
+             mock.patch.object(runner.sys, "platform", "linux"), \
              mock.patch.object(runner.shutil, "which",
                                side_effect=lambda name: f"/usr/bin/{name}"), \
-             mock.patch.object(runner.subprocess, "run",
-                               return_value=subprocess.CompletedProcess([], 0)) as run:
+             mock.patch.object(runner.subprocess, "Popen",
+                               return_value=process) as spawn:
             self.assertEqual(runner.main(), 0)
-            run.assert_called_once()
-            command = run.call_args.args[0]
-            env = run.call_args.kwargs["env"]
+            spawn.assert_called_once()
+            command = spawn.call_args.args[0]
+            env = spawn.call_args.kwargs["env"]
             self.assertEqual(command[0], "/usr/bin/xvfb-run")
             self.assertIn("-a", command)
             self.assertEqual(command[-1], "--self-test")
-            self.assertEqual(run.call_args.kwargs["timeout"], runner.MAX_SECONDS)
+            self.assertTrue(spawn.call_args.kwargs["start_new_session"])
+            process.wait.assert_called_once_with(timeout=runner.MAX_SECONDS)
             for key in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
-                        "XAUTHORITY", "XDG_CURRENT_DESKTOP"):
+                        "XAUTHORITY", "XDG_CURRENT_DESKTOP", "SMOOTHCAST_TEST_CONTEXT"):
                 self.assertNotIn(key, env)
             self.assertEqual(env["GDK_BACKEND"], "x11")
             self.assertEqual(env["SMOOTHCAST_GUI_TEST_ISOLATED"], "1")
@@ -109,12 +114,38 @@ class GuiTestSafetyTests(unittest.TestCase):
                 self.assertTrue(env[name].endswith(("home", "config", "data",
                                                     "cache", "runtime")))
 
+    def test_runner_timeout_terminates_whole_process_group(self):
+        process = mock.Mock(pid=12345)
+        process.wait.side_effect = [subprocess.TimeoutExpired("xvfb-run", 20), 0]
+        with mock.patch.dict(runner.os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}), \
+             mock.patch.object(runner.sys, "platform", "linux"), \
+             mock.patch.object(runner.shutil, "which",
+                               side_effect=lambda name: f"/usr/bin/{name}"), \
+             mock.patch.object(runner.subprocess, "Popen",
+                               return_value=process), \
+             mock.patch.object(runner.os, "killpg") as kill:
+            self.assertEqual(runner.main(), 124)
+            kill.assert_called_once_with(12345, runner.signal.SIGKILL)
+            self.assertEqual(process.wait.call_count, 2)
+
     def test_unavailable_xvfb_fails_closed_not_fallback_to_live_display(self):
-        with mock.patch.object(runner.sys, "platform", "linux"), \
+        with mock.patch.dict(runner.os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}), \
+             mock.patch.object(runner.sys, "platform", "linux"), \
              mock.patch.object(runner.shutil, "which", return_value=None), \
-             mock.patch.object(runner.subprocess, "run") as run:
+             mock.patch.object(runner.subprocess, "Popen") as spawn:
             self.assertEqual(runner.main(), 2)
-            run.assert_not_called()
+            spawn.assert_not_called()
+
+    def test_pytest_context_refuses_normal_gui_entry_before_gtk(self):
+        env = dict(os.environ, SMOOTHCAST_TEST_CONTEXT="1",
+                   PYTHONPATH=str(ROOT / "src"))
+        result = subprocess.run(
+            [sys.executable, "-m", "cli", "--action", "about"],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Refusing to start GTK from pytest", result.stderr)
+
 
     def test_smoke_application_has_no_network_polls_or_startup_cleanup(self):
         source = (ROOT / "src" / "cast_control.py").read_text("utf-8")
