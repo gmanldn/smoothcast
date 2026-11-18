@@ -290,7 +290,21 @@ class LifecycleMixin:
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
         ).expanduser()
-        position = self.tracker.value() or 0.0
+        if self.external and self.session is None:
+            self.toast("Cannot capture another application's TV stream", error=True)
+            return
+        # The cast tracker measures receiver playback, not the local film
+        # preview. Choose the clock that actually owns the visible frame.
+        if self.session is not None:
+            position = self.tracker.value() or 0.0
+        else:
+            position = self._preview_position if self._preview_path == str(source) else 0.0
+            if self._local_video_path == str(source):
+                stream = self._local_stream()
+                if stream is not None:
+                    timestamp = stream.get_timestamp()
+                    if timestamp >= 0:
+                        position = timestamp / 1_000_000
         self.toast("Capturing screenshot…")
         # FFmpeg, filesystem access and a corrupt input file may block for
         # seconds. Keep all of it off the GTK event loop.
