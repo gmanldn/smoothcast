@@ -8,6 +8,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
+- **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
 - **Direct play** — untouched passthrough for compatible files
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
@@ -27,6 +28,12 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 That's it. First run creates a `.venv` and installs `catt` automatically. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
 
 Optional executable shortcut: `./sc.py` delegates to the same launcher and forwards arguments. If SmoothCast is already running, GTK raises that window; it does not restart an active stream.
+
+## Responsive sizing
+
+The application no longer requires fullscreen or a 1400-pixel-wide minimum window. Saved startup dimensions are bounded by the detected monitor's logical geometry, leaving space for decorations. Layout automatically reflows on resize: **1180+ logical px** shows two columns; narrower widths stack cards. Transport controls and action buttons wrap as needed, preview height and card padding become more compact, and one outer vertical scroller keeps every card accessible even when the window is shorter than the full interface. Resizing wider restores the two-column layout. The app avoids shrinking controls to unreadable sizes.
+
+The geometry and breakpoint decisions are independently testable in `src/responsive_layout.py`. Run `python3 -m unittest discover -s tests -v` for breakpoint and GTK structure regression checks.
 
 ## Desktop launcher and dock
 
