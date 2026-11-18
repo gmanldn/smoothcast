@@ -153,7 +153,6 @@ class AudioMonitor:
         self._dir: pathlib.Path | None = None
         self._lock = threading.Lock()
         self._offset = 0.0
-        self._paired = 0
         # Parallel arrays indexed by window; absolute time in ``_times``.
         self._times: array.array = array.array("d")
         self._in_l: array.array = array.array("f")
@@ -171,7 +170,6 @@ class AudioMonitor:
         self.stop()
         self._stop.clear()
         self._offset = max(0.0, offset)
-        self._paired = 0
         for seq in (self._times, self._in_l, self._in_r, self._out_l, self._out_r,
                     self._in_rms, self._out_rms, self._in_peak, self._out_peak):
             del seq[:]
@@ -238,9 +236,10 @@ class AudioMonitor:
         rin = self._rin.records if self._rin else []
         rout = self._rout.records if self._rout else []
         total = min(len(rin), len(rout))
+        if not total:
+            return
         with self._lock:
-            while self._paired < total:
-                i = self._paired
+            for i in range(total):
                 src = rin[i]
                 dst = rout[i]
                 self._times.append(src.get("pts", 0.0) + self._offset)
@@ -252,7 +251,11 @@ class AudioMonitor:
                 self._out_r.append(dst.get("r", FLOOR_DB))
                 self._out_rms.append(dst.get("rms", FLOOR_DB))
                 self._out_peak.append(dst.get("peak", FLOOR_DB))
-                self._paired += 1
+            # Each record is now represented by compact arrays. Keeping both
+            # branches' original dictionaries for an entire film wastes RAM.
+            # Leave only unmatched frames for the next incremental pass.
+            del rin[:total]
+            del rout[:total]
 
     # ---- query ----
 

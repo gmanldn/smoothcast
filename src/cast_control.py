@@ -1322,10 +1322,16 @@ class MainWindow(Adw.ApplicationWindow):
     def _stop_monitor(self, reset: bool = True) -> None:
         mon, self.monitor = self.monitor, None
         if mon is not None:
-            try:
-                mon.stop()
-            except Exception:
-                pass
+            # Stopping FFmpeg and joining its reader can take several seconds.
+            # Never do that on GTK's main event loop during seek/pause/close.
+            def dispose():
+                try:
+                    mon.stop()
+                except Exception as exc:
+                    print(f"SmoothCast: meter cleanup failed: {exc}", file=sys.stderr)
+            threading.Thread(
+                target=dispose, name="smoothcast-meter-stop", daemon=False,
+            ).start()
         if reset and self.meter is not None:
             self.meter.reset()
 

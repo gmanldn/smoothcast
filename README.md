@@ -4,7 +4,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 
 ## Features
 
-- **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker)
+- **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker); bounded metadata memory for long films and asynchronous FFmpeg shutdown
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
