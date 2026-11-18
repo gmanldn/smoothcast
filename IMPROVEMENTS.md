@@ -220,6 +220,14 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #58 — HLS casts recover while final segments drain:** the existing
+  `recoverable_hls()` path already requires a finalised playlist whose
+  referenced `segment-N.ts` files exist and are non-empty, plus a healthy
+  SmoothCast server, and the GUI only reclaims ownership when the receiver
+  still reports the saved stream URL, so a 404ing or unconfirmed stream is
+  not adopted and cannot trigger repeat/auto-close. Added a cleanup test
+  proving a retained transcode cast keeps its playlist and final segments
+  instead of being deleted as finished. Real-receiver confirmation pending.
 - **P1 #63 — Stable HLS content types (CI pending):** the private
   HTTP server explicitly serves `.m3u8` as
   `application/vnd.apple.mpegurl` and `.ts` as `video/mp2t`,

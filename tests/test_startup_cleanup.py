@@ -55,6 +55,35 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertEqual(report.preserved, [100, 101])
             self.assertEqual([p.pid for p in stop.call_args.args[0]], [102])
 
+    def test_retained_hls_stream_keeps_its_final_segments(self):
+        # A kept HLS cast is still draining on the receiver; its final
+        # playlist and segments must survive cleanup or the receiver would
+        # start 404ing ranges mid-film.
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "segment-00000.ts").write_text("segment")
+            (root / "segment-00001.ts").write_text("segment")
+            (root / "movie.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:2,\nsegment-00001.ts\n#EXT-X-ENDLIST\n")
+            processes = [process(100, "server"), process(101, "encoder")]
+            state = streamer.SessionState(
+                file="/x", mode="transcode", offset=0, duration=10,
+                device="TV", title="Film", server_pid=100, ffmpeg_pid=101,
+            )
+            with mock.patch.object(cleanup, "discover", return_value=processes), \
+                 mock.patch.object(streamer, "load_session", return_value=state), \
+                 mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
+                 mock.patch.object(cleanup, "_stop_orphans"):
+                report = cleanup.cleanup_before_window(
+                    keep_streaming=True, temp_root=root,
+                )
+            self.assertTrue(report.retained_stream)
+            self.assertEqual(report.files_removed, 0)
+            self.assertTrue((root / "segment-00000.ts").exists())
+            self.assertTrue((root / "segment-00001.ts").exists())
+            self.assertTrue((root / "movie.m3u8").exists())
+
     def test_reused_server_without_saved_pid_is_preserved(self):
         with TemporaryDirectory() as d:
             processes = [process(100, "server"), process(101, "encoder")]
