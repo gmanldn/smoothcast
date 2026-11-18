@@ -147,8 +147,8 @@ class StartupCleanupTests(unittest.TestCase):
             location = root / str(pid)
             location.mkdir()
             (location / "cmdline").write_bytes(
-                b"ffmpeg\\0-progress\\0" + str(streamer.PROGRESS_FILE).encode()
-                + b"\\0"
+                b"ffmpeg\0-progress\0" + str(streamer.PROGRESS_FILE).encode()
+                + b"\0"
             )
             fields = ["S"] + ["0"] * 18 + ["7319"] + ["0"] * 3
             (location / "stat").write_text(
