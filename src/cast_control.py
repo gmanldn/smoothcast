@@ -283,7 +283,7 @@ class LevelMeter(Gtk.DrawingArea):
     def __init__(self) -> None:
         super().__init__()
         self.set_hexpand(True)
-        self.set_size_request(-1, 156)
+        self.set_size_request(-1, 144)
         self.set_draw_func(self._draw)
         self.connect("unrealize", self._on_unrealize)
         self._lock = threading.Lock()
@@ -555,7 +555,7 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._BLUE)
         cr.move_to(gx, pump_y + 10.0)
         cr.show_text(gain_text)
-# master bouncing line meter — shows how close *output* is to 0 dBFS
+        # Master bouncing line: a single post-processing output indicator.
         master_y = pump_y + 16.0
         cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
         cr.move_to(0, master_y + self._MASTER_H - 3.0)
@@ -578,13 +578,6 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._WHITE)
         cr.move_to(mx, master_y + self._MASTER_H / 2)
         cr.show_text(master_text)
-# master bouncing-line meter
-        master_y = pump_y + 12.0 + self._ROW_GAP
-        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
-        cr.move_to(0, master_y + self._MASTER_H - 3.5)
-        cr.show_text("MASTER")
-        self._draw_master(cr, bar_x, master_y, bar_w, self._MASTER_H)
-
     @staticmethod
     def _rounded(cr, x, y, width, height, radius) -> None:
         if width <= 0 or height <= 0:
@@ -850,6 +843,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.remove_css_class("compact")
         self.preview.set_size_request(-1, state.preview_height)
         self.preview.set_vexpand(False)
+        self.meter.set_size_request(-1, 120 if state.compact else 144)
         self.play_image.set_pixel_size(24 if state.compact else 30)
 
         # Gtk.Grid.detach/attach preserves the actual buttons, callbacks and
@@ -1133,31 +1127,52 @@ class MainWindow(Adw.ApplicationWindow):
         return card
 
     def _build_live_levels(self) -> Gtk.Box:
-        card, body = self._card("Live Levels")
+        card, body = self._card(
+            "Audio signal", "Real-time input, processed output and headroom."
+        )
+        card.add_css_class("meter-card")
+        legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
+        for text in ("INPUT L / R", "OUTPUT L / R", "MASTER / 0 dBFS"):
+            label = Gtk.Label(label=text)
+            label.add_css_class("meter-legend")
+            legend.append(label)
+        body.append(legend)
         self.meter = LevelMeter()
         body.append(self.meter)
-        self.levels_hint = Gtk.Label(label="", wrap=True)
+        self.levels_hint = Gtk.Label(label="Meter becomes active while analysing audio.", xalign=0.0, wrap=True)
         self.levels_hint.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.levels_hint.add_css_class("caption")
-        self.levels_hint.add_css_class("dim-label")
         body.append(self.levels_hint)
         return card
 
     def _build_console_card(self) -> Gtk.Box:
-        card, body = self._card("Live Cast Console")
-        body.set_vexpand(True)
+        card, body = self._card(
+            "Activity", "Casting, encoder and connection events."
+        )
+        card.add_css_class("activity-card")
+        card.set_vexpand(False)
+        self.console_empty = Gtk.Label(
+            label="No activity yet — events appear here when you start a cast.",
+            xalign=0.0, wrap=True,
+        )
+        self.console_empty.add_css_class("console-idle")
+        body.append(self.console_empty)
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_vexpand(True)
+        scroller.set_min_content_height(84)
+        scroller.set_max_content_height(230)
+        scroller.set_propagate_natural_height(True)
+        self.console_scroller = scroller
         self.console_list = Gtk.ListBox()
         self.console_list.set_selection_mode(Gtk.SelectionMode.NONE)
         self.console_list.add_css_class("boxed-list")
         scroller.set_child(self.console_list)
         body.append(scroller)
-        clear = Gtk.Button(label="Clear console")
+        clear = Gtk.Button(label="Clear activity")
         clear.set_halign(Gtk.Align.END)
         clear.add_css_class("flat")
         clear.connect("clicked", lambda _b: self._clear_console())
+        self.console_clear_button = clear
         body.append(clear)
         self._refresh_console()
         return card
@@ -1171,7 +1186,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _set_levels_hint(self, text: str) -> None:
         hint = getattr(self, "levels_hint", None)
         if hint is not None:
-            hint.set_text(text)
+            hint.set_text(text or "Meter becomes active while analysing audio.")
 
     def _console(self, text: str) -> None:
         """Append a timestamped line to the live casting status console."""
@@ -1188,10 +1203,16 @@ class MainWindow(Adw.ApplicationWindow):
         list_box = self.console_list
         for child in list(list_box):
             list_box.remove(child)
-        for line in self.console_lines:
-            row = Adw.ActionRow(title=line)
-            row.set_title_lines(1)
-            list_box.append(row)
+        has_activity = bool(self.console_lines)
+        self.console_empty.set_visible(not has_activity)
+        self.console_scroller.set_visible(has_activity)
+        self.console_clear_button.set_sensitive(has_activity)
+        for line in self.console_lines[-60:]:
+            text = Gtk.Label(label=line, xalign=0.0, ellipsize=Pango.EllipsizeMode.END)
+            text.add_css_class("console-line")
+            text.set_tooltip_text(line)
+            text.set_selectable(True)
+            list_box.append(text)
 
     def _meter_tick(self) -> bool:
         mon = self.monitor
