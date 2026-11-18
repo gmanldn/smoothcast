@@ -167,6 +167,12 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #56 — Idle Stop is harmless:** `stop_stream` now returns before any
+  receiver command when no session or external playback is owned and the
+  observed device state is idle/offline/unknown, so the shortcut or action
+  invoked before the first poll cannot stop another app's cast. Stopping a
+  local preview still affects only the preview. Source-level regression test
+  in `tests/test_player_action_safety.py`. Real-receiver confirmation pending.
 - **P0 #16 — Subtitle encoding detection:** code, regression tests and user
   documentation pushed. Bounded UTF-8/UTF-16/Windows-1252 SRT detection,
   read-only originals, private UTF-8 staging for receiver and burn-in,

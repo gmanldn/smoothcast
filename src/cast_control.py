@@ -2639,6 +2639,13 @@ class MainWindow(Adw.ApplicationWindow):
             self._queue_preview(0.0)
             self._refresh_controls()
             return
+        if (self.session is None and not self.external
+                and self.device_state in {"IDLE", "OFFLINE", "UNKNOWN"}):
+            # Nothing owned and no observed TV playback: an idle Stop (e.g. the
+            # shortcut or action before the first poll) must send no receiver
+            # command, so another app's cast is never disturbed.
+            self._refresh_controls()
+            return
         self.busy = True
         self._refresh_controls()
         device = self._device()

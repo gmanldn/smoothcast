@@ -80,6 +80,16 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("self._cast_path(next_path, 0.0)", self.methods["_on_finished"])
         self.assertIn("self._cast_path(path, None)", self.methods["open_recent"])
 
+    def test_idle_stop_sends_no_receiver_command(self):
+        # Before the first poll (or any owned playback) Stop must not fall
+        # through to castctl.stop/dlna.stop and disturb another app's cast.
+        code = self.methods["stop_stream"]
+        guard = 'self.device_state in {"IDLE", "OFFLINE", "UNKNOWN"}'
+        self.assertIn(guard, code)
+        self.assertIn("self._preview_path is not None", code)
+        self.assertLess(code.index(guard), code.index("castctl.stop(device)"))
+        self.assertLess(code.index(guard), code.index("session.stop(device)"))
+
 
 if __name__ == "__main__":
     unittest.main()
