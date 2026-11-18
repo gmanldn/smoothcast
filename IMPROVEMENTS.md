@@ -220,6 +220,15 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #57 — Completion is distinguished from loss of status:**
+  `castctl.player_state` already reports `UNKNOWN` (never `IDLE`) for a
+  partial or missing media state, and `playback_state.playback_ended`
+  needs an owned session, an idle (not busy) UI and a real
+  PLAYING/BUFFERING/PAUSED -> IDLE transition, so offline, cancelled and
+  malformed polls cannot advance the film. New tests pin offline/unknown
+  reports, missing-session/busy/idle predecessors, a paused natural
+  finish, and the exactly-once `_finished_handled` guard. Receiver
+  confirmation pending.
 - **P0 #89 — GTK self-test completion is trustworthy:**
   `CastControlApp._selftest_quit` now runs its completion work inside
   `try/except/finally`, so a failing probe can never skip `self.quit()`

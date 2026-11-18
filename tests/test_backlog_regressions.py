@@ -60,6 +60,25 @@ class ReceiverSafetyTests(unittest.TestCase):
             has_session=True, busy=False,
         ))
 
+    def test_offline_and_cancelled_reports_never_finish_the_owned_film(self):
+        # Losing status (offline/unknown), having no owned session, being busy,
+        # or an already-idle predecessor must all fail to advance the queue.
+        for state in ("OFFLINE", "UNKNOWN"):
+            self.assertFalse(playback_ended(
+                "PLAYING", state, has_session=True, busy=False))
+        self.assertFalse(playback_ended("PLAYING", "IDLE", has_session=False, busy=False))
+        self.assertFalse(playback_ended("PLAYING", "IDLE", has_session=True, busy=True))
+        self.assertFalse(playback_ended("IDLE", "IDLE", has_session=True, busy=False))
+        # A paused film that reaches IDLE is still a natural completion.
+        self.assertTrue(playback_ended("PAUSED", "IDLE", has_session=True, busy=False))
+
+    def test_completion_advances_exactly_once(self):
+        finished = METHODS["_maybe_finished"]
+        self.assertIn(
+            "if self._finished_handled or self.busy or self.session is None:", finished)
+        self.assertLess(finished.index("self._finished_handled = True"),
+                        finished.index("self._on_finished()"))
+
     def test_receiver_swap_discards_pending_debounced_volume(self):
         changes = METHODS["_on_device_selected"]
         self.assertIn("GLib.source_remove(self._volume_job)", changes)
