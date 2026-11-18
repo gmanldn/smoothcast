@@ -60,7 +60,9 @@ class DesktopIntegrationTests(unittest.TestCase):
         script = (Path(__file__).resolve().parents[1] / "smoothcast").read_text()
         self.assertIn('RUNTIME="$DIR/.venv/bin/python"', script)
         self.assertIn('m.version("catt")', script)
-        self.assertIn('re.findall(r"\\d+",m.version("catt"))', script)
+        self.assertIn('match=re.fullmatch(', script)
+        self.assertIn('sys.exit(0 if match', script)
+        self.assertNotIn('assert tuple(v)', script)
         self.assertIn('for tool in ffmpeg ffprobe ffplay; do', script)
         self.assertIn('"$DIR/setup/bootstrap.py" --target "$TARGET"', script)
 

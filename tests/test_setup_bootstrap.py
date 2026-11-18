@@ -73,6 +73,7 @@ class SetupContractTests(unittest.TestCase):
         with mock.patch.object(bootstrap, "check_tools", return_value=[]), \
              mock.patch.object(bootstrap, "python_ok", return_value=True), \
              mock.patch.object(bootstrap, "works", return_value=True), \
+             mock.patch.object(bootstrap, "venv_supported", return_value=True), \
              mock.patch.object(bootstrap, "checked_run") as run:
             interpreter, env = bootstrap.install_linux(check=True)
         self.assertTrue(str(interpreter).endswith("python3"))
@@ -84,6 +85,7 @@ class SetupContractTests(unittest.TestCase):
              mock.patch.object(bootstrap, "python_ok", return_value=True), \
              mock.patch.object(bootstrap, "works", return_value=True), \
              mock.patch.object(bootstrap, "manager_for_linux", return_value="apt-get"), \
+             mock.patch.object(bootstrap, "venv_supported", return_value=True), \
              mock.patch.object(bootstrap, "privileged", side_effect=lambda x: x), \
              mock.patch.object(bootstrap, "checked_run") as run:
             bootstrap.install_linux(check=False)
@@ -98,6 +100,115 @@ class SetupContractTests(unittest.TestCase):
             with self.assertRaises(bootstrap.SetupError):
                 bootstrap.install_linux(check=True)
         run.assert_not_called()
+
+    def test_python_floor_uses_exit_code_not_optimizable_assert(self):
+        self.assertTrue(bootstrap.python_ok(sys.executable))
+        source = bootstrap.python_ok.__code__
+        self.assertIn("sys.exit", source.co_consts[-1])
+        launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
+        self.assertIn("sys.exit(0 if sys.version_info", launcher)
+        self.assertNotIn("assert sys.version_info", launcher)
+
+    def test_catt_prerelease_rejected_even_under_optimized_python(self):
+        for version, accepted in (
+            ("0.11.99", False), ("0.12rc1", False),
+            ("0.12.0rc1", False), ("0.13.dev0", False),
+            ("0.12", True), ("0.12.0", True),
+            ("0.12.post1", True), ("1.0", True),
+        ):
+            with self.subTest(version=version):
+                injection = (
+                    "import importlib.metadata as _m; "
+                    f"_m.version=lambda name:{version!r}; "
+                )
+                for optimize in (False, True):
+                    argv = [sys.executable] + (["-O"] if optimize else [])
+                    result = subprocess.run(
+                        argv + ["-c", injection + bootstrap.CATT_CHECK],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted,
+                                     (version, optimize, result.stderr))
+        launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
+        self.assertNotIn("assert tuple(v)", launcher)
+        self.assertIn("re.fullmatch", launcher)
+
+    def test_ffmpeg_tool_probe_handles_missing_loader_timeout_and_exit(self):
+        outcomes = {
+            "ffmpeg": subprocess.CompletedProcess(["ffmpeg"], 0),
+            "ffprobe": subprocess.TimeoutExpired(["ffprobe"], 4),
+            "ffplay": OSError("bad shared library"),
+        }
+        def run(command, **kwargs):
+            result = outcomes[Path(command[0]).name]
+            if isinstance(result, Exception):
+                raise result
+            self.assertEqual(command[1], "-version")
+            self.assertEqual(kwargs["timeout"], 4)
+            self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+            return result
+
+        with mock.patch.object(bootstrap.shutil, "which",
+                               side_effect=lambda name, path=None: "/bin/" + name), \
+             mock.patch.object(bootstrap.subprocess, "run", side_effect=run):
+            missing = bootstrap.check_tools()
+        self.assertEqual(missing, [
+            "ffprobe (version probe timed out)",
+            "ffplay (failed to start; check loader/runtime)",
+        ])
+        outcomes["ffprobe"] = subprocess.CompletedProcess(["ffprobe"], 127)
+        outcomes["ffplay"] = subprocess.CompletedProcess(["ffplay"], 0)
+        with mock.patch.object(bootstrap.shutil, "which",
+                               side_effect=lambda name, path=None: "/bin/" + name), \
+             mock.patch.object(bootstrap.subprocess, "run", side_effect=run):
+            self.assertEqual(bootstrap.check_tools(),
+                             ["ffprobe (version probe exited 127)"])
+        with mock.patch.object(bootstrap.shutil, "which", return_value=None), \
+             mock.patch.object(bootstrap.subprocess, "run") as process:
+            self.assertEqual(bootstrap.check_tools(), [
+                "ffmpeg (missing)", "ffprobe (missing)", "ffplay (missing)",
+            ])
+            process.assert_not_called()
+
+    def test_venv_probe_creates_only_disposable_environment(self):
+        created = []
+        def run(command, **kwargs):
+            self.assertIn("--system-site-packages", command)
+            target = Path(command[-1])
+            created.append(target)
+            target.mkdir(parents=True)
+            (target / "pyvenv.cfg").write_text("home = /usr/bin", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+        with mock.patch.object(bootstrap.subprocess, "run", side_effect=run):
+            self.assertTrue(bootstrap.venv_supported(Path(sys.executable)))
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists(), "temporary venv must be cleaned")
+        with mock.patch.object(bootstrap.subprocess, "run",
+                               return_value=subprocess.CompletedProcess([], 1)):
+            self.assertFalse(bootstrap.venv_supported(Path(sys.executable)))
+
+    def test_debian_missing_python3_venv_is_detected_by_check_and_setup(self):
+        patches = [
+            mock.patch.object(bootstrap, "manager_for_linux", return_value="apt-get"),
+            mock.patch.object(bootstrap, "check_tools", return_value=[]),
+            mock.patch.object(bootstrap, "python_ok", return_value=True),
+            mock.patch.object(bootstrap, "works", return_value=True),
+            mock.patch.object(bootstrap, "venv_supported", return_value=False),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        with mock.patch.object(bootstrap, "checked_run") as run:
+            with self.assertRaisesRegex(bootstrap.SetupError, "python3-venv"):
+                bootstrap.install_linux(check=True)
+            run.assert_not_called()
+        with mock.patch.object(bootstrap, "privileged", side_effect=lambda x: x), \
+             mock.patch.object(bootstrap, "checked_run") as run, \
+             mock.patch.object(bootstrap, "pick_runtime",
+                               return_value=Path(sys.executable)):
+            bootstrap.install_linux(check=False)
+        run.assert_called_once()
+        self.assertIn("python3-venv", run.call_args.args[0])
 
     def test_windows_runtime_paths_expose_native_gtk_dlls(self):
         env = bootstrap.windows_env(Path("C:/msys64"))
