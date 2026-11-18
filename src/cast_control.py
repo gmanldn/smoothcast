@@ -38,6 +38,7 @@ ICON_NAME = APP_ID
 
 DEFAULTS: dict = {
     "device": castctl.DEFAULT_DEVICE,
+    "cast_targets": [],
     "quality": "balanced",
     "audio": "dialogue",
     "audio_gain": 6.0,
@@ -1419,7 +1420,21 @@ class MainWindow(Adw.ApplicationWindow):
         row.append(self.device_dropdown)
         row.append(refresh)
         body.append(row)
-        self.device_detail = Gtk.Label(label="Searching for Chromecast…", xalign=0.0, wrap=True)
+        manual = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.cast_ip_entry = Gtk.Entry()
+        self.cast_ip_entry.set_placeholder_text("Cast receiver IPv4 (e.g. 192.168.1.40)")
+        self.cast_ip_entry.set_hexpand(True)
+        self.cast_ip_entry.set_tooltip_text(
+            "For Cast-enabled TVs not found by mDNS discovery. DLNA and AirPlay require other backends."
+        )
+        self.cast_ip_entry.connect("activate", lambda _entry: self._add_cast_target())
+        add_ip = Gtk.Button(label="Add IP")
+        add_ip.add_css_class("flat")
+        add_ip.connect("clicked", lambda _button: self._add_cast_target())
+        manual.append(self.cast_ip_entry)
+        manual.append(add_ip)
+        body.append(manual)
+        self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
         return card
@@ -1720,7 +1735,29 @@ class MainWindow(Adw.ApplicationWindow):
         return self.cfg["device"]
 
     def _device_host(self, device: str) -> str | None:
+        if device in self.cfg.get("cast_targets", []):
+            return device
         return next((d.host for d in self.devices if d.name == device and d.host), None)
+
+    def _add_cast_target(self) -> None:
+        """Manually connect to a Google Cast receiver when mDNS is blocked."""
+        try:
+            target = castctl.validate_manual_target(self.cast_ip_entry.get_text())
+        except ValueError as exc:
+            self.toast(str(exc), error=True)
+            return
+        targets = self.cfg.get("cast_targets")
+        if not isinstance(targets, list):
+            targets = []
+        if target not in targets:
+            targets.append(target)
+        self.cfg["cast_targets"] = targets[-32:]
+        self.cfg["device"] = target
+        save_config(self.cfg)
+        self.cast_ip_entry.set_text("")
+        self._scan_done(self.devices)
+        self.toast(f"Added Google Cast target {target}; checking receiver")
+        self._poll_device()
 
     def _initial_scan(self) -> bool:
         self.scan_devices()
@@ -1736,7 +1773,10 @@ class MainWindow(Adw.ApplicationWindow):
     def _scan_done(self, devices) -> None:
         self.scan_busy = False
         self.devices = devices
-        names = [d.name for d in devices]
+        names = list(dict.fromkeys(
+            [d.name for d in devices] + [t for t in self.cfg.get("cast_targets", [])
+                                          if isinstance(t, str)]
+        ))
         if self.cfg["device"] not in names:
             names.insert(0, self.cfg["device"])
         selected = names.index(self.cfg["device"])
@@ -1747,13 +1787,18 @@ class MainWindow(Adw.ApplicationWindow):
         selected = next((d for d in devices if d.name == self.cfg["device"]), None)
         if selected is not None:
             self.device_detail.set_text(
-                f"{selected.model or 'Chromecast'} · {selected.host}"
+                f"{selected.model or 'Google Cast receiver'} · {selected.manufacturer or 'Unknown maker'} · {selected.host}"
             )
             self._set_device_badge("FOUND ON LAN")
+        elif self.cfg["device"] in self.cfg.get("cast_targets", []):
+            self.device_detail.set_text(
+                f"Manual Google Cast target {self.cfg['device']} · checking connectivity"
+            )
+            self._set_device_badge("MANUAL IP")
         else:
             self.device_detail.set_text(
-                "Selected device not found. Choose another device or rescan."
-                if devices else "No Chromecast found on this network."
+                "Selected Cast receiver not found. Choose another receiver or add its IP."
+                if devices else "No Cast receivers discovered. Try Add IP for a Cast-enabled TV."
             )
             self._set_device_badge("NOT FOUND", "offline")
 
