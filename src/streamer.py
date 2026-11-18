@@ -675,6 +675,8 @@ class Session:
         clear_session()
         for segment in ROOT.glob(SEGMENT_GLOB):
             segment.unlink(missing_ok=True)
+        for suffix in SUBTITLE_EXTS:
+            (ROOT / f"burned_subs{suffix}").unlink(missing_ok=True)
         self.state = None
         self.ffmpeg = None
         self.server = None
@@ -704,11 +706,22 @@ class Session:
     def _stage_subs(self, subs_file: pathlib.Path | None) -> pathlib.Path | None:
         if subs_file is None:
             return None
-        staged = ROOT / f"burned_subs{subs_file.suffix.lower()}"
+        extension = subs_file.suffix.lower()
+        if extension not in SUBTITLE_EXTS:
+            raise StreamError(f"Unsupported subtitle file format: {extension or 'unknown'}")
+        staged = ROOT / f"burned_subs{extension}"
+        temporary = staged.with_name(f".{staged.name}.{os.getpid()}.tmp")
         try:
-            staged.write_bytes(subs_file.read_bytes())
-        except OSError:
-            raise StreamError("could not stage the subtitles file")
+            # Restrict memory use and disk writes for untrusted downloaded SRTs.
+            size = subs_file.stat().st_size
+            if size == 0 or size > 16 * 1024 * 1024:
+                raise StreamError("Subtitle file must be between 1 byte and 16 MiB")
+            temporary.write_bytes(subs_file.read_bytes())
+            temporary.replace(staged)
+        except OSError as exc:
+            raise StreamError(f"Could not stage subtitles: {exc}") from exc
+        finally:
+            temporary.unlink(missing_ok=True)
         return staged
 
     def _hwaccel_args(self, software: bool) -> list[str]:
