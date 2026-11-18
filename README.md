@@ -67,6 +67,12 @@ and some unusual encodings are not guaranteed.
 
 **Subtitles:** In **Playback settings → Subtitles**, use **Pick .srt /
 subtitles…** and choose an existing .srt, .vtt, .ttml, .ass or .ssa file.
+For external SRT files, SmoothCast recognises UTF-8 (with or without BOM),
+UTF-16 little/big-endian (with or without BOM when identifiable), and legacy
+Windows-1252. It verifies the captions and stages a private UTF-8 copy
+(mode 0600 on POSIX) for both Cast receiver subtitles and FFmpeg burn-in.
+The original subtitle file is never rewritten. Invalid or oversized (over
+16 MiB) captions produce a visible error before starting playback.
 For SRT/VTT/TTML, SmoothCast can send a separate caption track to the Cast
 receiver; enable **Burn subtitles into video** when your TV does not display
 it reliably. ASS/SSA always use burn-in, because catt does not accept them
