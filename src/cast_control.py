@@ -24,6 +24,7 @@ import responsive_layout
 import playback_state
 import playlist_control
 import preflight
+import gui_test_safety
 import url_control
 import update_control
 import version
@@ -778,14 +779,17 @@ class MainWindow(Adw.ApplicationWindow):
         self._install_shortcuts()
         self._apply_color_scheme()
         self._refresh_controls()
-        GLib.timeout_add(500, self._tick)
-        GLib.timeout_add(200, self._refresh_responsive_layout)
-        GLib.timeout_add(100, self._meter_tick)
-        GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
-        GLib.timeout_add(4000, self._poll_device)
-        GLib.timeout_add(400, self._initial_scan)
-        GLib.timeout_add(600, self._adopt_session)
-        GLib.timeout_add_seconds(5, self._sleep_tick)
+        if not app.selftest:
+            # A GUI smoke test builds widgets only: it must not scan LANs,
+            # adopt casts, poll receivers or run media/telemetry timers.
+            GLib.timeout_add(500, self._tick)
+            GLib.timeout_add(200, self._refresh_responsive_layout)
+            GLib.timeout_add(100, self._meter_tick)
+            GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
+            GLib.timeout_add(4000, self._poll_device)
+            GLib.timeout_add(400, self._initial_scan)
+            GLib.timeout_add(600, self._adopt_session)
+            GLib.timeout_add_seconds(5, self._sleep_tick)
 
     def _build_ui(self) -> None:
         # Keep the *running* release in the prominent title, not an easily
@@ -4157,6 +4161,8 @@ class MainWindow(Adw.ApplicationWindow):
 
 class CastControlApp(Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
+        if selftest and not gui_test_safety.is_isolated_gui_test():
+            raise RuntimeError(gui_test_safety.refusal())
         flags = Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.HANDLES_COMMAND_LINE
         if selftest:
             # Self-tests must not activate an already-running user instance.
@@ -4289,7 +4295,9 @@ class CastControlApp(Adw.Application):
             window.open_paths(self._pending_files)
             self._pending_files = []
         if self.selftest:
-            GLib.timeout_add(6500, self._selftest_quit)
+            # The only permitted self-test display is the disposable Xvfb
+            # session. Exit promptly and avoid persistent user state.
+            GLib.timeout_add(1500, self._selftest_quit)
         elif not self._update_started:
             self._update_started = True
             # Never delay the first window while DNS/network/git is unresponsive.
@@ -4368,6 +4376,9 @@ def main() -> int:
         print(f"{APP_NAME} {version.label()}")
         return 0
     selftest = "--self-test" in sys.argv
+    if selftest and not gui_test_safety.is_isolated_gui_test():
+        print(gui_test_safety.refusal(), file=sys.stderr)
+        return 2
     argv = [arg for arg in sys.argv if arg != "--self-test"]
 
     # GTK startup is never delayed by a network-based git pull.
