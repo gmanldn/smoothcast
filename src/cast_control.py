@@ -16,6 +16,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 import castctl
+import dlna
 import streamer
 import audio_monitor
 import screenshot
@@ -712,6 +713,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.media: streamer.MediaInfo | None = None
         self.device_info: dict | None = None
         self.devices: list[castctl.Device] = []
+        self.dlna_devices: list[dlna.Renderer] = []
+        self._dlna_by_key: dict[str, dlna.Renderer] = {}
         self.device_state = "IDLE"
         self.external = False
         self.busy = False
@@ -1417,7 +1420,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _build_device_card(self) -> Gtk.Box:
         card, body = self._card(
-            "Output device", "Select the Chromecast receiving your media."
+            "Output device", "Google Cast or DLNA/UPnP renderer on your network."
         )
         card.add_css_class("device-card")
         row_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
@@ -1765,7 +1768,13 @@ class MainWindow(Adw.ApplicationWindow):
     def _device(self) -> str:
         return self.cfg["device"]
 
+    def _dlna_renderer(self, device: str | None = None) -> dlna.Renderer | None:
+        return self._dlna_by_key.get(device or self._device())
+
     def _device_host(self, device: str) -> str | None:
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            return renderer.host
         if device in self.cfg.get("cast_targets", []):
             return device
         return next((d.host for d in self.devices if d.name == device and d.host), None)
@@ -1798,15 +1807,40 @@ class MainWindow(Adw.ApplicationWindow):
         if self.scan_busy:
             return
         self.scan_busy = True
-        self.device_detail.set_text("Scanning…")
-        Async.run(castctl.scan, done=self._scan_done, failed=lambda msg: self._scan_failed(msg))
+        self.device_detail.set_text("Scanning Cast and DLNA receivers…")
+
+        def work():
+            errors = []
+            try:
+                cast_devices = castctl.scan()
+            except Exception as exc:
+                cast_devices = []
+                errors.append(f"Cast discovery: {exc}")
+            try:
+                dlna_devices = dlna.discover()
+            except Exception as exc:
+                dlna_devices = []
+                errors.append(f"DLNA discovery: {exc}")
+            if errors and not cast_devices and not dlna_devices:
+                raise RuntimeError("; ".join(errors))
+            return cast_devices, dlna_devices
+
+        Async.run(work, done=self._scan_done, failed=self._scan_failed)
 
     def _scan_done(self, devices) -> None:
         self.scan_busy = False
-        self.devices = devices
+        if isinstance(devices, tuple):
+            cast_devices, discovered_dlna = devices
+            self.dlna_devices = discovered_dlna
+        else:
+            cast_devices = devices
+        self.devices = cast_devices
+        self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
         names = list(dict.fromkeys(
-            [d.name for d in devices] + [t for t in self.cfg.get("cast_targets", [])
-                                          if isinstance(t, str)]
+            [d.name for d in cast_devices]
+            + list(self._dlna_by_key)
+            + [t for t in self.cfg.get("cast_targets", [])
+               if isinstance(t, str)]
         ))
         if self.cfg["device"] not in names:
             names.insert(0, self.cfg["device"])
@@ -1815,8 +1849,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.device_dropdown.set_model(Gtk.StringList.new(names))
         self.device_dropdown.set_selected(selected)
         self._syncing = False
-        selected = next((d for d in devices if d.name == self.cfg["device"]), None)
-        if selected is not None:
+        selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
+        dlna_selected = self._dlna_renderer()
+        if dlna_selected is not None:
+            self.device_detail.set_text(
+                f"DLNA/UPnP · {dlna_selected.model or 'MediaRenderer'} · {dlna_selected.host}"
+            )
+            self._set_device_badge("DLNA FOUND")
+        elif selected is not None:
             self.device_detail.set_text(
                 f"{selected.model or 'Google Cast receiver'} · {selected.manufacturer or 'Unknown maker'} · {selected.host}"
             )
@@ -1829,7 +1869,7 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.device_detail.set_text(
                 "Selected Cast receiver not found. Choose another receiver or add its IP."
-                if devices else "No Cast receivers discovered. Try Add IP for a Cast-enabled TV."
+                if cast_devices or self.dlna_devices else "No Cast or DLNA receivers discovered. Check Wi-Fi/VPN or firewall."
             )
             self._set_device_badge("NOT FOUND", "offline")
 
