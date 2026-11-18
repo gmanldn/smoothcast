@@ -2363,7 +2363,7 @@ class MainWindow(Adw.ApplicationWindow):
         if path is None:
             self.open_video()
             return
-        self._cast_path(pathlib.Path(path), 0.0)
+        self._cast_path(pathlib.Path(path), None)
 
     def _selected_path(self) -> str | None:
         if self.now_playing:
@@ -2391,11 +2391,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._refresh_controls()
         self.toast("Playing locally")
 
-    def _cast_path(self, path: pathlib.Path, offset: float) -> None:
-        if offset == 0.0:
-            saved = (self.cfg.get("positions") or {}).get(str(path))
-            if saved:
-                offset = float(saved)
+    def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
+        # None means "resume saved position"; explicit 0 is always rewind.
+        # This avoids a seek-to-start silently jumping to a previous stop.
+        offset = playback_state.start_offset(
+            offset, (self.cfg.get("positions") or {}).get(str(path)),
+        )
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -2846,7 +2847,7 @@ class MainWindow(Adw.ApplicationWindow):
         index = row.get_index()
         if index < len(self.queue):
             self.now_playing = self.queue[index]
-            self._cast_path(pathlib.Path(self.now_playing), 0.0)
+            self._cast_path(pathlib.Path(self.now_playing), None)
 
     def _on_queue_selected(self, _list, row) -> None:
         self.selected_index = row.get_index() if row is not None else None
@@ -2945,7 +2946,7 @@ class MainWindow(Adw.ApplicationWindow):
         path = gfile.get_path()
         if path:
             self.set_selection(path)
-            self._cast_path(pathlib.Path(path), 0.0)
+            self._cast_path(pathlib.Path(path), None)
 
     def set_selection(self, path: str) -> None:
         if path not in self.queue:
@@ -3126,7 +3127,7 @@ class MainWindow(Adw.ApplicationWindow):
             path = pathlib.Path(recents[index])
             if path.is_file():
                 self.set_selection(str(path))
-                self._cast_path(path, 0.0)
+                self._cast_path(path, None)
             else:
                 self.toast("That file has moved or been deleted", error=True)
 
