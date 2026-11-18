@@ -100,6 +100,23 @@ Choose a Chromecast in the device selector, then press **Cast**. SmoothCast stop
 
 Embedded playback uses GTK4's native GStreamer media backend; still-frame scrubbing continues to use FFmpeg. On Debian/Ubuntu, install the media backend and codecs with `bash setup/linuxsetup.sh` (including `libgtk-4-media-gstreamer`, `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`). If a codec is unsupported, a decoder error is reported and the still-frame preview remains available. Windows/macOS GTK media backend and real-device casting still require native smoke testing.
 
+## MKV decoder preflight
+
+On the first cast of an MKV, SmoothCast checks the film **before stopping the
+currently playing TV**. FFmpeg decodes a short (0.8-second) sample using the
+selected audio stream and any required text subtitle filter, encodes it
+privately to H.264/AAC, then FFprobe verifies that real video frames were
+produced. Temporary media/captions are deleted after the check. A clear
+local error is shown if a decoder, audio track, subtitle filter or encoder
+is missing; no cast command is sent for a failed preflight.
+
+Successful checks are cached for the running app by media size/mtime, subtitle
+size/mtime, audio choice and burn/embedded subtitle selection. Changing the
+file or track triggers a new check. This can add up to 20 seconds on a first
+cast, but repeated unmodified films skip the dry run. **A passed local
+preflight is not a guarantee that a particular TV, GPU or network can cast**
+the stream; it validates the software decoding and selected subtitle path.
+
 ## Playback reliability
 
 Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
