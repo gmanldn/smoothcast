@@ -737,6 +737,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._subs_cache: tuple[str, str | None] = ("", None)
         self._hover_time: float | None = None
         self._finished_handled = False
+        self._closing = False
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
@@ -2955,6 +2956,17 @@ class MainWindow(Adw.ApplicationWindow):
         def done(result):
             session, media = result
             self._dlna_cancel = None
+            if self._closing:
+                # The window closed while this cast was starting. Never leave
+                # an orphan: retire local helpers unless keep-streaming is on,
+                # in which case the saved session stays recoverable on the
+                # next launch instead of being published to a dead window.
+                if not self.cfg["keep_streaming"] or session.mode == "dlna":
+                    try:
+                        session.stop(device, send_stop=False)
+                    except Exception:
+                        pass
+                return
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -2998,6 +3010,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._poll_device()
 
         def failed(message):
+            if self._closing:
+                return
             # A failed preflight never stopped the previous receiver. Do not
             # discard its live meter or ownership just because a new MKV fails.
             if previous is not None and previous is self.session and previous.active():
@@ -4126,6 +4140,9 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- lifecycle ----------
 
     def _on_close(self, _window) -> bool:
+        # A cast may still be starting on a worker thread; its done() callback
+        # must not publish an orphan after the window is gone.
+        self._closing = True
         if self._dlna_cancel is not None:
             self._dlna_cancel.set()
         self._stop_monitor()

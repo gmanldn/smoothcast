@@ -90,6 +90,17 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertLess(code.index(guard), code.index("castctl.stop(device)"))
         self.assertLess(code.index(guard), code.index("session.stop(device)"))
 
+    def test_close_during_cast_startup_never_publishes_an_orphan(self):
+        # _cast_path publishes its session in an async worker callback. If the
+        # window closes first, that callback must retire local helpers (or keep
+        # the saved session recoverable) instead of targeting a dead window.
+        cast = self.methods["_cast_path"]
+        self.assertIn("self._closing", cast)
+        self.assertIn("session.stop(device, send_stop=False)", cast)
+        self.assertLess(cast.index("if self._closing:"), cast.index("self.session = session"))
+        self.assertIn("if self._closing:", cast[cast.index("def failed(message):"):])
+        self.assertIn("self._closing = True", self.methods["_on_close"])
+
     def test_manual_target_does_not_switch_tv_mid_cast(self):
         # Manual IPv4 entry (Return and Add IP) must obey the same ownership
         # rule as the dropdown: remember the target, never retarget mid-cast.

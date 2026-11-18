@@ -220,6 +220,14 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #59 — Closing during cast startup never leaves an orphan:**
+  `MainWindow` records `_closing` on `close-request`; the `_cast_path`
+  worker's `done()` callback now checks it before publishing. If the
+  window is gone it retires the new session (`send_stop=False`) unless
+  keep-streaming is on, in which case the saved session stays recoverable
+  on the next launch; `failed()` also stops touching a closed window.
+  Source-level regression test in `tests/test_player_action_safety.py`.
+  Real close-during-startup confirmation pending.
 - **P0 #60 — Completed one-segment HLS clips are accepted:**
   `Session._wait_for_segments` still waits for two segments while the
   encoder runs, but when the encoder exits successfully it now accepts a
