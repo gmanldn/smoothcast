@@ -82,6 +82,24 @@ def direct_session_matches(info: dict | None, saved_title: str) -> bool:
     return True
 
 
+def hls_session_matches(info: dict | None, saved_url: str, saved_title: str) -> bool:
+    """Do not adopt an unrelated cast after the HLS encoder has exited.
+
+    A friendly title or open HLS port is insufficient; only the exact
+    content URL reported by the receiver establishes our ownership.
+    """
+    if not isinstance(info, dict) or not saved_url:
+        return False
+    if str(info.get("player_state") or "").upper() not in PLAYING_STATES:
+        return False
+    if str(info.get("content_id") or "").strip() != saved_url:
+        return False
+    current_title = str(info.get("title") or "").strip()
+    if current_title and saved_title and current_title.casefold() != saved_title.strip().casefold():
+        return False
+    return True
+
+
 def start_offset(requested: float | None, saved: object = None) -> float:
     """Resolve source timeline start without confusing explicit 0 with resume.
 
