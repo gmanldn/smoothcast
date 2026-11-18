@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import shutil
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import playlist_control
@@ -26,6 +28,50 @@ class PlaylistTests(unittest.TestCase):
             self.assertEqual(tracks, [str(first), str(second)])
             self.assertEqual(skipped, 0)
             self.assertEqual(playlist.read_text().splitlines()[0], "#EXTM3U")
+
+    def test_playlist_with_media_tree_survives_folder_move(self):
+        with TemporaryDirectory() as folder:
+            base = Path(folder)
+            old = base / "original"
+            media = old / "movies"
+            media.mkdir(parents=True)
+            a, b = media / "first film.mkv", media / "second.mp4"
+            a.write_bytes(b"first")
+            b.write_bytes(b"second")
+            playlist = old / "my queue.m3u"
+            playlist_control.save_playlist(playlist, [str(b), str(a)])
+            saved = playlist.read_text()
+            self.assertIn("movies/second.mp4", saved.replace("\\\\", "/"))
+            self.assertNotIn(str(old), saved)
+            moved = base / "renamed"
+            shutil.move(str(old), str(moved))
+            tracks, skipped = playlist_control.load_playlist(moved / "my queue.m3u")
+            self.assertEqual(tracks, [str(moved / "movies" / "second.mp4"),
+                                      str(moved / "movies" / "first film.mkv")])
+            self.assertEqual(skipped, 0)
+
+    def test_windows_cross_drive_falls_back_to_absolute_media_path(self):
+        with TemporaryDirectory() as folder:
+            base = Path(folder)
+            film = base / "clip.mkv"
+            film.touch()
+            destination = base / "playlist.m3u"
+            with mock.patch.object(playlist_control.os.path, "relpath",
+                                   side_effect=ValueError("different Windows drive")):
+                playlist_control.save_playlist(destination, [str(film)])
+            self.assertIn(str(film.resolve()), destination.read_text())
+            self.assertEqual(playlist_control.load_playlist(destination),
+                             ([str(film.resolve())], 0))
+
+    def test_playlist_export_rejects_newlines_before_writing(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "playlist.m3u"
+            path.write_text("existing queue", encoding="utf-8")
+            for bad in ("film\\nother.mkv", "film\\rother.mkv", "film\\0other.mkv"):
+                with self.subTest(bad=repr(bad)):
+                    with self.assertRaises(playlist_control.PlaylistError):
+                        playlist_control.save_playlist(path, [bad])
+            self.assertEqual(path.read_text(), "existing queue")
 
     def test_relative_entries_comments_urls_and_duplicates(self):
         with TemporaryDirectory() as folder:
