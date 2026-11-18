@@ -14,7 +14,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
-- **Searchable queue** — Ctrl+F filters filenames and folder paths without changing cast order or the selected file
+- **Searchable queue** — Ctrl+F filters filenames and folder paths; selecting or activating a filtered row uses the correct file identity, and reordering/removal preserves selection where possible
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
