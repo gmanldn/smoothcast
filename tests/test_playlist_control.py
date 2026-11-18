@@ -85,6 +85,37 @@ class PlaylistTests(unittest.TestCase):
         self.assertIn("row.set_tooltip_text(path)", source)
         self.assertIn('add("<Control>f", lambda: self.queue_search.grab_focus())', source)
 
+    def test_queue_reorder_keeps_selected_media_identity(self):
+        # Moved selected entry, moved non-selected entry, and unrelated swap.
+        self.assertEqual(playlist_control.selection_after_move(1, 1, 2), 2)
+        self.assertEqual(playlist_control.selection_after_move(2, 1, 2), 1)
+        self.assertEqual(playlist_control.selection_after_move(0, 1, 2), 0)
+        self.assertIsNone(playlist_control.selection_after_move(None, 1, 2))
+
+    def test_removal_keeps_selection_or_chooses_neighbour(self):
+        self.assertEqual(playlist_control.selection_after_remove(3, 1, 4), 2)
+        self.assertEqual(playlist_control.selection_after_remove(0, 1, 4), 0)
+        self.assertEqual(playlist_control.selection_after_remove(2, 2, 4), 2)
+        self.assertEqual(playlist_control.selection_after_remove(4, 4, 4), 3)
+        self.assertIsNone(playlist_control.selection_after_remove(0, 0, 0))
+        self.assertIsNone(playlist_control.selection_after_remove(None, 0, 4))
+
+    def test_filtered_row_commands_use_stable_paths_not_visual_indexes(self):
+        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        window = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+                      and n.name == "MainWindow")
+        methods = {n.name: ast.get_source_segment(source, n)
+                   for n in window.body if isinstance(n, ast.FunctionDef)}
+        activated = methods["_on_queue_activated"]
+        selected = methods["_on_queue_selected"]
+        self.assertIn("row.get_tooltip_text()", activated)
+        self.assertIn("row.get_tooltip_text()", selected)
+        self.assertNotIn("row.get_index()", activated)
+        self.assertNotIn("row.get_index()", selected)
+        self.assertIn("playlist_control.selection_after_move(", methods["_move_queue"])
+        self.assertIn("playlist_control.selection_after_remove(", methods["_remove_queue"])
+
     def test_actions_are_separate_and_load_uses_enqueue(self):
         source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
