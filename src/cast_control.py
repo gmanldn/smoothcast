@@ -738,6 +738,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._hover_time: float | None = None
         self._finished_handled = False
         self._closing = False
+        self._cast_starting = False
+        self._closing_hold = False
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
@@ -2955,17 +2957,16 @@ class MainWindow(Adw.ApplicationWindow):
 
         def done(result):
             session, media = result
+            self._cast_starting = False
             self._dlna_cancel = None
             if self._closing:
-                # The window closed while this cast was starting. Never leave
-                # an orphan: retire local helpers unless keep-streaming is on,
-                # in which case the saved session stays recoverable on the
-                # next launch instead of being published to a dead window.
-                if not self.cfg["keep_streaming"] or session.mode == "dlna":
-                    try:
-                        session.stop(device, send_stop=False)
-                    except Exception:
-                        pass
+                # The hidden window and held GApplication remain alive until
+                # this callback. Route through normal close policy: stop
+                # the new session unless keep-streaming is enabled (DLNA
+                # always stops because its HTTP server lives in this process).
+                self.session = session
+                self.busy = False
+                self._finish_delayed_close()
                 return
             self.session = session
             self.media = media
@@ -3010,7 +3011,10 @@ class MainWindow(Adw.ApplicationWindow):
             self._poll_device()
 
         def failed(message):
+            self._cast_starting = False
             if self._closing:
+                self.busy = False
+                self._finish_delayed_close()
                 return
             # A failed preflight never stopped the previous receiver. Do not
             # discard its live meter or ownership just because a new MKV fails.
@@ -3022,6 +3026,7 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self._cast_failed(message)
 
+        self._cast_starting = True
         Async.run(work, done=done, failed=failed)
         # The old receiver may remain live when a new MKV fails preflight.
         # Only update the displayed title after a successful cast callback.
@@ -4160,12 +4165,35 @@ class MainWindow(Adw.ApplicationWindow):
 
     # ---------- lifecycle ----------
 
+    def _finish_delayed_close(self) -> None:
+        """Close only after the cast worker reports success/failure to GTK."""
+        if not self._closing_hold:
+            return
+        app = self.get_application()
+        try:
+            self.close()
+        finally:
+            self._closing_hold = False
+            if app is not None:
+                app.release()
+
     def _on_close(self, _window) -> bool:
-        # A cast may still be starting on a worker thread; its done() callback
-        # must not publish an orphan after the window is gone.
         self._closing = True
         if self._dlna_cancel is not None:
             self._dlna_cancel.set()
+        if self._cast_starting:
+            # Closing a GtkApplication while Async.run's daemon worker is
+            # still running can terminate that worker before GLib.idle_add
+            # delivers cleanup. Hide the window, but keep its application
+            # main loop alive until the cast callback finishes. This never
+            # opens or raises a GUI window during tests.
+            if not self._closing_hold:
+                app = self.get_application()
+                if app is not None:
+                    app.hold()
+                    self._closing_hold = True
+                self.set_visible(False)
+            return True
         self._stop_monitor()
         self._unload_local_video()
         # Gtk4 tracks the normal window size separately from fullscreen and
