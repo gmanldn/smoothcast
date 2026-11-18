@@ -40,7 +40,7 @@ class PreCastPreviewTests(unittest.TestCase):
         self.assertIn("streamer.ffprobe(", selection)
         self.assertIn("self.seekbar.set_state(self._preview_position, duration", selection)
         self.assertIn("self._queue_preview(self._preview_position)", selection)
-        self.assertIn("Async.run(work, done=done)", selection)
+        self.assertIn("Async.run(work, done=done, failed=failed)", selection)
 
     def test_play_button_operates_on_embedded_video_not_chromecast(self):
         method = METHODS["toggle_play"]
