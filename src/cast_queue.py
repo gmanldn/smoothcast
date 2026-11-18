@@ -737,7 +737,9 @@ class QueueMixin:
             self.cfg["device"] = name
             matches = [d for d in self.devices if d.name == name and d.uuid]
             self.cfg["device_uuid"] = (
-                matches[0].uuid if len(matches) == 1
+                matches[0].uuid if name not in self._dlna_by_key
+                and name not in self.cfg.get("cast_targets", [])
+                and len(matches) == 1
                 and castctl.uniquely_named_device(matches[0].uuid, self.devices)
                     is matches[0] else ""
             )
