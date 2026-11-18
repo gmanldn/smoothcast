@@ -798,13 +798,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.left_column.set_valign(Gtk.Align.START)
         self.left_column.append(self._build_now_playing())
         self.left_column.append(self._build_live_levels())
-        self.left_column.append(self._build_queue())
+        # Build the device card before the queue: _build_queue() calls
+        # _rebuild_queue() -> _refresh_controls(), which needs device_dropdown.
         self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.right_column.set_valign(Gtk.Align.START)
         self.right_column.append(self._build_device_card())
         self.right_column.append(self._build_settings_card())
         self.right_column.append(self._build_console_card())
         self.right_column.append(self._build_details_card())
+        self.left_column.append(self._build_queue())
         self.page.append(self.left_column)
         self.page.append(self.right_column)
         self.page_scroller = Gtk.ScrolledWindow()
