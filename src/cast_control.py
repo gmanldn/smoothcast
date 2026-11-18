@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -118,22 +119,22 @@ window {
 }
 
 .card {
-    background-color: alpha(@card_bg_color, 0.88);
-    border-radius: 14px;
-    border: 1px solid alpha(@borders, 0.10);
-    padding: 16px;
+    background-color: alpha(@card_bg_color, 0.92);
+    border-radius: 16px;
+    border: 1px solid alpha(@borders, 0.08);
+    padding: 18px;
 }
 
 .card .heading {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: alpha(@view_fg_color, 0.6);
+    color: alpha(@view_fg_color, 0.55);
 }
 
 .card .caption {
-    font-size: 10.5px;
+    font-size: 10px;
     color: alpha(@view_fg_color, 0.5);
 }
 
@@ -141,13 +142,13 @@ window {
     border-radius: 99px;
     padding: 2px 12px;
     font-weight: 600;
-    font-size: 0.8em;
+    font-size: 0.78em;
     border: none;
 }
 
 .chip.idle {
-    background-color: alpha(@view_fg_color, 0.08);
-    color: alpha(@view_fg_color, 0.55);
+    background-color: alpha(@view_fg_color, 0.06);
+    color: alpha(@view_fg_color, 0.5);
 }
 
 .chip.playing, .chip.buffering {
@@ -170,58 +171,58 @@ window {
     font-weight: 600;
     min-width: 52px;
     padding: 5px 10px;
-    background-color: alpha(@view_fg_color, 0.06);
-    border: none;
+    background-color: alpha(@view_fg_color, 0.05);
+    border: 1px solid alpha(@borders, 0.10);
 }
 
 .pill:hover {
-    background-color: alpha(@view_fg_color, 0.12);
+    background-color: alpha(@view_fg_color, 0.10);
 }
 
 .big-play {
-    min-width: 72px;
-    min-height: 72px;
-    border-radius: 36px;
+    min-width: 80px;
+    min-height: 80px;
+    border-radius: 40px;
     background-color: @accent_color;
     color: white;
     border: none;
 }
 
 .big-play:hover {
-    background-color: alpha(@view_fg_color, 0.2);
+    background-color: shade(@accent_color, 0.9);
 }
 
 .transport {
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: 22px;
-    background-color: alpha(@view_fg_color, 0.08);
-    border: none;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: 24px;
+    background-color: alpha(@view_fg_color, 0.05);
+    border: 1px solid alpha(@borders, 0.10);
 }
 
 .transport:hover {
-    background-color: alpha(@view_fg_color, 0.16);
+    background-color: alpha(@view_fg_color, 0.10);
 }
 
 .transport:active {
-    background-color: alpha(@view_fg_color, 0.24);
+    background-color: alpha(@view_fg_color, 0.16);
 }
 
 .seekbar trough {
-    min-height: 6px;
-    border-radius: 3px;
-    background-color: alpha(@view_fg_color, 0.10);
+    min-height: 5px;
+    border-radius: 2.5px;
+    background-color: alpha(@view_fg_color, 0.08);
 }
 
 .seekbar progress {
     background-color: @accent_color;
-    border-radius: 3px;
+    border-radius: 2.5px;
 }
 
 .seekbar slider {
-    min-width: 14px;
-    min-height: 14px;
-    border-radius: 7px;
+    min-width: 13px;
+    min-height: 13px;
+    border-radius: 6.5px;
     background-color: white;
     border: 1.5px solid @accent_color;
 }
@@ -235,7 +236,7 @@ window {
 }
 
 .detail-key {
-    color: alpha(@view_fg_color, 0.55);
+    color: alpha(@view_fg_color, 0.5);
 }
 
 .detail-value {
@@ -244,39 +245,60 @@ window {
 
 .mono {
     font-family: monospace;
-    font-size: 0.9em;
+    font-size: 0.88em;
 }
 
 button {
     border-radius: 8px;
-    border: none;
-    padding: 6px 12px;
-    font-size: 13px;
+    border: 1px solid alpha(@borders, 0.12);
+    padding: 6px 14px;
+    font-size: 12.5px;
     font-weight: 500;
-    background-color: alpha(@view_fg_color, 0.06);
+    background-color: @card_bg_color;
     color: @view_fg_color;
 }
 
 button:hover {
-    background-color: alpha(@view_fg_color, 0.12);
+    background-color: alpha(@view_fg_color, 0.05);
+    border-color: alpha(@borders, 0.20);
 }
 
 button:active {
-    background-color: alpha(@view_fg_color, 0.20);
+    background-color: alpha(@view_fg_color, 0.10);
 }
 
 button.suggested-action {
     background-color: @accent_color;
     color: white;
+    border: none;
 }
 
 button.suggested-action:hover {
-    background-color: alpha(@view_fg_color, 0.2);
+    background-color: shade(@accent_color, 0.92);
 }
 
 Adw.WindowTitle {
     font-weight: 600;
     font-size: 15px;
+}
+
+Adw.HeaderBar {
+    background-color: @theme_bg_color;
+    border-bottom: 1px solid alpha(@borders, 0.08);
+    min-height: 44px;
+}
+
+Adw.Toast {
+    border-radius: 8px;
+    background-color: alpha(@view_fg_color, 0.9);
+    color: @theme_bg_color;
+}
+
+.entry, spinbutton {
+    border-radius: 6px;
+    border: 1px solid alpha(@borders, 0.12);
+    background-color: @card_bg_color;
+    padding: 6px 10px;
 }
 """.encode()
 
@@ -974,7 +996,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _build_ui(self) -> None:
         self.set_title(APP_NAME)
         header = Adw.HeaderBar()
-        self.title_widget = Adw.WindowTitle(title=APP_NAME, subtitle=self.cfg["device"])
+        self.title_widget = Adw.WindowTitle(title=APP_NAME, subtitle=f"{self.cfg['device']}  ·  v{version.__version__}")
         header.set_title_widget(self.title_widget)
         _icon_path = pathlib.Path(__file__).resolve().parent.parent / "data" / "cast-control.png"
         if _icon_path.exists():
@@ -2878,9 +2900,28 @@ class CastControlApp(Adw.Application):
         return 0
 
 
+def auto_pull_on_load() -> None:
+    """Best-effort `git pull --ff-only` on startup so the user always runs the
+    latest code from repo main. Never blocks, never fails loudly."""
+    try:
+        result = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            capture_output=True, text=True, timeout=8,
+            cwd=pathlib.Path(__file__).resolve().parent.parent,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            print(f"[update] {result.stdout.strip()}")
+    except Exception:
+        pass  # network/offline/git-not-installed — continue anyway
+
+
 def main() -> int:
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
+
+    # Auto-update from repo main on load (unless self-testing).
+    if not selftest:
+        auto_pull_on_load()
 
     # Single-instance lock — never allow two running instances.
     if not selftest and not acquire_lock():
