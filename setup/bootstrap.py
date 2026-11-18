@@ -336,9 +336,12 @@ def ensure_venv(python: Path, env: dict[str, str], *,
                 "Review the native Python/PyGObject installation."
             )
         if not works(installed, CATT_CHECK, env=env):
+            # The project uses pyproject.toml, not requirements.txt. Install
+            # into the *selected venv* so every launcher resolves the same
+            # catt dependency; do not download or replace native GTK bindings.
             checked_run([str(installed), "-m", "pip", "install",
-                         "--disable-pip-version-check", "-r",
-                         str(ROOT / "requirements.txt")], env=env)
+                         "--disable-pip-version-check", "-e",
+                         str(ROOT)], env=env)
     if not works(installed, CATT_CHECK, env=env):
         raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
     missing = check_tools(env)
