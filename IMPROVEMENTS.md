@@ -8,7 +8,8 @@ L = substantial. Prioritise verified end-to-end behaviour over feature count.
 
 ## Actual compatibility baseline
 
-- The existing sender backend is **Google Cast via catt**. It can discover
+- Two distinct sender backends now exist: **Google Cast via catt** and
+  **DLNA AVTransport (beta) via SSDP/SOAP**. Google Cast can discover
   Chromecast devices, Google TV / Android TV Cast receivers, Google Cast-enabled
   smart TVs, Google TV Streamer and Cast-capable smart displays. The receiver
   must expose Google Cast; having an HDMI port, Wi-Fi or a TV app is not enough.
@@ -20,9 +21,11 @@ L = substantial. Prioritise verified end-to-end behaviour over feature count.
   subtitle path or FFmpeg burn-in. External **.ass/.ssa** require burn-in.
   Embedded MKV text tracks can be selected and burned by FFmpeg/libass.
   **Bitmap PGS/VobSub/DVB subtitles are not yet rendered.**
-- **DLNA/UPnP-only TVs, AirPlay-only devices, Roku without Cast, and
-  Miracast** are *not* supported by the catt backend. They need their own
-  discovery, media delivery and control adapters, with real-device tests.
+- **DLNA/UPnP MediaRenderers** now have a first progressive-MP4 playback
+  adapter, with HTTP Range, SOAP control, and optional offline MKV conversion.
+  Physical TV qualification and capability negotiation remain **open**.
+  **AirPlay-only devices, Roku without Cast and Miracast** still require their
+  own adapters and device tests.
 - This describes implementation intent, not a claim of comprehensive
   hardware qualification. Portable CI does not validate network or GPU
   playback on physical TVs.
@@ -34,7 +37,7 @@ Relevant vendor documentation:
 
 ## P0 — target breadth and operational correctness
 
-1. **[P0 · L] Native DLNA/UPnP MediaRenderer adapter.** Discover via SSDP and control AVTransport; stream compatible progressive MP4 and MPEG-TS rather than assuming DLNA understands HLS. Pass LG/Samsung/Sony DMR smoke tests.
+1. **[P0 · L · beta shipped, qualification open] Native DLNA/UPnP MediaRenderer adapter.** SSDP/AVTransport and progressive MP4 HTTP Range implemented; finish target capability negotiation, direct MPEG-TS fallback, seek/volume quirks and LG/Samsung/Sony hardware smoke tests.
 2. **[P0 · L] AirPlay video adapter.** Use a maintained, tested implementation with authentication/pairing and explicit protocol-version support; verify Apple TV playback, seek and stop.
 3. **[P0 · L] Roku ECP/receiver adapter.** Implement only against a documented receiver route and test on Roku hardware; distinguish Roku from Cast-equipped TVs.
 4. **[P0 · M] Target capability negotiation.** Probe MIME, codecs, resolution, subtitle formats, seek/range and playback speed; construct a per-session compatibility plan instead of guessing.
