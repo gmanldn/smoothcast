@@ -183,10 +183,16 @@ def subs_off(device: str) -> tuple[bool, str]:
 
 
 def player_state(info_dict: dict | None) -> str:
-    if not info_dict:
+    """Only an explicit receiver IDLE state can prove playback completed.
+
+    Some catt/receiver status payloads contain volume or device identity but
+    omit media state. Treating those partial replies as IDLE previously made
+    SmoothCast auto-advance, repeat or auto-close a film still playing.
+    """
+    if not isinstance(info_dict, dict) or not info_dict:
         return "OFFLINE"
-    state = str(info_dict.get("player_state") or "").upper()
-    return state or "IDLE"
+    state = str(info_dict.get("player_state") or "").strip().upper()
+    return state if state in {"PLAYING", "BUFFERING", "PAUSED", "IDLE"} else "UNKNOWN"
 
 
 def is_playing(info_dict: dict | None) -> bool:
