@@ -651,6 +651,12 @@ class QueueMixin:
 
     def _add_cast_target(self) -> None:
         """Manually connect to a Google Cast receiver when mDNS is blocked."""
+        # Return and Add IP reach this handler even when a widget is disabled
+        # (for instance, a pending signal). Never retarget an owned TV.
+        if (self.session is not None or self.busy
+                or self._cast_starting or self.external):
+            self.toast("Stop the current cast before changing TV", error=True)
+            return
         try:
             target = castctl.validate_manual_target(self.cast_ip_entry.get_text())
         except ValueError as exc:
@@ -662,15 +668,6 @@ class QueueMixin:
         if target not in targets:
             targets.append(target)
         self.cfg["cast_targets"] = targets[-32:]
-        if target != self.cfg["device"] and (self.session is not None or self.busy):
-            # An owned or starting stream still targets its original TV. A
-            # manual entry mid-cast would stop the old encoder while sending
-            # 'stop' to the new, unrelated TV, so remember the target without
-            # switching the active device. The dropdown enforces the same rule.
-            save_config(self.cfg)
-            self.cast_ip_entry.set_text("")
-            self.toast("Added target; stop the current cast before changing TV", error=True)
-            return
         self.cfg["device"] = target
         save_config(self.cfg)
         self.cast_ip_entry.set_text("")
@@ -687,10 +684,11 @@ class QueueMixin:
         if index == Gtk.INVALID_LIST_POSITION or model is None:
             return
         name = model.get_string(index)
-        if name and name != self.cfg["device"] and self.session is not None:
-            # An owned stream still targets its original TV. A device change
-            # mid-cast would stop the old encoder while sending 'stop' to the
-            # new, unrelated TV. Require an explicit stop before switching.
+        if (name and name != self.cfg["device"]
+                and (self.session is not None or self.busy
+                     or self._cast_starting or self.external)):
+            # Keep A selected even if a queued GTK signal tries to select B.
+            # Commands already in flight must retain their receiver identity.
             self._syncing = True
             try:
                 for current_index in range(model.get_n_items()):
