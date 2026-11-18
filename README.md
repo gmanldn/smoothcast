@@ -341,7 +341,7 @@ For the main window, the queue and activity list scrollers have fixed height bou
 
 ## Error log
 
-Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log`, a ring buffer capped at 10,000 lines (oldest dropped). The file is gitignored and lives at `~/.config/cast-control/errors.log`.
+Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` without rewriting the entire history per entry. The log keeps at most 10,000 recent lines/entries and 2 MiB of retained data, compacting atomically when it exceeds 4 MiB. Old oversized logs are read from a bounded tail only, and a single enormous error is truncated while retaining its beginning and final cause. It is gitignored at `~/.config/cast-control/errors.log`.
 
 ## Support diagnostics
 
