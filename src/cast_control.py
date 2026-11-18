@@ -20,6 +20,7 @@ import streamer
 import audio_monitor
 import screenshot
 import playback_state
+import url_control
 import update_control
 import version
 import error_log
@@ -2868,6 +2869,48 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self.toast("That file has moved or been deleted", error=True)
 
+    def _cast_remote_url(self, value: str) -> None:
+        try:
+            url = url_control.validate_media_url(value)
+        except ValueError as exc:
+            self.toast(str(exc), error=True)
+            return
+        if self.busy:
+            self.toast("Hold on — finishing the last command")
+            return
+        device = self._device()
+        previous = self.session
+        self.session = None
+        self.busy = True
+        self._refresh_controls()
+        self.toast(f"Opening remote stream on {device}…")
+
+        def work():
+            if previous is not None:
+                previous.stop(device, send_stop=False)
+            # catt casts HTTP(S) URLs directly, resolving supported video
+            # sites. Do not send remote URLs through local-file ffprobe.
+            return castctl.command(device, "cast", "--no-subs", url, timeout=60)
+
+        def done(result):
+            ok, message = result
+            self.busy = False
+            if not ok:
+                self._cast_failed(message or "Remote cast failed")
+                return
+            self._stop_monitor()
+            self.media = None
+            self.now_playing = None
+            self.external = True
+            self.tracker.clear()
+            self.np_title.set_text("Remote stream")
+            self.toast(f"Remote stream sent to {device}")
+            self._console(f"Remote stream sent to {device}")
+            self._refresh_controls()
+            self._poll_device()
+
+        Async.run(work, done=done, failed=self._cast_failed)
+
     def _open_url(self) -> None:
         dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
         entry = Gtk.Entry()
@@ -2881,7 +2924,7 @@ class MainWindow(Adw.ApplicationWindow):
             if r == "open":
                 url = entry.get_text().strip()
                 if url:
-                    self.set_selection(url)
+                    self._cast_remote_url(url)
         dialog.connect("response", on_resp)
         dialog.present(self)
 
