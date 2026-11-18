@@ -33,7 +33,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/audio_monitor.py` — fast ffmpeg analysis of input/output levels
 - `src/streamer.py` — HLS transcode, direct play, ffmpeg chains, audio filters
 - `src/castctl.py` — catt CLI wrapper
-- `src/server.py` — HLS static file server
+- `src/server.py` — allowlisted HLS HTTP server (playlist, TS segments, health probe only; never serve session.json or logs)
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH, bump patch on every commit)
 
 ## Architecture
@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.13`
+- Current: `1.0.14`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.13`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.14`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -75,5 +75,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; absolute `Exec` avoids PATH failures. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
 
+14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
+
 ## Pending work
-None — all requested features implemented.
+Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).

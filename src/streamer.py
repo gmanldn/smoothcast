@@ -6,7 +6,9 @@ import os
 import pathlib
 import socket
 import subprocess
+import sys
 import time
+from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
@@ -225,17 +227,42 @@ def pid_alive(pid: int | None) -> bool:
         return True
 
 
-def _terminate_pid(pid: int | None) -> None:
+def _pid_is_ours(pid: int | None, role: str) -> bool:
+    """Protect against stale/reused PIDs before restoring or signalling them."""
     if not pid_alive(pid):
+        return False
+    try:
+        argv = [
+            part.decode("utf-8", "replace")
+            for part in pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            if part
+        ]
+    except OSError:
+        return False
+    if role == "server":
+        return str(SERVER_SCRIPT) in argv
+    if role == "encoder":
+        return (bool(argv) and pathlib.Path(argv[0]).name.startswith("ffmpeg")
+                and str(PROGRESS_FILE) in argv)
+    if role == "caster":
+        return ("-d" in argv and "cast" in argv
+                and any(pathlib.Path(arg).name == "catt" for arg in argv[:2]))
+    return False
+
+
+def _terminate_pid(pid: int | None, role: str) -> None:
+    if not _pid_is_ours(pid, role):
         return
     try:
         os.kill(pid, 15)
     except OSError:
         return
     for _ in range(20):
-        if not pid_alive(pid):
+        if not _pid_is_ours(pid, role):
             return
         time.sleep(0.15)
+    if not _pid_is_ours(pid, role):
+        return
     try:
         os.kill(pid, 9)
     except OSError:
@@ -243,20 +270,21 @@ def _terminate_pid(pid: int | None) -> None:
 
 
 class PidHandle:
-    """Minimal Popen-like handle for processes restored from disk."""
+    """Minimal Popen-like handle for verified processes restored from disk."""
 
-    def __init__(self, pid: int) -> None:
+    def __init__(self, pid: int, role: str) -> None:
         self.pid = pid
+        self.role = role
 
     def poll(self) -> int | None:
-        return None if pid_alive(self.pid) else -1
+        return None if _pid_is_ours(self.pid, self.role) else -1
 
     def terminate(self) -> None:
-        _terminate_pid(self.pid)
+        _terminate_pid(self.pid, self.role)
 
     def wait(self, timeout: float | None = None) -> int:
         deadline = None if timeout is None else time.time() + timeout
-        while pid_alive(self.pid):
+        while self.poll() is None:
             if deadline is not None and time.time() > deadline:
                 raise TimeoutError("process did not exit")
             time.sleep(0.1)
@@ -357,6 +385,19 @@ def _port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _server_healthy() -> bool:
+    """Verify our HLS server is listening; never mistake another app for it."""
+    connection = HTTPConnection("127.0.0.1", PORT, timeout=0.4)
+    try:
+        connection.request("GET", "/_smoothcast/health")
+        response = connection.getresponse()
+        return response.status == 200 and response.read(64) == b"SmoothCast HLS server v1\n"
+    except (OSError, ValueError, HTTPException):
+        return False
+    finally:
+        connection.close()
+
+
 @dataclass
 class SessionState:
     file: str
@@ -420,9 +461,9 @@ class Session:
     def restore(self, state: SessionState) -> None:
         self.state = state
         self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
-        self.ffmpeg = PidHandle(state.ffmpeg_pid) if pid_alive(state.ffmpeg_pid) else None
-        self.server = PidHandle(state.server_pid) if pid_alive(state.server_pid) else None
-        self.caster = PidHandle(state.caster_pid) if pid_alive(state.caster_pid) else None
+        self.ffmpeg = PidHandle(state.ffmpeg_pid, "encoder") if _pid_is_ours(state.ffmpeg_pid, "encoder") else None
+        self.server = PidHandle(state.server_pid, "server") if _pid_is_ours(state.server_pid, "server") else None
+        self.caster = PidHandle(state.caster_pid, "caster") if _pid_is_ours(state.caster_pid, "caster") else None
 
     def active(self) -> bool:
         if self.mode == "direct":
@@ -473,8 +514,12 @@ class Session:
         _terminate(self.ffmpeg)
         _terminate(self.server)
         if self.state is not None:
-            for pid in (self.state.server_pid, self.state.ffmpeg_pid, self.state.caster_pid):
-                _terminate_pid(pid)
+            for pid, role in (
+                (self.state.server_pid, "server"),
+                (self.state.ffmpeg_pid, "encoder"),
+                (self.state.caster_pid, "caster"),
+            ):
+                _terminate_pid(pid, role)
         if send_stop:
             castctl.stop(device)
         clear_session()
@@ -487,17 +532,24 @@ class Session:
 
     def _start_server(self) -> None:
         if _port_open(PORT):
-            return
+            if _server_healthy():
+                return  # Verified server left alive by keep-streaming.
+            raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
         self.server = subprocess.Popen(
-            ["python3", str(SERVER_SCRIPT)],
+            [sys.executable, str(SERVER_SCRIPT)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
         for _ in range(50):
-            if _port_open(PORT):
+            if self.server.poll() is not None:
+                raise StreamError("The SmoothCast streaming server exited during startup")
+            if _server_healthy():
                 return
             time.sleep(0.1)
+        _terminate(self.server)
+        self.server = None
+        raise StreamError("The SmoothCast streaming server did not become ready")
 
     def _stage_subs(self, subs_file: pathlib.Path | None) -> pathlib.Path | None:
         if subs_file is None:
@@ -595,7 +647,12 @@ class Session:
                 stdout=subprocess.DEVNULL, stderr=log,
                 start_new_session=True,
             )
-        self._start_server()
+        try:
+            self._start_server()
+        except Exception:
+            _terminate(self.ffmpeg)
+            self.ffmpeg = None
+            raise
         if not self._wait_for_segments(30):
             if self.ffmpeg.poll() is not None and not self.used_software_fallback:
                 self.used_software_fallback = True

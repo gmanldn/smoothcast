@@ -2122,22 +2122,32 @@ class MainWindow(Adw.ApplicationWindow):
                 previous.stop(device, send_stop=False)
             session = streamer.Session()
             title = pretty_title(path)
-            if use_direct and media.direct_ok and not burn:
+            try:
+                if use_direct and media.direct_ok and not burn:
+                    try:
+                        session.start_direct(
+                            media, device=device, subs_file=subs_path,
+                            subs_disabled=(subs_mode == "off"), title=title,
+                        )
+                        return session, media
+                    except streamer.StreamError:
+                        # The failed direct attempt can leave a catt subprocess.
+                        session.stop(device, send_stop=False)
+                        session = streamer.Session()
+                session.start_transcode(
+                    media, offset, device=device, quality=cfg["quality"],
+                    audio_profile=cfg["audio"], subs_file=subs_path,
+                    burn_subs=burn, title=title,
+                    audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                )
+                return session, media
+            except Exception:
+                # No orphan ffmpeg, catt or HTTP server after failed startup.
                 try:
-                    session.start_direct(
-                        media, device=device, subs_file=subs_path,
-                        subs_disabled=(subs_mode == "off"), title=title,
-                    )
-                    return session, media
-                except streamer.StreamError:
-                    session = streamer.Session()
-            session.start_transcode(
-                media, offset, device=device, quality=cfg["quality"],
-                audio_profile=cfg["audio"], subs_file=subs_path,
-                burn_subs=burn, title=title,
-                audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-            )
-            return session, media
+                    session.stop(device, send_stop=False)
+                except Exception:
+                    pass
+                raise
 
         def done(result):
             session, media = result
@@ -2271,11 +2281,18 @@ class MainWindow(Adw.ApplicationWindow):
             if media is None:
                 media = streamer.ffprobe(file_path)
             session.stop(device, send_stop=False)
-            session.start_transcode(
-                media, target, device=device, quality=quality,
-                audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
-                audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-            )
+            try:
+                session.start_transcode(
+                    media, target, device=device, quality=quality,
+                    audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
+                    audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                )
+            except Exception:
+                try:
+                    session.stop(device, send_stop=False)
+                except Exception:
+                    pass
+                raise
             return session, media
 
         def done(result):

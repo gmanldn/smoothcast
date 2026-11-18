@@ -38,6 +38,12 @@ python3 scripts/install_desktop.py --check
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
+## Streaming reliability and local-network safety
+
+The HLS server listens on port 8767 for Chromecast access, but exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
+
+Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
+
 ## Requirements
 
 - **Python 3.10+**
