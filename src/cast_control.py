@@ -297,14 +297,17 @@ class LevelMeter(Gtk.DrawingArea):
 
     Draws four horizontal segmented bars (input L/R, output L/R) plus a
     diverging PUMP / GAIN strip showing how far the dialogue chain is lifting
-    or pulling the signal.  Samples are pushed in from the audio monitor
-    thread via :meth:`set_sample` (marshalled onto the main thread by the
-    caller).  A short animation timer (~40 fps) eases the displayed bars
-    toward each new target with real-meter ballistics (fast attack, slow
-    release) so the display glides smoothly between analysis windows instead
-    of jumping and flickering.  The timer stops once everything settles to
-    keep CPU idle.  With no sample the meter eases to a dim "no signal" state
-    and never touches playback.
+    or pulling the signal.  A MASTER bouncing-line meter sits at the bottom:
+    a single bright line whose horizontal reach is the post-compressor output
+    level, so you can see at a glance how close the *played-back* signal is to
+    0 dBFS.  Samples are pushed in from the audio monitor thread via
+    :meth:`set_sample` (marshalled onto the main thread by the caller).  A
+    short animation timer (~40 fps) eases the displayed bars toward each new
+    target with real-meter ballistics (fast attack, slow release) so the
+    display glides smoothly between analysis windows instead of jumping and
+    flickering.  The timer stops once everything settles to keep CPU idle.
+    With no sample the meter eases to a dim "no signal" state and never
+    touches playback.
     """
 
     SEGMENTS = 26
@@ -313,6 +316,7 @@ class LevelMeter(Gtk.DrawingArea):
     _LABEL_W = 48.0
     _ROW_H = 15.0
     _ROW_GAP = 4.0
+    _MASTER_H = 18.0
 
     # Animation ballistics — fast rise, slow fall (like a real VU/PPM meter).
     _ATTACK = 0.55
@@ -328,11 +332,12 @@ class LevelMeter(Gtk.DrawingArea):
     _BLUE = (0.30, 0.62, 0.95)
     _ORANGE = (0.99, 0.60, 0.18)
     _DIM = (1.0, 1.0, 1.0, 0.07)
+    _WHITE = (1.0, 1.0, 1.0)
 
     def __init__(self) -> None:
         super().__init__()
         self.set_hexpand(True)
-        self.set_size_request(-1, 132)
+        self.set_size_request(-1, 156)
         self.set_draw_func(self._draw)
         self.connect("unrealize", self._on_unrealize)
         self._lock = threading.Lock()
@@ -340,6 +345,8 @@ class LevelMeter(Gtk.DrawingArea):
         self._disp = None         # eased values actually drawn
         self._gain = 0.0
         self._gain_target = 0.0
+        self._master = FLOOR_DB   # eased master output level (dBFS)
+        self._master_target = FLOOR_DB
         self._timer = 0           # GLib animation timer id (0 = stopped)
 
     def _on_unrealize(self, _widget) -> None:
@@ -358,8 +365,10 @@ class LevelMeter(Gtk.DrawingArea):
             self._target = sample
             if sample is not None:
                 self._gain_target = float(sample.gain_db)
+                self._master_target = float(sample.out_rms)
             else:
                 self._gain_target = 0.0
+                self._master_target = self.FLOOR_DB
         if self._timer == 0:
             self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
 
@@ -368,6 +377,7 @@ class LevelMeter(Gtk.DrawingArea):
         with self._lock:
             self._target = None
             self._gain_target = 0.0
+            self._master_target = self.FLOOR_DB
         if self._timer == 0:
             self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
 
@@ -414,6 +424,15 @@ class LevelMeter(Gtk.DrawingArea):
                 moving = True
             else:
                 self._gain = self._gain_target
+
+            # Ease the master bouncing line.
+            master_diff = abs(self._master_target - self._master)
+            if master_diff > self._SETTLE_DB:
+                factor = self._ATTACK if self._master_target > self._master else self._RELEASE
+                self._master += (self._master_target - self._master) * factor
+                moving = True
+            else:
+                self._master = self._master_target
 
         if moving:
             self.queue_draw()
@@ -477,6 +496,53 @@ class LevelMeter(Gtk.DrawingArea):
                 cr.set_source_rgba(*self._DIM)
             cr.fill()
 
+    def _draw_master(self, cr, x, y, width, height) -> None:
+        """Bouncing-line master meter — shows how close the *output* is to 0.
+
+        A single bright vertical line whose height is the post-compressor level
+        (out_rms, eased with attack/release).  The line "bounces" toward each
+        new target instead of jumping, so you can watch how close the signal
+        is to 0 dBFS without the display flickering.  A faint 0 dBFS ceiling
+        notch marks the top of the scale.
+        """
+        # Track background.
+        self._rounded(cr, x, y, width, height, height / 2)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
+        cr.fill()
+        # 0 dBFS ceiling notch.
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.35)
+        cr.rectangle(x + 1, y + 0.6, max(2.0, width - 2), 1.0)
+        cr.fill()
+        # -6 dB warning notch.
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.18)
+        six_y = y + (1.0 - (-6.0 - self.FLOOR_DB) / (0.0 - self.FLOOR_DB)) * height
+        cr.rectangle(x + 1, six_y, max(2.0, width - 2), 1.0)
+        cr.fill()
+        # Bouncing line.
+        frac = (self._master - self.FLOOR_DB) / (0.0 - self.FLOOR_DB)
+        frac = max(0.0, min(1.0, frac))
+        line_h = max(2.0, frac * height)
+        line_y = y + height - line_h
+        # Glow under the line.
+        cr.set_source_rgba(*self._ORANGE, 0.30)
+        cr.rectangle(x + 2, line_y - 2, max(2.0, width - 4), line_h + 4)
+        cr.fill()
+        # The line itself — colour by how close to 0 it is.
+        if self._master >= -6.0:
+            color = self._RED
+        elif self._master >= -18.0:
+            color = self._YELLOW
+        else:
+            color = self._WHITE
+        cr.set_source_rgb(*color)
+        cr.rectangle(x + 3, line_y, max(3.0, width - 6), line_h)
+        cr.fill()
+        # Tip glow when very close to 0.
+        if self._master >= -3.0:
+            cr.set_source_rgba(*self._RED, 0.55)
+            cr.arc(x + width / 2, line_y - 1.0, 4.0, 0, 6.2832)
+            cr.fill()
+
     def _draw_pump(self, cr, x, y, width, height) -> None:
         center = x + width / 2
         half = width / 2
@@ -507,7 +573,8 @@ class LevelMeter(Gtk.DrawingArea):
             ("OUT L", sample.out_l if sample else None),
             ("OUT R", sample.out_r if sample else None),
         )
-        total_h = len(rows) * self._ROW_H + (len(rows) - 1) * self._ROW_GAP + self._ROW_GAP + 13.0
+        total_h = (len(rows) * self._ROW_H + (len(rows) - 1) * self._ROW_GAP
+                   + self._ROW_GAP + 13.0 + self._ROW_GAP + self._MASTER_H)
         top = max(0.0, (height - total_h) / 2)
         bar_x = self._LABEL_W
         bar_w = max(10.0, width - self._LABEL_W - 4.0)
@@ -541,6 +608,12 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._BLUE)
         cr.move_to(gx, pump_y + 10.0)
         cr.show_text(gain_text)
+        # master bouncing-line meter
+        master_y = pump_y + 12.0 + self._ROW_GAP
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
+        cr.move_to(0, master_y + self._MASTER_H - 3.5)
+        cr.show_text("MASTER")
+        self._draw_master(cr, bar_x, master_y, bar_w, self._MASTER_H)
 
     @staticmethod
     def _rounded(cr, x, y, width, height, radius) -> None:

@@ -2,6 +2,7 @@
 
 ## Critical rules
 - **Commit after every meaningful change.** User loses work if not committed. Run `git add -A && git commit -m "..."` frequently.
+- **Commit at least every ~10,000 lines of code or so**, even if the change is small, so work is never lost.
 - Never ask the user for confirmation to commit — just do it.
 - Keep responses short and technical. No preamble, no postamble.
 
