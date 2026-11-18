@@ -17,6 +17,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 import castctl
+import config_control
 import diagnostics
 import dlna
 import streamer
@@ -77,14 +78,13 @@ CSS = ui_theme.CSS
 
 
 def load_config() -> dict:
-    cfg = dict(DEFAULTS)
     try:
         raw = json.loads(CONFIG_FILE.read_text())
-        if isinstance(raw, dict):
-            cfg.update({k: v for k, v in raw.items() if k in DEFAULTS})
     except (OSError, ValueError):
-        pass
-    return cfg
+        raw = {}
+    # A corrupt field must not leak into GTK controls, nor should mutable
+    # defaults be shared between independent launches/config loads.
+    return config_control.sanitise_config(raw, DEFAULTS)
 
 
 def save_config(cfg: dict) -> None:
