@@ -220,6 +220,13 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P1 #63 — Stable HLS content types (CI pending):** the private
+  HTTP server explicitly serves `.m3u8` as
+  `application/vnd.apple.mpegurl` and `.ts` as `video/mp2t`,
+  irrespective of the host's MIME table. Actual loopback HTTP GET/HEAD
+  tests check type, length, no HEAD body and no-store headers in
+  `tests/test_http_server.py`. Real Chromecast confirmation pending.
+
 - **P0 #58 — Retained HLS recovery after FFmpeg exits (CI pending):**
   `Session.recoverable_hls` validates a finalised, local-only HLS playlist
   with nonempty segments and a healthy local server; `hls_session_matches`
