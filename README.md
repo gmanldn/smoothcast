@@ -30,6 +30,16 @@ That's it. First run creates a `.venv` and installs `catt` automatically. GUI la
 
 Optional executable shortcut: `./sc.py` delegates to the same launcher and forwards arguments. If SmoothCast is already running, GTK raises that window; it does not restart an active stream.
 
+## Install via pip (recommended for Python workflows)
+
+```sh
+pip install -e .
+# or from a release tarball
+pip install smoothcast
+```
+
+Then run `smoothcast` or `sc` directly. The pip entry point is the canonical way forward; the `./smoothcast` bash launcher is a convenience for non-Python workflows and will delegate to the installed entry point in a future version.
+
 ## Interface and visual design
 
 SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The film preview is deliberately an illustrated metadata slate rather than a fake video screenshot. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.

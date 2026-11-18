@@ -8,3 +8,13 @@ crashlog.txt
 htmlcov/
 errors.log
 errors.log.tmp
+build/
+dist/
+*.egg-info/
+smoothcast.egg-info/
+.eggs/
+
+# Local virtualenv created by the legacy bash launcher (legacy path now
+# superseded by `pip install -e .` / `pip install smoothcast`).
+.venv/
+

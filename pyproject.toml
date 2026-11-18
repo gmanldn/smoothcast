@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smoothcast"
+version = "1.0.45"
+description = "Chromecast companion app with GTK4/libadwaita UI"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "catt>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock",
+]
+
+[project.scripts]
+smoothcast = "cast_control:main"
+sc = "cast_control:main"
+
+[project.gui-scripts]
+smoothcast-gui = "cast_control:main"
+
+[tool.setuptools]
+py-modules = [
+    "cast_control", "castctl", "audio_monitor", "server", "update_control",
+    "error_log", "utils", "screenshot", "position_tracker", "playback_state",
+    "ui_theme", "responsive_layout", "url_control", "version",
+    "local_playback", "startup_cleanup", "streamer",
+]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

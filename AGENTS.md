@@ -68,9 +68,14 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Path: `~/.config/cast-control/errors.log`.
 
 ## Version
-- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.43`
+- `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit. Keep `pyproject.toml` `version` in sync.
+- Current: `1.0.45`
 - Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+
+## Packaging
+- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts that run `cast_control:main`.
+- `./smoothcast` (bash launcher) remains for non-Python workflows; it bootstraps its own `.venv`. Do not remove it until it delegates to the installed entry point.
+- All 18 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -119,6 +124,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.
 2. ~~Add a bouncing line level meter for master so user can see how close to 0 the signal is.~~ Done: `LevelMeter._draw_master` draws a single vertical line whose height is the eased `out_rms` (post-compressor output), with 0 dBFS and -6 dB notches, colour-coded green/yellow/red, and a tip glow when within -3 dB.
 3. Local playback device: `src/local_playback.py` manages an `ffplay` subprocess. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts.
+
+## Pending work
+- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
+- `GtkBox min > natural` warning on `GtkBox 0x...` (reported min height 1637, natural 1539) still appears in `--self-test` on the running desktop. The outer page scroller should be re-examined so the left column's natural height never exceeds its min height request.
 
 ## Completed work
 24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.

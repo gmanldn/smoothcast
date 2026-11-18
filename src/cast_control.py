@@ -793,7 +793,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Change this box's orientation at a breakpoint rather than forcing a
         # 1400 px-wide Gtk.Paned that clips on laptop screens.
         self.page = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        self.page.set_hexpand(True)
+        self.page.set_vexpand(False)
+        self.page.set_valign(Gtk.Align.START)
         self.left_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.left_column.set_hexpand(True)
         self.left_column.set_valign(Gtk.Align.START)
