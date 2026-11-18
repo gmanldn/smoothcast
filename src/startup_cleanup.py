@@ -41,7 +41,7 @@ def process_kind(argv: tuple[str, ...]) -> str | None:
     if not argv:
         return None
     executable = Path(argv[0]).name
-    if str(streamer.SERVER_SCRIPT) in argv and executable.startswith("python"):
+    if len(argv) >= 2 and argv[1] == str(streamer.SERVER_SCRIPT) and executable.startswith("python"):
         return "server"
     if executable == "ffmpeg":
         if "-progress" in argv and str(streamer.PROGRESS_FILE) in argv:
