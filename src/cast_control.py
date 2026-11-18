@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import sys
 import threading
@@ -4161,6 +4162,8 @@ class MainWindow(Adw.ApplicationWindow):
 
 class CastControlApp(Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
+        if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+            raise RuntimeError("Refusing a GTK application inside pytest")
         if selftest and not gui_test_safety.is_isolated_gui_test():
             raise RuntimeError(gui_test_safety.refusal())
         flags = Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.HANDLES_COMMAND_LINE
@@ -4375,6 +4378,10 @@ def main() -> int:
     if sys.argv[1:] in (["--version"], ["-V"]):
         print(f"{APP_NAME} {version.label()}")
         return 0
+    if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+        print("Refusing to start GTK from pytest; run portable tests only.",
+              file=sys.stderr)
+        return 2
     selftest = "--self-test" in sys.argv
     if selftest and not gui_test_safety.is_isolated_gui_test():
         print(gui_test_safety.refusal(), file=sys.stderr)
