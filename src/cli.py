@@ -9,6 +9,10 @@ def main() -> int:
         from version import label
         print(f"SmoothCast {label()}")
         return 0
+    if sys.argv[1:2] == ["--diagnostics"]:
+        # Bounded, redacted support bundle; never needs GTK or a display.
+        import diagnostics
+        return diagnostics.main(sys.argv[2:])
     # Import native GUI dependencies only when actually starting the app.
     from cast_control import main as gui_main
     return gui_main()

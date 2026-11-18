@@ -246,6 +246,17 @@ For the main window, the queue and activity list scrollers have fixed height bou
 
 Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log`, a ring buffer capped at 10,000 lines (oldest dropped). The file is gitignored and lives at `~/.config/cast-control/errors.log`.
 
+## Support diagnostics
+
+SmoothCast can write a small, redacted support bundle for bug reports. It records the version, platform, tool versions (FFmpeg, catt), recent errors and the in-app activity log, while masking LAN IP addresses and reducing absolute paths and the home directory to basenames. Credential-like settings keys are redacted. The bundle is bounded to 256 KiB and written owner-only (0600).
+
+```sh
+smoothcast --diagnostics            # writes ~/.config/cast-control/diagnostics-<UTC>.json
+smoothcast --diagnostics /tmp/sc.json
+```
+
+The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
+
 ## License
 
 MIT

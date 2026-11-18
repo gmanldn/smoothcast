@@ -5,9 +5,13 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${PYTHON:-python3}"
 
-# Version queries never install anything or import GTK.
+# Version and diagnostics queries never install anything or import GTK.
 if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
     exec "$PYTHON" "$DIR/src/version.py"
+fi
+
+if [[ "${1:-}" == "--diagnostics" ]]; then
+    exec "$PYTHON" "$DIR/src/diagnostics.py" "${@:2}"
 fi
 
 if ! "$PYTHON" -c 'import sys; assert sys.version_info >= (3, 10)' 2>/dev/null; then

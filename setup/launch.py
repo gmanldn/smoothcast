@@ -63,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
+    if args[:1] == ["--diagnostics"]:
+        # GTK-free support bundle: works even when the runtime is broken.
+        return subprocess.call(
+            [sys.executable, str(ROOT / "src" / "diagnostics.py"), *args[1:]],
+        )
     try:
         installed = python_path()
     except FileNotFoundError as exc:

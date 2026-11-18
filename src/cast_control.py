@@ -16,6 +16,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 import castctl
+import diagnostics
 import streamer
 import audio_monitor
 import screenshot
@@ -1018,6 +1019,7 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append_submenu("Appearance", scheme)
         help_menu = Gio.Menu()
         help_menu.append("Keyboard shortcuts", "app.shortcuts")
+        help_menu.append("Save diagnostics…", "app.save-diagnostics")
         help_menu.append("About Cast Control", "app.about")
         help_menu.append("Quit", "app.quit")
         menu.append_section(None, help_menu)
@@ -3767,6 +3769,21 @@ class MainWindow(Adw.ApplicationWindow):
         dialog.connect("response", on_resp)
         dialog.present(self)
 
+    def action_save_diagnostics(self) -> None:
+        """Write a bounded, redacted support bundle off the GTK thread."""
+        self.toast("Collecting diagnostics…")
+        activity = list(self.console_lines)
+        config = dict(self.cfg)
+        # Collecting tool versions and reading the log may touch the disk;
+        # never block the GTK event loop.
+        Async.run(
+            lambda: diagnostics.export(activity=activity, config=config),
+            done=lambda path: self.toast(f"Diagnostics saved: {path.name}"),
+            failed=lambda message: self.toast(
+                f"Diagnostics failed: {message}", error=True,
+            ),
+        )
+
     def _screenshot(self) -> None:
         media = self.media
         if media is None:
@@ -4063,6 +4080,7 @@ class CastControlApp(Adw.Application):
         for m in (0, 15, 30, 45, 60):
             simple(f"sleep-{m}", lambda *a, mm=m: self._window()._sleep_timer(mm))
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
+        simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
@@ -4195,6 +4213,10 @@ def main() -> int:
     if sys.argv[1:] in (["--version"], ["-V"]):
         print(f"{APP_NAME} {version.label()}")
         return 0
+    if sys.argv[1:2] == ["--diagnostics"]:
+        # Bounded, redacted support bundle; starts no window.
+        import diagnostics
+        return diagnostics.main(sys.argv[2:])
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
 
