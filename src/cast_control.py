@@ -1933,7 +1933,11 @@ class MainWindow(Adw.ApplicationWindow):
                 return
             self._poll_failed(message)
 
-        Async.run(lambda: castctl.info(device), done=completed, failed=failed)
+        renderer = self._dlna_renderer(device)
+        Async.run(
+            (lambda: dlna.info(renderer)) if renderer else (lambda: castctl.info(device)),
+            done=completed, failed=failed,
+        )
         return True
 
     def _poll_failed(self, message) -> None:
@@ -2533,7 +2537,12 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         value = int(self.volume_scale.get_value())
         device = self._device()
-        Async.run(lambda: castctl.volume(device, value))
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            Async.run(lambda: dlna.volume(renderer, value),
+                      failed=lambda msg: self.toast(f"DLNA volume: {msg}", error=True))
+        else:
+            Async.run(lambda: castctl.volume(device, value))
         return False
 
     def _on_mute(self, button) -> None:
@@ -2544,7 +2553,12 @@ class MainWindow(Adw.ApplicationWindow):
         if self.device_state == "OFFLINE":
             return
         device = self._device()
-        Async.run(lambda: castctl.set_muted(device, muted))
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            Async.run(lambda: dlna.set_muted(renderer, muted),
+                      failed=lambda msg: self.toast(f"DLNA mute: {msg}", error=True))
+        else:
+            Async.run(lambda: castctl.set_muted(device, muted))
         self.toast("Muted" if muted else "Sound on")
 
     def toggle_mute(self) -> None:
@@ -2562,10 +2576,17 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("Device is offline", error=True)
             return
         device = self._device()
+        renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
         self.tracker.set_state(want_play)
 
         def work():
+            if renderer is not None:
+                if want_play:
+                    dlna.play(renderer)
+                else:
+                    dlna.pause(renderer)
+                return True, ""
             if want_play:
                 return castctl.play(device)
             return castctl.pause(device)
@@ -2601,9 +2622,13 @@ class MainWindow(Adw.ApplicationWindow):
         session = self.session
         self.session = None
 
+        renderer = self._dlna_renderer(device)
+
         def work():
             if session is not None:
                 session.stop(device)
+            elif renderer is not None:
+                dlna.stop(renderer)
             else:
                 castctl.stop(device)
 
@@ -2942,6 +2967,18 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self.toast("Nothing is playing yet")
             return
+        if session.mode == "dlna":
+            renderer = self._dlna_renderer()
+            if renderer is None:
+                self.toast("DLNA receiver disappeared; rescan devices", error=True)
+                return
+            self.tracker.device_update(target, duration)
+            Async.run(
+                lambda: dlna.seek(renderer, target),
+                done=lambda _: self._poll_device(),
+                failed=lambda message: self.toast(f"DLNA seek failed: {message}", error=True),
+            )
+            return
         if session.mode == "direct" and castctl.is_seekable(self.device_info):
             device = self._device()
             self.tracker.device_update(target, duration)
@@ -2968,6 +3005,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None) -> None:
+        if session.mode == "dlna":
+            # DLNA requires a fresh progressive resource if audio/codec choices
+            # change; never send an HLS-specific restart to AVTransport.
+            self.busy = False
+            self._cast_path(pathlib.Path(session.state.file), target)
+            return
         device = self._device()
         device_ip = self._device_host(device)
         state = session.state
