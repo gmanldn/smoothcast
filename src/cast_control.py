@@ -22,6 +22,7 @@ import screenshot
 import responsive_layout
 import playback_state
 import playlist_control
+import preflight
 import url_control
 import update_control
 import version
@@ -749,6 +750,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._local_video_path: str | None = None
         self._local_start_pending: float | None = None
         self._media_cache: dict[str, tuple[tuple[int, int], streamer.MediaInfo]] = {}
+        self._preflight_ok: set[tuple] = set()  # successful source/caption fingerprints
 
         # GTK4/Wayland controls window placement; avoid the removed Gtk3
         # move()/get_position() APIs and never force a fullscreen-sized minimum.
@@ -2756,6 +2758,24 @@ class MainWindow(Adw.ApplicationWindow):
                     raise streamer.StreamError(
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
+            if path.suffix.lower() == ".mkv":
+                # Decoder/caption failures must be reported before interrupting
+                # the current receiver. One short private CPU render per file
+                # fingerprint/track selection; no Cast commands in preflight.
+                fingerprint = preflight.fingerprint(
+                    path, audio_track_index=audio_track, subs_file=subs_path,
+                    burn_subs=burn,
+                    embedded_subtitle_index=embedded.index if embedded else None,
+                )
+                if fingerprint not in self._preflight_ok:
+                    preflight.check_media(
+                        media, audio_track_index=audio_track,
+                        subs_file=subs_path, burn_subs=burn,
+                        embedded_subtitle_index=embedded.index if embedded else None,
+                    )
+                    if len(self._preflight_ok) >= 256:
+                        self._preflight_ok.clear()
+                    self._preflight_ok.add(fingerprint)
             if previous is not None:
                 previous.stop(device, send_stop=False)
             session = streamer.Session()
@@ -2836,7 +2856,18 @@ class MainWindow(Adw.ApplicationWindow):
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        def failed(message):
+            # A failed preflight never stopped the previous receiver. Do not
+            # discard its live meter or ownership just because a new MKV fails.
+            if previous is not None and previous is self.session and previous.active():
+                self.busy = False
+                self.toast(f"Cast not started: {message}", error=True)
+                self._console(f"Preflight/cast preparation failed: {message}")
+                self._refresh_controls()
+            else:
+                self._cast_failed(message)
+
+        Async.run(work, done=done, failed=failed)
         self.np_title.set_text(path.name)
 
     def _cast_failed(self, message: str) -> None:
