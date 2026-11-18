@@ -57,6 +57,13 @@ class DlnaGuiContracts(unittest.TestCase):
         self.assertIn('self.session.mode == "dlna"', close)
         self.assertIn("session.stop(device)", close)
 
+    def test_remote_url_does_not_send_catt_command_to_dlna_target(self):
+        remote = METHODS["_cast_remote_url"]
+        self.assertIn("if self._dlna_renderer() is not None:", remote)
+        self.assertLess(remote.index("if self._dlna_renderer() is not None:"),
+                        remote.index("self.session = None"))
+        self.assertIn("castctl.command(device", remote)
+
     def test_polling_uses_same_device_state_model(self):
         poll = METHODS["_poll_device"]
         self.assertIn("dlna.info(renderer)", poll)
