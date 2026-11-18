@@ -813,6 +813,7 @@ class Session:
         subs_file: pathlib.Path | None,
         subs_disabled: bool,
         title: str,
+        offset: float = 0.0,
     ) -> None:
         args = ["-d", device, "cast", "--stream-type", "buffered", "-l", title]
         if subs_disabled:
@@ -833,8 +834,16 @@ class Session:
             except Exception:
                 pass
             raise StreamError((output or "direct play failed").strip()[-300:])
+        # A previously watched file must resume on the TV, not merely report
+        # its old position in the GUI. Fail the direct attempt if the receiver
+        # cannot seek, so the caller can recover using an offset transcoder.
+        offset = min(max(0.0, float(offset)), max(0.0, media.duration - 1.0)) if media.duration else max(0.0, float(offset))
+        if offset > 0.0:
+            ok, message = castctl.seek(device, offset)
+            if not ok:
+                raise StreamError(f"Direct resume seek failed: {message or 'receiver did not seek'}")
         self.state = SessionState(
-            file=str(media.path), mode="direct", offset=0.0,
+            file=str(media.path), mode="direct", offset=offset,
             duration=media.duration, device=device, title=title,
             audio="original",
             subs=str(subs_file or ""), burn_subs=False,
