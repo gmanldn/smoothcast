@@ -6,13 +6,22 @@ import math
 PLAYING_STATES = frozenset({"PLAYING", "BUFFERING", "PAUSED"})
 
 
-def absolute_encoded_position(offset: float, elapsed: float | None, duration: float = 0.0) -> float | None:
-    """Convert FFmpeg -progress (relative to -ss) to media-absolute seconds."""
+def absolute_encoded_position(
+    offset: float, elapsed: float | None, duration: float = 0.0,
+    speed: float = 1.0,
+) -> float | None:
+    """Map HLS presentation seconds back to the source-file timeline.
+
+    The stream starts at source offset `-ss` but its clock restarts at zero.
+    For playback at 2×, ten seconds of HLS represents twenty seconds of source.
+    """
     if elapsed is None or not math.isfinite(elapsed):
+        return None
+    if not math.isfinite(speed) or speed <= 0:
         return None
     offset = offset if math.isfinite(offset) else 0.0
     duration = duration if math.isfinite(duration) else 0.0
-    position = max(0.0, offset) + max(0.0, elapsed)
+    position = max(0.0, offset) + max(0.0, elapsed) * speed
     return min(position, duration) if duration > 0 else position
 
 
