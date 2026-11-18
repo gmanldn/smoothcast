@@ -2628,7 +2628,14 @@ class MainWindow(Adw.ApplicationWindow):
         previous = self.session
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
-        burn = bool(cfg["burn_subs"]) and subs_path is not None
+        if subs_mode == "pick" and subs_path is None:
+            self._cast_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
+            return
+        # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
+        # FFmpeg rather than advertised as unsupported receiver-side tracks.
+        burn = subs_path is not None and (
+            bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
+        )
         # Direct play hands the file to the TV untouched, so it can only be used
         # when no audio processing is wanted. Any dialogue/night profile needs
         # the transcode pipeline to apply its filters.
@@ -2643,12 +2650,21 @@ class MainWindow(Adw.ApplicationWindow):
 
         def work():
             media = streamer.ffprobe(path)
+            embedded = None
+            if subs_mode == "embedded" or (subs_mode == "auto" and subs_path is None):
+                saved = cfg.get("subtitle_track_by_file") or {}
+                requested = saved.get(str(path), -1) if isinstance(saved, dict) and subs_mode == "embedded" else -1
+                embedded = streamer.preferred_embedded_subtitle(media, requested)
+                if subs_mode == "embedded" and embedded is None:
+                    raise streamer.StreamError(
+                        "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
+                    )
             if previous is not None:
                 previous.stop(device, send_stop=False)
             session = streamer.Session()
             title = pretty_title(path)
             try:
-                if use_direct and media.direct_ok and not burn:
+                if use_direct and media.direct_ok and not burn and embedded is None:
                     try:
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
@@ -2668,6 +2684,7 @@ class MainWindow(Adw.ApplicationWindow):
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    embedded_subtitle_index=embedded.index if embedded is not None else None,
                 )
                 return session, media
             except Exception:
@@ -2682,6 +2699,7 @@ class MainWindow(Adw.ApplicationWindow):
             session, media = result
             self.session = session
             self.media = media
+            self._update_embedded_choices(media)
             self.now_playing = str(path)
             if str(path) in self.queue:
                 self.selected_index = self.queue.index(str(path))
@@ -2846,6 +2864,10 @@ class MainWindow(Adw.ApplicationWindow):
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    embedded_subtitle_index=(
+                        state.embedded_subtitle_index
+                        if state is not None and state.embedded_subtitle_index >= 0 else None
+                    ),
                 )
             except Exception:
                 try:
@@ -3226,6 +3248,7 @@ class MainWindow(Adw.ApplicationWindow):
             # film is reselected; the stat fingerprint invalidates changed files.
             self.queue_durations[path] = cached[1].duration
             self.media = cached[1]
+            self._update_embedded_choices(self.media)
             self._preview_position = min(
                 self._preview_position, max(0.0, self.media.duration - 1.0)
             ) if self.media.duration else 0.0
@@ -3254,6 +3277,7 @@ class MainWindow(Adw.ApplicationWindow):
                     and self.now_playing is None and self.session is None
                     and not self.external and self._preview_path == path_result):
                 self.media = media
+                self._update_embedded_choices(media)
                 duration = media.duration
                 self._preview_position = min(self._preview_position, max(0.0, duration - 1.0)) if duration else 0.0
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
