@@ -40,8 +40,8 @@ def test_macos_launcher_uses_saved_prefix_not_path_or_default():
             result = launch._runtime_environment_for(
                 "macos", {"PATH": "/usr/bin", "HOME": str(temp)},
             )
-            assert result["PATH"].split(os.pathsep)[0] == str(prefix / "bin")
-            assert result["SMOOTHCAST_NATIVE_PREFIX"] == str(prefix)
+            assert Path(result["PATH"].split(os.pathsep)[0]).resolve() == (prefix / "bin").resolve()
+            assert Path(result["SMOOTHCAST_NATIVE_PREFIX"]).resolve() == prefix.resolve()
             (prefix / "bin" / "brew").unlink()
             try:
                 launch._runtime_environment_for("macos", {"PATH": "/usr/bin"})
@@ -64,9 +64,9 @@ def test_windows_launcher_respects_recorded_msys2_even_with_foreign_environment(
             result = launch._runtime_environment_for(
                 "windows", {"PATH": "fake", "MSYS2_ROOT": "/some/other/runtime"},
             )
-            assert result["MSYS2_ROOT"] == str(prefix)
-            assert result["PYGI_DLL_PATH"] == str(prefix / "ucrt64" / "bin")
-            assert result["PATH"].split(os.pathsep)[0] == str(prefix / "ucrt64" / "bin")
+            assert Path(result["MSYS2_ROOT"]).resolve() == prefix.resolve()
+            assert Path(result["PYGI_DLL_PATH"]).resolve() == (prefix / "ucrt64" / "bin").resolve()
+            assert Path(result["PATH"].split(os.pathsep)[0]).resolve() == (prefix / "ucrt64" / "bin").resolve()
             python.unlink()
             try:
                 launch._runtime_environment_for("windows", {"PATH": "fake"})
