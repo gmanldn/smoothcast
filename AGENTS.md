@@ -1,8 +1,10 @@
 # SmoothCast — essentials for coding agents
 
 Python 3.10+, GTK4/libadwaita, Chromecast and DLNA. Read only the **relevant**
-topic in [agent handbook](docs/agents/README.md); do not load its entire tree
-or the [historical archive](docs/AGENT_REFERENCE.md) by default.
+topic in [agent handbook](docs/agents/README.md); run
+`python3 scripts/agent_context.py route <task-or-path>` for a short route.
+Do not load the entire handbook or
+[historical archive](docs/AGENT_REFERENCE.md) by default.
 
 ## Rules
 
