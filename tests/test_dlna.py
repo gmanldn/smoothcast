@@ -4,6 +4,7 @@ from __future__ import annotations
 from http.client import HTTPConnection
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -272,6 +273,92 @@ class DlnaPrepareTests(unittest.TestCase):
             args = run.call_args.args[0]
             self.assertEqual(args[args.index("-c:v") + 1], "copy")
             self.assertIn("+faststart", args)
+
+    def test_selected_dts_is_encoded_without_needlessly_reencoding_h264(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            source = Path(dirname) / "dual-track.mkv"
+            source.write_bytes(b"mock dual-audio film")
+            media = streamer.MediaInfo(
+                path=source, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                width=1280, height=720, fps=24, duration=5,
+                audio_streams=[
+                    streamer.AudioTrack(index=0, codec="aac", default=True),
+                    streamer.AudioTrack(index=1, codec="dts"),
+                ],
+            )
+            target = Path(dirname) / "prepared.mp4"
+            def make_file(args, **kwargs):
+                Path(args[-1]).write_bytes(b"mock mp4")
+                proc = mock.MagicMock()
+                proc.poll.return_value = 0
+                proc.returncode = 0
+                return proc
+
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as ffmpeg:
+                dlna.prepare_mp4(media, target, audio_track=1)
+            args = ffmpeg.call_args.args[0]
+            self.assertIn("0:a:1?", args)
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            self.assertEqual(args[args.index("-c:a") + 1], "aac")
+            self.assertEqual(args[args.index("-ac") + 1], "2")
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as ffmpeg:
+                dlna.prepare_mp4(media, target, audio_track=0)
+            args = ffmpeg.call_args.args[0]
+            self.assertIn("0:a:0?", args)
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            self.assertEqual(args[args.index("-c:a") + 1], "copy")
+
+    def test_missing_selected_audio_fails_before_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            source = Path(dirname) / "film.mkv"
+            source.write_bytes(b"mock")
+            media = streamer.MediaInfo(
+                path=source, vcodec="h264", acodec="aac",
+                audio_streams=[streamer.AudioTrack(index=0, codec="aac")],
+            )
+            with mock.patch.object(dlna.subprocess, "Popen") as start:
+                with self.assertRaisesRegex(dlna.DlnaError, "no longer available"):
+                    dlna.prepare_mp4(media, Path(dirname) / "out.mp4", audio_track=3)
+                start.assert_not_called()
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
+                         "Actual FFmpeg/FFprobe required for audio-codec integration")
+    def test_real_mkv_second_soundtrack_is_supported_aac_in_mp4(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            source = Path(dirname) / "dual-tone.mkv"
+            output = Path(dirname) / "selected.mp4"
+            # AAC is the default soundtrack. FLAC is a deliberately
+            # incompatible alternative, like DTS, and should be transcoded
+            # while preserving the H.264 picture without re-encoding.
+            command = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=black:s=128x72:r=24:d=2",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                "-f", "lavfi", "-i", "sine=frequency=880:duration=2",
+                "-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a:0", "aac", "-c:a:1", "flac",
+                "-disposition:a:0", "default",
+                "-disposition:a:1", "0", "-shortest", str(source),
+            ]
+            subprocess.run(command, check=True, capture_output=True, timeout=25)
+            media = streamer.ffprobe(source)
+            self.assertEqual([t.codec for t in media.audio_streams], ["aac", "flac"])
+            dlna.prepare_mp4(media, output, audio_track=1)
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries",
+                 "stream=codec_type,codec_name", "-of", "json", str(output)],
+                check=True, capture_output=True, text=True, timeout=10,
+            )
+            streams = json.loads(probe.stdout)["streams"]
+            self.assertEqual(
+                [item["codec_name"] for item in streams if item["codec_type"] == "audio"],
+                ["aac"],
+            )
+            self.assertEqual(
+                [item["codec_name"] for item in streams if item["codec_type"] == "video"],
+                ["h264"],
+            )
 
     def test_hevc_mkv_converts_to_8bit_h264_and_aac(self):
         with tempfile.TemporaryDirectory() as dirname:
