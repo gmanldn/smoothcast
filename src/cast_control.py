@@ -2975,7 +2975,8 @@ class MainWindow(Adw.ApplicationWindow):
                 self._cast_failed(message)
 
         Async.run(work, done=done, failed=failed)
-        self.np_title.set_text(path.name)
+        # The old receiver may remain live when a new MKV fails preflight.
+        # Only update the displayed title after a successful cast callback.
 
     def _cast_failed(self, message: str) -> None:
         self._dlna_cancel = None
