@@ -2,7 +2,10 @@
 
 import sys
 import tempfile
+import threading
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
@@ -77,3 +80,79 @@ def test_log_module_level(tmp_path):
 def test_default_path_is_config_dir():
     el = error_log.ErrorLog()
     assert el._path == Path.home() / ".config" / "cast-control" / "errors.log"
+
+def test_explicit_exception_tuple_outside_except_records_real_traceback(tmp_path):
+    el = error_log.ErrorLog(tmp_path / "errors.log")
+    try:
+        raise RuntimeError("preserve this exception")
+    except RuntimeError:
+        captured = sys.exc_info()
+    assert sys.exc_info() == (None, None, None)
+    el.add("uncaught", exc_info=captured)
+    text = "\\n".join(el.read())
+    assert "RuntimeError: preserve this exception" in text
+    assert "Traceback (most recent call last)" in text
+    assert "NoneType: None" not in text
+
+
+def test_previous_hooks_run_exactly_once_when_log_storage_fails(tmp_path):
+    old_sys, old_thread, old_log = (
+        sys.excepthook, threading.excepthook, error_log.LOG,
+    )
+    main_next, thread_next = mock.Mock(), mock.Mock()
+    sys.excepthook = main_next
+    threading.excepthook = thread_next
+    error_log.LOG = error_log.ErrorLog(tmp_path / "errors.log")
+    try:
+        error_log.install_excepthook()
+        try:
+            raise ValueError("do not hide me")
+        except ValueError:
+            captured = sys.exc_info()
+        args = SimpleNamespace(
+            exc_type=captured[0], exc_value=captured[1],
+            exc_traceback=captured[2], thread=threading.current_thread(),
+        )
+        with mock.patch.object(error_log.LOG, "_persist",
+                               side_effect=OSError("disk full")):
+            sys.excepthook(*captured)
+            threading.excepthook(args)
+        main_next.assert_called_once_with(*captured)
+        thread_next.assert_called_once_with(args)
+        # Keyboard interrupts must go straight to the previous handlers.
+        sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(), None)
+        main_next.assert_called_with(KeyboardInterrupt, mock.ANY, None)
+        assert main_next.call_count == 2
+    finally:
+        sys.excepthook = old_sys
+        threading.excepthook = old_thread
+        error_log.LOG = old_log
+
+
+def test_uncaught_thread_hook_logs_explicit_traceback_outside_except(tmp_path):
+    old_sys, old_thread, old_log = (
+        sys.excepthook, threading.excepthook, error_log.LOG,
+    )
+    next_hook = mock.Mock()
+    threading.excepthook = next_hook
+    error_log.LOG = error_log.ErrorLog(tmp_path / "errors.log")
+    try:
+        error_log.install_excepthook()
+        try:
+            raise LookupError("thread sample")
+        except LookupError:
+            captured = sys.exc_info()
+        args = SimpleNamespace(
+            exc_type=captured[0], exc_value=captured[1],
+            exc_traceback=captured[2], thread=threading.current_thread(),
+        )
+        threading.excepthook(args)
+        next_hook.assert_called_once_with(args)
+        text = "\\n".join(error_log.LOG.read())
+        assert "LookupError: thread sample" in text
+        assert "Traceback" in text
+    finally:
+        sys.excepthook = old_sys
+        threading.excepthook = old_thread
+        error_log.LOG = old_log
+
