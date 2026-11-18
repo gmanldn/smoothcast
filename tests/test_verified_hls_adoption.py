@@ -112,7 +112,7 @@ def test_completed_hls_is_not_published_until_worker_proves_ownership():
          mock.patch.object(streamer, "ffprobe", return_value=media), \
          mock.patch.object(castctl, "info", return_value=GOOD):
         w._adopt_session()
-        assert w.session is None and w.now_playing if False else w.session is None
+        assert w.session is None
         assert w.queue == []
         assert not w.tracker.start.called
         assert len(jobs) == 1
