@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import secrets
 import signal
 import shutil
 import subprocess
@@ -42,6 +43,13 @@ def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) ->
     env["NO_AT_BRIDGE"] = "1"
     env["GTK_USE_PORTAL"] = "0"
     env["SMOOTHCAST_GUI_TEST_ISOLATED"] = "1"
+    # The private marker prevents accidental GUI activation if a caller
+    # inherits the testing flag in a live shell. Xvfb-run supplies XAUTHORITY.
+    token = secrets.token_hex(32)
+    marker = Path(env["XDG_RUNTIME_DIR"]) / ".smoothcast-gui-test-token"
+    marker.write_text(token, encoding="ascii")
+    marker.chmod(0o600)
+    env["SMOOTHCAST_GUI_TEST_TOKEN"] = token
     return env
 
 
