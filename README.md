@@ -13,7 +13,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
-- **Subtitle support** — auto-select, burn-in, or disable
+- **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
@@ -38,9 +38,44 @@ On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms
 
 For an environment where GTK4/libadwaita and FFmpeg are already available, the Python package can be installed with `python -m pip install -e .`. Plain `pip install` cannot provide the required native GTK stack; the platform setup scripts are the recommended first-install path.
 
+## Cast targets, MKV codecs and subtitle files
+
+**Google Cast-compatible receivers:** SmoothCast discovers Chromecast,
+Google TV Streamer, Google TV / Android TV Cast receivers, smart TVs with
+Google Cast built in, and compatible Google Nest displays through the catt
+Google Cast backend. The receiver must actually expose Google Cast; a
+generic Wi-Fi TV is not sufficient. If mDNS discovery fails, use **Output
+device → Add IP** with the receiver's private-LAN IPv4 address, then select
+it in the output dropdown. A manual IP only targets Google Cast receivers,
+not DLNA, AirPlay or Miracast. Those separate protocols are tracked in
+[IMPROVEMENTS.md](IMPROVEMENTS.md); **they are not implemented yet**.
+
+**MKV/Matroska:** FFprobe detects embedded video/audio/subtitle streams.
+Common video codecs H.264, HEVC/H.265, VP9 and AV1 and audio codecs AAC,
+AC-3/E-AC-3, DTS, Opus and FLAC can be decoded and *transcoded* by a suitably
+built FFmpeg into H.264 8-bit 4:2:0/AAC HLS for Cast. In software mode the
+output is bounded to 1080p and high-frame-rate sources to 30 fps for older
+receiver compatibility. The first audio track is used; choosing among
+multiple audio tracks is still a planned improvement. Actual playback
+depends on the installed FFmpeg build and receiver; DRM-protected files
+and some unusual encodings are not guaranteed.
+
+**Subtitles:** In **Playback settings → Subtitles**, use **Pick .srt /
+subtitles…** and choose an existing .srt, .vtt, .ttml, .ass or .ssa file.
+For SRT/VTT/TTML, SmoothCast can send a separate caption track to the Cast
+receiver; enable **Burn subtitles into video** when your TV does not display
+it reliably. ASS/SSA always use burn-in, because catt does not accept them
+as external receiver tracks. **Auto** chooses a same-name sidecar
+(`Film.srt` or `Film.en.srt`) first; otherwise it uses a compatible
+embedded MKV text track. **Embedded (MKV track)** lets you choose a
+particular track and language; an embedded track is burned into the
+transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
+**not yet rendered**. Missing or incompatible subtitle files return a
+visible error instead of silently proceeding with another track.
+
 ## Interface and visual design
 
-SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The film preview is deliberately an illustrated metadata slate rather than a fake video screenshot. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
+SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
 
