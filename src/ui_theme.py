@@ -55,6 +55,22 @@ headerbar .subtitle {
     border: 1px solid #385470;
     background-image: linear-gradient(to bottom right, #1a2b40, #131e2c);
 }
+.card.device-card {
+    border-color: #35516b;
+}
+.card.settings-card {
+    background-color: #141e2c;
+}
+.card.meter-card {
+    border-color: #34506b;
+    background-image: linear-gradient(to bottom right, #182739, #131e2b);
+}
+.card.queue-card {
+    background-color: #141e2c;
+}
+.card.activity-card, .card.diagnostics-card {
+    background-color: #121d2a;
+}
 .card .heading {
     font-size: 12px;
     font-weight: 800;
