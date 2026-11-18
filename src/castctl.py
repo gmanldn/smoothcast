@@ -1,0 +1,192 @@
+"""Chromecast control via the catt CLI."""
+from __future__ import annotations
+
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+
+
+def _find_catt() -> str:
+    """Locate the catt binary: venv first, then PATH, then common locations."""
+    # 1. Project-local venv
+    venv_catt = pathlib.Path(__file__).resolve().parent.parent / ".venv" / "bin" / "catt"
+    if venv_catt.exists():
+        return str(venv_catt)
+    # 2. PATH
+    found = shutil.which("catt")
+    if found:
+        return found
+    # 3. pipx / user-local
+    for candidate in (
+        pathlib.Path.home() / ".local" / "bin" / "catt",
+        pathlib.Path.home() / ".local" / "share" / "pipx" / "venvs" / "catt" / "bin" / "catt",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return "catt"  # last resort — will fail with a clear error
+
+
+CATT = _find_catt()
+DEFAULT_DEVICE = "Living Room TV"
+
+
+class CastError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Device:
+    name: str
+    host: str = ""
+    port: int = 0
+    model: str = ""
+    manufacturer: str = ""
+    uuid: str = ""
+
+
+def _run(args: list[str], timeout: float = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(CATT), *args], capture_output=True, text=True, timeout=timeout
+    )
+
+
+def scan(timeout: float = 30) -> list[Device]:
+    result = _run(["scan", "-j"], timeout=timeout)
+    if result.returncode != 0:
+        raise CastError((result.stderr or "device scan failed").strip())
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError:
+        raise CastError("device scan returned invalid output") from None
+    devices = []
+    for name, item in sorted(data.items()):
+        if not isinstance(item, dict):
+            continue
+        devices.append(
+            Device(
+                name=name,
+                host=str(item.get("host") or ""),
+                port=int(item.get("port") or 0),
+                model=str(item.get("model_name") or ""),
+                manufacturer=str(item.get("manufacturer") or ""),
+                uuid=str(item.get("uuid") or ""),
+            )
+        )
+    return devices
+
+
+def info(device: str, timeout: float = 8) -> dict | None:
+    """Full device/media status. None when offline or unreachable."""
+    try:
+        result = _run(["-d", device, "info", "-j"], timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or not payload:
+        return None
+    return payload
+
+
+def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+    try:
+        result = _run(["-d", device, *args], timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, "The device did not respond in time."
+    except OSError as exc:
+        return False, str(exc)
+    message = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0:
+        return False, message or "The command failed."
+    return True, message
+
+
+def play(device: str) -> tuple[bool, str]:
+    return command(device, "play")
+
+
+def pause(device: str) -> tuple[bool, str]:
+    return command(device, "pause")
+
+
+def play_toggle(device: str) -> tuple[bool, str]:
+    return command(device, "play_toggle")
+
+
+def stop(device: str) -> tuple[bool, str]:
+    return command(device, "stop")
+
+
+def seek(device: str, seconds: float) -> tuple[bool, str]:
+    return command(device, "seek", str(max(0, int(seconds))))
+
+
+def volume(device: str, percent: float) -> tuple[bool, str]:
+    level = max(0, min(100, int(round(percent))))
+    return command(device, "volume", str(level))
+
+
+def set_muted(device: str, muted: bool) -> tuple[bool, str]:
+    return command(device, "volumemute", "true" if muted else "false")
+
+
+def subs_on(device: str) -> tuple[bool, str]:
+    return command(device, "subs")
+
+
+def subs_off(device: str) -> tuple[bool, str]:
+    return command(device, "subs", "-n")
+
+
+def player_state(info_dict: dict | None) -> str:
+    if not info_dict:
+        return "OFFLINE"
+    state = str(info_dict.get("player_state") or "").upper()
+    return state or "IDLE"
+
+
+def is_playing(info_dict: dict | None) -> bool:
+    return player_state(info_dict) in {"PLAYING", "BUFFERING"}
+
+
+def is_seekable(info_dict: dict | None) -> bool:
+    if not info_dict:
+        return False
+    return bool(info_dict.get("duration")) and info_dict.get("current_time") is not None
+
+
+def volume_percent(info_dict: dict | None) -> int | None:
+    if not info_dict:
+        return None
+    raw = info_dict.get("volume_level")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value <= 1.0:
+        value *= 100.0
+    return int(round(max(0.0, min(100.0, value))))
+
+
+def volume_muted(info_dict: dict | None) -> bool:
+    if not info_dict:
+        return False
+    return bool(info_dict.get("volume_muted"))
+
+
+def fmt_time(seconds: float | None) -> str:
+    if seconds is None:
+        return "--:--"
+    total = max(0, int(seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"

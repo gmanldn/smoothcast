@@ -1,0 +1,65 @@
+# SmoothCast
+
+A modern GTK4/libadwaita Chromecast companion with live compressor metering, dialogue auto-fix, and zero flicker.
+
+## Features
+
+- **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker)
+- **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
+- **Night mode** — stronger compression for late-night low-volume viewing
+- **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
+- **HLS transcoding** — VAAPI hardware-accelerated H.264 encoding with software fallback
+- **Direct play** — untouched passthrough for compatible files
+- **Subtitle support** — auto-select, burn-in, or disable
+- **Queue / Up Next** — auto-play next, drag-reorder
+- **Keyboard shortcuts** — space, arrows, etc.
+
+## Quick start (self-contained)
+
+1. Unzip the release
+2. Run:
+
+```sh
+./smoothcast
+```
+
+That's it. First run creates a `.venv` and installs `catt` automatically. Subsequent runs start instantly.
+
+## Requirements
+
+- **Python 3.10+**
+- **GTK4 + libadwaita** (system packages, cannot be pip-installed):
+  - Debian/Ubuntu: `sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`
+  - Fedora: `sudo dnf install python3-gobject gtk4 libadwaita`
+  - Arch: `sudo pacman -S python-gobject gtk4 libadwaita`
+- **ffmpeg** (`sudo apt install ffmpeg` or equivalent)
+- **catt** — installed automatically into the bundled venv on first run
+
+## Architecture
+
+```
+smoothcast/
+├── smoothcast          # bootstrap launcher (creates venv, installs catt, runs app)
+├── requirements.txt    # pip deps (catt)
+├── src/
+│   ├── cast_control.py # main GTK4/Adw app — UI, LevelMeter, MainWindow
+│   ├── streamer.py     # HLS transcode, direct play, ffmpeg chains, auto-trim
+│   ├── audio_monitor.py# fast precompute + lookup-by-position level analysis
+│   ├── castctl.py      # catt CLI wrapper
+│   └── server.py       # HLS static file server
+└── data/
+    ├── cast-control.png
+    └── smoothcast.desktop
+```
+
+## How the compressor meter works
+
+The audio monitor runs a fast ffmpeg pass (no `-re`) that splits the audio into two branches:
+- **IN** — raw input RMS/peak per channel
+- **OUT** — after `volume → acompressor → alimiter` chain
+
+The `LevelSample` carries both, and `gain_db = out_rms - in_rms` shows how much the chain is lifting or pulling. The meter eases displayed values toward each new target with attack (0.55) / release (0.16) ballistics at ~40 fps, so bars glide smoothly without flicker.
+
+## License
+
+MIT

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# SmoothCast — self-contained launcher
+# Unzip, run ./smoothcast, done. Sets up its own venv on first run.
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV="$DIR/.venv"
+PYTHON="${PYTHON:-python3}"
+
+# ── sanity: Python 3.10+ ──────────────────────────────────────────────────────
+if ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+    echo "SmoothCast needs Python 3.10+ (found: $("$PYTHON" --version 2>&1))" >&2
+    exit 1
+fi
+
+# ── sanity: GTK4 + libadwaita (system packages, cannot pip-install) ──────────
+if ! "$PYTHON" -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1")' 2>/dev/null; then
+    cat >&2 <<'EOF'
+SmoothCast needs GTK4 and libadwaita. Install them:
+
+  Debian/Ubuntu:  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+  Fedora:         sudo dnf install python3-gobject gtk4 libadwaita
+  Arch:           sudo pacman -S python-gobject gtk4 libadwaita
+
+Then run ./smoothcast again.
+EOF
+    exit 1
+fi
+
+# ── sanity: ffmpeg ───────────────────────────────────────────────────────────
+if ! command -v ffmpeg &>/dev/null; then
+    echo "SmoothCast needs ffmpeg. Install it: sudo apt install ffmpeg (or your distro's equivalent)" >&2
+    exit 1
+fi
+
+# ── bootstrap venv on first run ──────────────────────────────────────────────
+if [ ! -f "$VENV/bin/activate" ]; then
+    echo "SmoothCast: first run — creating self-contained venv..."
+    "$PYTHON" -m venv "$VENV"
+    # catt is the only pip dependency; PyGObject comes from system packages
+    "$VENV/bin/pip" install --quiet --upgrade pip
+    "$VENV/bin/pip" install --quiet catt
+    echo "SmoothCast: venv ready."
+fi
+
+# ── run ──────────────────────────────────────────────────────────────────────
+exec "$VENV/bin/python" "$DIR/src/cast_control.py" "$@"

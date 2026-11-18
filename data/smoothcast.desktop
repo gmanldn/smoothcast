@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SmoothCast
+Comment=Modern Chromecast companion with live compressor metering
+Exec=smoothcast
+Icon=cast-control
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=chromecast;cast;stream;video;audio;
