@@ -31,6 +31,12 @@ FLOOR_DB = -60.0
 # 4096 samples per window ~= 93 ms at 44.1 kHz: responsive without exploding the
 # window count on multi-hour sources.
 _WINDOW = 4096
+# ``ametadata`` files can accumulate a multi-hour stream's records between
+# polls. Consume them in bounded chunks so a burst (or a slow reader) cannot
+# read an unbounded amount of text into memory at once. Normal astats records
+# are tiny, so these limits never split a real record in practice.
+_MAX_READ_BYTES = 64 * 1024
+_MAX_PENDING_BYTES = 256 * 1024
 _FRAME = re.compile(r"^frame:\d+\s+pts:\d+\s+pts_time:([0-9.]+)")
 # astats metadata keys we care about (per-channel index 1=Left, 2=Right).
 _KEYS = {
@@ -94,12 +100,17 @@ class _Reader:
                 self._fh = open(self.path, "r")
             except OSError:
                 return
-        chunk = self._fh.read()
+        chunk = self._fh.read(_MAX_READ_BYTES)
         if not chunk:
             return
         self._pending += chunk
         lines = self._pending.split("\n")
         self._pending = lines.pop()  # trailing fragment may be incomplete
+        # A malformed stream without newlines must not grow the fragment
+        # without bound; keep only the newest bytes and resynchronise on the
+        # next complete record.
+        if len(self._pending) > _MAX_PENDING_BYTES:
+            self._pending = self._pending[-_MAX_PENDING_BYTES:]
         for line in lines:
             self._consume(line)
 

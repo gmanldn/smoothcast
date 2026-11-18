@@ -125,5 +125,62 @@ class AudioMonitorCoverageTests(unittest.TestCase):
         self.assertIsNone(monitor.sample_at(6.0))
 
 
+class AudioMonitorReadBoundsTests(unittest.TestCase):
+    def test_reader_reads_a_bounded_chunk_per_poll(self):
+        from audio_monitor import _Reader
+
+        reader = _Reader(Path("unused"))
+        reader._fh = mock.Mock()
+        reader._fh.read.return_value = ""
+        reader.poll()
+        reader._fh.read.assert_called_once_with(audio_monitor._MAX_READ_BYTES)
+
+    def test_unterminated_fragment_is_bounded(self):
+        from audio_monitor import _Reader
+
+        reader = _Reader(Path("unused"))
+
+        class Fake:
+            sent = False
+
+            def read(self, size):
+                if self.sent:
+                    return ""
+                self.sent = True
+                return "x" * (audio_monitor._MAX_PENDING_BYTES + 5000)
+
+        reader._fh = Fake()
+        reader.poll()
+        self.assertLessEqual(len(reader._pending), audio_monitor._MAX_PENDING_BYTES)
+
+    def test_large_metadata_file_is_consumed_incrementally(self):
+        from audio_monitor import _Reader
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as work:
+            path = Path(work) / "in.txt"
+            lines = []
+            for i in range(4000):
+                lines.append(f"frame:{i}")
+                lines.append("lavfi.astats.Overall.RMS_level=-20.0")
+            path.write_text("\n".join(lines) + "\n")
+
+            reader = _Reader(path)
+            first = None
+            for _ in range(10_000):
+                before = len(reader.records)
+                reader.poll()
+                if first is None and reader.records:
+                    first = len(reader.records)
+                if len(reader.records) == before:
+                    break
+            reader.finish()
+            # The first bounded read cannot consume the whole multi-hour-scale
+            # file at once, and repeated polls still recover every record.
+            self.assertIsNotNone(first)
+            self.assertLess(first, 4000)
+            self.assertEqual(len(reader.records), 4000)
+
+
 if __name__ == "__main__":
     unittest.main()
