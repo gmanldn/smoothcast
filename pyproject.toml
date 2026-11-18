@@ -31,7 +31,7 @@ py-modules = [
     "cast_control", "castctl", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
-    "local_playback", "startup_cleanup", "streamer",
+    "local_playback", "startup_cleanup", "streamer", "playlist_control",
 ]
 
 [tool.setuptools.package-dir]
