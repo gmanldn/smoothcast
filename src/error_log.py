@@ -11,7 +11,10 @@ import pathlib
 import sys
 import threading
 import traceback
+from types import TracebackType
 from typing import Optional
+
+ExceptionDetails = tuple[type[BaseException], BaseException, TracebackType | None]
 
 MAX_LINES = 10000
 FILENAME = "errors.log"
@@ -49,11 +52,13 @@ class ErrorLog:
                 fh.write(line + "\n")
         tmp.replace(self._path)
 
-    def add(self, message: str, *, exc_info: bool = False) -> None:
+    def add(self, message: str, *, exc_info: bool | ExceptionDetails = False) -> None:
         stamp = _dt.datetime.now().isoformat(timespec="seconds")
         if exc_info:
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            detail = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            # Uncaught exception hooks run outside an except block: sys.exc_info()
+            # is empty there. The explicit tuple is the authoritative traceback.
+            details = exc_info if isinstance(exc_info, tuple) else sys.exc_info()
+            detail = "".join(traceback.format_exception(*details))
             message = f"{message}\n{detail}"
         entry = f"{stamp}  {message}"
         with self._lock:
@@ -79,7 +84,7 @@ class ErrorLog:
 LOG = ErrorLog()
 
 
-def log(message: str, *, exc_info: bool = False) -> None:
+def log(message: str, *, exc_info: bool | ExceptionDetails = False) -> None:
     LOG.add(message, exc_info=exc_info)
 
 
@@ -91,8 +96,14 @@ def install_excepthook() -> None:
         if exc_type is KeyboardInterrupt:
             previous_hook(exc_type, exc_value, exc_tb)
             return
-        log("uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
-        previous_hook(exc_type, exc_value, exc_tb)
+        try:
+            log("uncaught exception", exc_info=(exc_type, exc_value, exc_tb))
+        except Exception:
+            # Logging is best-effort; preserve the original traceback at stderr
+            # even with a full disk, bad permissions or a broken log backend.
+            pass
+        finally:
+            previous_hook(exc_type, exc_value, exc_tb)
 
     sys.excepthook = hook
 
@@ -102,8 +113,12 @@ def install_excepthook() -> None:
         if args.exc_type is KeyboardInterrupt:
             previous_thread_hook(args)
             return
-        log("uncaught thread exception",
-            exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-        previous_thread_hook(args)
+        try:
+            log("uncaught thread exception",
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+        except Exception:
+            pass
+        finally:
+            previous_thread_hook(args)
 
     threading.excepthook = thread_hook

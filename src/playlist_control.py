@@ -62,9 +62,25 @@ def save_playlist(path: Path, items: list[str]) -> None:
     """Atomically save a local M3U playlist so interrupted writes cannot lose it."""
     if not items:
         raise PlaylistError("Queue is empty")
-    path = Path(path).expanduser()
+    path = Path(path).expanduser().resolve()
     temp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    data = "#EXTM3U\n" + "".join(str(Path(p).expanduser().resolve()) + "\n" for p in items)
+    entries: list[str] = []
+    for item in items:
+        # M3U is line-oriented: a newline in one source path would inject
+        # an unrelated queued item into the exported playlist.
+        if any(char in str(item) for char in ("\n", "\r", "\0")):
+            raise PlaylistError("Media path contains an invalid line or null character")
+        media = Path(item).expanduser().resolve()
+        try:
+            # Relocating a playlist and its sibling media tree should preserve
+            # playback order without hand-editing paths.
+            entry = os.path.relpath(media, path.parent)
+        except ValueError:
+            # On Windows, relpath across different drive letters is invalid.
+            # Preserve an absolute path rather than failing to save the queue.
+            entry = str(media)
+        entries.append(entry)
+    data = "#EXTM3U\n" + "".join(entry + "\n" for entry in entries)
     try:
         temp.write_text(data, encoding="utf-8")
         temp.replace(path)
