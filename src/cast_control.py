@@ -1766,7 +1766,7 @@ class MainWindow(Adw.ApplicationWindow):
         state = labels.get(self.device_state, "idle")
         if self.external and state not in {"offline", "idle"}:
             state = "playing on TV"
-        self.title_widget.set_subtitle(f"{self._device()} · {state}")
+        self.title_widget.set_subtitle(f"{self._device()} · {state} · v{version.__version__}")
 
     def _set_chip(self, label: str, kind: str) -> None:
         for existing in ("idle", "playing", "paused", "buffering", "offline", "error"):
@@ -2826,6 +2826,12 @@ class CastControlApp(Adw.Application):
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         GLib.set_prgname(APP_ID)
+        Gtk.Window.set_default_icon_name(ICON_NAME)
+        _data_dir = pathlib.Path(__file__).resolve().parent.parent / "data"
+        try:
+            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(_data_dir))
+        except Exception:
+            pass
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
