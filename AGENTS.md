@@ -42,6 +42,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH)
 - `src/cli.py` — GTK-free console entry point; reports --version before importing the GUI
 - `src/subtitle_encoding.py` — bounded, strict SRT encoding detection (UTF-8, UTF-16, cp1252) and atomic private UTF-8 staging
+- `src/preflight.py` — bounded MKV software decoder dry-run, validated 0.8 s sample, no receiver commands
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
@@ -146,6 +147,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/castctl.py` speaks **Google Cast via catt**, including compatible built-in TVs, Google TV, Android TV Cast receivers and smart displays. Manual receiver IPv4 is for Cast devices when mDNS fails, **not** general DLNA/AirPlay.
 - `src/streamer.py` normalises incompatible MKV/HEVC/VP9/AV1 sources to receiver-safe H.264/AAC. Respect capability limits; the fallback software encoder outputs 8-bit yuv420p and downscales 4K to 1080p.
 - External `.srt/.vtt/.ttml` may be passed to catt or burned by FFmpeg; `.ass/.ssa` require burn-in.
+- Never call receiver stop/cast when preflighting an unverified MKV. `preflight.check_media` must produce and verify actual frames from a short private H.264/AAC render, retain media/subtitle selections and always remove its temporary files; only after success may `_cast_path` call `previous.stop`. Cache by media and subtitle fingerprints, preserving a currently playing TV if preflight fails.
 - Always route external `.srt` through `subtitle_encoding.stage_srt` before either Cast receiver subtitles or FFmpeg burn-in. Strict UTF-8/UTF-16/CP1252 detection, 16 MiB input/output limits, timestamp/control validation and private atomic mode-0600 output apply; never rewrite a user's subtitle. `Session.stop` and primary startup cleanup remove stale staged files, except for a deliberately retained live cast. Embedded MKV **text** tracks are selectable and burned by the libass subtitle filter; **PGS/VobSub/DVB bitmap streams are not yet supported**. Do not silently mark them as available.
 - Preserve embedded subtitle index in `SessionState` and across restart/seek; do not send duplicate sidecar tracks when captions are burned into the video. Resolve user-picked paths only if valid; bound temporary staging.
 - In-window Play/Pause uses `Gtk.Video`, not a separate ffplay window. Local playhead and cached duration are independent of Cast session time. Cast explicitly hands off at the local timestamp.
