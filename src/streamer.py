@@ -546,6 +546,11 @@ def _motion_video_stream(streams: list[dict]) -> dict | None:
     return max(candidates, key=lambda item: item[:4])[-1]
 
 
+def _rotated_dimensions(width: int, height: int, rotation: int) -> tuple[int, int]:
+    """Picture bounds after FFmpeg's transpose, before output scaling."""
+    return (height, width) if rotation in (90, 270) else (width, height)
+
+
 def ffprobe(path: pathlib.Path) -> MediaInfo:
     media = MediaInfo(path=path)
     try:
@@ -957,8 +962,18 @@ class Session:
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
-        if software and video_size and (video_size[0] > 1920 or video_size[1] > 1080):
-            chain.append("scale=w=1920:h=1080:force_original_aspect_ratio=decrease")
+        # Scale the *transposed* picture. A 1920x1080 source rotated 90°
+        # becomes 1080x1920; looking at input bounds alone missed this.
+        # Both x264/yuv420p and h264_vaapi need even output dimensions.
+        if video_size and (software or rotation in (90, 270, 180)):
+            out_w, out_h = _rotated_dimensions(*video_size, rotation)
+            if out_w > 1920 or out_h > 1080:
+                chain.append(
+                    "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
+                    "force_divisible_by=2"
+                )
+            elif out_w % 2 or out_h % 2:
+                chain.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
         # VAAPI keeps frames on GPU unless burning subtitles, so a rotation
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
@@ -1019,7 +1034,8 @@ class Session:
         )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
-        if (media.width > 1920 or media.height > 1080
+        out_w, out_h = _rotated_dimensions(media.width, media.height, rotation)
+        if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
         software = self.used_software_fallback
