@@ -24,6 +24,12 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertRegex(version.__version__, r"^[0-9]+\.[0-9]+\.[0-9]+$")
         self.assertEqual(version.label(), f"v{version.__version__}")
 
+    def test_package_metadata_matches_the_canonical_release(self):
+        metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"', metadata)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), version.__version__)
+
     def test_on_disk_version_does_not_overwrite_running_version(self):
         with tempfile.TemporaryDirectory() as directory:
             filename = Path(directory) / "version.py"
