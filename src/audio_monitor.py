@@ -270,9 +270,21 @@ class AudioMonitor:
                 return None
             idx = bisect.bisect_right(self._times, position) - 1
             if idx < 0:
+                # The first decoded frame can start a little after offset.
+                if position < self._times[0] - 0.05:
+                    return None
                 idx = 0
-            elif idx >= n:
-                idx = n - 1
+            # A window is valid only for its own short time interval.
+            # Never replay the last analysed sample after a long seek: the
+            # meter must report no data until the background decoder catches
+            # up. Derive window width from adjacent PTS values where possible.
+            width = (self._times[idx + 1] - self._times[idx]
+                     if idx + 1 < n else
+                     self._times[-1] - self._times[-2] if n > 1
+                     else 0.1)
+            width = max(0.02, min(0.5, width))
+            if position >= self._times[idx] + width:
+                return None
             return LevelSample(
                 in_rms=self._in_rms[idx], out_rms=self._out_rms[idx],
                 in_peak=self._in_peak[idx], out_peak=self._out_peak[idx],
