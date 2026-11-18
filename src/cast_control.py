@@ -1933,6 +1933,10 @@ class MainWindow(Adw.ApplicationWindow):
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
         if duration:
             target = min(target, max(0.0, duration - 1.0))
+        # Move the scrubbing knob immediately so the user sees where they
+        # jumped to while the cast catches up in the background.
+        if self.seekbar is not None:
+            self.seekbar.set_state(target, duration, self.seekbar.buffered)
         if self.external:
             self.toast("The position of an external stream is unknown", error=True)
             return
@@ -1962,6 +1966,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
+        # Update tracker immediately so the seekbar knob stays at the target
+        # while the transcode restarts in the background.
+        self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
     def _restart_at(self, session, target: float) -> None:
