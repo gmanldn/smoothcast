@@ -35,6 +35,21 @@ single GUI file or import GTK during ordinary tests.
   `src/version.py`.
 - Tests and CI: `tests/`, `.github/workflows/verify.yml`.
 
+## Asynchronous receiver transport safety
+
+`SessionMixin.toggle_play` and `SessionMixin.seek_to` serialize direct
+Google Cast and DLNA transport commands with the window's `busy` guard.
+Every UI action, including keyboard shortcuts and seekbar signals, must obey
+that guard *before* changing optimistic UI state. Worker callbacks only
+update controls for the unchanged session and selected device and must
+release the guard on both success and failure. On failure, poll the receiver
+to resynchronise the displayed state; never infer success from an issued
+command alone. Stop and cast transitions are separate ownership paths.
+
+This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
+cancellation, retry policy and full physical receiver acceptance remain
+open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
+
 Search symbols and affected callers before opening large files; follow runtime
 state ownership through the whole cast/cleanup lifecycle. For historical
 edge-case notes see [archived instructions](../AGENT_REFERENCE.md).
