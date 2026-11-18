@@ -1,76 +1,100 @@
-# SmoothCast — 50 Best Improvements (researched from VLC, mpv, PotPlayer, IINA, Plex, Kodi)
+# SmoothCast — 50 high-value improvement proposals
 
-Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv (quality, shaders, keyboard, OSC), PotPlayer (UI/overlay, bookmark, capture, zoom), IINA (mac layout, playlist sidebar, modern UI), Plex/Kodi (metadata, library, now-playing), Spotify (queue/now-playing), YouTube (seek preview, speed).
+This is a prioritised engineering backlog, **not a list of shipped features**.
+Each idea targets a real user outcome and names an observable completion criterion.
+**Priority:** P0 = compatibility/reliability blocker, P1 = major experience or
+capability gain, P2 = strategically valuable. **Effort:** S = small, M = medium,
+L = substantial. Prioritise verified end-to-end behaviour over feature count.
 
-## Backlog (50 items)
+## Actual compatibility baseline
 
-1. Picture-in-Picture window (always-on-top mini player).
-2. Keyboard shortcuts cheatsheet overlay (press `?`).
-3. Frame-accurate seek (left/right 1s/5s/10s, Shift for frame).
-4. Playback speed control with presets (0.5x–2.0x) + custom.
-5. Audio track selection + channel layout display.
-6. Subtitle delay/offset adjustment (+/- ms).
-7. Subtitle font size/position/color customization.
-8. A-B loop (repeat segment).
-9. Bookmarks / chapters jump.
-10. Screenshot capture (current frame) to file.
-11. Zoom/pan (crop, 1x/2x/4x, pan with arrows).
-12. Deinterlace toggle.
-13. HDR tone-mapping toggle.
-14. Video filters (brightness/contrast/saturation/hue).
-15. Audio equalizer (10-band) + presets.
-16. Audio delay adjustment.
-17. Normalization / loudness (EBU R128) toggle.
-18. Mono/stereo downmix toggle.
-19. Aspect ratio override (16:9, 4:3, fill, crop).
-20. Crop (top/bottom/left/right).
-21. Rotation (90/180/270).
-22. Loop one / loop all / shuffle.
-23. Playlist save/load (m3u).
-24. Drag-and-drop reorder queue.
-25. Multi-file open (folder → queue).
-26. Recent files list (already have; add clear + pin).
-27. Search within queue.
-28. Now-playing large album art / thumbnail.
-29. Mini-player mode (compact transport bar).
-30. Fullscreen with auto-hide controls.
-31. Theater mode (maximized, no chrome).
-32. OSD (on-screen display) for volume/seek.
-33. Gapless playback.
-34. Resume from last position (per file).
-35. Watch history with timestamps.
-36. Sleep timer.
-37. Auto-shutdown after playlist ends.
-38. Network stream open (URL).
-39. YouTube/URL paste & play.
-40. Cast to multiple devices simultaneously.
-41. Cast audio-only mode.
-42. Cast quality preset (720/1080/4K).
-43. Bitrate/codec stats overlay.
-44. Buffer health graph.
-45. Network speed indicator.
-46. Dark/light/system theme (already; add auto by time).
-47. Accent color picker.
-48. Compact/comfortable/spacious density.
-49. Window remember position/size.
-50. Auto-update check + one-click update.
+- The existing sender backend is **Google Cast via catt**. It can discover
+  Chromecast devices, Google TV / Android TV Cast receivers, Google Cast-enabled
+  smart TVs, Google TV Streamer and Cast-capable smart displays. The receiver
+  must expose Google Cast; having an HDMI port, Wi-Fi or a TV app is not enough.
+  Manual private-LAN IPv4 selection can help when mDNS discovery fails.
+- FFmpeg transcodes common Matroska/MKV video and audio codecs such as H.264,
+  HEVC, VP9, AV1, AAC, E-AC-3, AC-3, DTS, FLAC and Opus to a conservative
+  H.264/AAC HLS output, subject to local decoder/encoder availability.
+- External **.srt**, **.vtt** and **.ttml** are supported through the receiver
+  subtitle path or FFmpeg burn-in. External **.ass/.ssa** require burn-in.
+  Embedded MKV text tracks can be selected and burned by FFmpeg/libass.
+  **Bitmap PGS/VobSub/DVB subtitles are not yet rendered.**
+- **DLNA/UPnP-only TVs, AirPlay-only devices, Roku without Cast, and
+  Miracast** are *not* supported by the catt backend. They need their own
+  discovery, media delivery and control adapters, with real-device tests.
+- This describes implementation intent, not a claim of comprehensive
+  hardware qualification. Portable CI does not validate network or GPU
+  playback on physical TVs.
 
-## Status
-- [ ] Not started (all). Implement one per commit, bump version each.
+Relevant vendor documentation:
+[Google Cast supported receivers](https://developers.google.com/cast/docs/overview),
+[Google Cast device-dependent media support](https://developers.google.com/cast/docs/media),
+[FFmpeg subtitles filter](https://ffmpeg.org/ffmpeg-filters.html#subtitles-1).
 
-## Done
-- [x] 1. Picture-in-Picture (always-on-top toggle)
-- [x] 2. Keyboard shortcuts cheatsheet (menu)
-- [x] 3. Frame-accurate seek (comma/period 1s)
-- [x] 10. Screenshot capture
-- [x] 22. Loop toggle
-- [x] 21. Rotation (90/180/270)
-- [x] 26. Recent files clear
-- [x] 30. Fullscreen toggle
-- [x] 38. Network stream open (URL)
-- [x] 4. Playback speed presets
-- [x] 36. Sleep timer
-- [x] 46. Auto theme by time
-- [x] 34. Resume from last position
-- [x] 37. Auto-shutdown after playlist ends
-- [x] 31. Theater mode
+## P0 — target breadth and operational correctness
+
+1. **[P0 · L] Native DLNA/UPnP MediaRenderer adapter.** Discover via SSDP and control AVTransport; stream compatible progressive MP4 and MPEG-TS rather than assuming DLNA understands HLS. Pass LG/Samsung/Sony DMR smoke tests.
+2. **[P0 · L] AirPlay video adapter.** Use a maintained, tested implementation with authentication/pairing and explicit protocol-version support; verify Apple TV playback, seek and stop.
+3. **[P0 · L] Roku ECP/receiver adapter.** Implement only against a documented receiver route and test on Roku hardware; distinguish Roku from Cast-equipped TVs.
+4. **[P0 · M] Target capability negotiation.** Probe MIME, codecs, resolution, subtitle formats, seek/range and playback speed; construct a per-session compatibility plan instead of guessing.
+5. **[P0 · M] Model-aware Cast output profiles.** Use receiver model/codec capabilities to choose conservative 1080p H.264 or verified 4K/HDR paths without needless quality loss.
+6. **[P0 · M] Cast transfer error recovery.** If launch/seek fails, preserve local position and offer one-click retry, alternate encoding or a different target with clear reason.
+7. **[P0 · M] Network-route diagnostics.** Show receiver IP, selected interface, VPN/firewall interference, inbound media-port reachability and HLS health test from a second host.
+8. **[P0 · M] Chromecast discovery robustness.** Reconcile mDNS updates, duplicate display names, missing TXT fields and stale IPs without losing saved receiver selections.
+9. **[P0 · L] Receiver command state machine.** Serialize cast, seek, pause, resume, stop and transfer with cancellation and idempotent retries; stale callbacks cannot hijack another TV.
+10. **[P0 · M] First-frame and stall watchdog.** Distinguish FFmpeg stalled, HLS buffer starved and receiver stopped; recover automatically within bounded attempts.
+11. **[P0 · M] Direct-to-transcode failover.** Verify actual decoder acceptance and subtitle capability before switching; preserve selected source timestamp and audio/subtitle tracks.
+12. **[P0 · M] End-to-end media matrix CI.** Generate MKV/MP4 fixtures covering H.264/HEVC/VP9/AV1, AC-3/DTS/Opus, external SRT/ASS, multiple streams and 10-bit inputs; assert stream output.
+13. **[P0 · M] Multi-audio-track picker.** Enumerate languages, titles and channel layouts, select any valid track, carry its selection through seeks and cast restarts.
+14. **[P0 · L] Bitmap subtitle compositor.** Decode PGS, VobSub and DVB subtitle images, overlay with correct timing and palette; validate forced-only and multilingual tracks.
+15. **[P0 · M] Reliable subtitle state across transfers.** Preserve selected external/embedded track, delay, forced flag and burn mode when switching targets or restarting an encoder.
+16. **[P0 · M] Subtitle encoding detection.** Detect UTF-8/UTF-16/legacy SRT safely; normalise sidecars to a private bounded UTF-8 file when required, without changing originals.
+17. **[P0 · M] In-window player runtime smoke test.** Assert real video, audio, seek, pause, EOS and Cast handoff on each OS, not just GTK-free source-level tests.
+18. **[P0 · M] Transactional setup/uninstall/repair.** Validate GTK media plugin, codecs, CLI, app icon and launch on macOS/Windows/Linux; failed setup leaves the prior working install usable.
+
+## P1 — powerful film and subtitle experience
+
+19. **[P1 · M] HDR10-to-SDR tone mapping.** Preserve meaningful luminance/colour on older SDR receivers; compare reference clips and record GPU/CPU performance.
+20. **[P1 · L] Dolby Vision fallback.** Detect DV profiles and select compatible base-layer HDR10/SDR without green/purple corruption; test popular MKV variants.
+21. **[P1 · M] Native 4K/HDR hardware encoders.** Support VAAPI, VideoToolbox and Windows encoders with per-device capability checks and deterministic software fallback.
+22. **[P1 · L] Adaptive bitrate and network feedback.** Switch quality on actual throughput/buffer metrics instead of fixed presets; avoid oscillation and excess re-encoding.
+23. **[P1 · M] Automatic audio downmix policies.** Handle stereo, 5.1, 7.1, E-AC-3/DTS/TrueHD, dialogue isolation and LFE safely, with A/V sync tests.
+24. **[P1 · M] Subtitle delay and live calibration.** Provide ±100 ms controls with persisted offsets and verified burn-in timings.
+25. **[P1 · M] Subtitle styling and placement.** Expose font size, margin, border and contrast, with safe presets respecting ASS text styling.
+26. **[P1 · M] MKV font attachments.** Extract embedded ASS/SSA fonts into a secure temporary directory; preserve intended typesetting without writing to the user’s font collection.
+27. **[P1 · S] Drag-and-drop subtitle loading.** Drop an SRT/VTT/ASS file onto preview and immediately display its language, preview and whether burn-in is required.
+28. **[P1 · M] Interactive subtitle track preview.** Preview text at scrub time before casting and allow explicit selection of forced or full-dialogue tracks.
+29. **[P1 · M] Persistent language preferences.** Prefer requested audio/subtitle languages per series, with forced captions handled separately from full subtitles.
+30. **[P1 · M] Matroska chapter and edition navigation.** Display chapter titles and segment times; support direct chapter jump with exact timeline mapping.
+31. **[P1 · M] Frame-step and thumbnail strip.** Generate sparse cached thumbnails for instant scrub previews and frame stepping without spawning a decoder per mouse move.
+32. **[P1 · M] Playback handoff accuracy.** Measure local-to-TV start error and compensate for startup latency and receiver buffering within a defined tolerance.
+33. **[P1 · M] Smart resume/watch-state database.** Store durations, file fingerprints, chosen tracks, watched percentage and positions transactionally across restarts.
+34. **[P1 · M] Progressive file support for DLNA.** Provide HTTP Range/HEAD, MIME and DLNA contentFeatures safely on an allowlisted session resource.
+35. **[P1 · L] External browser/web receiver.** Secure opt-in LAN web UI for preview/casting and viewing video on a browser, with pairing and expiration.
+36. **[P1 · M] Graceful audio-only cast mode.** Detect Cast speaker/audio-only hardware and transmit AAC/MP3 audio without failing on video content.
+37. **[P1 · L] Synchronized multi-room output.** Calibrate receiver clock drift and latency; pause/resume a group without losing sync or shared volume safety.
+38. **[P1 · M] Per-device quality and subtitle presets.** Remember a receiver’s safe codec, bit rate, subtitle method and preferred speaker volume with an obvious reset.
+39. **[P1 · M] Reliable playlist handoff.** Pre-probe the next film and prewarm a target-safe encoder so queue transitions are bounded and cancellable.
+40. **[P1 · M] Real-time stream-health console.** Show measured network throughput, HLS latency, actual decoder state, segment failures and recoveries, not inferred success.
+
+## P2 — product quality and advanced workflows
+
+41. **[P2 · M] Accessible transport and subtitle controls.** Complete GTK keyboard navigation, screen-reader labels, high-contrast focus rings and large touch targets.
+42. **[P2 · M] Subtitle search across locally owned files.** Index user-supplied directories for matching language-tagged subtitle files, with no automatic untrusted downloads.
+43. **[P2 · S] Receiver favourites and recent targets.** Sort by last successful session, pin devices and keep manual-IP entries clearly distinguishable.
+44. **[P2 · M] Local library index.** Incrementally fingerprint local media and cache metadata without loading entire folders into RAM.
+45. **[P2 · M] Automatic crop/deinterlace policies.** Detect letterboxing and interlaced input, with previews and reversibility before changing the picture.
+46. **[P2 · M] Bounded diagnostic bundle export.** Collect redacted system/decoder/log details and reproduce a failing cast without exposing file paths or receiver credentials.
+47. **[P2 · S] Encoder dry-run preflight.** For an unfamiliar MKV, render a short private sample and report missing codecs/subtitle support before touching the TV.
+48. **[P2 · M] Playback-quality benchmark wizard.** Measure machine encode speed vs source frame rate and recommend 720p/1080p/4K settings with explicit trade-offs.
+49. **[P2 · M] Sandboxed subtitle and media-file handling.** Tighten temporary file limits, process timeouts, parser fuzz tests and secure cleanup of FFmpeg-produced files.
+50. **[P2 · M] Release qualification dashboard.** Track CI, GTK self-tests, real-device model matrix, installer checks, codec/subtitle samples and known failures per release.
+
+## Delivery criteria
+
+A proposal is **done** only when its behaviour is implemented, source-level and
+runtime tests cover the positive and failure paths, user instructions are
+updated, and required hardware claims have been validated on actual devices.
+Do not convert this list into unchecked feature claims or increase the release
+version for every intermediate fix.
