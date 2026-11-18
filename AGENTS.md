@@ -115,8 +115,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Reconfirm any prior `GtkBox min > natural` warnings on the running desktop before claiming full resolution.
 
-## Pending work
-- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
+## User's requests (pending)
+1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.
+2. ~~Add a bouncing line level meter for master so user can see how close to 0 the signal is.~~ Done: `LevelMeter._draw_master` draws a single vertical line whose height is the eased `out_rms` (post-compressor output), with 0 dBFS and -6 dB notches, colour-coded green/yellow/red, and a tip glow when within -3 dB.
+3. Local playback device: `src/local_playback.py` manages an `ffplay` subprocess. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts.
 
 ## Completed work
 24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.
