@@ -65,16 +65,40 @@ class AvMixin:
         # as a fresh command to TV B after switching the selected device.
         target, self._volume_target = self._volume_target, None
         if self.device_state == "OFFLINE" or target is None or target != self._device():
+            self._reject_volume()
             return False
         value = int(self.volume_scale.get_value())
         device = target
         renderer = self._dlna_renderer(device)
         if renderer is not None:
             Async.run(lambda: dlna.volume(renderer, value),
-                      failed=lambda msg: self.toast(f"DLNA volume: {msg}", error=True))
+                      failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"))
         else:
-            Async.run(lambda: castctl.volume(device, value))
+            def done(result):
+                ok, message = result
+                if not ok:
+                    self._reject_volume(message or "Volume change rejected")
+
+            Async.run(lambda: castctl.volume(device, value),
+                      done=done,
+                      failed=lambda msg: self._reject_volume(f"Volume: {msg}"))
         return False
+
+
+    def _reject_volume(self, message: str | None = None) -> None:
+        """Undo an optimistic volume display the receiver never applied."""
+        if message:
+            self.toast(message, error=True)
+        known = castctl.volume_percent(self.device_info)
+        if known is not None:
+            self._syncing = True
+            try:
+                self.volume_scale.set_value(known)
+            finally:
+                self._syncing = False
+        # Let the next poll resync the control with the receiver again.
+        self._volume_user_ts = 0.0
+        self._poll_device()
 
 
     def _nudge_volume(self, delta: int) -> None:

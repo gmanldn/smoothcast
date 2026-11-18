@@ -92,6 +92,27 @@ class ReceiverSafetyTests(unittest.TestCase):
         self.assertIn("device = target", commit)
         self.assertNotIn("device = self._device()", commit)
 
+    def test_rejected_volume_change_is_not_displayed_as_confirmed(self):
+        commit = METHODS["_commit_volume"]
+        reject = METHODS["_reject_volume"]
+        # Stale targets, offline receivers, command failures and silent
+        # castctl rejections all route through the revert helper.
+        self.assertIn("self._reject_volume(", commit)
+        self.assertIn("if not ok:", commit)
+        self.assertIn("failed=lambda msg: self._reject_volume(", commit)
+        self.assertLess(commit.index("if not ok:"),
+                        commit.index("self._reject_volume(message"))
+        # The unconfirmed value is replaced by the last known receiver value
+        # without re-scheduling another debounce.
+        self.assertIn("castctl.volume_percent(self.device_info)", reject)
+        self.assertIn("self.volume_scale.set_value(known)", reject)
+        self.assertIn("self._volume_user_ts = 0.0", reject)
+        self.assertIn("self._poll_device()", reject)
+        self.assertLess(reject.index("self._syncing = True"),
+                        reject.index("self.volume_scale.set_value(known)"))
+        self.assertGreater(reject.index("finally:"),
+                           reject.index("self.volume_scale.set_value(known)"))
+
     def test_active_receiver_media_not_replaced_by_queue_selection(self):
         selection = METHODS["set_selection"]
         self.assertIn("self.session is not None or self.external or self.busy", selection)
