@@ -23,7 +23,8 @@ def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) ->
     """Build an environment that cannot reach the user's display or XDG files."""
     env = dict(os.environ if parent is None else parent)
     for name in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
-                 "XAUTHORITY", "XDG_CURRENT_DESKTOP", "DESKTOP_SESSION"):
+                 "XAUTHORITY", "XDG_CURRENT_DESKTOP", "DESKTOP_SESSION",
+                 "SMOOTHCAST_TEST_CONTEXT"):
         env.pop(name, None)
     for key, subdir in (
         ("HOME", "home"),
