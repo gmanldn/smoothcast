@@ -287,6 +287,9 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
 class MediaInfo:
     path: pathlib.Path
     duration: float = 0.0
+    # FFprobe's absolute input stream index (not ordinal among video tracks).
+    # Cover artwork can occupy stream 0, before the actual motion picture.
+    video_stream_index: int = 0
     width: int = 0
     height: int = 0
     fps: float = 0.0
@@ -508,6 +511,41 @@ def _duration_seconds(raw: object) -> float:
         return 0.0
 
 
+def _motion_video_stream(streams: list[dict]) -> dict | None:
+    """Choose real motion video, never an attached/still cover image.
+
+    Matroska can expose a one-frame MJPEG/PNG as an ordinary video stream
+    *without* attached_pic. Dispositions alone therefore are insufficient;
+    check frame count and per-stream duration too. Preserve the container's
+    default-track choice among genuine video tracks.
+    """
+    candidates = []
+    image_codecs = {"mjpeg", "png", "bmp", "gif", "webp", "tiff", "jpeg2000"}
+    for position, stream in enumerate(streams):
+        if stream.get("codec_type") != "video":
+            continue
+        disposition = stream.get("disposition") or {}
+        if disposition.get("attached_pic") or disposition.get("still_image"):
+            continue
+        duration = (
+            _duration_seconds(stream.get("duration"))
+            or _duration_seconds((stream.get("tags") or {}).get("DURATION"))
+        )
+        raw_frames = stream.get("nb_frames")
+        try:
+            frames = int(raw_frames) if raw_frames is not None else 0
+        except (ValueError, TypeError):
+            frames = 0
+        codec = str(stream.get("codec_name") or "").lower()
+        if codec in image_codecs and (frames == 1 or 0 < duration < 0.5):
+            continue
+        candidates.append((bool(disposition.get("default")), duration,
+                           codec not in image_codecs, -position, stream))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[:4])[-1]
+
+
 def ffprobe(path: pathlib.Path) -> MediaInfo:
     media = MediaInfo(path=path)
     try:
@@ -528,10 +566,15 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         media.bitrate = int(fmt.get("bit_rate") or 0)
     except (TypeError, ValueError):
         pass
+    streams = data.get("streams") or []
+    selected_video = _motion_video_stream(streams)
+    if selected_video is None:
+        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     subtitle_index = 0
-    for stream in data.get("streams") or []:
+    for stream_position, stream in enumerate(streams):
         kind = stream.get("codec_type")
-        if kind == "video" and not media.vcodec:
+        if kind == "video" and stream is selected_video:
+            media.video_stream_index = int(stream.get("index", stream_position))
             media.vcodec = str(stream.get("codec_name") or "")
             media.vprofile = str(stream.get("profile") or "")
             media.pix_fmt = str(stream.get("pix_fmt") or "")
@@ -582,6 +625,8 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
                 forced=bool(disposition.get("forced")),
             ))
             subtitle_index += 1
+    if not media.vcodec:
+        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
     return media
 
@@ -986,7 +1031,7 @@ class Session:
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
-        args += ["-i", str(media.path), "-map", "0:v:0", "-map", audio_map]
+        args += ["-i", str(media.path), "-map", f"0:{media.video_stream_index}", "-map", audio_map]
         args += self._codec_args(quality, software)
         args += self._filter_args(
             burn_subs, staged, software, speed, rotation,

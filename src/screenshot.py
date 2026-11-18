@@ -15,6 +15,7 @@ class CaptureError(RuntimeError):
 
 def capture_frame(
     source: Path, position: float, directory: Path, *, timeout: int = 30,
+    video_stream_index: int = 0,
 ) -> Path:
     """Capture one source frame without overwriting an existing picture.
 
@@ -33,6 +34,8 @@ def capture_frame(
         raise CaptureError(f"Source is not a regular video file: {source.name}")
     if not math.isfinite(position):
         raise CaptureError("Invalid video position")
+    if type(video_stream_index) is not int or video_stream_index < 0:
+        raise CaptureError("Invalid video stream index")
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -42,7 +45,7 @@ def capture_frame(
     args = [
         "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
         "-n", "-ss", str(max(0.0, position)), "-i", str(source),
-        "-frames:v", "1", str(target),
+        "-map", f"0:{video_stream_index}", "-frames:v", "1", str(target),
     ]
     try:
         result = subprocess.run(
@@ -73,7 +76,8 @@ def capture_frame(
     return target
 
 
-def preview_frame(source: Path, position: float, *, timeout: int = 12) -> bytes:
+def preview_frame(source: Path, position: float, *, timeout: int = 12,
+                  video_stream_index: int = 0) -> bytes:
     """Decode a small JPEG frame for the pre-cast scrubber, without writing files.
 
     This runs only in a worker thread. A bounded output resolution and timeout
@@ -88,9 +92,12 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12) -> bytes:
         raise CaptureError(f"Source is not a regular video file: {source.name}")
     if not isinstance(position, (int, float)) or not math.isfinite(position):
         raise CaptureError("Invalid preview position")
+    if type(video_stream_index) is not int or video_stream_index < 0:
+        raise CaptureError("Invalid video stream index")
     command = [
         "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
         "-ss", str(max(0.0, position)), "-i", str(source),
+        "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",
         "-vf", "scale=640:360:force_original_aspect_ratio=decrease",
         "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",

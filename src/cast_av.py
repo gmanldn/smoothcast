@@ -428,8 +428,12 @@ class AvMixin:
             if self._preview_pending is not None and not self._preview_timer_id:
                 self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
 
+        media = self.media if self.media is not None and str(self.media.path) == path else None
+        video_index = media.video_stream_index if media is not None else 0
         Async.run(
-            lambda: screenshot.preview_frame(pathlib.Path(path), position),
+            lambda: screenshot.preview_frame(
+                pathlib.Path(path), position, video_stream_index=video_index,
+            ),
             done=finish, failed=lambda _error: finish(),
         )
         return False
