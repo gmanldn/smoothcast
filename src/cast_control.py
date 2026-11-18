@@ -51,8 +51,8 @@ DEFAULTS: dict = {
     "playback_speed": 1.0,
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
-    "window_width": 1400,
-    "window_height": 900,
+    "window_width": 1600,
+    "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
 }
@@ -60,7 +60,7 @@ DEFAULTS: dict = {
 
 CSS = """
 window {
-    font-size: 13px;
+    font-size: 12px;
     background-color: #0e0e10;
     color: #eaeaf0;
 }
@@ -892,10 +892,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
 
-        w = max(1200, int(self.cfg.get("window_width", 1400)))
-        h = max(800, int(self.cfg.get("window_height", 900)))
+        w = max(1400, int(self.cfg.get("window_width", 1600)))
+        h = max(900, int(self.cfg.get("window_height", 1000)))
         self.set_default_size(w, h)
-        self.set_size_request(1200, 800)
+        self.set_size_request(1400, 900)
         try:
             x = int(self.cfg.get("window_x", -1))
             y = int(self.cfg.get("window_y", -1))
