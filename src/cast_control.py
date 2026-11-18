@@ -43,6 +43,7 @@ DEFAULTS: dict = {
     "audio_gain": 6.0,
     "subs": "auto",
     "subs_path": "",
+    "subtitle_track_by_file": {},
     "burn_subs": False,
     "direct": True,
     "autonext": False,
@@ -1516,16 +1517,21 @@ class MainWindow(Adw.ApplicationWindow):
         group("SUBTITLES")
         self.subs_dropdown = dropdown_row(
             "Subtitles",
-            ["Off", "Auto (matching file)", "Pick file…"],
+            ["Off", "Auto (sidecar or MKV)", "Pick .srt / subtitles…", "Embedded (MKV track)"],
             self.cfg["subs"],
             "External subtitles served to the TV",
         )
-        self.subs_dropdown.set_selected({"off": 0, "auto": 1, "pick": 2}.get(self.cfg["subs"], 1))
+        self.subs_dropdown.set_selected({"off": 0, "auto": 1, "pick": 2, "embedded": 3}.get(self.cfg["subs"], 1))
         self.subs_dropdown.connect("notify::selected", self._on_subs_mode)
         self.subs_detail = Gtk.Label(label="", xalign=0.0, wrap=True)
         self.subs_detail.add_css_class("dim-label")
         self.subs_detail.add_css_class("caption")
         body.append(self.subs_detail)
+        self.embedded_dropdown = Gtk.DropDown.new_from_strings(["Preferred embedded track"])
+        self.embedded_dropdown.set_tooltip_text("Select a text subtitle track inside the current MKV")
+        self.embedded_dropdown.set_visible(False)
+        self.embedded_dropdown.connect("notify::selected", self._on_embedded_track)
+        body.append(self.embedded_dropdown)
 
         burn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         burn_row.add_css_class("setting-row")
@@ -2255,12 +2261,22 @@ class MainWindow(Adw.ApplicationWindow):
         if mode == "pick":
             path = self.cfg["subs_path"]
             return f"Using {pathlib.Path(path).name}" if path else "No subtitle file picked yet"
+        if mode == "embedded" and self.media is not None:
+            saved = self.cfg.get("subtitle_track_by_file") or {}
+            selected = saved.get(str(self.media.path), -1) if isinstance(saved, dict) else -1
+            chosen = streamer.preferred_embedded_subtitle(self.media, selected)
+            return f"Embedded: {chosen.label}" if chosen else "No supported embedded text track; choose a .srt file"
         if self.now_playing:
             found = self._cached_subs(self.now_playing)
             if found:
                 return f"Found next to video: {pathlib.Path(found).name}"
             return "No matching subtitle file next to the video"
-        return "Matches .srt/.vtt files named after the video"
+        if self.media is not None and self.media.subtitle_tracks:
+            chosen = streamer.preferred_embedded_subtitle(self.media)
+            if chosen is not None:
+                return f"MKV embedded text available: {chosen.label}"
+            return "Bitmap subtitles are not supported; load an .srt file"
+        return "Matches an external subtitle file or selects a compatible MKV text track"
 
     def _cached_subs(self, path: str) -> str | None:
         cached_path, cached_result = self._subs_cache
@@ -2725,8 +2741,8 @@ class MainWindow(Adw.ApplicationWindow):
             return None
         if mode == "pick":
             path = pathlib.Path(self.cfg["subs_path"]).expanduser()
-            return path if path.is_file() else None
-        return streamer.find_subtitles(video)
+            return path if path.is_file() and path.suffix.lower() in streamer.SUBTITLE_EXTS else None
+        return streamer.find_subtitles(video) if mode == "auto" else None
 
     def _active_subs(self) -> str | None:
         mode = self.cfg["subs"]
@@ -2735,7 +2751,7 @@ class MainWindow(Adw.ApplicationWindow):
         if mode == "pick":
             path = pathlib.Path(self.cfg["subs_path"]).expanduser()
             return str(path) if path.is_file() else None
-        return self._cached_subs(self.now_playing)
+        return self._cached_subs(self.now_playing) if mode == "auto" else None
 
     def seek_to(self, target: float) -> None:
         target = max(0.0, target)
@@ -3340,13 +3356,13 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_subs_mode(self, dropdown, _param) -> None:
         if self._syncing:
             return
-        mapping = {0: "off", 1: "auto", 2: "pick"}
+        mapping = {0: "off", 1: "auto", 2: "pick", 3: "embedded"}
         value = mapping.get(dropdown.get_selected(), "auto")
         if value == "pick":
             dialog = Gtk.FileDialog(title="Choose a subtitle file")
             sub_filter = Gtk.FileFilter()
             sub_filter.set_name("Subtitles")
-            for pattern in ("*.srt", "*.vtt", "*.ttml", "*.ass"):
+            for pattern in ("*.srt", "*.vtt", "*.ttml", "*.ass", "*.ssa"):
                 sub_filter.add_pattern(pattern)
             store = Gio.ListStore.new(Gtk.FileFilter)
             store.append(sub_filter)
@@ -3355,20 +3371,58 @@ class MainWindow(Adw.ApplicationWindow):
             return
         self.cfg["subs"] = value
         save_config(self.cfg)
-        self.toast("Subtitles: " + {"off": "off", "auto": "auto"}[value])
+        self.toast("Subtitles: " + {"off": "off", "auto": "auto", "embedded": "embedded track"}[value])
+        self.subs_detail.set_text(self._subs_status_text())
 
     def _subs_file_chosen(self, dialog, result) -> None:
         try:
             gfile = dialog.open_finish(result)
         except GLib.Error:
-            self.subs_dropdown.set_selected(1)
+            self._syncing = True
+            self.subs_dropdown.set_selected(
+                {"off": 0, "auto": 1, "pick": 2, "embedded": 3}.get(self.cfg["subs"], 1)
+            )
+            self._syncing = False
             return
         path = gfile.get_path()
-        if path:
+        if path and pathlib.Path(path).is_file() and pathlib.Path(path).suffix.lower() in streamer.SUBTITLE_EXTS:
             self.cfg["subs"] = "pick"
             self.cfg["subs_path"] = path
             save_config(self.cfg)
+            self.subs_detail.set_text(self._subs_status_text())
             self.toast(f"Subtitles: {pathlib.Path(path).name}")
+        else:
+            self.toast("Choose an existing .srt, .vtt, .ttml, .ass or .ssa file", error=True)
+
+    def _on_embedded_track(self, dropdown, _param) -> None:
+        if self._syncing or self.media is None or self._preview_path is None:
+            return
+        text_tracks = [track for track in self.media.subtitle_tracks if track.is_text]
+        index = dropdown.get_selected()
+        chosen = text_tracks[index - 1].index if 1 <= index <= len(text_tracks) else -1
+        self.cfg.setdefault("subtitle_track_by_file", {})[self._preview_path] = chosen
+        self.cfg["subs"] = "embedded"
+        save_config(self.cfg)
+        self._syncing = True
+        self.subs_dropdown.set_selected(3)
+        self._syncing = False
+        self.subs_detail.set_text(self._subs_status_text())
+
+    def _update_embedded_choices(self, media: streamer.MediaInfo) -> None:
+        text_tracks = [track for track in media.subtitle_tracks if track.is_text]
+        self._syncing = True
+        try:
+            labels = ["Preferred embedded track"] + [track.label for track in text_tracks]
+            self.embedded_dropdown.set_model(Gtk.StringList.new(labels))
+            saved = self.cfg.get("subtitle_track_by_file") or {}
+            selected = saved.get(str(media.path), -1) if isinstance(saved, dict) else -1
+            position = next((n + 1 for n, track in enumerate(text_tracks)
+                             if track.index == selected), 0)
+            self.embedded_dropdown.set_selected(position)
+            self.embedded_dropdown.set_visible(bool(text_tracks))
+        finally:
+            self._syncing = False
+        self.subs_detail.set_text(self._subs_status_text())
 
     def _on_burn(self, switch, _param) -> None:
         self.cfg["burn_subs"] = switch.get_active()
