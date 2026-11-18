@@ -60,3 +60,23 @@ def timer_expired(deadline: object, now: float) -> bool:
     except (ValueError, TypeError):
         return False
     return math.isfinite(value) and value > 0 and now >= value
+
+
+def direct_session_matches(info: dict | None, saved_title: str) -> bool:
+    """Only restore a saved direct cast when the TV still reports playback.
+
+    catt can exit successfully after initiating a cast, so checking its PID
+    cannot establish whether playback is ongoing after an app restart.
+    """
+    if not isinstance(info, dict):
+        return False
+    state = str(info.get("player_state") or "").upper()
+    if state not in PLAYING_STATES:
+        return False
+    # Some Chromecast receivers omit titles. Reject a known mismatch rather
+    # than attaching our media controls to another app's unrelated stream.
+    current_title = str(info.get("title") or "").strip()
+    saved_title = str(saved_title or "").strip()
+    if current_title and saved_title and current_title.casefold() != saved_title.casefold():
+        return False
+    return True
