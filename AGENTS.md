@@ -89,7 +89,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
 - Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
 - Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
-- All 20 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
+- All 21 modules under `src/` are listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
 - `src/version.py` is the sole version authority; `[project] dynamic = ["version"]` and `[tool.setuptools.dynamic] version = {attr = "version.__version__"}` are required. The `cli:main` entry point exposes the running version without GTK.
 
 ## UI features
