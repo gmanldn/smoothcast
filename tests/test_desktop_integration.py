@@ -53,6 +53,8 @@ class DesktopIntegrationTests(unittest.TestCase):
         script = (Path(__file__).resolve().parents[1] / "smoothcast").read_text()
         self.assertIn('RUNTIME="$DIR/.venv/bin/python"', script)
         self.assertIn('m.version("catt")', script)
+        self.assertIn('re.findall(r"\\d+",m.version("catt"))', script)
+        self.assertIn('for tool in ffmpeg ffprobe ffplay; do', script)
         self.assertIn('"$DIR/setup/bootstrap.py" --target "$TARGET"', script)
 
     def test_runtime_launcher_uses_project_root_for_dock_launch(self):
