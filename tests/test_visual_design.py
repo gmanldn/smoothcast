@@ -83,6 +83,13 @@ class VisualDesignTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.source)
 
+    def test_primary_action_changes_with_selection(self):
+        self.assertIn("self.open_button = open_button", self.source)
+        self.assertIn("ready_to_cast = self.now_playing is not None", self.source)
+        self.assertIn("self.cast_button.set_sensitive(ready_to_cast and online and not busy)", self.source)
+        self.assertIn('self.cast_button.add_css_class("primary-action")', self.source)
+        self.assertIn('self.open_button.add_css_class("primary-action")', self.source)
+
     def test_responsiveness_is_not_sacrificed_for_styling(self):
         for snippet in (
             'self.page_scroller.set_child(self.page)',
