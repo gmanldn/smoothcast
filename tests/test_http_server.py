@@ -57,7 +57,7 @@ class StreamServerTests(unittest.TestCase):
     def test_hls_content_types_and_lengths_are_stable_for_get_and_head(self):
         samples = (
             ("/movie.m3u8", "application/vnd.apple.mpegurl",
-             b"#EXTM3U\\n#EXTINF:4,\\nsegment-00000.ts\\n"),
+             (self.root / "movie.m3u8").read_bytes()),
             ("/segment-00000.ts", "video/mp2t", b"mpeg-ts"),
         )
         # Test the actual HTTP handler, not just a platform MIME lookup.
