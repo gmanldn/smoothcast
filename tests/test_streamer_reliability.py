@@ -65,6 +65,24 @@ class StreamerReliabilityTests(unittest.TestCase):
         session.state = None
         self.assertFalse(session.active())
 
+    def test_direct_start_records_original_audio_for_transcode_resume(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            media = streamer.MediaInfo(path=root / "movie.mp4", duration=90.0)
+            session = streamer.Session()
+            proc = mock.MagicMock()
+            proc.poll.return_value = 0  # catt successfully sent the cast.
+            proc.returncode = 0
+            with mock.patch.object(streamer, "_save_session"), \
+                 mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=proc):
+                session.start_direct(
+                    media, device="TV", title="Film", subs_file=None,
+                    subs_disabled=True,
+                )
+            self.assertEqual(session.state.audio, "original")
+
     def test_cast_route_preferred_over_other_interfaces(self):
         fake = mock.MagicMock()
         fake.__enter__.return_value = fake
