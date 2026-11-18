@@ -60,6 +60,21 @@ Git checkouts perform one background `git pull --ff-only` after the first window
 - **ffmpeg** (`sudo apt install ffmpeg` or equivalent)
 - **catt** — installed automatically into the bundled venv on first run
 
+## Testing
+
+Pure-logic tests run without GTK or a display:
+
+```sh
+python3 -m pytest
+```
+
+The GTK UI is verified by the self-test (needs a display, e.g. Xvfb):
+
+```sh
+DISPLAY=:99 .venv/bin/python src/cast_control.py --self-test
+# prints SELFTEST OK
+```
+
 ## Architecture
 
 ```
@@ -73,7 +88,10 @@ smoothcast/
 │   ├── streamer.py     # HLS transcode, direct play, ffmpeg chains, auto-trim
 │   ├── audio_monitor.py# fast precompute + lookup-by-position level analysis
 │   ├── castctl.py      # catt CLI wrapper
-│   └── server.py       # HLS static file server
+│   ├── server.py       # HLS static file server
+│   ├── error_log.py    # ring-buffer error log (10k lines, gitignored)
+│   ├── position_tracker.py — playback position estimation (no GTK dep)
+│   └── utils.py        # pure text helpers (pretty_title)
 └── data/
     ├── cast-control.png
     └── (desktop entry generated into user XDG applications directory)
@@ -86,6 +104,14 @@ The audio monitor runs a fast ffmpeg pass (no `-re`) that splits the audio into 
 - **OUT** — after `volume → acompressor → alimiter` chain
 
 The `LevelSample` carries both, and `gain_db = out_rms - in_rms` shows how much the chain is lifting or pulling. The meter eases displayed values toward each new target with attack (0.55) / release (0.16) ballistics at ~40 fps, so bars glide smoothly without flicker.
+
+## Master meter
+
+A MASTER bouncing-line meter sits below the PUMP strip in the LevelMeter widget. Its height is the post-compressor output level (out_rms), easing with attack/release ballistics so it bounces rather than jumps. It shows at a glance how close the played-back signal is to 0 dBFS: white below -18 dB, yellow -18..-6 dB, red at -6 dB and above, with a tip glow near -3 dB. A faint 0 dBFS ceiling notch marks the top of the scale. The master meter only reflects the transcoded output; direct play passes audio untouched.
+
+## Error log
+
+Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log`, a ring buffer capped at 10,000 lines (oldest dropped). The file is gitignored and lives at `~/.config/cast-control/errors.log`.
 
 ## License
 

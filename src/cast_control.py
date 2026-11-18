@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 import sys
 import threading
 import time
@@ -23,6 +22,7 @@ import screenshot
 import playback_state
 import update_control
 import version
+import error_log
 
 APP_ID = "local.cast-control"
 APP_NAME = "SmoothCast"
@@ -283,10 +283,8 @@ def save_config(cfg: dict) -> None:
         pass
 
 
-def pretty_title(path: pathlib.Path) -> str:
-    stem = re.sub(r"[._]+", " ", path.stem).strip()
-    stem = re.sub(r"\s+(19|20)\d\d\s*$", "", stem).strip()
-    return stem or path.name
+from position_tracker import PositionTracker
+from utils import pretty_title
 
 
 def fmt_time(seconds: float | None) -> str:
@@ -300,6 +298,7 @@ class Async:
             try:
                 result = work()
             except Exception as exc:
+                error_log.log("Async.run failure", exc_info=True)
                 if failed is not None:
                     GLib.idle_add(failed, str(exc))
                 return
@@ -309,61 +308,7 @@ class Async:
         threading.Thread(target=runner, daemon=True).start()
 
 
-class PositionTracker:
-    def __init__(self) -> None:
-        self.known = False
-        self.duration = 0.0
-        self._base = 0.0
-        self._epoch = time.monotonic()
-        self._playing = False
-        self._paused_accum = 0.0
-        self._pause_started: float | None = None
-
-    def start(self, base: float, duration: float, playing: bool = True) -> None:
-        self.known = True
-        self.duration = duration or self.duration
-        self._base = max(0.0, base)
-        self._epoch = time.monotonic()
-        self._playing = playing
-        self._paused_accum = 0.0
-        self._pause_started = None
-
-    def set_state(self, playing: bool) -> None:
-        if playing == self._playing:
-            return
-        now = time.monotonic()
-        if playing:
-            if self._pause_started is not None:
-                self._paused_accum += now - self._pause_started
-                self._pause_started = None
-        else:
-            self._pause_started = now
-        self._playing = playing
-
-    def device_update(self, current: float, duration: float | None) -> None:
-        self.start(current, duration or self.duration, self._playing)
-
-    def rebase(self, value: float) -> None:
-        self.start(value, self.duration, self._playing)
-
-    def value(self, now: float | None = None) -> float | None:
-        if not self.known:
-            return None
-        now = now or time.monotonic()
-        paused = self._paused_accum
-        if self._pause_started is not None:
-            paused += now - self._pause_started
-        value = self._base + (now - self._epoch - paused)
-        if self.duration:
-            value = min(value, self.duration)
-        return max(0.0, value)
-
-    def clear(self) -> None:
-        self.known = False
-        self.duration = 0.0
-        self._playing = False
-        self._paused_accum = 0.0
-        self._pause_started = None
+from position_tracker import PositionTracker
 
 
 class SeekBar(Gtk.DrawingArea):
@@ -808,7 +753,7 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._BLUE)
         cr.move_to(gx, pump_y + 10.0)
         cr.show_text(gain_text)
-        # master bouncing line meter — shows how close *output* is to 0 dBFS
+# master bouncing line meter — shows how close *output* is to 0 dBFS
         master_y = pump_y + 16.0
         cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
         cr.move_to(0, master_y + self._MASTER_H - 3.0)
@@ -831,6 +776,12 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._WHITE)
         cr.move_to(mx, master_y + self._MASTER_H / 2)
         cr.show_text(master_text)
+# master bouncing-line meter
+        master_y = pump_y + 12.0 + self._ROW_GAP
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
+        cr.move_to(0, master_y + self._MASTER_H - 3.5)
+        cr.show_text("MASTER")
+        self._draw_master(cr, bar_x, master_y, bar_w, self._MASTER_H)
 
     @staticmethod
     def _rounded(cr, x, y, width, height, radius) -> None:
@@ -1117,6 +1068,8 @@ class MainWindow(Adw.ApplicationWindow):
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Save playlist", "app.save-playlist")
+        playback.append("Load playlist", "app.load-playlist")
         playback.append("Theater mode", "app.theater")
         playback.append("Auto-shutdown after playlist", "app.auto-shutdown")
         playback.append("Auto theme by time", "app.auto-theme")
@@ -2470,7 +2423,26 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.fullscreen()
 
-    def _toggle_loop(self) -> None:
+    def _save_playlist(self) -> None:
+        if not self.queue:
+            self.toast("Queue is empty", error=True)
+            return
+        out = pathlib.Path.home() / "smoothcast_playlist.m3u"
+        out.write_text("#EXTM3U\n" + "\n".join(self.queue) + "\n")
+        self.toast(f"Playlist saved: {out.name}")
+
+    def _load_playlist(self) -> None:
+        path = pathlib.Path.home() / "smoothcast_playlist.m3u"
+        if not path.is_file():
+            self.toast("No saved playlist", error=True)
+            return
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                if line not in self.queue:
+                    self.queue.append(line)
+        self.queue_draw()
+        self.toast("Playlist loaded")
         self.cfg["loop"] = not self.cfg.get("loop", False)
         save_config(self.cfg)
         self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
@@ -3078,6 +3050,7 @@ class CastControlApp(Adw.Application):
             Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(_data_dir))
         except Exception:
             pass
+        error_log.install_excepthook()
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
@@ -3101,6 +3074,8 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("save-playlist", lambda *a: self._window()._save_playlist())
+        simple("load-playlist", lambda *a: self._window()._load_playlist())
         simple("theater", lambda *a: self._window()._toggle_theater())
         simple("auto-shutdown", lambda *a: self._window()._toggle_auto_shutdown())
         simple("auto-theme", lambda *a: self._window()._toggle_auto_theme())
