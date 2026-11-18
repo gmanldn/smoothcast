@@ -108,7 +108,7 @@ class CaptureMappingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             src = Path(folder) / "movie.mkv"
             src.write_bytes(b"mock")
-            completed = subprocess.CompletedProcess([], 0, b"\\xff\\xd8sample", b"")
+            completed = subprocess.CompletedProcess([], 0, b"\xff\xd8sample", b"")
             with mock.patch.object(screenshot.subprocess, "run", return_value=completed) as ff:
                 screenshot.preview_frame(src, 1.0, video_stream_index=1)
             args = ff.call_args.args[0]
@@ -155,7 +155,7 @@ class RealMkvArtworkTests(unittest.TestCase):
             self.assertEqual(media.resolution, "160x90")
             jpeg = screenshot.preview_frame(movie, 1.0,
                                             video_stream_index=media.video_stream_index)
-            self.assertTrue(jpeg.startswith(b"\\xff\\xd8"))
+            self.assertTrue(jpeg.startswith(b"\xff\xd8"))
             shot = screenshot.capture_frame(movie, 1.0, root / "captures",
                                             video_stream_index=media.video_stream_index)
             self.assertGreater(shot.stat().st_size, 100)
