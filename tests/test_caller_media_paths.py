@@ -45,12 +45,12 @@ class CallerMediaPathTests(unittest.TestCase):
                 observed["args"] = command
                 observed["cwd_at_exec"] = os.getcwd()
 
-            with mock.patch.object(launch, "ROOT", checkout), \\
-                 mock.patch.object(launch, "python_path", return_value=Path("/venv/python")), \\
-                 mock.patch.object(launch, "runtime_environment", return_value={}), \\
-                 mock.patch.object(launch.os, "execvpe", side_effect=execvpe), \\
-                 mock.patch.object(launch.os, "chdir") as chdir, \\
-                 mock.patch.object(launch.Path, "cwd", return_value=caller), \\
+            with mock.patch.object(launch, "ROOT", checkout), \
+                 mock.patch.object(launch, "python_path", return_value=Path("/venv/python")), \
+                 mock.patch.object(launch, "runtime_environment", return_value={}), \
+                 mock.patch.object(launch.os, "execvpe", side_effect=execvpe), \
+                 mock.patch.object(launch.os, "chdir") as chdir, \
+                 mock.patch.object(launch.Path, "cwd", return_value=caller), \
                  mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
                 launch.main(["film.mkv"])
             self.assertEqual(observed["args"][-1], str(caller / "film.mkv"))
