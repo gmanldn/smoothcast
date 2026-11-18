@@ -41,7 +41,7 @@ class PlaylistTests(unittest.TestCase):
             playlist = old / "my queue.m3u"
             playlist_control.save_playlist(playlist, [str(b), str(a)])
             saved = playlist.read_text()
-            self.assertIn("movies/second.mp4", saved.replace("\\\\", "/"))
+            self.assertIn("movies/second.mp4", saved.replace("\\", "/"))
             self.assertNotIn(str(old), saved)
             moved = base / "renamed"
             shutil.move(str(old), str(moved))
@@ -67,7 +67,7 @@ class PlaylistTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             path = Path(folder) / "playlist.m3u"
             path.write_text("existing queue", encoding="utf-8")
-            for bad in ("film\\nother.mkv", "film\\rother.mkv", "film\\0other.mkv"):
+            for bad in ("film\nother.mkv", "film\rother.mkv", "film\0other.mkv"):
                 with self.subTest(bad=repr(bad)):
                     with self.assertRaises(playlist_control.PlaylistError):
                         playlist_control.save_playlist(path, [bad])
