@@ -10,23 +10,25 @@
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Checkout launcher: `./smoothcast` (Linux/macOS) bootstraps a project-local `.venv` and hands off to `setup/launch.py`. On Windows, `python sc.py` delegates to `setup/launch.py` after `setup/winsetup.bat`. Never leave shell-generation commands in the launcher, use unset variables, or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported launcher paths tested.
-- Run directly: `DISPLAY=:99 python3 src/cast_control.py`
-- Self-test: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`)
+- **Do not launch the real GUI during normal test cycles.** Never run `./smoothcast`,
+  `smoothcast`, `python3 src/cast_control.py`, or `gtk-launch` as a test.
+- **Default tests:** `python3 -m pytest -q tests` and `python3 -m compileall -q src scripts setup tests`;
+  these are headless and must never open, focus, or activate the user's window.
 
 ## Display / screenshots
-- Use `Xvfb :99 -screen 0 1280x800x24 -ac` for virtual display.
-- Capture window by ID with Xlib + PIL:
-  ```python
-  from Xlib import X, display
-  from PIL import Image
-  d = display.Display(':99')
-  window = d.create_resource_object('window', WINDOW_ID)
-  wgeom = window.get_geometry()
-  image = window.get_image(wgeom.x, wgeom.y, wgeom.width, wgeom.height, X.ZPixmap, 0xffffffff)
-  img = Image.frombytes('RGB', (wgeom.width, wgeom.height), image.data, 'raw', 'BGRX')
-  img.save('/tmp/app.png')
-  ```
-- Find window ID: `DISPLAY=:99 xdotool search --all --name ""`
+- **Explicit opt-in GTK smoke only:** `python3 scripts/test_gui_isolated.py`.
+  Requires `Xvfb`, `xvfb-run` and `xauth`; missing dependencies cause
+  a safe refusal (no fallback to the user's `DISPLAY`).
+- The runner creates an isolated X server, Xauthority, HOME/XDG data and
+  config directories, disconnects Wayland/session DBus, uses a non-unique
+  GTK instance and terminates the entire process group after a bounded run.
+- Never use a user's active `DISPLAY` or `WAYLAND_DISPLAY` for UI tests.
+  Bare `--self-test` is deliberately refused without the isolated runner.
+  Do not repeatedly run the smoke test as a proxy for ordinary regressions.
+- For screenshots, create an **additional isolated virtual-display workflow**
+  with its own Xauthority; never use `xdotool` or screenshot commands targeting
+  the active user desktop. Do not change the real dock, window focus or casting
+  state as part of tests.
 
 ## Key files
 - `src/cast_control.py` — main GTK app, LevelMeter widget, MainWindow, version import
@@ -70,7 +72,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Testing (portable, GTK-free)
 - Run: `python3 -m pytest` (from repo root) — no display needed.
 - Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
-- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`).
+- GTK wiring is checked without starting the app. Optional GUI smoke testing must run via `python3 scripts/test_gui_isolated.py` and only on an isolated Xvfb display; never call `--self-test` directly from pytest or a developer's desktop.
 - All modules must `compileall` clean; self-test must print `SELFTEST OK`.
 - Installer contract: `python3 -m unittest discover -s tests -p 'test_setup_bootstrap.py' -v`; matrix must pass on Ubuntu, macOS and Windows without installing native GUI dependencies.
 
@@ -82,7 +84,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
 - **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
 - **User-visible:** `smoothcast --version`, `sc --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
-- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version; the update notice distinguishes that from a newer *downloaded* version and announces that a restart is required.
+- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version and requests restart **only when a newer release version was downloaded**, never for changes within the same version.
 - **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
