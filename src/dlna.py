@@ -8,6 +8,7 @@ Only one explicit local file is served per session, under an unguessable URL.
 from __future__ import annotations
 
 import atexit
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +33,7 @@ SERVICE_PREFIX = "urn:schemas-upnp-org:service:"
 MAX_DESCRIPTION = 512 * 1024
 MAX_SOAP_RESPONSE = 128 * 1024
 MAX_RENDERERS = 64
+MAX_DISCOVERY_WORKERS = 8
 CHUNK = 128 * 1024
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 MEDIA_TYPE = "video/mp4"
@@ -108,9 +110,9 @@ def _url(url: str, *, expected_host: str = "") -> tuple[str, int, str]:
     return host, port, target
 
 
-def _http_get(url: str, *, expected_host: str) -> bytes:
+def _http_get(url: str, *, expected_host: str, timeout: float = 4.0) -> bytes:
     host, port, target = _url(url, expected_host=expected_host)
-    conn = HTTPConnection(host, port, timeout=4)
+    conn = HTTPConnection(host, port, timeout=max(0.05, min(4.0, timeout)))
     try:
         conn.request("GET", target, headers={"User-Agent": "SmoothCast/UPnP", "Connection": "close"})
         resp = conn.getresponse()
@@ -182,13 +184,22 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
 
 
 def discover(timeout: float = 4.0) -> list[Renderer]:
-    """Discover MediaRenderers by SSDP; bounded by deadline and device count."""
+    """Find LAN MediaRenderers within one end-to-end scan deadline.
+
+    SSDP discovery uses at most half the budget (capped at two seconds).
+    Description GETs run concurrently and must finish before the remaining
+    deadline; a slow or malformed receiver cannot delay every other TV.
+    In-flight GETs have individual socket timeouts and never publish results
+    after the scan has returned.
+    """
     query = ("M-SEARCH * HTTP/1.1\r\n"
              "HOST: 239.255.255.250:1900\r\n"
              'MAN: "ssdp:discover"\r\n'
              "MX: 2\r\n"
              f"ST: {DEVICE_TYPE}\r\n\r\n").encode("ascii")
-    deadline = time.monotonic() + max(0.2, min(12.0, timeout))
+    budget = max(0.2, min(12.0, timeout))
+    deadline = time.monotonic() + budget
+    ssdp_end = time.monotonic() + min(2.0, budget * 0.5)
     locations: dict[str, str] = {}
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -196,10 +207,10 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
             sock.bind(("0.0.0.0", 0))
             sock.sendto(query, SSDP_ADDRESS)
             while len(locations) < MAX_RENDERERS:
-                remaining = deadline - time.monotonic()
+                remaining = min(ssdp_end, deadline) - time.monotonic()
                 if remaining <= 0:
                     break
-                sock.settimeout(min(0.5, remaining))
+                sock.settimeout(min(0.25, remaining))
                 try:
                     payload, addr = sock.recvfrom(8192)
                 except socket.timeout:
@@ -207,12 +218,12 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
                 sender = addr[0]
                 if not _private_host(sender):
                     continue
-                header = {}
+                headers = {}
                 for line in payload.decode("iso-8859-1", "replace").splitlines():
                     name, sep, value = line.partition(":")
                     if sep:
-                        header[name.strip().lower()] = value.strip()
-                location = header.get("location", "")
+                        headers[name.strip().lower()] = value.strip()
+                location = headers.get("location", "")
                 try:
                     _url(location, expected_host=sender)
                 except DlnaError:
@@ -220,18 +231,42 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
                 locations.setdefault(location, sender)
     except OSError as exc:
         raise DlnaError(f"SSDP multicast discovery failed: {exc}") from exc
-    devices: list[Renderer] = []
-    seen = set()
-    for location, sender in locations.items():
+
+    if not locations or time.monotonic() >= deadline:
+        return []
+
+    def inspect(location: str, sender: str) -> Renderer | None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
         try:
-            item = parse_renderer(_http_get(location, expected_host=sender),
-                                  location, sender)
+            xml = _http_get(location, expected_host=sender, timeout=remaining)
+            return parse_renderer(xml, location, sender)
         except DlnaError:
-            continue
-        if (item.host, item.transport_url) not in seen:
-            devices.append(item)
-            seen.add((item.host, item.transport_url))
-    return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
+            return None
+
+    pool = ThreadPoolExecutor(max_workers=min(MAX_DISCOVERY_WORKERS, len(locations)))
+    try:
+        pending = [pool.submit(inspect, location, sender)
+                   for location, sender in locations.items()]
+        completed, waiting = wait(pending, timeout=max(0.0, deadline - time.monotonic()))
+        for future in waiting:
+            future.cancel()
+        devices: list[Renderer] = []
+        seen = set()
+        for future in completed:
+            try:
+                item = future.result()
+            except Exception:
+                continue  # An invalid LAN responder must not break discovery.
+            if item is not None and (item.host, item.transport_url) not in seen:
+                devices.append(item)
+                seen.add((item.host, item.transport_url))
+        return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
+    finally:
+        # Do not wait for unresponsive receivers. Each outstanding GET still
+        # has a bounded socket timeout; its result is deliberately discarded.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _upnp_fault(data: bytes) -> str:

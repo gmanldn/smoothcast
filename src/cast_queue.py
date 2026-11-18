@@ -443,7 +443,11 @@ class QueueMixin:
 
     def scan_devices(self) -> None:
         if self.scan_busy:
+            # Queue one refresh, rather than publishing the older in-flight
+            # result or launching unbounded simultaneous SSDP scans.
+            self._scan_again = True
             return
+        self._scan_again = False
         self.scan_busy = True
         self.device_detail.set_text("Scanning Cast and DLNA receivers…")
 
@@ -463,7 +467,27 @@ class QueueMixin:
                 raise RuntimeError("; ".join(errors))
             return cast_devices, dlna_devices
 
-        Async.run(work, done=self._scan_done, failed=self._scan_failed)
+        def completed(devices):
+            if self._closing:
+                self.scan_busy = False
+                return
+            if self._scan_again:
+                self.scan_busy = False
+                self.scan_devices()
+                return
+            self._scan_done(devices)
+
+        def failed(message):
+            if self._closing:
+                self.scan_busy = False
+                return
+            if self._scan_again:
+                self.scan_busy = False
+                self.scan_devices()
+                return
+            self._scan_failed(message)
+
+        Async.run(work, done=completed, failed=failed)
 
 
     def _initial_scan(self) -> bool:

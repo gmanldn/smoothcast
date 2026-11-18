@@ -117,6 +117,7 @@ class LifecycleMixin:
         self._dlna_cancel = None
         self.poll_busy = False
         self.scan_busy = False
+        self._scan_again = False
         self.queue = []
         self.queue_durations = {}
         self._preview_generation += 1
