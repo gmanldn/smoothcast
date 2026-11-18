@@ -197,8 +197,11 @@ class DlnaPrepareTests(unittest.TestCase):
             )
             def make_file(args, **kwargs):
                 Path(args[-1]).write_bytes(b"simulated mp4")
-                return subprocess.CompletedProcess(args, 0, b"", b"")
-            with mock.patch.object(dlna.subprocess, "run", side_effect=make_file) as run:
+                process = mock.MagicMock()
+                process.poll.return_value = 0
+                process.returncode = 0
+                return process
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as run:
                 self.assertEqual(dlna.prepare_mp4(media, target), target)
             args = run.call_args.args[0]
             self.assertEqual(args[args.index("-c:v") + 1], "copy")
@@ -215,8 +218,11 @@ class DlnaPrepareTests(unittest.TestCase):
             )
             def make_file(args, **kwargs):
                 Path(args[-1]).write_bytes(b"simulated mp4")
-                return subprocess.CompletedProcess(args, 0, b"", b"")
-            with mock.patch.object(dlna.subprocess, "run", side_effect=make_file) as run:
+                process = mock.MagicMock()
+                process.poll.return_value = 0
+                process.returncode = 0
+                return process
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as run:
                 dlna.prepare_mp4(media, target)
             args = run.call_args.args[0]
             self.assertIn("libx264", args)
@@ -224,6 +230,32 @@ class DlnaPrepareTests(unittest.TestCase):
             self.assertIn("aac", args)
             self.assertIn("scale=w=1920:h=1080:force_original_aspect_ratio=decrease", args[-6:] if False else " ".join(args))
             self.assertIn("30", args)
+
+    def test_cancelled_ffmpeg_is_terminated_and_partial_file_removed(self):
+        import threading
+        with tempfile.TemporaryDirectory() as dirname:
+            base = Path(dirname)
+            source = base / "movie.mkv"
+            source.write_bytes(b"input")
+            output = base / "out.mp4"
+            media = streamer.MediaInfo(
+                path=source, vcodec="hevc", acodec="dts",
+                width=1280, height=720, duration=30,
+            )
+            cancel = threading.Event()
+            process = mock.MagicMock()
+            process.poll.return_value = None
+
+            def launch(args, **kwargs):
+                output.write_bytes(b"partial MP4")
+                cancel.set()
+                return process
+
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=launch):
+                with self.assertRaisesRegex(dlna.DlnaError, "cancelled"):
+                    dlna.prepare_mp4(media, output, cancel=cancel)
+            process.terminate.assert_called_once()
+            self.assertFalse(output.exists())
 
 if __name__ == "__main__":
     unittest.main()
