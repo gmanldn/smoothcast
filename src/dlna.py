@@ -7,12 +7,11 @@ Only one explicit local file is served per session, under an unguessable URL.
 """
 from __future__ import annotations
 
+import atexit
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
-import mimetypes
-import os
 from pathlib import Path
 import re
 import secrets
@@ -36,6 +35,29 @@ MAX_RENDERERS = 64
 CHUNK = 128 * 1024
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 MEDIA_TYPE = "video/mp4"
+
+_live_encoders: set[subprocess.Popen] = set()
+_encoder_lock = threading.Lock()
+
+
+def _stop_encoders_on_exit() -> None:
+    """Do not orphan an FFmpeg full-film conversion when the GUI exits."""
+    with _encoder_lock:
+        children = list(_live_encoders)
+    for proc in children:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+        except OSError:
+            pass
+
+
+atexit.register(_stop_encoders_on_exit)
 
 
 class DlnaError(RuntimeError):
@@ -437,13 +459,16 @@ class ProgressiveFileServer:
 
 def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
-                audio_track: int = 0) -> Path:
+                audio_track: int = 0,
+                cancel: threading.Event | None = None) -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
     overlays or >1080p/30 sources need an offline encode, which can be slow.
     """
-    from streamer import Session, StreamError
+    from streamer import Session
+    if cancel is not None and cancel.is_set():
+        raise DlnaError("DLNA preparation cancelled")
     source = Path(media.path)
     if not source.is_file():
         raise DlnaError("Local film no longer exists")
@@ -485,15 +510,47 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         if media.fps > 30.01:
             args += ["-r", "30"]
     args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
-    try:
-        result = subprocess.run(args, capture_output=True, timeout=7200, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        output.unlink(missing_ok=True)
-        raise DlnaError(f"FFmpeg could not prepare DLNA media: {exc}") from exc
-    if result.returncode or not output.is_file() or output.stat().st_size == 0:
-        output.unlink(missing_ok=True)
-        message = result.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise DlnaError((message[-1] if message else "DLNA MP4 preparation failed")[-300:])
+    # A full-film conversion is slow. Poll the child process so the UI's
+    # Cancel/Stop button can abort immediately and no orphan FFmpeg remains.
+    with tempfile.TemporaryFile() as error_log:
+        try:
+            proc = subprocess.Popen(
+                args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=error_log, start_new_session=True,
+            )
+        except OSError as exc:
+            output.unlink(missing_ok=True)
+            raise DlnaError(f"Cannot start FFmpeg: {exc}") from exc
+        with _encoder_lock:
+            _live_encoders.add(proc)
+        deadline = time.monotonic() + min(7200, max(180, media.duration * 3 + 120))
+        try:
+            try:
+                while proc.poll() is None:
+                    if cancel is not None and cancel.is_set():
+                        raise DlnaError("DLNA preparation cancelled")
+                    if time.monotonic() > deadline:
+                        raise DlnaError("FFmpeg exceeded the DLNA preparation time limit")
+                    time.sleep(0.2)
+            except BaseException:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+                except (OSError, subprocess.TimeoutExpired):
+                    proc.kill()
+                    proc.wait(timeout=3)
+                output.unlink(missing_ok=True)
+                raise
+        finally:
+            with _encoder_lock:
+                _live_encoders.discard(proc)
+        if proc.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
+            output.unlink(missing_ok=True)
+            error_log.seek(0, 2)
+            size = error_log.tell()
+            error_log.seek(max(0, size - 2048))
+            message = error_log.read().decode("utf-8", "replace").strip().splitlines()
+            raise DlnaError((message[-1] if message else "DLNA MP4 preparation failed")[-300:])
     return output
 
 
@@ -503,6 +560,7 @@ class Session:
     def __init__(self):
         self.state = None
         self.renderer: Renderer | None = None
+        self._owns_renderer = False
         self.http: ProgressiveFileServer | None = None
         self.tmp: tempfile.TemporaryDirectory | None = None
         self.used_software_fallback = True
@@ -523,7 +581,8 @@ class Session:
 
     def start(self, media, *, renderer: Renderer, local_ip: str, offset: float,
               title: str, subtitle_file: Path | None = None,
-              embedded_subtitle_index: int | None = None, audio_track: int = 0) -> None:
+              embedded_subtitle_index: int | None = None, audio_track: int = 0,
+              cancel: threading.Event | None = None) -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
@@ -543,10 +602,13 @@ class Session:
                     media, Path(self.tmp.name) / "movie.mp4",
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
-                    audio_track=audio_track,
+                    audio_track=audio_track, cancel=cancel,
                 )
+            if cancel is not None and cancel.is_set():
+                raise DlnaError("DLNA preparation cancelled")
             self.http = ProgressiveFileServer(path, receiver_ip=renderer.host)
             set_uri(renderer, self.http.url(local_ip), title)
+            self._owns_renderer = True
             play(renderer)
             if offset > 0:
                 seek(renderer, offset)
@@ -561,11 +623,11 @@ class Session:
                 started_at=time.time(),
             )
         except Exception:
-            self.stop(renderer.key, send_stop=True)
+            self.stop(renderer.key, send_stop=self._owns_renderer)
             raise
 
     def stop(self, _device: str, *, send_stop: bool = True) -> None:
-        if send_stop and self.renderer is not None:
+        if send_stop and self._owns_renderer and self.renderer is not None:
             try:
                 stop(self.renderer)
             except DlnaError:
@@ -577,4 +639,5 @@ class Session:
             self.tmp.cleanup()
             self.tmp = None
         self.state = None
+        self._owns_renderer = False
         self.renderer = None

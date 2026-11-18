@@ -10,23 +10,25 @@
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Checkout launcher: `./smoothcast` (Linux/macOS) bootstraps a project-local `.venv` and hands off to `setup/launch.py`. On Windows, `python sc.py` delegates to `setup/launch.py` after `setup/winsetup.bat`. Never leave shell-generation commands in the launcher, use unset variables, or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported launcher paths tested.
-- Run directly: `DISPLAY=:99 python3 src/cast_control.py`
-- Self-test: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`)
+- **Do not launch the real GUI during normal test cycles.** Never run `./smoothcast`,
+  `smoothcast`, `python3 src/cast_control.py`, or `gtk-launch` as a test.
+- **Default tests:** `python3 -m pytest -q tests` and `python3 -m compileall -q src scripts setup tests`;
+  these are headless and must never open, focus, or activate the user's window.
 
 ## Display / screenshots
-- Use `Xvfb :99 -screen 0 1280x800x24 -ac` for virtual display.
-- Capture window by ID with Xlib + PIL:
-  ```python
-  from Xlib import X, display
-  from PIL import Image
-  d = display.Display(':99')
-  window = d.create_resource_object('window', WINDOW_ID)
-  wgeom = window.get_geometry()
-  image = window.get_image(wgeom.x, wgeom.y, wgeom.width, wgeom.height, X.ZPixmap, 0xffffffff)
-  img = Image.frombytes('RGB', (wgeom.width, wgeom.height), image.data, 'raw', 'BGRX')
-  img.save('/tmp/app.png')
-  ```
-- Find window ID: `DISPLAY=:99 xdotool search --all --name ""`
+- **Explicit opt-in GTK smoke only:** `python3 scripts/test_gui_isolated.py`.
+  Requires `Xvfb`, `xvfb-run` and `xauth`; missing dependencies cause
+  a safe refusal (no fallback to the user's `DISPLAY`).
+- The runner creates an isolated X server, Xauthority, HOME/XDG data and
+  config directories, disconnects Wayland/session DBus, uses a non-unique
+  GTK instance and terminates the entire process group after a bounded run.
+- Never use a user's active `DISPLAY` or `WAYLAND_DISPLAY` for UI tests.
+  Bare `--self-test` is deliberately refused without the isolated runner.
+  Do not repeatedly run the smoke test as a proxy for ordinary regressions.
+- For screenshots, create an **additional isolated virtual-display workflow**
+  with its own Xauthority; never use `xdotool` or screenshot commands targeting
+  the active user desktop. Do not change the real dock, window focus or casting
+  state as part of tests.
 
 ## Key files
 - `src/cast_control.py` — main GTK app, LevelMeter widget, MainWindow, version import
@@ -41,6 +43,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/utils.py` — pure text helpers (pretty_title)
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH)
 - `src/cli.py` — GTK-free console entry point; reports --version before importing the GUI
+- `src/subtitle_encoding.py` — bounded, strict SRT encoding detection (UTF-8, UTF-16, cp1252) and atomic private UTF-8 staging
+- `src/preflight.py` — bounded MKV software decoder dry-run, validated 0.8 s sample, no receiver commands
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
 - `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
 - `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
@@ -60,7 +64,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - The audio monitor (`audio_monitor.py`) runs a separate read-only ffmpeg pass for metering; it never touches playback.
 - Audio track identity is relative to audio streams: `0:a:N`. `MediaInfo.audio_streams` records languages, titles, codecs, layouts; `SessionState.audio_track_index` carries an explicit per-file selection through HLS restart and VAAPI fallback. When explicitly chosen, do not use direct Cast passthrough; select the same track for the read-only audio meter.
 - UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
-- Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks the user to restart after playback. The network must never delay startup.
+- Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks for restart **only when the downloaded semantic release differs from the running release**. Do not repeatedly prompt to restart for same-version commits. The network must never delay startup.
 - Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
 - On a **new primary application startup only**, `startup_cleanup.cleanup_before_window()` runs synchronously with a bounded SIGTERM grace period **before** MainWindow creates session, meter and polling workers. It must be skipped for `--self-test`, existing-instance activation, and non-Linux process discovery. Never indiscriminately `pkill ffmpeg` or `pkill python`: match same-user `/proc` argv plus starttime to prevent PID reuse accidents. Preserve a verified stream when `keep_streaming` is enabled, and never send a startup stop command to the TV.
 - Graceful error handling: `main()` wraps `app.run()` in try/except.
@@ -68,7 +72,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Testing (portable, GTK-free)
 - Run: `python3 -m pytest` (from repo root) — no display needed.
 - Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
-- GTK UI (`cast_control.py`) is covered by the self-test which builds the full window: `DISPLAY=:99 smoothcast --self-test` (or `python3 src/cast_control.py --self-test`).
+- GTK wiring is checked without starting the app. Optional GUI smoke testing must run via `python3 scripts/test_gui_isolated.py` and only on an isolated Xvfb display; never call `--self-test` directly from pytest or a developer's desktop.
 - All modules must `compileall` clean; self-test must print `SELFTEST OK`.
 - Installer contract: `python3 -m unittest discover -s tests -p 'test_setup_bootstrap.py' -v`; matrix must pass on Ubuntu, macOS and Windows without installing native GUI dependencies.
 
@@ -80,7 +84,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
 - **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
 - **User-visible:** `smoothcast --version`, `sc --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
-- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version; the update notice distinguishes that from a newer *downloaded* version and announces that a restart is required.
+- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version and requests restart **only when a newer release version was downloaded**, never for changes within the same version.
 - **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
 
 ## Packaging
@@ -113,7 +117,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
 11. A non-blocking background `git pull --ff-only` runs after the first window is visible; a restart applies new Python code.
 12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
-13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, with a fixed working directory. Never assume `~/.local/bin` is on the desktop session PATH. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
+13. Dock: `scripts/install_desktop.py` must parse `--quiet` and `--pin` with valid `argparse` actions; the GUI launcher invokes `--quiet` on every startup. Its canonical dock Exec must resolve to the *absolute checkout launcher*, never a bare PATH command or stale pip installation. The installer registers the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, with a fixed working directory. Never assume `~/.local/bin` is on the desktop session PATH. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
 14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
 15. Playback transitions: FFmpeg `-progress` timestamps begin at zero after `-ss` and must be converted to absolute time by `playback_state.absolute_encoded_position`. Queue progression is triggered by a real device PLAYING/PAUSED→IDLE transition, not an encoder/catt exit. Previous-session cleanup must finish before starting Up Next. Pure regression tests live in `tests/test_playback_state.py`.
 16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.
@@ -132,7 +136,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 29. Device ownership and reconnection: `catt cast` may exit after starting TV playback; direct session ownership lasts until explicit stop or confirmed device completion. The transcoder may exit before buffered TV playback ends: do not disable Stop/Pause because the FFmpeg PID finished. Ignore stale responses for a previously selected TV; prohibit switching outputs while an owned session is live. Saved direct casts must pass `playback_state.direct_session_matches` before presenting them as reconnected. Portable CI syntax/tests: `.github/workflows/verify.yml`.
 
-30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Reconfirm any prior `GtkBox min > natural` warnings on the running desktop before claiming full resolution.
+30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Investigate any remaining `GtkBox min > natural` warnings only through an explicitly isolated virtual-display workflow; never open the user's desktop during test cycles.
 
 31. Clean startup recovery (v1.0.45): `CastControlApp.do_startup()` scans only the current user's verified old SmoothCast FFmpeg (HLS encoder and audio analysis), ffplay preview and HLS server commands before constructing a window. Recheck PID **start ticks and full argv** before signalling with bounded SIGTERM/SIGKILL. Remove stale playlist, segments, progress and orphaned `cast-mon-*` scratch directories without disturbing logs or user media. If `keep_streaming` is enabled, preserve saved live direct casts and verified HLS server/encoder processes for `_adopt_session()`. Single-instance repeat activation and self-tests MUST NEVER run cleanup. Tests: `tests/test_startup_cleanup.py`.
 
@@ -144,7 +148,9 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 - `src/castctl.py` speaks **Google Cast via catt**, including compatible built-in TVs, Google TV, Android TV Cast receivers and smart displays. Manual receiver IPv4 is for Cast devices when mDNS fails, **not** general DLNA/AirPlay.
 - `src/streamer.py` normalises incompatible MKV/HEVC/VP9/AV1 sources to receiver-safe H.264/AAC. Respect capability limits; the fallback software encoder outputs 8-bit yuv420p and downscales 4K to 1080p.
-- External `.srt/.vtt/.ttml` may be passed to catt or burned by FFmpeg; `.ass/.ssa` require burn-in. Embedded MKV **text** tracks are selectable and burned by the libass subtitle filter; **PGS/VobSub/DVB bitmap streams are not yet supported**. Do not silently mark them as available.
+- External `.srt/.vtt/.ttml` may be passed to catt or burned by FFmpeg; `.ass/.ssa` require burn-in.
+- Never call receiver stop/cast when preflighting an unverified MKV. `preflight.check_media` must produce and verify actual frames from a short private H.264/AAC render, retain media/subtitle selections and always remove its temporary files; only after success may `_cast_path` call `previous.stop`. Cache by media and subtitle fingerprints, preserving a currently playing TV if preflight fails.
+- Always route external `.srt` through `subtitle_encoding.stage_srt` before either Cast receiver subtitles or FFmpeg burn-in. Strict UTF-8/UTF-16/CP1252 detection, 16 MiB input/output limits, timestamp/control validation and private atomic mode-0600 output apply; never rewrite a user's subtitle. `Session.stop` and primary startup cleanup remove stale staged files, except for a deliberately retained live cast. Embedded MKV **text** tracks are selectable and burned by the libass subtitle filter; **PGS/VobSub/DVB bitmap streams are not yet supported**. Do not silently mark them as available.
 - Preserve embedded subtitle index in `SessionState` and across restart/seek; do not send duplicate sidecar tracks when captions are burned into the video. Resolve user-picked paths only if valid; bound temporary staging.
 - In-window Play/Pause uses `Gtk.Video`, not a separate ffplay window. Local playhead and cached duration are independent of Cast session time. Cast explicitly hands off at the local timestamp.
 - `IMPROVEMENTS.md` is the prioritised improvement backlog. Never present backlog proposals as shipping features; require tests and real-device verification for protocol claims.
@@ -156,7 +162,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Pending work
 - Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
-- `GtkBox min > natural` warning on `GtkBox 0x...` (reported min height 1637, natural 1539) still appears in `--self-test` on the running desktop. The outer page scroller should be re-examined so the left column's natural height never exceeds its min height request.
+- `GtkBox min > natural` warning on `GtkBox 0x...` (reported min height 1637, natural 1539) was reported previously; do not run self-tests on the active desktop. The outer page scroller should be re-examined so the left column's natural height never exceeds its min height request.
 
 ## Completed work
 24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.

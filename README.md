@@ -48,8 +48,36 @@ Google Cast backend. The receiver must actually expose Google Cast; a
 generic Wi-Fi TV is not sufficient. If mDNS discovery fails, use **Output
 device → Add IP** with the receiver's private-LAN IPv4 address, then select
 it in the output dropdown. A manual IP only targets Google Cast receivers,
-not DLNA, AirPlay or Miracast. Those separate protocols are tracked in
-[IMPROVEMENTS.md](IMPROVEMENTS.md); **they are not implemented yet**.
+not DLNA, AirPlay or Miracast. **AirPlay and Miracast remain unimplemented.**
+
+**DLNA / UPnP MediaRenderer (beta):** SmoothCast also scans for
+AVTransport-compatible DLNA renderers on the private LAN using SSDP. Choose an
+entry labelled **DLNA · TV name · IP** in **Output device**, then press **Cast**.
+The application supplies a temporary HTTP URL with an unguessable token and
+byte-range requests; the TV fetches a progressive MP4 from your machine.
+Playback, pause, stop, seek and optional volume controls use UPnP SOAP, **not**
+the Google Cast backend. A receiver must advertise a compatible DLNA
+AVTransport service; some TVs with only UPnP *media browsing* are not
+MediaRenderers and will not be listed.
+
+For compatible H.264/AAC MP4 files, DLNA playback starts directly. An MKV
+with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
+non-default audio tracks or selected subtitles require full FFmpeg
+transcoding and burn-in **before playback starts**. For long films this can
+take significant time and disk space (roughly twice the source-file size must
+be available). The application checks local free space and reports conversion
+errors. The DLNA target path currently uses normal playback speed, no video
+rotation and the original sound profile; Chromecast still supports its own
+transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
+support in your FFmpeg build.
+
+DLNA discovery currently requires private IPv4 SSDP responses with a matching
+HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
+prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
+also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
+DLNA has automated protocol tests but **has not yet been verified on a real
+television**; device-specific MIME/codec negotiation is a follow-up in
+[IMPROVEMENTS.md](IMPROVEMENTS.md).
 
 **MKV/Matroska:** FFprobe detects embedded video/audio/subtitle streams.
 Common video codecs H.264, HEVC/H.265, VP9 and AV1 and audio codecs AAC,
@@ -67,6 +95,12 @@ and some unusual encodings are not guaranteed.
 
 **Subtitles:** In **Playback settings → Subtitles**, use **Pick .srt /
 subtitles…** and choose an existing .srt, .vtt, .ttml, .ass or .ssa file.
+For external SRT files, SmoothCast recognises UTF-8 (with or without BOM),
+UTF-16 little/big-endian (with or without BOM when identifiable), and legacy
+Windows-1252. It verifies the captions and stages a private UTF-8 copy
+(mode 0600 on POSIX) for both Cast receiver subtitles and FFmpeg burn-in.
+The original subtitle file is never rewritten. Invalid or oversized (over
+16 MiB) captions produce a visible error before starting playback.
 For SRT/VTT/TTML, SmoothCast can send a separate caption track to the Cast
 receiver; enable **Burn subtitles into video** when your TV does not display
 it reliably. ASS/SSA always use burn-in, because catt does not accept them
@@ -90,9 +124,26 @@ Choose **Open** and select a local film. FFprobe enumerates its full duration an
 
 **Play** (or Space) now starts the movie **inside the preview panel**, with local audio. Play again to pause. The seek bar, jump buttons and number-key shortcuts change the local movie position; the playhead advances in real time without ever rerunning FFprobe on each scrub or tick. This preview works even when no Chromecast is connected. **Stop** resets only the local preview.
 
-Choose a Chromecast in the device selector, then press **Cast**. SmoothCast stops the local decoder, captures its most recent playback timestamp and starts casting at that position. After transfer, Play/Pause and seeking control the TV as before. The **Play preview** button does the same as the main Play control while no TV cast is active. Queue double-click remains an explicit immediate cast action.
+Choose a Google Cast or DLNA renderer in the device selector, then press **Cast**. SmoothCast stops the local decoder, captures its most recent playback timestamp and starts casting at that position. After transfer, Play/Pause and seeking control the TV as before. The **Play preview** button does the same as the main Play control while no TV cast is active. Queue double-click remains an explicit immediate cast action.
 
 Embedded playback uses GTK4's native GStreamer media backend; still-frame scrubbing continues to use FFmpeg. On Debian/Ubuntu, install the media backend and codecs with `bash setup/linuxsetup.sh` (including `libgtk-4-media-gstreamer`, `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`). If a codec is unsupported, a decoder error is reported and the still-frame preview remains available. Windows/macOS GTK media backend and real-device casting still require native smoke testing.
+
+## MKV decoder preflight
+
+On the first cast of an MKV, SmoothCast checks the film **before stopping the
+currently playing TV**. FFmpeg decodes a short (0.8-second) sample using the
+selected audio stream and any required text subtitle filter, encodes it
+privately to H.264/AAC, then FFprobe verifies that real video frames were
+produced. Temporary media/captions are deleted after the check. A clear
+local error is shown if a decoder, audio track, subtitle filter or encoder
+is missing; no cast command is sent for a failed preflight.
+
+Successful checks are cached for the running app by media size/mtime, subtitle
+size/mtime, audio choice and burn/embedded subtitle selection. Changing the
+file or track triggers a new check. This can add up to 20 seconds on a first
+cast, but repeated unmodified films skip the dry run. **A passed local
+preflight is not a guarantee that a particular TV, GPU or network can cast**
+the stream; it validates the software decoding and selected subtitle path.
 
 ## Playback reliability
 
@@ -118,7 +169,7 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 ## Desktop launcher and dock
 
-SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the bare `smoothcast` console script (resolved through the user's `PATH`, which always includes `~/.local/bin` after `pip install`). A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
+SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, not a potentially older `smoothcast` found on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
 To repair the existing Linux dock icon after pulling a new version (run from your SmoothCast checkout, without `sudo`):
 
@@ -127,12 +178,29 @@ git pull --ff-only
 bash setup/linuxsetup.sh
 python3 scripts/install_desktop.py --pin
 python3 scripts/install_desktop.py --check
-gtk-launch local.cast-control
+grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
-The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. `gtk-launch` verifies the actual desktop entry rather than merely launching a terminal command.
+The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. The read-only `--check` and `grep` commands validate the desktop entry **without launching a window or stealing focus**.
 
-If `gtk-launch` cannot find the entry, log out and back in to refresh GNOME's application cache. If the window still fails, run `python3 sc.py` from the same checkout in a terminal to see dependency errors; on GNOME, also inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
+To diagnose an old version or repeated launch, compare the checkout version with the dock's actual executable:
+
+```sh
+cd /path/to/smoothcast
+git pull --ff-only
+python3 src/version.py
+python3 scripts/install_desktop.py --pin
+python3 scripts/install_desktop.py --check
+grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
+```
+
+The dock must point to the **absolute path to the launcher in this checkout**.
+Running `python3 sc.py` from this directory bypasses any old dock entry.
+A dependency repair now installs from `pyproject.toml`, not a missing
+`requirements.txt`; repair failures print the actual error rather than
+pretending that the same release installed again.
+
+If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `python3 sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
@@ -172,28 +240,43 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Automatic updates without blocking startup
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
 ## Runtime dependencies
 
 Python 3.10+ is the only dependency users must install themselves. The platform setup scripts automatically detect or provision native GTK4, libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project virtual environment. This still requires network access, a supported system package manager and permission to install system packages. Verify without modifying anything using `--check`.
 
-## Testing
+## Testing — never steal desktop focus
 
-Pure-logic tests run without GTK or a display:
-
-```sh
-python3 -m pytest
-```
-
-The GTK UI is verified by the self-test (needs a display, e.g. Xvfb):
+Normal regression testing is intentionally **headless**, even if a developer
+has an active Wayland or X11 session:
 
 ```sh
-DISPLAY=:99 python3 -m pytest
-# or, after install:
-DISPLAY=:99 smoothcast --self-test
-# prints SELFTEST OK
+python3 -m pytest -q tests
+python3 -m compileall -q src scripts setup tests
 ```
+
+These commands do not launch SmoothCast or bring an existing window to the
+foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
+`--self-test` on the normal launcher is refused before bootstrap.
+
+A real GTK widget-construction smoke test is **optional**, run only when
+explicitly needed, through a disposable virtual display:
+
+```sh
+# Debian/Ubuntu, if not installed: sudo apt-get install xvfb xauth
+python3 scripts/test_gui_isolated.py
+# Builds GTK under a private Xvfb display and exits with SELFTEST OK.
+```
+
+The runner has a strict timeout and kills the complete Xvfb/UI process group
+if it hangs. It isolates `HOME`, XDG config/data/cache, Xauthority and
+session DBus; it never uses the desktop's `DISPLAY` or `WAYLAND_DISPLAY`,
+never discovers TV devices and does not change dock integration. It refuses
+to run when Xvfb is unavailable instead of opening a real window.
+**Do not use `DISPLAY=:0 smoothcast --self-test` or manually launch the
+GUI repeatedly during automated testing.** Source-level UI wiring and
+responsive layout tests are included in normal pytest.
 
 ## Architecture
 

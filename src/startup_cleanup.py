@@ -170,6 +170,10 @@ def cleanup_before_window(
                  *root.glob(streamer.SEGMENT_GLOB)]
         if not report.retained_stream:
             files.insert(0, streamer.SESSION_FILE)
+            # Never remove the captions from a deliberately retained cast;
+            # otherwise remove only SmoothCast's own staged names, not user SRTs.
+            files.extend([root / "receiver_subs.srt",
+                          *(root / f"burned_subs{ext}" for ext in streamer.SUBTITLE_EXTS)])
         for file in files:
             try:
                 if file.is_file():

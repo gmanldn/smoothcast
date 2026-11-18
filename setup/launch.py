@@ -68,6 +68,13 @@ def main(argv: list[str] | None = None) -> int:
         return subprocess.call(
             [sys.executable, str(ROOT / "src" / "diagnostics.py"), *args[1:]],
         )
+    # Native desktop shortcuts and direct launcher calls are not GUI test
+    # harnesses. Refuse before starting another GTK process.
+    if "--self-test" in args or os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+        print("Refusing GUI startup during testing; use "
+              "python3 scripts/test_gui_isolated.py for opt-in Xvfb smoke.",
+              file=sys.stderr)
+        return 2
     try:
         installed = python_path()
     except FileNotFoundError as exc:

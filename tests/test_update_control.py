@@ -18,7 +18,7 @@ class UpdateControlTests(unittest.TestCase):
                 self.assertIsNone(update_control.refresh_checkout(Path(d)))
                 run.assert_not_called()
 
-    def test_update_returns_restart_notice(self):
+    def test_code_only_update_does_not_trigger_restart_notice(self):
         with tempfile.TemporaryDirectory() as d:
             repo = Path(d)
             (repo / ".git").mkdir()
@@ -26,7 +26,7 @@ class UpdateControlTests(unittest.TestCase):
                 ["git"], 0, "Updating abc..def\nFast-forward\n", "",
             )
             with mock.patch.object(update_control.subprocess, "run", return_value=completed) as run:
-                self.assertIn("restart", update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo))
                 self.assertEqual(run.call_args.kwargs["cwd"], repo)
                 self.assertEqual(run.call_args.kwargs["timeout"], 8)
 
@@ -62,11 +62,7 @@ class UpdateControlTests(unittest.TestCase):
             )
             with mock.patch.object(update_control.subprocess, "run", return_value=result):
                 notice = update_control.refresh_checkout(repo)
-            self.assertIn("code updated", notice)
-            self.assertIn(f"running {version.label()}", notice)
-            self.assertNotIn(
-                f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1}", notice,
-            )
+            self.assertIsNone(notice)  # Same release must not request a restart.
 
     def test_already_current_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
