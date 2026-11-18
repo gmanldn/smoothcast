@@ -2327,7 +2327,11 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.local_button.set_label("Play preview")
             self.local_button.set_icon_name("media-playback-start-symbolic")
-        if self.device_state == "OFFLINE":
+        if self.session is None and not self.external and stream is not None and stream.get_playing():
+            self._set_chip("Playing locally", "playing")
+        elif local_ready:
+            self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
+        elif self.device_state == "OFFLINE":
             self._set_chip("Offline", "offline")
         elif self.busy:
             self._set_chip("Preparing…", "buffering")
@@ -2528,6 +2532,17 @@ class MainWindow(Adw.ApplicationWindow):
         stream.play()
         self._refresh_controls()
 
+    def _on_local_error(self, stream, _param, path: str) -> None:
+        if path != self._local_video_path:
+            return
+        error = stream.get_error()
+        if error is not None:
+            self.toast(f"Local decoder failed: {error.message}", error=True)
+            self._unload_local_video()
+            self.preview_picture.set_visible(False)
+            self._queue_preview(self._preview_position)
+            self._refresh_controls()
+
     def _toggle_local_preview(self) -> None:
         """Play/pause locally in the embedded video panel, never on the TV."""
         if self.session is not None or self.external:
@@ -2557,6 +2572,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self.toast("Video backend unavailable; install GTK GStreamer media support", error=True)
                 return
             stream.connect("notify::prepared", self._on_local_prepared, path)
+            stream.connect("notify::error", self._on_local_error, path)
             if stream.is_prepared():
                 self._on_local_prepared(stream, None, path)
         elif stream is not None and self._local_start_pending is None:
@@ -3049,6 +3065,14 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_queue_selected(self, _list, row) -> None:
         self.selected_index = row.get_index() if row is not None else None
+        if (self.selected_index is not None
+                and 0 <= self.selected_index < len(self.queue)
+                and self.session is None and not self.external):
+            path = self.queue[self.selected_index]
+            if path != self._preview_path:
+                # Delay to avoid mutating a Gtk.ListBox during its selection signal.
+                GLib.idle_add(lambda: (self.set_selection(path), False)[1]
+                              if path != self._preview_path else False)
 
     def _move_queue(self, index: int, delta: int) -> None:
         target = index + delta
