@@ -246,22 +246,37 @@ Git checkouts perform one background `git pull --ff-only` after the first window
 
 Python 3.10+ is the only dependency users must install themselves. The platform setup scripts automatically detect or provision native GTK4, libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project virtual environment. This still requires network access, a supported system package manager and permission to install system packages. Verify without modifying anything using `--check`.
 
-## Testing
+## Testing — never steal desktop focus
 
-Pure-logic tests run without GTK or a display:
-
-```sh
-python3 -m pytest
-```
-
-The GTK UI is verified by the self-test (needs a display, e.g. Xvfb):
+Normal regression testing is intentionally **headless**, even if a developer
+has an active Wayland or X11 session:
 
 ```sh
-DISPLAY=:99 python3 -m pytest
-# or, after install:
-DISPLAY=:99 smoothcast --self-test
-# prints SELFTEST OK
+python3 -m pytest -q tests
+python3 -m compileall -q src scripts setup tests
 ```
+
+These commands do not launch SmoothCast or bring an existing window to the
+foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
+`--self-test` on the normal launcher is refused before bootstrap.
+
+A real GTK widget-construction smoke test is **optional**, run only when
+explicitly needed, through a disposable virtual display:
+
+```sh
+# Debian/Ubuntu, if not installed: sudo apt-get install xvfb xauth
+python3 scripts/test_gui_isolated.py
+# Builds GTK under a private Xvfb display and exits with SELFTEST OK.
+```
+
+The runner has a strict timeout and kills the complete Xvfb/UI process group
+if it hangs. It isolates `HOME`, XDG config/data/cache, Xauthority and
+session DBus; it never uses the desktop's `DISPLAY` or `WAYLAND_DISPLAY`,
+never discovers TV devices and does not change dock integration. It refuses
+to run when Xvfb is unavailable instead of opening a real window.
+**Do not use `DISPLAY=:0 smoothcast --self-test` or manually launch the
+GUI repeatedly during automated testing.** Source-level UI wiring and
+responsive layout tests are included in normal pytest.
 
 ## Architecture
 
