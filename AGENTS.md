@@ -37,7 +37,10 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/error_log.py` — ring-buffer error log (errors.log, 10k lines, gitignored)
 - `src/position_tracker.py` — playback position estimation (no GTK dep)
 - `src/utils.py` — pure text helpers (pretty_title)
-- `src/version.py` — version counter (MAJOR.MINOR.PATCH, bump patch on every commit)
+- `src/version.py` — version counter (MAJOR.MINOR.PATCH)
+- `src/url_control.py` — HTTP(S) URL validation for remote casting
+- `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
+- `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
 - `tests/` — pytest suite (runs without GTK/display)
 - `pytest.ini` — pytest config (testpaths, pythonpath=src)
 
@@ -63,8 +66,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.32`
-- Release tags mark releases, e.g. `v1.0.32`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+- Current: `1.0.35`
+- Release tags mark releases, e.g. `v1.0.35`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -72,13 +75,13 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Casting status in details card: Buffer Health (ahead/behind time) and Segments (HLS segment count) rows show exact cast status.
 - Error handling: `main()` wraps `app.run()` in try/except; GApplication handles repeat activation.
 - Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
-- Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 700x500 with default 1120x720, no fixed widths preventing scaling.
+- Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 1200x800 with default 1400x900, no fixed widths preventing scaling.
 - Version number shown on front page: header subtitle displays `device · vX.Y.Z`.
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.32`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.35`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -86,7 +89,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 8. Single-instance GTK/GApplication activation: second launch presents the existing window.
 9. Graceful error handling: `main()` wraps `app.run()` in try/except.
 10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
-11. Auto-pull from repo main on load: `auto_pull_on_load()` runs `git pull --ff-only` at startup.
+11. A non-blocking background `git pull --ff-only` runs after the first window is visible; a restart applies new Python code.
 12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
 13. Dock: `scripts/install_desktop.py` installs the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; absolute `Exec` avoids PATH failures. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
 14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
@@ -99,5 +102,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 21. Screenshot capture: `src/screenshot.py` runs FFmpeg only in a background worker with a bounded timeout, no stdin, and a unique non-overwriting output path. Never reintroduce synchronous `subprocess.run` in `MainWindow._screenshot`. Regression tests: `tests/test_screenshot.py`.
 22. Real Loop and Sleep timer: `playback_state.next_media` repeats one item before `autonext`; cleanup completes before restarting the same track or auto-shutting down. The sleep timer stores a persisted wall-clock `sleep_timer_deadline` and polls every five seconds, stopping the SmoothCast-owned session. The GTK application must be running for the deadline to fire. Tests: `tests/test_playback_controls.py`.
 
+23. Remote URL casting: `MainWindow._cast_remote_url` validates HTTP(S) addresses with `url_control.validate_media_url`, then calls `catt -d DEVICE cast --no-subs URL` in an `Async.run` worker. Never send network URLs to `streamer.ffprobe(Path(...))`. Tests: `tests/test_url_control.py`.
+
 ## Pending work
-- Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
+- **Playback speed presets are not yet effective.** The current `_set_speed()` only saves configuration and shows a toast. Do not mark this implemented until the actual playback/transcode rate changes and is tested.
+- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming.
