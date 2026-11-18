@@ -72,3 +72,9 @@ def save_playlist(path: Path, items: list[str]) -> None:
         raise PlaylistError(f"Cannot save playlist: {exc}") from exc
     finally:
         temp.unlink(missing_ok=True)
+
+
+def matches_query(path: str, query: str) -> bool:
+    """Filter a queue by case-insensitive filename/folder terms, in any order."""
+    haystack = str(path).casefold()
+    return all(term in haystack for term in str(query).casefold().split())
