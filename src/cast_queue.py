@@ -504,6 +504,19 @@ class QueueMixin:
             cast_devices = devices
         self.devices = cast_devices
         self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
+        # A receiver's friendly name may change without changing the physical
+        # device. Only follow a stored UUID on an idle window, and only if
+        # both UUID and resulting display name identify exactly one device.
+        # Never retarget a live cast or a pending receiver command.
+        saved_uuid = self.cfg.get("device_uuid", "")
+        unlocked = not (self.session is not None or self.busy
+                        or self._cast_starting or self.external)
+        if unlocked and saved_uuid:
+            matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
+            if matched is not None and matched.name != self.cfg["device"]:
+                self.cfg["device"] = matched.name
+                save_config(self.cfg)
+                self.toast(f"Reconnected renamed Cast receiver: {matched.name}")
         names = list(dict.fromkeys(
             [d.name for d in cast_devices]
             + list(self._dlna_by_key)
@@ -518,6 +531,13 @@ class QueueMixin:
         self.device_dropdown.set_selected(selected)
         self._syncing = False
         selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
+        # Migrate older configurations when the selected display name itself
+        # is unique. Do not adopt a duplicate name or overwrite a saved UUID.
+        if not saved_uuid and selected is not None and selected.uuid:
+            unique = castctl.uniquely_named_device(selected.uuid, cast_devices)
+            if unique is selected:
+                self.cfg["device_uuid"] = selected.uuid
+                save_config(self.cfg)
         dlna_selected = self._dlna_renderer()
         if dlna_selected is not None:
             self.device_detail.set_text(
@@ -677,6 +697,7 @@ class QueueMixin:
             targets.append(target)
         self.cfg["cast_targets"] = targets[-32:]
         self.cfg["device"] = target
+        self.cfg["device_uuid"] = ""  # Manual IP does not claim a discovered identity.
         save_config(self.cfg)
         self.cast_ip_entry.set_text("")
         self._scan_done(self.devices)
@@ -714,6 +735,12 @@ class QueueMixin:
                 self._volume_job = None
             self._volume_target = None
             self.cfg["device"] = name
+            matches = [d for d in self.devices if d.name == name and d.uuid]
+            self.cfg["device_uuid"] = (
+                matches[0].uuid if len(matches) == 1
+                and castctl.uniquely_named_device(matches[0].uuid, self.devices)
+                    is matches[0] else ""
+            )
             save_config(self.cfg)
             self.title_widget.set_subtitle(name)
             self.toast(f"Now controlling {name}")
