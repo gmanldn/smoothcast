@@ -274,6 +274,15 @@ These commands do not launch SmoothCast or bring an existing window to the
 foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
 `--self-test` on the normal launcher is refused before bootstrap.
 
+**Version coverage:** GitHub Actions runs the **entire** portable pytest suite
+and Python syntax check using both Python **3.10** (the published minimum)
+and **3.13** (the primary development interpreter). Unlike bare
+`unittest discover`, pytest collects both `unittest.TestCase` methods
+and standalone `test_*` functions. The separate cross-platform setup
+matrix intentionally uses
+`python3 -m unittest discover -s tests -p "test_setup_bootstrap.py" -v`
+for installer-only contracts; it does **not** replace the full portable suite.
+
 A real GTK widget-construction smoke test is **optional**, run only when
 explicitly needed, through a disposable virtual display:
 
