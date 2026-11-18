@@ -245,13 +245,19 @@ class SetupContractTests(unittest.TestCase):
                     (sha + "  msys2-x86_64-20261118.exe").encode()
                     if "checksum" in url else binary)
             return io.BytesIO(data)
-        with tempfile.TemporaryDirectory() as directory, \
-             mock.patch.object(bootstrap.urllib.request, "urlopen",
-                               side_effect=fake_open), \
-             mock.patch.object(bootstrap.tempfile, "gettempdir",
-                               return_value=directory):
-            path = bootstrap.download_verified_msys2()
-            self.assertEqual(path.read_bytes(), binary)
+        with tempfile.TemporaryDirectory() as directory:
+            original_mkdtemp = tempfile.mkdtemp
+            def private_dir(*, prefix):
+                return original_mkdtemp(prefix=prefix, dir=directory)
+            with mock.patch.object(bootstrap.urllib.request, "urlopen",
+                                   side_effect=fake_open), \
+                 mock.patch.object(bootstrap.tempfile, "mkdtemp",
+                                   side_effect=private_dir):
+                path = bootstrap.download_verified_msys2()
+                self.assertEqual(path.read_bytes(), binary)
+                self.assertEqual(path.parent.parent, Path(directory))
+                self.assertTrue(path.parent.name.startswith("smoothcast-msys2-"))
+                shutil.rmtree(path.parent)
 
     def test_missing_catt_recovers_from_project_metadata_not_removed_requirements(self):
         with tempfile.TemporaryDirectory() as directory:

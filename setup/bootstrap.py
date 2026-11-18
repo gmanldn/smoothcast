@@ -40,6 +40,9 @@ CATT_CHECK = (
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
 PIP_PACKAGES = ("catt>=0.12",)
+# A compromised or corrupt release asset must never exhaust the local disk.
+MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
+
 WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
     "mingw-w64-ucrt-x86_64-python-pip",
@@ -298,17 +301,29 @@ def download_verified_msys2() -> Path:
         expected = checksum_data.split()[0].lower()
         if not re.fullmatch(r"[0-9a-f]{64}", expected):
             raise SetupError("Invalid checksum published for MSYS2 installer.")
-        destination = Path(tempfile.gettempdir()) / binary["name"]
-        digest = hashlib.sha256()
-        with urllib.request.urlopen(binary["browser_download_url"], timeout=60) as r, \
-             destination.open("wb") as out:
-            while chunk := r.read(1024 * 1024):
-                out.write(chunk)
-                digest.update(chunk)
-        if digest.hexdigest() != expected:
-            destination.unlink(missing_ok=True)
-            raise SetupError("MSYS2 installer SHA-256 mismatch; aborting.")
-        return destination
+        # Each caller gets a private, randomly named directory, avoiding
+        # same-name races and symlink attacks in the shared OS temp folder.
+        directory = Path(tempfile.mkdtemp(prefix="smoothcast-msys2-"))
+        destination = directory / binary["name"]
+        try:
+            digest = hashlib.sha256()
+            size = 0
+            with urllib.request.urlopen(binary["browser_download_url"], timeout=60) as r, \
+                 destination.open("xb") as out:
+                while chunk := r.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_MSYS2_DOWNLOAD_BYTES:
+                        raise SetupError("MSYS2 installer exceeds safe download size limit.")
+                    out.write(chunk)
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                raise SetupError("MSYS2 installer SHA-256 mismatch; aborting.")
+            return destination
+        except BaseException:
+            # Includes network failure, invalid checksum and Ctrl+C: never
+            # retain or execute a partial/unverified installer payload.
+            shutil.rmtree(directory, ignore_errors=True)
+            raise
     except (OSError, ValueError, KeyError, StopIteration) as exc:
         raise SetupError(f"MSYS2 download/verification failed: {exc}") from exc
 
@@ -348,7 +363,12 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
                          "--accept-messages", "--root", root.as_posix()],
                         timeout=1800)
         finally:
-            installer.unlink(missing_ok=True)
+            # Only remove the newly created private staging directory, never
+            # a global temp path or the actual MSYS2 installation tree.
+            if installer.parent.name.startswith("smoothcast-msys2-"):
+                shutil.rmtree(installer.parent, ignore_errors=True)
+            else:
+                installer.unlink(missing_ok=True)
     shell = root / "usr" / "bin" / "bash.exe"
     if not shell.is_file():
         raise SetupError("MSYS2 installation incomplete: bash.exe is missing.")
