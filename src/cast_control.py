@@ -1115,6 +1115,7 @@ class MainWindow(Adw.ApplicationWindow):
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Theater mode", "app.theater")
         playback.append("Auto-shutdown after playlist", "app.auto-shutdown")
         playback.append("Auto theme by time", "app.auto-theme")
         speed = Gio.Menu()
@@ -2472,6 +2473,13 @@ class MainWindow(Adw.ApplicationWindow):
         save_config(self.cfg)
         self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
 
+    def _toggle_theater(self) -> None:
+        if self.is_maximized():
+            self.unmaximize()
+        else:
+            self.maximize()
+        self.toast("Theater mode " + ("on" if self.is_maximized() else "off"))
+
     def _toggle_auto_shutdown(self) -> None:
         self.cfg["auto_shutdown"] = not self.cfg.get("auto_shutdown", False)
         save_config(self.cfg)
@@ -3091,6 +3099,7 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("theater", lambda *a: self._window()._toggle_theater())
         simple("auto-shutdown", lambda *a: self._window()._toggle_auto_shutdown())
         simple("auto-theme", lambda *a: self._window()._toggle_auto_theme())
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
