@@ -20,6 +20,11 @@ if [[ $# -eq 1 && ( "$1" == "--version" || "$1" == "-V" ) ]]; then
     exec "$PYTHON" "$DIR/src/version.py"
 fi
 
+if [[ "${SMOOTHCAST_TEST_CONTEXT:-}" == "1" ]]; then
+    echo "Refusing to start SmoothCast GUI from pytest." >&2
+    exit 2
+fi
+
 if ! "$PYTHON" -c 'import sys; assert sys.version_info >= (3, 10)' 2>/dev/null; then
     echo "SmoothCast needs Python 3.10+; run the platform setup script first." >&2
     exit 1
