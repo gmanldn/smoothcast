@@ -35,6 +35,10 @@ class PreflightTests(unittest.TestCase):
             )
             seen = {}
             def complete(args, **_kwargs):
+                if args[0] == "ffprobe":
+                    return subprocess.CompletedProcess(
+                        args, 0, '{"streams":[{"nb_read_frames":"12"}]}', "",
+                    )
                 seen["args"] = args
                 output = Path(args[-1])
                 self.assertTrue(output.parent.name.startswith("smoothcast-preflight-"))
@@ -81,6 +85,20 @@ class PreflightTests(unittest.TestCase):
                 return_value=subprocess.CompletedProcess([], 0, "", ""),
             ):
                 with self.assertRaisesRegex(preflight.PreflightError, "no media"):
+                    preflight.check_media(media)
+
+    def test_container_without_decoded_video_frames_is_rejected(self):
+        with TemporaryDirectory() as folder:
+            media = self.media(Path(folder))
+            def empty_frames(args, **_kwargs):
+                if args[0] == "ffprobe":
+                    return subprocess.CompletedProcess(
+                        args, 0, '{"streams":[{"nb_read_frames":"0"}]}', "",
+                    )
+                Path(args[-1]).write_bytes(b"container header only")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            with mock.patch.object(preflight.subprocess, "run", side_effect=empty_frames):
+                with self.assertRaisesRegex(preflight.PreflightError, "no video frames"):
                     preflight.check_media(media)
 
     def test_missing_selected_stream_and_bitmap_subtitle_fail_before_ffmpeg(self):
@@ -137,8 +155,8 @@ class PreflightTests(unittest.TestCase):
 
     def test_real_local_ffmpeg_renders_mkv_when_encoders_installed(self):
         ffmpeg = shutil.which("ffmpeg")
-        if ffmpeg is None:
-            self.skipTest("FFmpeg is unavailable")
+        if ffmpeg is None or shutil.which("ffprobe") is None:
+            self.skipTest("FFmpeg/FFprobe are unavailable")
         listing = subprocess.run(
             [ffmpeg, "-hide_banner", "-encoders"],
             capture_output=True, text=True, timeout=10,
