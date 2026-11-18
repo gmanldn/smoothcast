@@ -36,4 +36,7 @@ def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
             f"SmoothCast v{downloaded} downloaded; running v{running}. "
             "Restart after playback to apply."
         )
-    return f"SmoothCast code updated (running v{running}); restart to apply."
+    # Git commits can change without any semantic release. Those edits must
+    # not repeatedly prompt the user to restart "the same version" every time
+    # they launch. The downloaded code still takes effect on a normal relaunch.
+    return None
