@@ -679,8 +679,15 @@ class Session:
             _terminate(self.ffmpeg)
             self.ffmpeg = None
             raise
-        if not self._wait_for_segments(30):
-            if self.ffmpeg.poll() is not None and not self.used_software_fallback:
+        # Hardware FFmpeg can stall without exiting; a live PID isn't proof
+        # that its VAAPI encoder is producing media. Retry once on software
+        # after a bounded startup window, terminating the old encoder first.
+        timeout = 15 if not software else 30
+        if not self._wait_for_segments(timeout):
+            tail = self.log_tail()
+            if not software:
+                _terminate(self.ffmpeg)
+                self.ffmpeg = None
                 self.used_software_fallback = True
                 self.start_transcode(
                     media, offset, device=device, quality=quality,
@@ -689,7 +696,6 @@ class Session:
                     audio_gain_db=audio_gain_db, device_ip=device_ip,
                 )
                 return
-            tail = self.log_tail()
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
         url = f"http://{local_ip}:{PORT}/{HLS_NAME}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]

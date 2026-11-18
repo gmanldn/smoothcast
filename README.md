@@ -8,7 +8,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
-- **HLS transcoding** — VAAPI hardware-accelerated H.264 encoding with software fallback; picks the LAN source IP routed to the selected Chromecast (rather than a VPN/Docker interface)
+- **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
 - **Direct play** — untouched passthrough for compatible files
 - **Subtitle support** — auto-select, burn-in, or disable
 - **Queue / Up Next** — auto-play next after the TV finishes playback and prior stream cleanup completes; drag-reorder

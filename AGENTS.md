@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.19`
+- Current: `1.0.20`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.19`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.20`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -84,6 +84,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 17. Chromecast LAN selection: `host_ip(device_host)` picks the outbound interface using a no-packet UDP route to the discovered TV IP, with safe fallbacks. Never advertise loopback, link-local or multicast addresses as HLS URLs. Propagate the selected device IP through normal starts and software-encoder fallback/seek restarts. Regression cases are in `tests/test_streamer_reliability.py`.
 
 18. Startup responsiveness: automatic git updates must run once in a worker **after** GTK window presentation, never before `app.run()`. `--self-test` runs `Gio.ApplicationFlags.NON_UNIQUE` so it cannot activate a live user instance. `app.quit` actions close the window to preserve the normal keep-streaming and configuration lifecycle. Tests: `tests/test_update_control.py`.
+
+19. Encoder fallback: hardware VAAPI is allowed 15s to generate HLS media; software libx264 gets 30s. A stalled but live hardware FFmpeg process must be terminated before one software retry. No infinite fallback loops. `test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive` validates the failure mode.
 
 ## Pending work
 Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).

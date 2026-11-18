@@ -9,6 +9,40 @@ import streamer
 
 
 class StreamerReliabilityTests(unittest.TestCase):
+    def test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            media = streamer.MediaInfo(path=root / "movie.mp4", duration=120.0)
+            session = streamer.Session()
+            proc = mock.MagicMock()
+            proc.pid = 12345
+            proc.poll.return_value = None  # Hardware encoder hangs, never exits.
+            with mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
+                 mock.patch.object(streamer, "host_ip", return_value="192.168.1.23"), \
+                 mock.patch.object(session, "_start_server"), \
+                 mock.patch.object(session, "_wait_for_segments", side_effect=[False, True]) as wait, \
+                 mock.patch.object(streamer, "_terminate") as terminate, \
+                 mock.patch.object(streamer, "_save_session"), \
+                 mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
+                session.start_transcode(
+                    media, 45.0, device="TV", device_ip="192.168.1.42",
+                    quality="balanced", audio_profile="original",
+                    subs_file=None, burn_subs=False, title="Film",
+                )
+            self.assertTrue(session.used_software_fallback)
+            self.assertEqual([call.args[0] for call in wait.call_args_list], [15, 30])
+            terminate.assert_called_once_with(proc)
+            self.assertEqual(popen.call_count, 3)  # VAAPI, libx264, catt.
+            first_args, second_args = (call.args[0] for call in popen.call_args_list[:2])
+            self.assertIn("-hwaccel", first_args)
+            self.assertNotIn("-hwaccel", second_args)
+            self.assertIn("libx264", second_args)
+            self.assertIn("192.168.1.23:8767", session.state.stream_url)
+
     def test_cast_route_preferred_over_other_interfaces(self):
         fake = mock.MagicMock()
         fake.__enter__.return_value = fake
