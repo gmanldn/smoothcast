@@ -3232,14 +3232,19 @@ class MainWindow(Adw.ApplicationWindow):
         return row
 
     def _on_queue_activated(self, _list, row) -> None:
-        index = row.get_index()
-        if 0 <= index < len(self.queue):
-            self._cast_path(pathlib.Path(self.queue[index]), None)
+        path = row.get_tooltip_text() if row is not None else None
+        if path in self.queue:
+            # GTK filtering can change visual row positions. Cast by stable
+            # file identity, never by a potentially filtered row index.
+            self._cast_path(pathlib.Path(path), None)
 
     def _on_queue_selected(self, _list, row) -> None:
         if row is None and self.queue_search.get_text().strip():
             return  # A hidden row must not change playback selection.
-        self.selected_index = row.get_index() if row is not None else None
+        selected_path = row.get_tooltip_text() if row is not None else None
+        self.selected_index = (
+            self.queue.index(selected_path) if selected_path in self.queue else None
+        )
         if (self.selected_index is not None
                 and 0 <= self.selected_index < len(self.queue)
                 and self.session is None and not self.external):
@@ -3251,13 +3256,19 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _move_queue(self, index: int, delta: int) -> None:
         target = index + delta
-        if 0 <= target < len(self.queue):
+        if 0 <= index < len(self.queue) and 0 <= target < len(self.queue):
+            self.selected_index = playlist_control.selection_after_move(
+                self.selected_index, index, target,
+            )
             self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
             self._rebuild_queue()
 
     def _remove_queue(self, index: int) -> None:
-        if index < len(self.queue):
+        if 0 <= index < len(self.queue):
             removed = self.queue.pop(index)
+            self.selected_index = playlist_control.selection_after_remove(
+                self.selected_index, index, len(self.queue),
+            )
             if removed == self.now_playing and not (
                 self.session and self.session.state is not None
             ):
