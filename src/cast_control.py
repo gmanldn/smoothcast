@@ -1776,14 +1776,32 @@ class MainWindow(Adw.ApplicationWindow):
             self._set_device_badge("AVAILABLE", "online")
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
-            # Sync the tracker with the device for BOTH direct and transcode
-            # modes so the position pointer stays live and doesn't drift.
-            # Use current_time whenever available (not just is_seekable) because
-            # HLS streams report position but may not be seekable.
+            # Chromecast reports the *new HLS playlist's* current_time from
+            # zero after each seek. Convert it to source-file seconds, including
+            # the original -ss offset and any non-1× playback rate. Direct play
+            # already uses the source timeline and needs no conversion.
             current_time = info.get("current_time")
             duration = info.get("duration")
-            if current_time is not None and duration is not None:
-                self.tracker.device_update(float(current_time), float(duration))
+            if current_time is not None:
+                try:
+                    device_time = float(current_time)
+                    state = self.session.state
+                    if self.session.mode == "transcode" and state is not None:
+                        absolute = playback_state.absolute_encoded_position(
+                            state.offset, device_time, state.duration,
+                            speed=state.speed,
+                        )
+                        if absolute is not None:
+                            self.tracker.device_update(
+                                absolute, state.duration, rate=state.speed,
+                            )
+                    else:
+                        self.tracker.device_update(
+                            device_time, float(duration) if duration else None,
+                            rate=1.0,
+                        )
+                except (TypeError, ValueError, OverflowError):
+                    pass
         volume = castctl.volume_percent(info)
         if volume is not None and time.time() - self._volume_user_ts > 3:
             self._syncing = True
@@ -1891,7 +1909,8 @@ class MainWindow(Adw.ApplicationWindow):
         if self.session and self.session.mode == "transcode" and self.session.state:
             progress = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
-                self.session.state.offset, progress.get("out_time"), duration
+                self.session.state.offset, progress.get("out_time"), duration,
+                speed=self.session.state.speed,
             )
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
@@ -2007,6 +2026,7 @@ class MainWindow(Adw.ApplicationWindow):
             encoded = playback_state.absolute_encoded_position(
                 session.state.offset, progress.get("out_time"),
                 self.tracker.duration or (media.duration if media else 0.0),
+                speed=session.state.speed,
             )
             if encoded is not None and position is not None:
                 ahead = encoded - position
@@ -2383,7 +2403,10 @@ class MainWindow(Adw.ApplicationWindow):
                 hint = "Original audio (direct play)"
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
-            self.tracker.start(started, media.duration, True)
+            self.tracker.start(
+                started, media.duration, True,
+                rate=session.state.speed if session.state else 1.0,
+            )
             self._add_recent(str(path))
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
