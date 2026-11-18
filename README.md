@@ -23,7 +23,20 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 ./smoothcast
 ```
 
-That's it. First run creates a `.venv` and installs `catt` automatically. Subsequent runs start instantly.
+That's it. First run creates a `.venv` and installs `catt` automatically. GUI launches also register and repair the dock icon and desktop launcher for your user without sudo.
+
+## Desktop launcher and dock
+
+SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The launcher uses the absolute path to this checkout, not an unavailable `smoothcast` executable on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
+
+To repair or check the launcher explicitly from the checkout:
+
+```sh
+python3 scripts/install_desktop.py
+python3 scripts/install_desktop.py --check
+```
+
+A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
 ## Requirements
 
@@ -41,6 +54,8 @@ That's it. First run creates a `.venv` and installs `catt` automatically. Subseq
 smoothcast/
 ├── smoothcast          # bootstrap launcher (creates venv, installs catt, runs app)
 ├── requirements.txt    # pip deps (catt)
+├── scripts/
+│   └── install_desktop.py # user XDG launcher/icon installer
 ├── src/
 │   ├── cast_control.py # main GTK4/Adw app — UI, LevelMeter, MainWindow
 │   ├── streamer.py     # HLS transcode, direct play, ffmpeg chains, auto-trim
@@ -49,7 +64,7 @@ smoothcast/
 │   └── server.py       # HLS static file server
 └── data/
     ├── cast-control.png
-    └── smoothcast.desktop
+    └── (desktop entry generated into user XDG applications directory)
 ```
 
 ## How the compressor meter works

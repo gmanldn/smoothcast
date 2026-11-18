@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import re
 import subprocess
 import sys
 import threading
 import time
-
-try:
-    import fcntl
-except Exception:  # pragma: no cover - non-Unix fallback
-    fcntl = None
 
 import gi
 
@@ -29,11 +23,10 @@ import audio_monitor
 import version
 
 APP_ID = "local.cast-control"
-APP_NAME = f"Cast Control v{version.__version__}"
+APP_NAME = "SmoothCast"
 CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-LOCK_FILE = CONFIG_DIR / "cast-control.lock"
-ICON_NAME = "cast-control"
+ICON_NAME = APP_ID
 
 DEFAULTS: dict = {
     "device": castctl.DEFAULT_DEVICE,
@@ -52,65 +45,6 @@ DEFAULTS: dict = {
     "window_height": 760,
 }
 
-
-def acquire_lock() -> bool:
-    """Try to acquire a single-instance lock file.
-
-    Returns True if this process holds the lock (first instance), False if
-    another instance is already running. Stale locks from dead processes are
-    cleaned up automatically. Never blocks.
-    """
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        fh = open(LOCK_FILE, "w")
-    except OSError:
-        # Config dir not writable — fall back to allowing the instance.
-        return True
-    if fcntl is None:
-        # No fcntl (non-Unix): best-effort check via PID file.
-        try:
-            existing = fh.read()
-            if existing:
-                pid = int(existing.strip())
-                if pid_alive(pid):
-                    fh.close()
-                    return False
-        except (ValueError, OSError):
-            pass
-        try:
-            fh.seek(0); fh.truncate(); fh.write(str(os.getpid())); fh.flush()
-        except OSError:
-            pass
-        return True
-    try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        # Another process holds the lock.
-        fh.close()
-        return False
-    except OSError:
-        return True
-    # Write our PID so others can identify us.
-    try:
-        fh.seek(0); fh.truncate(); fh.write(str(os.getpid())); fh.flush()
-    except OSError:
-        pass
-    return True
-
-
-def pid_alive(pid: int) -> bool:
-    """Return True if *pid* is a running process."""
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
 
 CSS = """
 window {
@@ -2862,7 +2796,7 @@ class MainWindow(Adw.ApplicationWindow):
         about = Adw.AboutDialog(
             application_name=APP_NAME,
             application_icon=ICON_NAME,
-            version="2.0",
+            version=version.__version__,
             developer_name="gridout",
             comments="A modern companion for casting local videos to a Chromecast: live HLS transcoding or direct play, queue, captions, sound profiles and full remote control.",
         )
@@ -3022,16 +2956,8 @@ def main() -> int:
     if not selftest:
         auto_pull_on_load()
 
-    # Single-instance lock — never allow two running instances.
-    if not selftest and not acquire_lock():
-        try:
-            existing = LOCK_FILE.read_text().strip()
-            pid = int(existing)
-            msg = f"Cast Control is already running (PID {pid})."
-        except (OSError, ValueError):
-            msg = "Cast Control is already running."
-        print(msg, file=sys.stderr)
-        return 0
+    # GTK/GApplication handles single-instance D-Bus activation: launching
+    # from the dock again presents the existing window rather than exiting.
 
     app = CastControlApp()
     app.selftest = selftest

@@ -13,6 +13,13 @@ if ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,10) else 1)' 2>/
     exit 1
 fi
 
+# Repair the desktop launcher/icon for this user on interactive GUI starts.
+# Idempotent: no sudo, no shell PATH dependency, no duplicate visible launcher.
+if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && [[ " $* " != *" --self-test "* ]]; then
+    "$PYTHON" "$DIR/scripts/install_desktop.py" --quiet || \
+        echo "SmoothCast: unable to refresh desktop integration (run python3 scripts/install_desktop.py)" >&2
+fi
+
 # ── sanity: GTK4 + libadwaita (system packages, cannot pip-install) ──────────
 if ! "$PYTHON" -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1")' 2>/dev/null; then
     cat >&2 <<'EOF'
