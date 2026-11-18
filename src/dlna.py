@@ -248,7 +248,7 @@ def _upnp_fault(data: bytes) -> str:
     code = code if re.fullmatch(r"[0-9]{1,6}", code) else ""
     # SOAP faults can be supplied by an untrusted LAN endpoint. Do not let
     # arbitrary XML, line controls or huge renderer text enter GUI/logs.
-    description = re.sub(r"[\\x00-\\x1f\\x7f]", " ", description)
+    description = re.sub(r"[\x00-\x1f\x7f]", " ", description)
     description = " ".join(description.split())[:120]
     if code and description:
         return f"UPnP {code}: {description}"
