@@ -36,7 +36,7 @@ fi
 # ── bootstrap venv on first run ──────────────────────────────────────────────
 if [ ! -f "$VENV/bin/activate" ]; then
     echo "SmoothCast: first run — creating self-contained venv..."
-    "$PYTHON" -m venv "$VENV"
+    "$PYTHON" -m venv --system-site-packages "$VENV"
     # catt is the only pip dependency; PyGObject comes from system packages
     "$VENV/bin/pip" install --quiet --upgrade pip
     "$VENV/bin/pip" install --quiet catt
