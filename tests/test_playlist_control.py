@@ -72,8 +72,8 @@ class PlaylistTests(unittest.TestCase):
             [paths[0]],
         )
         self.assertEqual(
-            [p for p in paths if playlist_control.matches_query(p, "FILM")],
-            [paths[0], paths[2]],
+            [p for p in paths if playlist_control.matches_query(p, "ANOTHER")],
+            [paths[2]],
         )
         self.assertTrue(all(playlist_control.matches_query(p, "   ") for p in paths))
         self.assertFalse(playlist_control.matches_query(paths[0], "missing title"))
