@@ -29,7 +29,7 @@ if [[ "${SMOOTHCAST_TEST_CONTEXT:-}" == "1" ]]; then
     exit 2
 fi
 
-if ! "$PYTHON" -c 'import sys; assert sys.version_info >= (3, 10)' 2>/dev/null; then
+if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
     echo "SmoothCast needs Python 3.10+; run the platform setup script first." >&2
     exit 1
 fi
@@ -42,7 +42,7 @@ esac
 
 RUNTIME="$DIR/.venv/bin/python"
 NEEDS_SETUP=0
-if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m,re;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;v=[int(x) for x in re.findall(r"\d+",m.version("catt"))[:2]];assert tuple(v)>=(0,12)' >/dev/null 2>&1; then
+if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m,re,sys;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;v=m.version("catt");match=re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?(?:\.post\d+)?(?:\+[A-Za-z0-9.]+)?",v);sys.exit(0 if match and (int(match[1]),int(match[2]))>=(0,12) else 1)' >/dev/null 2>&1; then
     NEEDS_SETUP=1
 fi
 for tool in ffmpeg ffprobe ffplay; do

@@ -14,14 +14,18 @@ not a preinstalled pip environment.
 The installer checks the native packages and creates a project-local `.venv`
 with access to the system GTK bindings. It installs `catt` using pip in that
 environment. It then verifies that the actual environment can import GTK4 and
-libadwaita, that `catt` is installed, and that `ffmpeg`, `ffprobe`, and
-`ffplay` can be launched. It registers a per-user application shortcut:
+libadwaita, that stable `catt >= 0.12` is installed (prerelease builds
+below that floor are rejected even with `python -O`), and that `ffmpeg`,
+`ffprobe`, and `ffplay` **actually start and return success** from bounded
+`-version` probes; PATH presence alone is not sufficient. It registers a per-user application shortcut:
 Linux desktop entry, macOS `~/Applications/SmoothCast.app`, or the Windows
 Start Menu. Running setup repeatedly is intended to be safe.
 
 Options:
 
-- `--check`: read-only dependency verification, no installations or shortcuts
+- `--check`: read-only dependency verification, no installations or shortcuts; on
+  Debian/Ubuntu it performs a disposable temporary `venv`/ensurepip creation
+  and removes it immediately to detect missing `python3-venv`.
 - `--no-shortcuts`: install the runtime but skip desktop registration
 
 The original `./smoothcast` launcher on Linux/macOS also bootstraps a fresh

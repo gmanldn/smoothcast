@@ -149,6 +149,11 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
                        "urn:schemas-upnp-org:device:MediaRenderer:")), None)
     if device is None:
         raise DlnaError("Description is not a UPnP MediaRenderer")
+    # UPnP URLBase is a document-root property, not a MediaRenderer service.
+    # It can specify a different same-host port/path from the description URL.
+    # Validate before joining *any* control URLs to avoid off-LAN SSRF.
+    base = _child_text(root, "URLBase") or location
+    _url(base, expected_host=sender_host)
     transport = None
     rendering = None
     for service in device.iter():
@@ -158,7 +163,7 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
         control = _child_text(service, "controlURL")
         if not control:
             continue
-        endpoint = urljoin(location, control)
+        endpoint = urljoin(base, control)
         _url(endpoint, expected_host=sender_host)
         if service_type.startswith(SERVICE_PREFIX + "AVTransport:"):
             transport = (endpoint, service_type)
@@ -229,6 +234,29 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
     return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
 
 
+def _upnp_fault(data: bytes) -> str:
+    """Extract one bounded, human-readable UPnP fault; never expose raw XML."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return ""
+    error = next((node for node in root.iter() if _local(node.tag) == "UPnPError"), None)
+    if error is None:
+        return ""
+    code = _child_text(error, "errorCode")
+    description = _child_text(error, "errorDescription")
+    code = code if re.fullmatch(r"[0-9]{1,6}", code) else ""
+    # SOAP faults can be supplied by an untrusted LAN endpoint. Do not let
+    # arbitrary XML, line controls or huge renderer text enter GUI/logs.
+    description = re.sub(r"[\x00-\x1f\x7f]", " ", description)
+    description = " ".join(description.split())[:120]
+    if code and description:
+        return f"UPnP {code}: {description}"
+    if code:
+        return f"UPnP {code}"
+    return ""
+
+
 def _soap(renderer: Renderer, action: str, params: dict[str, str],
           *, rendering: bool = False) -> ET.Element:
     if rendering:
@@ -258,8 +286,14 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
         if len(data) > MAX_SOAP_RESPONSE:
             raise DlnaError("DLNA response exceeds safe size limit")
         if response.status != 200:
-            raise DlnaError(f"DLNA {action} failed (HTTP {response.status})")
-        return ET.fromstring(data)
+            fault = _upnp_fault(data)
+            suffix = f"; {fault}" if fault else ""
+            raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
+        root = ET.fromstring(data)
+        fault = _upnp_fault(data)
+        if fault:
+            raise DlnaError(f"DLNA {action} failed ({fault})")
+        return root
     except ET.ParseError as exc:
         raise DlnaError(f"DLNA {action} returned invalid XML") from exc
     except (OSError, HTTPException) as exc:

@@ -30,10 +30,11 @@ GUI_CHECK = (
     "from gi.repository import Gtk, Adw"
 )
 CATT_CHECK = (
-    "import importlib.metadata as m,re; "
+    "import importlib.metadata as m,re,sys; "
     "v=m.version('catt'); "
-    "parts=[int(x) for x in re.findall(r'\\d+',v)[:2]]; "
-    "assert tuple(parts) >= (0,12)"
+    "match=re.fullmatch(r'(\\d+)\\.(\\d+)(?:\\.\\d+)?'"
+    "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',v); "
+    "sys.exit(0 if match and (int(match[1]),int(match[2])) >= (0,12) else 1)"
 )
 # pip dependencies installed into the isolated runtime. Keep in sync with the
 # `dependencies` list in pyproject.toml; the project itself is installed in
@@ -91,7 +92,7 @@ def works(python: Path | str, code: str, *, env: dict[str, str] | None = None) -
 
 
 def python_ok(python: Path | str) -> bool:
-    return works(python, "import sys; assert sys.version_info >= (3,10)")
+    return works(python, "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)")
 
 
 def manager_for_linux(which=shutil.which) -> str | None:
@@ -116,9 +117,51 @@ def venv_python(venv: Path = VENV) -> Path:
 
 
 def check_tools(env: dict[str, str] | None = None) -> list[str]:
+    """Verify the actual media executables, not only names on PATH.
+
+    Loader failures, nonzero exits and hangs have previously passed a PATH
+    lookup, causing the app to fail later while playing a film.
+    """
     path = None if env is None else env.get("PATH")
-    return [tool for tool in ("ffmpeg", "ffprobe", "ffplay")
-            if not shutil.which(tool, path=path)]
+    failures: list[str] = []
+    for tool in ("ffmpeg", "ffprobe", "ffplay"):
+        executable = shutil.which(tool, path=path)
+        if not executable:
+            failures.append(tool + " (missing)")
+            continue
+        try:
+            result = subprocess.run(
+                [executable, "-version"], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=env, timeout=4, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append(tool + " (version probe timed out)")
+        except OSError:
+            failures.append(tool + " (failed to start; check loader/runtime)")
+        else:
+            if result.returncode != 0:
+                failures.append(f"{tool} (version probe exited {result.returncode})")
+    return failures
+
+
+def venv_supported(python: Path | str) -> bool:
+    """Exercise venv+ensurepip in disposable storage, without installing.
+
+    Debian can import the venv module yet fail to create an environment
+    because python3-venv/ensurepip is absent. --help would miss that failure.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix="smoothcast-venv-probe-") as temp:
+            target = Path(temp) / "probe"
+            result = subprocess.run(
+                [str(python), "-m", "venv", "--system-site-packages", str(target)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=30, check=False,
+            )
+            return result.returncode == 0 and (target / "pyvenv.cfg").is_file()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def pick_runtime(candidates: list[Path | str], *,
@@ -151,13 +194,20 @@ def install_linux(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     missing = check_tools()
     ready = next((p for p in candidates
                   if python_ok(p) and works(p, GUI_CHECK)), None)
-    if check:
-        if not ready or missing:
-            raise SetupError(f"Linux prerequisites missing: GTK={not bool(ready)}, "
-                             f"tools={', '.join(missing) or 'none'}")
-        return Path(ready), dict(os.environ)
     manager = manager_for_linux()
-    if not ready or missing or (manager is not None and not linux_media_ready(manager)):
+    venv_ready = bool(ready) and (
+        manager != "apt-get" or venv_supported(ready)
+    )
+    if check:
+        if not ready or missing or not venv_ready:
+            raise SetupError(
+                f"Linux prerequisites missing: GTK={not bool(ready)}, "
+                f"tools={', '.join(missing) or 'none'}, "
+                f"venv/ensurepip={not venv_ready} "
+                "(on Debian/Ubuntu install python3-venv)"
+            )
+        return Path(ready), dict(os.environ)
+    if not ready or missing or not venv_ready or (manager is not None and not linux_media_ready(manager)):
         if not manager:
             raise SetupError(
                 "Unsupported Linux package manager; supported: apt-get, dnf, pacman."
