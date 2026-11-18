@@ -455,11 +455,11 @@ class UiMixin:
             "For Cast-enabled TVs not found by mDNS discovery. DLNA and AirPlay require other backends."
         )
         self.cast_ip_entry.connect("activate", lambda _entry: self._add_cast_target())
-        add_ip = Gtk.Button(label="Add IP")
-        add_ip.add_css_class("flat")
-        add_ip.connect("clicked", lambda _button: self._add_cast_target())
+        self.add_ip_button = Gtk.Button(label="Add IP")
+        self.add_ip_button.add_css_class("flat")
+        self.add_ip_button.connect("clicked", lambda _button: self._add_cast_target())
         manual.append(self.cast_ip_entry)
-        manual.append(add_ip)
+        manual.append(self.add_ip_button)
         body.append(manual)
         self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
         self.device_detail.add_css_class("section-caption")
@@ -1092,9 +1092,15 @@ class UiMixin:
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
         self.volume_scale.set_sensitive(online)
         self.mute_button.set_sensitive(online)
-        self.device_dropdown.set_sensitive(not busy and self.session is None)
+        # Sensitivity is user feedback, not the security/ownership guard:
+        # callbacks must independently reject changes during a cast.
+        target_locked = bool(self.session is not None or self.busy
+                             or self._cast_starting or self.external)
+        self.device_dropdown.set_sensitive(not target_locked)
+        self.cast_ip_entry.set_sensitive(not target_locked)
+        self.add_ip_button.set_sensitive(not target_locked)
         self.device_dropdown.set_tooltip_text(
-            "Stop your current cast before changing TVs" if self.session
+            "Stop the current cast before changing TVs" if target_locked
             else "Choose the Chromecast to control"
         )
         embedded_burned = bool(
