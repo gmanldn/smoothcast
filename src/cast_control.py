@@ -1705,6 +1705,20 @@ class MainWindow(Adw.ApplicationWindow):
         if index == Gtk.INVALID_LIST_POSITION or model is None:
             return
         name = model.get_string(index)
+        if name and name != self.cfg["device"] and self.session is not None:
+            # An owned stream still targets its original TV. A device change
+            # mid-cast would stop the old encoder while sending 'stop' to the
+            # new, unrelated TV. Require an explicit stop before switching.
+            self._syncing = True
+            try:
+                for current_index in range(model.get_n_items()):
+                    if model.get_string(current_index) == self.cfg["device"]:
+                        dropdown.set_selected(current_index)
+                        break
+            finally:
+                self._syncing = False
+            self.toast("Stop the current cast before changing TV", error=True)
+            return
         if name and name != self.cfg["device"]:
             self.cfg["device"] = name
             save_config(self.cfg)
@@ -1720,15 +1734,33 @@ class MainWindow(Adw.ApplicationWindow):
             return True
         self.poll_busy = True
         device = self._device()
-        Async.run(
-            lambda: castctl.info(device),
-            done=self._poll_done,
-            failed=self._poll_failed,
-        )
+
+        def completed(info):
+            # Ignore an old TV's response if the target changed while the
+            # background catt query was running; immediately query the new TV.
+            if device != self._device():
+                self.poll_busy = False
+                self._poll_device()
+                return
+            self._poll_done(info)
+
+        def failed(message):
+            if device != self._device():
+                self.poll_busy = False
+                self._poll_device()
+                return
+            self._poll_failed(message)
+
+        Async.run(lambda: castctl.info(device), done=completed, failed=failed)
         return True
 
-    def _poll_failed(self, _message) -> None:
+    def _poll_failed(self, message) -> None:
         self.poll_busy = False
+        self.device_info = None
+        self.device_state = "OFFLINE"
+        self._set_device_badge("OFFLINE", "offline")
+        self._refresh_controls()
+        self._console(f"Device status unavailable: {message}")
 
     def _poll_done(self, info) -> None:
         self.poll_busy = False
@@ -2101,6 +2133,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
         self.volume_scale.set_sensitive(online)
         self.mute_button.set_sensitive(online)
+        self.device_dropdown.set_sensitive(not busy and self.session is None)
+        self.device_dropdown.set_tooltip_text(
+            "Stop your current cast before changing TVs" if self.session
+            else "Choose the Chromecast to control"
+        )
         self.cc_button.set_sensitive(active and not busy)
         has_subs = bool(self._active_subs()) or bool(self.session and self.session.state and self.session.state.subs)
         self._syncing = True
