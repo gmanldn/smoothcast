@@ -43,6 +43,8 @@ DEFAULTS: dict = {
     "color_scheme": "prefer-dark",
     "recents": [],
     "loop": False,
+    "playback_speed": 1.0,
+    "sleep_timer_minutes": 0,
     "window_width": 1120,
     "window_height": 760,
     "window_x": -1,
@@ -1110,6 +1112,14 @@ class MainWindow(Adw.ApplicationWindow):
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Always on top", "app.always-on-top")
         playback.append("Loop", "app.loop")
+        speed = Gio.Menu()
+        for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
+            speed.append(f"{s}x", f"app.speed-{str(s).replace('.','_')}")
+        menu.append_submenu("Speed", speed)
+        sleep = Gio.Menu()
+        for m in (0, 15, 30, 45, 60):
+            sleep.append(f"{m} min" if m else "Off", f"app.sleep-{m}")
+        menu.append_submenu("Sleep timer", sleep)
         menu.append_section(None, playback)
         scheme = Gio.Menu()
         for label, value in (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")):
@@ -2440,6 +2450,16 @@ class MainWindow(Adw.ApplicationWindow):
         save_config(self.cfg)
         self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
 
+    def _set_speed(self, speed: float) -> None:
+        self.cfg["playback_speed"] = speed
+        save_config(self.cfg)
+        self.toast(f"Speed {speed}x")
+
+    def _sleep_timer(self, minutes: int) -> None:
+        self.cfg["sleep_timer_minutes"] = minutes
+        save_config(self.cfg)
+        self.toast(f"Sleep timer: {minutes} min" if minutes else "Sleep timer off")
+
     def _skip(self, delta: float) -> None:
         position = self.tracker.value()
         if position is None:
@@ -3034,6 +3054,10 @@ class CastControlApp(Adw.Application):
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("always-on-top", lambda *a: self._window()._toggle_always_on_top())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
+            simple(f"speed-{str(s).replace('.','_')}", lambda *a, sp=s: self._window()._set_speed(sp))
+        for m in (0, 15, 30, 45, 60):
+            simple(f"sleep-{m}", lambda *a, mm=m: self._window()._sleep_timer(mm))
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
