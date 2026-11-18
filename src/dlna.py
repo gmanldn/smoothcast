@@ -579,7 +579,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     )
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-y", "-i", str(source),
-            "-map", "0:v:0", "-map", f"0:a:{audio_track}?"]
+            "-map", f"0:{media.video_stream_index}", "-map", f"0:a:{audio_track}?"]
     if copy_video:
         args += ["-c:v", "copy"]
     else:
