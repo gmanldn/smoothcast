@@ -12,9 +12,14 @@ from dataclasses import dataclass
 def _find_catt() -> str:
     """Locate the catt binary: venv first, then PATH, then common locations."""
     # 1. Project-local venv
-    venv_catt = pathlib.Path(__file__).resolve().parent.parent / ".venv" / "bin" / "catt"
-    if venv_catt.exists():
-        return str(venv_catt)
+    venv = pathlib.Path(__file__).resolve().parent.parent / ".venv"
+    for candidate in (
+        venv / "bin" / "catt",
+        venv / "bin" / "catt.exe",
+        venv / "Scripts" / "catt.exe",
+    ):
+        if candidate.is_file():
+            return str(candidate)
     # 2. PATH
     found = shutil.which("catt")
     if found:
