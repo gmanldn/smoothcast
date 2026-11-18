@@ -396,6 +396,8 @@ TV/OS verification deliberately remain open.
 
 The complete [issue workflow, provenance and historical recovery guide](docs/ISSUES.md)
 explains where issues are stored, how to claim and verify them, and how to
-preserve earlier research. Contribute a new improvement using the
+preserve earlier research. Agents should start with
+`python3 scripts/ticket_digest.py --next`, a bounded read-only index rather
+than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
 not by adding a second TODO document.

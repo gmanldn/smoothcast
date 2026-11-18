@@ -62,10 +62,41 @@ byte/character comparison, **not** a measured model-token count.
 its budget, and `tests/gui_source.py` lets source-asserting tests keep working
 without hard-coding the module layout.
 
+## Issue and ticket context
+
+SmoothCast adapts Actifix's bounded derived-feed pattern without creating a
+second backlog: GitHub Issues remain authoritative, and
+[`scripts/ticket_digest.py`](../scripts/ticket_digest.py) prints a small,
+read-only view on demand. It has no committed cache, so it cannot go stale or
+be mistaken for a work authority.
+
+Measured on 18 November 2026 with 113 open issues at that time:
+
+| Query | Bytes |
+| --- | --- |
+| All open metadata (`number,title,labels,assignees,updatedAt,url`) | 36,144 |
+| All open metadata plus bodies | 143,047 |
+| `ticket_digest.py --limit 30` text output | about 2,600 |
+| One issue body (`ticket_digest.py --show N`) | about 1,200 |
+
+The digest inspects metadata in one `gh` call, prints at most 30 one-line
+records, and never requests comment or issue bodies unless `--show N` is
+explicitly used. Claims use GitHub assignees so agents do not scan every
+comment. The counts are bytes/characters, **not** provider-billed tokens; an
+A/B usage measurement is still required before claiming a financial saving.
+
+From Actifix, retain these principles: a feed is orientation rather than
+permission; query the canonical authority for detail; declare freshness and
+truncation; never copy full ticket history into a prompt; prefer one bounded
+work unit per ticket; and preserve uncertainty when a read fails. Actifix's
+Letta/PostgreSQL/Jenkins machinery does not apply to SmoothCast's
+GitHub-Issues-only workflow.
+
 ## Workflow for coding agents
 
 1. Identify the task and affected module. Search relevant symbols/callers;
-   avoid entire repo/tree dumps unless the task requires them.
+   avoid entire repo/tree dumps unless the task requires them. Use
+   `python3 scripts/ticket_digest.py --next` before listing the whole backlog.
 2. Choose Ponytail's smallest complete solution. Preserve every behaviour,
    security check, compatibility contract and required regression test.
 3. Run `python3 -m pytest -q tests/test_affected.py`; expand to the full

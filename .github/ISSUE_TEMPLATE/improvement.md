@@ -1,35 +1,61 @@
 ---
-name: "Improvement / regression"
-about: "Propose or claim a concrete SmoothCast improvement, regression fix or receiver verification"
+name: "Bug or improvement"
+about: "Propose or claim one concrete SmoothCast fix, feature or receiver verification"
 title: ""
 labels: []
 assignees: []
 ---
 
-## Problem or outcome
-What specifically needs to change? State observed and expected behaviour for a bug.
+## Outcome
+
+What must change, for which user/source/receiver/platform? For a bug, state
+observed vs expected behaviour and a deterministic reproducer.
 
 ## Existing implementation and evidence
-Relevant functions, saved state, logs, upstream PRs and dependencies. If this
-extends an implemented feature, describe the **remaining** work, not a rewrite.
+
+Relevant functions, callers, saved state, logs, upstream PRs and dependencies.
+If this extends an implemented feature, describe the **remaining** work, not a
+rewrite.
+
+## Affected area
+
+Likely files/modules, callers and tests; related issues or PRs.
 
 ## Acceptance criteria
+
 - [ ] Working behaviour with a measurable success criterion
 - [ ] Failure, cancellation and ownership safety tested
 - [ ] Portable automated regression tests pass
-- [ ] Platform/real receiver verification where required (otherwise state why not)
+- [ ] Platform/real-receiver verification where required (otherwise state why not)
 - [ ] Documentation updated and PR linked
 
-## Priority / effort
-P0 (correctness/critical), P1 (high value), or P2 (refinement); S/M/L effort.
+## Work unit
 
-## Provenance / related work
-Original request, research source, legacy SC-nnn ID if applicable, linked
-issues and PRs. Check [the issue workflow](https://github.com/gmanldn/smoothcast/blob/main/docs/ISSUES.md) and avoid
-creating a parallel Markdown backlog.
+- Normalized units: 1
+- Why this is one coherent, independently reviewable slice:
+- Split trigger (new issue instead of expanding this one):
 
-## Notes
-Testing must not repeatedly launch/focus the real GTK app. Use the isolated
-Xvfb smoke runner only when explicitly authorised; hardware checks require a
-controlled receiver. A merged implementation still needs an open issue if
-qualification is unfinished.
+## Verification class
+
+- [ ] Portable CI (`python3 -m pytest -q tests`)
+- [ ] Isolated GTK/Xvfb smoke (explicit authorisation only)
+- [ ] Physical receiver or OS validation (state device/version)
+- [ ] Not applicable; reason:
+
+## Priority and effort
+
+P0 (correctness/critical), P1 (high value) or P2 (refinement); S/M/L effort.
+
+## Provenance and links
+
+Original request, research source, legacy `SC-nnn` if applicable, linked
+issues and PRs. Check [the issue workflow](https://github.com/gmanldn/smoothcast/blob/main/docs/ISSUES.md)
+and do not create a parallel Markdown backlog.
+
+## Agent notes
+
+Start with `python3 scripts/ticket_digest.py --next` or `--show <number>`; read
+one issue body at a time. Claim by assigning yourself and posting one short
+comment. Routine tests must not launch or focus the real GTK app. Hardware
+checks require a controlled receiver. A merged implementation still needs an
+open issue if qualification is unfinished.

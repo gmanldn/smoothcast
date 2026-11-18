@@ -22,13 +22,17 @@ class BacklogPreservationTests(unittest.TestCase):
     def test_issues_are_canonical_and_old_root_backlog_is_absent(self):
         self.assertFalse((ROOT / "IMPROVEMENTS.md").exists())
         workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
+        migration = (
+            ROOT / "docs" / "ISSUES_MIGRATION_20261118.md"
+        ).read_text(encoding="utf-8")
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("https://github.com/gmanldn/smoothcast/issues", workflow)
         self.assertIn("SC-001", workflow)
         self.assertIn("SC-132", workflow)
-        self.assertIn("132 numbered proposals", workflow)
-        self.assertIn("b76579c12f6a202188cc7964a0de06c09bd5aa9e", workflow)
+        self.assertIn("ISSUES_MIGRATION_20261118.md", workflow)
+        self.assertIn("132 numbered proposals", migration)
+        self.assertIn("b76579c12f6a202188cc7964a0de06c09bd5aa9e", migration)
         self.assertIn("docs/ISSUES.md", agents)
         self.assertIn("docs/ISSUES.md", readme)
         self.assertIn("GitHub Issues", agents)
@@ -41,9 +45,13 @@ class BacklogPreservationTests(unittest.TestCase):
         self.assertEqual(original_nums[:50], list(range(1, 51)))
         self.assertIn("## Done", archived)
         workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
+        migration = (
+            ROOT / "docs" / "ISSUES_MIGRATION_20261118.md"
+        ).read_text(encoding="utf-8")
         self.assertIn("IMPROVEMENTS_ORIGINAL_50_20261118.md", workflow)
-        self.assertIn("historical", workflow.lower())
-        self.assertIn("duplicate", workflow.lower())
+        self.assertIn("IMPROVEMENTS_ORIGINAL_50_20261118.md", migration)
+        self.assertIn("historical", migration.lower())
+        self.assertIn("duplicate", migration.lower())
 
 
 class ReceiverSafetyTests(unittest.TestCase):
