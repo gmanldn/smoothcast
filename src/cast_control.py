@@ -21,6 +21,7 @@ import audio_monitor
 import screenshot
 import responsive_layout
 import playback_state
+import playlist_control
 import url_control
 import update_control
 import version
@@ -2665,29 +2666,35 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.fullscreen()
 
+    def _toggle_loop(self) -> None:
+        """The Loop menu action changes only repeat-one, never playlist I/O."""
+        self.cfg["loop"] = not bool(self.cfg.get("loop", False))
+        save_config(self.cfg)
+        self.toast("Repeat current video on" if self.cfg["loop"] else "Repeat off")
+
     def _save_playlist(self) -> None:
-        if not self.queue:
-            self.toast("Queue is empty", error=True)
+        path = pathlib.Path.home() / "smoothcast_playlist.m3u"
+        try:
+            playlist_control.save_playlist(path, self.queue)
+        except playlist_control.PlaylistError as exc:
+            self.toast(str(exc), error=True)
             return
-        out = pathlib.Path.home() / "smoothcast_playlist.m3u"
-        out.write_text("#EXTM3U\n" + "\n".join(self.queue) + "\n")
-        self.toast(f"Playlist saved: {out.name}")
+        self.toast(f"Playlist saved: {path.name} ({len(self.queue)} videos)")
 
     def _load_playlist(self) -> None:
         path = pathlib.Path.home() / "smoothcast_playlist.m3u"
-        if not path.is_file():
-            self.toast("No saved playlist", error=True)
+        try:
+            loaded, skipped = playlist_control.load_playlist(path)
+        except playlist_control.PlaylistError as exc:
+            self.toast(str(exc), error=True)
             return
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                if line not in self.queue:
-                    self.queue.append(line)
-        self.queue_draw()
-        self.toast("Playlist loaded")
-        self.cfg["loop"] = not self.cfg.get("loop", False)
-        save_config(self.cfg)
-        self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
+        additions = [item for item in loaded if item not in self.queue]
+        if additions:
+            self._enqueue(additions)
+        self.toast(
+            f"Playlist: {len(additions)} added"
+            + (f", {skipped} missing or invalid" if skipped else "")
+        )
 
     def _toggle_theater(self) -> None:
         if self.is_maximized():
