@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import math
+import stat
 import subprocess
 import uuid
 
@@ -21,8 +22,15 @@ def capture_frame(
     """
     source = Path(source).expanduser()
     directory = Path(directory).expanduser()
-    if not source.is_file():
-        raise CaptureError(f"Source video is missing: {source.name}")
+    # Verify filesystem metadata directly. Apart from avoiding TOCTOU-prone
+    # path predicates, this remains correct when unrelated tests monkeypatch
+    # Path.is_file globally.
+    try:
+        source_stat = source.stat()
+    except OSError as exc:
+        raise CaptureError(f"Source video is missing: {source.name}") from exc
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise CaptureError(f"Source is not a regular video file: {source.name}")
     if not math.isfinite(position):
         raise CaptureError("Invalid video position")
     try:
@@ -47,7 +55,18 @@ def capture_frame(
     except OSError as exc:
         target.unlink(missing_ok=True)
         raise CaptureError(f"Cannot start FFmpeg: {exc}") from exc
-    if result.returncode != 0 or not target.is_file():
+    try:
+        output_stat = target.stat()
+    except OSError:
+        output_stat = None
+    # FFmpeg can return 0 yet leave a zero-byte output or no file at all.
+    # A bare Path.is_file() check isn't sufficient for that case.
+    if (
+        result.returncode != 0
+        or output_stat is None
+        or not stat.S_ISREG(output_stat.st_mode)
+        or output_stat.st_size == 0
+    ):
         target.unlink(missing_ok=True)
         detail = (result.stderr or "").strip().splitlines()
         raise CaptureError((detail[-1] if detail else "FFmpeg produced no image")[-240:])
