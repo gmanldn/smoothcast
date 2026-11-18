@@ -1,6 +1,7 @@
 """Tiny GTK-free entry point for installed SmoothCast commands."""
 from __future__ import annotations
 
+import os
 import sys
 
 
@@ -9,6 +10,9 @@ def main() -> int:
         from version import label
         print(f"SmoothCast {label()}")
         return 0
+    if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+        print("Refusing to start GTK from pytest; only portable tests run there.", file=sys.stderr)
+        return 2
     # Reject unsafe self-tests *before importing GTK* or connecting to a
     # developer's running GApplication (which would steal desktop focus).
     if "--self-test" in sys.argv[1:]:
