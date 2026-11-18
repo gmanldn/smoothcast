@@ -718,6 +718,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.device_state = "IDLE"
         self.external = False
         self.busy = False
+        self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False
         self.scan_busy = False
         self.queue: list[str] = []
@@ -920,6 +921,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.selected_index = None
         self.external = False
         self.busy = False
+        self._dlna_cancel = None
         self.poll_busy = False
         self.scan_busy = False
         self.queue = []
@@ -2439,7 +2441,10 @@ class MainWindow(Adw.ApplicationWindow):
         local_ready = self._preview_path is not None and self.session is None and not self.external
         can_play = not busy and ((online and active) or local_ready)
         self.play_button.set_sensitive(can_play)
-        self.stop_button.set_sensitive(not busy and ((online and active) or local_ready))
+        self.stop_button.set_sensitive(
+            (not busy and ((online and active) or local_ready))
+            or (busy and self._dlna_cancel is not None)
+        )
         can_seek = not busy and ((online and not self.external and self.tracker.known and active)
                                  or (local_ready and bool(self.media and self.media.duration)))
         for button in (self.back10_button, self.back30_button, self.fwd10_button, self.fwd30_button):
@@ -2615,6 +2620,9 @@ class MainWindow(Adw.ApplicationWindow):
             self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
             save_config(self.cfg)
         if self.busy:
+            if self._dlna_cancel is not None:
+                self._dlna_cancel.set()
+                self.toast("Cancelling DLNA media preparation…")
             return
         if self.session is None and not self.external and self._preview_path is not None:
             self._unload_local_video()
@@ -2784,6 +2792,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._finished_handled = False
         device = self._device()
         renderer = self._dlna_renderer(device)
+        self._dlna_cancel = threading.Event() if renderer is not None else None
         if device.startswith("DLNA · ") and renderer is None:
             self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
             return
@@ -2848,6 +2857,7 @@ class MainWindow(Adw.ApplicationWindow):
                         offset=offset, title=title, subtitle_file=subs_path,
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
+                        cancel=self._dlna_cancel,
                     )
                     return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
@@ -2884,6 +2894,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         def done(result):
             session, media = result
+            self._dlna_cancel = None
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -2930,6 +2941,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.np_title.set_text(path.name)
 
     def _cast_failed(self, message: str) -> None:
+        self._dlna_cancel = None
         self.busy = False
         self._stop_monitor()
         self._set_levels_hint("")
@@ -3994,6 +4006,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- lifecycle ----------
 
     def _on_close(self, _window) -> bool:
+        if self._dlna_cancel is not None:
+            self._dlna_cancel.set()
         self._stop_monitor()
         self._unload_local_video()
         # Gtk4 tracks the normal window size separately from fullscreen and
