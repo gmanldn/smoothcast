@@ -33,7 +33,7 @@ jobs:
         run: python -m pip install 'pytest>=8,<10'
 
       - name: Run all portable regression tests
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q tests
 
   setup-contract:
     name: Setup contract (${{ matrix.os }})
