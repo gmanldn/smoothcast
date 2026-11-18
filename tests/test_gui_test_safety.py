@@ -52,8 +52,13 @@ class GuiTestSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             authority = Path(folder) / "xauthority"
             authority.touch()
+            token = "e" * 64
+            marker = Path(folder) / "runtime" / ".smoothcast-gui-test-token"
+            marker.parent.mkdir()
+            marker.write_text(token, encoding="ascii")
             env = {
                 "SMOOTHCAST_GUI_TEST_ISOLATED": "1",
+                "SMOOTHCAST_GUI_TEST_TOKEN": token,
                 "DISPLAY": ":123",
                 "GDK_BACKEND": "x11",
                 "XAUTHORITY": str(authority),
@@ -68,12 +73,15 @@ class GuiTestSafetyTests(unittest.TestCase):
                 ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
                 ("GDK_BACKEND", "wayland"),
                 ("SMOOTHCAST_GUI_TEST_ISOLATED", "0"),
+                ("SMOOTHCAST_GUI_TEST_TOKEN", "a" * 64),
                 ("XAUTHORITY", "/nonexistent/smoothcast-xauthority"),
                 ("XDG_CONFIG_HOME", ""),
             ):
                 with self.subTest(name=name):
                     broken = dict(env, **{name: value})
                     self.assertFalse(gui_test_safety.is_isolated_gui_test(broken))
+            marker.unlink()
+            self.assertFalse(gui_test_safety.is_isolated_gui_test(env))
 
     def test_console_selftest_fails_before_importing_gtk(self):
         env = dict(os.environ)
@@ -122,6 +130,7 @@ class GuiTestSafetyTests(unittest.TestCase):
                 self.assertNotIn(key, env)
             self.assertEqual(env["GDK_BACKEND"], "x11")
             self.assertEqual(env["SMOOTHCAST_GUI_TEST_ISOLATED"], "1")
+            self.assertEqual(len(env["SMOOTHCAST_GUI_TEST_TOKEN"]), 64)
             self.assertEqual(env["GSETTINGS_BACKEND"], "memory")
             for name in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
                          "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"):
