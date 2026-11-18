@@ -92,14 +92,14 @@ class StreamSelectionTests(unittest.TestCase):
             process = mock.MagicMock()
             process.poll.return_value = 0
             process.pid = 123
-            with mock.patch.object(streamer, "ROOT", root), \\
-                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \\
-                 mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \\
-                 mock.patch.object(streamer, "host_ip", return_value="192.168.1.10"), \\
-                 mock.patch.object(session, "_start_server"), \\
-                 mock.patch.object(session, "_wait_for_segments", return_value=True), \\
-                 mock.patch.object(streamer.subprocess, "Popen", return_value=process) as start, \\
-                 mock.patch.object(streamer.time, "sleep"), \\
+            with mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
+                 mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
+                 mock.patch.object(streamer, "host_ip", return_value="192.168.1.10"), \
+                 mock.patch.object(session, "_start_server"), \
+                 mock.patch.object(session, "_wait_for_segments", return_value=True), \
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=process) as start, \
+                 mock.patch.object(streamer.time, "sleep"), \
                  mock.patch.object(streamer, "_save_session"):
                 session.start_transcode(
                     media, 0, device="TV", quality="balanced",
