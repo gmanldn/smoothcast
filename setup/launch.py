@@ -70,9 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     command = [str(installed), str(ROOT / "src" / "cast_control.py"), *args]
     env = runtime_environment()
-    if os.name != "nt":
-        os.execvpe(command[0], command, env)
     try:
+        if os.name != "nt":
+            # A .desktop launch may inherit HOME or / as its working directory.
+            # Use the same project root as the Windows launcher.
+            os.chdir(ROOT)
+            os.execvpe(command[0], command, env)
         return subprocess.call(command, cwd=ROOT, env=env)
     except OSError as exc:
         print(f"SmoothCast could not start: {exc}", file=sys.stderr)
