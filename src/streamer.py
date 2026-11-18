@@ -536,7 +536,10 @@ class Session:
 
     def active(self) -> bool:
         if self.mode == "direct":
-            return self.caster is not None and self.caster.poll() is None
+            # catt may exit 0 immediately after instructing the Chromecast
+            # to play. The cast keeps playing on the TV independently.
+            # A successful direct session remains owned until stop/end.
+            return self.state is not None
         if self.ffmpeg is not None and self.ffmpeg.poll() is None:
             return True
         return False
