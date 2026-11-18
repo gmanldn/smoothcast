@@ -545,6 +545,7 @@ class SessionState:
     audio_gain_db: float = 0.0
     subs: str = ""
     burn_subs: bool = False
+    embedded_subtitle_index: int = -1
     speed: float = 1.0
     rotation: int = 0
     started_at: float = 0.0
@@ -721,17 +722,34 @@ class Session:
             "-qp", str(qp), "-g", "96",
         ]
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0) -> list[str]:
+    @staticmethod
+    def _filter_path(path: pathlib.Path) -> str:
+        """Escape a filename through FFmpeg filtergraph and option parsing.
+
+        FFmpeg parses the filter graph and then the subtitle filter options,
+        so ':' and apostrophes require additional quoting layers. Never pass
+        untrusted filenames as interpolated shell command strings.
+        """
+        return (path.as_posix().replace("\\", "\\\\")
+                .replace(":", "\\\\:").replace("'", "\\\\\\'")
+                .replace(",", "\\,").replace(";", "\\;")
+                .replace("[", "\\[").replace("]", "\\]"))
+
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None) -> list[str]:
         chain: list[str] = []
-        if burn_subs and staged is not None:
+        if embedded_subtitle_index is not None and embedded_source is not None:
+            chain.append(f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}")
+        elif burn_subs and staged is not None:
             chain.append(f"subtitles=filename={staged.name}")
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
         # VAAPI keeps frames on GPU unless burning subtitles, so a rotation
         # filter (which runs in software) forces a download/upload round trip.
+        need_subtitle_filter = ((burn_subs and staged is not None)
+                                or embedded_subtitle_index is not None)
         force_software = not software and rotation != 0
-        if (not software and burn_subs and staged is not None) or force_software:
+        if (not software and need_subtitle_filter) or force_software:
             return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
         if chain:
             return ["-vf", ",".join(chain)]
@@ -752,6 +770,7 @@ class Session:
         device_ip: str | None = None,
         speed: float = 1.0,
         rotation: int = 0,
+        embedded_subtitle_index: int | None = None,
     ) -> None:
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
@@ -762,7 +781,15 @@ class Session:
         for segment in ROOT.glob(SEGMENT_GLOB):
             segment.unlink(missing_ok=True)
         (ROOT / HLS_NAME).unlink(missing_ok=True)
-        staged = self._stage_subs(subs_file) if burn_subs else None
+        # Embedded text subtitles must be drawn by libass; the receiver
+        # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
+        if embedded_subtitle_index is not None:
+            track = next((t for t in media.subtitle_tracks
+                          if t.index == embedded_subtitle_index), None)
+            if track is None or not track.is_text:
+                raise StreamError("Selected MKV subtitle track cannot be burned into video")
+            burn_subs = True
+        staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
         software = self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
@@ -774,7 +801,11 @@ class Session:
         args += self._hwaccel_args(software)
         args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
         args += self._codec_args(quality, software)
-        args += self._filter_args(burn_subs, staged, software, speed, rotation)
+        args += self._filter_args(
+            burn_subs, staged, software, speed, rotation,
+            embedded_subtitle_index=embedded_subtitle_index,
+            embedded_source=media.path if embedded_subtitle_index is not None else None,
+        )
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
             # Auto-trim the input so the compressor always engages, then apply
@@ -827,12 +858,13 @@ class Session:
                     burn_subs=burn_subs, title=title,
                     audio_gain_db=audio_gain_db, device_ip=device_ip,
                     speed=speed, rotation=rotation,
+                    embedded_subtitle_index=embedded_subtitle_index,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
         url = f"http://{local_ip}:{PORT}/{HLS_NAME}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
-        if subs_file is not None:
+        if not burn_subs and subs_file is not None and subs_file.suffix.lower() in CAST_SUBTITLE_EXTS:
             cast_args += ["-s", str(subs_file)]
         else:
             cast_args += ["--no-subs"]
@@ -853,7 +885,9 @@ class Session:
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
-            subs=str(subs_file or ""), burn_subs=burn_subs, speed=speed,
+            subs=str(subs_file or ""), burn_subs=burn_subs,
+            embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
+            speed=speed,
             rotation=rotation,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
