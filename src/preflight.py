@@ -7,8 +7,8 @@ All temporary media is removed after the check.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import pathlib
-import re
 import subprocess
 import tempfile
 from typing import TYPE_CHECKING
@@ -121,6 +121,19 @@ def check_media(
             size = 0
         if size <= 0:
             raise PreflightError("MKV decoder check produced no media")
+        try:
+            verify = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-count_frames", "-show_entries", "stream=nb_read_frames",
+                 "-of", "json", str(output)],
+                capture_output=True, text=True, timeout=8,
+            )
+            streams = (json.loads(verify.stdout or "{}").get("streams") or [])
+            frames = int(streams[0].get("nb_read_frames") or 0) if streams else 0
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, IndexError) as exc:
+            raise PreflightError("Could not verify decoded sample video frames") from exc
+        if verify.returncode != 0 or frames < 1:
+            raise PreflightError("MKV decoder check produced no video frames")
         return PreflightResult(bytes_rendered=size, sample_seconds=0.8)
 
 
