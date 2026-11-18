@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -148,6 +149,45 @@ class AudioTrackTests(unittest.TestCase):
         self.assertIn('audio_track_index=audio_track', source)
         self.assertIn('audio_track_override=choice', source)
         self.assertIn('state.audio_track_index if state else -1', source)
+
+
+@unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg needed for real two-track trim checks")
+class SelectedTrackTrimTests(unittest.TestCase):
+    """SC-066 #75: measurement and encoded gain must follow the chosen track."""
+
+    def test_loud_and_quiet_tracks_measure_and_trim_independently(self):
+        with TemporaryDirectory() as folder:
+            media = Path(folder) / "two-tracks.mka"
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                    "-f", "lavfi", "-i", "sine=frequency=880:duration=2",
+                    "-filter_complex", "[0:a]volume=8[a0];[1:a]volume=0.05[a1]",
+                    "-map", "[a0]", "-map", "[a1]",
+                    "-c:a", "aac", str(media),
+                ],
+                check=True, capture_output=True, timeout=60,
+            )
+            loud = streamer.measure_mean_volume(str(media), audio_track_index=0)
+            quiet = streamer.measure_mean_volume(str(media), audio_track_index=1)
+            self.assertIsNotNone(loud)
+            self.assertIsNotNone(quiet)
+            self.assertGreater(loud - quiet, 12.0)
+
+            loud_trim = streamer.auto_trim_gain(str(media), "dialogue", audio_track_index=0)
+            quiet_trim = streamer.auto_trim_gain(str(media), "dialogue", audio_track_index=1)
+            self.assertLess(loud_trim, quiet_trim)
+
+            loud_chain = streamer.effective_chain(str(media), "dialogue", audio_track_index=0)
+            quiet_chain = streamer.effective_chain(str(media), "dialogue", audio_track_index=1)
+            self.assertTrue(loud_chain[0].startswith("volume=-"), loud_chain[0])
+            self.assertTrue(quiet_chain[0].startswith("volume="), quiet_chain[0])
+            self.assertNotIn("-", quiet_chain[0])
+
+            self.assertEqual(
+                streamer.effective_chain(str(media), "original", audio_track_index=0), [],
+            )
 
 
 if __name__ == "__main__":
