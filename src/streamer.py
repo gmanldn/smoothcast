@@ -287,6 +287,9 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
 class MediaInfo:
     path: pathlib.Path
     duration: float = 0.0
+    # FFprobe's absolute input stream index (not ordinal among video tracks).
+    # Cover artwork can occupy stream 0, before the actual motion picture.
+    video_stream_index: int = 0
     width: int = 0
     height: int = 0
     fps: float = 0.0
@@ -529,9 +532,11 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     except (TypeError, ValueError):
         pass
     subtitle_index = 0
-    for stream in data.get("streams") or []:
+    for stream_position, stream in enumerate(data.get("streams") or []):
         kind = stream.get("codec_type")
-        if kind == "video" and not media.vcodec:
+        if (kind == "video" and not media.vcodec
+                and not bool((stream.get("disposition") or {}).get("attached_pic"))):
+            media.video_stream_index = int(stream.get("index", stream_position))
             media.vcodec = str(stream.get("codec_name") or "")
             media.vprofile = str(stream.get("profile") or "")
             media.pix_fmt = str(stream.get("pix_fmt") or "")
@@ -582,6 +587,8 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
                 forced=bool(disposition.get("forced")),
             ))
             subtitle_index += 1
+    if not media.vcodec:
+        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
     return media
 
@@ -986,7 +993,7 @@ class Session:
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
-        args += ["-i", str(media.path), "-map", "0:v:0", "-map", audio_map]
+        args += ["-i", str(media.path), "-map", f"0:{media.video_stream_index}", "-map", audio_map]
         args += self._codec_args(quality, software)
         args += self._filter_args(
             burn_subs, staged, software, speed, rotation,
