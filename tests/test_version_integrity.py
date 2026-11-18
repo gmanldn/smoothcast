@@ -26,9 +26,10 @@ class CanonicalVersionTests(unittest.TestCase):
 
     def test_package_metadata_matches_the_canonical_release(self):
         metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        match = re.search(r'(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"', metadata)
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(1), version.__version__)
+        self.assertIn('dynamic = ["version"]', metadata)
+        self.assertIn('version = {attr = "version.__version__"}', metadata)
+        self.assertNotRegex(metadata, r'(?m)^version\s*=\s*"\d+\.\d+\.\d+"')
+        self.assertIn('smoothcast = "cli:main"', metadata)
 
     def test_on_disk_version_does_not_overwrite_running_version(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -59,9 +60,10 @@ class CanonicalVersionTests(unittest.TestCase):
             self.assertIsNone(version.read_checkout_version(folder / "absent.py"))
 
     def test_cli_version_bypasses_gtk_and_venv(self):
-        env = dict(os.environ, PYTHON=sys.executable)
+        # Portable test: no installed script, GTK or X11 is needed.
+        env = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
         result = subprocess.run(
-            ["smoothcast", "--version"],
+            [sys.executable, "-m", "cli", "--version"],
             env=env, text=True, capture_output=True, timeout=10,
             check=True,
         )
