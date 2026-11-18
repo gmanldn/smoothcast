@@ -912,6 +912,7 @@ class SessionMixin:
 
 
     def _toggle_fullscreen(self) -> None:
+        self._remember_normal_geometry()
         # Gtk4 exposes fullscreen()/unfullscreen(), not set_fullscreen().
         if self.is_fullscreen():
             self.unfullscreen()
@@ -920,6 +921,7 @@ class SessionMixin:
 
 
     def _toggle_theater(self) -> None:
+        self._remember_normal_geometry()
         if self.is_maximized():
             self.unmaximize()
         else:
