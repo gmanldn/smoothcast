@@ -246,6 +246,20 @@ Git checkouts perform one background `git pull --ff-only` after the first window
 
 Python 3.10+ is the only dependency users must install themselves. The platform setup scripts automatically detect or provision native GTK4, libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project virtual environment. This still requires network access, a supported system package manager and permission to install system packages. Verify without modifying anything using `--check`.
 
+## Token-efficient coding agents
+
+SmoothCast includes project-scoped [Caveman](.kilo/skills/caveman/SKILL.md)
+(concise technical responses) and
+[Ponytail](.kilo/skills/ponytail/SKILL.md)
+(minimal complete diffs) instruction skills. The root
+[AGENTS.md](AGENTS.md) has been reduced by **88% in characters**;
+the original instructions remain intact in
+[docs/AGENT_REFERENCE.md](docs/AGENT_REFERENCE.md).
+See [agent token efficiency](docs/AGENT_TOKEN_EFFICIENCY.md) for
+measurement limitations and optional official upstream plugins. These
+repo-local instructions do **not** install a proxy, change user
+credentials or add SmoothCast runtime dependencies.
+
 ## Testing — never steal desktop focus
 
 Normal regression testing is intentionally **headless**, even if a developer
