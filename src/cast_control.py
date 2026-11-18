@@ -2793,6 +2793,12 @@ class MainWindow(Adw.ApplicationWindow):
         device = self._device()
         renderer = self._dlna_renderer(device)
         self._dlna_cancel = threading.Event() if renderer is not None else None
+        if renderer is not None:
+            self.np_meta.set_text(
+                "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
+            )
+            self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
+            self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
             self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
             return
