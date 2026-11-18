@@ -27,6 +27,7 @@ import version
 import ui_theme
 import error_log
 import local_playback
+import startup_cleanup
 
 APP_ID = "local.cast-control"
 APP_NAME = "SmoothCast"
@@ -3392,10 +3393,34 @@ class CastControlApp(Adw.Application):
         self.window: MainWindow | None = None
         self.selftest = selftest
         self._update_started = False
+        self._startup_report: startup_cleanup.CleanupReport | None = None
+        self._startup_reported = False
         self._pending_files: list[str] = []
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
+        # This is executed only in the primary GApplication process, once,
+        # before MainWindow and its monitor/session timers can be created.
+        # Reactivating via a second dock click must NEVER stop an active cast.
+        # Standalone --self-test instances must NEVER affect the user's app.
+        if not self.selftest:
+            try:
+                self._startup_report = startup_cleanup.cleanup_before_window(
+                    keep_streaming=bool(load_config().get("keep_streaming", True)),
+                )
+                report = self._startup_report
+                if report.stopped or report.files_removed or report.temp_dirs_removed:
+                    print(
+                        "SmoothCast startup recovery: "
+                        f"signalled {len(report.stopped)} old helper(s); "
+                        f"removed {report.files_removed} stale stream file(s), "
+                        f"{report.temp_dirs_removed} old meter directory/directories"
+                    )
+                for warning in report.errors:
+                    print(f"SmoothCast startup recovery: {warning}", file=sys.stderr)
+            except Exception as exc:
+                # A cleanup failure must not prevent opening the application.
+                print(f"SmoothCast startup recovery failed: {exc}", file=sys.stderr)
         GLib.set_prgname(APP_ID)
         Gtk.Window.set_default_icon_name(ICON_NAME)
         _data_dir = pathlib.Path(__file__).resolve().parent.parent / "data"
@@ -3474,6 +3499,20 @@ class CastControlApp(Adw.Application):
     def do_activate(self) -> None:
         window = self._window()
         window.present()
+        if not self._startup_reported:
+            self._startup_reported = True
+            report = self._startup_report
+            if report is not None:
+                if report.stopped:
+                    window.toast(f"Recovered {len(report.stopped)} old SmoothCast helper(s)")
+                if report.stopped or report.files_removed or report.temp_dirs_removed:
+                    window._console(
+                        f"Startup recovery: {len(report.stopped)} old helper(s) signalled, "
+                        f"{report.files_removed} stream file(s) and "
+                        f"{report.temp_dirs_removed} meter directory/directories removed"
+                    )
+                for warning in report.errors:
+                    window._console(f"Startup recovery warning: {warning}")
         if self._pending_files:
             window.open_paths(self._pending_files)
             self._pending_files = []
