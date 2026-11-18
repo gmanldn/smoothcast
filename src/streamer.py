@@ -752,6 +752,7 @@ class Session:
                     audio_profile=audio_profile, subs_file=subs_file,
                     burn_subs=burn_subs, title=title,
                     audio_gain_db=audio_gain_db, device_ip=device_ip,
+                    speed=speed, rotation=rotation,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
