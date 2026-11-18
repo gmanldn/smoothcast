@@ -29,6 +29,40 @@ class UpdateControlTests(unittest.TestCase):
                 self.assertEqual(run.call_args.kwargs["cwd"], repo)
                 self.assertEqual(run.call_args.kwargs["timeout"], 8)
 
+    def test_downloaded_release_is_distinct_from_running_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / ".git").mkdir()
+            (repo / "src").mkdir()
+            (repo / "src/version.py").write_text(
+                "MAJOR = 1\nMINOR = 0\nPATCH = 47\n", encoding="utf-8",
+            )
+            result = subprocess.CompletedProcess(
+                ["git"], 0, "Updating abc..def\nFast-forward\n", "",
+            )
+            with mock.patch.object(update_control.subprocess, "run", return_value=result):
+                notice = update_control.refresh_checkout(repo)
+            self.assertIn("v1.0.47 downloaded", notice)
+            self.assertIn("running v1.0.46", notice)
+            self.assertIn("Restart", notice)
+
+    def test_same_release_code_update_does_not_claim_new_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / ".git").mkdir()
+            (repo / "src").mkdir()
+            (repo / "src/version.py").write_text(
+                "MAJOR = 1\nMINOR = 0\nPATCH = 46\n", encoding="utf-8",
+            )
+            result = subprocess.CompletedProcess(
+                ["git"], 0, "Updating abc..def\nFast-forward\n", "",
+            )
+            with mock.patch.object(update_control.subprocess, "run", return_value=result):
+                notice = update_control.refresh_checkout(repo)
+            self.assertIn("code updated", notice)
+            self.assertIn("running v1.0.46", notice)
+            self.assertNotIn("v1.0.47", notice)
+
     def test_already_current_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
             repo = Path(d)
