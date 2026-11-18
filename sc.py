@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""SmoothCast launcher shortcut.
+"""Cross-platform SmoothCast launcher shortcut.
 
-Delegates to ./smoothcast, including its environment bootstrap and dock repair.
-Re-launching an active GTK instance raises its window; it does not kill a cast.
+On Unix, delegate to ./smoothcast (automatic first-run setup); on Windows,
+launch the isolated runtime installed by setup/winsetup.bat.
 """
-import os
 from pathlib import Path
+import os
+import subprocess
 import sys
 
-launcher = Path(__file__).resolve().parent / "smoothcast"
-if not launcher.is_file() or not os.access(launcher, os.X_OK):
-    sys.exit("sc.py: ./smoothcast is missing or not executable")
+root = Path(__file__).resolve().parent
+if os.name == "nt":
+    raise SystemExit(subprocess.call(
+        [sys.executable, str(root / "setup" / "launch.py"), *sys.argv[1:]],
+        cwd=root,
+    ))
+
+launcher = root / "smoothcast"
+if not launcher.is_file():
+    sys.exit("sc.py: SmoothCast launcher is missing")
 os.execv(str(launcher), [str(launcher), *sys.argv[1:]])
