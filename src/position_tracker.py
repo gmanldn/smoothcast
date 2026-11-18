@@ -49,6 +49,10 @@ class PositionTracker:
             if self._pause_started is not None:
                 self._paused_accum += now - self._pause_started
                 self._pause_started = None
+            if self._device_pos is not None:
+                # While paused, the device reports a fixed position. Rebase
+                # extrapolation on resume rather than counting paused seconds.
+                self._device_epoch = now
         else:
             self._pause_started = now
         self._playing = playing
