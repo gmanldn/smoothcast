@@ -357,6 +357,15 @@ The same bundle is available from the app menu under **Save diagnostics…**. It
 ## License
 
 MIT
+## Configuration robustness
+
+Saved preferences are validated separately for each key. If a configuration
+contains a null recent-file list, a nonnumeric gain or an unknown audio profile,
+SmoothCast falls back only for the invalid field and preserves valid neighbours.
+Collection sizes and numeric ranges are bounded; nested defaults are copied
+for each load. Reading the file never overwrites the user's original settings.
+Implementation: GTK-independent `src/config_control.py`.
+
 ## Issues and improvement planning
 
 **All unfinished features, regressions, device qualification and suggested
