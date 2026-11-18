@@ -50,6 +50,19 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertEqual(session.state.rotation, 90)
             self.assertIn("192.168.1.23:8767", session.state.stream_url)
 
+    def test_direct_cast_remains_active_after_successful_catt_exit(self):
+        session = streamer.Session()
+        session.state = streamer.SessionState(
+            file="movie.mp4", mode="direct", offset=0.0, duration=120,
+            device="TV", title="Film",
+        )
+        caster = mock.Mock()
+        caster.poll.return_value = 0  # catt exits on success, Chromecast keeps playing.
+        session.caster = caster
+        self.assertTrue(session.active())
+        session.state = None
+        self.assertFalse(session.active())
+
     def test_cast_route_preferred_over_other_interfaces(self):
         fake = mock.MagicMock()
         fake.__enter__.return_value = fake
