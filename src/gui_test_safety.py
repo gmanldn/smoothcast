@@ -12,6 +12,8 @@ from typing import Mapping
 
 def is_isolated_gui_test(env: Mapping[str, str] | None = None) -> bool:
     values = os.environ if env is None else env
+    if values.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+        return False
     if values.get("SMOOTHCAST_GUI_TEST_ISOLATED") != "1":
         return False
     if values.get("GDK_BACKEND") != "x11" or not values.get("DISPLAY"):
