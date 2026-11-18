@@ -357,6 +357,17 @@ The same bundle is available from the app menu under **Save diagnostics…**. It
 ## License
 
 MIT
+## Configuration robustness
+
+Saved preferences are loaded independently per key. Malformed JSON or an
+invalid value (for example, a null recent-file list, nonnumeric audio gain
+or unknown audio profile) falls back to its default **without discarding
+other valid choices**. Collection sizes and numeric ranges are bounded.
+SmoothCast does not overwrite the original configuration merely by reading
+or recovering it; the next explicit settings save writes the sanitised state.
+Validation lives in the GTK-independent `src/config_control.py` and has
+portable automated regression tests.
+
 ## Issues and improvement planning
 
 **All unfinished features, regressions, device qualification and suggested
