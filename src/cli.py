@@ -9,6 +9,13 @@ def main() -> int:
         from version import label
         print(f"SmoothCast {label()}")
         return 0
+    # Reject unsafe self-tests *before importing GTK* or connecting to a
+    # developer's running GApplication (which would steal desktop focus).
+    if "--self-test" in sys.argv[1:]:
+        from gui_test_safety import is_isolated_gui_test, refusal
+        if not is_isolated_gui_test():
+            print(refusal(), file=sys.stderr)
+            return 2
     # Import native GUI dependencies only when actually starting the app.
     from cast_control import main as gui_main
     return gui_main()
