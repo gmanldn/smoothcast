@@ -4,7 +4,7 @@
 GNOME dock pins, discover/control the user's TV, or touch real media. Never use
 `gtk-launch`, `./smoothcast` (except `--version`), plain
 `python3 src/cast_control.py`, or bare `--self-test` in a test loop.
-Do not use the user's live X11/Wayland display or desktop D-Bus.
+Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 
 Headless portable verification from repo root:
 
