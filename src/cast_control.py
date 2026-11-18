@@ -3389,8 +3389,16 @@ class MainWindow(Adw.ApplicationWindow):
                 self._queue_preview(self._preview_position)
             self._rebuild_queue()
 
+        def failed(message):
+            if (generation == self._preview_generation
+                    and self.session is None and self._preview_path == path):
+                self.np_meta.set_text(f"Cannot inspect film: {message}")
+                self.preview.set_video(pretty_title(path), "Media inspection failed")
+                self.toast(f"Cannot inspect {pathlib.Path(path).name}: {message}", error=True)
+            self._console(f"FFprobe failed for {pathlib.Path(path).name}: {message}")
+
         if cached is None or cached[0] != fingerprint:
-            Async.run(work, done=done)
+            Async.run(work, done=done, failed=failed)
         else:
             self.preview.set_video(pretty_title(path), " · ".join(
                 x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
