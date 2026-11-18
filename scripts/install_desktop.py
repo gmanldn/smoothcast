@@ -58,8 +58,11 @@ def write_if_changed(destination: Path, contents: bytes) -> bool:
     return True
 
 
-def repair_gnome_favourites() -> bool:
-    """Migrate only SmoothCast's old dock pins; preserve their position."""
+def repair_gnome_favourites(*, pin: bool = False) -> bool:
+    """Migrate SmoothCast's old dock pins; with pin=True also add a missing pin.
+
+    Existing pins keep their positions; nothing is reordered or duplicated.
+    """
     if "GNOME" not in os.environ.get("XDG_CURRENT_DESKTOP", "").upper():
         return False
     if not shutil.which("gsettings"):
@@ -77,6 +80,8 @@ def repair_gnome_favourites() -> bool:
             item = replacement if item in LEGACY_IDS else item
             if item != replacement or item not in updated:
                 updated.append(item)
+        if pin and replacement not in updated:
+            updated.append(replacement)
         if updated == parsed:
             return False
         subprocess.run(("gsettings", "set", *key, str(updated)),
@@ -86,7 +91,7 @@ def repair_gnome_favourites() -> bool:
         return False  # Unsupported shell/schema/session; never block launch.
 
 
-def install(*, data_home: Path | None = None, repair_pins: bool = True) -> bool:
+def install(*, data_home: Path | None = None, repair_pins: bool = True, pin: bool = False) -> bool:
     launcher = ROOT / "smoothcast"
     source_icon = ROOT / "data" / "cast-control.png"
     if not launcher.is_file() or not source_icon.is_file():
@@ -101,7 +106,7 @@ def install(*, data_home: Path | None = None, repair_pins: bool = True) -> bool:
     # The originally shipped desktop ID was smoothcast.desktop; GNOME favourites
     # need updating to the real GTK app ID for dock grouping and window focusing.
     if repair_pins:
-        changed |= repair_gnome_favourites()
+        changed |= repair_gnome_favourites(pin=pin)
     return changed
 
 
@@ -109,6 +114,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check desktop integration without modifying files")
+    parser.add_argument("--pin", action="store_true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
     args = parser.parse_args()
     try:
         if args.check:
@@ -118,7 +124,7 @@ def main() -> int:
             if not args.quiet:
                 print("SmoothCast desktop integration: OK" if ok else "SmoothCast desktop integration: needs repair")
             return 0 if ok else 1
-        changed = install()
+        changed = install(repair_pins=True, pin=args.pin)
         if not args.quiet:
             print("SmoothCast desktop integration: repaired" if changed else "SmoothCast desktop integration: OK")
         return 0

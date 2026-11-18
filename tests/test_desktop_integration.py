@@ -63,6 +63,23 @@ class DesktopIntegrationTests(unittest.TestCase):
                     self.assertEqual(run.call_args_list[-1].args[0][-1],
                                      "['firefox.desktop', 'local.cast-control.desktop', 'terminal.desktop']")
 
+    def test_gnome_pin_appends_without_reordering(self):
+        with mock.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "GNOME"}):
+            with mock.patch.object(desktop.shutil, "which", return_value="/usr/bin/gsettings"):
+                with mock.patch.object(desktop.subprocess, "run") as run:
+                    run.return_value.stdout = "['firefox.desktop', 'terminal.desktop']\n"
+                    self.assertTrue(desktop.repair_gnome_favourites(pin=True))
+                    self.assertEqual(run.call_args_list[-1].args[0][-1],
+                                     "['firefox.desktop', 'terminal.desktop', 'local.cast-control.desktop']")
+
+    def test_gnome_pin_is_noop_when_already_pinned(self):
+        with mock.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": "GNOME"}):
+            with mock.patch.object(desktop.shutil, "which", return_value="/usr/bin/gsettings"):
+                with mock.patch.object(desktop.subprocess, "run") as run:
+                    run.return_value.stdout = "['firefox.desktop', 'local.cast-control.desktop']\n"
+                    self.assertFalse(desktop.repair_gnome_favourites(pin=True))
+                    self.assertEqual(run.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,7 +67,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.37`
+- Current: `1.0.38`
 - Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
@@ -82,7 +82,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.37`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.38`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -112,3 +112,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Completed work
 24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.
+
+25. Dock artwork: new SmoothCast icon (dark slate squircle, gradient cast glyph with signal arcs, play cutout, glow halo) regenerated offline by `scripts/make_icon.py` and committed at `data/cast-control.png`; `scripts/install_desktop.py --pin` pins SmoothCast to the GNOME dock without reordering existing favorites. Tests: `tests/test_desktop_integration.py`.
+
+26. (none yet — placeholder)
