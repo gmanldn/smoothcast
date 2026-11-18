@@ -731,6 +731,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
         self._volume_job: int | None = None
+        self._volume_target: str | None = None
         self._volume_user_ts = 0.0
         self._syncing = False
         self._subs_cache: tuple[str, str | None] = ("", None)
@@ -985,6 +986,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Clear any queued timer-based pending state.
         self._volume_job = None
+        self._volume_target = None
         self._volume_user_ts = 0.0
         self._syncing = False
         self._subs_cache = ("", None)
@@ -1922,6 +1924,11 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("Stop the current cast before changing TV", error=True)
             return
         if name and name != self.cfg["device"]:
+            # Never allow a previously queued volume write for A to affect B.
+            if self._volume_job is not None:
+                GLib.source_remove(self._volume_job)
+                self._volume_job = None
+            self._volume_target = None
             self.cfg["device"] = name
             save_config(self.cfg)
             self.title_widget.set_subtitle(name)
@@ -2556,16 +2563,20 @@ class MainWindow(Adw.ApplicationWindow):
         if self._syncing:
             return
         self._volume_user_ts = time.time()
+        self._volume_target = self._device()
         if self._volume_job is not None:
             GLib.source_remove(self._volume_job)
         self._volume_job = GLib.timeout_add(300, self._commit_volume)
 
     def _commit_volume(self) -> bool:
         self._volume_job = None
-        if self.device_state == "OFFLINE":
+        # Debouncing must not reinterpret a change intended for TV A
+        # as a fresh command to TV B after switching the selected device.
+        target, self._volume_target = self._volume_target, None
+        if self.device_state == "OFFLINE" or target is None or target != self._device():
             return False
         value = int(self.volume_scale.get_value())
-        device = self._device()
+        device = target
         renderer = self._dlna_renderer(device)
         if renderer is not None:
             Async.run(lambda: dlna.volume(renderer, value),
@@ -3444,6 +3455,26 @@ class MainWindow(Adw.ApplicationWindow):
             self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
             self._rebuild_queue()
 
+    def _retire_unqueued_preview(self) -> None:
+        """Retire deleted local media without touching an owned TV session."""
+        if (self.session is not None or self.external or
+                self._preview_path is None or self._preview_path in self.queue):
+            return
+        self._preview_generation += 1
+        self._preview_pending = None
+        self._unload_local_video()
+        self._preview_path = None
+        self._preview_position = 0.0
+        self.preview_picture.set_visible(False)
+        self.media = None
+        self._update_audio_choices(None)
+        self.embedded_dropdown.set_visible(False)
+        self.seekbar.set_state(0.0, 0.0, 0.0)
+        self.elapsed_label.set_text("00:00")
+        self.remaining_label.set_text("--:--")
+        self.np_title.set_text("Ready to cast")
+        self.np_meta.set_text("Open a film to inspect and cast it")
+
     def _remove_queue(self, index: int) -> None:
         if 0 <= index < len(self.queue):
             removed = self.queue.pop(index)
@@ -3454,11 +3485,13 @@ class MainWindow(Adw.ApplicationWindow):
                 self.session and self.session.state is not None
             ):
                 self.now_playing = None
+            self._retire_unqueued_preview()
             self._rebuild_queue()
 
     def clear_queue(self) -> None:
         self.queue.clear()
         self.selected_index = None
+        self._retire_unqueued_preview()
         self._rebuild_queue()
         self.toast("Queue cleared")
 
@@ -3547,8 +3580,13 @@ class MainWindow(Adw.ApplicationWindow):
         row = self.queue_list.get_row_at_index(index)
         if row is not None:
             self.queue_list.select_row(row)
-        if self.now_playing is None:
+        if self.now_playing is None and not self.busy:
             self.np_title.set_text(pathlib.Path(path).name)
+        # Re-selecting a queued film while casting must not change active
+        # media metadata, its audio/subtitle tracks or the receiver clock.
+        if self.session is not None or self.external or self.busy:
+            self._refresh_controls()
+            return
         if self.session is None and not self.external:
             if self._preview_path == path:
                 return  # A row re-selection must not reset the local playhead.

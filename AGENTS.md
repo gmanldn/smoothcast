@@ -7,6 +7,24 @@
 - **Version authority:** `src/version.py` alone defines MAJOR/MINOR/PATCH and `__version__`. Bump the semantic release once when publishing a coherent release; use the Git commit SHA to identify individual intermediate commits. Never duplicate a hardcoded *current* version in documentation, the launcher, GTK labels, or tests.
 - Keep responses short and technical. No preamble, no postamble.
 
+## Improvement backlog preservation (mandatory)
+
+- `IMPROVEMENTS.md` is an accumulating, numbered backlog. **Never replace
+  the entire file with a fresh 50-item list.** New ideas go after the current
+  highest number, with their provenance and acceptance conditions. If merging
+  branches, reconcile both sets before committing, even where themes overlap.
+- The original researched 50 items plus historical done markers are preserved
+  verbatim in `docs/IMPROVEMENTS_ORIGINAL_50_20261118.md` (Git source
+  `7b8bd62c8a06`). The later 100 compatibility and audit items remain in the
+  canonical file, followed by recovered original-only items 101–132.
+- A historical checkmark does **not** qualify a present implementation; code,
+  portable tests, native GUI smoke tests and actual device tests are distinct.
+- Never claim an uncommitted GPT Astra batch has been restored without the
+  source file, stash or backup as evidence. Preserve suspected local work before
+  pulling or merging; do not silently overwrite it.
+- `tests/test_backlog_regressions.py` is a preservation and playback-safety
+  guard. Maintain it when intentionally extending the backlog.
+
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Checkout launcher: `./smoothcast` (Linux/macOS) bootstraps a project-local `.venv` and hands off to `setup/launch.py`. On Windows, `python sc.py` delegates to `setup/launch.py` after `setup/winsetup.bat`. Never leave shell-generation commands in the launcher, use unset variables, or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported launcher paths tested.

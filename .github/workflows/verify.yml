@@ -40,6 +40,15 @@ jobs:
       - name: Run all portable regression tests
         run: python -m pytest -q tests
 
+      - name: Prove tests cannot see a simulated active desktop
+        env:
+          DISPLAY: ':0'
+          WAYLAND_DISPLAY: 'wayland-0'
+          DBUS_SESSION_BUS_ADDRESS: 'unix:path=/tmp/smoothcast-test-live-bus'
+          XAUTHORITY: '/tmp/smoothcast-test-live-xauthority'
+          SMOOTHCAST_GUI_TEST_ISOLATED: '1'
+        run: python -m pytest -q tests/test_gui_test_safety.py
+
   media-integration:
     name: FFmpeg MKV/SRT runtime integration
     runs-on: ubuntu-24.04

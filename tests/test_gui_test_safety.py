@@ -24,6 +24,33 @@ spec.loader.exec_module(runner)
 
 
 class GuiTestSafetyTests(unittest.TestCase):
+    def test_current_pytest_process_cannot_connect_to_user_display(self):
+        # Under pytest, conftest has already removed real desktop handles,
+        # even if DISPLAY/Wayland/DBus were injected by the caller.
+        if os.environ.get("SMOOTHCAST_TEST_CONTEXT") != "1":
+            self.skipTest("Only pytest loads the pre-collection safety guard")
+        self.assertEqual(os.environ.get("GDK_BACKEND"), "x11")
+        for key in (
+            "DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+            "XAUTHORITY", "SMOOTHCAST_GUI_TEST_ISOLATED",
+        ):
+            with self.subTest(key=key):
+                self.assertNotIn(key, os.environ)
+
+    def test_pytest_clears_inherited_desktop_display_channels(self):
+        # Guard must be applied before test collection, not after tests have
+        # had a chance to create GTK objects or spawn GUI subprocesses.
+        source = (ROOT / "tests" / "conftest.py").read_text("utf-8")
+        ast.parse(source)
+        self.assertIn('os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"', source)
+        self.assertIn('os.environ["GDK_BACKEND"] = "x11"', source)
+        for name in (
+            "DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+            "XAUTHORITY", "SMOOTHCAST_GUI_TEST_ISOLATED",
+        ):
+            self.assertIn(f'"{name}"', source)
+        self.assertIn("os.environ.pop(name, None)", source)
+
     def test_live_desktop_refused_even_when_selftest_argument_explicit(self):
         for env in (
             {},
@@ -38,8 +65,13 @@ class GuiTestSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             authority = Path(folder) / "xauthority"
             authority.touch()
+            token = "e" * 64
+            marker = Path(folder) / "runtime" / ".smoothcast-gui-test-token"
+            marker.parent.mkdir()
+            marker.write_text(token, encoding="ascii")
             env = {
                 "SMOOTHCAST_GUI_TEST_ISOLATED": "1",
+                "SMOOTHCAST_GUI_TEST_TOKEN": token,
                 "DISPLAY": ":123",
                 "GDK_BACKEND": "x11",
                 "XAUTHORITY": str(authority),
@@ -54,12 +86,15 @@ class GuiTestSafetyTests(unittest.TestCase):
                 ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
                 ("GDK_BACKEND", "wayland"),
                 ("SMOOTHCAST_GUI_TEST_ISOLATED", "0"),
+                ("SMOOTHCAST_GUI_TEST_TOKEN", "a" * 64),
                 ("XAUTHORITY", "/nonexistent/smoothcast-xauthority"),
                 ("XDG_CONFIG_HOME", ""),
             ):
                 with self.subTest(name=name):
                     broken = dict(env, **{name: value})
                     self.assertFalse(gui_test_safety.is_isolated_gui_test(broken))
+            marker.unlink()
+            self.assertFalse(gui_test_safety.is_isolated_gui_test(env))
 
     def test_console_selftest_fails_before_importing_gtk(self):
         env = dict(os.environ)
@@ -108,6 +143,7 @@ class GuiTestSafetyTests(unittest.TestCase):
                 self.assertNotIn(key, env)
             self.assertEqual(env["GDK_BACKEND"], "x11")
             self.assertEqual(env["SMOOTHCAST_GUI_TEST_ISOLATED"], "1")
+            self.assertEqual(len(env["SMOOTHCAST_GUI_TEST_TOKEN"]), 64)
             self.assertEqual(env["GSETTINGS_BACKEND"], "memory")
             for name in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
                          "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"):
