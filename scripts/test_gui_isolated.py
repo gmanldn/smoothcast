@@ -44,6 +44,10 @@ def isolated_environment(scratch: Path, parent: dict[str, str] | None = None) ->
 
 
 def main() -> int:
+    if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
+        print("GUI smoke tests are opt-in and must run outside pytest.",
+              file=sys.stderr)
+        return 2
     if sys.platform != "linux":
         print("Isolated GTK smoke test requires Linux/Xvfb.", file=sys.stderr)
         return 2
