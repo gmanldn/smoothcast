@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Register SmoothCast's launcher and icon for the current Linux user.
 
-Safe to run on every GUI launch; no sudo, no PATH assumptions, no duplicate
-visible application entry. The desktop ID matches GTK's application ID.
+Dock entries use this checkout's absolute launcher, never an outdated
+same-named pip or PATH command. The desktop ID matches GTK's application ID.
 """
 from __future__ import annotations
 
@@ -131,11 +131,11 @@ def install(*, data_home: Path | None = None, repair_pins: bool = True, pin: boo
     apps = base / "applications"
     icon = base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png"
     changed = write_if_changed(icon, source_icon.read_bytes())
-    # Canonical entry: project's smoothcast script (adds Path/TryExec for dock integration).
-    # Exec uses bare console-script name so installed version works; Path/TryExec point to checkout.
-    changed |= write_if_changed(apps / f"{APP_ID}.desktop", desktop_entry(ROOT / "smoothcast", exec_name="smoothcast"))
-    # Shadow any system-wide legacy entry and keep existing legacy dock pins usable.
-    changed |= write_if_changed(apps / "smoothcast.desktop", desktop_entry(ROOT / "smoothcast", legacy=True, exec_name="smoothcast"))
+    # Pin one *specific checkout* to the dock; a bare "smoothcast" command
+    # can resolve to a stale pip script or a different installation on PATH.
+    # Preserve a hidden alias for previously pinned desktop IDs.
+    changed |= write_if_changed(apps / f"{APP_ID}.desktop", desktop_entry(ROOT / "smoothcast"))
+    changed |= write_if_changed(apps / "smoothcast.desktop", desktop_entry(ROOT / "smoothcast", legacy=True))
     # The originally shipped desktop ID was smoothcast.desktop; GNOME favourites
     # need updating to the real GTK app ID for dock grouping and window focusing.
     if repair_pins:
