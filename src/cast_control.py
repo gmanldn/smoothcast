@@ -45,6 +45,7 @@ DEFAULTS: dict = {
     "subs": "auto",
     "subs_path": "",
     "subtitle_track_by_file": {},
+    "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,
     "autonext": False,
@@ -1505,6 +1506,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.audio_dropdown.set_selected({"original": 0, "dialogue": 1, "night": 2}.get(self.cfg["audio"], 1))
         self.audio_dropdown.connect("notify::selected", self._on_audio)
 
+        self.audio_track_dropdown = dropdown_row(
+            "Film audio track",
+            ["Auto (file default)"],
+            -1,
+            "Choose the MKV audio language, commentary or channel mix; changing the active cast restarts at the current position",
+        )
+        self.audio_track_dropdown.set_sensitive(False)
+        self.audio_track_dropdown.connect("notify::selected", self._on_audio_track)
+
         self.rotation_dropdown = dropdown_row(
             "Video rotation",
             ["None", "90°", "180°", "270°"],
@@ -2713,13 +2723,21 @@ class MainWindow(Adw.ApplicationWindow):
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
         # A device-native stream cannot apply ffmpeg speed/rotation filters.
         # Always transcode when either transform is enabled, even for H.264/AAC.
+        saved_audio = cfg.get("audio_track_by_file")
+        requested_audio = (saved_audio.get(str(path), -1)
+                           if isinstance(saved_audio, dict) else -1)
+        audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
-            and speed == 1.0 and rotation == 0
+            and speed == 1.0 and rotation == 0 and audio_track < 0
         )
 
         def work():
             media = streamer.ffprobe(path)
+            if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
+                raise streamer.StreamError(
+                    "The selected audio track is no longer in this film; choose Auto or another track"
+                )
             embedded = None
             if subs_mode == "embedded" or (subs_mode == "auto" and subs_path is None):
                 saved = cfg.get("subtitle_track_by_file") or {}
@@ -2755,6 +2773,7 @@ class MainWindow(Adw.ApplicationWindow):
                     speed=speed,
                     rotation=rotation,
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
+                    audio_track_index=audio_track,
                 )
                 return session, media
             except Exception:
@@ -2770,6 +2789,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
+            self._update_audio_choices(media)
             self.now_playing = str(path)
             if str(path) in self.queue:
                 self.selected_index = self.queue.index(str(path))
@@ -2897,7 +2917,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
-    def _restart_at(self, session, target: float, *, speed_override: float | None = None) -> None:
+    def _restart_at(self, session, target: float, *, speed_override: float | None = None,
+                    audio_track_override: int | None = None) -> None:
         device = self._device()
         device_ip = self._device_host(device)
         state = session.state
@@ -2914,6 +2935,10 @@ class MainWindow(Adw.ApplicationWindow):
             else float(self.cfg.get("playback_speed", 1.0))
         )
         rotation = int(state.rotation) if state else self.cfg["rotation"]
+        audio_track = (
+            audio_track_override if audio_track_override is not None
+            else state.audio_track_index if state else -1
+        )
         burn = bool(state.burn_subs) if state else False
         subs_path = None
         if state and state.subs:
@@ -2938,6 +2963,7 @@ class MainWindow(Adw.ApplicationWindow):
                         state.embedded_subtitle_index
                         if state is not None and state.embedded_subtitle_index >= 0 else None
                     ),
+                    audio_track_index=audio_track,
                 )
             except Exception:
                 try:
@@ -2950,6 +2976,7 @@ class MainWindow(Adw.ApplicationWindow):
         def done(result):
             _session, media_result = result
             self.media = media_result
+            self._update_audio_choices(media_result)
             self.busy = False
             gain = _session.state.audio_gain_db if _session.state else 0.0
             chain = streamer.audio_filters(audio, gain)
@@ -3326,6 +3353,7 @@ class MainWindow(Adw.ApplicationWindow):
                 return  # A row re-selection must not reset the local playhead.
             self._unload_local_video()
             self.media = None
+            self._update_audio_choices(None)
             self._preview_path = path
             self._preview_generation += 1
             self._preview_pending = None
@@ -3350,6 +3378,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.queue_durations[path] = cached[1].duration
             self.media = cached[1]
             self._update_embedded_choices(self.media)
+            self._update_audio_choices(self.media)
             self._preview_position = min(
                 self._preview_position, max(0.0, self.media.duration - 1.0)
             ) if self.media.duration else 0.0
@@ -3379,6 +3408,7 @@ class MainWindow(Adw.ApplicationWindow):
                     and not self.external and self._preview_path == path_result):
                 self.media = media
                 self._update_embedded_choices(media)
+                self._update_audio_choices(media)
                 duration = media.duration
                 self._preview_position = min(self._preview_position, max(0.0, duration - 1.0)) if duration else 0.0
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
@@ -3455,6 +3485,63 @@ class MainWindow(Adw.ApplicationWindow):
             save_config(self.cfg)
             self.toast(f"Sound: {streamer.AUDIO_LABELS[value]} (restart to apply)")
         self._refresh_direct_note()
+
+    def _update_audio_choices(self, media: streamer.MediaInfo | None) -> None:
+        """Refresh a per-file audio picker without triggering a cast command."""
+        picker = getattr(self, "audio_track_dropdown", None)
+        if picker is None:
+            return
+        self._syncing = True
+        try:
+            tracks = media.audio_streams if media is not None else []
+            picker.set_model(Gtk.StringList.new(
+                ["Auto (file default)"] + [t.label for t in tracks]
+            ))
+            saved = self.cfg.get("audio_track_by_file") or {}
+            requested = saved.get(str(media.path), -1) if media is not None and isinstance(saved, dict) else -1
+            selected = next(
+                (i + 1 for i, track in enumerate(tracks) if track.index == requested), 0
+            )
+            picker.set_selected(selected)
+            picker.set_sensitive(bool(tracks))
+        finally:
+            self._syncing = False
+
+    def _on_audio_track(self, dropdown, _param) -> None:
+        if self._syncing or self.media is None:
+            return
+        selected = dropdown.get_selected()
+        tracks = self.media.audio_streams
+        if not (0 <= selected <= len(tracks)):
+            return
+        choice = tracks[selected - 1].index if selected else -1
+        path = str(self.media.path)
+        active = self.session is not None and self.session.state is not None and self.session.state.file == path
+        if active and self.busy:
+            self.toast("Hold on — finishing the last cast command")
+            self._update_audio_choices(self.media)
+            return
+        saved = self.cfg.get("audio_track_by_file")
+        if not isinstance(saved, dict):
+            saved = {}
+        if (saved.get(path, -1) == choice
+                and (not active or self.session.state.audio_track_index == choice)):
+            return
+        saved[path] = choice
+        self.cfg["audio_track_by_file"] = saved
+        save_config(self.cfg)
+        self._refresh_direct_note()
+        if active:
+            # A new audio track requires re-encoding. Preserve the source-film
+            # clock and do not allow two cast/seek jobs to race.
+            position = self.tracker.value() or 0.0
+            self.busy = True
+            self._refresh_controls()
+            self.tracker.device_update(position, self.media.duration)
+            self._restart_at(self.session, position, audio_track_override=choice)
+            self.toast("Switching audio track at current film position…")
+        else:
+            self.toast("Audio track saved for the next cast")
 
     def _on_rotation(self, dropdown, _param) -> None:
         if self._syncing:
