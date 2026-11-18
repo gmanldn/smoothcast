@@ -68,7 +68,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.39`
+- Current: `1.0.40`
 - Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
@@ -83,7 +83,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.39`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.40`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -116,4 +116,4 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 25. Dock artwork: new SmoothCast icon (dark slate squircle, gradient cast glyph with signal arcs, play cutout, glow halo) regenerated offline by `scripts/make_icon.py` and committed at `data/cast-control.png`; `scripts/install_desktop.py --pin` pins SmoothCast to the GNOME dock without reordering existing favorites. Tests: `tests/test_desktop_integration.py`.
 
-26. Media-console visual redesign (v1.0.39): all application CSS belongs in `src/ui_theme.py`, not a second hard-coded stylesheet in `cast_control.py`. Keep contrast-safe `PALETTE` tokens; `tests/test_visual_design.py` checks them and the callback/layout invariants. `PreviewScreen` is intentionally a *drawn metadata slate*, never a fabricated film frame; its title must ellipsise at any width. The Now Playing hero and primary Open video action have distinct emphasis. Empty queue/activity states must collapse their scrollers (no large vacant panels). Device status badges come from `castctl.info`; never claim a connection from scan results alone. Group playback options and stream diagnostics. Preserve native GTK4 widget semantics, responsive reflow, keyboard shortcuts, all cast callbacks and activity logging.
+26. Media-console visual redesign (v1.0.40): all application CSS belongs in `src/ui_theme.py`, not a second hard-coded stylesheet in `cast_control.py`. Keep contrast-safe `PALETTE` tokens; `tests/test_visual_design.py` checks them and the callback/layout invariants. `PreviewScreen` is intentionally a *drawn metadata slate*, never a fabricated film frame; its title must ellipsise at any width. The Now Playing hero starts with Open video as the primary action; when a local video is selected, Cast to TV becomes primary while Open remains available. Empty queue/activity states must collapse their scrollers (no large vacant panels). Device status badges come from `castctl.info`; never claim a connection from scan results alone. Group playback options and stream diagnostics. Preserve native GTK4 widget semantics, responsive reflow, keyboard shortcuts, all cast callbacks and activity logging.
