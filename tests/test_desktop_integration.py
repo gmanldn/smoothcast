@@ -27,8 +27,9 @@ class DesktopIntegrationTests(unittest.TestCase):
     def test_installs_matching_desktop_id_and_icon(self):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         entry = (self.data_home / "applications/local.cast-control.desktop").read_text()
-        # Canonical entry uses the bare pip-installed console script name.
-        self.assertIn('Exec=smoothcast %F', entry)
+        # The dock must start *this checkout*, never a stale pip command.
+        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', entry)
+        self.assertNotIn('Exec=smoothcast %F', entry)
         self.assertIn("Icon=local.cast-control\n", entry)
         self.assertIn("StartupWMClass=local.cast-control\n", entry)
         self.assertIn("Path=" + str(self.root) + "\n", entry)
@@ -38,7 +39,13 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
         legacy = (self.data_home / "applications/smoothcast.desktop").read_text()
         self.assertIn("NoDisplay=true\n", legacy)
-        self.assertIn('Exec=smoothcast %F', legacy)
+        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', legacy)
+        self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
+
+    def test_check_contract_matches_installed_absolute_exec(self):
+        desktop.install(data_home=self.data_home, repair_pins=False)
+        entry = (self.data_home / "applications/local.cast-control.desktop").read_bytes()
+        self.assertEqual(entry, desktop.desktop_entry(self.root / "smoothcast"))
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
 
     def test_repairs_changed_launcher_and_icon_without_duplication(self):
