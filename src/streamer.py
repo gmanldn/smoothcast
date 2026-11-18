@@ -698,7 +698,9 @@ class Session:
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-progress", str(PROGRESS_FILE), "-nostats",
-            "-ss", str(max(0.0, offset)), "-re",
+            # Read source samples at the requested playback rate: a 2×
+            # setpts/atempo stream needs 2× input, otherwise the TV starves.
+            "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
         args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
