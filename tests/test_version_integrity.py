@@ -60,8 +60,12 @@ class CanonicalVersionTests(unittest.TestCase):
 
     def test_cli_version_bypasses_gtk_and_venv(self):
         env = dict(os.environ, PYTHON=sys.executable)
+        # CI may not have installed the console entrypoint on PATH. Verify
+        # the checkout launcher itself; it must not create .venv or load GTK.
+        command = ([str(ROOT / "smoothcast"), "--version"] if os.name != "nt"
+                   else [sys.executable, str(ROOT / "src" / "version.py")])
         result = subprocess.run(
-            ["smoothcast", "--version"],
+            command,
             env=env, text=True, capture_output=True, timeout=10,
             check=True,
         )
