@@ -71,3 +71,4 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 - [x] 36. Sleep timer
 - [x] 46. Auto theme by time
 - [x] 34. Resume from last position
+- [x] 37. Auto-shutdown after playlist ends
