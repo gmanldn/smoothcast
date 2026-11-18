@@ -19,6 +19,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import castctl
 import streamer
 import audio_monitor
+import screenshot
 import playback_state
 import update_control
 import version
@@ -2857,20 +2858,25 @@ class MainWindow(Adw.ApplicationWindow):
         dialog.present(self)
 
     def _screenshot(self) -> None:
-        import subprocess
-        path = self.cfg.get("screenshot_dir", str(pathlib.Path.home() / "Pictures"))
-        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-        out = pathlib.Path(path) / f"smoothcast_{int(time.time())}.png"
-        pos = self.tracker.value() or 0.0
         media = self.media
         if media is None:
             self.toast("No media loaded", error=True)
             return
-        try:
-            subprocess.run(["ffmpeg", "-y", "-ss", str(pos), "-i", str(media.path), "-frames:v", "1", str(out)], check=True, capture_output=True)
-            self.toast(f"Screenshot saved: {out.name}")
-        except Exception as e:
-            self.toast(f"Screenshot failed: {e}", error=True)
+        source = pathlib.Path(media.path)
+        output_dir = pathlib.Path(
+            self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
+        ).expanduser()
+        position = self.tracker.value() or 0.0
+        self.toast("Capturing screenshot…")
+        # FFmpeg, filesystem access and a corrupt input file may block for
+        # seconds. Keep all of it off the GTK event loop.
+        Async.run(
+            lambda: screenshot.capture_frame(source, position, output_dir),
+            done=lambda out: self.toast(f"Screenshot saved: {out.name}"),
+            failed=lambda message: self.toast(
+                f"Screenshot failed: {message}", error=True,
+            ),
+        )
 
     def _adopt_session(self) -> bool:
         state = streamer.load_session()

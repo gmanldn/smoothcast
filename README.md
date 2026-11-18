@@ -12,7 +12,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Direct play** — untouched passthrough for compatible files
 - **Subtitle support** — auto-select, burn-in, or disable
 - **Queue / Up Next** — auto-play next after the TV finishes playback and prior stream cleanup completes; drag-reorder
-- **Keyboard shortcuts** — space, arrows, etc.; GTK4-compatible fullscreen and working Clear recent files action (always-on-top is managed by the compositor, not GTK4)
+- **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
 ## Quick start (self-contained)
 

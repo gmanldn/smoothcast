@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.25`
+- Current: `1.0.26`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.25`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.26`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -88,6 +88,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 19. Encoder fallback: hardware VAAPI is allowed 15s to generate HLS media; software libx264 gets 30s. A stalled but live hardware FFmpeg process must be terminated before one software retry. No infinite fallback loops. `test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive` validates the failure mode.
 
 20. GTK4 action integrity: use `window.fullscreen()/unfullscreen()`, never GTK3-only `set_fullscreen()/set_keep_above()`. Window stacking is compositor-controlled; do not advertise an unsupported always-on-top action. Every `Gio.Menu` entry must correspond to a registered `Gio.SimpleAction`, including `app.clear-recents`.
+
+21. Screenshot capture: `src/screenshot.py` runs FFmpeg only in a background worker with a bounded timeout, no stdin, and a unique non-overwriting output path. Never reintroduce synchronous `subprocess.run` in `MainWindow._screenshot`. Regression tests: `tests/test_screenshot.py`.
 
 ## Pending work
 Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
