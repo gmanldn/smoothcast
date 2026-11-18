@@ -50,6 +50,7 @@ DEFAULTS: dict = {
     "positions": {},
     "loop": False,
     "playback_speed": 1.0,
+    "rotation": 0,
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "window_width": 1600,
@@ -1508,6 +1509,15 @@ class MainWindow(Adw.ApplicationWindow):
         self.audio_dropdown.set_selected({"original": 0, "dialogue": 1, "night": 2}.get(self.cfg["audio"], 1))
         self.audio_dropdown.connect("notify::selected", self._on_audio)
 
+        self.rotation_dropdown = dropdown_row(
+            "Video rotation",
+            ["None", "90°", "180°", "270°"],
+            self.cfg["rotation"],
+            "Rotate the transcoded video clockwise — applies on the next (re)start",
+        )
+        self.rotation_dropdown.set_selected({0: 0, 90: 1, 180: 2, 270: 3}.get(self.cfg["rotation"], 0))
+        self.rotation_dropdown.connect("notify::selected", self._on_rotation)
+
         gain_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         gain_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         gain_text.set_hexpand(True)
@@ -2335,6 +2345,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
+                    rotation=cfg["rotation"],
                 )
                 return session, media
             except Exception:
@@ -2469,6 +2480,7 @@ class MainWindow(Adw.ApplicationWindow):
         quality = state.quality if state else self.cfg["quality"]
         audio = state.audio if state else self.cfg["audio"]
         speed = float(state.speed) if state and state.speed else float(self.cfg.get("playback_speed", 1.0))
+        rotation = int(state.rotation) if state else self.cfg["rotation"]
         burn = bool(state.burn_subs) if state else False
         subs_path = None
         if state and state.subs:
@@ -2488,6 +2500,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
+                    rotation=rotation,
                 )
             except Exception:
                 try:
@@ -2886,6 +2899,16 @@ class MainWindow(Adw.ApplicationWindow):
             save_config(self.cfg)
             self.toast(f"Sound: {streamer.AUDIO_LABELS[value]} (restart to apply)")
         self._refresh_direct_note()
+
+    def _on_rotation(self, dropdown, _param) -> None:
+        if self._syncing:
+            return
+        mapping = {0: 0, 1: 90, 2: 180, 3: 270}
+        value = mapping.get(dropdown.get_selected(), 0)
+        if value != self.cfg.get("rotation"):
+            self.cfg["rotation"] = value
+            save_config(self.cfg)
+            self.toast(f"Video rotation {value}° (restart to apply)")
 
     def _refresh_direct_note(self) -> None:
         switch = getattr(self, "direct_switch", None)

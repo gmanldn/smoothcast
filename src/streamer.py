@@ -120,6 +120,28 @@ def atempo_filters(speed: float) -> list:
     return filters
 
 
+_ROTATION_FILTERS = {
+    0: [],
+    90: ["transpose=1"],
+    180: ["transpose=2,transpose=2"],
+    270: ["transpose=2"],
+}
+
+
+def normalize_rotation(degrees) -> int:
+    """Return a valid ffmpeg rotation (0/90/180/270 degrees clockwise), defaulting to 0."""
+    try:
+        degrees = int(degrees)
+    except (TypeError, ValueError):
+        return 0
+    return degrees if degrees in _ROTATION_FILTERS else 0
+
+
+def rotation_filters(degrees: int) -> list[str]:
+    """ffmpeg ``-vf`` entries that rotate the video by *degrees* clockwise."""
+    return list(_ROTATION_FILTERS.get(normalize_rotation(degrees), []))
+
+
 def measure_mean_volume(path: str, max_seconds: int = 60) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of audio.
 
@@ -457,6 +479,7 @@ class SessionState:
     subs: str = ""
     burn_subs: bool = False
     speed: float = 1.0
+    rotation: int = 0
     started_at: float = 0.0
     ffmpeg_pid: int = 0
     server_pid: int = 0
@@ -626,15 +649,17 @@ class Session:
             "-qp", str(qp), "-g", "96",
         ]
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0) -> list[str]:
         chain: list[str] = []
         if burn_subs and staged is not None:
             chain.append(f"subtitles=filename={staged.name}")
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
-        if not software and burn_subs and staged is not None:
-            # Only download/upload when burning subtitles; otherwise frames
-            # stay in GPU memory and the VAAPI encoder handles them directly.
+        chain.extend(rotation_filters(rotation))
+        # VAAPI keeps frames on GPU unless burning subtitles, so a rotation
+        # filter (which runs in software) forces a download/upload round trip.
+        force_software = not software and rotation != 0
+        if (not software and burn_subs and staged is not None) or force_software:
             return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
         if chain:
             return ["-vf", ",".join(chain)]
@@ -654,10 +679,12 @@ class Session:
         audio_gain_db: float = 0.0,
         device_ip: str | None = None,
         speed: float = 1.0,
+        rotation: int = 0,
     ) -> None:
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
+        rotation = normalize_rotation(rotation)
         ROOT.mkdir(parents=True, exist_ok=True)
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
@@ -673,7 +700,7 @@ class Session:
         args += self._hwaccel_args(software)
         args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
         args += self._codec_args(quality, software)
-        args += self._filter_args(burn_subs, staged, software, speed)
+        args += self._filter_args(burn_subs, staged, software, speed, rotation)
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
             # Auto-trim the input so the compressor always engages, then apply
@@ -752,6 +779,7 @@ class Session:
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
             subs=str(subs_file or ""), burn_subs=burn_subs, speed=speed,
+            rotation=rotation,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,

@@ -64,6 +64,7 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 - [x] 3. Frame-accurate seek (comma/period 1s)
 - [x] 10. Screenshot capture
 - [x] 22. Loop toggle
+- [x] 21. Rotation (90/180/270)
 - [x] 26. Recent files clear
 - [x] 30. Fullscreen toggle
 - [x] 38. Network stream open (URL)
