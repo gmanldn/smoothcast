@@ -10,16 +10,12 @@ from dataclasses import dataclass
 
 
 def _find_catt() -> str:
-    """Locate the catt binary: venv first, then PATH, then common locations."""
-    # 1. Project-local venv
-    venv_catt = pathlib.Path(__file__).resolve().parent.parent / ".venv" / "bin" / "catt"
-    if venv_catt.exists():
-        return str(venv_catt)
-    # 2. PATH
+    """Locate the catt binary on PATH or in user-local locations."""
+    # 1. PATH (canonical: installed via `pip install -e .` / `pip install smoothcast`)
     found = shutil.which("catt")
     if found:
         return found
-    # 3. pipx / user-local
+    # 2. pipx / user-local
     for candidate in (
         pathlib.Path.home() / ".local" / "bin" / "catt",
         pathlib.Path.home() / ".local" / "share" / "pipx" / "venvs" / "catt" / "bin" / "catt",

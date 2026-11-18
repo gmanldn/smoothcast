@@ -1055,7 +1055,7 @@ class MainWindow(Adw.ApplicationWindow):
         transport = Gtk.Grid(column_spacing=8, row_spacing=8)
         transport.set_halign(Gtk.Align.CENTER)
         self.transport_grid = transport
-        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=20)
+        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=28)
         self.back30_button = self._text_button("−30", "Back 30 seconds (Shift+←)", self._skip_back30)
         self.back30_button.add_css_class("transport-step")
         self.back10_button = self._text_button("−10", "Back 10 seconds (←)", self._skip_back10)
@@ -1065,7 +1065,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.play_button.add_css_class("big-play")
         self.play_button.add_css_class("transport-primary")
         self.play_image = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
-        self.play_image.set_pixel_size(30)
+        self.play_image.set_pixel_size(50)
         self.play_button.set_child(self.play_image)
         self.play_button.set_tooltip_text("Play / Pause (Space)")
         self.play_button.connect("clicked", lambda _b: self.toggle_play())
@@ -1073,8 +1073,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.fwd10_button.add_css_class("transport-step")
         self.fwd30_button = self._text_button("+30", "Forward 30 seconds (Shift+→)", self._skip_forward30)
         self.fwd30_button.add_css_class("transport-step")
-        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=20)
-        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport stop-control", self.stop_stream, size=20)
+        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=28)
+        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport stop-control", self.stop_stream, size=28)
         self.transport_controls = (
             self.prev_button, self.back30_button, self.back10_button,
             self.play_button, self.fwd10_button, self.fwd30_button,

@@ -102,7 +102,6 @@ headerbar .subtitle {
     font-weight: 800;
 }
 .setting-row {
-    min-height: 36px;
 }
 .label-strong {
     font-weight: 600;
@@ -222,7 +221,6 @@ button.transport {
 }
 button.transport-step, button.pill {
     min-width: 43px;
-    min-height: 40px;
     border-radius: 12px;
     color: #c7d7ec;
     background-color: #1c2b3e;
@@ -265,7 +263,6 @@ scale slider {
     background-color: #76baff;
 }
 dropdown, spinbutton, entry {
-    min-height: 32px;
     border-radius: 10px;
     background-color: #202f43;
     border: 1px solid #364b65;
