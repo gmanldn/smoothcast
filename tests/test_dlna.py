@@ -157,7 +157,7 @@ class DlnaSOAPTests(unittest.TestCase):
         connection.getresponse.return_value = reply
         with mock.patch.object(dlna, "HTTPConnection", return_value=connection):
             with self.assertRaisesRegex(
-                dlna.DlnaError, r"DLNA Seek failed \\(HTTP 500; UPnP 710: No such object\\)"
+                dlna.DlnaError, r"DLNA Seek failed \(HTTP 500; UPnP 710: No such object\)"
             ):
                 dlna._soap(self.renderer, "Seek", {"InstanceID": "0"})
         connection.close.assert_called_once()
