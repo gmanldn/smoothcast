@@ -136,6 +136,12 @@ The `LevelSample` carries both, and `gain_db = out_rms - in_rms` shows how much 
 
 A MASTER bouncing-line meter sits below the PUMP strip in the LevelMeter widget. Its height is the post-compressor output level (out_rms), easing with attack/release ballistics so it bounces rather than jumps. It shows at a glance how close the played-back signal is to 0 dBFS: white below -18 dB, yellow -18..-6 dB, red at -6 dB and above, with a tip glow near -3 dB. A faint 0 dBFS ceiling notch marks the top of the scale. The master meter only reflects the transcoded output; direct play passes audio untouched.
 
+## Troubleshooting tests and GTK sizing
+
+Use `python3 -m unittest discover -s tests -v` to run all GTK-independent regression tests. A previously observed set of local-playback test errors was caused by using the `mock.patch` context manager object instead of the object returned by `patcher.start()`; make sure the current `tests/test_local_playback.py` is committed and all patches are stopped in teardown. Screenshot capture now verifies input and output using filesystem metadata, including that FFmpeg actually produced a non-empty file.
+
+For the main window, the queue and activity list scrollers have fixed height bounds and no longer propagate unstable child natural heights into the parent box. The **outer** page scroller still makes all controls available on smaller displays. This addresses a potential cause of GTK measure warnings; actual on-screen validation is still required.
+
 ## Error log
 
 Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log`, a ring buffer capped at 10,000 lines (oldest dropped). The file is gitignored and lives at `~/.config/cast-control/errors.log`.
