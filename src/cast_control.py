@@ -567,13 +567,15 @@ class LevelMeter(Gtk.DrawingArea):
     def _draw(self, _widget, cr, width, height) -> None:
         with self._lock:
             sample = self._disp
+            master = self._master
         rows = (
             ("IN L", sample.in_l if sample else None),
             ("IN R", sample.in_r if sample else None),
             ("OUT L", sample.out_l if sample else None),
             ("OUT R", sample.out_r if sample else None),
         )
-        total_h = len(rows) * self._ROW_H + (len(rows) - 1) * self._ROW_GAP + self._ROW_GAP + 13.0
+        total_h = (len(rows) * self._ROW_H + (len(rows) - 1) * self._ROW_GAP
+                   + self._ROW_GAP + self._MASTER_H + 20.0)
         top = max(0.0, (height - total_h) / 2)
         bar_x = self._LABEL_W
         bar_w = max(10.0, width - self._LABEL_W - 4.0)
@@ -607,6 +609,29 @@ class LevelMeter(Gtk.DrawingArea):
             cr.set_source_rgb(*self._BLUE)
         cr.move_to(gx, pump_y + 10.0)
         cr.show_text(gain_text)
+        # master bouncing line meter — shows how close *output* is to 0 dBFS
+        master_y = pump_y + 16.0
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.78)
+        cr.move_to(0, master_y + self._MASTER_H - 3.0)
+        cr.show_text("MASTER")
+        self._draw_master(cr, bar_x, master_y, bar_w, self._MASTER_H)
+        master_text = f"{master:+.1f} dBFS"
+        cr.set_font_size(8.5)
+        ext = cr.text_extents(master_text)
+        mx = max(bar_x, bar_x + bar_w - ext.width)
+        cr.rectangle(mx - 3, master_y - 1.0, ext.width + 6, self._MASTER_H + 2.0)
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.55)
+        cr.fill()
+        if sample is None:
+            cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.5)
+        elif master >= -6.0:
+            cr.set_source_rgb(*self._RED)
+        elif master >= -18.0:
+            cr.set_source_rgb(*self._YELLOW)
+        else:
+            cr.set_source_rgb(*self._WHITE)
+        cr.move_to(mx, master_y + self._MASTER_H / 2)
+        cr.show_text(master_text)
 
     @staticmethod
     def _rounded(cr, x, y, width, height, radius) -> None:
