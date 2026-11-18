@@ -41,6 +41,7 @@ DEFAULTS: dict = {
     "autonext": False,
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
+    "auto_theme": False,
     "recents": [],
     "loop": False,
     "playback_speed": 1.0,
@@ -1112,6 +1113,7 @@ class MainWindow(Adw.ApplicationWindow):
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Always on top", "app.always-on-top")
         playback.append("Loop", "app.loop")
+        playback.append("Auto theme by time", "app.auto-theme")
         speed = Gio.Menu()
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
             speed.append(f"{s}x", f"app.speed-{str(s).replace('.','_')}")
@@ -1620,6 +1622,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.seek_to(duration * tenth / 10.0)
 
     def _apply_color_scheme(self) -> None:
+        if self.cfg.get("auto_theme"):
+            import datetime
+            h = datetime.datetime.now().hour
+            scheme = Adw.ColorScheme.PREFER_DARK if (h >= 19 or h < 7) else Adw.ColorScheme.FORCE_LIGHT
+            Adw.StyleManager.get_default().set_color_scheme(scheme)
+            return
         scheme = {
             "default": Adw.ColorScheme.DEFAULT,
             "force-light": Adw.ColorScheme.FORCE_LIGHT,
@@ -2450,6 +2458,12 @@ class MainWindow(Adw.ApplicationWindow):
         save_config(self.cfg)
         self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
 
+    def _toggle_auto_theme(self) -> None:
+        self.cfg["auto_theme"] = not self.cfg.get("auto_theme", False)
+        save_config(self.cfg)
+        self._apply_color_scheme()
+        self.toast("Auto theme " + ("on" if self.cfg["auto_theme"] else "off"))
+
     def _set_speed(self, speed: float) -> None:
         self.cfg["playback_speed"] = speed
         save_config(self.cfg)
@@ -3054,6 +3068,7 @@ class CastControlApp(Adw.Application):
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("always-on-top", lambda *a: self._window()._toggle_always_on_top())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("auto-theme", lambda *a: self._window()._toggle_auto_theme())
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
             simple(f"speed-{str(s).replace('.','_')}", lambda *a, sp=s: self._window()._set_speed(sp))
         for m in (0, 15, 30, 45, 60):
