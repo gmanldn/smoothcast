@@ -147,7 +147,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check desktop integration without modifying files")
-    parser.add_argument("--pin", action="true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
+    parser.add_argument("--pin", action="store_true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
     args = parser.parse_args()
     try:
         if args.check:
