@@ -61,6 +61,30 @@ class PlaylistTests(unittest.TestCase):
                 playlist_control.save_playlist(file, [])
             self.assertEqual(file.read_text(), "previous data")
 
+    def test_search_matches_casefolded_terms_without_reordering(self):
+        paths = [
+            "/films/Drama/The Grand Film.mkv",
+            "/films/Comedy/Grand Day Out.mp4",
+            "/films/Drama/Another Film.mp4",
+        ]
+        self.assertEqual(
+            [p for p in paths if playlist_control.matches_query(p, "grand drama")],
+            [paths[0]],
+        )
+        self.assertEqual(
+            [p for p in paths if playlist_control.matches_query(p, "FILM")],
+            [paths[0], paths[2]],
+        )
+        self.assertTrue(all(playlist_control.matches_query(p, "   ") for p in paths))
+        self.assertFalse(playlist_control.matches_query(paths[0], "missing title"))
+
+    def test_queue_filter_preserves_original_index_and_focus_shortcut(self):
+        source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
+        self.assertIn("self.queue_list.invalidate_filter()", source)
+        self.assertIn("row.set_tooltip_text(path)", source)
+        self.assertIn('add("<Control>f", lambda: self.queue_search.grab_focus())', source)
+
     def test_actions_are_separate_and_load_uses_enqueue(self):
         source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
