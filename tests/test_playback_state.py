@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from playback_state import absolute_encoded_position, playback_ended, direct_session_matches
+from playback_state import absolute_encoded_position, playback_ended, direct_session_matches, start_offset
 
 
 class PlaybackStateTests(unittest.TestCase):
@@ -26,6 +26,24 @@ class PlaybackStateTests(unittest.TestCase):
         self.assertFalse(direct_session_matches({"player_state": "PLAYING", "title": "Other"}, "Film"))
         self.assertTrue(direct_session_matches({"player_state": "PAUSED", "title": "Film"}, "Film"))
         self.assertTrue(direct_session_matches({"player_state": "BUFFERING", "title": ""}, "Film"))
+
+    def test_explicit_zero_seek_never_resumes_previous_position(self):
+        self.assertEqual(start_offset(0.0, 658.0), 0.0)
+        self.assertEqual(start_offset(12.5, 658.0), 12.5)
+        self.assertEqual(start_offset(None, 658.0), 658.0)
+        self.assertEqual(start_offset(None, "658.5"), 658.5)
+
+    def test_invalid_resume_values_fail_safe_to_start(self):
+        for value in (None, "", "not-a-number", float("inf"), -10, "nan"):
+            with self.subTest(value=value):
+                self.assertEqual(start_offset(None, value), 0.0)
+
+    def test_queue_auto_next_starts_at_zero_not_saved_resume(self):
+        source = (Path(__file__).resolve().parents[1] / "src" / "cast_control.py").read_text()
+        self.assertIn("self._cast_path(next_path, 0.0)", source)
+        self.assertIn("self._cast_path(pathlib.Path(self.now_playing), target)", source)
+        self.assertIn("self._cast_path(path, None)", source)
+        self.assertIn('offset = playback_state.start_offset(', source)
 
     def test_only_device_completion_advances_the_queue(self):
         self.assertTrue(playback_ended("PLAYING", "IDLE", has_session=True, busy=False))
