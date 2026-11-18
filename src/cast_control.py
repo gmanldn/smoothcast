@@ -2506,7 +2506,10 @@ class MainWindow(Adw.ApplicationWindow):
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         quality = state.quality if state else self.cfg["quality"]
-        audio = state.audio if state else self.cfg["audio"]
+        audio = (
+            "original" if state and session.mode == "direct"
+            else state.audio if state else self.cfg["audio"]
+        )
         speed = (
             float(speed_override) if speed_override is not None
             else float(state.speed) if state and state.speed
@@ -2631,7 +2634,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.cfg["playback_speed"] = speed
         save_config(self.cfg)
         session = self.session
-        if session is not None and session.mode == "transcode" and session.active():
+        if session is not None and session.active():
             if self.busy:
                 self.toast("Hold on — finishing the last command")
                 return
