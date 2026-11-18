@@ -1104,6 +1104,8 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append_submenu("Open recent", recents)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
+        playback.append("Toggle fullscreen", "app.fullscreen")
+        playback.append("Always on top", "app.always-on-top")
         menu.append_section(None, playback)
         scheme = Gio.Menu()
         for label, value in (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")):
@@ -1584,6 +1586,8 @@ class MainWindow(Adw.ApplicationWindow):
         add("k", self.toggle_play)
         add("Left", self._skip_back10)
         add("Right", self._skip_forward10)
+        add("comma", self._skip_back1)
+        add("period", self._skip_forward1)
         add("<Shift>Left", self._skip_back30)
         add("<Shift>Right", self._skip_forward30)
         add("j", self._skip_back10)
@@ -1592,8 +1596,6 @@ class MainWindow(Adw.ApplicationWindow):
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("s", self.stop_stream)
-        add("n", self.on_next)
-        add("p", self.on_prev)
         for digit in range(1, 10):
             add(str(digit), lambda d=digit: self._seek_percent(d))
         self.add_controller(controller)
@@ -2408,6 +2410,12 @@ class MainWindow(Adw.ApplicationWindow):
     def _skip_back10(self) -> None:
         self._skip(-10)
 
+    def _skip_back1(self) -> None:
+        self._skip(-1)
+
+    def _skip_forward1(self) -> None:
+        self._skip(1)
+
     def _skip_forward10(self) -> None:
         self._skip(10)
 
@@ -2416,6 +2424,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _skip_forward30(self) -> None:
         self._skip(30)
+
+    def _toggle_fullscreen(self) -> None:
+        self.set_fullscreen(not self.is_fullscreen())
+
+    def _toggle_always_on_top(self) -> None:
+        self.set_keep_above(not self.get_keep_above())
 
     def _skip(self, delta: float) -> None:
         position = self.tracker.value()
@@ -2977,6 +2991,8 @@ class CastControlApp(Adw.Application):
         simple("open", lambda *a: self._window().action_open())
         simple("add-files", lambda *a: self._window().action_add_files())
         simple("stop-stream", lambda *a: self._window().action_stop())
+        simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
+        simple("always-on-top", lambda *a: self._window()._toggle_always_on_top())
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("about", lambda *a: self._window().action_about())
