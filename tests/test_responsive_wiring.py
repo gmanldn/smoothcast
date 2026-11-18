@@ -40,6 +40,17 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
         self.assertIn("value_label.set_max_width_chars(32)", self.source)
         self.assertIn("ellipsize=", self.source)
 
+    def test_nested_scroll_areas_have_stable_bounded_height(self):
+        # The outer page handles vertical scrolling; dynamically changing
+        # inner lists must never propagate their natural heights to GtkBox.
+        self.assertIn("self.page_scroller.set_propagate_natural_height(False)", self.source)
+        self.assertEqual(self.source.count("scroller.set_propagate_natural_height(False)"), 2)
+        self.assertNotIn("scroller.set_propagate_natural_height(True)", self.source)
+        self.assertIn("scroller.set_min_content_height(84)", self.source)
+        self.assertIn("scroller.set_max_content_height(230)", self.source)
+        self.assertIn("scroller.set_min_content_height(100)", self.source)
+        self.assertIn("scroller.set_max_content_height(270)", self.source)
+
     def test_no_gtk3_window_positioning(self):
         self.assertNotIn("self.move(", self.source)
         self.assertNotIn("self.get_position()", self.source)
