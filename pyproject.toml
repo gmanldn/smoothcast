@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smoothcast"
-version = "1.0.49"
+dynamic = ["version"]
 description = "Chromecast companion app with GTK4/libadwaita UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -20,18 +20,18 @@ dev = [
 ]
 
 [project.scripts]
-smoothcast = "cast_control:main"
-sc = "cast_control:main"
+smoothcast = "cli:main"
+sc = "cli:main"
 
 [project.gui-scripts]
-smoothcast-gui = "cast_control:main"
+smoothcast-gui = "cli:main"
 
 [tool.setuptools]
 py-modules = [
     "cast_control", "castctl", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
-    "local_playback", "startup_cleanup", "streamer", "playlist_control",
+    "local_playback", "startup_cleanup", "streamer", "playlist_control", "cli",
 ]
 
 [tool.setuptools.package-dir]
