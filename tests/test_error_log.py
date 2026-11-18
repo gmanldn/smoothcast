@@ -89,7 +89,7 @@ def test_explicit_exception_tuple_outside_except_records_real_traceback(tmp_path
         captured = sys.exc_info()
     assert sys.exc_info() == (None, None, None)
     el.add("uncaught", exc_info=captured)
-    text = "\\n".join(el.read())
+    text = "\n".join(el.read())
     assert "RuntimeError: preserve this exception" in text
     assert "Traceback (most recent call last)" in text
     assert "NoneType: None" not in text
@@ -148,7 +148,7 @@ def test_uncaught_thread_hook_logs_explicit_traceback_outside_except(tmp_path):
         )
         threading.excepthook(args)
         next_hook.assert_called_once_with(args)
-        text = "\\n".join(error_log.LOG.read())
+        text = "\n".join(error_log.LOG.read())
         assert "LookupError: thread sample" in text
         assert "Traceback" in text
     finally:
