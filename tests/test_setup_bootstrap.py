@@ -147,7 +147,9 @@ class SetupContractTests(unittest.TestCase):
             script = app / "Contents" / "MacOS" / "SmoothCast"
             self.assertTrue(script.is_file())
             self.assertIn("setup/launch.py", script.read_text())
-            self.assertTrue(script.stat().st_mode & 0o111)
+            # Windows does not expose POSIX executable mode bits for files.
+            if os.name != "nt":
+                self.assertTrue(script.stat().st_mode & 0o111)
 
     def test_windows_shortcut_paths_are_quoted_not_evaluated(self):
         source = shortcuts.windows_shortcut_command(
