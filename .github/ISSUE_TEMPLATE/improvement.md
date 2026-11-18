@@ -25,7 +25,7 @@ P0 (correctness/critical), P1 (high value), or P2 (refinement); S/M/L effort.
 
 ## Provenance / related work
 Original request, research source, legacy SC-nnn ID if applicable, linked
-issues and PRs. Check [the issue workflow](../../docs/ISSUES.md) and avoid
+issues and PRs. Check [the issue workflow](https://github.com/gmanldn/smoothcast/blob/main/docs/ISSUES.md) and avoid
 creating a parallel Markdown backlog.
 
 ## Notes
