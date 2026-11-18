@@ -44,6 +44,8 @@ DEFAULTS: dict = {
     "recents": [],
     "window_width": 1120,
     "window_height": 760,
+    "window_x": -1,
+    "window_y": -1,
 }
 
 
@@ -930,8 +932,13 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
 
-        self.set_default_size(1300, 850)
+        self.set_default_size(int(self.cfg.get("window_width", 1300)), int(self.cfg.get("window_height", 850)))
         self.set_size_request(900, 650)
+        try:
+            if int(self.cfg.get("window_x", -1)) >= 0 and int(self.cfg.get("window_y", -1)) >= 0:
+                self.move(int(self.cfg["window_x"]), int(self.cfg["window_y"]))
+        except Exception:
+            pass
         self._build_ui()
         self._flush_stale_state()
         self._refresh_direct_note()
@@ -1283,7 +1290,6 @@ class MainWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=line)
             row.set_title_lines(1)
             list_box.append(row)
-        list_box.show_all()
 
     def _meter_tick(self) -> bool:
         mon = self.monitor
@@ -2824,6 +2830,12 @@ class MainWindow(Adw.ApplicationWindow):
         self._stop_monitor()
         self.cfg["window_width"] = self.get_width()
         self.cfg["window_height"] = self.get_height()
+        try:
+            x, y = self.get_position()
+            self.cfg["window_x"] = x
+            self.cfg["window_y"] = y
+        except Exception:
+            pass
         save_config(self.cfg)
         if not self.cfg["keep_streaming"] and self.session is not None:
             session, self.session = self.session, None
