@@ -78,6 +78,58 @@ class StreamSelectionTests(unittest.TestCase):
         self.assertEqual(media.vcodec, "mjpeg")
         self.assertEqual(media.video_stream_index, 0)
 
+    def test_transcode_uses_selected_absolute_video_stream(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            movie = root / "movie.mkv"
+            movie.write_bytes(b"test")
+            media = streamer.MediaInfo(
+                path=movie, duration=2, vcodec="h264",
+                width=160, height=90, pix_fmt="yuv420p",
+                video_stream_index=2,
+            )
+            session = streamer.Session()
+            process = mock.MagicMock()
+            process.poll.return_value = 0
+            process.pid = 123
+            with mock.patch.object(streamer, "ROOT", root), \\
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \\
+                 mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \\
+                 mock.patch.object(streamer, "host_ip", return_value="192.168.1.10"), \\
+                 mock.patch.object(session, "_start_server"), \\
+                 mock.patch.object(session, "_wait_for_segments", return_value=True), \\
+                 mock.patch.object(streamer.subprocess, "Popen", return_value=process) as start, \\
+                 mock.patch.object(streamer.time, "sleep"), \\
+                 mock.patch.object(streamer, "_save_session"):
+                session.start_transcode(
+                    media, 0, device="TV", quality="balanced",
+                    audio_profile="original", subs_file=None, burn_subs=False,
+                    title="Movie",
+                )
+            command = start.call_args_list[0].args[0]
+            self.assertEqual(command[command.index("-map") + 1], "0:2")
+
+    def test_dlna_preparation_maps_selected_absolute_stream(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            movie = root / "movie.mkv"
+            movie.write_bytes(b"test")
+            output = root / "prepared.mp4"
+            media = streamer.MediaInfo(
+                path=movie, duration=2, vcodec="h264", pix_fmt="yuv420p",
+                width=160, height=90, fps=24, video_stream_index=1,
+            )
+            def complete(args, **kwargs):
+                Path(args[-1]).write_bytes(b"prepared mp4")
+                proc = mock.MagicMock()
+                proc.poll.return_value = 0
+                proc.returncode = 0
+                return proc
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=complete) as start:
+                dlna.prepare_mp4(media, output)
+            command = start.call_args.args[0]
+            self.assertEqual(command[command.index("-map") + 1], "0:1")
+
     def test_selected_absolute_index_is_used_in_cast_and_dlna(self):
         from types import SimpleNamespace
         import inspect
