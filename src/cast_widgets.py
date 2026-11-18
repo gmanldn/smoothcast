@@ -42,6 +42,7 @@ ICON_NAME = APP_ID
 
 DEFAULTS: dict = {
     "device": castctl.DEFAULT_DEVICE,
+    "device_uuid": "",  # Stable discovered Cast identity; manual IP/DLNA stays name-based.
     "cast_targets": [],
     "quality": "balanced",
     "audio": "dialogue",
