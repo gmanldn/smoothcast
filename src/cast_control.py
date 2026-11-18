@@ -1803,6 +1803,15 @@ class MainWindow(Adw.ApplicationWindow):
         if target not in targets:
             targets.append(target)
         self.cfg["cast_targets"] = targets[-32:]
+        if target != self.cfg["device"] and (self.session is not None or self.busy):
+            # An owned or starting stream still targets its original TV. A
+            # manual entry mid-cast would stop the old encoder while sending
+            # 'stop' to the new, unrelated TV, so remember the target without
+            # switching the active device. The dropdown enforces the same rule.
+            save_config(self.cfg)
+            self.cast_ip_entry.set_text("")
+            self.toast("Added target; stop the current cast before changing TV", error=True)
+            return
         self.cfg["device"] = target
         save_config(self.cfg)
         self.cast_ip_entry.set_text("")

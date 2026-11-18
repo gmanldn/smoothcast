@@ -90,6 +90,15 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertLess(code.index(guard), code.index("castctl.stop(device)"))
         self.assertLess(code.index(guard), code.index("session.stop(device)"))
 
+    def test_manual_target_does_not_switch_tv_mid_cast(self):
+        # Manual IPv4 entry (Return and Add IP) must obey the same ownership
+        # rule as the dropdown: remember the target, never retarget mid-cast.
+        code = self.methods["_add_cast_target"]
+        guard = "self.session is not None or self.busy"
+        self.assertIn(guard, code)
+        self.assertLess(code.index(guard), code.index('self.cfg["device"] = target'))
+        self.assertIn("self.cast_ip_entry.set_text(\"\")", code)
+
 
 if __name__ == "__main__":
     unittest.main()

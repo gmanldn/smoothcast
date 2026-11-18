@@ -167,6 +167,13 @@ These tasks target the separate `src/dlna.py` adapter, not DLNA support in `catt
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #53 — Manual target entry is locked during playback:** `_add_cast_target`
+  now applies the dropdown's ownership rule. While a session is live or a cast
+  is starting, entering another IPv4 (via Return or Add IP) remembers the
+  target without changing the active device, so Stop still targets the playing
+  TV; both inputs switch devices normally when idle. Source-level regression
+  test in `tests/test_player_action_safety.py`. Real-receiver confirmation
+  pending.
 - **P0 #56 — Idle Stop is harmless:** `stop_stream` now returns before any
   receiver command when no session or external playback is owned and the
   observed device state is idle/offline/unknown, so the shortcut or action
