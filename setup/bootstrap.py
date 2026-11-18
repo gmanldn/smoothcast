@@ -241,6 +241,12 @@ def windows_env(root: Path) -> dict[str, str]:
          env.get("PATH", "")),
     )
     env["MSYSTEM"] = "UCRT64"
+    # PyGObject's MSYS2 runtime needs an explicit DLL search directory.
+    env["PYGI_DLL_PATH"] = str(root / "ucrt64" / "bin")
+    env["GI_TYPELIB_PATH"] = str(root / "ucrt64" / "lib" / "girepository-1.0")
+    env["XDG_DATA_DIRS"] = os.pathsep.join(
+        (str(root / "ucrt64" / "share"), env.get("XDG_DATA_DIRS", "")),
+    )
     return env
 
 
