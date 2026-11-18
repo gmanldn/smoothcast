@@ -345,8 +345,8 @@ class LevelMeter(Gtk.DrawingArea):
         self._disp = None         # eased values actually drawn
         self._gain = 0.0
         self._gain_target = 0.0
-        self._master = FLOOR_DB   # eased master output level (dBFS)
-        self._master_target = FLOOR_DB
+        self._master = self.FLOOR_DB   # eased master output level (dBFS)
+        self._master_target = self.FLOOR_DB
         self._timer = 0           # GLib animation timer id (0 = stopped)
 
     def _on_unrealize(self, _widget) -> None:
