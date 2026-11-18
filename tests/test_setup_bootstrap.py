@@ -5,6 +5,8 @@ from contextlib import nullcontext
 import hashlib
 import io
 import json
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -33,13 +35,14 @@ class SetupContractTests(unittest.TestCase):
                 script = (ROOT / "setup" / path).read_text(encoding="utf-8")
                 self.assertIn("bootstrap.py", script)
                 self.assertIn("--target " + target, script)
-        for filename in ("linuxsetup.sh", "macsetup.sh", "smoothcast"):
-            result = subprocess.run(
-                ["bash", "-n", str(ROOT / ("setup" if filename.endswith(".sh")
-                                            else ".") / filename)],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
+        if os.name != "nt" and shutil.which("bash"):
+            for filename in ("linuxsetup.sh", "macsetup.sh", "smoothcast"):
+                result = subprocess.run(
+                    ["bash", "-n", str(ROOT / ("setup" if filename.endswith(".sh")
+                                              else ".") / filename)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_dependency_matrix_explicit_on_all_three_platforms(self):
         self.assertIn("gir1.2-adw-1", bootstrap.LINUX_PACKAGES["apt-get"])
