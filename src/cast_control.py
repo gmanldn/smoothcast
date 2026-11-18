@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-import subprocess
 import sys
 import threading
 import time
@@ -21,6 +20,7 @@ import castctl
 import streamer
 import audio_monitor
 import playback_state
+import update_control
 import version
 
 APP_ID = "local.cast-control"
@@ -2916,13 +2916,15 @@ class MainWindow(Adw.ApplicationWindow):
 
 
 class CastControlApp(Adw.Application):
-    def __init__(self) -> None:
-        super().__init__(
-            application_id=APP_ID,
-            flags=Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
-        )
+    def __init__(self, *, selftest: bool = False) -> None:
+        flags = Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.HANDLES_COMMAND_LINE
+        if selftest:
+            # Self-tests must not activate an already-running user instance.
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
+        super().__init__(application_id=APP_ID, flags=flags)
         self.window: MainWindow | None = None
-        self.selftest = False
+        self.selftest = selftest
+        self._update_started = False
         self._pending_files: list[str] = []
 
     def do_startup(self) -> None:
@@ -2957,7 +2959,7 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
         simple("about", lambda *a: self._window().action_about())
-        simple("quit", lambda *a: self.quit())
+        simple("quit", lambda *a: self._window().close())
         for index in range(8):
             action = Gio.SimpleAction.new(f"recent-{index}", None)
             action.connect("activate", lambda _a, _p, i=index: self._window().open_recent(i))
@@ -2994,6 +2996,23 @@ class CastControlApp(Adw.Application):
             self._pending_files = []
         if self.selftest:
             GLib.timeout_add(6500, self._selftest_quit)
+        elif not self._update_started:
+            self._update_started = True
+            # Never delay the first window while DNS/network/git is unresponsive.
+            threading.Thread(
+                target=self._background_update,
+                name="smoothcast-git-update",
+                daemon=False,
+            ).start()
+
+    def _background_update(self) -> None:
+        notice = update_control.refresh_checkout(
+            pathlib.Path(__file__).resolve().parent.parent,
+        )
+        if notice:
+            # All GTK work stays on the main loop.
+            GLib.idle_add(lambda: (self.window.toast(notice), False)[1]
+                          if self.window is not None else False)
 
     def _selftest_quit(self) -> bool:
         print("SELFTEST: window built successfully")
@@ -3041,34 +3060,16 @@ class CastControlApp(Adw.Application):
         return 0
 
 
-def auto_pull_on_load() -> None:
-    """Best-effort `git pull --ff-only` on startup so the user always runs the
-    latest code from repo main. Never blocks, never fails loudly."""
-    try:
-        result = subprocess.run(
-            ["git", "pull", "--ff-only"],
-            capture_output=True, text=True, timeout=8,
-            cwd=pathlib.Path(__file__).resolve().parent.parent,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            print(f"[update] {result.stdout.strip()}")
-    except Exception:
-        pass  # network/offline/git-not-installed — continue anyway
-
-
 def main() -> int:
     selftest = "--self-test" in sys.argv
     argv = [arg for arg in sys.argv if arg != "--self-test"]
 
-    # Auto-update from repo main on load (unless self-testing).
-    if not selftest:
-        auto_pull_on_load()
-
+    # GTK startup is never delayed by a network-based git pull.
+    # The first visible window schedules a non-blocking update check.
     # GTK/GApplication handles single-instance D-Bus activation: launching
     # from the dock again presents the existing window rather than exiting.
 
-    app = CastControlApp()
-    app.selftest = selftest
+    app = CastControlApp(selftest=selftest)
     try:
         result = app.run(argv)
     except Exception as exc:  # pragma: no cover - defensive

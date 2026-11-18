@@ -46,6 +46,10 @@ The HLS server listens on port 8767 for Chromecast access, but exposes only the 
 
 Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
 
+## Automatic updates without blocking startup
+
+Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+
 ## Requirements
 
 - **Python 3.10+**

@@ -42,7 +42,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - The compressor (`acompressor` + `alimiter`) lives in `streamer.py:AUDIO_FILTERS` and is applied **only** in the ffmpeg transcode chain that produces the HLS stream sent to the Chromecast. It does **not** affect local machine audio, the original file, or any other application.
 - The audio monitor (`audio_monitor.py`) runs a separate read-only ffmpeg pass for metering; it never touches playback.
 - UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
-- Auto-pull on load: `auto_pull_on_load()` runs `git pull --ff-only` at startup so the user always runs the latest code from repo main. Skipped in self-test mode. Never blocks or fails loudly.
+- Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks the user to restart after playback. The network must never delay startup.
 - Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
 - Graceful error handling: `main()` wraps `app.run()` in try/except.
 
@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.18`
+- Current: `1.0.19`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.18`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.19`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -82,6 +82,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.
 
 17. Chromecast LAN selection: `host_ip(device_host)` picks the outbound interface using a no-packet UDP route to the discovered TV IP, with safe fallbacks. Never advertise loopback, link-local or multicast addresses as HLS URLs. Propagate the selected device IP through normal starts and software-encoder fallback/seek restarts. Regression cases are in `tests/test_streamer_reliability.py`.
+
+18. Startup responsiveness: automatic git updates must run once in a worker **after** GTK window presentation, never before `app.run()`. `--self-test` runs `Gio.ApplicationFlags.NON_UNIQUE` so it cannot activate a live user instance. `app.quit` actions close the window to preserve the normal keep-streaming and configuration lifecycle. Tests: `tests/test_update_control.py`.
 
 ## Pending work
 Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
