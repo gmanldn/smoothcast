@@ -156,7 +156,7 @@ class SetupContractTests(unittest.TestCase):
             self.assertTrue((app / "Contents" / "Info.plist").is_file())
             script = app / "Contents" / "MacOS" / "SmoothCast"
             self.assertTrue(script.is_file())
-            self.assertIn("setup/launch.py", script.read_text())
+            self.assertIn(str(ROOT / "setup" / "launch.py"), script.read_text())
             # Windows does not expose POSIX executable mode bits for files.
             if os.name != "nt":
                 self.assertTrue(script.stat().st_mode & 0o111)
