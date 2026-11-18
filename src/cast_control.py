@@ -626,44 +626,81 @@ class PreviewScreen(Gtk.DrawingArea):
         self.queue_draw()
 
     def _draw(self, _widget, cr, width, height) -> None:
+        """Render a purposeful film slate rather than an empty grey rectangle."""
         with self._lock:
-            title = self._title
-            info = self._info
-            color = self._color
-
-        # Placeholder background.
-        cr.set_source_rgb(*color)
+            title, info = self._title, self._info
+        if width <= 0 or height <= 0:
+            return
+        cr.save()
         cr.rectangle(0, 0, width, height)
+        cr.clip()
+        cr.set_source_rgb(0.064, 0.112, 0.179)
+        cr.paint()
+        for step in range(10):
+            cr.set_source_rgba(0.47, 0.75, 1.0, 0.012 + 0.004 * (10 - step))
+            cr.rectangle(width * (0.53 + step * 0.046), 0, width * 0.024, height)
+            cr.fill()
+        cr.set_source_rgba(0.48, 0.73, 1.0, 0.34)
+        cr.rectangle(0, 0, min(width, 5), height)
+        cr.fill()
+        empty = not title or title == "No video"
+        cx = width / 2 if empty else min(64, width * 0.16)
+        cy = height * (0.35 if empty else 0.50)
+        radius = min(30.0, max(17.0, min(width, height) * 0.18))
+        cr.set_source_rgba(0.42, 0.69, 1.0, 0.14)
+        cr.arc(cx, cy, radius + 10, 0, 6.283185)
+        cr.fill()
+        cr.set_source_rgba(0.51, 0.77, 1.0, 0.95)
+        cr.arc(cx, cy, radius, 0, 6.283185)
+        cr.fill()
+        cr.set_source_rgb(0.068, 0.15, 0.24)
+        cr.move_to(cx - radius * 0.23, cy - radius * 0.45)
+        cr.line_to(cx - radius * 0.23, cy + radius * 0.45)
+        cr.line_to(cx + radius * 0.50, cy)
+        cr.close_path()
         cr.fill()
 
-        # Border ring.
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.15)
-        cr.set_line_width(1.0)
-        cr.rectangle(0.5, 0.5, width - 1.0, height - 1.0)
-        cr.stroke()
-
-        # Cairo text needs ellipsising explicitly: narrow windows must not
-        # paint long film names outside the allocated preview.
-        limit = max(0.0, width - 32.0)
-
-        def clipped_text(value: str) -> str:
+        def fit(value: str, limit: float) -> str:
+            if limit < 12:
+                return ""
             if cr.text_extents(value).width <= limit:
                 return value
-            value = value.rstrip()
-            while value and cr.text_extents(value + "…").width > limit:
-                value = value[:-1]
-            return value + "…" if value else ""
+            lo, hi = 0, len(value)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if cr.text_extents(value[:mid] + "…").width <= limit:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            return value[:lo] + "…" if lo else ""
 
-        cr.set_source_rgb(1.0, 1.0, 1.0)
         cr.select_font_face("Sans")
-        cr.set_font_size(16)
-        cr.move_to(16, height / 2 - 6)
-        cr.show_text(clipped_text(title))
-        if info:
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.75)
-            cr.set_font_size(11)
-            cr.move_to(16, height / 2 + 12)
-            cr.show_text(clipped_text(info))
+        cr.set_font_size(17 if height >= 140 else 14)
+        heading = "READY FOR YOUR NEXT FILM" if empty else title
+        if empty:
+            display_title = fit(heading, width - 30)
+            text_x = max(10, (width - cr.text_extents(display_title).width) / 2)
+            text_y = min(height - 22, cy + radius + 30)
+        else:
+            text_x = min(width - 15, cx + radius + 27)
+            display_title = fit(heading, width - text_x - 18)
+            text_y = height * 0.50 + 1
+        cr.set_source_rgb(0.93, 0.96, 1.0)
+        cr.move_to(text_x, text_y)
+        cr.show_text(display_title)
+        subheading = "Open a video to start casting" if empty else info
+        if subheading:
+            cr.set_font_size(12)
+            subtitle = fit(subheading, width - 32 if empty else width - text_x - 18)
+            subtitle_x = max(10, (width - cr.text_extents(subtitle).width) / 2) if empty else text_x
+            cr.set_source_rgb(0.66, 0.76, 0.89)
+            cr.move_to(subtitle_x, min(height - 9, text_y + 22))
+            cr.show_text(subtitle)
+        cr.restore()
+        cr.set_source_rgba(0.47, 0.67, 0.9, 0.25)
+        cr.set_line_width(1)
+        cr.rectangle(0.5, 0.5, max(0, width - 1), max(0, height - 1))
+        cr.stroke()
 
 
 class MainWindow(Adw.ApplicationWindow):
