@@ -10,6 +10,7 @@ import platform
 import socket
 import subprocess
 import sys
+import threading
 import time
 from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
@@ -764,6 +765,15 @@ class Session:
         # the first frame rather than stalling for 15 s on impossible VAAPI.
         self.used_software_fallback = platform.system() != "Linux"
         self.audio_chain: list = []
+        # Progress and segment counts are read by background sampling so GTK
+        # callbacks (seekbar/details) never touch the filesystem. The snapshot
+        # belongs to this Session, so a retired session's values are never used
+        # after the window swaps to a new one.
+        self._snapshot_lock = threading.Lock()
+        self._progress_snapshot: dict = {}
+        self._segments_snapshot = 0
+        self._sampler_stop = threading.Event()
+        self._sampler: threading.Thread | None = None
 
     @property
     def mode(self) -> str:
@@ -775,6 +785,7 @@ class Session:
         self.ffmpeg = PidHandle(state.ffmpeg_pid, "encoder") if _pid_is_ours(state.ffmpeg_pid, "encoder") else None
         self.server = PidHandle(state.server_pid, "server") if _pid_is_ours(state.server_pid, "server") else None
         self.caster = PidHandle(state.caster_pid, "caster") if _pid_is_ours(state.caster_pid, "caster") else None
+        self._start_sampler()
 
     def active(self) -> bool:
         if self.mode == "direct":
@@ -809,10 +820,21 @@ class Session:
         return False
 
     def progress(self) -> dict:
+        """Return the last background progress snapshot (never reads disk)."""
+        with self._snapshot_lock:
+            return dict(self._progress_snapshot)
+
+    def segment_count(self) -> int:
+        """Return the last background segment count (never globs on the GTK thread)."""
+        with self._snapshot_lock:
+            return self._segments_snapshot
+
+    def _read_progress(self, path=None) -> dict:
+        progress_path = PROGRESS_FILE if path is None else path
         out: dict = {}
         try:
-            size = PROGRESS_FILE.stat().st_size
-            with open(PROGRESS_FILE, "rb") as handle:
+            size = progress_path.stat().st_size
+            with open(progress_path, "rb") as handle:
                 handle.seek(max(0, size - 8192))
                 tail = handle.read().decode("utf-8", "replace")
         except OSError:
@@ -829,6 +851,49 @@ class Session:
             out["out_time"] = 0.0
         return out
 
+    def _count_segments(self, root=None, pattern=None) -> int:
+        segment_root = ROOT if root is None else root
+        segment_pattern = SEGMENT_GLOB if pattern is None else pattern
+        try:
+            return len(list(segment_root.glob(segment_pattern)))
+        except OSError:
+            return 0
+
+    def _start_sampler(self) -> None:
+        """Sample progress and segment count off the GTK thread."""
+        self._stop_sampler()
+        self._sampler_stop = threading.Event()
+        # Bind the paths now so a session created inside a patched test
+        # environment cannot later read the real cache.
+        progress_path = PROGRESS_FILE
+        root = ROOT
+        pattern = SEGMENT_GLOB
+        # Prime synchronously so the first UI tick already has data.
+        progress = self._read_progress(progress_path)
+        segments = self._count_segments(root, pattern)
+        with self._snapshot_lock:
+            self._progress_snapshot = progress
+            self._segments_snapshot = segments
+
+        def pump():
+            while not self._sampler_stop.is_set():
+                progress = self._read_progress(progress_path)
+                segments = self._count_segments(root, pattern)
+                with self._snapshot_lock:
+                    self._progress_snapshot = progress
+                    self._segments_snapshot = segments
+                self._sampler_stop.wait(0.5)
+
+        self._sampler = threading.Thread(target=pump, daemon=True)
+        self._sampler.start()
+
+    def _stop_sampler(self) -> None:
+        self._sampler_stop.set()
+        thread = self._sampler
+        self._sampler = None
+        if thread is not None:
+            thread.join(timeout=1.0)
+
     def log_tail(self, lines: int = 5) -> str:
         try:
             content = FFMPEG_LOG.read_text(errors="replace").splitlines()
@@ -837,6 +902,7 @@ class Session:
         return " ".join(line.strip() for line in content[-lines:] if line.strip())
 
     def stop(self, device: str, *, send_stop: bool = True) -> None:
+        self._stop_sampler()
         _terminate(self.caster)
         _terminate(self.ffmpeg)
         _terminate(self.server)
@@ -1104,6 +1170,7 @@ class Session:
             _terminate(self.ffmpeg)
             self.ffmpeg = None
             raise
+        self._start_sampler()
         # Hardware FFmpeg can stall without exiting; a live PID isn't proof
         # that its VAAPI encoder is producing media. Retry once on software
         # after a bounded startup window, terminating the old encoder first.

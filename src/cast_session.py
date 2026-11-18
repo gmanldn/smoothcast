@@ -715,10 +715,13 @@ class SessionMixin:
                 if not duration and stream.get_duration() > 0:
                     duration = stream.get_duration() / 1_000_000
         buffered = None
+        snapshot = {}
         if self.session and self.session.mode == "transcode" and self.session.state:
-            progress = self.session.progress()
+            # One background snapshot feeds both the seekbar buffer and the
+            # details panel, so the two never disagree within a tick.
+            snapshot = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
-                self.session.state.offset, progress.get("out_time"), duration,
+                self.session.state.offset, snapshot.get("out_time"), duration,
                 speed=self.session.state.speed,
             )
         self.seekbar.set_state(position, duration, buffered)
@@ -733,7 +736,7 @@ class SessionMixin:
                 self.elapsed_label.set_text("--:--")
                 self.remaining_label.set_text("--:--")
         self._update_transport_icon()
-        self._update_details()
+        self._update_details(snapshot)
         return True
 
 

@@ -874,10 +874,14 @@ class UiMixin:
             list_box.append(text)
 
 
-    def _update_details(self) -> None:
+    def _update_details(self, snapshot: dict | None = None) -> None:
         info = self.device_info
         session = self.session
         media = self.media
+        # Reuse the snapshot the seekbar used this tick; neither path touches
+        # the filesystem (a background Session sampler maintains the cache).
+        if snapshot is None:
+            snapshot = session.progress() if session else {}
         state_text = {
             "OFFLINE": "Offline",
             "IDLE": "Idle",
@@ -893,9 +897,8 @@ class UiMixin:
             mode_text = ("DLNA progressive MP4" if session.mode == "dlna" else (
                 "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"))
             if session.mode == "transcode":
-                progress = session.progress()
-                speed = progress.get("speed") or "—"
-                fps = progress.get("fps") or "—"
+                speed = snapshot.get("speed") or "—"
+                fps = snapshot.get("fps") or "—"
                 engine = "libx264 (CPU)" if session.used_software_fallback else "h264 VAAPI"
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
@@ -914,9 +917,8 @@ class UiMixin:
         # Buffer health — how far ahead the encoder is from playback position.
         buffer_text = "—"
         if session and session.mode == "transcode" and session.state:
-            progress = session.progress()
             encoded = playback_state.absolute_encoded_position(
-                session.state.offset, progress.get("out_time"),
+                session.state.offset, snapshot.get("out_time"),
                 self.tracker.duration or (media.duration if media else 0.0),
                 speed=session.state.speed,
             )
@@ -929,12 +931,8 @@ class UiMixin:
         # Segment count for HLS streams.
         segments_text = "—"
         if session and session.mode == "transcode":
-            seg_dir = streamer.ROOT
-            try:
-                seg_count = len(list(seg_dir.glob(streamer.SEGMENT_GLOB)))
-                segments_text = f"{seg_count} segment{'s' if seg_count != 1 else ''}"
-            except Exception:
-                segments_text = "—"
+            seg_count = session.segment_count()
+            segments_text = f"{seg_count} segment{'s' if seg_count != 1 else ''}"
         subtitle_text = "—"
         if session and session.state:
             if session.state.embedded_subtitle_index >= 0:

@@ -102,6 +102,18 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertLess(code.index(guard), code.index('self.cfg["device"] = target'))
         self.assertIn("self.cast_ip_entry.set_text(\"\")", code)
 
+    def test_gtk_tick_and_details_never_read_the_filesystem(self):
+        # SC-069 #78: progress and segment counts are sampled in the background.
+        tick = self.methods["_tick"]
+        details = self.methods["_update_details"]
+        for code in (tick, details):
+            self.assertNotIn("ROOT.glob", code)
+            self.assertNotIn("SEGMENT_GLOB", code)
+        self.assertIn("self.session.progress()", tick)
+        self.assertIn("self._update_details(snapshot)", tick)
+        self.assertIn("segment_count()", details)
+        self.assertIn('snapshot.get("out_time")', details)
+
 
 if __name__ == "__main__":
     unittest.main()

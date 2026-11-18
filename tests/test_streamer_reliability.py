@@ -271,3 +271,30 @@ class OneSegmentHlsTests(unittest.TestCase):
             session = self._session(root, 0)
             with mock.patch.object(streamer, "ROOT", root):
                 self.assertFalse(session._wait_for_segments(0.5))
+
+
+class ProgressSamplerTests(unittest.TestCase):
+    """SC-069 #78: GTK callbacks read a snapshot sampled off the GTK thread."""
+
+    def test_progress_and_segment_count_are_cache_only(self):
+        session = streamer.Session()
+        session._progress_snapshot = {"speed": "1.5x", "out_time": 4.0}
+        session._segments_snapshot = 7
+        with mock.patch.object(
+                streamer.Session, "_read_progress",
+                side_effect=AssertionError("must not read disk")), \
+             mock.patch.object(streamer, "ROOT") as root:
+            self.assertEqual(session.progress()["speed"], "1.5x")
+            self.assertEqual(session.segment_count(), 7)
+            root.glob.assert_not_called()
+
+    def test_sampler_primes_the_snapshot_and_stops_cleanly(self):
+        session = streamer.Session()
+        with mock.patch.object(session, "_read_progress",
+                               return_value={"speed": "2x"}), \
+             mock.patch.object(session, "_count_segments", return_value=3):
+            session._start_sampler()
+            self.assertEqual(session.progress(), {"speed": "2x"})
+            self.assertEqual(session.segment_count(), 3)
+            session._stop_sampler()
+        self.assertIsNone(session._sampler)
