@@ -2776,8 +2776,9 @@ class MainWindow(Adw.ApplicationWindow):
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index > 0:
-                self.now_playing = self.queue[index - 1]
-                self._cast_path(pathlib.Path(self.now_playing), 0.0)
+                # Don't change now_playing until _cast_path actually succeeds;
+                # an in-flight command can reject a new cast as busy.
+                self._cast_path(pathlib.Path(self.queue[index - 1]), 0.0)
                 return
         if self.now_playing:
             self.seek_to(0.0)
@@ -2786,8 +2787,7 @@ class MainWindow(Adw.ApplicationWindow):
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index + 1 < len(self.queue):
-                self.now_playing = self.queue[index + 1]
-                self._cast_path(pathlib.Path(self.now_playing), 0.0)
+                self._cast_path(pathlib.Path(self.queue[index + 1]), 0.0)
 
     # ---------- queue ----------
 
@@ -2846,9 +2846,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_queue_activated(self, _list, row) -> None:
         index = row.get_index()
-        if index < len(self.queue):
-            self.now_playing = self.queue[index]
-            self._cast_path(pathlib.Path(self.now_playing), None)
+        if 0 <= index < len(self.queue):
+            self._cast_path(pathlib.Path(self.queue[index]), None)
 
     def _on_queue_selected(self, _list, row) -> None:
         self.selected_index = row.get_index() if row is not None else None
