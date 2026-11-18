@@ -210,6 +210,41 @@ class StreamError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class AudioTrack:
+    """One audio stream, indexed relative to other audio tracks (0:a:N)."""
+    index: int
+    codec: str
+    channels: int = 0
+    language: str = ""
+    title: str = ""
+    layout: str = ""
+    default: bool = False
+
+    @property
+    def label(self) -> str:
+        parts = [self.language.upper() if self.language else "Undetermined"]
+        if self.title:
+            parts.append(self.title)
+        parts.append(self.codec.upper() or "Unknown codec")
+        if self.layout:
+            parts.append(self.layout)
+        elif self.channels:
+            parts.append(f"{self.channels} channels")
+        if self.default:
+            parts.append("default")
+        return " · ".join(parts)
+
+
+def preferred_audio_track(media: "MediaInfo", requested: int = -1) -> AudioTrack | None:
+    """Resolve a requested relative audio index, or default/first in auto mode."""
+    if requested >= 0:
+        return next((t for t in media.audio_streams if t.index == requested), None)
+    return next((t for t in media.audio_streams if t.default), None) or (
+        media.audio_streams[0] if media.audio_streams else None
+    )
+
+
+@dataclass(frozen=True)
 class SubtitleTrack:
     """An embedded subtitle stream with a stream-relative FFmpeg si index."""
     index: int
@@ -260,6 +295,7 @@ class MediaInfo:
     acodec: str = ""
     channels: int = 0
     audio_tracks: int = 0
+    audio_streams: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
     size: int = 0
     bitrate: int = 0
@@ -484,6 +520,17 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
                     except (TypeError, ValueError, ZeroDivisionError, OverflowError):
                         pass
         elif kind == "audio":
+            tags = stream.get("tags") or {}
+            disposition = stream.get("disposition") or {}
+            media.audio_streams.append(AudioTrack(
+                index=media.audio_tracks,
+                codec=str(stream.get("codec_name") or "").lower(),
+                channels=int(stream.get("channels") or 0),
+                language=str(tags.get("language") or ""),
+                title=str(tags.get("title") or ""),
+                layout=str(stream.get("channel_layout") or ""),
+                default=bool(disposition.get("default")),
+            ))
             media.audio_tracks += 1
             if not media.acodec:
                 media.acodec = str(stream.get("codec_name") or "")
@@ -574,6 +621,7 @@ class SessionState:
     quality: str = "balanced"
     audio: str = "dialogue"
     audio_gain_db: float = 0.0
+    audio_track_index: int = -1
     subs: str = ""
     burn_subs: bool = False
     embedded_subtitle_index: int = -1
@@ -821,6 +869,7 @@ class Session:
         speed: float = 1.0,
         rotation: int = 0,
         embedded_subtitle_index: int | None = None,
+        audio_track_index: int = -1,
     ) -> None:
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
@@ -839,6 +888,12 @@ class Session:
             if track is None or not track.is_text:
                 raise StreamError("Selected MKV subtitle track cannot be burned into video")
             burn_subs = True
+        # Explicit selections must fail before starting a new encoder. Keep
+        # the optional audio map for silent videos with no audio streams.
+        track = preferred_audio_track(media, audio_track_index)
+        if audio_track_index >= 0 and track is None:
+            raise StreamError(f"Audio track {audio_track_index + 1} is unavailable in this file")
+        audio_map = f"0:a:{track.index}" if track is not None else "0:a:0?"
         staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
@@ -854,7 +909,7 @@ class Session:
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
-        args += ["-i", str(media.path), "-map", "0:v:0", "-map", "0:a:0?"]
+        args += ["-i", str(media.path), "-map", "0:v:0", "-map", audio_map]
         args += self._codec_args(quality, software)
         args += self._filter_args(
             burn_subs, staged, software, speed, rotation,
@@ -917,6 +972,7 @@ class Session:
                     audio_gain_db=audio_gain_db, device_ip=device_ip,
                     speed=speed, rotation=rotation,
                     embedded_subtitle_index=embedded_subtitle_index,
+                    audio_track_index=audio_track_index,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -943,6 +999,7 @@ class Session:
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
+            audio_track_index=audio_track_index,
             subs=str(subs_file or ""), burn_subs=burn_subs,
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
             speed=speed,
