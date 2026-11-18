@@ -40,6 +40,7 @@ DEFAULTS: dict = {
     "burn_subs": False,
     "direct": True,
     "autonext": False,
+    "auto_shutdown": False,
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
     "auto_theme": False,
@@ -1114,6 +1115,7 @@ class MainWindow(Adw.ApplicationWindow):
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Auto-shutdown after playlist", "app.auto-shutdown")
         playback.append("Auto theme by time", "app.auto-theme")
         speed = Gio.Menu()
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
@@ -1811,6 +1813,8 @@ class MainWindow(Adw.ApplicationWindow):
         if session is not None:
             device = self._device()
             threading.Thread(target=lambda: session.stop(device), daemon=True).start()
+        if self.cfg.get("auto_shutdown") and not (self.cfg["autonext"] and item in self.queue and self.queue.index(item)+1 < len(self.queue)):
+            GLib.timeout_add_seconds(2, lambda: (self.get_application().quit(), False)[1])
         self.tracker.clear()
         self.now_playing = None
         self.toast("Finished")
@@ -2468,6 +2472,11 @@ class MainWindow(Adw.ApplicationWindow):
         save_config(self.cfg)
         self.toast("Loop " + ("on" if self.cfg["loop"] else "off"))
 
+    def _toggle_auto_shutdown(self) -> None:
+        self.cfg["auto_shutdown"] = not self.cfg.get("auto_shutdown", False)
+        save_config(self.cfg)
+        self.toast("Auto-shutdown " + ("on" if self.cfg["auto_shutdown"] else "off"))
+
     def _toggle_auto_theme(self) -> None:
         self.cfg["auto_theme"] = not self.cfg.get("auto_theme", False)
         save_config(self.cfg)
@@ -3082,6 +3091,7 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("auto-shutdown", lambda *a: self._window()._toggle_auto_shutdown())
         simple("auto-theme", lambda *a: self._window()._toggle_auto_theme())
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
             simple(f"speed-{str(s).replace('.','_')}", lambda *a, sp=s: self._window()._set_speed(sp))
