@@ -2499,7 +2499,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
-    def _restart_at(self, session, target: float) -> None:
+    def _restart_at(self, session, target: float, *, speed_override: float | None = None) -> None:
         device = self._device()
         device_ip = self._device_host(device)
         state = session.state
@@ -2507,7 +2507,11 @@ class MainWindow(Adw.ApplicationWindow):
         title = state.title if state else (file_path.stem if file_path else "video")
         quality = state.quality if state else self.cfg["quality"]
         audio = state.audio if state else self.cfg["audio"]
-        speed = float(state.speed) if state and state.speed else float(self.cfg.get("playback_speed", 1.0))
+        speed = (
+            float(speed_override) if speed_override is not None
+            else float(state.speed) if state and state.speed
+            else float(self.cfg.get("playback_speed", 1.0))
+        )
         rotation = int(state.rotation) if state else self.cfg["rotation"]
         burn = bool(state.burn_subs) if state else False
         subs_path = None
@@ -2549,7 +2553,7 @@ class MainWindow(Adw.ApplicationWindow):
             if gain > 0:
                 hint += f" · +{gain:g} dB"
             self._set_levels_hint(hint)
-            self.tracker.start(target, media_result.duration, True)
+            self.tracker.start(target, media_result.duration, True, rate=speed)
             self._refresh_controls()
             self._poll_device()
 
@@ -2636,7 +2640,9 @@ class MainWindow(Adw.ApplicationWindow):
             position = self.tracker.value() or 0.0
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
-            self._restart_at(session, position)
+            # The seekbar uses source-film time; preserve that position when
+            # changing pace and restart FFmpeg at the *new* requested speed.
+            self._restart_at(session, position, speed_override=speed)
             self.toast(f"Speed {speed}x — stream restarted")
         else:
             self.toast(f"Speed {speed}x")
@@ -3134,7 +3140,11 @@ class MainWindow(Adw.ApplicationWindow):
         # Immediate best estimate so the seek bar is not stuck at 0 while the
         # accurate device position is fetched. Works for direct and transcode.
         elapsed = max(0.0, time.time() - state.started_at) if state.started_at else 0.0
-        self.tracker.start(min(state.offset + elapsed, state.duration or 1e18), state.duration, True)
+        rate = state.speed if session.mode == "transcode" else 1.0
+        self.tracker.start(
+            min(state.offset + elapsed * rate, state.duration or 1e18),
+            state.duration, True, rate=rate,
+        )
         self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
 
         def probe():
@@ -3152,7 +3162,17 @@ class MainWindow(Adw.ApplicationWindow):
             media, current = result
             self.media = media
             if current > 0:
-                self.tracker.start(min(current, media.duration or current), media.duration, True)
+                absolute = (
+                    playback_state.absolute_encoded_position(
+                        state.offset, current, media.duration, speed=rate,
+                    )
+                    if session.mode == "transcode" else current
+                )
+                if absolute is not None:
+                    self.tracker.start(
+                        min(absolute, media.duration or absolute),
+                        media.duration, True, rate=rate,
+                    )
             gain = state.audio_gain_db
             if session.mode == "transcode":
                 chain = streamer.audio_filters(state.audio, gain)
