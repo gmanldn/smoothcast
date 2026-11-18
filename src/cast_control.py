@@ -112,22 +112,172 @@ def pid_alive(pid: int) -> bool:
     return True
 
 CSS = """
-window { font-size: 14px; }
-.card { background-color: @card_bg_color; border-radius: 18px; padding: 14px; }
-.chip { border-radius: 99px; padding: 2px 12px; font-weight: 600; font-size: 0.82em; }
-.chip.idle { background-color: alpha(@view_fg_color, 0.10); }
-.chip.playing, .chip.buffering { background-color: @accent_bg_color; color: @accent_fg_color; }
-.chip.paused { background-color: @warning_bg_color; color: @warning_fg_color; }
-.chip.offline, .chip.error { background-color: @error_bg_color; color: @error_fg_color; }
-.pill { border-radius: 99px; font-weight: 600; min-width: 50px; padding: 4px 6px; }
-.big-play { min-width: 64px; min-height: 64px; border-radius: 99px; }
-.transport { min-width: 40px; min-height: 40px; border-radius: 99px; }
-.seekbar { color: @accent_bg_color; }
-.queue-title { font-weight: 600; }
-.queue-row.current .queue-title { color: @accent_color; }
-.detail-key { color: alpha(@view_fg_color, 0.55); }
-.detail-value { font-feature-settings: "tnum"; }
-.mono { font-family: monospace; font-size: 0.9em; }
+window {
+    font-size: 13px;
+    background-color: @theme_bg_color;
+}
+
+.card {
+    background-color: alpha(@card_bg_color, 0.88);
+    border-radius: 14px;
+    border: 1px solid alpha(@borders, 0.10);
+    padding: 16px;
+}
+
+.card .heading {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: alpha(@view_fg_color, 0.6);
+}
+
+.card .caption {
+    font-size: 10.5px;
+    color: alpha(@view_fg_color, 0.5);
+}
+
+.chip {
+    border-radius: 99px;
+    padding: 2px 12px;
+    font-weight: 600;
+    font-size: 0.8em;
+    border: none;
+}
+
+.chip.idle {
+    background-color: alpha(@view_fg_color, 0.08);
+    color: alpha(@view_fg_color, 0.55);
+}
+
+.chip.playing, .chip.buffering {
+    background-color: @accent_color;
+    color: white;
+}
+
+.chip.paused {
+    background-color: @warning_color;
+    color: white;
+}
+
+.chip.offline, .chip.error {
+    background-color: @error_color;
+    color: white;
+}
+
+.pill {
+    border-radius: 99px;
+    font-weight: 600;
+    min-width: 52px;
+    padding: 5px 10px;
+    background-color: alpha(@view_fg_color, 0.06);
+    border: none;
+}
+
+.pill:hover {
+    background-color: alpha(@view_fg_color, 0.12);
+}
+
+.big-play {
+    min-width: 72px;
+    min-height: 72px;
+    border-radius: 36px;
+    background-color: @accent_color;
+    color: white;
+    border: none;
+}
+
+.big-play:hover {
+    background-color: alpha(@view_fg_color, 0.2);
+}
+
+.transport {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 22px;
+    background-color: alpha(@view_fg_color, 0.08);
+    border: none;
+}
+
+.transport:hover {
+    background-color: alpha(@view_fg_color, 0.16);
+}
+
+.transport:active {
+    background-color: alpha(@view_fg_color, 0.24);
+}
+
+.seekbar trough {
+    min-height: 6px;
+    border-radius: 3px;
+    background-color: alpha(@view_fg_color, 0.10);
+}
+
+.seekbar progress {
+    background-color: @accent_color;
+    border-radius: 3px;
+}
+
+.seekbar slider {
+    min-width: 14px;
+    min-height: 14px;
+    border-radius: 7px;
+    background-color: white;
+    border: 1.5px solid @accent_color;
+}
+
+.queue-title {
+    font-weight: 600;
+}
+
+.queue-row.current .queue-title {
+    color: @accent_color;
+}
+
+.detail-key {
+    color: alpha(@view_fg_color, 0.55);
+}
+
+.detail-value {
+    font-feature-settings: "tnum";
+}
+
+.mono {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+button {
+    border-radius: 8px;
+    border: none;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background-color: alpha(@view_fg_color, 0.06);
+    color: @view_fg_color;
+}
+
+button:hover {
+    background-color: alpha(@view_fg_color, 0.12);
+}
+
+button:active {
+    background-color: alpha(@view_fg_color, 0.20);
+}
+
+button.suggested-action {
+    background-color: @accent_color;
+    color: white;
+}
+
+button.suggested-action:hover {
+    background-color: alpha(@view_fg_color, 0.2);
+}
+
+Adw.WindowTitle {
+    font-weight: 600;
+    font-size: 15px;
+}
 """.encode()
 
 
@@ -726,7 +876,7 @@ class PreviewScreen(Gtk.DrawingArea):
         super().__init__()
         self.set_hexpand(True)
         self.set_vexpand(True)
-        self.set_size_request(-1, 180)
+        self.set_size_request(-1, 220)
         self.set_draw_func(self._draw)
         self._lock = threading.Lock()
         self._title = "No video"
@@ -848,28 +998,28 @@ class MainWindow(Adw.ApplicationWindow):
         paned.set_resize_start_child(True)
         paned.set_resize_end_child(False)
         paned.set_shrink_end_child(False)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         left.set_hexpand(True)
         left.append(self._build_now_playing())
         left.append(self._build_live_levels())
         left.append(self._build_queue())
-        right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        right_box.set_size_request(330, -1)
+        right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        right_box.set_size_request(340, -1)
         right_box.append(self._build_device_card())
         right_box.append(self._build_settings_card())
         right_box.append(self._build_details_card())
         right_scroller = Gtk.ScrolledWindow()
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         right_scroller.set_child(right_box)
-        right_scroller.set_size_request(346, -1)
+        right_scroller.set_size_request(356, -1)
         paned.set_start_child(left)
         paned.set_end_child(right_scroller)
-        paned.set_position(700)
+        paned.set_position(720)
         holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        holder.set_margin_top(14)
-        holder.set_margin_bottom(14)
-        holder.set_margin_start(14)
-        holder.set_margin_end(14)
+        holder.set_margin_top(18)
+        holder.set_margin_bottom(18)
+        holder.set_margin_start(18)
+        holder.set_margin_end(18)
         holder.append(paned)
         toolbar.set_content(holder)
         self.toasts.set_child(toolbar)
@@ -934,11 +1084,11 @@ class MainWindow(Adw.ApplicationWindow):
         body.append(self.preview)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
-        clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self.elapsed_label = Gtk.Label(label="0:00:00", xalign=0.0, hexpand=True)
         self.elapsed_label.add_css_class("caption")
         self.elapsed_label.add_css_class("mono")
-        self.remaining_label = Gtk.Label(label="--:--")
+        self.remaining_label = Gtk.Label(label="--:--", xalign=1.0)
         self.remaining_label.add_css_class("caption")
         self.remaining_label.add_css_class("mono")
         self.remaining_label.add_css_class("dim-label")
@@ -946,23 +1096,23 @@ class MainWindow(Adw.ApplicationWindow):
         clock_row.append(self.remaining_label)
         body.append(clock_row)
 
-        transport = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        transport = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         transport.set_halign(Gtk.Align.CENTER)
-        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=18)
+        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=20)
         self.back30_button = self._text_button("−30", "Back 30 seconds (Shift+←)", self._skip_back30)
         self.back10_button = self._text_button("−10", "Back 10 seconds (←)", self._skip_back10)
         self.play_button = Gtk.Button()
         self.play_button.add_css_class("suggested-action")
         self.play_button.add_css_class("big-play")
         self.play_image = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
-        self.play_image.set_pixel_size(26)
+        self.play_image.set_pixel_size(30)
         self.play_button.set_child(self.play_image)
         self.play_button.set_tooltip_text("Play / Pause (Space)")
         self.play_button.connect("clicked", lambda _b: self.toggle_play())
         self.fwd10_button = self._text_button("+10", "Forward 10 seconds (→)", self._skip_forward10)
         self.fwd30_button = self._text_button("+30", "Forward 30 seconds (Shift+→)", self._skip_forward30)
-        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=18)
-        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport", self.stop_stream, size=18)
+        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=20)
+        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport", self.stop_stream, size=20)
         for widget in (self.prev_button, self.back30_button, self.back10_button,
                        self.play_button, self.fwd10_button, self.fwd30_button,
                        self.next_button, self.stop_button):
@@ -1111,11 +1261,13 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _build_device_card(self) -> Gtk.Box:
         card, body = self._card("Device")
+        body.set_spacing(10)
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]])
         self.device_dropdown.set_hexpand(True)
         self.device_dropdown.connect("notify::selected", self._on_device_selected)
         refresh = self._icon_button("view-refresh-symbolic", "Scan the network", "flat", self.scan_devices)
+        refresh.set_valign(Gtk.Align.CENTER)
         row.append(self.device_dropdown)
         row.append(refresh)
         body.append(row)
