@@ -59,6 +59,35 @@ def runtime_environment() -> dict[str, str]:
     return env
 
 
+def media_arguments_from_caller(args: list[str], caller: Path) -> list[str]:
+    """Resolve film arguments before switching cwd to the installed checkout.
+
+    Ignore URLs, flags and --action values. A missing relative filename must
+    also become caller-absolute, otherwise a same-named checkout file could
+    be silently opened instead. No filesystem mutation or GTK interaction.
+    """
+    result: list[str] = []
+    action_value = False
+    for argument in args:
+        if action_value:
+            result.append(argument)
+            action_value = False
+        elif argument == "--action":
+            result.append(argument)
+            action_value = True
+        elif argument.startswith("-") or argument.startswith("file://"):
+            result.append(argument)
+        else:
+            try:
+                candidate = Path(argument).expanduser()
+                if not candidate.is_absolute():
+                    candidate = caller / candidate
+                result.append(str(candidate.resolve()))
+            except (OSError, RuntimeError, ValueError):
+                result.append(argument)
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args in (["--version"], ["-V"]):
@@ -80,7 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         print(f"SmoothCast: {exc}", file=sys.stderr)
         return 1
-    command = [str(installed), str(ROOT / "src" / "cast_control.py"), *args]
+    # GTK's process cwd is intentionally ROOT; preserve the caller's media
+    # paths before os.chdir/Windows subprocess cwd changes that reference.
+    media_args = media_arguments_from_caller(args, Path.cwd())
+    command = [str(installed), str(ROOT / "src" / "cast_control.py"), *media_args]
     env = runtime_environment()
     try:
         if os.name != "nt":
