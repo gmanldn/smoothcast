@@ -206,3 +206,68 @@ class StreamerReliabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OneSegmentHlsTests(unittest.TestCase):
+    """A very short clip can finalise with one complete HLS segment."""
+
+    def _session(self, root, returncode):
+        session = streamer.Session()
+        proc = mock.MagicMock()
+        proc.poll.return_value = returncode
+        proc.returncode = returncode
+        session.ffmpeg = proc
+        return session
+
+    def test_finalised_single_segment_playlist_is_accepted(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "segment-00000.ts").write_bytes(b"TS")
+            (root / "movie.m3u8").write_text(
+                "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\n"
+                "segment-00000.ts\n#EXT-X-ENDLIST\n",
+                encoding="utf-8",
+            )
+            session = self._session(root, 0)
+            with mock.patch.object(streamer, "ROOT", root):
+                self.assertTrue(session._wait_for_segments(1.0))
+
+    def test_single_segment_playlist_with_missing_segment_is_rejected(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "movie.m3u8").write_text(
+                "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2.0,\n"
+                "segment-00000.ts\n#EXT-X-ENDLIST\n",
+                encoding="utf-8",
+            )
+            session = self._session(root, 0)
+            with mock.patch.object(streamer, "ROOT", root):
+                self.assertFalse(session._wait_for_segments(0.5))
+
+    def test_failed_encode_does_not_accept_a_single_segment(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "segment-00000.ts").write_bytes(b"TS")
+            (root / "movie.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n#EXT-X-ENDLIST\n",
+                encoding="utf-8",
+            )
+            session = self._session(root, 1)
+            with mock.patch.object(streamer, "ROOT", root):
+                self.assertFalse(session._wait_for_segments(0.5))
+
+    def test_unfinalised_playlist_after_exit_is_rejected(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as work:
+            root = Path(work)
+            (root / "segment-00000.ts").write_bytes(b"TS")
+            (root / "movie.m3u8").write_text(
+                "#EXTM3U\n#EXTINF:2.0,\nsegment-00000.ts\n",
+                encoding="utf-8",
+            )
+            session = self._session(root, 0)
+            with mock.patch.object(streamer, "ROOT", root):
+                self.assertFalse(session._wait_for_segments(0.5))

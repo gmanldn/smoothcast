@@ -220,6 +220,14 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #60 — Completed one-segment HLS clips are accepted:**
+  `Session._wait_for_segments` still waits for two segments while the
+  encoder runs, but when the encoder exits successfully it now accepts a
+  finalised playlist (`#EXT-X-ENDLIST`) whose referenced segments all
+  exist and are non-empty. A missing segment, an unfinalised playlist or
+  a failed encode is still rejected. Tests cover all four cases in
+  `tests/test_streamer_reliability.py`; real-receiver confirmation of a
+  two-second cast is pending.
 - **P0 #57 — Completion is distinguished from loss of status:**
   `castctl.player_state` already reports `UNKNOWN` (never `IDLE`) for a
   partial or missing media state, and `playback_state.playback_ended`

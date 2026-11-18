@@ -1079,13 +1079,38 @@ class Session:
     def _wait_for_segments(self, timeout: float) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
-                return False
-            segments = list(ROOT.glob(SEGMENT_GLOB))
-            if (ROOT / HLS_NAME).exists() and len(segments) >= 2:
+            playlist = ROOT / HLS_NAME
+            if playlist.exists() and len(list(ROOT.glob(SEGMENT_GLOB))) >= 2:
                 return True
+            if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
+                # A two-second clip, or a seek into a film's final seconds, can
+                # finalise with a single complete segment and then exit. Accept
+                # that, but only for a successful encode whose finalised
+                # playlist references segments that actually exist.
+                return self.ffmpeg.returncode == 0 and self._playlist_is_complete(playlist)
             time.sleep(0.25)
         return False
+
+    def _playlist_is_complete(self, playlist: pathlib.Path) -> bool:
+        """True when a finalised playlist references only complete segments."""
+        try:
+            text = playlist.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        if "#EXT-X-ENDLIST" not in text:
+            return False
+        names = [line.strip() for line in text.splitlines()
+                 if line.strip() and not line.startswith("#")]
+        if not names:
+            return False
+        for name in names:
+            try:
+                segment = ROOT / name
+                if not segment.is_file() or segment.stat().st_size == 0:
+                    return False
+            except OSError:
+                return False
+        return True
 
     def start_direct(
         self,
