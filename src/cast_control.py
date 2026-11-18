@@ -1510,35 +1510,54 @@ class MainWindow(Adw.ApplicationWindow):
         return switch
 
     def _build_details_card(self) -> Gtk.Box:
-        card, body = self._card("Stream details")
-        grid = Gtk.Grid(row_spacing=6, column_spacing=12)
+        card, body = self._card(
+            "Stream diagnostics", "A live technical readout of the current session."
+        )
+        card.add_css_class("diagnostics-card")
+        grid = Gtk.Grid(row_spacing=11, column_spacing=16)
         grid.set_valign(Gtk.Align.START)
+        grid.set_column_homogeneous(False)
         self.detail_labels: dict[str, Gtk.Label] = {}
         rows = [
             ("state", "State"), ("mode", "Mode"), ("encoder", "Encoder"),
-            ("position", "Position"), ("buffer", "Buffer Health"), ("segments", "Segments"),
+            ("position", "Position"), ("buffer", "Buffer health"), ("segments", "Segments"),
             ("resolution", "Video"), ("audio", "Audio"),
             ("subs", "Subtitles"), ("file", "File"), ("url", "Stream URL"),
         ]
+        row_index = 0
         for index, (key, label) in enumerate(rows):
+            if index in (0, 6):
+                if index:
+                    sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+                    sep.add_css_class("mini-divider")
+                    grid.attach(sep, 0, row_index, 3, 1)
+                    row_index += 1
+                heading = Gtk.Label(
+                    label="PLAYBACK & ENCODER" if index == 0 else "MEDIA & OUTPUT",
+                    xalign=0.0,
+                )
+                heading.add_css_class("detail-section")
+                grid.attach(heading, 0, row_index, 3, 1)
+                row_index += 1
             key_label = Gtk.Label(label=label, xalign=0.0)
             key_label.add_css_class("detail-key")
-            key_label.add_css_class("caption")
             value_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
             value_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-            value_label.set_max_width_chars(36)
+            value_label.set_max_width_chars(32)
             value_label.set_width_chars(1)
-            value_label.add_css_class("caption")
             value_label.add_css_class("detail-value")
-            grid.attach(key_label, 0, index, 1, 1)
-            grid.attach(value_label, 1, index, 1, 1)
+            grid.attach(key_label, 0, row_index, 1, 1)
+            grid.attach(value_label, 1, row_index, 1, 1)
             if key == "url":
-                copy_button = self._icon_button("edit-copy-symbolic", "Copy stream URL", "flat", self._copy_url, size=14)
+                copy_button = self._icon_button(
+                    "edit-copy-symbolic", "Copy stream URL", "flat", self._copy_url, size=14
+                )
                 copy_button.set_valign(Gtk.Align.START)
                 copy_button.set_visible(False)
-                grid.attach(copy_button, 2, index, 1, 1)
+                grid.attach(copy_button, 2, row_index, 1, 1)
                 self.copy_url_button = copy_button
             self.detail_labels[key] = value_label
+            row_index += 1
         body.append(grid)
         return card
 
