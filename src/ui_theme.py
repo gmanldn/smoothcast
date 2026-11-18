@@ -26,10 +26,23 @@ window {
     background-color: #0b111b;
 }
 headerbar {
-    min-height: 48px;
+    min-height: 52px;
     background-color: #0c1521;
     border-bottom: 1px solid #29384e;
     box-shadow: none;
+}
+.dim-label {
+    opacity: 0.93;
+    color: #a6bad1;
+}
+headerbar .title {
+    font-size: 17px;
+    font-weight: 800;
+    color: #f4f8ff;
+}
+headerbar .subtitle {
+    font-size: 12px;
+    color: #a9bdd5;
 }
 .card {
     padding: 20px;
@@ -313,6 +326,12 @@ row.queue-row {
 }
 statuspage {
     color: #a4b6ce;
+}
+label {
+    text-shadow: none;
+}
+separator {
+    background-color: #2c4056;
 }
 /* Compact state is applied to the native window at the responsive breakpoint. */
 .compact .card {
