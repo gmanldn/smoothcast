@@ -3870,6 +3870,12 @@ class MainWindow(Adw.ApplicationWindow):
                 self.toast("That file has moved or been deleted", error=True)
 
     def _cast_remote_url(self, value: str) -> None:
+        # The external URL workflow is a catt/Google Cast capability, not a
+        # DLNA AVTransport resource negotiation path. Do not issue catt
+        # commands to a DLNA identifier or discard the current DLNA session.
+        if self._dlna_renderer() is not None:
+            self.toast("Open URL currently requires a Google Cast target; choose Cast or open a local film", error=True)
+            return
         try:
             url = url_control.validate_media_url(value)
         except ValueError as exc:
