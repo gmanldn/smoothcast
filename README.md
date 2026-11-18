@@ -169,7 +169,7 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 ## Desktop launcher and dock
 
-SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the bare `smoothcast` console script (resolved through the user's `PATH`, which always includes `~/.local/bin` after `pip install`). A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
+SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, not a potentially older `smoothcast` found on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
 To repair the existing Linux dock icon after pulling a new version (run from your SmoothCast checkout, without `sudo`):
 
@@ -182,6 +182,23 @@ gtk-launch local.cast-control
 ```
 
 The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. `gtk-launch` verifies the actual desktop entry rather than merely launching a terminal command.
+
+To diagnose an old version or repeated launch, compare the checkout version with the dock's actual executable:
+
+```sh
+cd /path/to/smoothcast
+git pull --ff-only
+python3 src/version.py
+python3 scripts/install_desktop.py --pin
+python3 scripts/install_desktop.py --check
+grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
+```
+
+The dock must point to the **absolute path to the launcher in this checkout**.
+Running `python3 sc.py` from this directory bypasses any old dock entry.
+A dependency repair now installs from `pyproject.toml`, not a missing
+`requirements.txt`; repair failures print the actual error rather than
+pretending that the same release installed again.
 
 If `gtk-launch` cannot find the entry, log out and back in to refresh GNOME's application cache. If the window still fails, run `python3 sc.py` from the same checkout in a terminal to see dependency errors; on GNOME, also inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
@@ -223,7 +240,7 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Automatic updates without blocking startup
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. A successful fast-forward shows a restart notification; code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
 ## Runtime dependencies
 
