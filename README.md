@@ -48,8 +48,36 @@ Google Cast backend. The receiver must actually expose Google Cast; a
 generic Wi-Fi TV is not sufficient. If mDNS discovery fails, use **Output
 device → Add IP** with the receiver's private-LAN IPv4 address, then select
 it in the output dropdown. A manual IP only targets Google Cast receivers,
-not DLNA, AirPlay or Miracast. Those separate protocols are tracked in
-[IMPROVEMENTS.md](IMPROVEMENTS.md); **they are not implemented yet**.
+not DLNA, AirPlay or Miracast. **AirPlay and Miracast remain unimplemented.**
+
+**DLNA / UPnP MediaRenderer (beta):** SmoothCast also scans for
+AVTransport-compatible DLNA renderers on the private LAN using SSDP. Choose an
+entry labelled **DLNA · TV name · IP** in **Output device**, then press **Cast**.
+The application supplies a temporary HTTP URL with an unguessable token and
+byte-range requests; the TV fetches a progressive MP4 from your machine.
+Playback, pause, stop, seek and optional volume controls use UPnP SOAP, **not**
+the Google Cast backend. A receiver must advertise a compatible DLNA
+AVTransport service; some TVs with only UPnP *media browsing* are not
+MediaRenderers and will not be listed.
+
+For compatible H.264/AAC MP4 files, DLNA playback starts directly. An MKV
+with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
+non-default audio tracks or selected subtitles require full FFmpeg
+transcoding and burn-in **before playback starts**. For long films this can
+take significant time and disk space (roughly twice the source-file size must
+be available). The application checks local free space and reports conversion
+errors. The DLNA target path currently uses normal playback speed, no video
+rotation and the original sound profile; Chromecast still supports its own
+transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
+support in your FFmpeg build.
+
+DLNA discovery currently requires private IPv4 SSDP responses with a matching
+HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
+prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
+also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
+DLNA has automated protocol tests but **has not yet been verified on a real
+television**; device-specific MIME/codec negotiation is a follow-up in
+[IMPROVEMENTS.md](IMPROVEMENTS.md).
 
 **MKV/Matroska:** FFprobe detects embedded video/audio/subtitle streams.
 Common video codecs H.264, HEVC/H.265, VP9 and AV1 and audio codecs AAC,
@@ -90,7 +118,7 @@ Choose **Open** and select a local film. FFprobe enumerates its full duration an
 
 **Play** (or Space) now starts the movie **inside the preview panel**, with local audio. Play again to pause. The seek bar, jump buttons and number-key shortcuts change the local movie position; the playhead advances in real time without ever rerunning FFprobe on each scrub or tick. This preview works even when no Chromecast is connected. **Stop** resets only the local preview.
 
-Choose a Chromecast in the device selector, then press **Cast**. SmoothCast stops the local decoder, captures its most recent playback timestamp and starts casting at that position. After transfer, Play/Pause and seeking control the TV as before. The **Play preview** button does the same as the main Play control while no TV cast is active. Queue double-click remains an explicit immediate cast action.
+Choose a Google Cast or DLNA renderer in the device selector, then press **Cast**. SmoothCast stops the local decoder, captures its most recent playback timestamp and starts casting at that position. After transfer, Play/Pause and seeking control the TV as before. The **Play preview** button does the same as the main Play control while no TV cast is active. Queue double-click remains an explicit immediate cast action.
 
 Embedded playback uses GTK4's native GStreamer media backend; still-frame scrubbing continues to use FFmpeg. On Debian/Ubuntu, install the media backend and codecs with `bash setup/linuxsetup.sh` (including `libgtk-4-media-gstreamer`, `gstreamer1.0-plugins-good` and `gstreamer1.0-libav`). If a codec is unsupported, a decoder error is reported and the still-frame preview remains available. Windows/macOS GTK media backend and real-device casting still require native smoke testing.
 
