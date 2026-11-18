@@ -7,6 +7,6 @@ traceable to a specific point in history.
 
 MAJOR = 1
 MINOR = 0
-PATCH = 28
+PATCH = 29
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
