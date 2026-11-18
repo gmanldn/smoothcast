@@ -92,6 +92,41 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertEqual(report.files_removed, 2)
             self.assertTrue((root / "ffmpeg.log").exists())
 
+    def test_abandoned_staged_captions_cleaned_but_saved_direct_captions_kept(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            captions = [root / "receiver_subs.srt", root / "burned_subs.srt"]
+            for path in captions:
+                path.write_bytes(b"staged")
+            (root / "ffmpeg.log").write_text("diagnostics preserved")
+            with mock.patch.object(cleanup, "discover", return_value=[]), \
+                 mock.patch.object(streamer, "load_session", return_value=None), \
+                 mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "SESSION_FILE", root / "session.json"), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"):
+                result = cleanup.cleanup_before_window(
+                    keep_streaming=False, temp_root=root,
+                )
+            self.assertEqual(result.files_removed, 2)
+            self.assertTrue(all(not path.exists() for path in captions))
+            self.assertTrue((root / "ffmpeg.log").exists())
+
+            (root / "receiver_subs.srt").write_bytes(b"still in use")
+            saved = streamer.SessionState(
+                file="/elsewhere/movie.mp4", mode="direct", offset=0,
+                duration=5, device="TV", title="A film",
+            )
+            with mock.patch.object(cleanup, "discover", return_value=[]), \
+                 mock.patch.object(streamer, "load_session", return_value=saved), \
+                 mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "SESSION_FILE", root / "session.json"), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"):
+                result = cleanup.cleanup_before_window(
+                    keep_streaming=True, temp_root=root,
+                )
+            self.assertTrue(result.retained_stream)
+            self.assertEqual((root / "receiver_subs.srt").read_bytes(), b"still in use")
+
     def test_disabled_keep_streaming_discards_saved_session(self):
         with TemporaryDirectory() as d:
             root = Path(d)
