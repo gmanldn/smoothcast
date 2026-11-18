@@ -10,6 +10,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Live position tracking** — seek bar stays synced with the device in both direct and transcode modes
 - **HLS transcoding** — VAAPI H.264 encoding with one bounded software fallback even if the hardware encoder hangs without exiting; picks the LAN source IP routed to the selected Chromecast
 - **Direct play** — untouched passthrough for compatible files
+- **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — auto-select, burn-in, or disable
 - **Queue / Up Next and repeat-one** — advance or loop the current video when the TV reports completion; old stream cleanup finishes before restarting
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
