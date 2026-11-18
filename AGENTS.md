@@ -36,6 +36,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `src/server.py` — HLS static file server / allowlisted HLS HTTP server (playlist, TS segments, health probe only; never serve session.json or logs)
 - `src/error_log.py` — ring-buffer error log (errors.log, 10k lines, gitignored)
 - `src/position_tracker.py` — playback position estimation (no GTK dep)
+- `src/responsive_layout.py` — GTK-free screen bounds and responsive breakpoints
 - `src/utils.py` — pure text helpers (pretty_title)
 - `src/version.py` — version counter (MAJOR.MINOR.PATCH)
 - `src/url_control.py` — HTTP(S) URL validation for remote casting
@@ -66,8 +67,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.36`
-- Release tags mark releases, e.g. `v1.0.35`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
+- Current: `1.0.37`
+- Release tags mark releases, e.g. `v1.0.37`. Bump via `git tag v<major>.<minor>.<patch>` and push tags with `--tags`.
 
 ## UI features
 - Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
@@ -81,7 +82,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.35`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.37`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -103,6 +104,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 22. Real Loop and Sleep timer: `playback_state.next_media` repeats one item before `autonext`; cleanup completes before restarting the same track or auto-shutting down. The sleep timer stores a persisted wall-clock `sleep_timer_deadline` and polls every five seconds, stopping the SmoothCast-owned session. The GTK application must be running for the deadline to fire. Tests: `tests/test_playback_controls.py`.
 
 23. Remote URL casting: `MainWindow._cast_remote_url` validates HTTP(S) addresses with `url_control.validate_media_url`, then calls `catt -d DEVICE cast --no-subs URL` in an `Async.run` worker. Never send network URLs to `streamer.ffprobe(Path(...))`. Tests: `tests/test_url_control.py`.
+
+25. Responsive GTK4 layout: `src/responsive_layout.py` clamps startup size to monitor geometry; `MainWindow._refresh_responsive_layout` checks allocated width/height every 200 ms and reflows cards from a two-column desktop page to a single-column layout below 1180 logical pixels. One outer `Gtk.ScrolledWindow` gives vertical access to every card on short screens. Transport/action controls reattach to compact GTK grids; long metadata wraps and preview text ellipsises. Never restore forced large window minima or GTK3 window-position APIs. See `tests/test_responsive_layout.py` and `tests/test_responsive_wiring.py`.
 
 ## Pending work
 - Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
