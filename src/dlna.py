@@ -192,11 +192,11 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
     In-flight GETs have individual socket timeouts and never publish results
     after the scan has returned.
     """
-    query = ("M-SEARCH * HTTP/1.1\\r\\n"
-             "HOST: 239.255.255.250:1900\\r\\n"
-             'MAN: "ssdp:discover"\\r\\n'
-             "MX: 2\\r\\n"
-             f"ST: {DEVICE_TYPE}\\r\\n\\r\\n").encode("ascii")
+    query = ("M-SEARCH * HTTP/1.1\r\n"
+             "HOST: 239.255.255.250:1900\r\n"
+             'MAN: "ssdp:discover"\r\n'
+             "MX: 2\r\n"
+             f"ST: {DEVICE_TYPE}\r\n\r\n").encode("ascii")
     budget = max(0.2, min(12.0, timeout))
     deadline = time.monotonic() + budget
     ssdp_end = time.monotonic() + min(2.0, budget * 0.5)
