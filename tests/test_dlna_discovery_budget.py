@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import socket
 import sys
+import textwrap
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -108,7 +109,7 @@ class RescanOwnershipTests(unittest.TestCase):
                 callbacks.append((work, done, failed))
         namespace = {"Async": Async, "castctl": SimpleNamespace(scan=lambda: []),
                      "dlna": SimpleNamespace(discover=lambda: [])}
-        exec(compile("class Window:\n" + code, "<scanning-test>", "exec"), namespace)
+        exec(compile("class Window:\n" + textwrap.indent(code, "    "), "<scanning-test>", "exec"), namespace)
         window = namespace["Window"]()
         window._closing = False
         window._scan_again = False
