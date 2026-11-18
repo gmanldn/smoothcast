@@ -7,6 +7,8 @@ crashlog.txt
 .coverage
 .coverage/*
 htmlcov/
+errors.log
+errors.log.tmp
 =======
 errors.log
 errors.log.tmp
