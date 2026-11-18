@@ -166,7 +166,7 @@ class AudioMonitor:
 
     # ---- lifecycle ----
 
-    def start(self, media_path, chain, *, offset: float = 0.0) -> None:
+    def start(self, media_path, chain, *, offset: float = 0.0, audio_track_index: int = 0) -> None:
         self.stop()
         self._stop.clear()
         self._offset = max(0.0, offset)
@@ -181,8 +181,9 @@ class AudioMonitor:
         # Split the decoded stereo stream: [a] measures the untouched source,
         # [b] measures the same audio after the dialogue/night chain. asetnsamples
         # gives both branches identical windowing so their records align 1:1.
+        track = audio_track_index if type(audio_track_index) is int and audio_track_index >= 0 else 0
         filter_complex = (
-            "[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[a][b];"
+            f"[0:a:{track}]aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[a][b];"
             f"[a]asetnsamples={_WINDOW},astats=metadata=1:reset=1,"
             f"ametadata=mode=print:file={in_path}:direct=1[o1];"
             f"[b]{chain_str},asetnsamples={_WINDOW},astats=metadata=1:reset=1,"
