@@ -52,7 +52,7 @@ Relevant vendor documentation:
 13. **[P0 · M] Multi-audio-track picker.** Enumerate languages, titles and channel layouts, select any valid track, carry its selection through seeks and cast restarts.
 14. **[P0 · L] Bitmap subtitle compositor.** Decode PGS, VobSub and DVB subtitle images, overlay with correct timing and palette; validate forced-only and multilingual tracks.
 15. **[P0 · M] Reliable subtitle state across transfers.** Preserve selected external/embedded track, delay, forced flag and burn mode when switching targets or restarting an encoder.
-16. **[P0 · M] Subtitle encoding detection.** Detect UTF-8/UTF-16/legacy SRT safely; normalise sidecars to a private bounded UTF-8 file when required, without changing originals.
+16. **[P0 · M · IMPLEMENTED / CI PENDING] Subtitle encoding detection.** Detect UTF-8/UTF-16/legacy SRT safely; normalise sidecars to a private bounded UTF-8 file when required, without changing originals.
 17. **[P0 · M] In-window player runtime smoke test.** Assert real video, audio, seek, pause, EOS and Cast handoff on each OS, not just GTK-free source-level tests.
 18. **[P0 · M] Transactional setup/uninstall/repair.** Validate GTK media plugin, codecs, CLI, app icon and launch on macOS/Windows/Linux; failed setup leaves the prior working install usable.
 
@@ -89,13 +89,24 @@ Relevant vendor documentation:
 44. **[P2 · M] Local library index.** Incrementally fingerprint local media and cache metadata without loading entire folders into RAM.
 45. **[P2 · M] Automatic crop/deinterlace policies.** Detect letterboxing and interlaced input, with previews and reversibility before changing the picture.
 46. **[P2 · M] Bounded diagnostic bundle export.** Collect redacted system/decoder/log details and reproduce a failing cast without exposing file paths or receiver credentials.
-47. **[P2 · S] Encoder dry-run preflight.** For an unfamiliar MKV, render a short private sample and report missing codecs/subtitle support before touching the TV.
+47. **[P2 · S · IMPLEMENTED / CI PENDING] Encoder dry-run preflight.** For an unfamiliar MKV, render a short private sample and report missing codecs/subtitle support before touching the TV.
 48. **[P2 · M] Playback-quality benchmark wizard.** Measure machine encode speed vs source frame rate and recommend 720p/1080p/4K settings with explicit trade-offs.
 49. **[P2 · M] Sandboxed subtitle and media-file handling.** Tighten temporary file limits, process timeouts, parser fuzz tests and secure cleanup of FFmpeg-produced files.
 50. **[P2 · M] Release qualification dashboard.** Track CI, GTK self-tests, real-device model matrix, installer checks, codec/subtitle samples and known failures per release.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #16 — Subtitle encoding detection:** code, regression tests and user
+  documentation pushed. Bounded UTF-8/UTF-16/Windows-1252 SRT detection,
+  read-only originals, private UTF-8 staging for receiver and burn-in,
+  invalid-file rejection, and crash cleanup. Integration test with FFmpeg
+  pending a successful media-runtime CI job. Not yet marked completed.
+- **P2 #47 — Encoder dry-run preflight:** code, regression tests and user
+  documentation pushed. Unknown MKVs render a private 0.8-second H.264/AAC
+  sample and verify actual frames *before* stopping an active receiver;
+  checks are cached per file/track fingerprint. Media-runtime CI still
+  pending. This tests local software decoders, not hardware receiver models.
+  Not yet marked completed.
 - **P0 #13 — Multi-audio-track picker:** implemented and under CI verification.
   FFprobe lists language, title, codec and channel layout; selected 0:a:N
   is persisted per film, survives HLS software fallback and seek restart,
