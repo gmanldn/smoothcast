@@ -11,7 +11,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **HLS transcoding** — VAAPI hardware-accelerated H.264 encoding with software fallback
 - **Direct play** — untouched passthrough for compatible files
 - **Subtitle support** — auto-select, burn-in, or disable
-- **Queue / Up Next** — auto-play next, drag-reorder
+- **Queue / Up Next** — auto-play next after the TV finishes playback and prior stream cleanup completes; drag-reorder
 - **Keyboard shortcuts** — space, arrows, etc.
 
 ## Quick start (self-contained)

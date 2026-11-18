@@ -20,6 +20,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import castctl
 import streamer
 import audio_monitor
+import playback_state
 import version
 
 APP_ID = "local.cast-control"
@@ -1702,9 +1703,11 @@ class MainWindow(Adw.ApplicationWindow):
             self._syncing = False
             self._apply_volume_icon()
         self._detect_external()
-        if previous != self.device_state:
-            if self.device_state == "IDLE" and previous in {"PLAYING", "BUFFERING", "PAUSED"}:
-                self._maybe_finished()
+        if playback_state.playback_ended(
+            previous, self.device_state,
+            has_session=self.session is not None, busy=self.busy,
+        ):
+            self._maybe_finished()
         self._refresh_controls()
         self._update_header_subtitle()
 
@@ -1728,11 +1731,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.tracker.clear()
 
     def _maybe_finished(self) -> None:
-        if self._finished_handled:
+        # The caster CLI/FFmpeg can finish long before the TV has drained its
+        # buffer; only a confirmed PLAYING/PAUSED -> IDLE device transition ends
+        # a session (direct or HLS).
+        if self._finished_handled or self.busy or self.session is None:
             return
-        if self.session and self.session.mode == "direct" and self.session.encoder_finished():
-            self._finished_handled = True
-            self._on_finished()
+        self._finished_handled = True
+        self._on_finished()
 
     def _on_finished(self) -> None:
         self._stop_monitor()
@@ -1742,12 +1747,24 @@ class MainWindow(Adw.ApplicationWindow):
         if self.cfg["autonext"] and item in self.queue:
             index = self.queue.index(item)
             if index + 1 < len(self.queue):
+                next_path = pathlib.Path(self.queue[index + 1])
+                self.now_playing = str(next_path)
+                self.toast(f"Up next: {next_path.name}")
+
+                def advance(_result=None):
+                    # Do not start a new transcoder while the previous session
+                    # is still deleting segments/shutting down its server.
+                    self._cast_path(next_path, 0.0)
+
                 if session is not None:
                     device = self._device()
-                    threading.Thread(target=lambda: session.stop(device, send_stop=False), daemon=True).start()
-                self.now_playing = self.queue[index + 1]
-                self.toast(f"Up next: {pathlib.Path(self.now_playing).name}")
-                GLib.timeout_add(1200, lambda: (self._cast_path(pathlib.Path(self.now_playing), 0.0), False)[1])
+                    Async.run(
+                        lambda: session.stop(device, send_stop=False),
+                        done=advance,
+                        failed=lambda msg: self._cast_failed(f"Queue cleanup: {msg}"),
+                    )
+                else:
+                    GLib.idle_add(lambda: (advance(), False)[1])
                 return
         if session is not None:
             device = self._device()
@@ -1761,19 +1778,14 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- ticking ----------
 
     def _tick(self) -> bool:
-        session_active = bool(self.session and self.session.active())
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
         position = self.tracker.value()
         buffered = None
-        if self.session and self.session.mode == "transcode" and session_active:
+        if self.session and self.session.mode == "transcode" and self.session.state:
             progress = self.session.progress()
-            out_time = progress.get("out_time")
-            if isinstance(out_time, (int, float)):
-                buffered = out_time
-            if (position is not None and duration and position >= duration - 0.6
-                    and self.session.encoder_finished() and not self._finished_handled):
-                self._finished_handled = True
-                GLib.idle_add(self._on_finished)
+            buffered = playback_state.absolute_encoded_position(
+                self.session.state.offset, progress.get("out_time"), duration
+            )
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
@@ -1883,11 +1895,14 @@ class MainWindow(Adw.ApplicationWindow):
             position_text += " (estimated)"
         # Buffer health — how far ahead the encoder is from playback position.
         buffer_text = "—"
-        if session and session.mode == "transcode" and session.active():
+        if session and session.mode == "transcode" and session.state:
             progress = session.progress()
-            out_time = progress.get("out_time")
-            if isinstance(out_time, (int, float)) and position is not None:
-                ahead = out_time - position
+            encoded = playback_state.absolute_encoded_position(
+                session.state.offset, progress.get("out_time"),
+                self.tracker.duration or (media.duration if media else 0.0),
+            )
+            if encoded is not None and position is not None:
+                ahead = encoded - position
                 if ahead >= 0:
                     buffer_text = f"{fmt_time(ahead)} ahead"
                 else:
