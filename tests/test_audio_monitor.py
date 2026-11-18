@@ -73,5 +73,57 @@ class AudioMonitorPairingTests(unittest.TestCase):
             self.assertEqual(meter._rout.records, [])
 
 
+
+class AudioMonitorCoverageTests(unittest.TestCase):
+    def test_long_seek_does_not_repeat_last_analysed_window(self):
+        monitor = AudioMonitor()
+        with monitor._lock:
+            monitor._times.extend([0.0, 0.1, 0.2, 0.3])
+            for samples in (monitor._in_rms, monitor._out_rms,
+                            monitor._in_peak, monitor._out_peak,
+                            monitor._in_l, monitor._in_r,
+                            monitor._out_l, monitor._out_r):
+                samples.extend([-20.0] * 4)
+        self.assertIsNotNone(monitor.sample_at(0.32))
+        self.assertIsNone(monitor.sample_at(0.4))
+        self.assertIsNone(monitor.sample_at(60.0))
+        self.assertAlmostEqual(monitor.analyzed_until, 0.3)
+
+    def test_new_decoder_samples_become_available_without_stale_values(self):
+        monitor = AudioMonitor()
+        with monitor._lock:
+            monitor._times.extend([0.0, 0.1])
+            for samples in (monitor._in_rms, monitor._out_rms,
+                            monitor._in_peak, monitor._out_peak,
+                            monitor._in_l, monitor._in_r,
+                            monitor._out_l, monitor._out_r):
+                samples.extend([-20.0, -15.0])
+        self.assertIsNone(monitor.sample_at(20.0))
+        with monitor._lock:
+            monitor._times.append(20.0)
+            for samples in (monitor._in_rms, monitor._out_rms,
+                            monitor._in_peak, monitor._out_peak,
+                            monitor._in_l, monitor._in_r,
+                            monitor._out_l, monitor._out_r):
+                samples.append(-10.0)
+        self.assertAlmostEqual(monitor.sample_at(20.03).in_rms, -10.0)
+        self.assertIsNone(monitor.sample_at(20.51))
+
+    def test_empty_and_before_initial_window_are_unknown(self):
+        monitor = AudioMonitor()
+        self.assertIsNone(monitor.sample_at(0))
+        monitor._offset = 5.0
+        with monitor._lock:
+            monitor._times.append(5.0)
+            for samples in (monitor._in_rms, monitor._out_rms,
+                            monitor._in_peak, monitor._out_peak,
+                            monitor._in_l, monitor._in_r,
+                            monitor._out_l, monitor._out_r):
+                samples.append(-30.0)
+        self.assertIsNone(monitor.sample_at(4.5))
+        self.assertIsNotNone(monitor.sample_at(5.05))
+        self.assertIsNone(monitor.sample_at(6.0))
+
+
 if __name__ == "__main__":
     unittest.main()
