@@ -32,24 +32,35 @@ jobs:
       - name: Install portable test dependencies
         run: python -m pip install 'pytest>=8,<10'
 
-      - name: Install FFmpeg and libass runtime for integration checks
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg libass9
+      - name: Run all portable regression tests
+        run: python -m pytest -q tests
 
-      - name: Verify FFmpeg runtime fixtures are available
+  media-integration:
+    name: FFmpeg MKV/SRT runtime integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install FFmpeg without holding up the portable test suite
         run: |
+          sudo timeout 180 apt-get install -y --no-install-recommends ffmpeg
           command -v ffmpeg
           command -v ffprobe
+      - name: Verify required encoders and caption filter
+        run: |
           ffmpeg -hide_banner -encoders > "$RUNNER_TEMP/ffmpeg-encoders.txt"
           ffmpeg -hide_banner -filters > "$RUNNER_TEMP/ffmpeg-filters.txt"
           grep -q libx264 "$RUNNER_TEMP/ffmpeg-encoders.txt"
           grep -q mpeg4 "$RUNNER_TEMP/ffmpeg-encoders.txt"
           grep -q aac "$RUNNER_TEMP/ffmpeg-encoders.txt"
           grep -q subtitles "$RUNNER_TEMP/ffmpeg-filters.txt"
-
-      - name: Run all portable regression tests
-        run: python -m pytest -q tests
+      - name: Install pytest
+        run: python -m pip install 'pytest>=8,<10'
+      - name: Run actual FFmpeg decoder and subtitle tests
+        run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py
 
   setup-contract:
     name: Setup contract (${{ matrix.os }})
