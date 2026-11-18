@@ -16,6 +16,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 import castctl
+import dlna
 import streamer
 import audio_monitor
 import screenshot
@@ -713,9 +714,12 @@ class MainWindow(Adw.ApplicationWindow):
         self.media: streamer.MediaInfo | None = None
         self.device_info: dict | None = None
         self.devices: list[castctl.Device] = []
+        self.dlna_devices: list[dlna.Renderer] = []
+        self._dlna_by_key: dict[str, dlna.Renderer] = {}
         self.device_state = "IDLE"
         self.external = False
         self.busy = False
+        self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False
         self.scan_busy = False
         self.queue: list[str] = []
@@ -919,6 +923,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.selected_index = None
         self.external = False
         self.busy = False
+        self._dlna_cancel = None
         self.poll_busy = False
         self.scan_busy = False
         self.queue = []
@@ -1419,7 +1424,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _build_device_card(self) -> Gtk.Box:
         card, body = self._card(
-            "Output device", "Select the Chromecast receiving your media."
+            "Output device", "Google Cast or DLNA/UPnP renderer on your network."
         )
         card.add_css_class("device-card")
         row_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
@@ -1767,7 +1772,13 @@ class MainWindow(Adw.ApplicationWindow):
     def _device(self) -> str:
         return self.cfg["device"]
 
+    def _dlna_renderer(self, device: str | None = None) -> dlna.Renderer | None:
+        return self._dlna_by_key.get(device or self._device())
+
     def _device_host(self, device: str) -> str | None:
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            return renderer.host
         if device in self.cfg.get("cast_targets", []):
             return device
         return next((d.host for d in self.devices if d.name == device and d.host), None)
@@ -1800,15 +1811,40 @@ class MainWindow(Adw.ApplicationWindow):
         if self.scan_busy:
             return
         self.scan_busy = True
-        self.device_detail.set_text("Scanning…")
-        Async.run(castctl.scan, done=self._scan_done, failed=lambda msg: self._scan_failed(msg))
+        self.device_detail.set_text("Scanning Cast and DLNA receivers…")
+
+        def work():
+            errors = []
+            try:
+                cast_devices = castctl.scan()
+            except Exception as exc:
+                cast_devices = []
+                errors.append(f"Cast discovery: {exc}")
+            try:
+                dlna_devices = dlna.discover()
+            except Exception as exc:
+                dlna_devices = []
+                errors.append(f"DLNA discovery: {exc}")
+            if errors and not cast_devices and not dlna_devices:
+                raise RuntimeError("; ".join(errors))
+            return cast_devices, dlna_devices
+
+        Async.run(work, done=self._scan_done, failed=self._scan_failed)
 
     def _scan_done(self, devices) -> None:
         self.scan_busy = False
-        self.devices = devices
+        if isinstance(devices, tuple):
+            cast_devices, discovered_dlna = devices
+            self.dlna_devices = discovered_dlna
+        else:
+            cast_devices = devices
+        self.devices = cast_devices
+        self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
         names = list(dict.fromkeys(
-            [d.name for d in devices] + [t for t in self.cfg.get("cast_targets", [])
-                                          if isinstance(t, str)]
+            [d.name for d in cast_devices]
+            + list(self._dlna_by_key)
+            + [t for t in self.cfg.get("cast_targets", [])
+               if isinstance(t, str)]
         ))
         if self.cfg["device"] not in names:
             names.insert(0, self.cfg["device"])
@@ -1817,8 +1853,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.device_dropdown.set_model(Gtk.StringList.new(names))
         self.device_dropdown.set_selected(selected)
         self._syncing = False
-        selected = next((d for d in devices if d.name == self.cfg["device"]), None)
-        if selected is not None:
+        selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
+        dlna_selected = self._dlna_renderer()
+        if dlna_selected is not None:
+            self.device_detail.set_text(
+                f"DLNA/UPnP · {dlna_selected.model or 'MediaRenderer'} · {dlna_selected.host}"
+            )
+            self._set_device_badge("DLNA FOUND")
+        elif selected is not None:
             self.device_detail.set_text(
                 f"{selected.model or 'Google Cast receiver'} · {selected.manufacturer or 'Unknown maker'} · {selected.host}"
             )
@@ -1831,7 +1873,7 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             self.device_detail.set_text(
                 "Selected Cast receiver not found. Choose another receiver or add its IP."
-                if devices else "No Cast receivers discovered. Try Add IP for a Cast-enabled TV."
+                if cast_devices or self.dlna_devices else "No Cast or DLNA receivers discovered. Check Wi-Fi/VPN or firewall."
             )
             self._set_device_badge("NOT FOUND", "offline")
 
@@ -1895,7 +1937,11 @@ class MainWindow(Adw.ApplicationWindow):
                 return
             self._poll_failed(message)
 
-        Async.run(lambda: castctl.info(device), done=completed, failed=failed)
+        renderer = self._dlna_renderer(device)
+        Async.run(
+            (lambda: dlna.info(renderer)) if renderer else (lambda: castctl.info(device)),
+            done=completed, failed=failed,
+        )
         return True
 
     def _poll_failed(self, message) -> None:
@@ -2210,7 +2256,8 @@ class MainWindow(Adw.ApplicationWindow):
         if media.size_label:
             meta.append(media.size_label)
         if session is not None and session.state:
-            meta.append("direct play" if session.mode == "direct" else "live transcode")
+            meta.append("DLNA/UPnP" if session.mode == "dlna" else (
+                "direct play" if session.mode == "direct" else "live transcode"))
         text = " · ".join(bit for bit in meta if bit)
         if self.np_title.get_text() != title:
             self.np_title.set_text(title)
@@ -2234,7 +2281,8 @@ class MainWindow(Adw.ApplicationWindow):
         mode_text = "—"
         encoder_text = "—"
         if session and session.state:
-            mode_text = "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"
+            mode_text = ("DLNA progressive MP4" if session.mode == "dlna" else (
+                "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"))
             if session.mode == "transcode":
                 progress = session.progress()
                 speed = progress.get("speed") or "—"
@@ -2242,7 +2290,7 @@ class MainWindow(Adw.ApplicationWindow):
                 engine = "libx264 (CPU)" if session.used_software_fallback else "h264 VAAPI"
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
-                encoder_text = "device-native"
+                encoder_text = "local MP4 preparation" if session.mode == "dlna" else "device-native"
         if self.external and info:
             title = f"{str(info.get('title') or 'external stream')} · external"
             if self.np_title.get_text() != title:
@@ -2395,7 +2443,10 @@ class MainWindow(Adw.ApplicationWindow):
         local_ready = self._preview_path is not None and self.session is None and not self.external
         can_play = not busy and ((online and active) or local_ready)
         self.play_button.set_sensitive(can_play)
-        self.stop_button.set_sensitive(not busy and ((online and active) or local_ready))
+        self.stop_button.set_sensitive(
+            (not busy and ((online and active) or local_ready))
+            or (busy and self._dlna_cancel is not None)
+        )
         can_seek = not busy and ((online and not self.external and self.tracker.known and active)
                                  or (local_ready and bool(self.media and self.media.duration)))
         for button in (self.back10_button, self.back30_button, self.fwd10_button, self.fwd30_button):
@@ -2416,10 +2467,14 @@ class MainWindow(Adw.ApplicationWindow):
             and self.session.state.embedded_subtitle_index >= 0
         )
         subtitle_burned = bool(self.session and self.session.state and self.session.state.burn_subs)
-        self.cc_button.set_sensitive(active and not busy and not subtitle_burned)
+        dlna_active = bool(self.session and self.session.mode == "dlna")
+        self.cc_button.set_sensitive(active and not busy and not subtitle_burned and not dlna_active)
         self.cc_button.set_tooltip_text(
-            "Captions are burned into video; change settings and recast to switch off"
-            if subtitle_burned else "Toggle subtitles on the receiver"
+            "DLNA captions are prepared in the MP4; recast to change them"
+            if dlna_active else (
+                "Captions are burned into video; change settings and recast to switch off"
+                if subtitle_burned else "Toggle subtitles on the receiver"
+            )
         )
         has_subs = (embedded_burned or bool(self._active_subs())
                     or bool(self.session and self.session.state and self.session.state.subs))
@@ -2495,7 +2550,12 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         value = int(self.volume_scale.get_value())
         device = self._device()
-        Async.run(lambda: castctl.volume(device, value))
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            Async.run(lambda: dlna.volume(renderer, value),
+                      failed=lambda msg: self.toast(f"DLNA volume: {msg}", error=True))
+        else:
+            Async.run(lambda: castctl.volume(device, value))
         return False
 
     def _on_mute(self, button) -> None:
@@ -2506,7 +2566,12 @@ class MainWindow(Adw.ApplicationWindow):
         if self.device_state == "OFFLINE":
             return
         device = self._device()
-        Async.run(lambda: castctl.set_muted(device, muted))
+        renderer = self._dlna_renderer(device)
+        if renderer is not None:
+            Async.run(lambda: dlna.set_muted(renderer, muted),
+                      failed=lambda msg: self.toast(f"DLNA mute: {msg}", error=True))
+        else:
+            Async.run(lambda: castctl.set_muted(device, muted))
         self.toast("Muted" if muted else "Sound on")
 
     def toggle_mute(self) -> None:
@@ -2524,10 +2589,17 @@ class MainWindow(Adw.ApplicationWindow):
             self.toast("Device is offline", error=True)
             return
         device = self._device()
+        renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
         self.tracker.set_state(want_play)
 
         def work():
+            if renderer is not None:
+                if want_play:
+                    dlna.play(renderer)
+                else:
+                    dlna.pause(renderer)
+                return True, ""
             if want_play:
                 return castctl.play(device)
             return castctl.pause(device)
@@ -2550,6 +2622,9 @@ class MainWindow(Adw.ApplicationWindow):
             self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
             save_config(self.cfg)
         if self.busy:
+            if self._dlna_cancel is not None:
+                self._dlna_cancel.set()
+                self.toast("Cancelling DLNA media preparation…")
             return
         if self.session is None and not self.external and self._preview_path is not None:
             self._unload_local_video()
@@ -2563,9 +2638,13 @@ class MainWindow(Adw.ApplicationWindow):
         session = self.session
         self.session = None
 
+        renderer = self._dlna_renderer(device)
+
         def work():
             if session is not None:
                 session.stop(device)
+            elif renderer is not None:
+                dlna.stop(renderer)
             else:
                 castctl.stop(device)
 
@@ -2714,6 +2793,17 @@ class MainWindow(Adw.ApplicationWindow):
         self._refresh_controls()
         self._finished_handled = False
         device = self._device()
+        renderer = self._dlna_renderer(device)
+        self._dlna_cancel = threading.Event() if renderer is not None else None
+        if renderer is not None:
+            self.np_meta.set_text(
+                "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
+            )
+            self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
+            self._refresh_controls()
+        if device.startswith("DLNA · ") and renderer is None:
+            self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
+            return
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
@@ -2777,10 +2867,25 @@ class MainWindow(Adw.ApplicationWindow):
                         self._preflight_ok.clear()
                     self._preflight_ok.add(fingerprint)
             if previous is not None:
-                previous.stop(device, send_stop=False)
-            session = streamer.Session()
+                previous.stop(device, send_stop=previous.mode == "dlna")
+            session = dlna.Session() if renderer is not None else streamer.Session()
             title = pretty_title(path)
             try:
+                if renderer is not None:
+                    if speed != 1.0 or rotation != 0:
+                        raise dlna.DlnaError(
+                            "DLNA currently supports normal speed and unrotated video; reset these settings"
+                        )
+                    audio_choice = streamer.preferred_audio_track(media, audio_track)
+                    session.start(
+                        media, renderer=renderer,
+                        local_ip=streamer.host_ip(renderer.host),
+                        offset=offset, title=title, subtitle_file=subs_path,
+                        embedded_subtitle_index=embedded.index if embedded else None,
+                        audio_track=audio_choice.index if audio_choice else 0,
+                        cancel=self._dlna_cancel,
+                    )
+                    return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
                     try:
                         session.start_direct(
@@ -2815,6 +2920,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         def done(result):
             session, media = result
+            self._dlna_cancel = None
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -2834,7 +2940,8 @@ class MainWindow(Adw.ApplicationWindow):
                     hint += f" · +{gain:g} dB"
             else:
                 chain = []
-                hint = "Original audio (direct play)"
+                hint = ("DLNA progressive MP4 · original audio"
+                        if session.mode == "dlna" else "Original audio (direct play)")
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
             self.tracker.start(
@@ -2871,6 +2978,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.np_title.set_text(path.name)
 
     def _cast_failed(self, message: str) -> None:
+        self._dlna_cancel = None
         self.busy = False
         self._stop_monitor()
         self._set_levels_hint("")
@@ -2933,6 +3041,18 @@ class MainWindow(Adw.ApplicationWindow):
             else:
                 self.toast("Nothing is playing yet")
             return
+        if session.mode == "dlna":
+            renderer = self._dlna_renderer()
+            if renderer is None:
+                self.toast("DLNA receiver disappeared; rescan devices", error=True)
+                return
+            self.tracker.device_update(target, duration)
+            Async.run(
+                lambda: dlna.seek(renderer, target),
+                done=lambda _: self._poll_device(),
+                failed=lambda message: self.toast(f"DLNA seek failed: {message}", error=True),
+            )
+            return
         if session.mode == "direct" and castctl.is_seekable(self.device_info):
             device = self._device()
             self.tracker.device_update(target, duration)
@@ -2959,6 +3079,12 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None) -> None:
+        if session.mode == "dlna":
+            # DLNA requires a fresh progressive resource if audio/codec choices
+            # change; never send an HLS-specific restart to AVTransport.
+            self.busy = False
+            self._cast_path(pathlib.Path(session.state.file), target)
+            return
         device = self._device()
         device_ip = self._device_host(device)
         state = session.state
@@ -3502,6 +3628,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_cc_toggled(self, button) -> None:
         if self.busy or self._syncing:
             return
+        if self._dlna_renderer() is not None:
+            self.toast("DLNA subtitles are burned into the prepared film; recast to change", error=True)
+            return
         on = button.get_active()
         device = self._device()
 
@@ -3914,6 +4043,8 @@ class MainWindow(Adw.ApplicationWindow):
     # ---------- lifecycle ----------
 
     def _on_close(self, _window) -> bool:
+        if self._dlna_cancel is not None:
+            self._dlna_cancel.set()
         self._stop_monitor()
         self._unload_local_video()
         # Gtk4 tracks the normal window size separately from fullscreen and
@@ -3923,7 +4054,10 @@ class MainWindow(Adw.ApplicationWindow):
             self.cfg["window_width"] = width
             self.cfg["window_height"] = height
         save_config(self.cfg)
-        if not self.cfg["keep_streaming"] and self.session is not None:
+        # DLNA's local HTTP server is process-owned; unlike Chromecast's HLS
+        # keep-streaming path it cannot survive closing this application.
+        if self.session is not None and (
+                not self.cfg["keep_streaming"] or self.session.mode == "dlna"):
             session, self.session = self.session, None
             device = self._device()
             thread = threading.Thread(target=lambda: session.stop(device), daemon=False)
