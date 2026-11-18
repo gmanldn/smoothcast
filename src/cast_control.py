@@ -4035,9 +4035,14 @@ class MainWindow(Adw.ApplicationWindow):
         state = streamer.load_session()
         if state is None:
             return False
+        # A finished encoder does not imply the receiver finished playback.
+        # Only the worker may probe server/playlist and confirm the TV's
+        # exact content URL before we retain ownership of an old HLS session.
         session = streamer.Session()
         session.restore(state)
-        if not session.active():
+        if state.device != self._device():
+            return False  # Never attach to or issue commands to a different TV.
+        if not session.active() and session.mode != "transcode":
             streamer.clear_session()
             return False
         self.session = session
@@ -4067,6 +4072,10 @@ class MainWindow(Adw.ApplicationWindow):
                 info, state.title,
             ):
                 return None, 0.0, info
+            if session.mode == "transcode" and (
+                    not playback_state.hls_session_matches(info, state.stream_url, state.title)
+                    or (not session.active() and not session.recoverable_hls())):
+                return None, 0.0, info
             media = streamer.ffprobe(pathlib.Path(state.file))
             return media, current, info
 
@@ -4074,15 +4083,23 @@ class MainWindow(Adw.ApplicationWindow):
             if self.session is not session:
                 return  # Another media command has replaced this saved session.
             media, current, info = result
-            if session.mode == "direct" and not playback_state.direct_session_matches(
-                info, state.title,
-            ):
+            if media is None or (
+                    session.mode == "direct" and not playback_state.direct_session_matches(
+                        info, state.title,
+                    )) or (
+                    session.mode == "transcode" and not playback_state.hls_session_matches(
+                        info, state.stream_url, state.title,
+                    )):
                 self.session = None
                 self.now_playing = None
                 self.media = None
                 self.tracker.clear()
-                streamer.clear_session()
-                self.toast("Previous cast is no longer playing")
+                # A temporarily unreachable receiver is not proof of
+                # completion. Keep session.json for a later safe retry;
+                # only discard it on an explicit known content mismatch.
+                if info is not None:
+                    streamer.clear_session()
+                self.toast("Could not verify ownership of the previous cast")
                 self._refresh_controls()
                 self._poll_device()
                 return
