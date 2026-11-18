@@ -166,10 +166,15 @@ def test_audio_filters_dialogue_with_gain():
     assert result[1:] == streamer.AUDIO_FILTERS["dialogue"]
 
 
-def test_audio_filters_zero_or_negative_gain_skips_volume():
+def test_audio_filters_zero_or_none_gain_skips_volume():
     assert streamer.audio_filters("dialogue", 0.0) == streamer.AUDIO_FILTERS["dialogue"]
-    assert streamer.audio_filters("dialogue", -3.0) == streamer.AUDIO_FILTERS["dialogue"]
     assert streamer.audio_filters("dialogue", None) == streamer.AUDIO_FILTERS["dialogue"]
+
+
+def test_audio_filters_negative_gain_is_applied():
+    result = streamer.audio_filters("dialogue", -3.0)
+    assert result[0] == "volume=-3dB"
+    assert result[1:] == streamer.AUDIO_FILTERS["dialogue"]
 
 
 def test_audio_filters_night():
@@ -186,17 +191,72 @@ def test_audio_filters_unknown_profile():
 # ── streamer.effective_chain ───────────────────────────────────────────────
 
 def test_effective_chain_original_is_empty(monkeypatch):
-    monkeypatch.setattr(streamer, "measure_mean_volume", lambda path, max_seconds=60: None)
+    monkeypatch.setattr(
+        streamer, "measure_mean_volume",
+        lambda path, max_seconds=60, audio_track_index=0: None,
+    )
     assert streamer.effective_chain("any/file.mp4", "original") == []
 
 
 def test_effective_chain_applies_trim_plus_manual(monkeypatch):
     monkeypatch.setattr(
-        streamer, "measure_mean_volume", lambda path, max_seconds=60: -30.0
+        streamer, "measure_mean_volume",
+        lambda path, max_seconds=60, audio_track_index=0: -30.0,
     )
     # target -16, mean -30 -> trim = 14, manual 0 -> effective 14
     result = streamer.effective_chain("any/file.mp4", "dialogue", manual_gain_db=0.0)
     assert result[0] == "volume=14dB"
+
+
+# ── streamer.audio_filters / selected-track trim (SC-066 #75) ─────────────
+
+def test_audio_filters_original_never_gets_negative_gain():
+    assert streamer.audio_filters("original", gain_db=-6.0) == []
+
+
+def test_measure_mean_volume_uses_selected_audio_track(monkeypatch):
+    seen = {}
+
+    class Result:
+        stderr = "mean_volume: -23.0 dB"
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        return Result()
+
+    monkeypatch.setattr(streamer.subprocess, "run", fake_run)
+    assert streamer.measure_mean_volume("movie.mkv", audio_track_index=1) == -23.0
+    assert "0:a:1?" in seen["args"]
+    assert "0:a:0?" not in seen["args"]
+
+
+def test_auto_trim_measures_the_selected_track(monkeypatch):
+    seen = {}
+
+    def fake_measure(path, max_seconds=60, audio_track_index=0):
+        seen["track"] = audio_track_index
+        return -28.0
+
+    monkeypatch.setattr(streamer, "measure_mean_volume", fake_measure)
+    # target -16, mean -28 -> trim = 12
+    assert streamer.auto_trim_gain("movie.mkv", "dialogue", audio_track_index=2) == 12.0
+    assert seen["track"] == 2
+
+
+def test_effective_chain_threads_track_and_applies_attenuation(monkeypatch):
+    seen = {}
+
+    def fake_measure(path, max_seconds=60, audio_track_index=0):
+        seen["track"] = audio_track_index
+        return -10.0  # loud selected track -> negative trim
+
+    monkeypatch.setattr(streamer, "measure_mean_volume", fake_measure)
+    chain = streamer.effective_chain(
+        "movie.mkv", "dialogue", manual_gain_db=0.0, audio_track_index=1,
+    )
+    # target -16, mean -10 -> trim = -6 within the clamp
+    assert chain[0] == "volume=-6dB"
+    assert seen["track"] == 1
 
 
 # ── PositionTracker ────────────────────────────────────────────────────────

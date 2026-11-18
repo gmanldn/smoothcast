@@ -93,16 +93,16 @@ AUDIO_DETAILS = {
 
 
 def audio_filters(profile: str, gain_db: float = 0.0) -> list:
-    """Return the ffmpeg -af chain for a profile, with an optional loudness boost.
+    """Return the ffmpeg -af chain for a profile, with optional positive or negative gain.
 
-    ``gain_db`` is *prepended* so it feeds the compressor: quiet dialogue sits
-    below the compressor threshold and receives the full boost, while loud
-    passages are pushed further into compression and stay controlled instead of
-    being re-amplified afterwards. ``original`` stays untouched and never gets
-    gain.
+    ``gain_db`` is *prepended* so it feeds the compressor: positive values lift
+    quiet dialogue above the compressor threshold, while negative values
+    attenuate an over-loud soundtrack before compression. Both signs must be
+    applied; dropping attenuation would leave a trimmed track too loud.
+    ``original`` stays untouched and never gets gain.
     """
     filters = list(AUDIO_FILTERS.get(profile) or [])
-    if not filters or gain_db is None or gain_db <= 0:
+    if not filters or gain_db is None or float(gain_db) == 0:
         return filters
     return [f"volume={float(gain_db):g}dB"] + filters
 
@@ -151,17 +151,22 @@ def rotation_filters(degrees: int) -> list[str]:
     return list(_ROTATION_FILTERS.get(normalize_rotation(degrees), []))
 
 
-def measure_mean_volume(path: str, max_seconds: int = 60) -> float | None:
-    """Quick volumedetect pass over the first *max_seconds* of audio.
+def measure_mean_volume(path: str, max_seconds: int = 60,
+                        audio_track_index: int = 0) -> float | None:
+    """Quick volumedetect pass over the first *max_seconds* of one audio track.
 
-    Skips video (``-vn``) so this is fast even for large files.  Returns mean
-    volume in dBFS, or ``None`` when the file has no audio stream or ffmpeg
-    fails.  Bounded by a 30-second timeout so a corrupt file cannot stall cast
-    startup.
+    ``audio_track_index`` is the relative ``0:a:N`` stream, matching the track
+    selected for the cast; measuring the default track would trim the wrong
+    soundtrack. Skips video (``-vn``) so this is fast even for large files.
+    Returns mean volume in dBFS, or ``None`` when the file has no audio stream
+    or ffmpeg fails. Bounded by a 30-second timeout so a corrupt file cannot
+    stall cast startup.
     """
+    track = (audio_track_index if type(audio_track_index) is int
+             and audio_track_index >= 0 else 0)
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-i", path, "-map", "0:a:0?",
+            ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
              "-t", str(max_seconds), "-vn", "-af", "volumedetect", "-f", "null", "-"],
             capture_output=True, text=True, timeout=30,
         )
@@ -176,33 +181,36 @@ def measure_mean_volume(path: str, max_seconds: int = 60) -> float | None:
     return None
 
 
-def auto_trim_gain(path: str, profile: str) -> float:
+def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0) -> float:
     """Return the dB gain needed so the compressor is always engaging.
 
-    Measures the input's mean loudness and computes a trim that brings it to
-    :data:`_AUTO_TRIM_TARGET_DB`, which sits above the compressor threshold so
-    the compressor always has signal to work with.  Clamped to a sane range.
-    Returns ``0.0`` for the ``original`` profile or when measurement fails.
+    Measures the input's selected audio track and computes a trim that brings
+    it to :data:`_AUTO_TRIM_TARGET_DB`, which sits above the compressor
+    threshold so the compressor always has signal to work with.  Clamped to a
+    sane range; the result can be negative for an over-loud track.  Returns
+    ``0.0`` for the ``original`` profile or when measurement fails.
     """
     if profile == "original":
         return 0.0
-    mean = measure_mean_volume(path)
+    mean = measure_mean_volume(path, audio_track_index=audio_track_index)
     if mean is None:
         return 0.0
     lo, hi = _AUTO_TRIM_CLAMP_DB
     return max(lo, min(hi, _AUTO_TRIM_TARGET_DB - mean))
 
 
-def effective_chain(path: str, profile: str, manual_gain_db: float = 0.0) -> list:
+def effective_chain(path: str, profile: str, manual_gain_db: float = 0.0,
+                    audio_track_index: int = 0) -> list:
     """Full ffmpeg ``-af`` chain: auto input trim + manual gain + profile filters.
 
     The auto-trim drives the signal above the compressor threshold so the
     compressor is always working; the manual gain adds on top for extra
-    loudness.  For ``original`` the chain is empty and no measurement runs.
+    loudness (positive) or attenuation (negative).  For ``original`` the chain
+    is empty and no measurement runs.
     """
     if profile == "original":
         return []
-    trim = auto_trim_gain(path, profile)
+    trim = auto_trim_gain(path, profile, audio_track_index=audio_track_index)
     return audio_filters(profile, trim + manual_gain_db)
 
 
@@ -1057,10 +1065,13 @@ class Session:
         )
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
-            # Auto-trim the input so the compressor always engages, then apply
-            # the user's manual gain on top.  Store the total so the monitor
-            # and resume paths use the exact same chain.
-            trim = auto_trim_gain(str(media.path), audio_profile)
+            # Auto-trim the selected soundtrack so the compressor always
+            # engages, then apply the user's manual gain on top.  Store the
+            # total so the monitor and resume paths use the exact same chain.
+            trim = auto_trim_gain(
+                str(media.path), audio_profile,
+                audio_track_index=(track.index if track is not None else 0),
+            )
             effective_gain = trim + audio_gain_db
             filters = audio_filters(audio_profile, effective_gain)
         else:
