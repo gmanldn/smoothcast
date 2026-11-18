@@ -745,10 +745,17 @@ class UiMixin:
         self.add_controller(controller)
 
 
+    def _remember_normal_geometry(self) -> None:
+        self._last_normal_size = responsive_layout.remember_normal_size(
+            self.get_width(), self.get_height(), self._last_normal_size,
+            fullscreen=self.is_fullscreen(), maximized=self.is_maximized(),
+        )
+
     def _refresh_responsive_layout(self) -> bool:
         """Reflow once per actual size/mode change; never do I/O during resize."""
         width = self.get_width() or self._startup_width
         height = self.get_height() or self._startup_height
+        self._remember_normal_geometry()
         state = responsive_layout.layout_for_size(width, height)
         if state == self._layout_state:
             return True
