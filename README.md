@@ -276,7 +276,7 @@ foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
 
 **Version coverage:** GitHub Actions runs the **entire** portable pytest suite
 and Python syntax check using both Python **3.10** (the published minimum)
-and **3.13** (the primary development interpreter). Unlike bare
+and Python **3.13** (the primary development interpreter). Unlike bare
 `unittest discover`, pytest collects both `unittest.TestCase` methods
 and standalone `test_*` functions. The separate cross-platform setup
 matrix intentionally uses
