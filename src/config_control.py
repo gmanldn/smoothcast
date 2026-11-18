@@ -6,6 +6,7 @@ One malformed value must not discard other valid settings.
 from __future__ import annotations
 
 from copy import deepcopy
+from itertools import islice
 import math
 
 
@@ -23,7 +24,12 @@ _MAX_ITEMS = 512
 
 
 def _number(value: object) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError):
+        return False
 
 
 def sanitise_config(raw: object, defaults: dict) -> dict:
@@ -53,7 +59,7 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
         elif key in _LIMITED_MAPS:
             if isinstance(value, dict):
                 clean: dict = {}
-                for path, selection in list(value.items())[:_MAX_ITEMS]:
+                for path, selection in islice(value.items(), _MAX_ITEMS):
                     if not isinstance(path, str) or not 0 < len(path) <= _MAX_PATH:
                         continue
                     if key == "positions":
