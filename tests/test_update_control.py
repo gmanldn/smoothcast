@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import update_control
+import version
 
 
 class UpdateControlTests(unittest.TestCase):
@@ -35,15 +36,16 @@ class UpdateControlTests(unittest.TestCase):
             (repo / ".git").mkdir()
             (repo / "src").mkdir()
             (repo / "src/version.py").write_text(
-                "MAJOR = 1\nMINOR = 0\nPATCH = 47\n", encoding="utf-8",
+                f"MAJOR = {version.MAJOR}\nMINOR = {version.MINOR}\n"
+                f"PATCH = {version.PATCH + 1}\n", encoding="utf-8",
             )
             result = subprocess.CompletedProcess(
                 ["git"], 0, "Updating abc..def\nFast-forward\n", "",
             )
             with mock.patch.object(update_control.subprocess, "run", return_value=result):
                 notice = update_control.refresh_checkout(repo)
-            self.assertIn("v1.0.47 downloaded", notice)
-            self.assertIn("running v1.0.46", notice)
+            self.assertIn(f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1} downloaded", notice)
+            self.assertIn(f"running {version.label()}", notice)
             self.assertIn("Restart", notice)
 
     def test_same_release_code_update_does_not_claim_new_version(self):
@@ -52,7 +54,8 @@ class UpdateControlTests(unittest.TestCase):
             (repo / ".git").mkdir()
             (repo / "src").mkdir()
             (repo / "src/version.py").write_text(
-                "MAJOR = 1\nMINOR = 0\nPATCH = 46\n", encoding="utf-8",
+                f"MAJOR = {version.MAJOR}\nMINOR = {version.MINOR}\n"
+                f"PATCH = {version.PATCH}\n", encoding="utf-8",
             )
             result = subprocess.CompletedProcess(
                 ["git"], 0, "Updating abc..def\nFast-forward\n", "",
@@ -60,8 +63,10 @@ class UpdateControlTests(unittest.TestCase):
             with mock.patch.object(update_control.subprocess, "run", return_value=result):
                 notice = update_control.refresh_checkout(repo)
             self.assertIn("code updated", notice)
-            self.assertIn("running v1.0.46", notice)
-            self.assertNotIn("v1.0.47", notice)
+            self.assertIn(f"running {version.label()}", notice)
+            self.assertNotIn(
+                f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1}", notice,
+            )
 
     def test_already_current_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
