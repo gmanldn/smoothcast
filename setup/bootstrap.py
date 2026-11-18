@@ -22,6 +22,8 @@ import tempfile
 import time
 import urllib.request
 
+import native_runtime
+
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
 GUI_CHECK = (
@@ -257,6 +259,7 @@ def install_macos(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise SetupError(f"Homebrew is not usable: {exc}") from exc
     env = dict(os.environ)
+    env["SMOOTHCAST_NATIVE_PREFIX"] = str(Path(prefix).resolve())
     env["PATH"] = os.pathsep.join((str(Path(prefix) / "bin"),
                                     str(Path(prefix) / "sbin"), env.get("PATH", "")))
     candidates = [Path(prefix) / "bin" / "python3", Path(sys.executable)]
@@ -335,6 +338,7 @@ def windows_env(root: Path) -> dict[str, str]:
          env.get("PATH", "")),
     )
     env["MSYSTEM"] = "UCRT64"
+    env["MSYS2_ROOT"] = str(root.resolve())
     # PyGObject's MSYS2 runtime needs an explicit DLL search directory.
     env["PYGI_DLL_PATH"] = str(root / "ucrt64" / "bin")
     env["GI_TYPELIB_PATH"] = str(root / "ucrt64" / "lib" / "girepository-1.0")
@@ -444,6 +448,8 @@ def main(argv: list[str] | None = None) -> int:
                    "windows": install_windows}[args.target]
         python, env = install(check=args.check)
         isolated = ensure_venv(python, env, check=args.check)
+        if not args.check:
+            native_runtime.save(VENV, target=args.target, native_python=python, env=env)
         if not args.check and not args.no_shortcuts:
             checked_run([str(isolated), str(ROOT / "setup" / "shortcuts.py"),
                          "--target", args.target], env=env)

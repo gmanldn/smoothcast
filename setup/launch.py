@@ -10,6 +10,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import native_runtime
+
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
 
@@ -28,26 +30,48 @@ def python_path() -> Path:
     )
 
 
-def runtime_environment() -> dict[str, str]:
-    env = dict(os.environ)
-    if os.name == "nt":
-        root = Path(os.environ.get("MSYS2_ROOT") or
-                    os.environ.get("SystemDrive", "C:") + "\\msys64")
+def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, str]:
+    """Construct a launch environment from the *installed* native GTK prefix."""
+    env = dict(initial)
+    record = native_runtime.load(VENV, target=target)
+    if record is not None:
+        native_python = Path(str(record["native_python"]))
+        if not native_python.is_file():
+            raise RuntimeError(
+                f"Selected native Python moved or is missing: {native_python}. "
+                "Rerun the platform setup script; another runtime will not be substituted."
+            )
+    if target == "windows":
+        root = (Path(str(record["prefix"])) if record else
+                Path(initial.get("MSYS2_ROOT") or
+                     initial.get("SystemDrive", "C:") + "\\msys64"))
         ucrt = root / "ucrt64"
+        if record and not (ucrt / "bin" / "python.exe").is_file():
+            raise RuntimeError(
+                f"Selected MSYS2 runtime moved: {root}. Rerun Windows setup."
+            )
+        env["MSYS2_ROOT"] = str(root)
         env["PATH"] = os.pathsep.join(
             (str(ucrt / "bin"), str(root / "usr" / "bin"), env.get("PATH", "")),
         )
         env["PYGI_DLL_PATH"] = str(ucrt / "bin")
-        typelib = ucrt / "lib" / "girepository-1.0"
-        env["GI_TYPELIB_PATH"] = str(typelib)
+        env["GI_TYPELIB_PATH"] = str(ucrt / "lib" / "girepository-1.0")
         env["XDG_DATA_DIRS"] = os.pathsep.join(
             (str(ucrt / "share"), env.get("XDG_DATA_DIRS", "")),
         )
-    elif sys.platform == "darwin":
-        prefixes = (Path("/opt/homebrew"), Path("/usr/local"))
-        installed = [p for p in prefixes if (p / "bin" / "brew").exists()]
-        if installed:
-            prefix = installed[0]
+    elif target == "macos":
+        if record:
+            prefix = Path(str(record["prefix"]))
+            if not (prefix / "bin" / "brew").is_file():
+                raise RuntimeError(
+                    f"Selected Homebrew prefix moved: {prefix}. Rerun macOS setup."
+                )
+        else:
+            prefixes = (Path("/opt/homebrew"), Path("/usr/local"))
+            installed = [p for p in prefixes if (p / "bin" / "brew").exists()]
+            prefix = installed[0] if installed else None
+        if prefix is not None:
+            env["SMOOTHCAST_NATIVE_PREFIX"] = str(prefix)
             env["PATH"] = os.pathsep.join(
                 (str(prefix / "bin"), str(prefix / "sbin"), env.get("PATH", "")),
             )
@@ -57,6 +81,13 @@ def runtime_environment() -> dict[str, str]:
                     (str(typelib), env.get("GI_TYPELIB_PATH", "")),
                 )
     return env
+
+
+def runtime_environment() -> dict[str, str]:
+    target = "windows" if os.name == "nt" else (
+        "macos" if sys.platform == "darwin" else "linux"
+    )
+    return _runtime_environment_for(target, dict(os.environ))
 
 
 def media_arguments_from_caller(args: list[str], caller: Path) -> list[str]:
@@ -113,15 +144,15 @@ def main(argv: list[str] | None = None) -> int:
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
     command = [str(installed), str(ROOT / "src" / "cast_control.py"), *media_args]
-    env = runtime_environment()
     try:
+        env = runtime_environment()
         if os.name != "nt":
             # A .desktop launch may inherit HOME or / as its working directory.
             # Use the same project root as the Windows launcher.
             os.chdir(ROOT)
             os.execvpe(command[0], command, env)
         return subprocess.call(command, cwd=ROOT, env=env)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         print(f"SmoothCast could not start: {exc}", file=sys.stderr)
         return 1
 
