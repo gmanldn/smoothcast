@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# This workflow is deliberately headless, on every runner and child process.
+# Real GTK smoke tests live outside this default verification path.
+env:
+  SMOOTHCAST_TEST_CONTEXT: '1'
+
 concurrency:
   group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
