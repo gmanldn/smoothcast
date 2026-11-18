@@ -3148,21 +3148,39 @@ class MainWindow(Adw.ApplicationWindow):
             min(state.offset + elapsed * rate, state.duration or 1e18),
             state.duration, True, rate=rate,
         )
-        self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
-
         def probe():
-            media = streamer.ffprobe(pathlib.Path(state.file))
             current = 0.0
+            info = None
             try:
                 info = castctl.info(device)
                 if info:
                     current = float(info.get("current_time") or 0.0)
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 current = 0.0
-            return media, current
+            if session.mode == "direct" and not playback_state.direct_session_matches(
+                info, state.title,
+            ):
+                return None, 0.0, info
+            media = streamer.ffprobe(pathlib.Path(state.file))
+            return media, current, info
 
         def probed(result):
-            media, current = result
+            if self.session is not session:
+                return  # Another media command has replaced this saved session.
+            media, current, info = result
+            if session.mode == "direct" and not playback_state.direct_session_matches(
+                info, state.title,
+            ):
+                self.session = None
+                self.now_playing = None
+                self.media = None
+                self.tracker.clear()
+                streamer.clear_session()
+                self.toast("Previous cast is no longer playing")
+                self._refresh_controls()
+                self._poll_device()
+                return
+            self.toast(f"Reconnected to {pathlib.Path(state.file).name}")
             self.media = media
             if current > 0:
                 absolute = (
@@ -3191,7 +3209,10 @@ class MainWindow(Adw.ApplicationWindow):
             self._set_now_playing_labels(media, session)
             self._poll_device()
 
-        Async.run(probe, done=probed, failed=lambda _msg: None)
+        Async.run(
+            probe, done=probed,
+            failed=lambda msg: self._console(f"Saved cast inspection failed: {msg}"),
+        )
         self._refresh_controls()
         self._poll_device()
         return False
