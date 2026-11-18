@@ -1615,6 +1615,9 @@ class MainWindow(Adw.ApplicationWindow):
     def _device(self) -> str:
         return self.cfg["device"]
 
+    def _device_host(self, device: str) -> str | None:
+        return next((d.host for d in self.devices if d.name == device and d.host), None)
+
     def _initial_scan(self) -> bool:
         self.scan_devices()
         return False
@@ -2182,7 +2185,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._refresh_controls()
         self._finished_handled = False
         device = self._device()
-        cfg = self.cfg
+        device_ip = self._device_host(device)
+        cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
@@ -2215,6 +2219,7 @@ class MainWindow(Adw.ApplicationWindow):
                     audio_profile=cfg["audio"], subs_file=subs_path,
                     burn_subs=burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                    device_ip=device_ip,
                 )
                 return session, media
             except Exception:
@@ -2342,6 +2347,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _restart_at(self, session, target: float) -> None:
         device = self._device()
+        device_ip = self._device_host(device)
         state = session.state
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
@@ -2364,6 +2370,7 @@ class MainWindow(Adw.ApplicationWindow):
                     media, target, device=device, quality=quality,
                     audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                    device_ip=device_ip,
                 )
             except Exception:
                 try:

@@ -9,6 +9,28 @@ import streamer
 
 
 class StreamerReliabilityTests(unittest.TestCase):
+    def test_cast_route_preferred_over_other_interfaces(self):
+        fake = mock.MagicMock()
+        fake.__enter__.return_value = fake
+        fake.getsockname.return_value = ("192.168.1.23", 54000)
+        with mock.patch.object(streamer.socket, "socket", return_value=fake):
+            self.assertEqual(streamer.host_ip("192.168.1.42"), "192.168.1.23")
+        fake.connect.assert_called_once_with(("192.168.1.42", 8009))
+
+    def test_host_ip_skips_unusable_addresses(self):
+        fake = mock.MagicMock()
+        fake.__enter__.return_value = fake
+        fake.getsockname.return_value = ("127.0.0.1", 54000)
+        with mock.patch.object(streamer.socket, "socket", return_value=fake), \
+             mock.patch.object(streamer.subprocess, "check_output", return_value="127.0.0.1 169.254.1.1 192.168.5.3"):
+            self.assertEqual(streamer.host_ip(), "192.168.5.3")
+
+    def test_no_lan_ip_gives_a_clear_error(self):
+        with mock.patch.object(streamer.socket, "socket", side_effect=OSError("no route")), \
+             mock.patch.object(streamer.subprocess, "check_output", side_effect=OSError("no interfaces")):
+            with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4"):
+                streamer.host_ip("192.168.1.42")
+
     def test_an_unrelated_port_owner_is_not_reused(self):
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=True), \

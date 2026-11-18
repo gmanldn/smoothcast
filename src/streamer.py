@@ -1,6 +1,7 @@
 """Casting session management: ffmpeg HLS transcode, direct play, device cast."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import pathlib
@@ -198,21 +199,43 @@ class MediaInfo:
         return f"{self.bitrate / 1_000_000:.1f} Mbps"
 
 
-def host_ip() -> str:
+def _usable_ipv4(value: str) -> bool:
     try:
-        out = subprocess.check_output(["hostname", "-I"], text=True, timeout=5).split()
-        if out:
-            return out[0]
-    except Exception:
+        addr = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        return False
+    return not (addr.is_loopback or addr.is_link_local or
+                addr.is_unspecified or addr.is_multicast)
+
+
+def host_ip(device_host: str | None = None) -> str:
+    """Choose the source interface for the Chromecast route, not hostname -I.
+
+    UDP connect only selects a route; no datagram is sent. A VPN, Docker bridge
+    or multiple NICs can make the first hostname -I address unreachable by TV.
+    """
+    routes = []
+    if device_host and _usable_ipv4(device_host):
+        routes.append((device_host, 8009))
+    routes.append(("8.8.8.8", 80))
+    for target in routes:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(target)
+                candidate = sock.getsockname()[0]
+            if _usable_ipv4(candidate):
+                return candidate
+        except OSError:
+            continue
+    # Best effort when no route can be selected, e.g. on a restricted network.
+    try:
+        out = subprocess.check_output(["hostname", "-I"], text=True, timeout=3).split()
+        for candidate in out:
+            if _usable_ipv4(candidate):
+                return candidate
+    except (OSError, subprocess.TimeoutExpired):
         pass
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        return ip
-    except OSError:
-        return "127.0.0.1"
+    raise StreamError("No usable LAN IPv4 address found for Chromecast streaming")
 
 
 def pid_alive(pid: int | None) -> bool:
@@ -604,7 +627,10 @@ class Session:
         burn_subs: bool,
         title: str,
         audio_gain_db: float = 0.0,
+        device_ip: str | None = None,
     ) -> None:
+        # Detect an unusable source address before spawning encoder/server jobs.
+        local_ip = host_ip(device_ip)
         ROOT.mkdir(parents=True, exist_ok=True)
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
@@ -660,12 +686,12 @@ class Session:
                     media, offset, device=device, quality=quality,
                     audio_profile=audio_profile, subs_file=subs_file,
                     burn_subs=burn_subs, title=title,
-                    audio_gain_db=audio_gain_db,
+                    audio_gain_db=audio_gain_db, device_ip=device_ip,
                 )
                 return
             tail = self.log_tail()
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
-        url = f"http://{host_ip()}:{PORT}/{HLS_NAME}"
+        url = f"http://{local_ip}:{PORT}/{HLS_NAME}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
         if subs_file is not None:
             cast_args += ["-s", str(subs_file)]

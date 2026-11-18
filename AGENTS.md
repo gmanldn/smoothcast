@@ -57,12 +57,12 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.17`
+- Current: `1.0.18`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.17`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.18`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -80,6 +80,8 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 15. Playback transitions: FFmpeg `-progress` timestamps begin at zero after `-ss` and must be converted to absolute time by `playback_state.absolute_encoded_position`. Queue progression is triggered by a real device PLAYING/PAUSED→IDLE transition, not an encoder/catt exit. Previous-session cleanup must finish before starting Up Next. Pure regression tests live in `tests/test_playback_state.py`.
 
 16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.
+
+17. Chromecast LAN selection: `host_ip(device_host)` picks the outbound interface using a no-packet UDP route to the discovered TV IP, with safe fallbacks. Never advertise loopback, link-local or multicast addresses as HLS URLs. Propagate the selected device IP through normal starts and software-encoder fallback/seek restarts. Regression cases are in `tests/test_streamer_reliability.py`.
 
 ## Pending work
 Real-device smoke test recommended after upgrading the HTTP server (start, seek, restart, stop, keep-streaming).
