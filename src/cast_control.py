@@ -2033,7 +2033,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.elapsed_label.set_text(fmt_time(value))
             if duration:
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - value))}")
-            if previewing:
+            if previewing and self._local_stream() is None:
                 self._queue_preview(value)
         else:
             position = self._preview_position if previewing else self.tracker.value()
@@ -2044,7 +2044,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _queue_preview(self, position: float) -> None:
         """Debounce frame decoding, with at most one FFmpeg worker at a time."""
-        if self._preview_path is None or self.session is not None or self.external:
+        if (self._preview_path is None or self.session is not None or self.external
+                or self._local_stream() is not None):
             return
         self._preview_pending = (self._preview_path, max(0.0, position),
                                  self._preview_generation)
@@ -2481,33 +2482,79 @@ class MainWindow(Adw.ApplicationWindow):
             self.open_video()
             return
         start_at = self._preview_position if path == self._preview_path and self.session is None else None
+        if path == self._local_video_path and self.session is None:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                start_at = max(0.0, stream.get_timestamp() / 1_000_000)
         self._cast_path(pathlib.Path(path), start_at)
 
     def _selected_path(self) -> str | None:
+        if self.session is None and self._preview_path is not None:
+            return self._preview_path
         if self.now_playing:
             return self.now_playing
         if self.selected_index is not None and 0 <= self.selected_index < len(self.queue):
             return self.queue[self.selected_index]
         return None
 
-    def _play_locally(self) -> None:
-        """Play the selected file locally with ffplay, or stop local playback."""
-        if self.local_playback.is_active():
-            self.local_playback.stop()
-            self._refresh_controls()
-            self.toast("Stopped local playback")
+    def _local_stream(self):
+        return self.local_video.get_media_stream() if self._local_video_path else None
+
+    def _unload_local_video(self) -> None:
+        stream = self._local_stream()
+        if stream is not None:
+            stream.pause()
+        self._local_start_pending = None
+        self._local_video_path = None
+        if hasattr(self, "local_video"):
+            self.local_video.set_file(None)
+            self.local_video.set_visible(False)
+
+    def _on_local_prepared(self, stream, _param, path: str) -> None:
+        if path != self._local_video_path or not stream.is_prepared():
             return
-        path = self._selected_path()
-        if not path:
+        if self._local_start_pending is None:
+            return
+        stream.seek(int(self._local_start_pending * 1_000_000))
+        self._local_start_pending = None
+        stream.play()
+        self._refresh_controls()
+
+    def _toggle_local_preview(self) -> None:
+        """Play/pause locally in the embedded video panel, never on the TV."""
+        if self.session is not None or self.external:
+            return
+        path = self._preview_path
+        if path is None:
             self.open_video()
             return
-        try:
-            self.local_playback.start(path)
-        except FileNotFoundError as exc:
-            self.toast(str(exc))
+        stream = self._local_stream()
+        if stream is not None and stream.get_playing():
+            self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
+            stream.pause()
+            self._refresh_controls()
             return
+        if self._local_video_path != path:
+            self._unload_local_video()
+            self._local_start_pending = self._preview_position
+            self._local_video_path = path
+            self.local_video.set_file(Gio.File.new_for_path(path))
+            stream = self._local_stream()
+            if stream is None:
+                self._unload_local_video()
+                self.toast("Video backend unavailable; install GTK GStreamer media support", error=True)
+                return
+            stream.connect("notify::prepared", self._on_local_prepared, path)
+            if stream.is_prepared():
+                self._on_local_prepared(stream, None, path)
+        elif stream is not None and self._local_start_pending is None:
+            stream.play()
+        self.preview_picture.set_visible(False)
+        self.local_video.set_visible(True)
         self._refresh_controls()
-        self.toast("Playing locally")
+
+    def _play_locally(self) -> None:
+        self._toggle_local_preview()
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
         # None means "resume saved position"; explicit 0 is always rewind.
@@ -2518,9 +2565,15 @@ class MainWindow(Adw.ApplicationWindow):
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
-        # Local playback and casting share the machine's output; stop any local
-        # playback before starting a cast so they never overlap.
+        # Pause and release the local decoder before starting Chromecast.
+        if str(path) == self._local_video_path and self.session is None:
+            stream = self._local_stream()
+            if stream is not None and stream.is_prepared():
+                offset = max(0.0, stream.get_timestamp() / 1_000_000)
+        self._unload_local_video()
         self.local_playback.stop()
+        self._preview_generation += 1
+        self._preview_pending = None
         self.busy = True
         self._refresh_controls()
         self._finished_handled = False
@@ -2669,9 +2722,15 @@ class MainWindow(Adw.ApplicationWindow):
             return
         session = self.session
         if session is None and self._preview_path is not None:
-            # Scrubbing an unopened film must not contact the Chromecast.
             self._preview_position = target
-            self._queue_preview(target)
+            stream = self._local_stream()
+            if stream is not None:
+                if stream.is_prepared():
+                    stream.seek(int(target * 1_000_000))
+                else:
+                    self._local_start_pending = target
+            else:
+                self._queue_preview(target)
             return
         if session is None or session.state is None:
             if self.now_playing:
@@ -3450,6 +3509,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_close(self, _window) -> bool:
         self._stop_monitor()
+        self._unload_local_video()
         # Gtk4 tracks the normal window size separately from fullscreen and
         # maximized allocations. Save that instead of the temporary screen size.
         width, height = self.get_default_size()
