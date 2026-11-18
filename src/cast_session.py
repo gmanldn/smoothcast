@@ -469,17 +469,14 @@ class SessionMixin:
         state = session.state
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
-        quality = state.quality if state else self.cfg["quality"]
-        audio = (
-            "original" if state and session.mode == "direct"
-            else state.audio if state else self.cfg["audio"]
-        )
+        quality = self.cfg["quality"]
+        audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
             else float(state.speed) if state and state.speed
             else float(self.cfg.get("playback_speed", 1.0))
         )
-        rotation = int(state.rotation) if state else self.cfg["rotation"]
+        rotation = int(self.cfg.get("rotation", 0))
         audio_track = (
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
@@ -490,6 +487,10 @@ class SessionMixin:
             candidate = pathlib.Path(state.subs)
             subs_path = candidate if candidate.is_file() else None
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
+        # A restart must not silently resume a paused film. Read the intent
+        # before the async worker replaces the session/tracker.
+        was_paused = (self.device_state == "PAUSED"
+                      or (self.tracker.known and not self.tracker.playing))
 
         def work():
             nonlocal media
@@ -516,6 +517,14 @@ class SessionMixin:
                 except Exception:
                     pass
                 raise
+            if was_paused:
+                # start_transcode begins playback; immediately pause again so a
+                # seek/speed/audio change made while paused stays paused. The
+                # next device poll reconciles if pause is unsupported.
+                try:
+                    castctl.pause(device)
+                except (OSError, ValueError, TypeError):
+                    pass
             return session, media
 
         def done(result):
@@ -530,7 +539,7 @@ class SessionMixin:
             if gain > 0:
                 hint += f" · +{gain:g} dB"
             self._set_levels_hint(hint)
-            self.tracker.start(target, media_result.duration, True, rate=speed)
+            self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
             self._refresh_controls()
             self._poll_device()
 
@@ -589,13 +598,15 @@ class SessionMixin:
 
     def _set_speed(self, speed: float) -> None:
         speed = max(0.05, min(40.0, float(speed)))
-        self.cfg["playback_speed"] = speed
-        save_config(self.cfg)
         session = self.session
         if session is not None and session.state is not None:
             if self.busy:
+                # Reject the live change without silently saving it as the
+                # next-cast preference.
                 self.toast("Hold on — finishing the last command")
                 return
+            self.cfg["playback_speed"] = speed
+            save_config(self.cfg)
             self.busy = True
             self._refresh_controls()
             position = self.tracker.value() or 0.0
@@ -606,6 +617,8 @@ class SessionMixin:
             self._restart_at(session, position, speed_override=speed)
             self.toast(f"Speed {speed}x — stream restarted")
         else:
+            self.cfg["playback_speed"] = speed
+            save_config(self.cfg)
             self.toast(f"Speed {speed}x")
 
 

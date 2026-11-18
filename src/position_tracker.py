@@ -101,3 +101,8 @@ class PositionTracker:
         self._pause_started = None
         self._device_pos = None
         self._device_epoch = 0.0
+
+    @property
+    def playing(self) -> bool:
+        """True while the tracker extrapolates; False while paused or unknown."""
+        return self._playing
