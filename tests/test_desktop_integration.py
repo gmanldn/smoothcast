@@ -69,6 +69,18 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertIn("os.chdir(ROOT)", script)
         self.assertIn("os.execvpe(command[0], command, env)", script)
 
+    def test_desktop_cli_parses_quiet_and_pin_without_crashing(self):
+        # --quiet is invoked on every graphical startup. An invalid argparse
+        # action used to raise ValueError before any dock repair could run.
+        with mock.patch("sys.argv", ["install_desktop.py", "--quiet"]), \
+             mock.patch.object(desktop, "install", return_value=False) as install:
+            self.assertEqual(desktop.main(), 0)
+        install.assert_called_once_with(repair_pins=True, pin=False)
+        with mock.patch("sys.argv", ["install_desktop.py", "--quiet", "--pin"]), \
+             mock.patch.object(desktop, "install", return_value=True) as install:
+            self.assertEqual(desktop.main(), 0)
+        install.assert_called_once_with(repair_pins=True, pin=True)
+
     def test_quotes_desktop_exec_field(self):
         result = desktop.exec_argument(Path('/tmp/a $"%'+chr(96)+'b/smoothcast'))
         self.assertIn(r'\$', result)
