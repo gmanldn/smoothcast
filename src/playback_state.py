@@ -82,6 +82,26 @@ def direct_session_matches(info: dict | None, saved_title: str) -> bool:
     return True
 
 
+def hls_session_matches(info: dict | None, saved_url: str, saved_title: str) -> bool:
+    """Require positive evidence that the TV is still using our HLS URL.
+
+    Comparing just a friendly title or a live server port is insufficient:
+    another application may have replaced the film while the encoder exited.
+    """
+    if not isinstance(info, dict) or not saved_url:
+        return False
+    if str(info.get("player_state") or "").upper() not in PLAYING_STATES:
+        return False
+    content_id = str(info.get("content_id") or "").strip()
+    if not content_id or content_id != saved_url:
+        return False
+    observed_title = str(info.get("title") or "").strip()
+    expected_title = str(saved_title or "").strip()
+    if observed_title and expected_title and observed_title.casefold() != expected_title.casefold():
+        return False
+    return True
+
+
 def start_offset(requested: float | None, saved: object = None) -> float:
     """Resolve source timeline start without confusing explicit 0 with resume.
 
