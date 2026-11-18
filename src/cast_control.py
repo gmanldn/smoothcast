@@ -49,8 +49,8 @@ DEFAULTS: dict = {
     "loop": False,
     "playback_speed": 1.0,
     "sleep_timer_minutes": 0,
-    "window_width": 1120,
-    "window_height": 760,
+    "window_width": 1300,
+    "window_height": 850,
     "window_x": -1,
     "window_y": -1,
 }
@@ -939,7 +939,9 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_chain: list[str] = []
         self.console_lines: list[str] = []
 
-        self.set_default_size(int(self.cfg.get("window_width", 1300)), int(self.cfg.get("window_height", 850)))
+        w = max(900, int(self.cfg.get("window_width", 1300)))
+        h = max(650, int(self.cfg.get("window_height", 850)))
+        self.set_default_size(w, h)
         self.set_size_request(900, 650)
         try:
             if int(self.cfg.get("window_x", -1)) >= 0 and int(self.cfg.get("window_y", -1)) >= 0:
