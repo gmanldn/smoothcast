@@ -220,6 +220,14 @@ network-speed feedback #40. No original item is intentionally discarded.
 
 ## Implementation progress (not hardware-qualified)
 
+- **P0 #89 — GTK self-test completion is trustworthy:**
+  `CastControlApp._selftest_quit` now runs its completion work inside
+  `try/except/finally`, so a failing probe can never skip `self.quit()`
+  and hang; a recorded `selftest_failed` makes `main()` return nonzero and
+  suppress the `SELFTEST OK` line. The opt-in `scripts/test_gui_isolated.py`
+  runner keeps its bounded deadline and process-group kill. Source-level
+  guards live in `tests/test_selftest_hygiene.py`; a manual isolated run
+  exits 0 and prints `SELFTEST OK`.
 - **P0 #54 — Desktop installer exercised as users run it:** the shipped
   `scripts/install_desktop.py` CLI is now covered end-to-end: two install
   runs from a checkout whose path contains spaces, with no `smoothcast` on

@@ -4244,6 +4244,7 @@ class CastControlApp(Adw.Application):
         super().__init__(application_id=APP_ID, flags=flags)
         self.window: MainWindow | None = None
         self.selftest = selftest
+        self.selftest_failed = False
         self._update_started = False
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
@@ -4401,8 +4402,16 @@ class CastControlApp(Adw.Application):
         return False
 
     def _selftest_quit(self) -> bool:
-        print("SELFTEST: window built successfully")
-        self.quit()
+        try:
+            print("SELFTEST: window built successfully")
+        except Exception as exc:  # pragma: no cover - defensive
+            self.selftest_failed = True
+            print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
+        finally:
+            # A broken completion probe must never hang --self-test: always
+            # leave the main loop so the runner's deadline is not the only
+            # thing that can end it.
+            self.quit()
         return False
 
     def do_open(self, files, n_files, _hint) -> None:
@@ -4476,6 +4485,9 @@ def main() -> int:
         print(f"Cast Control error: {exc}", file=sys.stderr)
         return 1
     if selftest and result == 0:
+        if app.selftest_failed:
+            print("SELFTEST FAILED: completion callback raised", file=sys.stderr)
+            return 1
         print("SELFTEST OK")
     return result
 

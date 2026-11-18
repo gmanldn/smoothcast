@@ -43,6 +43,30 @@ class SelfTestHygieneTests(unittest.TestCase):
         self.assertIn("quit", attributes)
         self.assertNotIn("_debug_measure", SOURCE)
 
+    def test_selftest_quit_runs_in_a_finally_block(self):
+        # An exception in the completion probe must not skip self.quit() and
+        # hang --self-test; the runner deadline must not be the only exit.
+        quit_fn = next(node for node in _class("CastControlApp").body
+                       if isinstance(node, ast.FunctionDef) and node.name == "_selftest_quit")
+        finally_calls = [
+            call
+            for node in ast.walk(quit_fn) if isinstance(node, ast.Try)
+            for stmt in node.finalbody
+            for call in ast.walk(stmt)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "quit"
+        ]
+        self.assertTrue(finally_calls, "self.quit() must run in a finally block")
+
+    def test_selftest_failure_is_reported_as_nonzero(self):
+        main_fn = next(node for node in TREE.body
+                       if isinstance(node, ast.FunctionDef) and node.name == "main")
+        segment = ast.get_source_segment(SOURCE, main_fn)
+        self.assertIn("selftest_failed", segment)
+        self.assertIn("return 1", segment)
+        self.assertIn('print("SELFTEST OK")', segment)
+
 
 if __name__ == "__main__":
     unittest.main()
