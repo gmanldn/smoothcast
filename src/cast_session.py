@@ -310,21 +310,38 @@ class SessionMixin:
 
         def work():
             if session is not None:
-                session.stop(device)
-            elif renderer is not None:
+                send_stop = True
+                state = session.state
+                if state is not None and state.mode == "transcode":
+                    # Do not stop unrelated TV content merely because our
+                    # local encoder/server still has a saved session. Check
+                    # receiver identity *at command time*, off the GTK thread.
+                    try:
+                        observed = castctl.info(device)
+                    except (OSError, ValueError, TypeError):
+                        observed = None
+                    send_stop = playback_state.hls_session_matches(
+                        observed, state.stream_url, state.title,
+                    )
+                session.stop(device, send_stop=send_stop)
+                return send_stop
+            if renderer is not None:
                 dlna.stop(renderer)
             else:
                 castctl.stop(device)
+            return True
 
-        def done(_result):
+        def done(sent_remote_stop):
             self.busy = False
             self.tracker.clear()
             self.now_playing = None
             self._finished_handled = False
             self._stop_monitor()
             self._set_levels_hint("")
-            self.toast("Stopped")
-            self._console("Stopped casting to TV")
+            self.toast("Stopped" if sent_remote_stop
+                       else "Local stream stopped; TV content was not verified")
+            self._console("Stopped casting to TV" if sent_remote_stop
+                          else "Retired local stream without stopping unrelated TV content")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()
