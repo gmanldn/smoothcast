@@ -115,13 +115,14 @@ def pid_alive(pid: int) -> bool:
 CSS = """
 window {
     font-size: 13px;
-    background-color: @theme_bg_color;
+    background-color: #0e0e10;
+    color: #eaeaf0;
 }
 
 .card {
-    background-color: alpha(@card_bg_color, 0.92);
+    background-color: #16161d;
     border-radius: 16px;
-    border: 1px solid alpha(@borders, 0.08);
+    border: 1px solid #2a2a33;
     padding: 18px;
 }
 
@@ -130,12 +131,12 @@ window {
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: alpha(@view_fg_color, 0.55);
+    color: #8a8a98;
 }
 
 .card .caption {
     font-size: 10px;
-    color: alpha(@view_fg_color, 0.5);
+    color: #6b6b78;
 }
 
 .chip {
@@ -147,23 +148,23 @@ window {
 }
 
 .chip.idle {
-    background-color: alpha(@view_fg_color, 0.06);
-    color: alpha(@view_fg_color, 0.5);
+    background-color: #24242e;
+    color: #8a8a98;
 }
 
 .chip.playing, .chip.buffering {
-    background-color: @accent_color;
-    color: white;
+    background-color: #4f8cff;
+    color: #ffffff;
 }
 
 .chip.paused {
-    background-color: @warning_color;
-    color: white;
+    background-color: #e2b73c;
+    color: #111111;
 }
 
 .chip.offline, .chip.error {
-    background-color: @error_color;
-    color: white;
+    background-color: #e85d75;
+    color: #ffffff;
 }
 
 .pill {
@@ -171,51 +172,53 @@ window {
     font-weight: 600;
     min-width: 52px;
     padding: 5px 10px;
-    background-color: alpha(@view_fg_color, 0.05);
-    border: 1px solid alpha(@borders, 0.10);
+    background-color: #1f1f28;
+    border: 1px solid #2a2a33;
+    color: #eaeaf0;
 }
 
 .pill:hover {
-    background-color: alpha(@view_fg_color, 0.10);
+    background-color: #2a2a33;
 }
 
 .big-play {
     min-width: 80px;
     min-height: 80px;
     border-radius: 40px;
-    background-color: @accent_color;
-    color: white;
+    background-color: #4f8cff;
+    color: #ffffff;
     border: none;
 }
 
 .big-play:hover {
-    background-color: shade(@accent_color, 0.9);
+    background-color: #5da0ff;
 }
 
 .transport {
     min-width: 48px;
     min-height: 48px;
     border-radius: 24px;
-    background-color: alpha(@view_fg_color, 0.05);
-    border: 1px solid alpha(@borders, 0.10);
+    background-color: #1f1f28;
+    border: 1px solid #2a2a33;
+    color: #eaeaf0;
 }
 
 .transport:hover {
-    background-color: alpha(@view_fg_color, 0.10);
+    background-color: #2a2a33;
 }
 
 .transport:active {
-    background-color: alpha(@view_fg_color, 0.16);
+    background-color: #33333d;
 }
 
 .seekbar trough {
     min-height: 5px;
     border-radius: 2.5px;
-    background-color: alpha(@view_fg_color, 0.08);
+    background-color: #24242e;
 }
 
 .seekbar progress {
-    background-color: @accent_color;
+    background-color: #4f8cff;
     border-radius: 2.5px;
 }
 
@@ -223,8 +226,8 @@ window {
     min-width: 13px;
     min-height: 13px;
     border-radius: 6.5px;
-    background-color: white;
-    border: 1.5px solid @accent_color;
+    background-color: #ffffff;
+    border: 1.5px solid #4f8cff;
 }
 
 .queue-title {
@@ -232,15 +235,16 @@ window {
 }
 
 .queue-row.current .queue-title {
-    color: @accent_color;
+    color: #4f8cff;
 }
 
 .detail-key {
-    color: alpha(@view_fg_color, 0.5);
+    color: #8a8a98;
 }
 
 .detail-value {
     font-feature-settings: "tnum";
+    color: #eaeaf0;
 }
 
 .mono {
@@ -250,55 +254,66 @@ window {
 
 button {
     border-radius: 8px;
-    border: 1px solid alpha(@borders, 0.12);
+    border: 1px solid #2a2a33;
     padding: 6px 14px;
     font-size: 12.5px;
     font-weight: 500;
-    background-color: @card_bg_color;
-    color: @view_fg_color;
+    background-color: #1f1f28;
+    color: #eaeaf0;
 }
 
 button:hover {
-    background-color: alpha(@view_fg_color, 0.05);
-    border-color: alpha(@borders, 0.20);
+    background-color: #2a2a33;
+    border-color: #4f8cff;
 }
 
 button:active {
-    background-color: alpha(@view_fg_color, 0.10);
+    background-color: #33333d;
 }
 
 button.suggested-action {
-    background-color: @accent_color;
-    color: white;
+    background-color: #4f8cff;
+    color: #ffffff;
     border: none;
 }
 
 button.suggested-action:hover {
-    background-color: shade(@accent_color, 0.92);
+    background-color: #5da0ff;
 }
 
 Adw.WindowTitle {
     font-weight: 600;
     font-size: 15px;
+    color: #eaeaf0;
 }
 
 Adw.HeaderBar {
-    background-color: @theme_bg_color;
-    border-bottom: 1px solid alpha(@borders, 0.08);
+    background-color: #0e0e10;
+    border-bottom: 1px solid #2a2a33;
     min-height: 44px;
 }
 
 Adw.Toast {
     border-radius: 8px;
-    background-color: alpha(@view_fg_color, 0.9);
-    color: @theme_bg_color;
+    background-color: #16161d;
+    color: #eaeaf0;
+    border: 1px solid #2a2a33;
 }
 
 .entry, spinbutton {
     border-radius: 6px;
-    border: 1px solid alpha(@borders, 0.12);
-    background-color: @card_bg_color;
+    border: 1px solid #2a2a33;
+    background-color: #16161d;
+    color: #eaeaf0;
     padding: 6px 10px;
+}
+
+Adw.Switch {
+    color: #4f8cff;
+}
+
+Adw.Switch:checked {
+    color: #4f8cff;
 }
 """.encode()
 
@@ -898,7 +913,7 @@ class PreviewScreen(Gtk.DrawingArea):
         super().__init__()
         self.set_hexpand(True)
         self.set_vexpand(True)
-        self.set_size_request(-1, 220)
+        self.set_size_request(-1, 120)
         self.set_draw_func(self._draw)
         self._lock = threading.Lock()
         self._title = "No video"
@@ -979,8 +994,8 @@ class MainWindow(Adw.ApplicationWindow):
         self._mon_path: pathlib.Path | None = None
         self._mon_chain: list[str] = []
 
-        self.set_default_size(self.cfg["window_width"], self.cfg["window_height"])
-        self.set_size_request(880, 560)
+        self.set_default_size(1120, 720)
+        self.set_size_request(700, 500)
         self._build_ui()
         self._flush_stale_state()
         self._refresh_direct_note()
@@ -1020,30 +1035,35 @@ class MainWindow(Adw.ApplicationWindow):
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         paned.set_wide_handle(True)
         paned.set_resize_start_child(True)
-        paned.set_resize_end_child(False)
-        paned.set_shrink_end_child(False)
+        paned.set_resize_end_child(True)
+        paned.set_shrink_start_child(True)
+        paned.set_shrink_end_child(True)
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         left.set_hexpand(True)
+        left.set_vexpand(True)
         left.append(self._build_now_playing())
         left.append(self._build_live_levels())
         left.append(self._build_queue())
         right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        right_box.set_size_request(340, -1)
+        right_box.set_hexpand(False)
+        right_box.set_vexpand(True)
         right_box.append(self._build_device_card())
         right_box.append(self._build_settings_card())
         right_box.append(self._build_details_card())
         right_scroller = Gtk.ScrolledWindow()
         right_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        right_scroller.set_vexpand(True)
         right_scroller.set_child(right_box)
-        right_scroller.set_size_request(356, -1)
         paned.set_start_child(left)
         paned.set_end_child(right_scroller)
-        paned.set_position(720)
+        paned.set_position(640)
         holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        holder.set_margin_top(18)
-        holder.set_margin_bottom(18)
-        holder.set_margin_start(18)
-        holder.set_margin_end(18)
+        holder.set_margin_top(14)
+        holder.set_margin_bottom(14)
+        holder.set_margin_start(14)
+        holder.set_margin_end(14)
+        holder.set_hexpand(True)
+        holder.set_vexpand(True)
         holder.append(paned)
         toolbar.set_content(holder)
         self.toasts.set_child(toolbar)

@@ -51,18 +51,18 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - Scrubbing knob moves immediately on seek/jump: `seek_to()` updates the seekbar directly, and `tracker.device_update()` is called immediately for both direct and transcode modes so `_tick()` doesn't override the knob while the cast catches up.
 - Casting status in details card: Buffer Health (ahead/behind time) and Segments (HLS segment count) rows show exact cast status.
 - Error handling: `main()` wraps `app.run()` in try/except; single-instance lock prevents duplicate instances.
-- Modern CSS styling: refined cards with subtle borders, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous 18px margins and 16px card spacing.
-- Cleaner color scheme using GTK color tokens (softer borders, subtle buttons).
+- Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
+- Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 700x500 with default 1120x720, no fixed widths preventing scaling.
 - Version number shown on front page: header subtitle displays `device · vX.Y.Z`.
 
 ## Version
 - `src/version.py`: `__version__ = "1.0.x"` — increment `PATCH` on every commit.
-- Current: `1.0.11`
+- Current: `1.0.12`
 
 ## Completed work
 1. Compressor only affects playback (verified by code inspection).
 2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
-3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.11`.
+3. Version counter: `src/version.py` with `__version__ = "1.0.x"`, increment PATCH on every commit. Current: `1.0.12`.
 4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
 5. Casting status in details card: Buffer Health and Segments rows.
 6. Scrubbing knob moves immediately on seek/jump.
@@ -71,7 +71,6 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 9. Graceful error handling: `main()` wraps `app.run()` in try/except.
 10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
 11. Auto-pull from repo main on load: `auto_pull_on_load()` runs `git pull --ff-only` at startup.
-12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
 12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
 
 ## Pending work
