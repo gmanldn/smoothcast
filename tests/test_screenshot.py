@@ -42,6 +42,36 @@ class ScreenshotTests(unittest.TestCase):
             self.assertEqual(calls[0][1]["timeout"], 30)
             self.assertEqual(calls[0][0][calls[0][0].index("-ss") + 1], "12.5")
 
+    def test_file_checks_do_not_depend_on_path_is_file_mock(self):
+        # A leaked mock in another test must not turn a missing input or a
+        # missing FFmpeg output into successful screenshots.
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            source = base / "video.mp4"
+            with mock.patch.object(Path, "is_file", return_value=True), \
+                 mock.patch.object(screenshot.subprocess, "run") as run:
+                with self.assertRaisesRegex(screenshot.CaptureError, "missing"):
+                    screenshot.capture_frame(source, 1, base)
+                run.assert_not_called()
+                source.touch()
+                run.return_value = subprocess.CompletedProcess([], 0, "", "")
+                with self.assertRaisesRegex(screenshot.CaptureError, "no image"):
+                    screenshot.capture_frame(source, 1, base)
+
+    def test_zero_byte_output_is_rejected(self):
+        with tempfile.TemporaryDirectory() as name:
+            base = Path(name)
+            source = base / "video.mp4"
+            source.touch()
+
+            def fake_ffmpeg(args, **kwargs):
+                Path(args[-1]).touch()
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            with mock.patch.object(screenshot.subprocess, "run", side_effect=fake_ffmpeg):
+                with self.assertRaisesRegex(screenshot.CaptureError, "no image"):
+                    screenshot.capture_frame(source, 1, base)
+
     def test_timeout_fails_cleanly(self):
         with tempfile.TemporaryDirectory() as name:
             base = Path(name)
