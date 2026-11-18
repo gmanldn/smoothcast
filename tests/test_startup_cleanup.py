@@ -32,6 +32,7 @@ class StartupCleanupTests(unittest.TestCase):
     def test_only_project_owned_command_signatures_match(self):
         self.assertIsNone(cleanup.process_kind(("ffmpeg", "-i", "other.mp4")))
         self.assertIsNone(cleanup.process_kind(("catt", "-d", "TV", "cast", "https://x")))
+        self.assertIsNone(cleanup.process_kind(("python3", "-c", "print(1)", str(streamer.SERVER_SCRIPT))))
         self.assertIsNone(cleanup.process_kind(("ffplay", "-i", "video.mp4")))
         for kind in ("server", "encoder", "monitor", "local"):
             self.assertEqual(cleanup.process_kind(process(100, kind).argv), kind)
