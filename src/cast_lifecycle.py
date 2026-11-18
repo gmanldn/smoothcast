@@ -41,9 +41,10 @@ class LifecycleMixin:
             return True
         self._stop_monitor()
         self._unload_local_video()
-        # Gtk4 tracks the normal window size separately from fullscreen and
-        # maximized allocations. Save that instead of the temporary screen size.
-        width, height = self.get_default_size()
+        # Save the last *actual* normal allocation, not GTK's default size.
+        # Fullscreen/maximised allocations are never persisted as preferences.
+        self._remember_normal_geometry()
+        width, height = self._last_normal_size
         if width > 0 and height > 0:
             self.cfg["window_width"] = width
             self.cfg["window_height"] = height

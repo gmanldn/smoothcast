@@ -43,6 +43,7 @@ def window(*, keep=False, mode="transcode"):
             self._cast_starting = True
             self._dlna_cancel = None
             self.cfg = {"keep_streaming": keep}
+            self._last_normal_size = (1000, 700)
             self.session = None
             self.mode = mode
             self.hidden = False
@@ -62,8 +63,11 @@ def window(*, keep=False, mode="transcode"):
         def _unload_local_video(self):
             pass
 
-        def get_default_size(self):
-            return (1000, 700)
+        def _remember_normal_geometry(self):
+            # The headless lifecycle double stands in for the UI's allocated
+            # normal-size sampler; closing a hidden window retains this size.
+            self._last_normal_size = (1000, 700)
+
 
         def _device(self):
             return "Test TV"
