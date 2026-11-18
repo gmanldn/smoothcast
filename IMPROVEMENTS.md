@@ -67,3 +67,5 @@ Source players studied: VLC (playback/codec, OSD, hotkeys, subtitle, audio), mpv
 - [x] 26. Recent files clear
 - [x] 30. Fullscreen toggle
 - [x] 38. Network stream open (URL)
+- [x] 4. Playback speed presets
+- [x] 36. Sleep timer
