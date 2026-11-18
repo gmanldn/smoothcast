@@ -906,9 +906,15 @@ class SessionMixin:
                 self._cast_failed(message or "Remote cast failed")
                 return
             self._stop_monitor()
+            # A successful handoff must release the local decoder/player so the
+            # machine's own audio does not keep playing under the TV cast.
+            self._unload_local_video()
+            self.local_playback.stop()
             self.media = None
             self.now_playing = None
             self.external = True
+            self._url_cast_url = url
+            self._url_cast_seen = False
             self.tracker.clear()
             self.np_title.set_text("Remote stream")
             self.toast(f"Remote stream sent to {device}")
@@ -980,9 +986,51 @@ class SessionMixin:
         if self.session is not None:
             self.toast("Sleep timer expired — stopping cast")
             self.stop_stream()
+        elif self._url_cast_url is not None:
+            self._sleep_stop_url_cast()
         else:
             self.toast("Sleep timer expired")
         return True
+
+
+    def _sleep_stop_url_cast(self) -> None:
+        """Stop our own URL cast at the deadline, never a replacement.
+
+        A URL cast has no local Session. Re-check the receiver off the GTK
+        thread at command time and stop only if it still reports the exact URL
+        we sent; if another app replaced it, leave that content playing.
+        """
+        device = self._device()
+        saved_url = self._url_cast_url or ""
+        self.busy = True
+        self._refresh_controls()
+
+        def work():
+            try:
+                observed = castctl.info(device)
+            except (OSError, ValueError, TypeError):
+                observed = None
+            if not playback_state.url_cast_matches(observed, saved_url):
+                return False
+            ok, _ = castctl.stop(device)
+            return ok
+
+        def done(stopped):
+            self.busy = False
+            self._url_cast_url = None
+            self._url_cast_seen = False
+            if stopped:
+                self.external = False
+                self.tracker.clear()
+                self.now_playing = None
+                self._finished_handled = False
+                self.toast("Sleep timer expired — stopped the URL cast")
+            else:
+                self.toast("Sleep timer expired; left the current TV content playing")
+            self._refresh_controls()
+            self._poll_device()
+
+        Async.run(work, done=done, failed=self._cast_failed)
 
 
     def _toggle_auto_shutdown(self) -> None:

@@ -100,6 +100,21 @@ def hls_session_matches(info: dict | None, saved_url: str, saved_title: str) -> 
     return True
 
 
+def url_cast_matches(info: dict | None, saved_url: str) -> bool:
+    """Return True only while the receiver still plays the URL we sent.
+
+    A URL cast has no local ``Session`` to prove ownership. Store the exact URL
+    we handed to the receiver and require both an active player state and an
+    identical content id before the sleep timer stops it; otherwise another app
+    that replaced our stream must be left playing.
+    """
+    if not isinstance(info, dict) or not saved_url:
+        return False
+    if str(info.get("player_state") or "").upper() not in PLAYING_STATES:
+        return False
+    return str(info.get("content_id") or "").strip() == str(saved_url).strip()
+
+
 def start_offset(requested: float | None, saved: object = None) -> float:
     """Resolve source timeline start without confusing explicit 0 with resume.
 

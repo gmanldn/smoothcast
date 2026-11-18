@@ -63,6 +63,10 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self._dlna_by_key: dict[str, dlna.Renderer] = {}
         self.device_state = "IDLE"
         self.external = False
+        # A remote URL cast has no local Session. Remember the exact URL we sent
+        # so the sleep timer can stop our own stream but never a replacement.
+        self._url_cast_url: str | None = None
+        self._url_cast_seen = False
         self.busy = False
         self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False

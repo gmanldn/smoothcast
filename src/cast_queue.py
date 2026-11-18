@@ -631,6 +631,14 @@ class QueueMixin:
             self._syncing = False
             self._apply_volume_icon()
         self._detect_external()
+        if self.session is None and self._url_cast_url is not None:
+            if playback_state.url_cast_matches(info, self._url_cast_url):
+                self._url_cast_seen = True
+            elif self._url_cast_seen:
+                # A different active content replaced our URL cast; never stop
+                # that replacement when the sleep timer expires.
+                self._url_cast_url = None
+                self._url_cast_seen = False
         if playback_state.playback_ended(
             previous, self.device_state,
             has_session=self.session is not None, busy=self.busy,
@@ -719,6 +727,10 @@ class QueueMixin:
         if idle:
             if self.external:
                 self.external = False
+            # The receiver is no longer playing anything we started, so a
+            # remembered URL cast must not be shown as owned or stopped later.
+            self._url_cast_url = None
+            self._url_cast_seen = False
             if not self.session:
                 self.now_playing = None
                 self.tracker.clear()
