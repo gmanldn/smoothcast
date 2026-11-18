@@ -118,6 +118,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
             geometry.height if geometry else None,
         )
         self.set_default_size(self._startup_width, self._startup_height)
+        self._last_normal_size = (self._startup_width, self._startup_height)
         self.set_size_request(360, 320)
         self._layout_state = None
         self._build_ui()
