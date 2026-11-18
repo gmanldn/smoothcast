@@ -126,12 +126,16 @@ def test_unique_uuid_resolves_only_one_physical_receiver():
 
 def test_idle_scan_recovers_renamed_device_and_persists_user_selection():
     w, saves = window()
+    w._volume_job = 41  # pending write for previous receiver
+    w._volume_target = "Old TV"
     w._scan_done([device("New TV", "uuid-a")])
     assert w.cfg["device"] == "New TV"
     assert w.cfg["device_uuid"] == "uuid-a"
     assert w.device_dropdown.get_model().names == ["New TV"]
     assert w.device_dropdown.get_selected() == 0
     assert len(saves) == 1
+    assert w._volume_job is None and w._volume_target is None
+    assert w.polls == 1  # status is queried on the new target
     assert "Reconnected renamed Cast receiver" in w.toasts[0]
 
 
