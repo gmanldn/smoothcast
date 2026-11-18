@@ -58,6 +58,33 @@ class DlnaDiscoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(dlna.DlnaError, "private LAN HTTP"):
             dlna.parse_renderer(malicious, LOCATION, "192.168.12.25")
 
+    def test_urlbase_same_host_different_port_and_relative_controls(self):
+        location = "http://192.168.12.25:1400/devices/desc.xml"
+        base = b"http://192.168.12.25:1520/upnp/root/"
+        xml = DESCRIPTION.replace(b"<device>", b"<URLBase>" + base + b"</URLBase><device>", 1)
+        xml = xml.replace(b"/upnp/control/av", b"control/av")
+        xml = xml.replace(b"/upnp/control/render", b"control/render")
+        renderer = dlna.parse_renderer(xml, location, "192.168.12.25")
+        self.assertEqual(renderer.transport_url,
+                         "http://192.168.12.25:1520/upnp/root/control/av")
+        self.assertEqual(renderer.rendering_url,
+                         "http://192.168.12.25:1520/upnp/root/control/render")
+
+    def test_missing_urlbase_uses_description_location(self):
+        xml = DESCRIPTION.replace(b"/upnp/control/av", b"control/av")
+        renderer = dlna.parse_renderer(
+            xml, "http://192.168.12.25:1400/devices/desc.xml", "192.168.12.25")
+        self.assertEqual(renderer.transport_url,
+                         "http://192.168.12.25:1400/devices/control/av")
+
+    def test_urlbase_rejects_off_host_public_and_userinfo(self):
+        for base in (b"http://192.168.12.99:1520/", b"http://8.8.8.8/",
+                     b"http://attacker@192.168.12.25/", b"https://192.168.12.25/"):
+            with self.subTest(base=base):
+                xml = DESCRIPTION.replace(b"<device>", b"<URLBase>" + base + b"</URLBase><device>", 1)
+                with self.assertRaises(dlna.DlnaError):
+                    dlna.parse_renderer(xml, LOCATION, "192.168.12.25")
+
     def test_no_public_ip_loopback_userinfo_or_hostname_url(self):
         for location, sender in [
             ("http://8.8.8.8/desc", "8.8.8.8"),
@@ -116,6 +143,45 @@ class DlnaSOAPTests(unittest.TestCase):
         self.assertIn(b"<DesiredVolume>56</DesiredVolume>", bodies[3])
         self.assertIn(b"<DesiredMute>1</DesiredMute>", bodies[4])
         self.assertEqual(conn.request.call_count, 6)
+
+    def test_http_500_fault_surfaces_safe_upnp_error_code(self):
+        fault = (
+            b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+            b'<s:Body><s:Fault><detail><UPnPError>'
+            b'<errorCode>710</errorCode><errorDescription>No such object</errorDescription>'
+            b'</UPnPError></detail></s:Fault></s:Body></s:Envelope>'
+        )
+        reply = self._reply(fault)
+        reply.status = 500
+        connection = mock.MagicMock()
+        connection.getresponse.return_value = reply
+        with mock.patch.object(dlna, "HTTPConnection", return_value=connection):
+            with self.assertRaisesRegex(
+                dlna.DlnaError, r"DLNA Seek failed \\(HTTP 500; UPnP 710: No such object\\)"
+            ):
+                dlna._soap(self.renderer, "Seek", {"InstanceID": "0"})
+        connection.close.assert_called_once()
+
+    def test_malformed_and_oversized_faults_are_not_leaked(self):
+        for payload in (b"<broken", b"x" * (dlna.MAX_SOAP_RESPONSE + 1)):
+            with self.subTest(size=len(payload)):
+                reply = self._reply(payload)
+                reply.status = 500
+                conn = mock.MagicMock()
+                conn.getresponse.return_value = reply
+                with mock.patch.object(dlna, "HTTPConnection", return_value=conn):
+                    with self.assertRaises(dlna.DlnaError) as result:
+                        dlna.seek(self.renderer, 25)
+                self.assertNotIn("x" * 200, str(result.exception))
+                self.assertNotIn("<broken", str(result.exception))
+
+    def test_upnp_fault_with_http_200_is_an_error(self):
+        fault = b"<root><UPnPError><errorCode>701</errorCode></UPnPError></root>"
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = self._reply(fault)
+        with mock.patch.object(dlna, "HTTPConnection", return_value=conn):
+            with self.assertRaisesRegex(dlna.DlnaError, "UPnP 701"):
+                dlna.play(self.renderer)
 
     def test_polling_normalizes_state_and_position(self):
         transport = b"<r><CurrentTransportState>PAUSED_PLAYBACK</CurrentTransportState></r>"
