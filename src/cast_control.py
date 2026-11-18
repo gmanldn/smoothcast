@@ -1682,6 +1682,8 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _seek_percent(self, tenth: int) -> None:
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if not duration and self._preview_path and self.session is None:
+            duration = self.queue_durations.get(self._preview_path, 0.0)
         if duration:
             self.seek_to(duration * tenth / 10.0)
 
@@ -2711,6 +2713,8 @@ class MainWindow(Adw.ApplicationWindow):
     def seek_to(self, target: float) -> None:
         target = max(0.0, target)
         duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if self._preview_path and self.session is None and not self.external:
+            duration = self.queue_durations.get(self._preview_path, duration)
         if duration:
             target = min(target, max(0.0, duration - 1.0))
         # Move the scrubbing knob immediately so the user sees where they
@@ -2948,7 +2952,8 @@ class MainWindow(Adw.ApplicationWindow):
         return True
 
     def _skip(self, delta: float) -> None:
-        position = self.tracker.value()
+        position = (self._preview_position if self.session is None and self._preview_path is not None
+                    and not self.external else self.tracker.value())
         if position is None:
             self.toast("Position unknown — nothing to skip in")
             return
@@ -3143,6 +3148,9 @@ class MainWindow(Adw.ApplicationWindow):
         if self.now_playing is None:
             self.np_title.set_text(pathlib.Path(path).name)
         if self.session is None and not self.external:
+            if self._preview_path == path:
+                return  # A row re-selection must not reset the local playhead.
+            self._unload_local_video()
             self.media = None
             self._preview_path = path
             self._preview_generation += 1
@@ -3155,13 +3163,44 @@ class MainWindow(Adw.ApplicationWindow):
             self.np_meta.set_text("Inspect the film and scrub to a starting point, then press Cast.")
             self.seekbar.set_state(0.0, 0.0, 0.0)
 
+        generation = self._preview_generation
+        try:
+            info = pathlib.Path(path).stat()
+            fingerprint = (info.st_size, info.st_mtime_ns)
+        except OSError:
+            fingerprint = None
+        cached = self._media_cache.get(path)
+        if cached is not None and cached[0] == fingerprint:
+            # Duration and codec details do not need to be re-probed when a
+            # film is reselected; the stat fingerprint invalidates changed files.
+            self.queue_durations[path] = cached[1].duration
+            self.media = cached[1]
+            self._preview_position = min(
+                self._preview_position, max(0.0, self.media.duration - 1.0)
+            ) if self.media.duration else 0.0
+            self.seekbar.set_state(self._preview_position, self.media.duration, 0.0)
+            self._queue_preview(self._preview_position)
+        else:
+            if fingerprint is None:
+                self.queue_durations.pop(path, None)
+            self.seekbar.set_state(self._preview_position,
+                                   self.queue_durations.get(path, 0.0), 0.0)
+
         def work():
             return path, streamer.ffprobe(pathlib.Path(path))
 
         def done(result):
             path_result, media = result
+            try:
+                info = pathlib.Path(path_result).stat()
+                current_fingerprint = (info.st_size, info.st_mtime_ns)
+            except OSError:
+                current_fingerprint = None
+            if current_fingerprint is not None:
+                self._media_cache[path_result] = (current_fingerprint, media)
             self.queue_durations[path_result] = media.duration
-            if (self.now_playing is None and self.session is None
+            if (generation == self._preview_generation
+                    and self.now_playing is None and self.session is None
                     and not self.external and self._preview_path == path_result):
                 self.media = media
                 duration = media.duration
@@ -3174,7 +3213,14 @@ class MainWindow(Adw.ApplicationWindow):
                 self._queue_preview(self._preview_position)
             self._rebuild_queue()
 
-        Async.run(work, done=done)
+        if cached is None or cached[0] != fingerprint:
+            Async.run(work, done=done)
+        else:
+            self.preview.set_video(pretty_title(path), " · ".join(
+                x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
+            ))
+            self.elapsed_label.set_text(fmt_time(self._preview_position))
+            self.remaining_label.set_text(f"-{fmt_time(max(0.0, self.media.duration - self._preview_position))}" if self.media.duration else "--:--")
         self._refresh_controls()
 
     def open_paths(self, paths: list[str]) -> None:
