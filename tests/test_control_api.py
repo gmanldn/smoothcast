@@ -343,8 +343,9 @@ def test_serve_refuses_a_public_bind_before_listening(tmp_path, monkeypatch, cap
 def test_module_and_cli_entry_do_not_import_gtk():
     code = ("import sys; sys.path.insert(0, 'src'); import control_api, cli; "
             "assert 'gi' not in sys.modules and not any(m.startswith('gi.') for m in sys.modules)")
-    subprocess.run([sys.executable, "-I", "-c", code], cwd=ROOT, check=True,
-                   env={"PATH": os.environ.get("PATH", ""), "HOME": str(ROOT)})
+    # Full environment: Python on Windows will not start without SYSTEMROOT and
+    # friends. -I already ignores PYTHONPATH and the user site directory.
+    subprocess.run([sys.executable, "-I", "-c", code], cwd=ROOT, check=True, env=os.environ.copy())
 
 
 def test_cli_routes_the_flag_and_module_is_installed():
