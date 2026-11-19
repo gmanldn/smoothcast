@@ -70,6 +70,20 @@ def shuffle_order(queue: list[str], seed: int) -> list[str]:
     return items
 
 
+def frame_step_delta(fps: object) -> float:
+    """Seconds for one source frame, or 1.0 s when the frame rate is unknown.
+
+    Uses the average frame duration (1/fps), which is the documented
+    approximation for variable-frame-rate sources. Never returns zero, so a
+    frame step always moves.
+    """
+    try:
+        value = float(fps)
+    except (TypeError, ValueError):
+        return 1.0
+    return 1.0 / value if value > 0 else 1.0
+
+
 def sleep_deadline(now: float, minutes: int) -> float:
     """Wall-clock expiry persisted across application restarts."""
     return now + minutes * 60 if minutes > 0 else 0.0
