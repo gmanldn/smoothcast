@@ -186,6 +186,7 @@ class StreamerReliabilityTests(unittest.TestCase):
              mock.patch.object(streamer.subprocess, "Popen") as popen:
             popen.return_value.poll.return_value = None
             session._start_server("192.168.1.23", "192.168.1.50")
+        self.assertEqual(len(popen.call_args.args), 1, "Popen takes one argv list")
         command = popen.call_args.args[0]
         self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
         self.assertNotIn("0.0.0.0", command)
