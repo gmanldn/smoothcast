@@ -15,7 +15,6 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 import preference_choices
-from cast_widgets import save_config
 
 
 class PreferencesWindow(Adw.PreferencesWindow):
@@ -25,6 +24,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._syncing = False
         self._combos = {}
         self._switches = {}
+        self._audio_labels = None
+        self._embedded_labels = None
         self.set_title("SmoothCast Preferences")
         self.set_default_size(670, 630)
         self.set_search_enabled(True)
@@ -158,18 +159,20 @@ class PreferencesWindow(Adw.PreferencesWindow):
             self.gain.set_value(float(cfg.get("audio_gain", 6.0)))
             media = self.owner.media
             audio_tracks = media.audio_streams if media is not None else []
-            self.audio_track.set_model(Gtk.StringList.new(
-                ["Auto (file default)"] + [track.label for track in audio_tracks]
-            ))
+            audio_labels = ["Auto (file default)"] + [track.label for track in audio_tracks]
+            if audio_labels != self._audio_labels:
+                self.audio_track.set_model(Gtk.StringList.new(audio_labels))
+                self._audio_labels = audio_labels
             self.audio_track.set_sensitive(bool(audio_tracks))
             self.audio_track.set_selected(self.owner.audio_track_dropdown.get_selected())
             text_tracks = (
                 [track for track in media.subtitle_tracks if track.is_text]
                 if media is not None else []
             )
-            self.embedded_track.set_model(Gtk.StringList.new(
-                ["Preferred embedded track"] + [track.label for track in text_tracks]
-            ))
+            embedded_labels = ["Preferred embedded track"] + [track.label for track in text_tracks]
+            if embedded_labels != self._embedded_labels:
+                self.embedded_track.set_model(Gtk.StringList.new(embedded_labels))
+                self._embedded_labels = embedded_labels
             self.embedded_track.set_sensitive(bool(text_tracks) and cfg.get("subs") == "embedded")
             self.embedded_track.set_selected(self.owner.embedded_dropdown.get_selected())
             self.subtitle_file.set_subtitle(self.owner._subs_status_text())
@@ -246,11 +249,12 @@ class PreferencesWindow(Adw.PreferencesWindow):
     def _subtitle_selected(self, dialog, result) -> None:
         # Reuse the existing file validation, cancel path and persistence code.
         self.owner._subs_file_chosen(dialog, result)
+        was_syncing = self.owner._syncing
         self.owner._syncing = True
         try:
             self.owner.subs_dropdown.set_selected(
                 preference_choices.selected_index("subs", self.owner.cfg["subs"])
             )
         finally:
-            self.owner._syncing = False
+            self.owner._syncing = was_syncing
         self.sync_from_owner()
