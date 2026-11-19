@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import streamer
+import subtitle_delay
 
 
 @dataclass(frozen=True)
@@ -18,9 +19,11 @@ class RestartSubtitles:
     external: Path | None
     burn: bool
     embedded_index: int | None
+    delay_ms: int = 0
 
 
-def validate_restart(state: Any, media: streamer.MediaInfo) -> RestartSubtitles:
+def validate_restart(state: Any, media: streamer.MediaInfo,
+                     delay_ms: int | None = None) -> RestartSubtitles:
     """Resolve exactly the previous caption choice without choosing another.
 
     Missing/invalid explicit tracks are errors *before* the active session is
@@ -29,6 +32,9 @@ def validate_restart(state: Any, media: streamer.MediaInfo) -> RestartSubtitles:
     """
     if state is None:
         return RestartSubtitles(None, False, None)
+    # An explicit delay wins; otherwise keep the delay the stream was using.
+    delay = subtitle_delay.normalize(
+        getattr(state, "subtitle_delay_ms", 0) if delay_ms is None else delay_ms)
     # Never normalise the filename: spaces are legal subtitle path bytes.
     saved = str(getattr(state, "subs", "") or "")
     selected = getattr(state, "embedded_subtitle_index", -1)
@@ -50,6 +56,8 @@ def validate_restart(state: Any, media: streamer.MediaInfo) -> RestartSubtitles:
         # A saved non-receiver subtitle format must never silently disappear
         # if an old state record accidentally carries burn_subs=False.
         burn = burn or path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
+        # A receiver-side sidecar cannot be time-shifted: burn it in instead.
+        burn = burn or delay != 0
 
     embedded: int | None = None
     if selected >= 0:
@@ -64,4 +72,4 @@ def validate_restart(state: Any, media: streamer.MediaInfo) -> RestartSubtitles:
         embedded = selected
         burn = True
 
-    return RestartSubtitles(path, burn, embedded)
+    return RestartSubtitles(path, burn, embedded, delay)

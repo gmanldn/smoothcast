@@ -233,6 +233,8 @@ class LifecycleMixin:
             ("Up", "Volume up 5%"),
             ("Down", "Volume down 5%"),
             ("M", "Mute"),
+            ("G", "Subtitles 100 ms earlier"),
+            ("H", "Subtitles 100 ms later"),
             ("S", "Stop the stream"),
             ("P", "Previous in queue"),
             ("N", "Next in queue"),

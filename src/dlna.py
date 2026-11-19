@@ -530,7 +530,7 @@ class ProgressiveFileServer:
 
 def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
-                audio_track: int = 0,
+                audio_track: int = 0, subtitle_delay_ms: int = 0,
                 cancel: threading.Event | None = None) -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
@@ -598,6 +598,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
             video_size=(media.width, media.height),
+            subtitle_delay_ms=subtitle_delay_ms,
         )
         args += vf
         if media.fps > 30.01:
@@ -679,6 +680,7 @@ class Session:
     def start(self, media, *, renderer: Renderer, local_ip: str, offset: float,
               title: str, subtitle_file: Path | None = None,
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
+              subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None) -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
@@ -703,7 +705,8 @@ class Session:
                     media, Path(self.tmp.name) / "movie.mp4",
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
-                    audio_track=audio_track, cancel=cancel,
+                    audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
+                    cancel=cancel,
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
@@ -721,6 +724,7 @@ class Session:
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(
                     embedded_subtitle_index if embedded_subtitle_index is not None else -1),
+                subtitle_delay_ms=subtitle_delay_ms,
                 started_at=time.time(),
             )
         except Exception:

@@ -115,6 +115,18 @@ transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
 **not yet rendered**. Missing or incompatible subtitle files return a
 visible error instead of silently proceeding with another track.
 
+**Subtitle delay:** if captions run early or late, use **Subtitle delay** in
+the main menu, or press **G** (100 ms earlier) / **H** (100 ms later); *Reset
+delay* clears it. The offset is whole milliseconds, limited to ±30 s, and is
+remembered per film. While casting over HLS or DLNA the stream restarts at the
+current position so the new timing is burned in. A non-zero delay always burns
+captions into the picture (a Cast receiver cannot time-shift a sidecar track),
+so it needs the slower transcode path and is not applied to direct play; the
+saved value is used on your next cast instead. Burn-in timing is checked with
+real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
+verified on physical receivers yet. Streams resumed or seeked to a later
+position also now draw burned-in captions at the correct film time.
+
 ## Interface and visual design
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
