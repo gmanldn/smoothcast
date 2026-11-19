@@ -20,6 +20,7 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
+import process_identity
 import server as hls_server
 import subtitle_encoding
 
@@ -451,60 +452,54 @@ def _pid_alive_windows(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def _pid_is_ours(pid: int | None, role: str) -> bool:
-    """Protect against stale/reused PIDs before restoring or signalling them."""
-    if not pid_alive(pid):
+def _pid_is_ours(pid: int | None, role: str, expected_start: float = 0.0) -> bool:
+    """Do not adopt a reused saved PID, foreign user or different command."""
+    if not pid or pid <= 1:
+        return False
+    if process_identity.psutil is not None:
+        return process_identity.matches(
+            process_identity.snapshot(pid), role,
+            expected_start=expected_start if expected_start > 0 else None,
+            server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+        )
+    # Source-only Linux fallback permits read-only PID observation, never
+    # signalling. Saved-session adoption requires an epoch birth time, which
+    # /proc start ticks alone cannot validate without the original boot clock.
+    if platform.system() != "Linux" or expected_start > 0 or not pid_alive(pid):
         return False
     try:
-        argv = [
+        argv = tuple(
             part.decode("utf-8", "replace")
             for part in pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
             if part
-        ]
+        )
     except OSError:
         return False
-    if role == "server":
-        return str(SERVER_SCRIPT) in argv
-    if role == "encoder":
-        return (bool(argv) and pathlib.Path(argv[0]).name.startswith("ffmpeg")
-                and str(PROGRESS_FILE) in argv)
-    if role == "caster":
-        return ("-d" in argv and "cast" in argv
-                and any(pathlib.Path(arg).name == "catt" for arg in argv[:2]))
-    return False
+    return process_identity.role_of(
+        argv, server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+    ) == role
 
 
-def _terminate_pid(pid: int | None, role: str) -> None:
-    if not _pid_is_ours(pid, role):
-        return
-    try:
-        os.kill(pid, 15)
-    except OSError:
-        return
-    for _ in range(20):
-        if not _pid_is_ours(pid, role):
-            return
-        time.sleep(0.15)
-    if not _pid_is_ours(pid, role):
-        return
-    try:
-        os.kill(pid, 9)
-    except OSError:
-        pass
-
+def _terminate_pid(pid: int | None, role: str, expected_start: float = 0.0) -> None:
+    """Never use os.kill on an unverified saved PID (especially on Windows)."""
+    process_identity.stop_verified(
+        pid, role, expected_start=expected_start if expected_start > 0 else None,
+        server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+    )
 
 class PidHandle:
     """Minimal Popen-like handle for verified processes restored from disk."""
 
-    def __init__(self, pid: int, role: str) -> None:
+    def __init__(self, pid: int, role: str, created_at: float = 0.0) -> None:
         self.pid = pid
         self.role = role
+        self.created_at = created_at
 
     def poll(self) -> int | None:
-        return None if _pid_is_ours(self.pid, self.role) else -1
+        return None if _pid_is_ours(self.pid, self.role, self.created_at) else -1
 
     def terminate(self) -> None:
-        _terminate_pid(self.pid, self.role)
+        _terminate_pid(self.pid, self.role, self.created_at)
 
     def wait(self, timeout: float | None = None) -> int:
         deadline = None if timeout is None else time.time() + timeout
@@ -764,6 +759,10 @@ class SessionState:
     ffmpeg_pid: int = 0
     server_pid: int = 0
     caster_pid: int = 0
+    # OS process creation epoch times, distinct from session playback time.
+    ffmpeg_created_at: float = 0.0
+    server_created_at: float = 0.0
+    caster_created_at: float = 0.0
     stream_url: str = ""
 
 
@@ -824,9 +823,14 @@ class Session:
             state.stream_url if state.mode == "transcode" else "",
         )
         self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
-        self.ffmpeg = PidHandle(state.ffmpeg_pid, "encoder") if _pid_is_ours(state.ffmpeg_pid, "encoder") else None
-        self.server = PidHandle(state.server_pid, "server") if _pid_is_ours(state.server_pid, "server") else None
-        self.caster = PidHandle(state.caster_pid, "caster") if _pid_is_ours(state.caster_pid, "caster") else None
+        def recovered(pid: int, role: str, created_at: float):
+            if not created_at or not _pid_is_ours(pid, role, created_at):
+                return None  # Older session files lack safe PID-reuse evidence.
+            return PidHandle(pid, role, created_at)
+
+        self.ffmpeg = recovered(state.ffmpeg_pid, "encoder", state.ffmpeg_created_at)
+        self.server = recovered(state.server_pid, "server", state.server_created_at)
+        self.caster = recovered(state.caster_pid, "caster", state.caster_created_at)
         self._start_sampler()
 
     def active(self) -> bool:
@@ -957,12 +961,13 @@ class Session:
         _terminate(self.ffmpeg)
         _terminate(self.server)
         if self.state is not None:
-            for pid, role in (
-                (self.state.server_pid, "server"),
-                (self.state.ffmpeg_pid, "encoder"),
-                (self.state.caster_pid, "caster"),
+            for pid, role, created in (
+                (self.state.server_pid, "server", self.state.server_created_at),
+                (self.state.ffmpeg_pid, "encoder", self.state.ffmpeg_created_at),
+                (self.state.caster_pid, "caster", self.state.caster_created_at),
             ):
-                _terminate_pid(pid, role)
+                if created > 0:
+                    _terminate_pid(pid, role, created)
         if send_stop:
             castctl.stop(device)
         clear_session()
@@ -1307,6 +1312,9 @@ class Session:
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,
             caster_pid=getattr(self.caster, "pid", 0) if self.caster else 0,
+            ffmpeg_created_at=process_identity.start_time(getattr(self.ffmpeg, "pid", 0)),
+            server_created_at=process_identity.start_time(getattr(self.server, "pid", 0)),
+            caster_created_at=process_identity.start_time(getattr(self.caster, "pid", 0)),
             stream_url=url,
         )
         _save_session(self.state)
@@ -1409,5 +1417,6 @@ class Session:
             subs=str(subs_file or ""), burn_subs=False,
             started_at=time.time(),
             caster_pid=getattr(self.caster, "pid", 0),
+            caster_created_at=process_identity.start_time(getattr(self.caster, "pid", 0)),
         )
         _save_session(self.state)
