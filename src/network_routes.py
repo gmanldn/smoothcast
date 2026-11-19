@@ -21,6 +21,20 @@ from server import HEALTH_BODY, HEALTH_PATH, PORT
 
 
 CAST_PORT = 8009
+_PRIVATE_LAN = tuple(ipaddress.ip_network(cidr) for cidr in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+))
+
+
+def _lan_source(value: str) -> bool:
+    """Require actual RFC1918 ranges, not Python's broader is_private."""
+    try:
+        address = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        return False
+    return any(address in network for network in _PRIVATE_LAN)
+
+
 _VPN_INTERFACE = re.compile(
     r"^(?:tun|tap|utun|wg|tailscale|ppp|zt|vpn|nordlynx)", re.I
 )
@@ -31,7 +45,8 @@ def _valid_source(value: str) -> str | None:
         address = ipaddress.IPv4Address(value)
     except ipaddress.AddressValueError:
         return None
-    if address.is_unspecified or address.is_loopback or address.is_multicast:
+    if (address.is_unspecified or address.is_loopback
+            or address.is_link_local or address.is_multicast):
         return None
     return str(address)
 
@@ -113,6 +128,8 @@ def report(
 ) -> dict:
     """Produce a local-only diagnostic, with honest remote-check uncertainty."""
     target = castctl.validate_manual_target(receiver)
+    if not _lan_source(target):
+        raise ValueError("Network check requires a private RFC1918 Cast IPv4 address")
     source, route_error = route_source(target, socket_factory=socket_factory)
     name = interface_name(
         target, source, os_name=os_name or platform.system(), run=run,
@@ -121,9 +138,7 @@ def report(
     local_health = check_local_hls(open_url=open_url)
     # Only private interface addresses should be recommended for access from
     # another LAN machine. A public/loopback result must not yield a link.
-    private = False
-    if source:
-        private = ipaddress.IPv4Address(source).is_private
+    private = bool(source and _lan_source(source))
     second_host_url = (
         f"http://{source}:{PORT}{HEALTH_PATH}" if source and private else None
     )
