@@ -23,6 +23,8 @@ import streamer
 
 import playback_state
 
+import direct_probe
+
 import stream_watchdog
 
 import preflight
@@ -177,6 +179,8 @@ class SessionMixin:
                             subs_disabled=(subs_mode == "off"), title=title,
                             offset=offset,
                         )
+                        if direct_probe.verify_direct_start(device, title) == "rejected":
+                            raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
                         return session, media
                     except streamer.StreamError:
                         # The failed direct attempt can leave a catt subprocess.
