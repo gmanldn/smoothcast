@@ -109,7 +109,7 @@ def test_closed_pr_event_only_accepts_merged_develop_source():
 
 def test_backfill_is_fixed_merged_refs_only_and_excludes_protected():
     assert len(cleanup.BACKFILL) == 32
-    assert len(set(number for number, _, _ in cleanup.BACKFILL)) == 8
+    assert len(set(number for number, _, _ in cleanup.BACKFILL)) == 32
     for number, name, sha in cleanup.BACKFILL:
         assert number > 0 and cleanup._safe_branch(name)
         assert cleanup.SHA.fullmatch(sha)
