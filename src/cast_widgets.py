@@ -54,6 +54,7 @@ DEFAULTS: dict = {
     "subs": "auto",
     "subs_path": "",
     "subtitle_track_by_file": {},
+    "subtitle_delay_by_file": {},
     "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,
@@ -73,10 +74,15 @@ DEFAULTS: dict = {
     "rotation": 0,
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
+    "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).
     "window_width": 1600,
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
+    "auto_update": True,  # Startup git pull of a release checkout (#230).
+    "verify_updates": False,  # Require a GPG-verified commit or tag to update.
+    "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
+    "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 

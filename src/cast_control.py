@@ -18,6 +18,8 @@ import threading
 
 import castctl
 
+import sleep_fade
+
 import dlna
 
 import streamer
@@ -49,9 +51,10 @@ from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_lifecycle import LifecycleMixin
+from cast_subtitles import SubtitleMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -68,6 +71,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         # so the sleep timer can stop our own stream but never a replacement.
         self._url_cast_url: str | None = None
         self._url_cast_seen = False
+        self._sleep_fader = sleep_fade.make_fader(Async.run)
         self.busy = False
         self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False
@@ -145,6 +149,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             GLib.timeout_add(400, self._initial_scan)
             GLib.timeout_add(600, self._adopt_session)
             GLib.timeout_add_seconds(5, self._sleep_tick)
+            GLib.timeout_add_seconds(3, self._sleep_fade_tick)
             GLib.timeout_add_seconds(600, self._theme_tick)
 
 
@@ -245,6 +250,9 @@ class CastControlApp(Adw.Application):
         simple("loop", lambda *a: self._window()._toggle_loop())
         simple("custom-speed", lambda *a: self._window().action_custom_speed())
         simple("loop-all", lambda *a: self._window()._toggle_loop_all())
+        simple("subtitle-earlier", lambda *a: self._window()._adjust_subtitle_delay(-1))
+        simple("subtitle-later", lambda *a: self._window()._adjust_subtitle_delay(1))
+        simple("subtitle-reset", lambda *a: self._window()._adjust_subtitle_delay(0))
         simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
         simple("load-playlist", lambda *a: self._window()._load_playlist())
@@ -352,8 +360,11 @@ class CastControlApp(Adw.Application):
             ).start()
 
     def _background_update(self) -> None:
+        cfg = getattr(self.window, "cfg", None) or {}
         notice = update_control.refresh_checkout(
             pathlib.Path(__file__).resolve().parent.parent,
+            enabled=bool(cfg.get("auto_update", True)),
+            verify=bool(cfg.get("verify_updates", False)),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in

@@ -112,7 +112,7 @@ class AgentHygieneTests(unittest.TestCase):
         for needle in ("Everyone — humans and agents — commits to `develop`",
                        "git worktree add --detach", "git worktree remove",
                        "git push origin HEAD:develop", "Keep `develop` green",
-                       "Stage files by name", "Mind the CI queue",
+                       "Stage files by name", "own CI run",
                        "promote_release.py", "head pinned to the verified commit", "bump_version.py",
                        "Allow GitHub Actions to create and approve pull"):
             self.assertIn(needle, workflow)
@@ -123,6 +123,20 @@ class AgentHygieneTests(unittest.TestCase):
             for stale in ("issue-specific branch", "open prs against", "every issue branch",
                           "work on a branch off", "open a pr referencing"):
                 self.assertNotIn(stale, text, f"{name}: {stale}")
+
+
+class CiConcurrencyTests(unittest.TestCase):
+    def test_every_trunk_push_gets_its_own_uncancelled_verify_run(self):
+        workflow = read(".github/workflows/verify.yml")
+        block = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:", 1)[0]
+        # Push runs are keyed by commit SHA: a newer push can neither cancel nor
+        # replace a queued run (a regression of this left develop unverified).
+        self.assertIn("github.sha", block)
+        self.assertIn("github.event_name == 'pull_request' && github.ref || github.sha", block)
+        # Only superseded pull-request runs may be cancelled.
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", block)
+        self.assertNotIn("cancel-in-progress: true", block)
+        self.assertNotIn("github.ref }}\n", block)
 
 
 if __name__ == "__main__":

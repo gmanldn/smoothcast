@@ -21,6 +21,8 @@ import dlna
 
 import streamer
 
+import subtitle_delay
+
 import subtitle_restart
 
 import playback_state
@@ -102,8 +104,10 @@ class SessionMixin:
             return
         # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
         # FFmpeg rather than advertised as unsupported receiver-side tracks.
+        delay = subtitle_delay.get(cfg, path)
         burn = subs_path is not None and (
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
+            or delay != 0
         )
         # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
@@ -135,9 +139,8 @@ class SessionMixin:
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if path.suffix.lower() == ".mkv":
-                # Decoder/caption failures must be reported before interrupting
-                # the current receiver. One short private CPU render per file
-                # fingerprint/track selection; no Cast commands in preflight.
+                # Report caption/decoder failures before interrupting the
+                # receiver; one private CPU render per selection, no Cast calls.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
@@ -173,6 +176,7 @@ class SessionMixin:
                         offset=offset, title=title, subtitle_file=subs_path,
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
+                        subtitle_delay_ms=delay,
                         cancel=self._dlna_cancel,
                     )
                     return session, media
@@ -200,6 +204,7 @@ class SessionMixin:
                     rotation=rotation,
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
+                    subtitle_delay_ms=delay,
                 )
                 return session, media
             except Exception:
@@ -538,6 +543,7 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
+        delay = subtitle_delay.get(self.cfg, file_path)
         # Validate captions before teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
         was_paused = (not resume_after_pause and
@@ -548,7 +554,7 @@ class SessionMixin:
             nonlocal media
             if media is None:
                 media = streamer.ffprobe(file_path)
-            captions = subtitle_restart.validate_restart(state, media)
+            captions = subtitle_restart.validate_restart(state, media, delay)
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
@@ -561,6 +567,7 @@ class SessionMixin:
                     rotation=rotation,
                     embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
+                    subtitle_delay_ms=captions.delay_ms,
                 )
             except Exception:
                 try:
@@ -816,13 +823,6 @@ class SessionMixin:
     def _on_autonext(self, switch, _param) -> None:
         self.cfg["autonext"] = switch.get_active()
         save_config(self.cfg)
-
-
-    def _on_burn(self, switch, _param) -> None:
-        self.cfg["burn_subs"] = switch.get_active()
-        save_config(self.cfg)
-        if switch.get_active():
-            self.toast("Subtitles will be burned in (slower encode)")
 
 
     def _adopt_session(self) -> bool:

@@ -14,15 +14,22 @@ import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
+from collections.abc import Callable
 from urllib.parse import urlsplit
 from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+import cache_policy
 import castctl
+import hw_encoder_state
 import lan_interfaces
+import playback_state
 import process_identity
+import process_priority
 import server as hls_server
+import subtitle_delay
 import subtitle_encoding
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
@@ -30,7 +37,8 @@ SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
 SESSION_FILE = ROOT / "session.json"
 PROGRESS_FILE = ROOT / "progress.log"
 FFMPEG_LOG = ROOT / "ffmpeg.log"
-PORT = 8767
+PORT = hls_server.PORT  # default; Session picks a free fallback if it is taken
+FALLBACK_PORTS = 32  # PORT .. PORT+31 are scanned for a free port or our own server
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
 HLS_SEGMENT_SECONDS = 4
@@ -181,6 +189,24 @@ def rotation_filters(degrees: int) -> list[str]:
     return list(_ROTATION_FILTERS.get(normalize_rotation(degrees), []))
 
 
+_VOLUME_CACHE: "OrderedDict[tuple, float]" = OrderedDict()
+_VOLUME_CACHE_LIMIT = 64
+_VOLUME_LOCK = threading.Lock()
+
+
+def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
+    """Identity of one measurement; None when the file cannot be identified.
+
+    Size and mtime invalidate the entry when the film changes; the track and
+    window are part of the key because each is a different measurement.
+    """
+    try:
+        info = os.stat(path)
+        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds)
+    except OSError:
+        return None
+
+
 def measure_mean_volume(path: str, max_seconds: int = 60,
                         audio_track_index: int = 0) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of one audio track.
@@ -194,6 +220,16 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     """
     track = (audio_track_index if type(audio_track_index) is int
              and audio_track_index >= 0 else 0)
+    # Results are cached for the running app: a VAAPI-to-software retry and
+    # every seek restart would otherwise repeat a pass that can take 30 s.
+    # Only successful measurements are kept, so a transient failure or
+    # timeout is retried rather than remembered.
+    key = _volume_cache_key(path, max_seconds, track)
+    if key is not None:
+        with _VOLUME_LOCK:
+            if key in _VOLUME_CACHE:
+                _VOLUME_CACHE.move_to_end(key)
+                return _VOLUME_CACHE[key]
     try:
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
@@ -205,9 +241,15 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     for line in result.stderr.splitlines():
         if "mean_volume:" in line:
             try:
-                return float(line.split("mean_volume:")[1].split("dB")[0].strip())
+                value = float(line.split("mean_volume:")[1].split("dB")[0].strip())
             except (ValueError, IndexError):
-                pass
+                continue
+            if key is not None and math.isfinite(value):
+                with _VOLUME_LOCK:
+                    _VOLUME_CACHE[key] = value
+                    while len(_VOLUME_CACHE) > _VOLUME_CACHE_LIMIT:
+                        _VOLUME_CACHE.popitem(last=False)
+            return value
     return None
 
 
@@ -734,19 +776,39 @@ def find_subtitles(path: pathlib.Path) -> pathlib.Path | None:
     return candidates[0].resolve()
 
 
+def valid_port(value: object) -> bool:
+    return type(value) is int and 1024 <= value <= 65535
+
+
+def configured_hls_port() -> int:
+    """The ``hls_port`` setting if valid, else the default; never raises."""
+    try:
+        raw = json.loads(cache_policy.config_path().read_text())
+        port = raw.get("hls_port") if isinstance(raw, dict) else None
+    except (OSError, ValueError, RuntimeError):
+        return PORT
+    return port if valid_port(port) else PORT
+
+
+def candidate_ports(preferred: int = PORT) -> list[int]:
+    """Preferred port first, then the fallback range, without duplicates."""
+    first = preferred if valid_port(preferred) else PORT
+    return [first] + [p for p in range(PORT, PORT + FALLBACK_PORTS) if p != first]
+
+
 def _port_open(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.4)
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _server_probe() -> tuple[bool, str | None, int | None]:
+def _server_probe(port: int = PORT) -> tuple[bool, str | None, int | None]:
     """Return (healthy, listen address, pid) for the server on our port.
 
     The address and pid come from headers added with the access restriction;
     an older server that predates them reports ``(True, None, None)``.
     """
-    connection = HTTPConnection("127.0.0.1", PORT, timeout=0.4)
+    connection = HTTPConnection("127.0.0.1", port, timeout=0.4)
     try:
         connection.request("GET", "/_smoothcast/health")
         response = connection.getresponse()
@@ -760,9 +822,9 @@ def _server_probe() -> tuple[bool, str | None, int | None]:
         connection.close()
 
 
-def _server_healthy() -> bool:
+def _server_healthy(port: int = PORT) -> bool:
     """Verify our HLS server is listening; never mistake another app for it."""
-    return _server_probe()[0]
+    return _server_probe(port)[0]
 
 
 @dataclass
@@ -791,6 +853,7 @@ class SessionState:
     server_created_at: float = 0.0
     caster_created_at: float = 0.0
     stream_url: str = ""
+    subtitle_delay_ms: int = 0
 
 
 def load_session() -> SessionState | None:
@@ -821,7 +884,10 @@ def clear_session() -> None:
 class Session:
     """A live casting session: HLS transcode (or direct play) plus cast."""
 
-    def __init__(self) -> None:
+    def __init__(self, port: int | None = None) -> None:
+        # Preferred HLS port (the ``hls_port`` setting); the port actually in
+        # use is whatever _start_server settles on and may be a fallback.
+        self.port = port if port is not None and valid_port(port) else configured_hls_port()
         self.state: SessionState | None = None
         self.ffmpeg = None
         self.server = None
@@ -829,6 +895,7 @@ class Session:
         # VAAPI requires Linux's /dev/dri. Windows/macOS use libx264 from
         # the first frame rather than stalling for 15 s on impossible VAAPI.
         self.used_software_fallback = platform.system() != "Linux"
+        self._vaapi_stalled = False  # set only while retrying on software
         self.audio_chain: list = []
         # Progress and segment counts are read by background sampling so GTK
         # callbacks (seekbar/details) never touch the filesystem. The snapshot
@@ -1000,6 +1067,13 @@ class Session:
         if send_stop:
             castctl.stop(device)
         clear_session()
+        # Revoke this session's generation so a kept-alive server stops
+        # answering for a cast that has ended (#228) -- but only if the policy
+        # still belongs to *this* session: stopping an older session after a
+        # newer cast has started must not lock that cast's receiver out.
+        match = _GENERATION_PLAYLIST.fullmatch(getattr(self, "_playlist_name", HLS_NAME))
+        if match and hls_server.load_policy(ROOT).token == match.group(1):
+            (ROOT / hls_server.POLICY_NAME).unlink(missing_ok=True)
         for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
         playlist = getattr(self, "_playlist_name", HLS_NAME)
@@ -1014,7 +1088,7 @@ class Session:
         self.caster = None
 
     def _start_server(self, bind_ip: str | None = None,
-                      receiver_ip: str | None = None) -> None:
+                      receiver_ip: str | None = None, token: str = "") -> None:
         """Start (or reuse) the HLS server, reachable only by the receiver.
 
         The server listens on loopback plus *bind_ip* (never 0.0.0.0) and
@@ -1024,22 +1098,41 @@ class Session:
         predates this restriction, is replaced only if its PID is verified
         as our own server; otherwise the cast is refused.
         """
-        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip))
-        if _port_open(PORT):
-            healthy, bound, pid = _server_probe()
+        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip, token=token))
+        ports = candidate_ports(self.port)
+        # Pass 1: reuse (or verifiably replace) a SmoothCast server that is
+        # already listening on any candidate port, so a kept-alive server on a
+        # fallback port is never orphaned when the preferred port frees up.
+        busy = []
+        for port in ports:
+            if not _port_open(port):
+                continue
+            healthy, bound, pid = _server_probe(port)
             if not healthy:
-                raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+                busy.append(port)         # another program owns it: leave it alone
+                continue
+            self.port = port
             if bind_ip is None or bound == bind_ip:
                 return  # Verified server left alive by keep-streaming.
             if not _pid_is_ours(pid, "server"):
                 raise StreamError(
-                    f"A SmoothCast streaming server on port {PORT} is bound to a different "
+                    f"A SmoothCast streaming server on port {port} is bound to a different "
                     "address and could not be verified for replacement; stop it and retry")
             _terminate_pid(pid, "server")
-            if _port_open(PORT):
-                raise StreamError(f"Port {PORT} is still in use by the previous streaming server")
+            if _port_open(port):
+                raise StreamError(f"Port {port} is still in use by the previous streaming server")
+            break
+        else:
+            # Pass 2: the first port nobody is listening on.
+            free = next((p for p in ports if p not in busy), None)
+            if free is None:
+                raise StreamError(
+                    f"Port {ports[0]} is already occupied by an unrecognised server and no "
+                    f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
+            self.port = free
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT)] + (["--bind", bind_ip] if bind_ip else []),
+            [sys.executable, str(SERVER_SCRIPT), "--port", str(self.port)]
+            + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1047,7 +1140,7 @@ class Session:
         for _ in range(50):
             if self.server.poll() is not None:
                 raise StreamError("The SmoothCast streaming server exited during startup")
-            if _server_healthy():
+            if _server_healthy(self.port):
                 return
             time.sleep(0.1)
         _terminate(self.server)
@@ -1098,6 +1191,14 @@ class Session:
             temporary.unlink(missing_ok=True)
         return staged
 
+    def _hw_state_path(self) -> pathlib.Path:
+        return ROOT / hw_encoder_state.STATE_NAME
+
+    def _vaapi_known_bad(self) -> bool:
+        """A fresh, matching record says VAAPI stalled here before (#236)."""
+        return hw_encoder_state.is_known_bad(
+            self._hw_state_path(), hw_encoder_state.current_key(VAAPI_PATH))
+
     def _hwaccel_args(self, software: bool) -> list[str]:
         """Hardware decoder args — must come BEFORE -i (input options)."""
         if software:
@@ -1134,12 +1235,18 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0) -> list[str]:
         chain: list[str] = []
+        sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
-            chain.append(f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}")
+            sub_filter = f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}"
         elif burn_subs and staged is not None:
-            chain.append(f"subtitles=filename={staged.name}")
+            sub_filter = f"subtitles=filename={staged.name}"
+        if sub_filter is not None:
+            # libass sees encode-relative timestamps: re-add the -ss start and
+            # apply the user delay, then restore the stream's own timeline.
+            shift = subtitle_delay.filter_shift(subtitle_offset, subtitle_delay_ms)
+            chain.extend([shift[0], sub_filter, shift[1]] if shift else [sub_filter])
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
@@ -1183,7 +1290,11 @@ class Session:
         rotation: int = 0,
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
+        subtitle_delay_ms: int = 0,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
+        subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1228,6 +1339,9 @@ class Session:
         if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
+        if not self.used_software_fallback and self._vaapi_known_bad():
+            # Skip a hardware start that already stalled on this exact setup.
+            self.used_software_fallback = True
         software = self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
@@ -1244,6 +1358,8 @@ class Session:
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
             video_size=(media.width, media.height),
+            subtitle_offset=max(0.0, offset),
+            subtitle_delay_ms=subtitle_delay_ms,
         )
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
@@ -1276,13 +1392,16 @@ class Session:
             str(ROOT / self._playlist_name),
         ]
         with open(FFMPEG_LOG, "w") as log:
+            low_priority = process_priority.enabled()
             self.ffmpeg = subprocess.Popen(
                 args, cwd=str(ROOT),
                 stdout=subprocess.DEVNULL, stderr=log,
                 start_new_session=True,
+                **process_priority.launch_kwargs(low_priority),
             )
+            process_priority.lower(self.ffmpeg, low_priority)
         try:
-            self._start_server(local_ip, device_ip)
+            self._start_server(local_ip, device_ip, token=generation)
         except Exception:
             _terminate(self.ffmpeg)
             self.ffmpeg = None
@@ -1298,6 +1417,9 @@ class Session:
                 _terminate(self.ffmpeg)
                 self.ffmpeg = None
                 self.used_software_fallback = True
+                # Persist only if the software retry then succeeds: a broken
+                # source must not get hardware encoding disabled.
+                self._vaapi_stalled = True
                 self.start_transcode(
                     media, offset, device=device, quality=quality,
                     audio_profile=audio_profile, subs_file=subs_file,
@@ -1306,10 +1428,15 @@ class Session:
                     speed=speed, rotation=rotation,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
+                    subtitle_delay_ms=subtitle_delay_ms,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
-        url = f"http://{local_ip}:{PORT}/{self._playlist_name}"
+        if self._vaapi_stalled:
+            self._vaapi_stalled = False
+            hw_encoder_state.record_failure(
+                self._hw_state_path(), hw_encoder_state.current_key(VAAPI_PATH))
+        url = f"http://{local_ip}:{self.port}/{self._playlist_name}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
         if not burn_subs and receiver_subs is not None and receiver_subs.suffix.lower() in CAST_SUBTITLE_EXTS:
             cast_args += ["-s", str(receiver_subs)]
@@ -1320,14 +1447,10 @@ class Session:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
-        time.sleep(2.0)
-        if self.caster.poll() not in (None, 0):
-            output = ""
-            try:
-                output = self.caster.stdout.read() if self.caster.stdout else ""
-            except Exception:
-                pass
-            raise StreamError((output or "casting failed").strip()[-300:])
+        self._await_receiver(
+            device,
+            lambda info: playback_state.hls_session_matches(info, url, title),
+        )
         self.state = SessionState(
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
@@ -1337,6 +1460,7 @@ class Session:
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
             speed=speed,
             rotation=rotation,
+            subtitle_delay_ms=subtitle_delay_ms,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,
@@ -1363,6 +1487,42 @@ class Session:
                 return self.ffmpeg.returncode == 0 and self._playlist_is_complete(playlist)
             time.sleep(0.25)
         return False
+
+    def _await_receiver(
+        self, device: str, matches: Callable[[dict | None], bool], *,
+        timeout: float = 10.0, interval: float = 0.25,
+    ) -> None:
+        """Confirm the receiver plays our media before a cast is treated as started.
+
+        A fixed sleep cannot tell a successful cast from one that fails a moment
+        later. Poll the receiver's own state until it reports our content, or a
+        clear timeout; a catt process that exits non-zero fails immediately.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.caster is not None and self.caster.poll() not in (None, 0):
+                raise StreamError(self._caster_output("casting failed"))
+            try:
+                info = castctl.info(device)
+            except (OSError, ValueError, TypeError):
+                info = None
+            if matches(info):
+                return
+            if time.monotonic() >= deadline:
+                raise StreamError(self._caster_output(
+                    "The receiver did not start playing this title in time"))
+            time.sleep(interval)
+
+    def _caster_output(self, fallback: str) -> str:
+        """Best-effort catt output for an error; never block on a live catt."""
+        output = ""
+        try:
+            if (self.caster is not None and self.caster.stdout is not None
+                    and self.caster.poll() is not None):
+                output = self.caster.stdout.read()
+        except Exception:
+            pass
+        return (output or fallback).strip()[-300:]
 
     def _playlist_is_complete(self, playlist: pathlib.Path) -> bool:
         """True when a finalised playlist references only complete segments."""
@@ -1408,6 +1568,8 @@ class Session:
         title: str,
         offset: float = 0.0,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
         args = ["-d", device, "cast", "--stream-type", "buffered", "-l", title]
         if subs_disabled:
             args.append("--no-subs")
@@ -1423,14 +1585,10 @@ class Session:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
-        time.sleep(2.5)
-        if self.caster.poll() is not None and self.caster.returncode != 0:
-            output = ""
-            try:
-                output = self.caster.stdout.read() if self.caster.stdout else ""
-            except Exception:
-                pass
-            raise StreamError((output or "direct play failed").strip()[-300:])
+        self._await_receiver(
+            device,
+            lambda info: playback_state.direct_session_matches(info, title),
+        )
         # A previously watched file must resume on the TV, not merely report
         # its old position in the GUI. Fail the direct attempt if the receiver
         # cannot seek, so the caller can recover using an offset transcoder.

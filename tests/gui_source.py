@@ -33,11 +33,12 @@ GUI_MODULES = (
     "cast_session.py",
     "cast_av.py",
     "cast_lifecycle.py",
+    "cast_subtitles.py",
     "cast_control.py",
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin")
+MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin", "SubtitleMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:

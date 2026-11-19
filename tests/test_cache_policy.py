@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import time
@@ -105,6 +106,7 @@ class ConversionGateTests(unittest.TestCase):
             self.prepare(size=600 * MB, cap_mb=1000)  # needs ~1200 MB
 
 
+@unittest.skipUnless(os.name == "posix", "POSIX scratch lease required")
 class StartupSweepTests(unittest.TestCase):
     def sweep(self, scratch: Path):
         with mock.patch.object(startup_cleanup, "discover", return_value=[]), \
@@ -113,10 +115,14 @@ class StartupSweepTests(unittest.TestCase):
             return startup_cleanup.cleanup_before_window(
                 keep_streaming=False, proc_root=scratch / "noproc", temp_root=scratch)
 
-    def make(self, root: Path, name: str, age: float):
+    def make(self, root: Path, name: str, age: float, *, marked: bool = True):
         folder = root / name
         folder.mkdir()
         (folder / "movie.mp4").write_bytes(b"x" * 100)
+        if marked and name.startswith(cp.SCRATCH_PREFIX):
+            lease = cp.hold_scratch_lease(folder)
+            self.assertIsNotNone(lease)
+            lease.close()  # Simulates an exited/crashed owner.
         stamp = time.time() - age
         os.utime(folder, (stamp, stamp))
         return folder
@@ -132,6 +138,76 @@ class StartupSweepTests(unittest.TestCase):
             self.assertTrue(fresh.exists())    # may be a conversion still preparing
             self.assertTrue(foreign.exists())  # never touch unrelated directories
             self.assertEqual(report.temp_dirs_removed, 1)
+
+    def test_old_active_conversion_survives_and_crashed_owner_is_reclaimed(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            old = self.make(
+                root, "smoothcast-dlna-active", cp.MIN_STALE_AGE_SECONDS + 60,
+                marked=False,
+            )
+            lease = cp.hold_scratch_lease(old)
+            self.assertIsNotNone(lease)
+            # Creating the marker updates the parent directory mtime; make
+            # it old *after* the lock is held to reproduce the reported race.
+            stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
+            os.utime(old, (stamp, stamp))
+            try:
+                self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
+                self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
+                self.assertTrue((old / "movie.mp4").exists())
+            finally:
+                lease.close()
+            self.assertEqual(self.sweep(root).temp_dirs_removed, 1)
+            self.assertFalse(old.exists())
+
+    def test_child_inherits_lease_after_parent_exits(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            old = self.make(
+                root, "smoothcast-dlna-child", cp.MIN_STALE_AGE_SECONDS + 60,
+                marked=False,
+            )
+            lease = cp.hold_scratch_lease(old)
+            self.assertIsNotNone(lease)
+            # Creating the marker updates the parent directory mtime; make
+            # it old *after* the lock is held to reproduce the reported race.
+            stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
+            os.utime(old, (stamp, stamp))
+            proc = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(2)"],
+                pass_fds=(lease.fileno(),),
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                lease.close()  # Simulate GUI crash while FFmpeg keeps writing.
+                self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
+                self.assertTrue(old.exists())
+            finally:
+                proc.terminate()
+                proc.wait(timeout=5)
+            self.assertEqual(self.sweep(root).temp_dirs_removed, 1)
+            self.assertFalse(old.exists())
+
+    def test_legacy_or_tampered_leases_fail_closed(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            legacy = self.make(
+                root, "smoothcast-dlna-legacy", cp.MIN_STALE_AGE_SECONDS + 60,
+                marked=False,
+            )
+            linked = self.make(
+                root, "smoothcast-dlna-linked", cp.MIN_STALE_AGE_SECONDS + 60,
+                marked=False,
+            )
+            outside = root / "outside"
+            outside.write_text("protected")
+            (linked / cp.SCRATCH_LEASE_NAME).symlink_to(outside)
+            self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
+            self.assertTrue(legacy.exists())
+            self.assertTrue(linked.exists())
+            self.assertEqual(outside.read_text(), "protected")
 
     def test_symlinked_scratch_is_never_followed_or_removed(self):
         with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as victim:

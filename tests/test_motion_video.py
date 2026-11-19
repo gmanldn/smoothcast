@@ -101,6 +101,7 @@ class StreamSelectionTests(unittest.TestCase):
                  mock.patch.object(session, "_wait_for_segments", return_value=True), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=process) as start, \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer, "_save_session"):
                 session.start_transcode(
                     media, 0, device="TV", quality="balanced",

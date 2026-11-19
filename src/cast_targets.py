@@ -46,3 +46,13 @@ def record_use(last_used: dict | None, name: str, now: float, *, limit: int = 32
 def is_manual(name: str, manual: list[str]) -> bool:
     """True when *name* is a user-entered manual target, not a discovery."""
     return name in set(m for m in manual if isinstance(m, str))
+
+
+NO_SELECTION = 2 ** 32 - 1  # Gtk.INVALID_LIST_POSITION
+
+
+def select_index(names: list[str], device: str) -> int:
+    """Index of *device* in *names*, adding a saved one; NO_SELECTION if unset (#239)."""
+    if device and device not in names:
+        names.insert(0, device)
+    return names.index(device) if device in names else NO_SELECTION
