@@ -18,6 +18,10 @@ def main() -> int:
         # Explicit diagnostic command; does not import GTK or start a cast.
         import network_routes
         return network_routes.main(sys.argv[2:])
+    if sys.argv[1:2] == ["--library-index"]:
+        # Explicit, headless scan/list; never loads GTK or touches a receiver.
+        import library_index
+        return library_index.main(sys.argv[2:])
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("Refusing to start GTK from pytest; only portable tests run there.", file=sys.stderr)
         return 2
