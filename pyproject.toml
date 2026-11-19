@@ -36,10 +36,10 @@ smoothcast-gui = "cli:main"
 packages = ["smoothcast_assets"]
 py-modules = [
     "cast_control", "castctl", "cast_targets", "config_control", "audio_monitor", "server", "update_control",
-    "cache_policy", "error_log", "utils", "screenshot", "position_tracker", "playback_state",
+    "cache_policy", "issue_report", "cli_control", "sleep_fade", "hw_encoder_state", "process_priority", "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
-    "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "network_route_ui", "subtitle_restart", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
-    "async_jobs", "process_identity", "lan_interfaces", "cache_privacy", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "watch_history", "benchmark", "library_index", "queue_metadata",
+    "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "network_route_ui", "subtitle_restart", "subtitle_delay", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
+    "async_jobs", "process_identity", "lan_interfaces", "cache_privacy", "ffmpeg_compat", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "cast_subtitles", "watch_history", "benchmark", "library_index", "queue_metadata",
     "preferences_ui", "preference_choices",
 ]
 
@@ -91,7 +91,7 @@ mypy_path = "src"
 files = [
     "src/playlist_control.py", "src/version.py", "src/utils.py",
     "src/watch_history.py", "src/queue_metadata.py", "src/preflight.py",
-    "src/network_routes.py", "src/dlna.py", "src/server.py", "src/cache_policy.py",
+    "src/network_routes.py", "src/dlna.py", "src/server.py", "src/cache_policy.py", "src/hw_encoder_state.py", "src/cli_control.py",
 ]
 ignore_missing_imports = true
 follow_imports = "silent"

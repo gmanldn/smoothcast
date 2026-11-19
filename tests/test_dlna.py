@@ -205,6 +205,7 @@ class DlnaRangeServerTests(unittest.TestCase):
         self.data = bytes(range(256)) * 4
         self.path.write_bytes(self.data)
         self.server = dlna.ProgressiveFileServer(self.path, receiver_ip="192.168.12.25")
+        self.assertEqual(self.server.httpd.server_address[0], "127.0.0.1")
 
     def tearDown(self):
         self.server.close()
@@ -246,8 +247,35 @@ class DlnaRangeServerTests(unittest.TestCase):
             status, _, _ = self._request("GET", forbidden)
             self.assertEqual(status, 404)
 
+    def test_receiver_routed_binding_is_exact_and_never_wildcard(self):
+        # No NIC or TV required: assert the actual socket bind arguments.
+        with mock.patch.object(dlna, "ThreadingHTTPServer") as server_class, \
+             mock.patch.object(dlna.threading, "Thread"):
+            routed = dlna.ProgressiveFileServer(
+                self.path, receiver_ip="192.168.12.25",
+                bind_ip="192.168.12.2",
+            )
+            try:
+                self.assertEqual(server_class.call_args.args[0], ("192.168.12.2", 0))
+                self.assertIn(routed.token, routed.url("192.168.12.2"))
+                with self.assertRaisesRegex(dlna.DlnaError, "not bound"):
+                    routed.url("192.168.12.99")
+            finally:
+                routed.close()
+
+    def test_public_multicast_unspecified_or_hostname_bind_is_refused(self):
+        for invalid in ("0.0.0.0", "8.8.8.8", "239.0.0.1",
+                        "169.254.1.10", "localhost", "::1", "127.0.0.2"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(dlna.DlnaError, "private LAN"):
+                    dlna.ProgressiveFileServer(
+                        self.path, receiver_ip="192.168.12.25",
+                        bind_ip=invalid,
+                    )
+
     def test_server_url_rejects_localhost_for_real_receiver(self):
-        self.assertIn(self.server.token, self.server.url("192.168.12.2"))
+        with self.assertRaisesRegex(dlna.DlnaError, "not bound"):
+            self.server.url("192.168.12.2")
         with self.assertRaises(dlna.DlnaError):
             self.server.url("127.0.0.1")
 

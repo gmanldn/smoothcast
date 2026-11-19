@@ -5,6 +5,8 @@ the existing MainWindow handlers for persistence and Cast safety.
 """
 from __future__ import annotations
 
+import time
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -167,3 +169,13 @@ class SettingsCardMixin:
         )
         self._syncing = False
         return card
+
+
+    def _sleep_fade_tick(self) -> bool:
+        """Fade Cast volume before the sleep timer fires; restore it after (#270)."""
+        self._sleep_fader.tick(
+            now=time.time(), deadline=self.cfg.get("sleep_timer_deadline", 0.0),
+            fade_seconds=self.cfg.get("sleep_fade_seconds", 0), device=self._device(),
+            active=(self.session is not None or self._url_cast_url is not None)
+            and self._dlna_renderer() is None)
+        return True

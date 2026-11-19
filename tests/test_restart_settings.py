@@ -19,6 +19,7 @@ import castctl
 import playback_state
 import position_tracker
 import streamer
+import subtitle_delay
 import subtitle_restart
 
 DEFAULTS = {"audio_gain": 0.0}
@@ -31,6 +32,7 @@ def extracted(*names, async_runs, saves):
     )
     namespace = {
         "streamer": streamer,
+        "subtitle_delay": subtitle_delay,
         "subtitle_restart": subtitle_restart,
         "playback_state": playback_state,
         "castctl": castctl,
@@ -88,6 +90,7 @@ def run_restart(w, session, *, paused):
     w.tracker.start(10.0, 200.0, not paused)
     media = SimpleNamespace(path=pathlib.Path("/film.mkv"), duration=200.0)
     with mock.patch.object(streamer, "ffprobe", return_value=media), \
+         mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
          mock.patch.object(castctl, "pause", return_value=(True, "")) as pause:
         w._restart_at(session, 42.0)
         work, done, _ = w.jobs.pop()
@@ -136,6 +139,7 @@ def test_recovery_after_long_pause_restores_play_and_two_x_source_clock():
     session.state.speed = 2.0
     media = SimpleNamespace(path=pathlib.Path("/film.mkv"), duration=200.0)
     with mock.patch.object(streamer, "ffprobe", return_value=media), \
+         mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
          mock.patch.object(castctl, "pause", return_value=(True, "")) as pause:
         w._restart_at(session, 42.0, resume_after_pause=True)
         work, done, _ = jobs.pop()
@@ -168,6 +172,7 @@ def test_restart_uses_requested_speed_override():
     session.state = state()
     media = SimpleNamespace(path=pathlib.Path("/film.mkv"), duration=200.0)
     with mock.patch.object(streamer, "ffprobe", return_value=media), \
+         mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
          mock.patch.object(castctl, "pause", return_value=(True, "")):
         w._restart_at(session, 42.0, speed_override=2.5)
         work, done, _ = jobs.pop()

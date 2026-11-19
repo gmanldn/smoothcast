@@ -94,5 +94,62 @@ class FuzzGateTests(unittest.TestCase):
             self.assertIn(parser, source)
 
 
+
+class AgentHygieneTests(unittest.TestCase):
+    def test_develop_only_rule_is_first_and_loud_in_agents_md(self):
+        agents = read("AGENTS.md")
+        self.assertLess(agents.index("Branch rule"), agents.index("## Rules"))
+        for needle in ("`develop` is the only branch anyone commits to",
+                       "git worktree add --detach ../smoothcast-N origin/develop",
+                       "git push origin HEAD:develop", "never with `--force`",
+                       "Never commit or push to `main`", "bump_version.py",
+                       "workflow.md"):
+            self.assertIn(needle, agents)
+        self.assertLess(len(agents), 2500)
+
+    def test_workflow_documents_trunk_flow_hygiene_and_automatic_release(self):
+        workflow = read("docs/agents/workflow.md")
+        for needle in ("Everyone — humans and agents — commits to `develop`",
+                       "git worktree add --detach", "git worktree remove",
+                       "git push origin HEAD:develop", "Keep `develop` green",
+                       "Stage files by name", "own CI run",
+                       "promote_release.py", "head pinned to the verified commit", "bump_version.py",
+                       "Allow GitHub Actions to create and approve pull"):
+            self.assertIn(needle, workflow)
+
+    def test_no_document_still_tells_agents_to_use_feature_branches_or_agent_prs(self):
+        for name in ("AGENTS.md", "CONTRIBUTING.md", "docs/ISSUES.md", "docs/agents/workflow.md"):
+            text = read(name).lower()
+            for stale in ("issue-specific branch", "open prs against", "every issue branch",
+                          "work on a branch off", "open a pr referencing"):
+                self.assertNotIn(stale, text, f"{name}: {stale}")
+
+
+class CiConcurrencyTests(unittest.TestCase):
+    def test_every_trunk_push_gets_its_own_uncancelled_verify_run(self):
+        workflow = read(".github/workflows/verify.yml")
+        block = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:", 1)[0]
+        # Push runs are keyed by commit SHA: a newer push can neither cancel nor
+        # replace a queued run (a regression of this left develop unverified).
+        self.assertIn("github.sha", block)
+        self.assertIn("github.event_name == 'pull_request' && github.ref || github.sha", block)
+        # Only superseded pull-request runs may be cancelled.
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", block)
+        self.assertNotIn("cancel-in-progress: true", block)
+        self.assertNotIn("github.ref }}\n", block)
+
+
+
+class FakeReceiverDocTests(unittest.TestCase):
+    def test_harness_is_documented_and_exercised_by_real_code_paths(self):
+        doc = read("docs/agents/testing.md")
+        for needle in ("tests/fake_receivers.py", "FakeDlnaRenderer", "FakeCast",
+                       "allow_loopback", "advance(seconds)"):
+            self.assertIn(needle, doc)
+        usage = read("tests/test_fake_receivers.py")
+        for needle in ("dlna.Session()", "start_direct", "cli_control.main", "castctl.scan()"):
+            self.assertIn(needle, usage)
+
+
 if __name__ == "__main__":
     unittest.main()

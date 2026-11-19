@@ -8,6 +8,12 @@ repos:
       - id: ruff
   - repo: local
     hooks:
+      - id: no-commit-to-main
+        name: no commits on main (develop is the working branch)
+        entry: python3 scripts/ci/guard_branch.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: compileall
         name: compileall (src scripts setup tests)
         entry: python3 -m compileall -q src scripts setup tests

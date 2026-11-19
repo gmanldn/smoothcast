@@ -137,6 +137,7 @@ def restart_window(session):
     namespace = {
         "pathlib": __import__("pathlib"),
         "streamer": streamer,
+        "subtitle_delay": __import__("subtitle_delay"),
         "subtitle_restart": subtitle_restart,
         "castctl": castctl,
         "DEFAULTS": {"audio_gain": 0.0},
@@ -224,7 +225,8 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
         session = mock.Mock(mode="transcode", state=selection)
         window, (work, _, _) = restart_window(session)
         source_media = media(track(index=7))
-        with mock.patch.object(streamer, "ffprobe", return_value=source_media):
+        with mock.patch.object(streamer, "ffprobe", return_value=source_media), \
+             mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)):
             work()
         session.stop.assert_called_once_with("TV", send_stop=False)
         args = session.start_transcode.call_args
@@ -237,7 +239,7 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
 
 def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget():
     text = main_window_methods()["_restart_at"]
-    assert text.index("subtitle_restart.validate_restart(state, media)") < (
+    assert text.index("subtitle_restart.validate_restart(state, media, delay)") < (
         text.index("session.stop(device, send_stop=False)")
     )
     assert "subs_file=captions.external" in text

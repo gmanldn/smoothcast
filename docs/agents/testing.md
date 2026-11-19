@@ -20,32 +20,41 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
-**Quality gates (#250, #252, #253, #262):** `ruff check src scripts setup tests
-sc.py setup.py` (rules in `pyproject.toml`; `ruff format` is configured but not
-gated) fails CI on new violations. The Python 3.13 portable job also runs
-`--cov=src --cov-fail-under=38` (measured baseline 40% on 19 Nov 2026; raise
-the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
-update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
-compileall locally (`pip install pre-commit && pre-commit install`).
+**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests sc.py
+setup.py` fails on new violations (`ruff format` is not gated). The 3.13 job
+runs `--cov=src --cov-fail-under=38` (baseline 40%; raise, never lower).
+**Types (#251):** `mypy` gates only the modules in `[tool.mypy] files`; to widen,
+make `mypy src/<module>.py` clean, then add it. `pip-audit`, CodeQL and weekly
+Dependabot run in CI; `catt` is bounded `>=0.12,<0.14` in `pyproject.toml` and
+`setup/bootstrap.py` (kept equal by a test). `.pre-commit-config.yaml` runs
+Ruff and compileall locally. **Fuzzing:** `tests/test_fuzz_parsers.py`
+(Hypothesis, seeded, ~3 s) holds parsers to their documented error; for a
+deeper hunt raise `max_examples` in a scratch copy and add each find as a
+regression.
 
-**Types (#251):** `mypy` (config in `pyproject.toml`) gates only the modules
-listed under `[tool.mypy] files`; CI fails on any error there. To widen it, fix
-a module until `mypy src/<module>.py` is clean, then add it to the list (new
-modules should start typed). GTK-facing modules stay out until typed.
+**Action integrity (#256):** all remote `uses:` entries in
+`.github/workflows/*.yml` must pin the immutable 40-character upstream commit
+SHA and retain the upstream major version as a comment (`# v4`). This avoids
+trusting a movable tag while remaining compatible with weekly Dependabot
+GitHub Actions updates. `tests/test_actions_sha_pinning.py` scans all present
+and newly added workflows; update pinned refs only after reviewing their
+upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 
-**Fuzzing (#260):** `tests/test_fuzz_parsers.py` property-tests the SRT decoder,
-M3U loader, DLNA description/fault XML and ffprobe JSON handling with
-Hypothesis (seeded, 150 examples each, ~3 s). Parsers may only raise their
-documented error. CI installs `hypothesis`; locally `pip install hypothesis`
-(the file skips if it is missing). For a deeper hunt raise `max_examples` and set
-`derandomize=False` in a scratch copy, then add each find as a fixed regression.
+**Fake receivers (#278):** `tests/fake_receivers.py` tests playback without a
+TV and mocks nothing in `dlna`/`castctl`. `FakeDlnaRenderer` is a real
+HTTP/SOAP renderer on loopback (use inside `allow_loopback()`); `FakeCast` is a
+stand-in `catt` (POSIX) patching `castctl.CATT`. Position moves only on
+`advance(seconds)`; script `fail(...)`, `drop(...)`/`go_offline(...)`,
+`delay(...)`; inspect `calls`. Examples: `tests/test_fake_receivers.py`. They
+model transport semantics, not a TV's quirks, and do not replace device tests.
 
-**Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
-`pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
-CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
-pushes and weekly. To adopt a new catt minor: test it against a receiver,
-raise the upper bound in both files and the setup docs, then run the suite.
-Triage CodeQL findings in the Security tab; record dismissals with a reason.
+**Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
+bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;
+SmoothCast requires FFmpeg 5.0+ for `-readrate` and
+`scale:force_divisible_by`. New-cast and restart workers check before
+stopping previous streams; transcode paths recheck before launching an encoder.
+`tests/test_ffmpeg_version_guard.py` mocks all subprocess calls and verifies
+rejecting unknown/broken/older builds without sending Cast commands.
 
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and

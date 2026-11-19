@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import direct_probe
 import playback_state
 import streamer
+import subtitle_delay
 
 
 def test_direct_status_classifier_is_conservative():
@@ -106,6 +107,7 @@ def cast_worker(status="rejected"):
         StreamError=streamer.StreamError,
         Session=mock.Mock(side_effect=[first, second]),
         CAST_SUBTITLE_EXTS=streamer.CAST_SUBTITLE_EXTS,
+        require_compatible_ffmpeg=mock.Mock(return_value=(7, 0)),
         normalize_rotation=streamer.normalize_rotation,
         ffprobe=mock.Mock(
             return_value=SimpleNamespace(path=Path("/film.mp4"), direct_ok=True)
@@ -114,6 +116,7 @@ def cast_worker(status="rejected"):
     probe = mock.Mock(return_value=status)
     namespace = {
         "playback_state": playback_state,
+        "subtitle_delay": subtitle_delay,
         "streamer": fake_streamer,
         "direct_probe": SimpleNamespace(
             verify_direct_start=probe,

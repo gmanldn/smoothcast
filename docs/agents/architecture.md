@@ -13,7 +13,7 @@ The main GTK application is assembled by `src/cast_control.py`, which has
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
-| Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`) |
+| Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |
 
@@ -81,9 +81,8 @@ always burn in, even if an old persisted state mistakenly says otherwise.
 `tests/test_subtitle_restart.py` executes the real handler with fakes and
 checks no Cast command is sent when selection validation fails.
 
-Subtitle *delay*, changing forced-track overrides, real device renderer
-transfers and timing need additional implementation/physical validation under
-[issue #22](https://github.com/gmanldn/smoothcast/issues/22).
+Subtitle delay lives in `src/cast_subtitles.py`; device timing and renderer
+transfers stay under [issue #22](https://github.com/gmanldn/smoothcast/issues/22).
 
 ## HLS generation identity (P1 SC-062)
 

@@ -13,9 +13,13 @@ permissions:
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
+# Every push to develop or main gets its own run (the group is the commit SHA),
+# so no integration commit is ever cancelled or replaced while queued: each one
+# is verified and the release promotion job can fire. Pull requests share one
+# group per branch and a newer push cancels the superseded run.
 concurrency:
-  group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: smoothcast-verify-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -23,8 +27,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Install Ruff
@@ -37,8 +41,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Install mypy
@@ -51,8 +55,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Audit the resolved runtime dependencies
@@ -76,10 +80,10 @@ jobs:
         python-version: ['3.10', '3.13']
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Use Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -113,8 +117,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Install FFmpeg with bounded signed-mirror failover
@@ -146,8 +150,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Check Python syntax
@@ -170,11 +174,72 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
       - name: Install isolated Python artifact build tools
         run: python -m pip install 'build>=1,<2' 'setuptools>=77' 'wheel>=0.45'
       - name: Build sdist, rebuild wheel, then check a fresh installed runtime
         run: python scripts/ci/verify_installed_artifact.py
+
+  # develop -> main, automatically, for verified point releases only. Runs
+  # last and only if every job above passed on this exact push. `main` is
+  # release-only and the repository ruleset requires a pull request, so the
+  # job opens one and merges it with the head pinned to the verified commit.
+  promote-release:
+    name: Promote verified release to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [lint, typecheck, dependency-audit, portable-tests, media-integration, setup-contract, installed-artifact]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: smoothcast-promote-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Is this verified commit a new release?
+        id: decide
+        run: |
+          git fetch origin develop main
+          if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+            echo "::notice::develop has moved past this commit; the newer verified commit will promote."
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=0
+          tag="$(python scripts/ci/promote_release.py check "$GITHUB_SHA")" || code=$?
+          if [ "$code" -eq 10 ]; then
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          echo "promote=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Open and merge the release pull request
+        if: steps.decide.outputs.promote == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          number="$(gh pr list --head develop --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$number" ]; then
+            url="$(gh pr create --head develop --base main --title "Release $TAG" \
+              --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")" || {
+              echo "::error title=Release promotion needs a repository setting::Every verification job passed and $TAG is a new release, but GitHub refused to open the develop->main pull request. A repository admin must enable Settings > Actions > General > Workflow permissions > 'Allow GitHub Actions to create and approve pull requests'. This is configuration, not a code failure."
+              exit 1
+            }
+            number="${url##*/}"
+          fi
+          gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
+            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA (develop may have moved, or main's rules blocked it). See the log above."
+            exit 1
+          }

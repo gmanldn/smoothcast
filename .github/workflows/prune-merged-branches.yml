@@ -1,0 +1,31 @@
+name: Safely prune merged SmoothCast branches
+
+on:
+  # One-time backfill when this workflow is first integrated on develop.
+  push:
+    branches: [develop]
+    paths:
+      - .github/workflows/prune-merged-branches.yml
+  # Thereafter remove only unchanged same-repository source refs after merge.
+  pull_request:
+    branches: [develop]
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted integration branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Verify merged PR metadata, remote SHA and lease-delete
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/prune_merged_branches.py --apply
