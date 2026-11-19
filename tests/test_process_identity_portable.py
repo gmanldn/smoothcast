@@ -153,6 +153,22 @@ def test_legacy_session_without_birth_times_is_not_adopted(monkeypatch):
     assert not session.active()
 
 
+def test_corrupt_saved_birth_times_never_restore_or_signal(monkeypatch):
+    p = ffmpeg()
+    monkeypatch.setattr(identity, "psutil", fake_psutil(p))
+    for bad in ("invalid", "12", -1, float("nan"), float("inf"), True, None):
+        state = streamer.SessionState(
+            file="/movie.mkv", mode="transcode", offset=0, duration=100,
+            device="TV", title="Movie", ffmpeg_pid=p.pid,
+            ffmpeg_created_at=bad,
+        )
+        with mock.patch.object(streamer.Session, "_start_sampler"):
+            session = streamer.Session()
+            session.restore(state)
+        assert session.ffmpeg is None
+    assert p.actions == []
+
+
 def test_new_saved_session_can_restore_matching_process(monkeypatch, tmp_path):
     p = ffmpeg()
     monkeypatch.setattr(identity, "psutil", fake_psutil(p))
