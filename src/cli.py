@@ -19,7 +19,8 @@ def main() -> int:
         from smoothcast_assets import icon_path
         gi.require_version("Gtk", "4.0")
         gi.require_version("Adw", "1")
-        from gi.repository import Gtk, Adw  # noqa: F401; import without a display
+        # Import the GI namespaces to validate native packaging without a display.
+        from gi.repository import Gtk, Adw  # noqa: F401
         print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
         return 0
     if sys.argv[1:] in (["--version"], ["-V"]):
