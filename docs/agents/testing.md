@@ -40,6 +40,14 @@ documented error. CI installs `hypothesis`; locally `pip install hypothesis`
 (the file skips if it is missing). For a deeper hunt raise `max_examples` and set
 `derandomize=False` in a scratch copy, then add each find as a fixed regression.
 
+**Action integrity (#256):** all remote `uses:` entries in
+`.github/workflows/*.yml` must pin the immutable 40-character upstream commit
+SHA and retain the upstream major version as a comment (`# v4`). This avoids
+trusting a movable tag while remaining compatible with weekly Dependabot
+GitHub Actions updates. `tests/test_actions_sha_pinning.py` scans all present
+and newly added workflows; update pinned refs only after reviewing their
+upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
+
 **Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
 `pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
 CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
