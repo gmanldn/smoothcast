@@ -26,3 +26,8 @@ errors.log.tmp
 # PyInstaller native bundles and packaging build environments
 .packaging-venv/
 *.spec.bak
+
+
+# Claude Code local overrides (personal, never committed)
+CLAUDE.local.md
+.claude/settings.local.json
