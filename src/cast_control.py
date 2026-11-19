@@ -48,13 +48,14 @@ import startup_cleanup
 
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen
 from cast_ui import UiMixin
+from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_lifecycle import LifecycleMixin
 
 
-class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
