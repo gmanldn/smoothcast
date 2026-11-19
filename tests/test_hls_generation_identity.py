@@ -161,6 +161,7 @@ def test_each_encoder_start_generates_unreused_url_and_segment_template():
             stack.enter_context(mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"))
             stack.enter_context(mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"))
             stack.enter_context(mock.patch.object(streamer, "host_ip", return_value="192.168.1.9"))
+            stack.enter_context(mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)))
             stack.enter_context(mock.patch.object(streamer.time, "sleep"))
             stack.enter_context(mock.patch.object(streamer, "_save_session"))
             popen = stack.enter_context(mock.patch.object(streamer.subprocess, "Popen", return_value=proc))

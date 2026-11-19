@@ -106,6 +106,7 @@ def cast_worker(status="rejected"):
         StreamError=streamer.StreamError,
         Session=mock.Mock(side_effect=[first, second]),
         CAST_SUBTITLE_EXTS=streamer.CAST_SUBTITLE_EXTS,
+        require_compatible_ffmpeg=mock.Mock(return_value=(7, 0)),
         normalize_rotation=streamer.normalize_rotation,
         ffprobe=mock.Mock(
             return_value=SimpleNamespace(path=Path("/film.mp4"), direct_ok=True)
