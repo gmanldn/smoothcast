@@ -1,6 +1,8 @@
 """Installed-wheel source contract without spawning GTK or build tools."""
 from __future__ import annotations
 
+import ast
+
 from pathlib import Path
 import importlib.util
 import os
@@ -14,6 +16,25 @@ import version
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_every_python_source_module_is_declared_for_wheel_install():
+    # Cheap Python 3.10+ gate: fail early when a new module is added in src/
+    # but omitted from explicit setuptools py-modules (e.g. cast_targets).
+    # Wheel matrix independently checks the actual built artifact.
+    config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "py-modules = [" in config
+    values = config.split("py-modules = [", 1)[1].split("]", 1)[0]
+    declared = set(ast.literal_eval("[" + values + "]"))
+    actual = {
+        path.stem for path in (ROOT / "src").glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert declared == actual, (
+        f"Missing modules: {sorted(actual - declared)}; "
+        f"Nonexistent declarations: {sorted(declared - actual)}"
+    )
+    assert "cast_targets" in declared
 
 
 def test_source_icon_is_identical_to_canonical_artwork():
