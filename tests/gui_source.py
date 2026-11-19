@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GUI_MODULES = (
     "cast_widgets.py",
     "cast_ui.py",
+    "preferences_ui.py",
     "cast_queue.py",
     "cast_session.py",
     "cast_av.py",
