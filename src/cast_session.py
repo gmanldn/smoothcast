@@ -29,6 +29,8 @@ import direct_probe
 
 import stream_watchdog
 
+import hls_pause_recovery
+
 import preflight
 
 import url_control
@@ -371,7 +373,9 @@ class SessionMixin:
         session = self.session
         renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
-        # Serialize async transport, including queued shortcut/seek signals.
+        if hls_pause_recovery.resume_from_long_pause(self, session, device, renderer, want_play):
+            return
+        # Serialise transport.
         self.busy = True
         self._refresh_controls()
 
@@ -505,13 +509,13 @@ class SessionMixin:
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
-        # Update the tracker immediately while HLS restarts; _restart_at
-        # persists the requested source-film time after a successful restart.
+        # Keep the seekbar at the requested source time during restart.
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
-                    audio_track_override: int | None = None) -> None:
+                    audio_track_override: int | None = None,
+                    resume_after_pause: bool = False) -> None:
         if session.mode == "dlna":
             # DLNA restarts use progressive AVTransport.
             self.busy = False
@@ -534,11 +538,11 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
-        # Verify exact captions before remote teardown.
+        # Validate captions before teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
-        # Remember pause state.
-        was_paused = (self.device_state == "PAUSED"
-                      or (self.tracker.known and not self.tracker.playing))
+        was_paused = (not resume_after_pause and
+                      (self.device_state == "PAUSED" or
+                       (self.tracker.known and not self.tracker.playing)))
 
         def work():
             nonlocal media
@@ -565,7 +569,7 @@ class SessionMixin:
                     pass
                 raise
             if was_paused:
-                # Preserve the previous pause state across encoder restart.
+                # Retain pause on ordinary restarts.
                 try:
                     castctl.pause(device)
                 except (OSError, ValueError, TypeError):
