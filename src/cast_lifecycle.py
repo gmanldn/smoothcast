@@ -215,6 +215,9 @@ class LifecycleMixin:
             ("<Shift>Right", "Skip forward 30 seconds"),
             ("J", "Skip back 10 seconds"),
             ("L", "Skip forward 10 seconds"),
+            ("comma", "Step back one frame"),
+            ("period", "Step forward one frame"),
+            ("Home", "Back to start"),
             ("Up", "Volume up 5%"),
             ("Down", "Volume down 5%"),
             ("M", "Mute"),
@@ -224,6 +227,9 @@ class LifecycleMixin:
             ("<Control>o", "Open a video"),
             ("<Control>a", "Add videos to queue"),
             ("<Control>f", "Search queue"),
+            ("<Control>w", "Stop the stream"),
+            ("<Control>q", "Quit"),
+            ("<Control>question", "This shortcuts window"),
         ]
         for accel, title in shortcuts:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -239,6 +245,13 @@ class LifecycleMixin:
         row.append(label)
         row.append(chips)
         box.append(row)
+        note = Gtk.Label(
+            label="While previewing locally these act on the preview; while "
+                  "casting they act on the TV.",
+            wrap=True, xalign=0.0,
+        )
+        note.add_css_class("dim-label")
+        box.append(note)
         scroller = Gtk.ScrolledWindow()
         scroller.set_child(box)
         toolbar.set_content(scroller)

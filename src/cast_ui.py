@@ -772,6 +772,8 @@ class UiMixin:
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("s", self.stop_stream)
+        add("p", self.on_prev)
+        add("n", self.on_next)
         add("<Control>f", lambda: self.queue_search.grab_focus())
         for digit in range(1, 10):
             add(str(digit), lambda d=digit: self._seek_percent(d))
