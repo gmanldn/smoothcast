@@ -20,10 +20,12 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+import cache_policy
 import castctl
 import hw_encoder_state
 import lan_interfaces
 import process_identity
+import process_priority
 import server as hls_server
 import subtitle_encoding
 
@@ -32,7 +34,8 @@ SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
 SESSION_FILE = ROOT / "session.json"
 PROGRESS_FILE = ROOT / "progress.log"
 FFMPEG_LOG = ROOT / "ffmpeg.log"
-PORT = 8767
+PORT = hls_server.PORT  # default; Session picks a free fallback if it is taken
+FALLBACK_PORTS = 32  # PORT .. PORT+31 are scanned for a free port or our own server
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
 HLS_SEGMENT_SECONDS = 4
@@ -770,19 +773,39 @@ def find_subtitles(path: pathlib.Path) -> pathlib.Path | None:
     return candidates[0].resolve()
 
 
+def valid_port(value: object) -> bool:
+    return type(value) is int and 1024 <= value <= 65535
+
+
+def configured_hls_port() -> int:
+    """The ``hls_port`` setting if valid, else the default; never raises."""
+    try:
+        raw = json.loads(cache_policy.config_path().read_text())
+        port = raw.get("hls_port") if isinstance(raw, dict) else None
+    except (OSError, ValueError, RuntimeError):
+        return PORT
+    return port if valid_port(port) else PORT
+
+
+def candidate_ports(preferred: int = PORT) -> list[int]:
+    """Preferred port first, then the fallback range, without duplicates."""
+    first = preferred if valid_port(preferred) else PORT
+    return [first] + [p for p in range(PORT, PORT + FALLBACK_PORTS) if p != first]
+
+
 def _port_open(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.4)
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _server_probe() -> tuple[bool, str | None, int | None]:
+def _server_probe(port: int = PORT) -> tuple[bool, str | None, int | None]:
     """Return (healthy, listen address, pid) for the server on our port.
 
     The address and pid come from headers added with the access restriction;
     an older server that predates them reports ``(True, None, None)``.
     """
-    connection = HTTPConnection("127.0.0.1", PORT, timeout=0.4)
+    connection = HTTPConnection("127.0.0.1", port, timeout=0.4)
     try:
         connection.request("GET", "/_smoothcast/health")
         response = connection.getresponse()
@@ -796,9 +819,9 @@ def _server_probe() -> tuple[bool, str | None, int | None]:
         connection.close()
 
 
-def _server_healthy() -> bool:
+def _server_healthy(port: int = PORT) -> bool:
     """Verify our HLS server is listening; never mistake another app for it."""
-    return _server_probe()[0]
+    return _server_probe(port)[0]
 
 
 @dataclass
@@ -857,7 +880,10 @@ def clear_session() -> None:
 class Session:
     """A live casting session: HLS transcode (or direct play) plus cast."""
 
-    def __init__(self) -> None:
+    def __init__(self, port: int | None = None) -> None:
+        # Preferred HLS port (the ``hls_port`` setting); the port actually in
+        # use is whatever _start_server settles on and may be a fallback.
+        self.port = port if port is not None and valid_port(port) else configured_hls_port()
         self.state: SessionState | None = None
         self.ffmpeg = None
         self.server = None
@@ -1037,6 +1063,13 @@ class Session:
         if send_stop:
             castctl.stop(device)
         clear_session()
+        # Revoke this session's generation so a kept-alive server stops
+        # answering for a cast that has ended (#228) -- but only if the policy
+        # still belongs to *this* session: stopping an older session after a
+        # newer cast has started must not lock that cast's receiver out.
+        match = _GENERATION_PLAYLIST.fullmatch(getattr(self, "_playlist_name", HLS_NAME))
+        if match and hls_server.load_policy(ROOT).token == match.group(1):
+            (ROOT / hls_server.POLICY_NAME).unlink(missing_ok=True)
         for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
         playlist = getattr(self, "_playlist_name", HLS_NAME)
@@ -1051,7 +1084,7 @@ class Session:
         self.caster = None
 
     def _start_server(self, bind_ip: str | None = None,
-                      receiver_ip: str | None = None) -> None:
+                      receiver_ip: str | None = None, token: str = "") -> None:
         """Start (or reuse) the HLS server, reachable only by the receiver.
 
         The server listens on loopback plus *bind_ip* (never 0.0.0.0) and
@@ -1061,22 +1094,41 @@ class Session:
         predates this restriction, is replaced only if its PID is verified
         as our own server; otherwise the cast is refused.
         """
-        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip))
-        if _port_open(PORT):
-            healthy, bound, pid = _server_probe()
+        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip, token=token))
+        ports = candidate_ports(self.port)
+        # Pass 1: reuse (or verifiably replace) a SmoothCast server that is
+        # already listening on any candidate port, so a kept-alive server on a
+        # fallback port is never orphaned when the preferred port frees up.
+        busy = []
+        for port in ports:
+            if not _port_open(port):
+                continue
+            healthy, bound, pid = _server_probe(port)
             if not healthy:
-                raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+                busy.append(port)         # another program owns it: leave it alone
+                continue
+            self.port = port
             if bind_ip is None or bound == bind_ip:
                 return  # Verified server left alive by keep-streaming.
             if not _pid_is_ours(pid, "server"):
                 raise StreamError(
-                    f"A SmoothCast streaming server on port {PORT} is bound to a different "
+                    f"A SmoothCast streaming server on port {port} is bound to a different "
                     "address and could not be verified for replacement; stop it and retry")
             _terminate_pid(pid, "server")
-            if _port_open(PORT):
-                raise StreamError(f"Port {PORT} is still in use by the previous streaming server")
+            if _port_open(port):
+                raise StreamError(f"Port {port} is still in use by the previous streaming server")
+            break
+        else:
+            # Pass 2: the first port nobody is listening on.
+            free = next((p for p in ports if p not in busy), None)
+            if free is None:
+                raise StreamError(
+                    f"Port {ports[0]} is already occupied by an unrecognised server and no "
+                    f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
+            self.port = free
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT)] + (["--bind", bind_ip] if bind_ip else []),
+            [sys.executable, str(SERVER_SCRIPT), "--port", str(self.port)]
+            + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1084,7 +1136,7 @@ class Session:
         for _ in range(50):
             if self.server.poll() is not None:
                 raise StreamError("The SmoothCast streaming server exited during startup")
-            if _server_healthy():
+            if _server_healthy(self.port):
                 return
             time.sleep(0.1)
         _terminate(self.server)
@@ -1229,6 +1281,8 @@ class Session:
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1324,13 +1378,16 @@ class Session:
             str(ROOT / self._playlist_name),
         ]
         with open(FFMPEG_LOG, "w") as log:
+            low_priority = process_priority.enabled()
             self.ffmpeg = subprocess.Popen(
                 args, cwd=str(ROOT),
                 stdout=subprocess.DEVNULL, stderr=log,
                 start_new_session=True,
+                **process_priority.launch_kwargs(low_priority),
             )
+            process_priority.lower(self.ffmpeg, low_priority)
         try:
-            self._start_server(local_ip, device_ip)
+            self._start_server(local_ip, device_ip, token=generation)
         except Exception:
             _terminate(self.ffmpeg)
             self.ffmpeg = None
@@ -1364,7 +1421,7 @@ class Session:
             self._vaapi_stalled = False
             hw_encoder_state.record_failure(
                 self._hw_state_path(), hw_encoder_state.current_key(VAAPI_PATH))
-        url = f"http://{local_ip}:{PORT}/{self._playlist_name}"
+        url = f"http://{local_ip}:{self.port}/{self._playlist_name}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
         if not burn_subs and receiver_subs is not None and receiver_subs.suffix.lower() in CAST_SUBTITLE_EXTS:
             cast_args += ["-s", str(receiver_subs)]
@@ -1463,6 +1520,8 @@ class Session:
         title: str,
         offset: float = 0.0,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
         args = ["-d", device, "cast", "--stream-type", "buffered", "-l", title]
         if subs_disabled:
             args.append("--no-subs")

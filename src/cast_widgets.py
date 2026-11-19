@@ -80,6 +80,8 @@ DEFAULTS: dict = {
     "window_y": -1,
     "auto_update": True,  # Startup git pull of a release checkout (#230).
     "verify_updates": False,  # Require a GPG-verified commit or tag to update.
+    "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
+    "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 

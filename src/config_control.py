@@ -107,7 +107,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             lo, hi = (-100000, 100000) if key in {"window_x", "window_y"} else (
                 (0, 1440) if key == "sleep_timer_minutes" else (
                 (0, 600) if key == "sleep_fade_seconds" else (
-                    (0, cache_policy.MAX_CAP_MB) if key == "cache_cap_mb" else (1, 10000)))
+                    (0, cache_policy.MAX_CAP_MB) if key == "cache_cap_mb" else (
+                        (1024, 65535) if key == "hls_port" else (1, 10000))))
             )
             if type(value) is int and lo <= value <= hi:
                 cfg[key] = value

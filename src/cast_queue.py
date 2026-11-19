@@ -588,9 +588,7 @@ class QueueMixin:
             self.cfg.get("device_favourites", []),
             self.cfg.get("device_last_used"),
         )
-        if self.cfg["device"] not in names:
-            names.insert(0, self.cfg["device"])
-        selected = names.index(self.cfg["device"])
+        selected = cast_targets.select_index(names, self.cfg["device"])
         self._syncing = True
         self.device_dropdown.set_model(Gtk.StringList.new(names))
         self.device_dropdown.set_selected(selected)

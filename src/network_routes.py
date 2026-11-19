@@ -14,6 +14,7 @@ import re
 import socket
 import subprocess
 import sys
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 import castctl
@@ -111,10 +112,22 @@ def check_receiver_port(
         return "unreachable_or_filtered"
 
 
-def check_local_hls(*, open_url=urlopen) -> str:
-    """Verify the local HLS HTTP server's exact health response, not LAN reach."""
+def active_port() -> int:
+    """Port of the running HLS stream (it may be a fallback), else the default."""
     try:
-        with open_url(f"http://127.0.0.1:{PORT}{HEALTH_PATH}", timeout=2) as response:
+        import streamer
+        state = streamer.load_session()
+        port = urlsplit(state.stream_url).port if state and state.stream_url else None
+    except Exception:
+        return PORT
+    return port if port and 1024 <= port <= 65535 else PORT
+
+
+def check_local_hls(*, open_url=urlopen, port: int | None = None) -> str:
+    """Verify the local HLS HTTP server's exact health response, not LAN reach."""
+    port = PORT if port is None else port
+    try:
+        with open_url(f"http://127.0.0.1:{port}{HEALTH_PATH}", timeout=2) as response:
             body = response.read(len(HEALTH_BODY) + 1)
             return "healthy" if body == HEALTH_BODY else "unexpected_response"
     except (OSError, ValueError, TimeoutError):
@@ -135,12 +148,13 @@ def report(
         target, source, os_name=os_name or platform.system(), run=run,
     )
     port_state = check_receiver_port(target, connect=connect) if source else "not_checked"
-    local_health = check_local_hls(open_url=open_url)
+    port = active_port()
+    local_health = check_local_hls(open_url=open_url, port=port)
     # Only private interface addresses should be recommended for access from
     # another LAN machine. A public/loopback result must not yield a link.
     private = bool(source and _lan_source(source))
     second_host_url = (
-        f"http://{source}:{PORT}{HEALTH_PATH}" if source and private else None
+        f"http://{source}:{port}{HEALTH_PATH}" if source and private else None
     )
     return {
         "receiver_ip": target,
