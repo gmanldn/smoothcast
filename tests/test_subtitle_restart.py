@@ -158,6 +158,7 @@ def restart_window(session):
             for method_name in (
                 "_cast_failed", "_update_audio_choices", "_start_monitor",
                 "_set_levels_hint", "_refresh_controls", "_poll_device",
+                "_console", "_stop_monitor",
             ):
                 setattr(self, method_name, mock.Mock())
 
@@ -190,8 +191,27 @@ def test_invalid_saved_choice_keeps_original_cast_running(kind, tmp_path):
     session.start_transcode.assert_not_called()
     assert window.session is session
     assert window.tracker.playing is True
+    window.busy = True
     failed(str(problem.value))
+    assert window.busy is False
+    window._cast_failed.assert_not_called()
+    window._stop_monitor.assert_not_called()
+    window._set_levels_hint.assert_not_called()
+    window._console.assert_called_once()
+    window._refresh_controls.assert_called_once()
+
+
+def test_dead_original_cast_uses_normal_cleanup_path(tmp_path):
+    s = state(subs=tmp_path / "missing.srt")
+    session = mock.Mock(mode="transcode", state=s)
+    session.active.return_value = False
+    window, (work, _, failed) = restart_window(session)
+    with mock.patch.object(streamer, "ffprobe", return_value=media()):
+        with pytest.raises(streamer.StreamError):
+            work()
+    failed("Selected subtitle file is missing")
     window._cast_failed.assert_called_once()
+    window._console.assert_not_called()
 
 
 def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
