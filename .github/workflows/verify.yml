@@ -112,16 +112,13 @@ jobs:
           SMOOTHCAST_GUI_TEST_ISOLATED: '1'
         run: python -m pytest -q tests/test_gui_test_safety.py
 
-  # The portable suite on the native desktop OSes (#258). Informational until
-  # every test that assumes Linux is marked or skipped: failures are reported
-  # (the job shows red) but do not fail the run or block release promotion.
-  # Remove continue-on-error and add this job to promote-release's needs once
-  # it is green. Headless like every other job.
+  # The portable suite on the native desktop OSes (#258). It gates like every
+  # other job (and release promotion). A test that cannot pass on an OS is listed
+  # with a reason in tests/platform_gaps.py; fix the cause and delete the entry.
   portable-tests-native:
-    name: Portable regressions (${{ matrix.os }}, informational)
+    name: Portable regressions (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -220,7 +217,7 @@ jobs:
   promote-release:
     name: Promote verified release to main
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: [lint, typecheck, dependency-audit, portable-tests, media-integration, setup-contract, installed-artifact]
+    needs: [lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

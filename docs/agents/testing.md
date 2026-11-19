@@ -53,7 +53,7 @@ stopping previous streams; transcode paths recheck before launching an encoder.
 rejecting unknown/broken/older builds without sending Cast commands.
 
 **macOS/Windows (#258):** `portable-tests-native` runs this suite there
-(informational). A test that cannot pass is listed by exact id, with a reason, in
+(it gates, incl. release promotion). A test that cannot pass is listed by exact id, with a reason, in
 `tests/platform_gaps.py` and skipped on that OS only; fix the cause and delete
 the entry. "PRODUCT BUG" marks a SmoothCast defect, not a test quirk.
 
