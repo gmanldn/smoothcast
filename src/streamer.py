@@ -1022,8 +1022,8 @@ class Session:
             if _port_open(PORT):
                 raise StreamError(f"Port {PORT} is still in use by the previous streaming server")
         self.server = subprocess.Popen(
-            frozen_runtime.server_command(SERVER_SCRIPT),
-            [sys.executable, str(SERVER_SCRIPT)] + (["--bind", bind_ip] if bind_ip else []),
+            frozen_runtime.server_command(SERVER_SCRIPT)
+            + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
