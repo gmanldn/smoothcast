@@ -23,6 +23,7 @@ MAX_BUNDLE_BYTES = 256 * 1024
 MAX_ERROR_LINES = 200
 MAX_ACTIVITY_LINES = 100
 MAX_SERVER_LINES = 100
+MAX_RECEIVER_FIELD = 120
 MAX_STRING = 500
 MAX_LOG_READ = 2 * 1024 * 1024
 
@@ -120,7 +121,37 @@ def redact_config(config: object, *, home: str | None = None) -> object:
     return config
 
 
-def collect(*, error_log=None, activity=None, config=None, home=None, server_log=None) -> dict:
+def receiver_report(dlna_renderer=None, cast_device=None) -> dict:
+    """Comparable receiver facts for device-compatibility reports (#275).
+
+    Duck-typed over the DLNA ``Renderer`` and Cast ``Device`` objects; keeps
+    only protocol, model and maker. Network addresses and names are left out.
+    """
+    if dlna_renderer is not None:
+        return {"protocol": "dlna", "model": str(getattr(dlna_renderer, "model", "") or "")}
+    if cast_device is not None:
+        return {"protocol": "cast", "model": str(getattr(cast_device, "model", "") or ""),
+                "manufacturer": str(getattr(cast_device, "manufacturer", "") or "")}
+    return {}
+
+
+def _clean_receiver(receiver: object, home: str) -> dict:
+    """Allow-list, bound and redact receiver fields from any caller."""
+    if not isinstance(receiver, dict):
+        return {}
+    clean: dict = {}
+    protocol = receiver.get("protocol")
+    if protocol in ("cast", "dlna"):
+        clean["protocol"] = protocol
+    for key in ("model", "manufacturer"):
+        value = receiver.get(key)
+        if isinstance(value, str) and value.strip():
+            clean[key] = redact(value.strip()[:MAX_RECEIVER_FIELD], home=home)
+    return clean
+
+
+def collect(*, error_log=None, activity=None, config=None, home=None, server_log=None,
+            receiver=None) -> dict:
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
 
@@ -140,6 +171,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "server_log": [redact(line, home=home_value)
                        for line in _tail(server_log, MAX_SERVER_LINES)],
         "config": redact_config(config or {}, home=home_value),
+        "receiver": _clean_receiver(receiver, home_value),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),
@@ -192,14 +224,14 @@ def default_path(*, directory=None, now: float | None = None) -> Path:
 
 
 def export(*, destination=None, error_log=None, activity=None, config=None,
-           home=None, server_log=None) -> Path:
+           home=None, server_log=None, receiver=None) -> Path:
     """Collect and write a bounded, redacted bundle; return the written path."""
     if error_log is None:
         error_log = default_error_log_path()
     if server_log is None:
         server_log = default_server_log_path()
     payload = collect(error_log=error_log, activity=activity, config=config, home=home,
-                      server_log=server_log)
+                      server_log=server_log, receiver=receiver)
     return write_bundle(destination or default_path(), payload)
 
 

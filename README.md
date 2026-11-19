@@ -392,6 +392,8 @@ smoothcast --diagnostics /tmp/sc.json
 
 The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
 
+The bundle records the active receiver's **protocol and model** (no address or name) so reports are comparable. To share how SmoothCast behaves on your TV or Chromecast, use the **Device compatibility report** issue form; results are collected in [docs/DEVICE_COMPATIBILITY.md](docs/DEVICE_COMPATIBILITY.md).
+
 The HLS server also keeps a **bounded `server.log`** in `~/.cache/cast-control/` (same size limits as the error log) recording failed requests (403/404), startup and bind failures; successful requests are not logged. Its redacted tail is included in the diagnostics bundle under `server_log`.
 
 ## License
