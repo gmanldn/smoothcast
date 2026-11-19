@@ -21,6 +21,8 @@ otherwise `~/.cache/smoothcast/library.sqlite3`. The index stores local
 absolute file paths, byte size, modification time, device and inode, streamed
 **full SHA-256 hashes**, and optionally codec/duration/video geometry metadata.
 Treat this private cache as personal data; do not attach it to support reports.
+On POSIX, newly created cache directories use mode 0700 and SQLite files are
+kept at 0600; database symlinks and nonregular destinations are rejected.
 
 First scans hash supported media files (.mkv, .mp4, .mov, .avi, .webm, .m4v,
 .ts, .mpeg, .mpg, .wmv) in fixed 1 MiB chunks. Subsequent scans reuse a digest
