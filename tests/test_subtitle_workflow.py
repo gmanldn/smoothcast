@@ -37,8 +37,10 @@ class SubtitleWorkflowTests(unittest.TestCase):
 
     def test_seek_restart_retains_embedded_subtitle(self):
         restart = METHODS["_restart_at"]
-        self.assertIn("state.embedded_subtitle_index", restart)
-        self.assertIn("embedded_subtitle_index=(", restart)
+        self.assertIn("subtitle_restart.validate_restart(state, media)", restart)
+        self.assertIn("embedded_subtitle_index=captions.embedded_index", restart)
+        self.assertLess(restart.index("subtitle_restart.validate_restart(state, media)"),
+                        restart.index("session.stop(device, send_stop=False)"))
 
     def test_burned_captions_are_not_falsely_toggleable(self):
         controls = METHODS["_refresh_controls"]
