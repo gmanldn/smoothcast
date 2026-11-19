@@ -233,7 +233,13 @@ jobs:
           number="$(gh pr list --head develop --base main --state open --json number --jq '.[0].number // empty')"
           if [ -z "$number" ]; then
             url="$(gh pr create --head develop --base main --title "Release $TAG" \
-              --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")"
+              --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")" || {
+              echo "::error title=Release promotion needs a repository setting::Every verification job passed and $TAG is a new release, but GitHub refused to open the develop->main pull request. A repository admin must enable Settings > Actions > General > Workflow permissions > 'Allow GitHub Actions to create and approve pull requests'. This is configuration, not a code failure."
+              exit 1
+            }
             number="${url##*/}"
           fi
-          gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA"
+          gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
+            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA (develop may have moved, or main's rules blocked it). See the log above."
+            exit 1
+          }
