@@ -44,6 +44,34 @@ def test_fifo_cannot_block_srt_staging_or_overwrite_destination(tmp_path):
     assert dest.read_bytes() == b"valid previous captions"
 
 
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"),
+                    reason="Atomic no-follow open is not available")
+def test_symlink_swap_between_check_and_open_is_rejected(tmp_path):
+    source = tmp_path / "original.srt"
+    source.write_bytes(CAPTION)
+    secret = tmp_path / "private.txt"
+    secret.write_bytes(CAPTION)
+    target = tmp_path / "staged.srt"
+    target.write_bytes(b"existing")
+    original_check = Path.is_symlink
+    swapped = []
+
+    def swap(path):
+        if path == source and not swapped:
+            source.unlink()
+            source.symlink_to(secret)
+            swapped.append(True)
+            return False  # Attacker changes the path just after validation.
+        return original_check(path)
+
+    with mock.patch.object(Path, "is_symlink", autospec=True, side_effect=swap):
+        with pytest.raises(subtitle_encoding.SubtitleEncodingError):
+            subtitle_encoding.stage_srt(source, target)
+    assert swapped
+    assert target.read_bytes() == b"existing"
+    assert not list(tmp_path.glob(".smoothcast-srt-*"))
+
+
 def test_actual_descriptor_checked_and_input_length_is_bounded(tmp_path):
     input_path = tmp_path / "captions.srt"
     input_path.write_bytes(CAPTION)
