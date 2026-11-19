@@ -10,11 +10,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import secrets
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_SECONDS = 20
@@ -78,6 +79,25 @@ def seed_isolated_state(scratch: Path, env: dict[str, str]) -> dict[str, Path]:
     return {"config": config, "session": session}
 
 
+def discard_scratch(folder: Path | str) -> None:
+    """Remove the isolated scratch tree, tolerating writers that outlive Xvfb.
+
+    A Mesa shader-cache helper can still be flushing when the smoke test
+    finishes, which makes the removal fail with "Directory not empty" on an
+    otherwise successful run. Retry briefly, then never let leftover scratch
+    turn a green verification into a failed one.
+    """
+    for _ in range(3):
+        try:
+            shutil.rmtree(folder)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.2)
+    shutil.rmtree(folder, ignore_errors=True)
+
+
 def main() -> int:
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
@@ -92,7 +112,8 @@ def main() -> int:
               + ". Install xvfb and xauth; never use your desktop DISPLAY.",
               file=sys.stderr)
         return 2
-    with tempfile.TemporaryDirectory(prefix="smoothcast-xvfb-") as folder:
+    folder = tempfile.mkdtemp(prefix="smoothcast-xvfb-")
+    try:
         scratch = Path(folder)
         env = isolated_environment(scratch)
         seeded = seed_isolated_state(scratch, env)
@@ -126,6 +147,8 @@ def main() -> int:
         except OSError as exc:
             print(f"GUI self-test could not start: {exc}", file=sys.stderr)
             return 2
+    finally:
+        discard_scratch(folder)
 
 
 if __name__ == "__main__":
