@@ -86,28 +86,6 @@ GAPS: dict[str, dict[str, str]] = {
             "uses os.getuid / signal.SIGKILL / a /proc scan: POSIX only",
         "test_launch_singleton.py::GuardBehaviourTests::test_unresponsive_instance_is_cleared_before_launch":
             "uses os.getuid / signal.SIGKILL / a /proc scan: POSIX only",
-        "test_library_index.py::test_indexes_in_chunks_and_reuses_stable_media":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_complete_scans_prune_missing_but_limited_scans_do_not":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_errors_preserve_existing_records_without_losing_progress":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_unreadable_directory_never_prunes_cached_data":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_explicit_probe_is_offline_bounded_and_cached":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_failed_probe_keeps_content_hash_but_retries":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_list_is_bounded_and_invalid_limits_fail":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_cli_can_run_without_loading_gtk":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_overlapping_explicit_roots_do_not_evict_one_another":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_traversal_depth_limit_is_not_a_complete_scan":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
-        "test_library_index.py::test_same_size_and_reset_mtime_still_rehashes":
-            "PRODUCT BUG: the library index scan finds no media on Windows (tracked: see #258)",
         "test_playlist_control.py::PlaylistTests::test_playlist_with_media_tree_survives_folder_move":
             "POSIX path comparison in playlist round trip",
         "test_playlist_control.py::PlaylistTests::test_relative_entries_comments_urls_and_duplicates":

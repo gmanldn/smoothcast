@@ -144,7 +144,11 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         try:
-                            if entry.is_symlink():
+                            if (entry.is_symlink() or
+                                    (getattr(entry, "is_junction", lambda: False)())):
+                                # NTFS junctions are reparse points, not always
+                                # classified as symbolic links. Never recurse
+                                # into an unapproved directory through one.
                                 counts["skipped_symlinks"] += 1
                                 continue
                             if entry.is_dir(follow_symlinks=False):
@@ -162,7 +166,15 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                                 counts["complete"] = False
                                 break
                             counts["files_seen"] += 1
-                            info = entry.stat(follow_symlinks=False)
+                            # On Windows DirEntry.stat() reports zero for
+                            # st_dev/st_ino even for normal files. Comparing
+                            # that cached snapshot with os.fstat(fd) then
+                            # rejects *every* film as changed. A fresh path
+                            # stat gives the real file identity on all OSes.
+                            info = os.stat(path, follow_symlinks=False)
+                            if not stat.S_ISREG(info.st_mode):
+                                counts["skipped_symlinks"] += 1
+                                continue
                             prior = connection.execute(
                                 "SELECT size,mtime_ns,ctime_ns,dev,inode,sha256,metadata,probed FROM media WHERE path=? AND root=?",
                                 (str(path), root_key)).fetchone()
