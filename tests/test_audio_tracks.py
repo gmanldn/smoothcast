@@ -122,6 +122,7 @@ class AudioTrackTests(unittest.TestCase):
             root = Path(folder)
             media = self.media(root)
             session = streamer.Session()
+            session.used_software_fallback = False   # a VAAPI-capable (Linux) host
             proc = mock.MagicMock()
             proc.pid = 12345
             proc.poll.return_value = None

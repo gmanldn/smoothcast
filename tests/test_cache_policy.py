@@ -67,14 +67,15 @@ class CapTests(unittest.TestCase):
         self.assertIsNone(cp.conversion_blocker(100 * MB, 200, in_use_bytes=-5))
 
     def test_directory_size_counts_files_and_ignores_symlinks(self):
-        with tempfile.TemporaryDirectory() as work, tempfile.NamedTemporaryFile() as outside:
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as elsewhere:
             root = Path(work)
             (root / "a").write_bytes(b"x" * 10)
             (root / "sub").mkdir()
             (root / "sub" / "b").write_bytes(b"y" * 20)
-            Path(outside.name).write_bytes(b"z" * 1000)
+            outside = Path(elsewhere) / "big"      # a closed file: Windows cannot reopen an open one
+            outside.write_bytes(b"z" * 1000)
             try:
-                os.symlink(outside.name, root / "link")
+                os.symlink(outside, root / "link")
             except (OSError, NotImplementedError):
                 self.skipTest("this platform or account cannot create symlinks")
             self.assertEqual(cp.directory_size(root), 30)
