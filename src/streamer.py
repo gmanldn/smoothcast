@@ -1063,6 +1063,13 @@ class Session:
         if send_stop:
             castctl.stop(device)
         clear_session()
+        # Revoke this session's generation so a kept-alive server stops
+        # answering for a cast that has ended (#228) -- but only if the policy
+        # still belongs to *this* session: stopping an older session after a
+        # newer cast has started must not lock that cast's receiver out.
+        match = _GENERATION_PLAYLIST.fullmatch(getattr(self, "_playlist_name", HLS_NAME))
+        if match and hls_server.load_policy(ROOT).token == match.group(1):
+            (ROOT / hls_server.POLICY_NAME).unlink(missing_ok=True)
         for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
         playlist = getattr(self, "_playlist_name", HLS_NAME)
@@ -1077,7 +1084,7 @@ class Session:
         self.caster = None
 
     def _start_server(self, bind_ip: str | None = None,
-                      receiver_ip: str | None = None) -> None:
+                      receiver_ip: str | None = None, token: str = "") -> None:
         """Start (or reuse) the HLS server, reachable only by the receiver.
 
         The server listens on loopback plus *bind_ip* (never 0.0.0.0) and
@@ -1087,7 +1094,7 @@ class Session:
         predates this restriction, is replaced only if its PID is verified
         as our own server; otherwise the cast is refused.
         """
-        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip))
+        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip, token=token))
         ports = candidate_ports(self.port)
         # Pass 1: reuse (or verifiably replace) a SmoothCast server that is
         # already listening on any candidate port, so a kept-alive server on a
@@ -1380,7 +1387,7 @@ class Session:
             )
             process_priority.lower(self.ffmpeg, low_priority)
         try:
-            self._start_server(local_ip, device_ip)
+            self._start_server(local_ip, device_ip, token=generation)
         except Exception:
             _terminate(self.ffmpeg)
             self.ffmpeg = None

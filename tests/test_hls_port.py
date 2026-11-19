@@ -183,7 +183,7 @@ class PortSelectionTests(unittest.TestCase):
             proc = mock.MagicMock(pid=5)
             proc.poll.return_value = None
 
-            def choose_port(*_args):
+            def choose_port(*_args, **_kwargs):
                 session.port = 8771
             with mock.patch.object(streamer, "ROOT", root), \
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
