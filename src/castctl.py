@@ -44,7 +44,10 @@ def _find_catt() -> str:
 
 
 CATT = _find_catt()
-DEFAULT_DEVICE = "Living Room TV"
+# No receiver is assumed on first run: a name the user may not own must never
+# be commanded. The empty string means "nothing chosen yet" (issue #239).
+DEFAULT_DEVICE = ""
+NO_DEVICE_MESSAGE = "No receiver selected. Scan the network and choose one."
 
 
 class CastError(RuntimeError):
@@ -133,6 +136,8 @@ def uniquely_named_device(uuid: str, devices: list[Device]) -> Device | None:
 
 def info(device: str, timeout: float = 8) -> dict | None:
     """Full device/media status. None when offline or unreachable."""
+    if not device.strip():
+        return None
     try:
         result = _run(["-d", device, "info", "-j"], timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
@@ -149,6 +154,8 @@ def info(device: str, timeout: float = 8) -> dict | None:
 
 
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+    if not device.strip():
+        return False, NO_DEVICE_MESSAGE
     try:
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
