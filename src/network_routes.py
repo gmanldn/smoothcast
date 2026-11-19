@@ -1,0 +1,169 @@
+"""Opt-in route/HLS diagnostics for a named private-LAN Chromecast target.
+
+All active probes are only invoked by `smoothcast --network-check`. A local
+socket route or loopback test cannot certify that another device reaches
+the media port; print an exact second-host check instead. GTK-free.
+"""
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import json
+import platform
+import re
+import socket
+import subprocess
+import sys
+from urllib.request import urlopen
+
+import castctl
+from server import HEALTH_BODY, HEALTH_PATH, PORT
+
+
+CAST_PORT = 8009
+_VPN_INTERFACE = re.compile(
+    r"^(?:tun|tap|utun|wg|tailscale|ppp|zt|vpn|nordlynx)", re.I
+)
+
+
+def _valid_source(value: str) -> str | None:
+    try:
+        address = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        return None
+    if address.is_unspecified or address.is_loopback or address.is_multicast:
+        return None
+    return str(address)
+
+
+def route_source(
+    receiver: str, *, socket_factory=socket.socket,
+) -> tuple[str | None, str | None]:
+    """Determine local source IPv4 without sending any UDP packets."""
+    try:
+        with socket_factory(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((receiver, CAST_PORT))
+            address = probe.getsockname()[0]
+        source = _valid_source(str(address))
+        return source, None if source else "No usable local IPv4 for the receiver route"
+    except (OSError, ValueError, TypeError) as exc:
+        return None, f"Receiver route lookup failed: {type(exc).__name__}"
+
+
+def interface_name(
+    receiver: str, source: str | None, *,
+    os_name: str, run=subprocess.run,
+) -> str | None:
+    """Best-effort OS route metadata, never a proof of receiver reachability."""
+    if source is None:
+        return None
+    if os_name == "Linux":
+        command = ["ip", "-j", "route", "get", receiver]
+    elif os_name == "Darwin":
+        command = ["route", "-n", "get", receiver]
+    else:
+        return None
+    try:
+        result = run(
+            command, capture_output=True, text=True, timeout=2, check=False,
+        )
+        if result.returncode != 0:
+            return None
+        if os_name == "Linux":
+            routes = json.loads(result.stdout)
+            if not isinstance(routes, list) or not routes:
+                return None
+            route = routes[0]
+            if not isinstance(route, dict) or route.get("prefsrc", route.get("src")) != source:
+                return None
+            name = str(route.get("dev") or "")
+        else:
+            match = re.search(r"^\s*interface:\s*([\w.-]+)\s*$", result.stdout, re.M)
+            name = match.group(1) if match else ""
+        return name if re.fullmatch(r"[\w.-]{1,64}", name) else None
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return None
+
+
+def check_receiver_port(
+    receiver: str, *, connect=socket.create_connection,
+) -> str:
+    """Probe the Cast control port without sending an application command."""
+    try:
+        with connect((receiver, CAST_PORT), timeout=2):
+            return "reachable"
+    except (OSError, TimeoutError):
+        return "unreachable_or_filtered"
+
+
+def check_local_hls(*, open_url=urlopen) -> str:
+    """Verify the local HLS HTTP server's exact health response, not LAN reach."""
+    try:
+        with open_url(f"http://127.0.0.1:{PORT}{HEALTH_PATH}", timeout=2) as response:
+            body = response.read(len(HEALTH_BODY) + 1)
+            return "healthy" if body == HEALTH_BODY else "unexpected_response"
+    except (OSError, ValueError, TimeoutError):
+        return "not_responding"
+
+
+def report(
+    receiver: str, *, socket_factory=socket.socket,
+    connect=socket.create_connection, open_url=urlopen,
+    run=subprocess.run, os_name: str | None = None,
+) -> dict:
+    """Produce a local-only diagnostic, with honest remote-check uncertainty."""
+    target = castctl.validate_manual_target(receiver)
+    source, route_error = route_source(target, socket_factory=socket_factory)
+    name = interface_name(
+        target, source, os_name=os_name or platform.system(), run=run,
+    )
+    port_state = check_receiver_port(target, connect=connect) if source else "not_checked"
+    local_health = check_local_hls(open_url=open_url)
+    # Only private interface addresses should be recommended for access from
+    # another LAN machine. A public/loopback result must not yield a link.
+    private = False
+    if source:
+        private = ipaddress.IPv4Address(source).is_private
+    second_host_url = (
+        f"http://{source}:{PORT}{HEALTH_PATH}" if source and private else None
+    )
+    return {
+        "receiver_ip": target,
+        "receiver_cast_tcp_port": CAST_PORT,
+        "receiver_cast_port": port_state,
+        "selected_source_ipv4": source,
+        "selected_interface": name,
+        "route_error": route_error,
+        "vpn_interface_suspected": bool(_VPN_INTERFACE.match(name)) if name else None,
+        "local_hls_health": local_health,
+        "second_host_health_url": second_host_url,
+        "inbound_hls_reachability": "not_verified_from_second_host",
+        "firewall_diagnosis": "unknown_without_second_host_test",
+        "interpretation": [
+            "A selected source address means the OS has a route, not that the receiver is reachable.",
+            "Cast TCP port failures may mean receiver offline, VPN isolation, or firewall; not proof of one cause.",
+            "A healthy loopback HLS response does NOT prove the television can connect to this computer.",
+            "Open second_host_health_url from another LAN device to test actual inbound media-port reachability.",
+            "A VPN-like interface name is a diagnostic clue, not a confirmed VPN or firewall fault.",
+        ],
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="smoothcast --network-check",
+        description="Check local Cast route, port and HLS health without opening GTK",
+    )
+    parser.add_argument("receiver", help="Private IPv4 address of your Chromecast")
+    args = parser.parse_args(argv)
+    try:
+        result = report(args.receiver)
+    except ValueError as exc:
+        print(f"SmoothCast network check: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
