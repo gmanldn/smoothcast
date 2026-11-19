@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 
 import cache_privacy
 import castctl
+import lan_interfaces
 import process_identity
 import server as hls_server
 import subtitle_encoding
@@ -378,34 +379,41 @@ def _usable_ipv4(value: str) -> bool:
 
 
 def host_ip(device_host: str | None = None) -> str:
-    """Choose the source interface for the Chromecast route, not hostname -I.
+    """Choose an outbound LAN IP, preferring the receiver's real route.
 
-    UDP connect only selects a route; no datagram is sent. A VPN, Docker bridge
-    or multiple NICs can make the first hostname -I address unreachable by TV.
+    A UDP connect only selects a source address; it sends no packet. If the
+    route is unavailable (e.g. isolated LAN), enumerate private IPv4 interface
+    addresses on Linux/macOS/Windows. No Linux-only hostname command.
     """
-    routes = []
     if device_host and _usable_ipv4(device_host):
-        routes.append((device_host, 8009))
-    routes.append(("8.8.8.8", 80))
-    for target in routes:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.connect(target)
+                sock.connect((device_host, 8009))
                 candidate = sock.getsockname()[0]
             if _usable_ipv4(candidate):
                 return candidate
         except OSError:
-            continue
-    # Best effort when no route can be selected, e.g. on a restricted network.
-    try:
-        out = subprocess.check_output(["hostname", "-I"], text=True, timeout=3).split()
-        for candidate in out:
-            if _usable_ipv4(candidate):
-                return candidate
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    raise StreamError("No usable LAN IPv4 address found for Chromecast streaming")
+            pass
 
+    candidate = lan_interfaces.select_private_lan_ip(device_host)
+    if candidate:
+        return candidate
+
+    # The default route can work even if OS interface enumeration is denied.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            candidate = sock.getsockname()[0]
+        if _usable_ipv4(candidate):
+            return candidate
+    except OSError:
+        pass
+
+    raise StreamError(
+        "No usable LAN IPv4 source address for streaming. "
+        "Check that Wi-Fi/Ethernet is connected and the receiver is reachable "
+        "on the selected network (interface enumeration and route probe failed)."
+    )
 
 _IS_WINDOWS = os.name == "nt"
 
@@ -589,11 +597,18 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         media.size = path.stat().st_size
     except OSError:
         pass
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-print_format", "json",
-         "-show_format", "-show_streams", str(path)],
-        capture_output=True, text=True, timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-print_format", "json",
+             "-show_format", "-show_streams", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise StreamError("ffprobe is not installed or not on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise StreamError("ffprobe timed out while reading this file") from exc
+    except OSError as exc:
+        raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
         raise StreamError("ffprobe could not read this file")
     try:
