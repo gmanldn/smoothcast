@@ -65,6 +65,30 @@ On Linux, `sudo` may request the user's password for native package
 installation. No unverified shell-piped downloads or silently ignored
 package-manager failures are permitted.
 
+## Clean installed wheel, outside the source checkout
+
+Besides source-checkout setup, the CI artifact matrix checks packaging on
+Linux, macOS and Windows. It builds an sdist, rebuilds a wheel **from that
+sdist**, then installs it in a fresh, isolated venv from outside the checkout
+with no `PYTHONPATH`. The headless checks assert that `smoothcast --version`,
+`sc --version` and the GUI-script entry point resolve, that the installed
+release version matches metadata, and that the HLS server helper and bundled
+application icon are available. The icon is shipped as
+`smoothcast_assets/local.cast-control.png` and is used by the GTK icon theme
+when the app starts; it no longer requires adjacent `data/` from the Git
+checkout. The original `data/cast-control.png` remains available to the
+desktop shortcut installer.
+
+CI builds only use development packaging tools; these are not extra
+initial prerequisites for the normal setup scripts. They deliberately skip
+installing the external `catt` dependency during wheel inspection, so the
+headless artifact contract cannot establish real TV playback or native GTK
+availability. Those require the platform setup process and device smoke tests.
+
+Developers can rerun the isolated check after installing `build`, `wheel`,
+and a current `setuptools`: `python3 scripts/ci/verify_installed_artifact.py`.
+No graphical application is opened.
+
 ## What this does **not** establish yet
 
 The dependency bootstrap, smoke checks and OS shortcut creation are automated,
