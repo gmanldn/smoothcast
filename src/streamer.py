@@ -27,6 +27,7 @@ import lan_interfaces
 import process_identity
 import process_priority
 import server as hls_server
+import subtitle_delay
 import subtitle_encoding
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
@@ -850,6 +851,7 @@ class SessionState:
     server_created_at: float = 0.0
     caster_created_at: float = 0.0
     stream_url: str = ""
+    subtitle_delay_ms: int = 0
 
 
 def load_session() -> SessionState | None:
@@ -1231,12 +1233,18 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0) -> list[str]:
         chain: list[str] = []
+        sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
-            chain.append(f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}")
+            sub_filter = f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}"
         elif burn_subs and staged is not None:
-            chain.append(f"subtitles=filename={staged.name}")
+            sub_filter = f"subtitles=filename={staged.name}"
+        if sub_filter is not None:
+            # libass sees encode-relative timestamps: re-add the -ss start and
+            # apply the user delay, then restore the stream's own timeline.
+            shift = subtitle_delay.filter_shift(subtitle_offset, subtitle_delay_ms)
+            chain.extend([shift[0], sub_filter, shift[1]] if shift else [sub_filter])
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
@@ -1280,9 +1288,11 @@ class Session:
         rotation: int = 0,
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
+        subtitle_delay_ms: int = 0,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
+        subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1346,6 +1356,8 @@ class Session:
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
             video_size=(media.width, media.height),
+            subtitle_offset=max(0.0, offset),
+            subtitle_delay_ms=subtitle_delay_ms,
         )
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
@@ -1414,6 +1426,7 @@ class Session:
                     speed=speed, rotation=rotation,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
+                    subtitle_delay_ms=subtitle_delay_ms,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -1449,6 +1462,7 @@ class Session:
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
             speed=speed,
             rotation=rotation,
+            subtitle_delay_ms=subtitle_delay_ms,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,

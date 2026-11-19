@@ -54,6 +54,7 @@ DEFAULTS: dict = {
     "subs": "auto",
     "subs_path": "",
     "subtitle_track_by_file": {},
+    "subtitle_delay_by_file": {},
     "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,
