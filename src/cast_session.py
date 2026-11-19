@@ -23,6 +23,8 @@ import streamer
 
 import playback_state
 
+import stream_watchdog
+
 import preflight
 
 import url_control
@@ -767,6 +769,8 @@ class SessionMixin:
                 self.session.state.offset, snapshot.get("out_time"), duration,
                 speed=self.session.state.speed,
             )
+        # Pure watchdog: no blocking I/O on the GTK tick.
+        stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:

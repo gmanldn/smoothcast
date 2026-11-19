@@ -26,6 +26,8 @@ import dlna
 
 import streamer
 
+import stream_watchdog
+
 import audio_monitor
 
 import responsive_layout
@@ -77,6 +79,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
+        self._stream_watchdog = stream_watchdog.StreamWatchdog()
         self._volume_job: int | None = None
         self._volume_target: str | None = None
         self._volume_user_ts = 0.0
