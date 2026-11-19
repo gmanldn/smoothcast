@@ -28,6 +28,7 @@ sc = "cli:main"
 smoothcast-gui = "cli:main"
 
 [tool.setuptools]
+packages = ["smoothcast_assets"]
 py-modules = [
     "cast_control", "castctl", "config_control", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
@@ -38,6 +39,9 @@ py-modules = [
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+smoothcast_assets = ["local.cast-control.png"]
 
 [tool.setuptools.dynamic]
 version = {attr = "version.__version__"}
