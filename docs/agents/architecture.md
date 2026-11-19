@@ -32,6 +32,21 @@ is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
 not assume a display name alone proves ownership; issue #15 (SC-008)
 still tracks duplicate-name, stale-IP and real-device qualification.
 
+## Verified cross-platform helper processes (P0 #237)
+
+Session files persist an OS process creation timestamp for each encoder, HLS
+server and caster PID. On restore, a PID is never considered owned merely
+because it exists: the timestamp, exact SmoothCast-specific argv and current
+user must agree. `src/process_identity.py` supplies the GTK-free psutil
+guard and re-verifies all three immediately before safe helper termination.
+Older session records without process birth times are deliberately not
+reattached as subprocesses; the receiver may still be detected separately.
+
+Startup cleanup uses Linux `/proc` start ticks where available and psutil
+birth-time inspection on macOS/Windows; absence or permission failure skips
+signals. Tests in `tests/test_process_identity_portable.py` use fake Windows,
+macOS and Linux process objects and never contact real PIDs or receivers.
+
 ## HLS stall watchdog (P0 SC-010)
 
 `stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
