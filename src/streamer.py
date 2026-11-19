@@ -593,14 +593,26 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         media.size = path.stat().st_size
     except OSError:
         pass
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-print_format", "json",
-         "-show_format", "-show_streams", str(path)],
-        capture_output=True, text=True, timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-print_format", "json",
+             "-show_format", "-show_streams", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise StreamError("ffprobe is not installed or not on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise StreamError("ffprobe timed out while reading this file") from exc
+    except OSError as exc:
+        raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
         raise StreamError("ffprobe could not read this file")
-    data = json.loads(result.stdout or "{}")
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError as exc:
+        raise StreamError("ffprobe returned metadata that could not be read") from exc
+    if not isinstance(data, dict):
+        raise StreamError("ffprobe returned metadata that could not be read")
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
     try:
