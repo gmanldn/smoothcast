@@ -39,7 +39,7 @@ class FrozenRuntimeTests(unittest.TestCase):
             with mock.patch.object(frozen_runtime, "companion_executable", return_value=Path("/tmp/SmoothCastCLI")):
                 self.assertEqual(
                     frozen_runtime.catt_command("/untrusted/catt", ["-d", "TV", "play"]),
-                    ["/tmp/SmoothCastCLI", frozen_runtime.CATT_FLAG, "-d", "TV", "play"],
+                    [str(Path("/tmp/SmoothCastCLI")), frozen_runtime.CATT_FLAG, "-d", "TV", "play"],
                 )
 
     def test_frozen_catt_requires_console_companion(self):
@@ -117,7 +117,7 @@ class FrozenRuntimeTests(unittest.TestCase):
             castctl._run(["scan", "-j"])
         self.assertEqual(
             runner.call_args.args[0],
-            ["/tmp/SmoothCastCLI", frozen_runtime.CATT_FLAG, "scan", "-j"],
+            [str(Path("/tmp/SmoothCastCLI")), frozen_runtime.CATT_FLAG, "scan", "-j"],
         )
 
     def test_cleanup_recognises_only_our_frozen_server_signature(self):
