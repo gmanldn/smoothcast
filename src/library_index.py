@@ -35,11 +35,15 @@ def _db_open(db: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA busy_timeout=5000")
     connection.execute("""CREATE TABLE IF NOT EXISTS media (
         path TEXT NOT NULL, root TEXT NOT NULL, size INTEGER NOT NULL,
-        mtime_ns INTEGER NOT NULL, dev INTEGER NOT NULL, inode INTEGER NOT NULL,
+        mtime_ns INTEGER NOT NULL, ctime_ns INTEGER NOT NULL, dev INTEGER NOT NULL, inode INTEGER NOT NULL,
         sha256 TEXT NOT NULL, metadata TEXT NOT NULL,
         probed INTEGER NOT NULL DEFAULT 0, scan_id TEXT NOT NULL,
         indexed_at TEXT NOT NULL, PRIMARY KEY (root, path)
     )""")
+    # Upgrade early snapshots without dropping an existing personal index.
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(media)")}
+    if "ctime_ns" not in columns:
+        connection.execute("ALTER TABLE media ADD COLUMN ctime_ns INTEGER NOT NULL DEFAULT 0")
     connection.execute("CREATE INDEX IF NOT EXISTS media_root_idx ON media(root)")
     return connection
 
@@ -144,12 +148,12 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                             counts["files_seen"] += 1
                             info = entry.stat(follow_symlinks=False)
                             prior = connection.execute(
-                                "SELECT size,mtime_ns,dev,inode,sha256,metadata,probed FROM media WHERE path=? AND root=?",
+                                "SELECT size,mtime_ns,ctime_ns,dev,inode,sha256,metadata,probed FROM media WHERE path=? AND root=?",
                                 (str(path), root_key)).fetchone()
-                            unchanged = (prior is not None and prior[:4] == (
-                                info.st_size, info.st_mtime_ns, info.st_dev, info.st_ino))
+                            unchanged = (prior is not None and prior[:5] == (
+                                info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_dev, info.st_ino))
                             if unchanged:
-                                digest, previous_json, probed = prior[4:]
+                                digest, previous_json, probed = prior[5:]
                                 metadata = json.loads(previous_json)
                                 counts["reused"] += 1
                             else:
@@ -161,14 +165,15 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                                 metadata, probed = _probe(path)
                                 counts["probed"] += int(bool(probed))
                             connection.execute("""INSERT INTO media (
-                                path,root,size,mtime_ns,dev,inode,sha256,metadata,probed,scan_id,indexed_at
-                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                                path,root,size,mtime_ns,ctime_ns,dev,inode,sha256,metadata,probed,scan_id,indexed_at
+                            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                             ON CONFLICT(root,path) DO UPDATE SET
                                 root=excluded.root,size=excluded.size,mtime_ns=excluded.mtime_ns,
+                                ctime_ns=excluded.ctime_ns,
                                 dev=excluded.dev,inode=excluded.inode,sha256=excluded.sha256,
                                 metadata=excluded.metadata,probed=excluded.probed,
                                 scan_id=excluded.scan_id,indexed_at=excluded.indexed_at""",
-                                (str(path), root_key, info.st_size, info.st_mtime_ns, info.st_dev,
+                                (str(path), root_key, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_dev,
                                  info.st_ino, digest, json.dumps(metadata, separators=(",", ":")),
                                  int(bool(probed)), ident, datetime.now(timezone.utc).isoformat()))
                         except (OSError, ValueError, sqlite3.DatabaseError, IndexError):
