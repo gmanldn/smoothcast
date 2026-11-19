@@ -246,7 +246,7 @@ class QueueMixin:
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
-        missing = tuple(path for path in paths if path not in self.queue_durations)
+        missing = tuple(dict.fromkeys(p for p in paths if p not in self.queue_durations))
 
         def probe():
             return queue_metadata.inspect(
