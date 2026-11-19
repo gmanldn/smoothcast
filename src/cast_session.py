@@ -247,6 +247,7 @@ class SessionMixin:
                 rate=session.state.speed if session.state else 1.0,
             )
             self._add_recent(str(path))
+            self._note_device_used()
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
             if self.preview is not None and media:

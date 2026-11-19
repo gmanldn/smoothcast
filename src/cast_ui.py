@@ -9,9 +9,11 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 import pathlib
+import time
 
 from utils import pretty_title
 import streamer
+import cast_targets
 
 import responsive_layout
 
@@ -21,7 +23,7 @@ import ui_theme
 
 import version
 
-from cast_widgets import APP_NAME, DEFAULTS, fmt_time, SeekBar, LevelMeter, PreviewScreen
+from cast_widgets import APP_NAME, DEFAULTS, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen
 class UiMixin:
 
 
@@ -124,6 +126,7 @@ class UiMixin:
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Pin or unpin receiver", "app.pin-receiver")
         playback.append("Loop all", "app.loop-all")
         playback.append("Shuffle queue", "app.shuffle-queue")
         playback.append("Save playlist", "app.save-playlist")
@@ -1214,3 +1217,59 @@ class UiMixin:
                            "enhancer needs the transcode pipeline")
         else:
             label.set_text("Instant seeking for H.264/AAC files")
+
+
+    def _toggle_favourite(self) -> None:
+        """Pin/unpin the selected file; ordered list, separate from recents."""
+        path = self._selected_path()
+        if not path:
+            self.toast("Select a file to pin", error=True)
+            return
+        favourites = [p for p in self.cfg.get("favourites", []) if p != path]
+        pinned = len(favourites) == len(self.cfg.get("favourites", []))
+        if pinned:
+            favourites.insert(0, path)
+        self.cfg["favourites"] = favourites[:16]
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast(f"{'Pinned' if pinned else 'Unpinned'}: {pathlib.Path(path).name}")
+
+
+    def _clear_favourites(self) -> None:
+        self.cfg["favourites"] = []
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast("Favourites cleared")
+
+
+    def _open_favourite(self, index: int) -> None:
+        favourites = self.cfg.get("favourites", [])
+        if not 0 <= index < len(favourites):
+            return
+        path = pathlib.Path(favourites[index])
+        if not path.is_file():
+            self.toast("That file has moved or been deleted", error=True)
+            return
+        self.open_paths([str(path)])
+
+
+    def _note_device_used(self) -> None:
+        """Remember the last successful receiver so the picker can sort by it."""
+        self.cfg["device_last_used"] = cast_targets.record_use(
+            self.cfg.get("device_last_used"), self.cfg.get("device", ""), time.time())
+        save_config(self.cfg)
+
+
+    def _toggle_device_favourite(self) -> None:
+        """Pin/unpin the current receiver so it stays at the top of the picker."""
+        device = self.cfg.get("device", "")
+        if not device:
+            return
+        favourites = [d for d in self.cfg.get("device_favourites", []) if d != device]
+        pinned = len(favourites) == len(self.cfg.get("device_favourites", []))
+        if pinned:
+            favourites.insert(0, device)
+        self.cfg["device_favourites"] = favourites[:16]
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast(f"{'Pinned' if pinned else 'Unpinned'} receiver: {device}")

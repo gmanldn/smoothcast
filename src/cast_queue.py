@@ -21,6 +21,7 @@ import streamer
 
 import playback_state
 
+import cast_targets
 import playlist_control
 
 from cast_widgets import save_config, fmt_time, Async
@@ -583,12 +584,12 @@ class QueueMixin:
                 save_config(self.cfg)
                 self.toast(f"Reconnected renamed Cast receiver: {matched.name}")
                 self._poll_device()
-        names = list(dict.fromkeys(
-            [d.name for d in cast_devices]
-            + list(self._dlna_by_key)
-            + [t for t in self.cfg.get("cast_targets", [])
-               if isinstance(t, str)]
-        ))
+        names = cast_targets.ordered_names(
+            [d.name for d in cast_devices] + list(self._dlna_by_key),
+            self.cfg.get("cast_targets", []),
+            self.cfg.get("device_favourites", []),
+            self.cfg.get("device_last_used"),
+        )
         if self.cfg["device"] not in names:
             names.insert(0, self.cfg["device"])
         selected = names.index(self.cfg["device"])

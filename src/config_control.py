@@ -18,6 +18,7 @@ _OPTIONS = {
 }
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
+    "device_last_used",
 })
 _MAX_PATH = 4096
 _MAX_ITEMS = 512
@@ -49,9 +50,10 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
         if key in _OPTIONS:
             if isinstance(value, str) and value in _OPTIONS[key]:
                 cfg[key] = value
-        elif key in {"recents", "favourites", "cast_targets"}:
+        elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
-                limit = 8 if key == "recents" else (16 if key == "favourites" else 32)
+                limit = 8 if key == "recents" else (
+                    16 if key in {"favourites", "device_favourites"} else 32)
                 cfg[key] = [
                     item for item in value[:_MAX_ITEMS]
                     if isinstance(item, str) and 0 < len(item) <= _MAX_PATH
@@ -62,8 +64,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                 for path, selection in islice(value.items(), _MAX_ITEMS):
                     if not isinstance(path, str) or not 0 < len(path) <= _MAX_PATH:
                         continue
-                    if key == "positions":
-                        if _number(selection) and 0 <= selection <= 1e9:
+                    if key in {"positions", "device_last_used"}:
+                        if _number(selection) and 0 <= selection <= 1e12:
                             clean[path] = float(selection)
                     elif type(selection) is int and -1 <= selection <= 1024:
                         clean[path] = selection

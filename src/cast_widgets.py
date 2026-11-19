@@ -44,6 +44,8 @@ DEFAULTS: dict = {
     "device": castctl.DEFAULT_DEVICE,
     "device_uuid": "",  # Stable discovered Cast identity; manual IP/DLNA stays name-based.
     "cast_targets": [],
+    "device_favourites": [],
+    "device_last_used": {},
     "quality": "balanced",
     "audio": "dialogue",
     "audio_gain": 6.0,

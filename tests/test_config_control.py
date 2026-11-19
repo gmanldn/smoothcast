@@ -124,5 +124,16 @@ class ConfigRecoveryTests(unittest.TestCase):
         self.assertNotIn(5, cfg["favourites"])
 
 
+    def test_device_favourites_and_last_used_are_bounded(self):
+        defaults = real_defaults()
+        raw = {
+            "device_favourites": ["TV"] + [f"D{i}" for i in range(20)],
+            "device_last_used": {"TV": 5.0, "bad": "x"},
+        }
+        cfg = config_control.sanitise_config(raw, defaults)
+        self.assertLessEqual(len(cfg["device_favourites"]), 16)
+        self.assertEqual(cfg["device_last_used"], {"TV": 5.0})
+
+
 if __name__ == "__main__":
     unittest.main()

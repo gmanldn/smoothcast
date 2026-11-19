@@ -148,5 +148,13 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("open_paths(", open_fav)
 
 
+    def test_receiver_favourites_and_last_used_are_wired(self):
+        # SC-043 #52: pinned receivers first, sorted by last successful session.
+        self.assertIn("app.pin-receiver", self.methods["_build_menu"])
+        self.assertIn("cast_targets.ordered_names(", self.methods["_scan_done"])
+        self.assertIn("self._note_device_used()", self.methods["_cast_path"])
+        self.assertIn("cast_targets.record_use(", self.methods["_note_device_used"])
+
+
 if __name__ == "__main__":
     unittest.main()
