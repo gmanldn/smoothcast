@@ -23,6 +23,7 @@ import playback_state
 
 import cast_targets
 import playlist_control
+import queue_metadata
 
 from cast_widgets import save_config, fmt_time, Async
 
@@ -245,18 +246,18 @@ class QueueMixin:
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
-        def probe():
-            for path in paths:
-                if path in self.queue_durations:
-                    continue
-                try:
-                    media = streamer.ffprobe(pathlib.Path(path))
-                    self.queue_durations[path] = media.duration
-                except Exception:
-                    self.queue_durations[path] = 0.0
-            return True
+        missing = tuple(path for path in paths if path not in self.queue_durations)
 
-        Async.run(probe, done=lambda _r: self._rebuild_queue(), domain="media", valid=lambda: not self._closing)
+        def probe():
+            return queue_metadata.inspect(
+                missing, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
+            )
+
+        def done(durations):
+            queue_metadata.publish(self.queue_durations, self.queue, durations)
+            self._rebuild_queue()
+
+        Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:
