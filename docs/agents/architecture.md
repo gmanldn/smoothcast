@@ -108,6 +108,17 @@ cross-generation stale requests, narrow allowlists, encoder arguments and
 finalised recovery. All tests use mock encoders/TV and ephemeral local
 servers; do not launch GTK or send commands to a receiver.
 
+## Explicit in-window Cast route diagnostics (P0 SC-007)
+
+The **Check connection** button in `src/cast_ui.py` delegates to the
+GTK-free `src/network_route_ui.py` coordinator, which calls the existing
+`network_routes.report` only after an explicit click. `Async.run` performs
+the socket/route/loopback probes off-thread; results return via GLib to the
+original selected receiver and only if its host IPv4 remains unchanged.
+No Cast playback commands are sent, and DLNA targets are refused. Never
+interpret a successful local check as proven inbound HLS reachability.
+`tests/test_network_route_gui.py` injects workers and all probe results.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
