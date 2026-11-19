@@ -72,6 +72,15 @@ def test_selection_changed_while_worker_runs_never_shows_previous_tv_result():
     assert "Sensitive data" not in text
 
 
+def test_reused_device_name_with_different_host_discards_stale_result():
+    w, _, jobs, enqueue = window()
+    network_route_ui.start(w, enqueue)
+    w._device_host.return_value = "192.168.1.99"
+    jobs[0][1]("Stale previous-IP result")
+    assert "Receiver changed" in w.network_detail.set_text.call_args.args[0]
+    assert "Stale previous-IP" not in w.network_detail.set_text.call_args.args[0]
+
+
 def test_close_during_worker_ignores_pending_widget_callbacks():
     w, _, jobs, enqueue = window()
     network_route_ui.start(w, enqueue)
@@ -112,7 +121,7 @@ def test_summary_distinguishes_local_health_from_second_host_reachability():
     text = network_route_ui.summary(report())
     assert "Local route: 192.168.1.25 (eth0)" in text
     assert "Local HLS: healthy" in text
-    assert "From another device on the same LAN" in text
+    assert "While HLS is running" in text
     assert "remain unverified" in text
 
     no_route = network_route_ui.summary(report(
