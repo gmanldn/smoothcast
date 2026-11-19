@@ -115,5 +115,14 @@ class ConfigRecoveryTests(unittest.TestCase):
         self.assertIn("config_control.sanitise_config(raw, DEFAULTS)", GUI_SOURCE)
 
 
+    def test_favourites_are_bounded_strings(self):
+        defaults = real_defaults()
+        raw = {"favourites": ["/a.mp4", 5, "", "/b.mp4"] + [f"/f{i}.mp4" for i in range(20)]}
+        cfg = config_control.sanitise_config(raw, defaults)
+        self.assertTrue(all(isinstance(p, str) and p for p in cfg["favourites"]))
+        self.assertLessEqual(len(cfg["favourites"]), 16)
+        self.assertNotIn(5, cfg["favourites"])
+
+
 if __name__ == "__main__":
     unittest.main()

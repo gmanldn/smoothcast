@@ -59,6 +59,7 @@ DEFAULTS: dict = {
     "color_scheme": "prefer-dark",
     "auto_theme": False,
     "recents": [],
+    "favourites": [],
     "positions": {},
     "loop": False,
     "loop_all": False,
