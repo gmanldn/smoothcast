@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 
 _FPS = re.compile(r"fps=\s*([\d.]+)")
+SOURCE_RATE = 30
 
 
 def parse_fps(text: str | None) -> float | None:
@@ -67,7 +69,7 @@ def probe_command(seconds: int = 4, height: int = 1080, encoder: str = "libx264"
     width = max(2, round(height * 16 / 9 / 2) * 2)
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "info",
-        "-f", "lavfi", "-i", f"testsrc=size={width}x{height}:rate=30",
+        "-f", "lavfi", "-i", f"testsrc=size={width}x{height}:rate={SOURCE_RATE}",
         "-t", str(seconds), "-c:v", encoder, "-preset", "veryfast",
         "-f", "null", "-",
     ]
@@ -75,8 +77,13 @@ def probe_command(seconds: int = 4, height: int = 1080, encoder: str = "libx264"
 
 def run_probe(seconds: int = 4, height: int = 1080, encoder: str = "libx264",
               *, runner=None) -> float | None:
-    """Run a bounded synthetic encode and return the measured frames/second."""
+    """Run a bounded synthetic encode and return the measured frames/second.
+
+    FFmpeg's periodic ``fps=`` line is timing-dependent and can be absent for a
+    fast encode, so fall back to frames-encoded / wall-clock elapsed.
+    """
     run = subprocess.run if runner is None else runner
+    start = time.monotonic()
     try:
         result = run(
             probe_command(seconds, height, encoder),
@@ -84,4 +91,10 @@ def run_probe(seconds: int = 4, height: int = 1080, encoder: str = "libx264",
         )
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
-    return parse_fps(getattr(result, "stderr", None))
+    measured = parse_fps(getattr(result, "stderr", None))
+    if measured is not None:
+        return measured
+    elapsed = time.monotonic() - start
+    if getattr(result, "returncode", 1) == 0 and elapsed > 0:
+        return (SOURCE_RATE * seconds) / elapsed
+    return None
