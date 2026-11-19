@@ -1,0 +1,110 @@
+"""P0 #13: early Cast errors must not disrupt the original owned stream.
+
+GTK-free: execute real extracted GUI handlers with stubbed side effects.
+No receiver/network commands or live desktop are launched.
+"""
+from __future__ import annotations
+
+import pathlib
+import textwrap
+import threading
+from types import SimpleNamespace
+from unittest import mock
+
+from gui_source import main_window_methods
+import playback_state
+
+
+def window(*, device="TV", subs="auto", active=True, owner=None):
+    names = ("_cast_path", "_cast_preflight_failed")
+    methods = main_window_methods()
+    source = "class Handlers:\n" + "\n\n".join(
+        textwrap.indent(textwrap.dedent(methods[name]), "    ")
+        for name in names
+    )
+    ns = {"playback_state": playback_state, "threading": threading}
+    exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
+    previous = SimpleNamespace(
+        state=SimpleNamespace(device=device if owner is None else owner),
+        active=lambda: active,
+    )
+
+    class Window(ns["Handlers"]):
+        def __init__(self):
+            self.cfg = {"positions": {}, "subs": subs}
+            self.session = previous
+            self.busy = False
+            self._dlna_cancel = None
+            self._local_video_path = None
+            self._preview_generation = 0
+            self._preview_pending = None
+            self._preview_position = 19.0
+            self.local_playback = mock.Mock()
+            self._unload_local_video = mock.Mock()
+            self._refresh_controls = mock.Mock()
+            self._cast_failed = mock.Mock()
+            self._stop_monitor = mock.Mock()
+            self.toast = mock.Mock()
+            self._console = mock.Mock()
+            self._resolve_subs = mock.Mock(return_value=None)
+            self.tracker = object()
+
+        def _device(self):
+            return device
+
+        def _dlna_renderer(self, selection):
+            return None
+
+        def _device_host(self, selection):
+            return "192.168.1.41"
+
+        def _local_stream(self):
+            return None
+
+    return Window(), previous
+
+
+def test_undiscovered_dlna_does_not_stop_prior_active_cast_or_monitor():
+    w, previous = window(device="DLNA · Living Room · 192.168.1.41")
+    tracker = w.tracker
+    w._cast_path(pathlib.Path("/unavailable.mkv"), 49.0)
+    assert w.session is previous
+    assert w.tracker is tracker
+    w._cast_failed.assert_not_called()
+    w._stop_monitor.assert_not_called()
+    assert w.busy is False and w._dlna_cancel is None
+    assert "DLNA receiver is not currently discovered" in w.toast.call_args.args[0]
+    assert w.toast.call_args.kwargs == {"error": True}
+    assert "Cast preparation failed" in w._console.call_args.args[0]
+    w._refresh_controls.assert_called()
+
+
+def test_missing_explicit_subtitles_preserves_position_and_old_cast():
+    w, previous = window(subs="pick")
+    tracker = w.tracker
+    w._cast_path(pathlib.Path("/another.mkv"), 33.0)
+    w._resolve_subs.assert_called_once()
+    assert w.session is previous
+    assert w.tracker is tracker
+    assert w._preview_position == 33.0
+    w._cast_failed.assert_not_called()
+    w._stop_monitor.assert_not_called()
+    assert w.busy is False
+    assert "subtitle file is missing" in w.toast.call_args.args[0]
+
+
+def test_no_valid_predecessor_uses_normal_failure_cleanup():
+    for active, owner in ((False, "TV"), (True, "Someone else")):
+        w, previous = window(subs="pick", active=active, owner=owner)
+        w._cast_path(pathlib.Path("/another.mkv"), 0.0)
+        w._cast_failed.assert_called_once_with(
+            "Selected subtitle file is missing or unsupported; choose a valid .srt"
+        )
+        assert w.session is previous
+
+
+def test_no_previous_session_uses_normal_failure_cleanup():
+    w, _ = window(subs="pick")
+    w.session = None
+    w._cast_path(pathlib.Path("/another.mkv"), 0.0)
+    w._cast_failed.assert_called_once()
