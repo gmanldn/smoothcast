@@ -127,6 +127,7 @@ class UiMixin:
         speed = Gio.Menu()
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
             speed.append(f"{s}x", f"app.speed-{str(s).replace('.','_')}")
+        speed.append("Custom…", "app.custom-speed")
         menu.append_submenu("Speed", speed)
         sleep = Gio.Menu()
         for m in (0, 15, 30, 45, 60):

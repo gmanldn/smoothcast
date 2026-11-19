@@ -237,6 +237,7 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("custom-speed", lambda *a: self._window().action_custom_speed())
         simple("loop-all", lambda *a: self._window()._toggle_loop_all())
         simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
