@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gdk, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import pathlib
 
 import sys
@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import benchmark
 
 import dlna
 
@@ -653,3 +654,48 @@ class AvMixin:
         else:
             meter.set_sample(mon.sample_at(position))
         return True
+
+
+    def action_benchmark(self, *_args) -> None:
+        """Measure encode speed and recommend a quality tier (SC-048 #57)."""
+        dialog = Adw.Dialog()
+        dialog.set_title("Playback-quality benchmark")
+        dialog.set_content_width(380)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(18)
+        box.set_margin_bottom(18)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+        result = Gtk.Label(
+            label="Press Run to measure this machine's 1080p encode speed.",
+            wrap=True, xalign=0.0,
+        )
+        box.append(result)
+        run = Gtk.Button(label="Run benchmark")
+        run.add_css_class("suggested-action")
+
+        def start(_button):
+            result.set_text("Running a short 1080p encode test…")
+            source_fps = self.media.fps if self.media and self.media.fps else 30.0
+
+            def work():
+                return benchmark.recommend(benchmark.run_probe(), source_fps)
+
+            def done(rec):
+                result.set_text(
+                    f"Recommend {rec['tier']}\n{rec['reason']}\n"
+                    f"Trade-off: {rec['tradeoff']}"
+                )
+
+            Async.run(
+                work, done=done,
+                failed=lambda message: result.set_text(f"Benchmark failed: {message}"),
+            )
+
+        run.connect("clicked", start)
+        box.append(run)
+        toolbar.set_content(box)
+        dialog.set_child(toolbar)
+        dialog.present(self)

@@ -260,6 +260,7 @@ class CastControlApp(Adw.Application):
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
+        simple("benchmark", lambda *a: self._window().action_benchmark())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("favourite", lambda *a: self._window()._toggle_favourite())
         simple("pin-receiver", lambda *a: self._window()._toggle_device_favourite())
