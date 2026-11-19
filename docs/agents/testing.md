@@ -75,6 +75,13 @@ unpreviewed queue rows before scheduling FFmpeg; test with
 `tests/test_film_screenshot_selection.py`. Real-device frame qualification
 remains separate.
 
+**P0 cross-platform process ownership (#237):** test per-process birth time,
+same-user and exact helper command signatures with
+`tests/test_process_identity_portable.py`. Never use real os.kill, psutil
+termination or process enumeration against the user's desktop in routine
+tests. Persist process creation times separately from the playback clock;
+legacy sessions without them cannot reattach unverified helper PIDs.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
