@@ -259,6 +259,37 @@ class LifecycleMixin:
         dialog.present(self)
 
 
+    def action_custom_speed(self, *_args) -> None:
+        """Pick a precise playback rate; validated to a safe 0.25x-4x range."""
+        dialog = Adw.Dialog()
+        dialog.set_title("Custom playback speed")
+        dialog.set_content_width(340)
+        toolbar = Adw.ToolbarView()
+        toolbar.add_top_bar(Adw.HeaderBar())
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(18)
+        box.set_margin_bottom(18)
+        box.set_margin_start(18)
+        box.set_margin_end(18)
+        box.append(Gtk.Label(label="Playback speed (0.25x - 4x)", xalign=0.0))
+        spin = Gtk.SpinButton.new_with_range(0.25, 4.0, 0.05)
+        spin.set_digits(2)
+        spin.set_value(min(4.0, max(0.25, float(self.cfg.get("playback_speed", 1.0)))))
+        box.append(spin)
+        apply = Gtk.Button(label="Apply")
+        apply.add_css_class("suggested-action")
+
+        def on_apply(_button):
+            dialog.close()
+            self._set_speed(spin.get_value())
+
+        apply.connect("clicked", on_apply)
+        box.append(apply)
+        toolbar.set_content(box)
+        dialog.set_child(toolbar)
+        dialog.present(self)
+
+
     def action_about(self, *_args) -> None:
         about = Adw.AboutDialog(
             application_name=APP_NAME,
