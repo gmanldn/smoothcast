@@ -340,18 +340,29 @@ class LifecycleMixin:
         if self.external and self.session is None:
             self.toast("Cannot capture another application's TV stream", error=True)
             return
-        # The cast tracker measures receiver playback, not the local film
-        # preview. Choose the clock that actually owns the visible frame.
+        # A row selection is not playback ownership. Never substitute the
+        # first frame when the current Cast/local decoder clock is unknown.
         if self.session is not None:
-            position = self.tracker.value() or 0.0
+            state = self.session.state
+            if state is None or pathlib.Path(state.file) != source:
+                self.toast("Active film and media metadata do not match", error=True)
+                return
+            position = self.tracker.value()
+            if position is None:
+                self.toast("Cannot capture: receiver position is unknown", error=True)
+                return
+        elif self._local_video_path == str(source):
+            stream = self._local_stream()
+            timestamp = stream.get_timestamp() if stream is not None else -1
+            if timestamp < 0:
+                self.toast("Cannot capture: local playback position is unknown", error=True)
+                return
+            position = timestamp / 1_000_000
+        elif self._preview_path == str(source):
+            position = self._preview_position
         else:
-            position = self._preview_position if self._preview_path == str(source) else 0.0
-            if self._local_video_path == str(source):
-                stream = self._local_stream()
-                if stream is not None:
-                    timestamp = stream.get_timestamp()
-                    if timestamp >= 0:
-                        position = timestamp / 1_000_000
+            self.toast("Select and preview a film before capturing", error=True)
+            return
         self.toast("Capturing screenshot…")
         # FFmpeg, filesystem access and a corrupt input file may block for
         # seconds. Keep all of it off the GTK event loop.
