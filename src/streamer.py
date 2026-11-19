@@ -460,7 +460,7 @@ def _pid_is_ours(pid: int | None, role: str) -> bool:
     except OSError:
         return False
     if role == "server":
-        return str(SERVER_SCRIPT) in argv or (len(argv) >= 2
+        return str(SERVER_SCRIPT) in argv or (frozen_runtime.is_frozen() and len(argv) >= 2
                 and argv[1] == frozen_runtime.SERVER_FLAG
                 and pathlib.Path(argv[0]).resolve() == pathlib.Path(sys.executable).resolve())
     if role == "encoder":
@@ -469,7 +469,7 @@ def _pid_is_ours(pid: int | None, role: str) -> bool:
     if role == "caster":
         return ("-d" in argv and "cast" in argv
                 and (any(pathlib.Path(arg).name == "catt" for arg in argv[:2])
-                     or (len(argv) >= 2 and argv[1] == frozen_runtime.CATT_FLAG
+                     or (frozen_runtime.is_frozen() and len(argv) >= 2 and argv[1] == frozen_runtime.CATT_FLAG
                          and pathlib.Path(argv[0]).resolve() == pathlib.Path(sys.executable).resolve())))
     return False
 

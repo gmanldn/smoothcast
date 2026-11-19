@@ -28,7 +28,7 @@ def check_environment() -> None:
         raise BuildError("Python 3.10+ is required")
     try:
         version = importlib.metadata.version("pyinstaller")
-        if int(version.split(".", 1)[0]) < 6:
+        if tuple(int(x) for x in version.split(".")[:2]) < (6, 21):
             raise BuildError("PyInstaller 6.21+ is required")
     except importlib.metadata.PackageNotFoundError as exc:
         raise BuildError("Install the packaging extra: python -m pip install -e '.[packaging]'") from exc
