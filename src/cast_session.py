@@ -106,8 +106,7 @@ class SessionMixin:
         # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
-        # A device-native stream cannot apply ffmpeg speed/rotation filters.
-        # Always transcode when either transform is enabled, even for H.264/AAC.
+        # Any speed/rotation change requires transcoding.
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
@@ -133,9 +132,7 @@ class SessionMixin:
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if path.suffix.lower() == ".mkv":
-                # Decoder/caption failures must be reported before interrupting
-                # the current receiver. One short private CPU render per file
-                # fingerprint/track selection; no Cast commands in preflight.
+                # Private CPU preflight must not interrupt the existing cast.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
@@ -534,8 +531,7 @@ class SessionMixin:
         )
         # Recheck the saved exact caption selection before remote teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
-        # A restart must not silently resume a paused film. Read the intent
-        # before the async worker replaces the session/tracker.
+        # Capture pause intent before replacing session/tracker.
         was_paused = (self.device_state == "PAUSED"
                       or (self.tracker.known and not self.tracker.playing))
 
