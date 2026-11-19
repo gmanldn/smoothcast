@@ -148,6 +148,10 @@ class StartupSweepTests(unittest.TestCase):
             )
             lease = cp.hold_scratch_lease(old)
             self.assertIsNotNone(lease)
+            # Creating the marker updates the parent directory mtime; make
+            # it old *after* the lock is held to reproduce the reported race.
+            stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
+            os.utime(old, (stamp, stamp))
             try:
                 self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
                 self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
@@ -166,6 +170,10 @@ class StartupSweepTests(unittest.TestCase):
             )
             lease = cp.hold_scratch_lease(old)
             self.assertIsNotNone(lease)
+            # Creating the marker updates the parent directory mtime; make
+            # it old *after* the lock is held to reproduce the reported race.
+            stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
+            os.utime(old, (stamp, stamp))
             proc = subprocess.Popen(
                 [sys.executable, "-c", "import time; time.sleep(2)"],
                 pass_fds=(lease.fileno(),),
