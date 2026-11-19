@@ -72,7 +72,6 @@ def test_queue_capacity_is_bounded_and_rejected_task_gets_failure_callback():
 
 def test_callbacks_are_dispatched_not_called_on_workers():
     pool, callbacks, _ = fixture()
-    scheduled = threading.Event()
     submitted_from = threading.get_ident()
     seen = []
     try:
@@ -141,9 +140,8 @@ def test_shutdown_discards_pending_jobs_and_already_scheduled_callbacks():
         pool.shutdown()
         release.set()
         assert pool.submit(lambda: ran.append("late"), domain="media") is False
-        assert not pool._workers["media"][0].is_alive() or (
-            pool._workers["media"][0].join(timeout=2) is None
-        )
+        pool._workers["media"][0].join(timeout=2)
+        assert not pool._workers["media"][0].is_alive()
         while True:
             try:
                 callback = callbacks.get_nowait()
