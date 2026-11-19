@@ -21,6 +21,8 @@ import dlna
 
 import streamer
 
+import subtitle_restart
+
 import playback_state
 
 import direct_probe
@@ -511,8 +513,7 @@ class SessionMixin:
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None) -> None:
         if session.mode == "dlna":
-            # DLNA requires a fresh progressive resource if audio/codec choices
-            # change; never send an HLS-specific restart to AVTransport.
+            # DLNA restarts use progressive AVTransport.
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
             return
@@ -533,14 +534,9 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
-        burn = bool(state.burn_subs) if state else False
-        subs_path = None
-        if state and state.subs:
-            candidate = pathlib.Path(state.subs)
-            subs_path = candidate if candidate.is_file() else None
+        # Verify exact captions before remote teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
-        # A restart must not silently resume a paused film. Read the intent
-        # before the async worker replaces the session/tracker.
+        # Remember pause state.
         was_paused = (self.device_state == "PAUSED"
                       or (self.tracker.known and not self.tracker.playing))
 
@@ -548,19 +544,18 @@ class SessionMixin:
             nonlocal media
             if media is None:
                 media = streamer.ffprobe(file_path)
+            captions = subtitle_restart.validate_restart(state, media)
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
                     media, target, device=device, quality=quality,
-                    audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
+                    audio_profile=audio, subs_file=captions.external,
+                    burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
-                    embedded_subtitle_index=(
-                        state.embedded_subtitle_index
-                        if state is not None and state.embedded_subtitle_index >= 0 else None
-                    ),
+                    embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                 )
             except Exception:
@@ -570,9 +565,7 @@ class SessionMixin:
                     pass
                 raise
             if was_paused:
-                # start_transcode begins playback; immediately pause again so a
-                # seek/speed/audio change made while paused stays paused. The
-                # next device poll reconciles if pause is unsupported.
+                # Preserve the previous pause state across encoder restart.
                 try:
                     castctl.pause(device)
                 except (OSError, ValueError, TypeError):
@@ -595,7 +588,16 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        def failed(message):
+            if self.session is session and session.active():
+                self.busy = False
+                self.toast(f"Restart cancelled: {message}", error=True)
+                self._console(f"Original cast preserved: {message}")
+                self._refresh_controls()
+            else:
+                self._cast_failed(message)
+
+        Async.run(work, done=done, failed=failed)
 
 
     def _skip_back1(self) -> None:

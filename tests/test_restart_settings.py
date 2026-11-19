@@ -17,6 +17,7 @@ import castctl
 import playback_state
 import position_tracker
 import streamer
+import subtitle_restart
 
 DEFAULTS = {"audio_gain": 0.0}
 
@@ -28,6 +29,7 @@ def extracted(*names, async_runs, saves):
     )
     namespace = {
         "streamer": streamer,
+        "subtitle_restart": subtitle_restart,
         "playback_state": playback_state,
         "castctl": castctl,
         "pathlib": pathlib,
