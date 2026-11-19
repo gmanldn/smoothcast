@@ -1301,10 +1301,10 @@ class Session:
         audio_track_index: int = -1,
         subtitle_delay_ms: int = 0,
     ) -> None:
-        # Fail before touching existing streaming resources or launching FFmpeg.
-        require_compatible_ffmpeg()
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
+        # Fail before touching existing streaming resources or launching FFmpeg.
+        require_compatible_ffmpeg()
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
