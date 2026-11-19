@@ -439,10 +439,16 @@ def set_muted(renderer: Renderer, muted: bool) -> None:
 class ProgressiveFileServer:
     """Serve one chosen local MP4 with HTTP byte ranges and an ephemeral URL."""
 
-    def __init__(self, path: Path, *, receiver_ip: str):
+    def __init__(self, path: Path, *, receiver_ip: str,
+                 bind_ip: str = "127.0.0.1"):
         self.path = Path(path)
         if not self.path.is_file() or self.path.stat().st_size < 1:
             raise DlnaError("DLNA file is missing or empty")
+        # Production binds only to the interface routed to the selected TV.
+        # Loopback is reserved for isolated, headless HTTP regression tests.
+        if bind_ip != "127.0.0.1" and not _private_host(bind_ip):
+            raise DlnaError("DLNA listener requires a private LAN IPv4 address")
+        self.bind_ip = bind_ip
         self.receiver_ip = receiver_ip
         self.token = secrets.token_urlsafe(24)
         source = self.path
@@ -512,7 +518,10 @@ class ProgressiveFileServer:
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
-        self.httpd = ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+        try:
+            self.httpd = ThreadingHTTPServer((bind_ip, 0), Handler)
+        except OSError as exc:
+            raise DlnaError(f"Cannot listen for DLNA on {bind_ip}: {exc}") from exc
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever,
@@ -522,6 +531,8 @@ class ProgressiveFileServer:
     def url(self, local_ip: str) -> str:
         if not _private_host(local_ip):
             raise DlnaError("No routable private LAN address available to serve DLNA video")
+        if local_ip != self.bind_ip:
+            raise DlnaError("DLNA media URL is not bound to the chosen LAN interface")
         return f"http://{local_ip}:{self.port}/media/{self.token}"
 
     def close(self) -> None:
@@ -721,7 +732,9 @@ class Session:
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
-            self.http = ProgressiveFileServer(path, receiver_ip=renderer.host)
+            self.http = ProgressiveFileServer(
+                path, receiver_ip=renderer.host, bind_ip=local_ip,
+            )
             set_uri(renderer, self.http.url(local_ip), title)
             self._owns_renderer = True
             play(renderer)

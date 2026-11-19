@@ -74,6 +74,13 @@ rotation and the original sound profile; Chromecast still supports its own
 transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
 support in your FFmpeg build.
 
+The DLNA media HTTP listener binds only to the specific private LAN IPv4
+interface routed to the selected receiver, never all interfaces. An invalid,
+missing or unbindable local interface prevents a new cast and does not stop
+another receiver's playback; loopback binding is used only by isolated tests.
+Receiver IP and an unguessable per-session URL still restrict requests.
+This does not replace host-header hardening or real-device qualification.
+
 DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
 prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
