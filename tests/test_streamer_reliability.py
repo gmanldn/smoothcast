@@ -138,12 +138,14 @@ class StreamerReliabilityTests(unittest.TestCase):
         fake.__enter__.return_value = fake
         fake.getsockname.return_value = ("127.0.0.1", 54000)
         with mock.patch.object(streamer.socket, "socket", return_value=fake), \
-             mock.patch.object(streamer.subprocess, "check_output", return_value="127.0.0.1 169.254.1.1 192.168.5.3"):
+             mock.patch.object(streamer.lan_interfaces, "select_private_lan_ip",
+                               return_value="192.168.5.3"):
             self.assertEqual(streamer.host_ip(), "192.168.5.3")
 
     def test_no_lan_ip_gives_a_clear_error(self):
         with mock.patch.object(streamer.socket, "socket", side_effect=OSError("no route")), \
-             mock.patch.object(streamer.subprocess, "check_output", side_effect=OSError("no interfaces")):
+             mock.patch.object(streamer.lan_interfaces, "select_private_lan_ip",
+                               return_value=None):
             with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4"):
                 streamer.host_ip("192.168.1.42")
 
