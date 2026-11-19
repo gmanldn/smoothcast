@@ -470,7 +470,7 @@ def _pid_is_ours(pid: int | None, role: str) -> bool:
         return ("-d" in argv and "cast" in argv
                 and (any(pathlib.Path(arg).name == "catt" for arg in argv[:2])
                      or (frozen_runtime.is_frozen() and len(argv) >= 2 and argv[1] == frozen_runtime.CATT_FLAG
-                         and pathlib.Path(argv[0]).resolve() == pathlib.Path(sys.executable).resolve())))
+                         and frozen_runtime.is_our_catt_helper(argv[0]))))
     return False
 
 

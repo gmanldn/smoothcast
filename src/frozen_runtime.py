@@ -23,9 +23,35 @@ def server_command(source_script: Path) -> list[str]:
     return [sys.executable, str(source_script)]
 
 
+def companion_executable() -> Path:
+    """Return the shipped console-enabled executable; required for CATT JSON.
+
+    Windows GUI-subsystem executables may not expose stdout or stderr to
+    capture_output=True. Failing closed is safer than an empty scan response.
+    """
+    executable = Path(sys.executable)
+    if executable.stem == "SmoothCastCLI":
+        return executable
+    companion = executable.with_name("SmoothCastCLI" + executable.suffix)
+    if not companion.is_file():
+        raise FileNotFoundError(
+            f"Missing SmoothCast console helper: {companion}. Reinstall the full bundle."
+        )
+    return companion
+
+
+def is_our_catt_helper(executable: str) -> bool:
+    if not is_frozen():
+        return False
+    try:
+        return Path(executable).resolve() == companion_executable().resolve()
+    except (OSError, ValueError):
+        return False
+
+
 def catt_command(external_binary: str, args: list[str]) -> list[str]:
     if is_frozen():
-        return [sys.executable, CATT_FLAG, *args]
+        return [str(companion_executable()), CATT_FLAG, *args]
     return [external_binary, *args]
 
 

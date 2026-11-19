@@ -36,10 +36,24 @@ class FrozenRuntimeTests(unittest.TestCase):
                 frozen_runtime.server_command(Path("/nonexistent/server.py")),
                 [sys.executable, frozen_runtime.SERVER_FLAG],
             )
-            self.assertEqual(
-                frozen_runtime.catt_command("/untrusted/catt", ["-d", "TV", "play"]),
-                [sys.executable, frozen_runtime.CATT_FLAG, "-d", "TV", "play"],
-            )
+            with mock.patch.object(frozen_runtime, "companion_executable", return_value=Path("/tmp/SmoothCastCLI")):
+                self.assertEqual(
+                    frozen_runtime.catt_command("/untrusted/catt", ["-d", "TV", "play"]),
+                    ["/tmp/SmoothCastCLI", frozen_runtime.CATT_FLAG, "-d", "TV", "play"],
+                )
+
+    def test_frozen_catt_requires_console_companion(self):
+        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \\
+             mock.patch.object(frozen_runtime.sys, "executable", "/tmp/SmoothCast"):
+            with mock.patch.object(Path, "is_file", return_value=False):
+                with self.assertRaisesRegex(FileNotFoundError, "console helper"):
+                    frozen_runtime.catt_command("catt", ["scan", "-j"])
+
+    def test_frozen_catt_helper_identity_is_exact(self):
+        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \\
+             mock.patch.object(frozen_runtime, "companion_executable", return_value=Path("/tmp/SmoothCastCLI")):
+            self.assertTrue(frozen_runtime.is_our_catt_helper("/tmp/SmoothCastCLI"))
+            self.assertFalse(frozen_runtime.is_our_catt_helper("/tmp/NotSmoothCastCLI"))
 
     def test_frozen_server_dispatch_does_not_import_gtk(self):
         fake_server = types.ModuleType("server")
