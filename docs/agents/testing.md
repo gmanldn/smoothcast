@@ -40,6 +40,19 @@ A successful local loopback check must never be described as receiver-side
 inbound reachability, nor is VPN/firewall causation proven without a second
 host. Keep printed private IPs out of exported support bundles.
 
+**Installed-artifact integrity (P1 SC-097):** the `installed-artifact` CI
+matrix builds a source distribution, builds a wheel **from that sdist**, then
+installs the wheel without source-tree imports or editable mode into a fresh
+Python venv. `scripts/ci/verify_installed_artifact.py` verifies the
+`smoothcast`, `sc` and `smoothcast-gui` command entry points (version
+command only), canonical version metadata, byte-identical bundled icon, and
+importable HLS helper from a different working directory. The script clears
+`PYTHONPATH`, display variables and desktop session addresses before
+running any installed code. This is a Python/package compatibility check,
+**not** native GTK, FFmpeg or receiver playback validation. The checked icon
+lives in `src/smoothcast_assets/local.cast-control.png`, not relative to a
+Git checkout.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
