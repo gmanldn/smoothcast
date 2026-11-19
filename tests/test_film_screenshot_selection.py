@@ -140,6 +140,28 @@ def test_invalid_local_decoder_timestamp_never_falls_back_to_frame_zero():
     assert "local playback position is unknown" in w.toast.call_args.args[0]
 
 
+def test_invalid_local_decoder_can_use_same_film_scrubbed_still():
+    w, jobs, capture = make_window()
+    w.session = None
+    w._local_video_path = CURRENT
+    w._preview_path = CURRENT
+    w._preview_position = 46.5
+    w._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: -1)
+    run_capture(w, jobs)
+    capture.assert_called_once_with(
+        Path(CURRENT), 46.5, Path("/screens"), video_stream_index=7
+    )
+
+
+def test_unknown_cast_identity_is_fail_closed_without_attribute_error():
+    w, jobs, capture = make_window()
+    w.session = object()  # state not yet published
+    w._screenshot()
+    assert jobs == []
+    capture.assert_not_called()
+    assert "do not match" in w.toast.call_args.args[0]
+
+
 def test_preview_source_timestamp_is_used_and_unrelated_preview_rejected():
     w, jobs, capture = make_window()
     w.session = None
