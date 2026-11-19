@@ -18,6 +18,7 @@ import watch_history
 import responsive_layout
 
 import playback_state
+import progress_model
 
 import ui_theme
 
@@ -831,14 +832,14 @@ class UiMixin:
             list_box.append(text)
 
 
-    def _update_details(self, snapshot: dict | None = None) -> None:
+    def _update_details(self, snapshot: progress_model.Progress | None = None) -> None:
         info = self.device_info
         session = self.session
         media = self.media
         # Reuse the snapshot the seekbar used this tick; neither path touches
         # the filesystem (a background Session sampler maintains the cache).
         if snapshot is None:
-            snapshot = session.progress() if session else {}
+            snapshot = session.progress() if session else progress_model.EMPTY
         state_text = {
             "OFFLINE": "Offline",
             "IDLE": "Idle",
@@ -854,8 +855,7 @@ class UiMixin:
             mode_text = ("DLNA progressive MP4" if session.mode == "dlna" else (
                 "Direct play (buffered)" if session.mode == "direct" else "Live transcode (HLS)"))
             if session.mode == "transcode":
-                speed = snapshot.get("speed") or "—"
-                fps = snapshot.get("fps") or "—"
+                speed, fps = snapshot.speed_text, snapshot.fps_text
                 engine = "libx264 (CPU)" if session.used_software_fallback else "h264 VAAPI"
                 encoder_text = f"{engine} · {speed} · {fps} fps"
             else:
@@ -875,7 +875,7 @@ class UiMixin:
         buffer_text = "—"
         if session and session.mode == "transcode" and session.state:
             encoded = playback_state.absolute_encoded_position(
-                session.state.offset, snapshot.get("out_time"),
+                session.state.offset, snapshot.out_time,
                 self.tracker.duration or (media.duration if media else 0.0),
                 speed=session.state.speed,
             )

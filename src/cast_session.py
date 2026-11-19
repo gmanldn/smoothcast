@@ -27,6 +27,8 @@ import subtitle_restart
 
 import playback_state
 
+import progress_model
+
 import direct_probe
 
 import stream_watchdog
@@ -779,13 +781,13 @@ class SessionMixin:
                 if not duration and stream.get_duration() > 0:
                     duration = stream.get_duration() / 1_000_000
         buffered = None
-        snapshot = {}
+        snapshot = progress_model.EMPTY
         if self.session and self.session.mode == "transcode" and self.session.state:
             # One background snapshot feeds both the seekbar buffer and the
             # details panel, so the two never disagree within a tick.
             snapshot = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
-                self.session.state.offset, snapshot.get("out_time"), duration,
+                self.session.state.offset, snapshot.out_time, duration,
                 speed=self.session.state.speed,
             )
         # Pure watchdog: no blocking I/O on the GTK tick.

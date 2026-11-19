@@ -112,7 +112,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("self.session.progress()", tick)
         self.assertIn("self._update_details(snapshot)", tick)
         self.assertIn("segment_count()", details)
-        self.assertIn('snapshot.get("out_time")', details)
+        self.assertIn("snapshot.out_time", details)
 
 
     def test_loop_all_and_shuffle_are_wired(self):

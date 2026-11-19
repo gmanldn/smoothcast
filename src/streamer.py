@@ -30,6 +30,7 @@ import lan_interfaces
 import playback_state
 import process_identity
 import process_priority
+import progress_model
 import server as hls_server
 import subtitle_delay
 import subtitle_encoding
@@ -910,7 +911,7 @@ class Session:
         # belongs to this Session, so a retired session's values are never used
         # after the window swaps to a new one.
         self._snapshot_lock = threading.Lock()
-        self._progress_snapshot: dict = {}
+        self._progress_snapshot = progress_model.EMPTY
         self._segments_snapshot = 0
         self._sampler_stop = threading.Event()
         self._sampler: threading.Thread | None = None
@@ -968,42 +969,31 @@ class Session:
         if self.mode == "transcode":
             if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
                 return True
-            return self.progress().get("progress") == "end"
+            return self.progress().done
         if self.mode == "direct":
             return self.caster is not None and self.caster.poll() is not None
         return False
 
-    def progress(self) -> dict:
+    def progress(self) -> progress_model.Progress:
         """Return the last background progress snapshot (never reads disk)."""
         with self._snapshot_lock:
-            return dict(self._progress_snapshot)
+            return self._progress_snapshot
 
     def segment_count(self) -> int:
         """Return the last background segment count (never globs on the GTK thread)."""
         with self._snapshot_lock:
             return self._segments_snapshot
 
-    def _read_progress(self, path=None) -> dict:
+    def _read_progress(self, path=None) -> progress_model.Progress:
         progress_path = PROGRESS_FILE if path is None else path
-        out: dict = {}
         try:
             size = progress_path.stat().st_size
             with open(progress_path, "rb") as handle:
                 handle.seek(max(0, size - 8192))
                 tail = handle.read().decode("utf-8", "replace")
         except OSError:
-            return out
-        for line in tail.splitlines():
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            out[key.strip()] = value.strip()
-        try:
-            us = float(out.get("out_time_us") or 0)
-            out["out_time"] = us / 1_000_000 if us else float(out.get("out_time_ms") or 0) / 1_000_000
-        except ValueError:
-            out["out_time"] = 0.0
-        return out
+            return progress_model.EMPTY
+        return progress_model.parse_progress(tail)
 
     def _count_segments(self, root=None, pattern=None) -> int:
         segment_root = ROOT if root is None else root

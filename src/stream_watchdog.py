@@ -10,6 +10,7 @@ import math
 import time
 
 import playback_state
+import progress_model
 
 
 class StreamWatchdog:
@@ -115,7 +116,7 @@ class StreamWatchdog:
         return "encoder_stalled" if encoder_stalled else "receiver_stalled"
 
 
-def recover_window(window, snapshot: dict, position: float | None) -> None:
+def recover_window(window, snapshot: progress_model.Progress, position: float | None) -> None:
     """Apply pure health verdicts to the current GTK window without blocking."""
     session = window.session
     state = session.state if session is not None else None
@@ -134,9 +135,9 @@ def recover_window(window, snapshot: dict, position: float | None) -> None:
         session=session, epoch=state.started_at, now=time.monotonic(),
         receiver_state=window.device_state,
         owned=owned, busy=window.busy or window._closing or window._cast_starting,
-        encoder_seconds=snapshot.get("out_time"),
+        encoder_seconds=snapshot.out_time,
         receiver_seconds=info.get("current_time") if info else None,
-        encoder_done=snapshot.get("progress") == "end",
+        encoder_done=snapshot.done,
         seconds_remaining=remaining,
     )
     if outcome in {"encoder_stalled", "receiver_stalled"}:
