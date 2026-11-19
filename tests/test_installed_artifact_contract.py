@@ -35,6 +35,7 @@ def test_every_python_source_module_is_declared_for_wheel_install():
         f"Nonexistent declarations: {sorted(declared - actual)}"
     )
     assert "cast_targets" in declared
+    assert "watch_history" in declared
 
 
 def test_source_icon_is_identical_to_canonical_artwork():
