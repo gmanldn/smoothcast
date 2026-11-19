@@ -167,5 +167,14 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn('self._record_watch("stop")', self.methods["stop_stream"])
 
 
+    def test_benchmark_wizard_is_wired(self):
+        # SC-048 #57: measure encode speed off-thread and recommend a tier.
+        self.assertIn("app.benchmark", self.methods["_build_menu"])
+        bench = self.methods["action_benchmark"]
+        self.assertIn("benchmark.run_probe(", bench)
+        self.assertIn("benchmark.recommend(", bench)
+        self.assertIn("Async.run(", bench)
+
+
 if __name__ == "__main__":
     unittest.main()

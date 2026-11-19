@@ -115,6 +115,7 @@ class UiMixin:
             recents.append("Clear recent files", "app.clear-recents")
         menu.append("Open URL…", "app.open-url")
         menu.append("Screenshot", "app.screenshot")
+        menu.append("Benchmark playback quality…", "app.benchmark")
         menu.append_submenu("Open recent", recents)
         favourites = Gio.Menu()
         for index, path in enumerate(self.cfg["favourites"][:16]):
