@@ -328,7 +328,7 @@ class SetupContractTests(unittest.TestCase):
             installed = bootstrap.ensure_venv(Path(sys.executable), {}, check=False)
         self.assertEqual(installed, Path(sys.executable))
         command = run.call_args.args[0]
-        self.assertIn("catt>=0.12", command)
+        self.assertIn("catt>=0.12,<0.14", command)
         self.assertNotIn("requirements.txt", command)
 
     def test_macos_application_bundle_has_valid_plist_and_executable(self):
