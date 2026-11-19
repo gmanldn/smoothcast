@@ -250,6 +250,7 @@ class SessionMixin:
             )
             self._add_recent(str(path))
             self._note_device_used()
+            self._record_watch("start")
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
             if self.preview is not None and media:
@@ -307,6 +308,7 @@ class SessionMixin:
             # command, so another app's cast is never disturbed.
             self._refresh_controls()
             return
+        self._record_watch("stop")
         self.busy = True
         self._refresh_controls()
         device = self._device()
@@ -511,8 +513,7 @@ class SessionMixin:
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None) -> None:
         if session.mode == "dlna":
-            # DLNA requires a fresh progressive resource if audio/codec choices
-            # change; never send an HLS-specific restart to AVTransport.
+            # DLNA restarts use progressive AVTransport.
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
             return
@@ -533,9 +534,9 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
-        # Recheck the saved exact caption selection before remote teardown.
+        # Verify exact captions before remote teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
-        # Capture pause intent before replacing session/tracker.
+        # Remember pause state.
         was_paused = (self.device_state == "PAUSED"
                       or (self.tracker.known and not self.tracker.playing))
 
@@ -564,9 +565,7 @@ class SessionMixin:
                     pass
                 raise
             if was_paused:
-                # start_transcode begins playback; immediately pause again so a
-                # seek/speed/audio change made while paused stays paused. The
-                # next device poll reconciles if pause is unsupported.
+                # Preserve the previous pause state across encoder restart.
                 try:
                     castctl.pause(device)
                 except (OSError, ValueError, TypeError):
@@ -678,6 +677,7 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        self._record_watch("completed")
         self._stop_monitor()
         self._set_levels_hint("")
         item = self.now_playing
