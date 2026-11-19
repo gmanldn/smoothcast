@@ -10,12 +10,16 @@ Do not load the entire handbook or
 
 - **GitHub Issues are authoritative:** start with
   `python3 scripts/ticket_digest.py --next` for the next unclaimed issue, then
-  read and claim that issue before work; use an isolated branch/worktree, link
-  PRs, and close only when all acceptance criteria (including hardware checks if
-  required) are verified. See [workflow](docs/agents/workflow.md) and
+  read and claim that issue before work; work on an isolated branch/worktree and
+  open PRs against **`develop`** (`main` is protected, release-only), closing
+  only when all acceptance criteria (including hardware checks if required) are
+  verified. See [workflow](docs/agents/workflow.md) and
   [issues](docs/ISSUES.md).
 - **Never lose work:** preserve user changes, local commits and stashes; no
   force-reset or destructive cleanup. Commit and push tested, cohesive fixes.
+- **Worktree per issue, clean repo:** `git worktree add ../smoothcast-N -b fix/N-slug origin/develop`;
+  never edit the shared checkout; stage files by name; push batched, merge never
+  rebase/force. See [hygiene](docs/agents/workflow.md#worktrees-and-repo-hygiene).
 - **Smallest complete fix:** inspect callers; reuse existing code; retain
   validation, privacy, device ownership, compatibility and regression tests.
   [Ponytail](.kilo/skills/ponytail/SKILL.md).

@@ -41,7 +41,7 @@ CATT_CHECK = (
 # pip dependencies installed into the isolated runtime. Keep in sync with the
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
-PIP_PACKAGES = ("catt>=0.12",)
+PIP_PACKAGES = ("catt>=0.12,<0.14",)
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 # Reviewed immutable Homebrew installer (2026-11-18); update commit and digest
@@ -428,7 +428,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
         if not installed.is_file() or not works(installed, GUI_CHECK, env=env):
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
         if not works(installed, CATT_CHECK, env=env):
-            raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
+            raise SetupError("catt >= 0.12, < 0.14 is not installed in SmoothCast's environment.")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))
@@ -468,7 +468,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
                          "--disable-pip-version-check", *PIP_PACKAGES,
                          "-e", str(ROOT)], env=env)
         if not works(installed, CATT_CHECK, env=env):
-            raise SetupError("catt >= 0.12 is not installed in SmoothCast's environment.")
+            raise SetupError("catt >= 0.12, < 0.14 is not installed in SmoothCast's environment.")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))

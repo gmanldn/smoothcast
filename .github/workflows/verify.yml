@@ -2,7 +2,7 @@ name: Verify SmoothCast
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -18,10 +18,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  lint:
+    name: Ruff lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Ruff
+        run: python -m pip install 'ruff==0.16.9'
+      - name: Lint (configuration in pyproject.toml)
+        run: ruff check src scripts setup tests sc.py setup.py
+
+  typecheck:
+    name: Type check (mypy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install mypy
+        run: python -m pip install 'mypy==2.3.1'
+      - name: Check the modules listed in pyproject.toml
+        run: mypy
+
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Audit the resolved runtime dependencies
+        # Resolves catt (bounded in pyproject.toml) and its dependencies, then
+        # fails on any known vulnerability. Not a lock file: see testing.md.
+        run: |
+          python -m pip install 'pip-audit>=2.7,<3'
+          python -m venv "$RUNNER_TEMP/audit-env"
+          "$RUNNER_TEMP/audit-env/bin/python" -m pip install .
+          python -m pip_audit --path "$RUNNER_TEMP/audit-env/lib" --strict
+
   portable-tests:
     name: Portable regressions (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    # Full Python 3.10 pytest exceeded 12 minutes on loaded shared runners.
+    # Do not skip tests or weaken coverage; use a bounded larger allowance.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -39,10 +87,17 @@ jobs:
         run: python -m compileall -q src scripts setup tests
 
       - name: Install portable test dependencies
-        run: python -m pip install 'pytest>=8,<10'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'hypothesis>=6,<7'
 
       - name: Run all portable regression tests
+        if: matrix.python-version != '3.13'
         run: python -m pytest -q tests
+
+      - name: Run all portable regression tests with coverage
+        if: matrix.python-version == '3.13'
+        # Baseline measured 40% line coverage on 19 Nov 2026; the gate sits
+        # just below it and may only be raised.
+        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=38
 
       - name: Prove tests cannot see a simulated active desktop
         env:

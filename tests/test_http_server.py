@@ -54,6 +54,17 @@ class StreamServerTests(unittest.TestCase):
         status, body, _ = self.request("/segment-00000.ts", "HEAD")
         self.assertEqual((status, body), (200, b""))
 
+    def test_playlists_and_segments_send_no_cors_wildcard(self):
+        # A page on the network must not be able to read the stream through
+        # CORS; receivers use native media fetches that ignore it (issue #229).
+        for path in ("/movie.m3u8", "/segment-00000.ts"):
+            for method in ("GET", "HEAD"):
+                with self.subTest(path=path, method=method):
+                    status, _, headers = self.request(path, method)
+                    self.assertEqual(status, 200)
+                    headers_ci = {name.lower(): value for name, value in headers.items()}
+                    self.assertNotIn("access-control-allow-origin", headers_ci)
+                    self.assertEqual(headers_ci.get("cache-control"), "no-store")
     def test_hls_content_types_and_lengths_are_stable_for_get_and_head(self):
         samples = (
             ("/movie.m3u8", "application/vnd.apple.mpegurl",
@@ -84,11 +95,83 @@ class StreamServerTests(unittest.TestCase):
                 status, _, _ = self.request(path, "HEAD")
                 self.assertEqual(status, 404)
 
+    def test_clients_outside_the_policy_get_403_but_loopback_is_allowed(self):
+        # Loopback is always allowed: the health check and our own tests.
+        self.assertEqual(self.request("/movie.m3u8")[0], 200)
+        denied = server.AccessPolicy()
+        with mock.patch.object(server, "client_allowed", return_value=False) as check:
+            for method in ("GET", "HEAD"):
+                for path in ("/movie.m3u8", "/segment-00000.ts", server.HEALTH_PATH,
+                             "/session.json"):
+                    with self.subTest(method=method, path=path):
+                        self.assertEqual(self.request(path, method)[0], 403)
+            self.assertTrue(check.called)
+        self.assertFalse(server.client_allowed("203.0.113.9", denied))
+
+    def test_health_reports_bind_address_and_pid_for_reuse_decisions(self):
+        _, _, headers = self.request(server.HEALTH_PATH)
+        lowered = {k.lower(): v for k, v in headers.items()}
+        self.assertEqual(lowered["x-smoothcast-pid"], str(__import__("os").getpid()))
+        self.assertIn("x-smoothcast-bind", lowered)
+
     def test_health_endpoint_identifies_our_server(self):
         status, body, _ = self.request(server.HEALTH_PATH)
         self.assertEqual((status, body), (200, server.HEALTH_BODY))
         status, body, _ = self.request(server.HEALTH_PATH, "HEAD")
         self.assertEqual((status, body), (200, b""))
+
+
+class AccessPolicyTests(unittest.TestCase):
+    RECEIVER = server.make_policy("192.168.1.50")
+
+    def test_receiver_and_loopback_only(self):
+        for address in ("192.168.1.50", "127.0.0.1", "::1", "127.0.0.2"):
+            with self.subTest(address=address):
+                self.assertTrue(server.client_allowed(address, self.RECEIVER))
+        for address in ("192.168.1.51", "10.0.0.5", "169.254.1.1", "garbage", ""):
+            with self.subTest(address=address):
+                self.assertFalse(server.client_allowed(address, self.RECEIVER))
+
+    def test_public_addresses_are_never_allowed(self):
+        for address in ("8.8.8.8", "1.1.1.1", "2001:4860:4860::8888"):
+            self.assertFalse(server.client_allowed(address, self.RECEIVER))
+            self.assertFalse(server.client_allowed(address, server.make_policy(None)))
+        # A public "receiver" can be named explicitly but is not private-LAN.
+        self.assertFalse(server.client_allowed("8.8.8.8", server.make_policy("garbage")))
+
+    def test_ipv4_mapped_ipv6_follows_the_ipv4_rules(self):
+        self.assertTrue(server.client_allowed("::ffff:192.168.1.50", self.RECEIVER))
+        self.assertTrue(server.client_allowed("::ffff:127.0.0.1", self.RECEIVER))
+        self.assertFalse(server.client_allowed("::ffff:8.8.8.8", self.RECEIVER))
+        self.assertFalse(server.client_allowed("::ffff:192.168.1.51", self.RECEIVER))
+
+    def test_unknown_receiver_falls_back_to_private_lan_not_public(self):
+        policy = server.make_policy(None)
+        self.assertTrue(policy.any_private)
+        for address in ("192.168.0.9", "10.1.2.3", "172.16.4.4", "127.0.0.1"):
+            self.assertTrue(server.client_allowed(address, policy), address)
+        for address in ("8.8.8.8", "100.64.0.1"):
+            self.assertFalse(server.client_allowed(address, policy), address)
+
+    def test_extra_allowed_addresses_must_be_private(self):
+        policy = server.make_policy("192.168.1.50", ("192.168.1.60", "8.8.8.8", "x"))
+        self.assertTrue(server.client_allowed("192.168.1.60", policy))
+        self.assertFalse(server.client_allowed("8.8.8.8", policy))
+
+    def test_policy_round_trips_and_missing_or_corrupt_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            self.assertEqual(server.load_policy(root), server.AccessPolicy())
+            server.write_policy(root, self.RECEIVER)
+            self.assertEqual(server.load_policy(root), self.RECEIVER)
+            (root / server.POLICY_NAME).write_text("{not json")
+            self.assertEqual(server.load_policy(root), server.AccessPolicy())
+            self.assertFalse(server.client_allowed("192.168.1.50", server.load_policy(root)))
+
+    def test_listen_addresses_never_include_the_wildcard(self):
+        for bind in (None, "", "0.0.0.0", "::", "224.0.0.1", "bad", "::1"):
+            self.assertEqual(server._listen_addresses(bind), ["127.0.0.1"], bind)
+        self.assertEqual(server._listen_addresses("192.168.1.23"), ["127.0.0.1", "192.168.1.23"])
 
 
 if __name__ == "__main__":

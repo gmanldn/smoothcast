@@ -71,12 +71,22 @@ def stage_srt(source: Path, destination: Path) -> tuple[Path, str]:
     destination = Path(destination)
     temporary: Path | None = None
     try:
-        info = source.stat()
-        if not stat.S_ISREG(info.st_mode):
-            raise SubtitleEncodingError("Subtitle source must be a regular file")
-        if info.st_size == 0 or info.st_size > MAX_SUBTITLE_BYTES:
-            raise SubtitleEncodingError("Subtitle file must be between 1 byte and 16 MiB")
-        with source.open("rb") as handle:
+        # Reject user-folder symlinks and do not follow them if an untrusted
+        # file is replaced between the check and open. O_NONBLOCK prevents a
+        # substituted FIFO from waiting indefinitely for a writer.
+        if source.is_symlink():
+            raise SubtitleEncodingError("Subtitle source must be a regular file, not a symlink")
+        flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0)
+                 | getattr(os, "O_CLOEXEC", 0)
+                 | getattr(os, "O_NOFOLLOW", 0)
+                 | getattr(os, "O_NONBLOCK", 0))
+        descriptor = os.open(source, flags)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise SubtitleEncodingError("Subtitle source must be a regular file")
+            if info.st_size == 0 or info.st_size > MAX_SUBTITLE_BYTES:
+                raise SubtitleEncodingError("Subtitle file must be between 1 byte and 16 MiB")
             raw = handle.read(MAX_SUBTITLE_BYTES + 1)
         normalised, codec = decode_srt(raw)
         destination.parent.mkdir(parents=True, exist_ok=True)

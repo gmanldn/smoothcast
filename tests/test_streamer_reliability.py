@@ -48,6 +48,11 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertIn("setpts=PTS/1.5", ",".join(second_args))
             self.assertIn("transpose=1", ",".join(second_args))
             self.assertIn("atempo=1.5", ",".join(second_args))
+            self.assertEqual(second_args[second_args.index("-hls_time") + 1], "4")
+            self.assertEqual(second_args[second_args.index("-hls_list_size") + 1], "12")
+            self.assertIn("delete_segments", second_args[second_args.index("-hls_flags") + 1])
+            self.assertLess(streamer.HLS_PAUSE_RESTART_AFTER,
+                            streamer.HLS_SEGMENT_SECONDS * streamer.HLS_PLAYLIST_SEGMENTS)
             self.assertEqual(session.state.speed, 1.5)
             self.assertEqual(session.state.rotation, 90)
             self.assertIn("192.168.1.23:8767", session.state.stream_url)
@@ -133,34 +138,94 @@ class StreamerReliabilityTests(unittest.TestCase):
         fake.__enter__.return_value = fake
         fake.getsockname.return_value = ("127.0.0.1", 54000)
         with mock.patch.object(streamer.socket, "socket", return_value=fake), \
-             mock.patch.object(streamer.subprocess, "check_output", return_value="127.0.0.1 169.254.1.1 192.168.5.3"):
+             mock.patch.object(streamer.lan_interfaces, "select_private_lan_ip",
+                               return_value="192.168.5.3"):
             self.assertEqual(streamer.host_ip(), "192.168.5.3")
 
     def test_no_lan_ip_gives_a_clear_error(self):
         with mock.patch.object(streamer.socket, "socket", side_effect=OSError("no route")), \
-             mock.patch.object(streamer.subprocess, "check_output", side_effect=OSError("no interfaces")):
+             mock.patch.object(streamer.lan_interfaces, "select_private_lan_ip",
+                               return_value=None):
             with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4"):
                 streamer.host_ip("192.168.1.42")
 
+    def _server_env(self):
+        from contextlib import ExitStack
+        from tempfile import TemporaryDirectory
+        stack = ExitStack()
+        root = Path(stack.enter_context(TemporaryDirectory()))
+        stack.enter_context(mock.patch.object(streamer, "ROOT", root))
+        self.addCleanup(stack.close)
+        return root
+
     def test_an_unrelated_port_owner_is_not_reused(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=True), \
-             mock.patch.object(streamer, "_server_healthy", return_value=False), \
+             mock.patch.object(streamer, "_server_probe", return_value=(False, None, None)), \
              mock.patch.object(streamer.subprocess, "Popen") as popen:
             with self.assertRaisesRegex(streamer.StreamError, "occupied"):
                 session._start_server()
             popen.assert_not_called()
 
     def test_existing_healthy_server_is_reused(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=True), \
-             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer, "_server_probe",
+                               return_value=(True, "192.168.1.23", 4321)), \
              mock.patch.object(streamer.subprocess, "Popen") as popen:
-            session._start_server()
+            session._start_server("192.168.1.23", "192.168.1.50")
             popen.assert_not_called()
             self.assertIsNone(session.server)
 
+    def test_server_is_bound_to_chosen_interface_and_policy_published(self):
+        import server
+        root = self._server_env()
+        session = streamer.Session()
+        with mock.patch.object(streamer, "_port_open", return_value=False), \
+             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            session._start_server("192.168.1.23", "192.168.1.50")
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
+        self.assertNotIn("0.0.0.0", command)
+        policy = server.load_policy(root)
+        self.assertEqual(policy.hosts, frozenset({"192.168.1.50"}))
+        self.assertFalse(policy.any_private)
+
+    def test_reused_server_on_another_interface_is_replaced_only_if_ours(self):
+        self._server_env()
+        session = streamer.Session()
+        stale = (True, "192.168.1.99", 4321)
+        with mock.patch.object(streamer, "_port_open", side_effect=[True, False]), \
+             mock.patch.object(streamer, "_server_probe", return_value=stale), \
+             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer, "_pid_is_ours", return_value=True), \
+             mock.patch.object(streamer, "_terminate_pid") as terminate, \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            session._start_server("192.168.1.23", "192.168.1.50")
+        terminate.assert_called_once_with(4321, "server")
+        popen.assert_called_once()
+
+    def test_unverifiable_unbound_server_is_not_killed_or_reused(self):
+        self._server_env()
+        session = streamer.Session()
+        legacy = (True, None, 4321)  # Predates the access restriction.
+        with mock.patch.object(streamer, "_port_open", return_value=True), \
+             mock.patch.object(streamer, "_server_probe", return_value=legacy), \
+             mock.patch.object(streamer, "_pid_is_ours", return_value=False), \
+             mock.patch.object(streamer, "_terminate_pid") as terminate, \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(streamer.StreamError, "different address"):
+                session._start_server("192.168.1.23", "192.168.1.50")
+        terminate.assert_not_called()
+        popen.assert_not_called()
+
     def test_failed_server_process_is_detected_immediately(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=False), \
              mock.patch.object(streamer, "_server_healthy", return_value=False), \
@@ -170,7 +235,8 @@ class StreamerReliabilityTests(unittest.TestCase):
                 session._start_server()
 
     def test_reused_pid_is_never_killed(self):
-        with mock.patch.object(streamer, "pid_alive", return_value=True), \
+        with mock.patch.object(streamer.process_identity, "psutil", None), \
+             mock.patch.object(streamer, "pid_alive", return_value=True), \
              mock.patch.object(Path, "read_bytes", return_value=b"/usr/bin/firefox\0--new-window\0"), \
              mock.patch.object(streamer.os, "kill") as kill:
             for role in ("server", "encoder", "caster"):
@@ -184,7 +250,8 @@ class StreamerReliabilityTests(unittest.TestCase):
             ("encoder", f"ffmpeg\0-progress\0{streamer.PROGRESS_FILE}\0".encode()),
             ("caster", b"/usr/bin/python3\0/usr/local/bin/catt\0-d\0TV\0cast\0"),
         )
-        with mock.patch.object(streamer, "pid_alive", return_value=True):
+        with mock.patch.object(streamer.process_identity, "psutil", None), \
+             mock.patch.object(streamer, "pid_alive", return_value=True):
             for role, command in cases:
                 with self.subTest(role=role), mock.patch.object(Path, "read_bytes", return_value=command):
                     self.assertTrue(streamer._pid_is_ours(12345, role))

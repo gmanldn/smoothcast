@@ -4,6 +4,9 @@
 is **evidence per release and commit**, not another task list. It does not run
 or claim a GUI/device test; a missing entry means **PENDING**, never passing.
 
+Promotion to `main` is a release merge from `develop`; `main` is protected, so
+release commits never land there directly.
+
 ## Use
 
 From the repository root, with no GTK, FFmpeg or receiver required:

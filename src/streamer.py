@@ -20,6 +20,9 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
+import lan_interfaces
+import process_identity
+import server as hls_server
 import subtitle_encoding
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
@@ -30,6 +33,10 @@ FFMPEG_LOG = ROOT / "ffmpeg.log"
 PORT = 8767
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
+HLS_SEGMENT_SECONDS = 4
+HLS_PLAYLIST_SEGMENTS = 12
+# A half-window margin avoids resuming into deleted live HLS segments.
+HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
 _GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
 
 
@@ -371,34 +378,41 @@ def _usable_ipv4(value: str) -> bool:
 
 
 def host_ip(device_host: str | None = None) -> str:
-    """Choose the source interface for the Chromecast route, not hostname -I.
+    """Choose an outbound LAN IP, preferring the receiver's real route.
 
-    UDP connect only selects a route; no datagram is sent. A VPN, Docker bridge
-    or multiple NICs can make the first hostname -I address unreachable by TV.
+    A UDP connect only selects a source address; it sends no packet. If the
+    route is unavailable (e.g. isolated LAN), enumerate private IPv4 interface
+    addresses on Linux/macOS/Windows. No Linux-only hostname command.
     """
-    routes = []
     if device_host and _usable_ipv4(device_host):
-        routes.append((device_host, 8009))
-    routes.append(("8.8.8.8", 80))
-    for target in routes:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.connect(target)
+                sock.connect((device_host, 8009))
                 candidate = sock.getsockname()[0]
             if _usable_ipv4(candidate):
                 return candidate
         except OSError:
-            continue
-    # Best effort when no route can be selected, e.g. on a restricted network.
-    try:
-        out = subprocess.check_output(["hostname", "-I"], text=True, timeout=3).split()
-        for candidate in out:
-            if _usable_ipv4(candidate):
-                return candidate
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    raise StreamError("No usable LAN IPv4 address found for Chromecast streaming")
+            pass
 
+    candidate = lan_interfaces.select_private_lan_ip(device_host)
+    if candidate:
+        return candidate
+
+    # The default route can work even if OS interface enumeration is denied.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            candidate = sock.getsockname()[0]
+        if _usable_ipv4(candidate):
+            return candidate
+    except OSError:
+        pass
+
+    raise StreamError(
+        "No usable LAN IPv4 source address for streaming. "
+        "Check that Wi-Fi/Ethernet is connected and the receiver is reachable "
+        "on the selected network (interface enumeration and route probe failed)."
+    )
 
 _IS_WINDOWS = os.name == "nt"
 
@@ -446,60 +460,54 @@ def _pid_alive_windows(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def _pid_is_ours(pid: int | None, role: str) -> bool:
-    """Protect against stale/reused PIDs before restoring or signalling them."""
-    if not pid_alive(pid):
+def _pid_is_ours(pid: int | None, role: str, expected_start: float = 0.0) -> bool:
+    """Do not adopt a reused saved PID, foreign user or different command."""
+    if not pid or pid <= 1:
+        return False
+    if process_identity.psutil is not None:
+        return process_identity.matches(
+            process_identity.snapshot(pid), role,
+            expected_start=expected_start if expected_start > 0 else None,
+            server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+        )
+    # Source-only Linux fallback permits read-only PID observation, never
+    # signalling. Saved-session adoption requires an epoch birth time, which
+    # /proc start ticks alone cannot validate without the original boot clock.
+    if platform.system() != "Linux" or expected_start > 0 or not pid_alive(pid):
         return False
     try:
-        argv = [
+        argv = tuple(
             part.decode("utf-8", "replace")
             for part in pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
             if part
-        ]
+        )
     except OSError:
         return False
-    if role == "server":
-        return str(SERVER_SCRIPT) in argv
-    if role == "encoder":
-        return (bool(argv) and pathlib.Path(argv[0]).name.startswith("ffmpeg")
-                and str(PROGRESS_FILE) in argv)
-    if role == "caster":
-        return ("-d" in argv and "cast" in argv
-                and any(pathlib.Path(arg).name == "catt" for arg in argv[:2]))
-    return False
+    return process_identity.role_of(
+        argv, server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+    ) == role
 
 
-def _terminate_pid(pid: int | None, role: str) -> None:
-    if not _pid_is_ours(pid, role):
-        return
-    try:
-        os.kill(pid, 15)
-    except OSError:
-        return
-    for _ in range(20):
-        if not _pid_is_ours(pid, role):
-            return
-        time.sleep(0.15)
-    if not _pid_is_ours(pid, role):
-        return
-    try:
-        os.kill(pid, 9)
-    except OSError:
-        pass
-
+def _terminate_pid(pid: int | None, role: str, expected_start: float = 0.0) -> None:
+    """Never use os.kill on an unverified saved PID (especially on Windows)."""
+    process_identity.stop_verified(
+        pid, role, expected_start=expected_start if expected_start > 0 else None,
+        server_script=str(SERVER_SCRIPT), progress_file=str(PROGRESS_FILE),
+    )
 
 class PidHandle:
     """Minimal Popen-like handle for verified processes restored from disk."""
 
-    def __init__(self, pid: int, role: str) -> None:
+    def __init__(self, pid: int, role: str, created_at: float = 0.0) -> None:
         self.pid = pid
         self.role = role
+        self.created_at = created_at
 
     def poll(self) -> int | None:
-        return None if _pid_is_ours(self.pid, self.role) else -1
+        return None if _pid_is_ours(self.pid, self.role, self.created_at) else -1
 
     def terminate(self) -> None:
-        _terminate_pid(self.pid, self.role)
+        _terminate_pid(self.pid, self.role, self.created_at)
 
     def wait(self, timeout: float | None = None) -> int:
         deadline = None if timeout is None else time.time() + timeout
@@ -588,14 +596,34 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
         media.size = path.stat().st_size
     except OSError:
         pass
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-print_format", "json",
-         "-show_format", "-show_streams", str(path)],
-        capture_output=True, text=True, timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-print_format", "json",
+             "-show_format", "-show_streams", str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise StreamError("ffprobe is not installed or not on PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise StreamError("ffprobe timed out while reading this file") from exc
+    except OSError as exc:
+        raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
         raise StreamError("ffprobe could not read this file")
-    data = json.loads(result.stdout or "{}")
+    try:
+        data = json.loads(result.stdout or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("ffprobe JSON is not an object")
+        _read_probe(media, data)
+    except (ValueError, TypeError, AttributeError, ArithmeticError, RecursionError) as exc:
+        # ffprobe output is untrusted (damaged file, replaced binary): any
+        # malformed shape is one clear error, never a crash in the GTK thread.
+        raise StreamError("ffprobe returned unusable data for this file") from exc
+    return media
+
+
+def _read_probe(media: MediaInfo, data: dict) -> None:
+    """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
     try:
@@ -664,7 +692,6 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     if not media.vcodec:
         raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
-    return media
 
 
 def _direct_capable(media: MediaInfo) -> tuple[bool, str]:
@@ -713,17 +740,29 @@ def _port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _server_healthy() -> bool:
-    """Verify our HLS server is listening; never mistake another app for it."""
+def _server_probe() -> tuple[bool, str | None, int | None]:
+    """Return (healthy, listen address, pid) for the server on our port.
+
+    The address and pid come from headers added with the access restriction;
+    an older server that predates them reports ``(True, None, None)``.
+    """
     connection = HTTPConnection("127.0.0.1", PORT, timeout=0.4)
     try:
         connection.request("GET", "/_smoothcast/health")
         response = connection.getresponse()
-        return response.status == 200 and response.read(64) == b"SmoothCast HLS server v1\n"
+        if response.status != 200 or response.read(64) != b"SmoothCast HLS server v1\n":
+            return False, None, None
+        pid = response.getheader("X-SmoothCast-Pid", "")
+        return True, response.getheader("X-SmoothCast-Bind"), int(pid) if pid.isdigit() else None
     except (OSError, ValueError, HTTPException):
-        return False
+        return False, None, None
     finally:
         connection.close()
+
+
+def _server_healthy() -> bool:
+    """Verify our HLS server is listening; never mistake another app for it."""
+    return _server_probe()[0]
 
 
 @dataclass
@@ -747,6 +786,10 @@ class SessionState:
     ffmpeg_pid: int = 0
     server_pid: int = 0
     caster_pid: int = 0
+    # OS process creation epoch times, distinct from session playback time.
+    ffmpeg_created_at: float = 0.0
+    server_created_at: float = 0.0
+    caster_created_at: float = 0.0
     stream_url: str = ""
 
 
@@ -807,9 +850,16 @@ class Session:
             state.stream_url if state.mode == "transcode" else "",
         )
         self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
-        self.ffmpeg = PidHandle(state.ffmpeg_pid, "encoder") if _pid_is_ours(state.ffmpeg_pid, "encoder") else None
-        self.server = PidHandle(state.server_pid, "server") if _pid_is_ours(state.server_pid, "server") else None
-        self.caster = PidHandle(state.caster_pid, "caster") if _pid_is_ours(state.caster_pid, "caster") else None
+        def recovered(pid: int, role: str, created_at: float):
+            if (type(created_at) not in (int, float)
+                    or not math.isfinite(created_at) or created_at <= 0
+                    or not _pid_is_ours(pid, role, created_at)):
+                return None  # Old, malformed or reused PID: fail closed.
+            return PidHandle(pid, role, created_at)
+
+        self.ffmpeg = recovered(state.ffmpeg_pid, "encoder", state.ffmpeg_created_at)
+        self.server = recovered(state.server_pid, "server", state.server_created_at)
+        self.caster = recovered(state.caster_pid, "caster", state.caster_created_at)
         self._start_sampler()
 
     def active(self) -> bool:
@@ -940,12 +990,13 @@ class Session:
         _terminate(self.ffmpeg)
         _terminate(self.server)
         if self.state is not None:
-            for pid, role in (
-                (self.state.server_pid, "server"),
-                (self.state.ffmpeg_pid, "encoder"),
-                (self.state.caster_pid, "caster"),
+            for pid, role, created in (
+                (self.state.server_pid, "server", self.state.server_created_at),
+                (self.state.ffmpeg_pid, "encoder", self.state.ffmpeg_created_at),
+                (self.state.caster_pid, "caster", self.state.caster_created_at),
             ):
-                _terminate_pid(pid, role)
+                if type(created) in (int, float) and math.isfinite(created) and created > 0:
+                    _terminate_pid(pid, role, created)
         if send_stop:
             castctl.stop(device)
         clear_session()
@@ -962,13 +1013,33 @@ class Session:
         self.server = None
         self.caster = None
 
-    def _start_server(self) -> None:
+    def _start_server(self, bind_ip: str | None = None,
+                      receiver_ip: str | None = None) -> None:
+        """Start (or reuse) the HLS server, reachable only by the receiver.
+
+        The server listens on loopback plus *bind_ip* (never 0.0.0.0) and
+        rejects other clients per the access policy published here before
+        any reuse, so a server kept alive for a previous receiver follows the
+        new one. A kept server bound to a different interface, or one that
+        predates this restriction, is replaced only if its PID is verified
+        as our own server; otherwise the cast is refused.
+        """
+        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip))
         if _port_open(PORT):
-            if _server_healthy():
+            healthy, bound, pid = _server_probe()
+            if not healthy:
+                raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+            if bind_ip is None or bound == bind_ip:
                 return  # Verified server left alive by keep-streaming.
-            raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+            if not _pid_is_ours(pid, "server"):
+                raise StreamError(
+                    f"A SmoothCast streaming server on port {PORT} is bound to a different "
+                    "address and could not be verified for replacement; stop it and retry")
+            _terminate_pid(pid, "server")
+            if _port_open(PORT):
+                raise StreamError(f"Port {PORT} is still in use by the previous streaming server")
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT)],
+            [sys.executable, str(SERVER_SCRIPT)] + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1198,7 +1269,8 @@ class Session:
             args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-            "-f", "hls", "-hls_time", "4", "-hls_list_size", "12",
+            "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS),
+            "-hls_list_size", str(HLS_PLAYLIST_SEGMENTS),
             "-hls_flags", "delete_segments+independent_segments",
             "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
             str(ROOT / self._playlist_name),
@@ -1210,7 +1282,7 @@ class Session:
                 start_new_session=True,
             )
         try:
-            self._start_server()
+            self._start_server(local_ip, device_ip)
         except Exception:
             _terminate(self.ffmpeg)
             self.ffmpeg = None
@@ -1269,6 +1341,9 @@ class Session:
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,
             caster_pid=getattr(self.caster, "pid", 0) if self.caster else 0,
+            ffmpeg_created_at=process_identity.start_time(getattr(self.ffmpeg, "pid", 0)),
+            server_created_at=process_identity.start_time(getattr(self.server, "pid", 0)),
+            caster_created_at=process_identity.start_time(getattr(self.caster, "pid", 0)),
             stream_url=url,
         )
         _save_session(self.state)
@@ -1371,5 +1446,6 @@ class Session:
             subs=str(subs_file or ""), burn_subs=False,
             started_at=time.time(),
             caster_pid=getattr(self.caster, "pid", 0),
+            caster_created_at=process_identity.start_time(getattr(self.caster, "pid", 0)),
         )
         _save_session(self.state)

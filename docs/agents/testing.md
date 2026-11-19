@@ -20,6 +20,33 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
+**Quality gates (#250, #252, #253, #262):** `ruff check src scripts setup tests
+sc.py setup.py` (rules in `pyproject.toml`; `ruff format` is configured but not
+gated) fails CI on new violations. The Python 3.13 portable job also runs
+`--cov=src --cov-fail-under=38` (measured baseline 40% on 19 Nov 2026; raise
+the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
+update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
+compileall locally (`pip install pre-commit && pre-commit install`).
+
+**Types (#251):** `mypy` (config in `pyproject.toml`) gates only the modules
+listed under `[tool.mypy] files`; CI fails on any error there. To widen it, fix
+a module until `mypy src/<module>.py` is clean, then add it to the list (new
+modules should start typed). GTK-facing modules stay out until typed.
+
+**Fuzzing (#260):** `tests/test_fuzz_parsers.py` property-tests the SRT decoder,
+M3U loader, DLNA description/fault XML and ffprobe JSON handling with
+Hypothesis (seeded, 150 examples each, ~3 s). Parsers may only raise their
+documented error. CI installs `hypothesis`; locally `pip install hypothesis`
+(the file skips if it is missing). For a deeper hunt raise `max_examples` and set
+`derandomize=False` in a scratch copy, then add each find as a fixed regression.
+
+**Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
+`pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
+CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
+pushes and weekly. To adopt a new catt minor: test it against a receiver,
+raise the upper bound in both files and the setup docs, then run the suite.
+Triage CodeQL findings in the Security tab; record dismissals with a reason.
+
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed
@@ -52,6 +79,26 @@ running any installed code. This is a Python/package compatibility check,
 **not** native GTK, FFmpeg or receiver playback validation. The checked icon
 lives in `src/smoothcast_assets/local.cast-control.png`, not relative to a
 Git checkout.
+
+**P0 early Cast preparation safety (#13):** missing selected subtitles or an
+undiscovered DLNA renderer must reject the new cast without clearing the
+original active receiver's session, playback clock or audio monitor.
+`tests/test_cast_preflight_preservation.py` executes the real GUI handlers
+with injected objects and no GTK or TV commands. Full retry/alternate
+encoding/device tests and physical receiver verification are separate.
+
+**Film screenshot ownership (#140):** select the active receiver/decoder/preview
+clock only when its source matches the currently loaded film. The GTK-free
+`src/screenshot.py` guard rejects foreign casts, unknown timestamps, and
+unpreviewed queue rows before scheduling FFmpeg; test with
+`tests/test_film_screenshot_selection.py`. Real-device frame qualification
+remains separate.
+
+**P0 cross-platform process ownership (#237):** mock process birth time,
+user and argv with `tests/test_process_identity_portable.py`; never signal a
+real PID in routine tests. Legacy sessions without birth evidence cannot
+reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
+separate from portable CI.
 
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,

@@ -7,8 +7,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from itertools import islice
+import json
 import math
+import os
+from pathlib import Path
+import shutil
 
+import cache_policy
 import watch_history
 
 
@@ -100,7 +105,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                 cfg[key] = value
         elif type(baseline) is int:
             lo, hi = (-100000, 100000) if key in {"window_x", "window_y"} else (
-                (0, 1440) if key == "sleep_timer_minutes" else (1, 10000)
+                (0, 1440) if key == "sleep_timer_minutes" else (
+                    (0, cache_policy.MAX_CAP_MB) if key == "cache_cap_mb" else (1, 10000))
             )
             if type(value) is int and lo <= value <= hi:
                 cfg[key] = value
@@ -119,3 +125,102 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             ):
                 cfg[key] = value
     return cfg
+
+
+# --- Schema versioning and migration (issue #273) ---------------------------
+#
+# ``schema_version`` is the integer format of config.json. A file without it is
+# version 0 (every release before versioning); its keys already match version
+# 1, so that migration only stamps the version. To change the format: bump
+# SCHEMA_VERSION, add MIGRATIONS[old] returning the new-shape dict, test it.
+SCHEMA_VERSION = 1
+
+
+class ConfigSchemaError(ValueError):
+    """The saved settings use a schema this release cannot safely handle."""
+
+
+def _v0_to_v1(raw: dict) -> dict:
+    return raw
+
+
+MIGRATIONS = {0: _v0_to_v1}
+# Paths whose original file must not be overwritten (newer schema, failed
+# migration, unreadable). Saves to them are skipped for this process.
+_PROTECTED: set[str] = set()
+
+
+def migrate(raw: dict) -> tuple[dict, int]:
+    """Return (migrated copy, original version); never mutates *raw*."""
+    version = raw.get("schema_version", 0)
+    if type(version) is not int or version < 0:
+        raise ConfigSchemaError(f"invalid schema_version {version!r}")
+    if version > SCHEMA_VERSION:
+        raise ConfigSchemaError(
+            f"settings are schema {version}; this release understands {SCHEMA_VERSION}")
+    original, data = version, deepcopy(raw)
+    while version < SCHEMA_VERSION:
+        step = MIGRATIONS.get(version)
+        if step is None:
+            raise ConfigSchemaError(f"no migration from schema {version}")
+        data = step(deepcopy(data))
+        if not isinstance(data, dict):
+            raise ConfigSchemaError(f"migration from schema {version} returned no mapping")
+        version += 1
+        data["schema_version"] = version
+    return data, original
+
+
+def _backup(path: Path, label: str) -> None:
+    """Keep one copy of the original; an existing backup is never replaced."""
+    target = path.with_name(f"{path.name}.{label}.bak")
+    try:
+        if not target.exists():
+            shutil.copy2(path, target)
+    except OSError:
+        pass
+
+
+def load_file(path: Path, defaults: dict) -> dict:
+    """Read, migrate and validate settings; protect the original on failure."""
+    path = Path(path)
+    key = str(path)
+    _PROTECTED.discard(key)
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError:
+        return sanitise_config({}, defaults)
+    except OSError:
+        _PROTECTED.add(key)  # Unreadable now does not mean worthless.
+        return sanitise_config({}, defaults)
+    except ValueError:
+        _backup(path, "corrupt")
+        return sanitise_config({}, defaults)
+    if not isinstance(raw, dict):
+        _backup(path, "corrupt")
+        return sanitise_config({}, defaults)
+    try:
+        migrated, original = migrate(raw)
+    except Exception:  # A buggy migration must never cost the user's settings.
+        _PROTECTED.add(key)
+        return sanitise_config(raw, defaults)
+    if original < SCHEMA_VERSION:
+        _backup(path, f"schema{original}")
+    cfg = sanitise_config(migrated, defaults)
+    cfg["schema_version"] = SCHEMA_VERSION
+    return cfg
+
+
+def save_file(path: Path, cfg: dict) -> bool:
+    """Atomically write settings unless the original is protected."""
+    path = Path(path)
+    if str(path) in _PROTECTED:
+        return False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cfg, indent=1))
+        os.replace(tmp, path)
+    except OSError:
+        return False
+    return True

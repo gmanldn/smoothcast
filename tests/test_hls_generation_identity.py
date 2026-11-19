@@ -13,7 +13,6 @@ from tempfile import TemporaryDirectory
 import threading
 from unittest import mock
 
-import pytest
 import server
 import streamer
 
@@ -110,7 +109,7 @@ def test_delayed_http_requests_never_receive_new_timeline_bytes():
                 assert fetch(f"/movie-{new}.m3u8")[:2] == (200, b"#EXTM3U\nNEW PLAYLIST\n")
                 assert fetch(f"/segment-{new}-00000.ts")[:2] == (200, b"NEW FRAME")
                 assert fetch(f"/segment-{new}-00000.ts", "HEAD")[:2] == (200, b"")
-                assert fetch(f"/session.json")[0] == 404
+                assert fetch("/session.json")[0] == 404
             finally:
                 httpd.shutdown()
                 httpd.server_close()

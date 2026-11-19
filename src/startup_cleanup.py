@@ -2,7 +2,7 @@
 
 Python threads die with their interpreter, but FFmpeg/ffplay/HLS subprocesses
 can survive a crash. Never signal by executable name alone: require the same
-user, a SmoothCast-specific command signature and matching /proc starttime.
+user, a SmoothCast-specific command signature and matching process birth time.
 Keep-streaming sessions are left for normal Chromecast session adoption.
 """
 from __future__ import annotations
@@ -16,7 +16,9 @@ import signal
 import tempfile
 import time
 
+import cache_policy
 import streamer
+import process_identity
 
 
 @dataclass(frozen=True)
@@ -38,24 +40,12 @@ class CleanupReport:
 
 
 def process_kind(argv: tuple[str, ...]) -> str | None:
-    """Match only project-owned subprocesses; never a generic ffmpeg/catt."""
-    if not argv:
-        return None
-    executable = Path(argv[0]).name
-    if len(argv) >= 2 and argv[1] == str(streamer.SERVER_SCRIPT) and executable.startswith("python"):
-        return "server"
-    if executable == "ffmpeg":
-        if "-progress" in argv and str(streamer.PROGRESS_FILE) in argv:
-            return "encoder"
-        if "-filter_complex" in argv and any(
-            "ametadata=mode=print:file=" in arg and "cast-mon-" in arg
-            for arg in argv
-        ):
-            return "monitor"
-    if executable == "ffplay" and "SmoothCast — local playback" in argv:
-        return "local"
-    return None
-
+    """Only helper roles with project-specific markers, not generic catt."""
+    kind = process_identity.role_of(
+        argv, server_script=str(streamer.SERVER_SCRIPT),
+        progress_file=str(streamer.PROGRESS_FILE),
+    )
+    return kind if kind in {"server", "encoder", "monitor", "local"} else None
 
 def _start_ticks(stat_text: str) -> int:
     # /proc/<pid>/stat field 2 (comm) can contain whitespace/parentheses.
@@ -83,7 +73,35 @@ def inspect_process(pid: int, proc_root: Path = Path("/proc")) -> Process | None
         return None
 
 
+def inspect_portable(pid: int) -> Process | None:
+    """Cross-platform same-user process snapshot, with OS birth time."""
+    identity = process_identity.snapshot(pid)
+    if identity is None:
+        return None
+    kind = process_kind(identity.argv)
+    if kind is None:
+        return None
+    return Process(identity.pid, kind, round(identity.created_at * 1_000_000),
+                   identity.argv)
+
+
+def discover_portable() -> list[Process]:
+    """Enumerate only same-user helpers on macOS/Windows, never by name alone."""
+    if process_identity.psutil is None:
+        return []
+    try:
+        result = []
+        for candidate in process_identity.psutil.process_iter():
+            if (info := inspect_portable(candidate.pid)) is not None:
+                result.append(info)
+        return result
+    except Exception:  # Permission failures cannot authorise termination.
+        return []
+
+
 def discover(proc_root: Path = Path("/proc")) -> list[Process]:
+    if platform.system() != "Linux":
+        return discover_portable()
     try:
         ids = [int(entry.name) for entry in proc_root.iterdir()
                if entry.name.isdecimal()]
@@ -94,7 +112,8 @@ def discover(proc_root: Path = Path("/proc")) -> list[Process]:
 
 
 def _same_process(process: Process, proc_root: Path) -> bool:
-    current = inspect_process(process.pid, proc_root)
+    current = (inspect_process(process.pid, proc_root)
+               if platform.system() == "Linux" else inspect_portable(process.pid))
     return bool(current and current.kind == process.kind
                 and current.start_ticks == process.start_ticks
                 and current.argv == process.argv)
@@ -102,28 +121,39 @@ def _same_process(process: Process, proc_root: Path) -> bool:
 
 def _stop_orphans(processes: list[Process], proc_root: Path,
                   report: CleanupReport, grace: float) -> None:
+    """Check start time and exact argv immediately before each signal."""
+    def send(process: Process, force: bool) -> bool:
+        if platform.system() != "Linux":
+            # os.kill(pid, SIGTERM) on Windows is unsafe (TerminateProcess).
+            return process_identity.signal_verified(
+                process.pid, process.kind,
+                expected_start=process.start_ticks / 1_000_000,
+                expected_argv=process.argv,
+                server_script=str(streamer.SERVER_SCRIPT),
+                progress_file=str(streamer.PROGRESS_FILE),
+                force=force,
+            )
+        try:
+            os.kill(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+            return True
+        except OSError as exc:
+            report.errors.append(f"signal {process.pid}: {exc}")
+            return False
+
     pending = []
     for process in processes:
-        if not _same_process(process, proc_root):
-            continue
-        try:
-            os.kill(process.pid, signal.SIGTERM)
+        if _same_process(process, proc_root) and send(process, False):
             pending.append(process)
             report.stopped.append(process.pid)
-        except OSError as exc:
-            report.errors.append(f"SIGTERM {process.pid}: {exc}")
     deadline = time.monotonic() + max(0.0, grace)
     while pending and time.monotonic() < deadline:
         pending = [p for p in pending if _same_process(p, proc_root)]
         if pending:
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
     for process in pending:
-        # Recheck identity immediately before escalation; PIDs may be reused.
+        # Recheck birth time and command before escalation; PID may be reused.
         if _same_process(process, proc_root):
-            try:
-                os.kill(process.pid, signal.SIGKILL)
-            except OSError as exc:
-                report.errors.append(f"SIGKILL {process.pid}: {exc}")
+            send(process, True)
 
 
 def cleanup_before_window(
@@ -136,9 +166,9 @@ def cleanup_before_window(
     Preserve a session explicitly kept streaming so it can be re-adopted.
     """
     report = CleanupReport()
-    # /proc and UID-owned process inspection are Linux-specific. Never try
-    # scanning/killing helpers on macOS or Windows using a Linux PID model.
-    if platform.system() != "Linux":
+    # Windows/macOS require psutil. Without it, fail closed; never probe or
+    # signal arbitrary saved PIDs with Windows os.kill semantics.
+    if platform.system() != "Linux" and process_identity.psutil is None:
         return report
     processes = discover(proc_root)
     state = streamer.load_session()
@@ -151,8 +181,12 @@ def cleanup_before_window(
         has_server = any(p.kind == "server" for p in processes)
     report.retained_stream = bool(keep_streaming and state and (
         state.mode == "direct" or
-        (state.mode == "transcode" and has_server)
+        (state.mode == "transcode" and
+         (has_server or platform.system() != "Linux"))
     ))
+    # On macOS/Windows a missed/inaccessible process inventory cannot prove
+    # that the receiver has stopped consuming this HLS playlist. Fail safe:
+    # preserve kept-stream media rather than deleting it on uncertain recovery.
     protected: set[int] = set()
     if report.retained_stream and state and state.mode == "transcode":
         protected.update(p.pid for p in processes if p.kind == "server")
@@ -167,7 +201,7 @@ def cleanup_before_window(
         # HLS artefacts. Leave diagnostic logs and all user media untouched.
         root = streamer.ROOT
         files = [streamer.PROGRESS_FILE, root / streamer.HLS_NAME,
-                 *root.glob(streamer.SEGMENT_GLOB)]
+                 *root.glob(streamer.SEGMENT_GLOB), *root.glob("movie-*.m3u8")]
         if not report.retained_stream:
             files.insert(0, streamer.SESSION_FILE)
             # Never remove the captions from a deliberately retained cast;
@@ -189,14 +223,21 @@ def cleanup_before_window(
     surviving = [p for p in processes if p.kind == "monitor"
                  and p.pid not in report.stopped]
     try:
-        candidates = list(scratch_root.glob("cast-mon-*"))[:256]
+        # DLNA conversions leave a multi-GB scratch MP4 if the app is killed;
+        # sweep those too, but only once old enough not to be in preparation.
+        candidates = [(f, 0.0) for f in list(scratch_root.glob("cast-mon-*"))[:256]]
+        candidates += [(f, cache_policy.MIN_STALE_AGE_SECONDS) for f in
+                       list(scratch_root.glob(cache_policy.SCRATCH_PREFIX + "*"))[:256]]
     except OSError:
         candidates = []
-    for folder in candidates:
+    for folder, min_age in candidates:
         try:
             stat = folder.lstat()
             if (not folder.is_dir() or folder.is_symlink()
+                    or platform.system() == "Windows"
                     or stat.st_uid != os.getuid()):
+                continue
+            if min_age and time.time() - stat.st_mtime < min_age:
                 continue
             if any(str(folder) in " ".join(p.argv) for p in surviving):
                 continue

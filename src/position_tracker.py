@@ -95,6 +95,13 @@ class PositionTracker:
             value = min(value, self.duration)
         return max(0.0, value)
 
+    def paused_for(self, now: float | None = None) -> float:
+        """Elapsed wall-clock pause time; zero when playing or unknown."""
+        if not self.known or self._playing or self._pause_started is None:
+            return 0.0
+        now = time.monotonic() if now is None else now
+        return max(0.0, now - self._pause_started)
+
     def clear(self) -> None:
         self.known = False
         self.duration = 0.0

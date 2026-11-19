@@ -6,13 +6,11 @@ import ast
 from pathlib import Path
 import importlib.util
 import os
-import sys
 from unittest import mock
 
 import smoothcast_assets
 import streamer
 import server
-import version
 
 
 ROOT = Path(__file__).resolve().parents[1]

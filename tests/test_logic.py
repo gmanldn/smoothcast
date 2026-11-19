@@ -1,7 +1,6 @@
 """Unit tests for pure-logic modules (no GTK/display/device required)."""
 
 import math
-import sys
 
 import pytest
 
@@ -314,6 +313,26 @@ def test_position_tracker_started_paused_resumes_at_original_source_clock(monkey
     now[0] += 30.0
     assert not tracker.playing
     assert tracker.value() == 105.5
+
+
+def test_pause_duration_tracks_restart_age_but_never_play_time(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
+    tracker = position_tracker.PositionTracker()
+    assert tracker.paused_for() == 0.0
+    tracker.start(30.0, 180.0, playing=False, rate=2.0)
+    assert tracker.paused_for() == 0.0
+    now[0] += 25.0
+    assert tracker.paused_for() == 25.0
+    assert tracker.value() == 30.0
+    tracker.set_state(True)
+    now[0] += 100.0
+    assert tracker.paused_for() == 0.0
+    tracker.set_state(False)
+    now[0] += 12.0
+    assert tracker.paused_for() == 12.0
+    tracker.clear()
+    assert tracker.paused_for() == 0.0
 
 
 def test_position_tracker_pause_resume_accumulates(monkeypatch):

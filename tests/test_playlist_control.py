@@ -172,5 +172,17 @@ class PlaylistTests(unittest.TestCase):
         self.assertIn('simple("loop", lambda *a: self._window()._toggle_loop())', source)
 
 
+
+class HostileEntryRegressionTests(unittest.TestCase):
+    """Found by tests/test_fuzz_parsers.py (#260)."""
+
+    def test_unknown_home_directory_entry_is_skipped_not_fatal(self):
+        with TemporaryDirectory() as work:
+            playlist = Path(work) / "list.m3u"
+            playlist.write_bytes(b"~\x01\n~no-such-user-xyz/film.mkv\n")
+            items, skipped = playlist_control.load_playlist(playlist)
+        self.assertEqual((items, skipped), ([], 2))
+
+
 if __name__ == "__main__":
     unittest.main()

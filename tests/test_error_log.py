@@ -1,13 +1,11 @@
 """Tests for src/error_log.py ring-buffer error logger."""
 
 import sys
-import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
