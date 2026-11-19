@@ -29,7 +29,8 @@ def validate_restart(state: Any, media: streamer.MediaInfo) -> RestartSubtitles:
     """
     if state is None:
         return RestartSubtitles(None, False, None)
-    saved = str(getattr(state, "subs", "") or "").strip()
+    # Never normalise the filename: spaces are legal subtitle path bytes.
+    saved = str(getattr(state, "subs", "") or "")
     selected = getattr(state, "embedded_subtitle_index", -1)
     if type(selected) is not int or selected < -1:
         raise streamer.StreamError("Saved embedded subtitle index is invalid; select a track again")
