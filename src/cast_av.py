@@ -547,6 +547,40 @@ class AvMixin:
         return None
 
 
+    def _toggle_favourite(self) -> None:
+        """Pin/unpin the selected file; ordered list, separate from recents."""
+        path = self._selected_path()
+        if not path:
+            self.toast("Select a file to pin", error=True)
+            return
+        favourites = [p for p in self.cfg.get("favourites", []) if p != path]
+        pinned = len(favourites) == len(self.cfg.get("favourites", []))
+        if pinned:
+            favourites.insert(0, path)
+        self.cfg["favourites"] = favourites[:16]
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast(f"{'Pinned' if pinned else 'Unpinned'}: {pathlib.Path(path).name}")
+
+
+    def _clear_favourites(self) -> None:
+        self.cfg["favourites"] = []
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast("Favourites cleared")
+
+
+    def _open_favourite(self, index: int) -> None:
+        favourites = self.cfg.get("favourites", [])
+        if not 0 <= index < len(favourites):
+            return
+        path = pathlib.Path(favourites[index])
+        if not path.is_file():
+            self.toast("That file has moved or been deleted", error=True)
+            return
+        self.open_paths([str(path)])
+
+
     def _current_media(self) -> streamer.MediaInfo | None:
         if self.media is not None and self.now_playing is not None and str(self.media.path) == self.now_playing:
             return self.media

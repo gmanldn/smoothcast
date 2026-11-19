@@ -237,6 +237,7 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("custom-speed", lambda *a: self._window().action_custom_speed())
         simple("loop-all", lambda *a: self._window()._toggle_loop_all())
         simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
@@ -253,11 +254,17 @@ class CastControlApp(Adw.Application):
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
+        simple("favourite", lambda *a: self._window()._toggle_favourite())
+        simple("clear-favourites", lambda *a: self._window()._clear_favourites())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
             action = Gio.SimpleAction.new(f"recent-{index}", None)
             action.connect("activate", lambda _a, _p, i=index: self._window().open_recent(i))
+            self.add_action(action)
+        for index in range(16):
+            action = Gio.SimpleAction.new(f"favourite-{index}", None)
+            action.connect("activate", lambda _a, _p, i=index: self._window()._open_favourite(i))
             self.add_action(action)
         scheme = Gio.SimpleAction.new_stateful(
             "color-scheme", GLib.VariantType.new("s"), GLib.Variant("s", "prefer-dark")

@@ -128,5 +128,25 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("self._rebuild_queue()", shuffle)
 
 
+    def test_custom_speed_is_wired_and_bounded(self):
+        # SC-119 #128: a precise rate input within a safe range.
+        self.assertIn("app.custom-speed", self.methods["_build_menu"])
+        custom = self.methods["action_custom_speed"]
+        self.assertIn("Gtk.SpinButton.new_with_range(0.25, 4.0", custom)
+        self.assertIn("self._set_speed(spin.get_value())", custom)
+
+
+    def test_file_favourites_are_wired(self):
+        # SC-112 #121: pinned files kept separate from recents/receiver favourites.
+        self.assertIn("Favourites", self.methods["_build_menu"])
+        self.assertIn("app.favourite", self.methods["_build_menu"])
+        toggle = self.methods["_toggle_favourite"]
+        self.assertIn('self.cfg["favourites"]', toggle)
+        self.assertIn("save_config(self.cfg)", toggle)
+        open_fav = self.methods["_open_favourite"]
+        self.assertIn("is_file()", open_fav)
+        self.assertIn("open_paths(", open_fav)
+
+
 if __name__ == "__main__":
     unittest.main()

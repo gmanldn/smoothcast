@@ -65,6 +65,32 @@ On Linux, `sudo` may request the user's password for native package
 installation. No unverified shell-piped downloads or silently ignored
 package-manager failures are permitted.
 
+## Receiver route and media-port diagnostics
+
+When a Chromecast is discovered but a cast cannot start or buffer, run the
+explicit headless check from the installed environment:
+
+```sh
+smoothcast --network-check 192.168.1.41
+```
+
+Substitute the receiver's **private IPv4** address. The command prints JSON
+with the OS-selected local source IPv4, the route's interface name (where
+available), a bounded Chromecast TCP 8009 probe, possible VPN-interface
+indicator, and loopback HTTP health for SmoothCast's HLS server. It also
+provides `second_host_health_url`, for example
+`http://192.168.1.25:8767/_smoothcast/health`. Open that exact URL from a
+phone/second computer on the same LAN to verify the inbound TCP 8767 path.
+
+**Interpretation matters:** a working local UDP route or HLS loopback check
+cannot prove the receiver reaches this machine. An unreachable Cast control
+port might mean the receiver is off, isolated by VPN/Wi-Fi, or filtered; the
+command never labels one cause as proven. On Windows interface names may be
+unavailable; the source IP is still reported. No diagnostic scan is run
+automatically during launch, and no network I/O is done by routine tests.
+The existing redacted support bundle intentionally omits private IPs; this
+local command prints them solely for the person troubleshooting.
+
 ## What this does **not** establish yet
 
 The dependency bootstrap, smoke checks and OS shortcut creation are automated,
