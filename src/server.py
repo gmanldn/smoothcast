@@ -14,14 +14,20 @@ ROOT = Path.home() / ".cache" / "cast-control"
 PORT = 8767
 HEALTH_PATH = "/_smoothcast/health"
 HEALTH_BODY = b"SmoothCast HLS server v1\n"
+# A unique 128-bit media generation binds the playlist and all its
+# segments. Legacy names are read-only compatibility for already saved casts;
+# new sessions never write those names, so stale requests cannot alias them.
 _SEGMENT = re.compile(r"/segment-[0-9]+\.ts\Z")
+_GENERATION = re.compile(r"/(?:movie-[0-9a-f]{32}\.m3u8|segment-[0-9a-f]{32}-[0-9]+\.ts)\Z")
 
 
 def public_resource(url: str) -> bool:
     path = urlsplit(url).path
-    # Exact names only: reject directory traversal, dotfiles, encoded aliases,
-    # and anything else that isn't an HLS resource.
-    return path == "/movie.m3u8" or _SEGMENT.fullmatch(path) is not None
+    # Exact basenames only: traversal, encoded slashes, paths and accidental
+    # new files under ROOT never become LAN-visible. Query strings don't
+    # change the identity of the underlying generation-specific resource.
+    return (path == "/movie.m3u8" or _SEGMENT.fullmatch(path) is not None
+            or _GENERATION.fullmatch(path) is not None)
 
 
 class H(SimpleHTTPRequestHandler):

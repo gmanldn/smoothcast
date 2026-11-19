@@ -68,6 +68,46 @@ runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
 and the actual cast worker's direct-to-HLS branch with fakes. Real device
 decoder/subtitle negotiation remains P0 issue #18.
 
+## Subtitle selection on encoder restarts (P0 SC-015)
+
+`SessionMixin._restart_at` preserves the exact saved external subtitle
+file, its burn-in mode, or the selected embedded *stream index*. It first
+probes the current source and calls `subtitle_restart.validate_restart`
+**inside the existing background worker and before stopping the old stream**.
+A vanished/unsupported sidecar or a missing/bitmap replacement for an
+explicit embedded text track is a visible error; do not silently choose the
+new preferred/forced track or restart without captions. ASS/SSA files must
+always burn in, even if an old persisted state mistakenly says otherwise.
+`tests/test_subtitle_restart.py` executes the real handler with fakes and
+checks no Cast command is sent when selection validation fails.
+
+Subtitle *delay*, changing forced-track overrides, real device renderer
+transfers and timing need additional implementation/physical validation under
+[issue #22](https://github.com/gmanldn/smoothcast/issues/22).
+
+## HLS generation identity (P1 SC-062)
+
+Every new `streamer.Session.start_transcode` generates a cryptographically
+random 128-bit stream ID. The playlist is
+`movie-<32 lowercase hex>.m3u8`, with matching
+`segment-<same ID>-00000.ts` files. **Both paths must change** on every
+seek/restart or film switch: merely putting an ID in a URL query would allow
+a delayed old request to load replacement bytes through the same file.
+
+The LAN HTTP server permits only exact generated playlist/segment basenames
+(and read-only legacy names for already saved sessions). It never exposes
+directories, logs, subtitle staging, configuration or arbitrary files. New
+starts remove stale HLS assets; a stale receiver request returns 404 instead
+of frames from a different film or seek point. Persist the exact generation
+URL in `SessionState.stream_url`: watchdog, receiver ownership and recovery
+compare that full URL. Finalised single-segment HLS recovery must verify
+every playlist segment belongs to its saved generation.
+
+`tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
+cross-generation stale requests, narrow allowlists, encoder arguments and
+finalised recovery. All tests use mock encoders/TV and ephemeral local
+servers; do not launch GTK or send commands to a receiver.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
