@@ -33,6 +33,13 @@ listed under `[tool.mypy] files`; CI fails on any error there. To widen it, fix
 a module until `mypy src/<module>.py` is clean, then add it to the list (new
 modules should start typed). GTK-facing modules stay out until typed.
 
+**Fuzzing (#260):** `tests/test_fuzz_parsers.py` property-tests the SRT decoder,
+M3U loader, DLNA description/fault XML and ffprobe JSON handling with
+Hypothesis (seeded, 150 examples each, ~3 s). Parsers may only raise their
+documented error. CI installs `hypothesis`; locally `pip install hypothesis`
+(the file skips if it is missing). For a deeper hunt raise `max_examples` and set
+`derandomize=False` in a scratch copy, then add each find as a fixed regression.
+
 **Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
 `pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
 CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,

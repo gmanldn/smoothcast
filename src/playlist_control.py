@@ -41,15 +41,17 @@ def load_playlist(path: Path) -> tuple[list[str], int]:
         if "://" in entry or "\0" in entry:
             skipped += 1
             continue
-        candidate = Path(entry).expanduser()
-        if not candidate.is_absolute():
-            candidate = path.parent / candidate
         try:
+            # expanduser raises RuntimeError for an unknown "~user"; Python 3.10
+            # also raises it from resolve() on a symlink loop. Skip such entries.
+            candidate = Path(entry).expanduser()
+            if not candidate.is_absolute():
+                candidate = path.parent / candidate
             candidate = candidate.resolve()
             if not candidate.is_file():
                 skipped += 1
                 continue
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             skipped += 1
             continue
         normalized = str(candidate)

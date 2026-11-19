@@ -600,7 +600,20 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     )
     if result.returncode != 0:
         raise StreamError("ffprobe could not read this file")
-    data = json.loads(result.stdout or "{}")
+    try:
+        data = json.loads(result.stdout or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("ffprobe JSON is not an object")
+        _read_probe(media, data)
+    except (ValueError, TypeError, AttributeError, ArithmeticError, RecursionError) as exc:
+        # ffprobe output is untrusted (damaged file, replaced binary): any
+        # malformed shape is one clear error, never a crash in the GTK thread.
+        raise StreamError("ffprobe returned unusable data for this file") from exc
+    return media
+
+
+def _read_probe(media: MediaInfo, data: dict) -> None:
+    """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
     try:
@@ -669,7 +682,6 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     if not media.vcodec:
         raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
-    return media
 
 
 def _direct_capable(media: MediaInfo) -> tuple[bool, str]:

@@ -78,5 +78,21 @@ class TypeCheckGateTests(unittest.TestCase):
             self.assertTrue((ROOT / name).is_file(), name)
 
 
+
+class FuzzGateTests(unittest.TestCase):
+    def test_ci_installs_hypothesis_so_the_fuzz_tests_cannot_silently_skip(self):
+        workflow = read(".github/workflows/verify.yml")
+        portable = workflow.split("  portable-tests:", 1)[1].split("  media-integration:", 1)[0]
+        self.assertIn("hypothesis>=6,<7", portable)
+        self.assertIn("hypothesis", read("pyproject.toml"))
+
+    def test_fuzz_runs_are_bounded_and_reproducible(self):
+        source = read("tests/test_fuzz_parsers.py")
+        self.assertIn("max_examples=150", source)
+        self.assertIn("derandomize=True", source)
+        for parser in ("decode_srt", "parse_renderer", "load_playlist", "ffprobe", "_upnp_fault"):
+            self.assertIn(parser, source)
+
+
 if __name__ == "__main__":
     unittest.main()
