@@ -287,6 +287,8 @@ Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and 
 
 The Sleep timer menu now stops the active SmoothCast session after the selected interval (15–60 minutes). The deadline is saved across application restarts, and can be cancelled with **Off**. The application must remain running for the timer to fire; closing it with Keep streaming enabled does not leave a background scheduler running.
 
+On a Google Cast receiver the volume fades out over the last `sleep_fade_seconds` (default 30, `0` disables, maximum 600; set in `~/.config/cast-control/config.json`) before playback stops. The receiver's original volume is read once at the start of the fade and restored after the cast has stopped, or immediately if you cancel or re-arm the timer; changing the selected receiver abandons the fade without touching the new one. A receiver whose volume cannot be read is left alone. DLNA renderers are not faded (no readable volume), and a crash or force-quit during a fade leaves the volume lowered until you raise it.
+
 ## Clean startup and orphan recovery
 
 When a **new primary SmoothCast process** launches, it recovers from any old crashed session *before constructing the GTK window*. Linux process checks identify only this user's SmoothCast-owned HLS server, FFmpeg encoder, FFmpeg audio-monitor and ffplay preview helpers. The check verifies command-line signatures and process start times before sending SIGTERM, escalating only stubborn verified leftovers. This is not a blanket kill of other FFmpeg, Python or catt jobs.
