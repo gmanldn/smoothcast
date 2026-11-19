@@ -32,6 +32,24 @@ jobs:
       - name: Lint (configuration in pyproject.toml)
         run: ruff check src scripts setup tests sc.py setup.py
 
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Audit the resolved runtime dependencies
+        # Resolves catt (bounded in pyproject.toml) and its dependencies, then
+        # fails on any known vulnerability. Not a lock file: see testing.md.
+        run: |
+          python -m pip install 'pip-audit>=2.7,<3'
+          python -m venv "$RUNNER_TEMP/audit-env"
+          "$RUNNER_TEMP/audit-env/bin/python" -m pip install .
+          python -m pip_audit --path "$RUNNER_TEMP/audit-env/lib" --strict
+
   portable-tests:
     name: Portable regressions (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04

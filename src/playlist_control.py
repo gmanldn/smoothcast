@@ -6,6 +6,7 @@ relative to the playlist location and does not probe media or invoke GTK.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -88,6 +89,54 @@ def save_playlist(path: Path, items: list[str]) -> None:
         raise PlaylistError(f"Cannot save playlist: {exc}") from exc
     finally:
         temp.unlink(missing_ok=True)
+
+
+_DIGITS = re.compile(r"(\d+)")
+# S01E02 / s1.e2 / S01E02E03 (first episode wins) and the 1x02 style. The
+# lookarounds stop "mix02" or "1080x1920" style names matching by accident.
+_EPISODE = re.compile(
+    r"(?<![a-z0-9])s(\d{1,3})[ ._-]?e(\d{1,4})(?!\d)"
+    r"|(?<![a-z0-9])(\d{1,2})x(\d{2,3})(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def natural_key(text: str) -> tuple:
+    """Sort key where digit runs compare as numbers: ep2 < ep10, not ep10 < ep2."""
+    return tuple(
+        (0, int(part), "") if index % 2 else (1, 0, part)
+        for index, part in enumerate(_DIGITS.split(str(text).casefold()))
+        if part != ""
+    )
+
+
+def episode_of(name: str) -> tuple[int, int] | None:
+    """Return (season, episode) from an SxxExx / NxNN file name, else None."""
+    found = _EPISODE.search(Path(str(name)).stem)
+    if found is None:
+        return None
+    season, episode = (found.group(1), found.group(2)) if found.group(1) else (
+        found.group(3), found.group(4))
+    return int(season), int(episode)
+
+
+def natural_order(paths: list[str]) -> list[str]:
+    """Order a batch the way people expect season/episode files to play.
+
+    Within a folder: files with an episode marker by (season, episode), then
+    the rest by natural name; folders compare naturally. Never used for M3U
+    playlists, whose authored order is preserved. Stable for equal keys.
+    """
+    def key(path: str):
+        item = Path(path)
+        episode = episode_of(item.name)
+        return (
+            natural_key(str(item.parent)),
+            (0, *episode) if episode else (1, 0, 0),
+            natural_key(item.name),
+            str(path),
+        )
+    return sorted(paths, key=key)
 
 
 def matches_query(path: str, query: str) -> bool:

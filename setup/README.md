@@ -20,7 +20,7 @@ new partial replacement and **restores the prior directory**. Brand-new
 partial installs are cleaned up on failure. Compatible venvs repaired in place,
 native OS packages, shortcuts and uninstall are not yet fully transactional;
 see P0 issue SC-018 (#25). It then verifies that the actual environment can import GTK4 and
-libadwaita, that stable `catt >= 0.12` is installed (prerelease builds
+libadwaita, that stable `catt >= 0.12, < 0.14` is installed (prerelease builds
 below that floor are rejected even with `python -O`), and that `ffmpeg`,
 `ffprobe`, and `ffplay` **actually start and return success** from bounded
 `-version` probes; PATH presence alone is not sufficient. It registers a per-user application shortcut:

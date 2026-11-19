@@ -11,8 +11,8 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
-    "catt>=0.12",
-    "psutil>=5.9,<8",  # Safe process IDs and portable interface discovery
+    "catt>=0.12,<0.14",
+    "psutil>=5.9,<8",  # Verified process identity and native LAN discovery
 ]
 
 [project.optional-dependencies]

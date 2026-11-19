@@ -28,6 +28,13 @@ the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
 update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
 compileall locally (`pip install pre-commit && pre-commit install`).
 
+**Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
+`pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
+CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
+pushes and weekly. To adopt a new catt minor: test it against a receiver,
+raise the upper bound in both files and the setup docs, then run the suite.
+Triage CodeQL findings in the Security tab; record dismissals with a reason.
+
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed
@@ -75,12 +82,11 @@ unpreviewed queue rows before scheduling FFmpeg; test with
 `tests/test_film_screenshot_selection.py`. Real-device frame qualification
 remains separate.
 
-**P0 cross-platform process ownership (#237):** test per-process birth time,
-same-user and exact helper command signatures with
-`tests/test_process_identity_portable.py`. Never use real os.kill, psutil
-termination or process enumeration against the user's desktop in routine
-tests. Persist process creation times separately from the playback clock;
-legacy sessions without them cannot reattach unverified helper PIDs.
+**P0 cross-platform process ownership (#237):** mock process birth time,
+user and argv with `tests/test_process_identity_portable.py`; never signal a
+real PID in routine tests. Legacy sessions without birth evidence cannot
+reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
+separate from portable CI.
 
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,

@@ -7,7 +7,6 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-import json
 
 from gi.repository import GLib, Gtk
 import pathlib
@@ -43,6 +42,7 @@ ICON_NAME = APP_ID
 
 
 DEFAULTS: dict = {
+    "schema_version": 1,  # Must equal config_control.SCHEMA_VERSION (tested).
     "device": castctl.DEFAULT_DEVICE,
     "device_uuid": "",  # Stable discovered Cast identity; manual IP/DLNA stays name-based.
     "cast_targets": [],
@@ -84,23 +84,14 @@ CSS = ui_theme.CSS
 
 
 def load_config() -> dict:
-    try:
-        raw = json.loads(CONFIG_FILE.read_text())
-    except (OSError, ValueError):
-        raw = {}
-    # Validate every field before GTK consumes it; malformed neighbours
-    # must not lose valid preferences or share mutable DEFAULTS identities.
-    return config_control.sanitise_config(raw, DEFAULTS)
+    # Migrate, then validate every field before GTK consumes it; malformed
+    # neighbours must not lose valid preferences or share DEFAULTS identities.
+    return config_control.load_file(CONFIG_FILE, DEFAULTS)
 
 
 def save_config(cfg: dict) -> None:
-    try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = CONFIG_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(cfg, indent=1))
-        tmp.replace(CONFIG_FILE)
-    except OSError:
-        pass
+    # Atomic; skipped when the on-disk file uses a newer/unmigratable schema.
+    config_control.save_file(CONFIG_FILE, cfg)
 
 
 def fmt_time(seconds: float | None) -> str:
