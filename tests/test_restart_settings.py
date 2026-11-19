@@ -120,6 +120,8 @@ def test_paused_restart_seeks_and_stays_paused():
     pause.assert_called_once_with("TV")
     assert w.tracker.playing is False
     assert w.tracker.known is True
+    # A paused restart without a fresh device poll must not extrapolate time.
+    assert w.tracker.value(now=w.tracker._epoch + 90.0) == 42.0
 
 
 def test_playing_restart_stays_playing():
