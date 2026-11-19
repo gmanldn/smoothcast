@@ -5,6 +5,7 @@ import ipaddress
 import json
 import pathlib
 import shutil
+import math
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -177,8 +178,22 @@ def stop(device: str) -> tuple[bool, str]:
     return command(device, "stop")
 
 
+def seek_seconds(seconds: float) -> int:
+    """Whole seconds catt accepts (it parses with int()): nearest, half up, >= 0.
+
+    Truncating made a seek to 59.9 s land on 59 s; non-finite input maps to 0.
+    """
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(value):
+        return 0
+    return max(0, math.floor(value + 0.5))
+
+
 def seek(device: str, seconds: float) -> tuple[bool, str]:
-    return command(device, "seek", str(max(0, int(seconds))))
+    return command(device, "seek", str(seek_seconds(seconds)))
 
 
 def volume(device: str, percent: float) -> tuple[bool, str]:
