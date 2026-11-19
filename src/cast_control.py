@@ -262,6 +262,7 @@ class CastControlApp(Adw.Application):
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("favourite", lambda *a: self._window()._toggle_favourite())
+        simple("pin-receiver", lambda *a: self._window()._toggle_device_favourite())
         simple("clear-favourites", lambda *a: self._window()._clear_favourites())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())

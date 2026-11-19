@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from gui_source import main_window_methods
 import castctl
+import cast_targets
 
 
 def device(name, uuid, host="192.168.1.40"):
@@ -75,6 +76,7 @@ def window(name="Old TV", uuid="uuid-a"):
         ),
         "GLib": SimpleNamespace(source_remove=lambda _: None),
         "castctl": castctl,
+        "cast_targets": cast_targets,
         "save_config": lambda cfg: saved.append(dict(cfg)),
     }
     exec(compile(source, "<discovery>", "exec"), namespace)

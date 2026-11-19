@@ -106,7 +106,8 @@ class SessionMixin:
         # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
-        # Any speed/rotation change requires transcoding.
+        # A device-native stream cannot apply ffmpeg speed/rotation filters.
+        # Always transcode when either transform is enabled, even for H.264/AAC.
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
@@ -132,7 +133,9 @@ class SessionMixin:
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if path.suffix.lower() == ".mkv":
-                # Private CPU preflight must not interrupt the existing cast.
+                # Decoder/caption failures must be reported before interrupting
+                # the current receiver. One short private CPU render per file
+                # fingerprint/track selection; no Cast commands in preflight.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
@@ -246,6 +249,7 @@ class SessionMixin:
                 rate=session.state.speed if session.state else 1.0,
             )
             self._add_recent(str(path))
+            self._note_device_used()
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
             if self.preview is not None and media:
