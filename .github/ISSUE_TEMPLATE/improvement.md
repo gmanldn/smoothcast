@@ -27,7 +27,7 @@ Likely files/modules, callers and tests; related issues or PRs.
 - [ ] Failure, cancellation and ownership safety tested
 - [ ] Portable automated regression tests pass
 - [ ] Platform/real-receiver verification where required (otherwise state why not)
-- [ ] Documentation updated and PR linked
+- [ ] Documentation updated; commit(s) on `develop` reference this issue
 
 ## Work unit
 

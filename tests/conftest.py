@@ -10,8 +10,17 @@ and it supplies its own disposable Xvfb session and credentials.
 from __future__ import annotations
 
 import os
+import tempfile
 
 os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"
+# Never read or write a developer's real home: settings (hls_port, cache_cap_mb),
+# the cache dir (session.json, server.log) and the error log all live under HOME.
+# Set before any test imports modules that compute paths from Path.home().
+_HOME = tempfile.mkdtemp(prefix="smoothcast-test-home-")
+os.environ["HOME"] = _HOME
+os.environ["XDG_CONFIG_HOME"] = os.path.join(_HOME, ".config")
+os.environ["XDG_CACHE_HOME"] = os.path.join(_HOME, ".cache")
+os.environ["XDG_DATA_HOME"] = os.path.join(_HOME, ".local", "share")
 os.environ["GDK_BACKEND"] = "x11"  # No X11 server without DISPLAY.
 for name in (
     "DISPLAY",

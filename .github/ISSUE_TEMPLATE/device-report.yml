@@ -1,0 +1,74 @@
+name: "Device compatibility report"
+description: "Report how SmoothCast behaves on a specific Chromecast, TV or DLNA receiver"
+title: "[Device] <make model> — <Cast or DLNA>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! One report per receiver and SmoothCast version. Results go in the
+        [compatibility table](https://github.com/gmanldn/smoothcast/blob/main/docs/DEVICE_COMPATIBILITY.md).
+        Only report what you actually tried; leave a result as "Not tested" otherwise.
+  - type: input
+    id: receiver
+    attributes:
+      label: Receiver make and model
+      description: "e.g. Chromecast with Google TV (HD), Sony BRAVIA KD-55X80J"
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol used
+      options: ["Google Cast", "DLNA / UPnP"]
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Receiver firmware or software version
+      description: "From the TV or Google Home app, if you can find it"
+  - type: input
+    id: version
+    attributes:
+      label: SmoothCast version
+      description: "Output of `smoothcast --version`"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Computer operating system
+      description: "e.g. Ubuntu 24.04, macOS 15, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Media tested
+      description: "Container and codecs (e.g. MKV, H.264 + AAC, 1080p24), and whether it needed transcoding"
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What worked (tick only what you tested and saw work)
+      options:
+        - label: Direct play started
+        - label: Transcoded (HLS) play started
+        - label: Pause and resume
+        - label: Seek
+        - label: Subtitles (sidecar or burned in)
+        - label: Volume control
+        - label: Queue advance to the next film
+  - type: textarea
+    id: problems
+    attributes:
+      label: What did not work
+      description: "What you did, what you expected, what happened. Include any error text."
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Run `smoothcast --diagnostics` (or use the app's diagnostics action) and
+        attach the redacted JSON file it writes. It records the receiver's
+        protocol and model, tool versions and recent errors; private addresses
+        and file paths are masked. Do not paste anything you consider private.

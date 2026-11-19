@@ -17,17 +17,17 @@ choose work.
    `gh issue view N --json number,title,state,labels,assignees,body,url`.
    Add `--comments` only when ownership or prior evidence matters.
 3. Claim before editing: assign yourself and post one short comment
-   (owner, branch, intended scope). The assignee is the cheap machine-readable
+   (owner, intended scope, files). The assignee is the cheap machine-readable
    claim; the comment is the durable detail. An unassigned issue with comments
    may still be claimed—read them first.
 
    ```sh
    ISSUE=123
    gh issue edit "$ISSUE" --add-assignee @me
-   gh issue comment "$ISSUE" --body "Claim: <agent> on fix/issue-$ISSUE; scope: <files>"
+   gh issue comment "$ISSUE" --body "Claim: <agent> on develop; scope: <files>"
    ```
-4. Use an isolated worktree and issue-specific branch. Do not modify or
-   force-reset another checkout.
+4. Use an isolated detached worktree of `origin/develop` and commit directly to
+   `develop` (no issue branches). Do not modify or force-reset another checkout.
 5. Validate targeted tests first, then the full headless suite when the change
    warrants it. Never launch or focus the real GTK app during routine tests.
 6. Comment compact evidence and close only when every acceptance item passes.
@@ -67,7 +67,7 @@ financial saving without an A/B usage measurement.
 | Next priority | Search for `is:issue is:open in:title "[P1]"`, then `[P2]` |
 | A specific migrated idea | Search the Issues tab for `SC-058`, substituting its original number |
 | Changes awaiting review/merge | [Pull requests](https://github.com/gmanldn/smoothcast/pulls) targeting `develop` |
-| Integration branch | `develop` takes all issue branches and PRs; `main` is **protected** and release-only |
+| Integration branch | `develop` is the only branch anyone commits to; `main` is **release-only** and updated by an automatic develop→main PR |
 | Automated validation | [Verify SmoothCast actions](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml) |
 | Current instructions for code agents | Root [AGENTS.md](../AGENTS.md), followed by this document |
 | Historic original 50 ideas | [Verbatim snapshot](IMPROVEMENTS_ORIGINAL_50_20261118.md), **not** a current work queue |
@@ -139,10 +139,11 @@ additional requirements rather than creating competing tasks.
    tasks, but don't collide with work someone else has claimed. Start with
    `scripts/ticket_digest.py`, not a full-backlog download.
 2. **Claim the issue** by assigning yourself and posting one explicit comment
-   (owner/agent, intended scope, likely touched files, working branch). If
+   (owner/agent, intended scope, likely touched files). If
    unable to finish, comment with blockers and handover steps. GitHub Issues
    records the durable state; ephemeral local notes do not.
-3. Use an **isolated Git worktree and issue-specific branch**. Do not modify or
+3. Use an **isolated detached Git worktree** of `origin/develop` and commit to
+   `develop` directly (see [workflow](agents/workflow.md)). Do not modify or
    force-reset a colleague's checkout; preserve stashes and uncommitted user
    work. Keep commits small and pushed frequently.
 4. Implement the **smallest complete change**: production code, callers,
@@ -156,11 +157,12 @@ additional requirements rather than creating competing tasks.
    require the **explicit** isolated Xvfb runner
    `python3 scripts/test_gui_isolated.py`. Hardware/device checks require a
    separately authorised, controlled test environment.
-6. Open a PR referencing the issue (e.g. `Fixes #68`) and explain exactly
-   which acceptance checks passed, which were not performed, and any
-   backward-compatibility risks. Watch CI, fix failures and merge safely. If
-   hardware qualification remains pending, say `Refs #68` rather than
-   `Fixes #68` and **leave the issue open**.
+6. Push the tested commit to `develop` (`Refs #68`, never a PR for agents) and
+   comment exactly which acceptance checks passed, which were not performed, and
+   any backward-compatibility risks. Watch CI on `develop`; if it goes red, fix
+   or `git revert` it before new work. If hardware qualification remains
+   pending, leave the issue **open**. Close issues by hand: GitHub closes them
+   from `Fixes #N` only when code reaches `main`.
 7. Comment final evidence and close as **completed** only once all specified
    acceptance criteria pass. Use a compact, parseable close comment:
    `Implementation: <SHA>`, `Why: <outcome>`, `Files: <paths>`,
