@@ -46,7 +46,7 @@ import local_playback
 
 import startup_cleanup
 
-from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen
+from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
@@ -220,6 +220,8 @@ class CastControlApp(Adw.Application):
         except Exception:
             pass
         error_log.install_excepthook()
+        # Stop accepting queued work and discard callbacks after GTK exits.
+        self.connect("shutdown", lambda _app: Async.shutdown())
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
