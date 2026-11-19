@@ -60,6 +60,13 @@ original active receiver's session, playback clock or audio monitor.
 with injected objects and no GTK or TV commands. Full retry/alternate
 encoding/device tests and physical receiver verification are separate.
 
+**Film screenshot ownership (#140):** select the active receiver/decoder/preview
+clock only when its source matches the currently loaded film. The GTK-free
+`src/screenshot.py` guard rejects foreign casts, unknown timestamps, and
+unpreviewed queue rows before scheduling FFmpeg; test with
+`tests/test_film_screenshot_selection.py`. Real-device frame qualification
+remains separate.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
