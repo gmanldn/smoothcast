@@ -256,7 +256,7 @@ class QueueMixin:
                     self.queue_durations[path] = 0.0
             return True
 
-        Async.run(probe, done=lambda _r: self._rebuild_queue(), domain="media")
+        Async.run(probe, done=lambda _r: self._rebuild_queue(), domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:
