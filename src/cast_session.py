@@ -601,7 +601,7 @@ class SessionMixin:
 
 
     def _skip_back1(self) -> None:
-        self._skip(-1)
+        self._frame_step(-1)
 
 
     def _skip_back10(self) -> None:
@@ -613,7 +613,7 @@ class SessionMixin:
 
 
     def _skip_forward1(self) -> None:
-        self._skip(1)
+        self._frame_step(1)
 
 
     def _skip_forward10(self) -> None:

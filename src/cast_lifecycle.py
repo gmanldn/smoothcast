@@ -391,3 +391,9 @@ class LifecycleMixin:
         """Re-evaluate the time-based theme so it switches at the day boundary."""
         self._apply_color_scheme()
         return True
+
+
+    def _frame_step(self, direction: int) -> None:
+        """Step one source frame (1 s fallback) using the media frame rate."""
+        fps = self.media.fps if self.media and self.media.fps else 0.0
+        self._skip(direction * playback_state.frame_step_delta(fps))
