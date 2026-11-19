@@ -62,7 +62,7 @@ class CaptureClockTests(unittest.TestCase):
 
     def test_owned_cast_uses_receiver_clock_even_if_local_preview_is_stale(self):
         win, calls, _ = self.make_window()
-        win.session = object()
+        win.session = SimpleNamespace(state=SimpleNamespace(file="/fixtures/film.mkv"))
         win._local_video_path = "/fixtures/film.mkv"
         win._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: 91_000_000)
         win.tracker = SimpleNamespace(value=lambda: 25.25)
