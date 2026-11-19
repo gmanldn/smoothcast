@@ -9,6 +9,9 @@ import math
 import subprocess
 import sys
 from dataclasses import dataclass
+from typing import cast
+
+from progress_model import ReceiverInfo
 
 
 def _find_catt() -> str:
@@ -135,7 +138,7 @@ def uniquely_named_device(uuid: str, devices: list[Device]) -> Device | None:
     return match if sum(d.name == match.name for d in devices) == 1 else None
 
 
-def info(device: str, timeout: float = 8) -> dict | None:
+def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():
         return None
@@ -151,7 +154,7 @@ def info(device: str, timeout: float = 8) -> dict | None:
         return None
     if not isinstance(payload, dict) or not payload:
         return None
-    return payload
+    return cast(ReceiverInfo, payload)
 
 
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
@@ -220,7 +223,7 @@ def subs_off(device: str) -> tuple[bool, str]:
     return command(device, "subs", "-n")
 
 
-def player_state(info_dict: dict | None) -> str:
+def player_state(info_dict: ReceiverInfo | None) -> str:
     """Only an explicit receiver IDLE state can prove playback completed.
 
     Some catt/receiver status payloads contain volume or device identity but
@@ -233,17 +236,17 @@ def player_state(info_dict: dict | None) -> str:
     return state if state in {"PLAYING", "BUFFERING", "PAUSED", "IDLE"} else "UNKNOWN"
 
 
-def is_playing(info_dict: dict | None) -> bool:
+def is_playing(info_dict: ReceiverInfo | None) -> bool:
     return player_state(info_dict) in {"PLAYING", "BUFFERING"}
 
 
-def is_seekable(info_dict: dict | None) -> bool:
+def is_seekable(info_dict: ReceiverInfo | None) -> bool:
     if not info_dict:
         return False
     return bool(info_dict.get("duration")) and info_dict.get("current_time") is not None
 
 
-def volume_percent(info_dict: dict | None) -> int | None:
+def volume_percent(info_dict: ReceiverInfo | None) -> int | None:
     if not info_dict:
         return None
     raw = info_dict.get("volume_level")
@@ -256,7 +259,7 @@ def volume_percent(info_dict: dict | None) -> int | None:
     return int(round(max(0.0, min(100.0, value))))
 
 
-def volume_muted(info_dict: dict | None) -> bool:
+def volume_muted(info_dict: ReceiverInfo | None) -> bool:
     if not info_dict:
         return False
     return bool(info_dict.get("volume_muted"))

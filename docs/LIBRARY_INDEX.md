@@ -24,6 +24,10 @@ Treat this private cache as personal data; do not attach it to support reports.
 On POSIX, newly created cache directories use mode 0700 and SQLite files are
 kept at 0600; database symlinks and nonregular destinations are rejected.
 
+Scanning is supported on Linux, macOS and Windows. File identity is obtained
+from a fresh OS stat rather than Windows directory-entry metadata, and directory
+junctions and symbolic links are never traversed.
+
 First scans hash supported media files (.mkv, .mp4, .mov, .avi, .webm, .m4v,
 .ts, .mpeg, .mpg, .wmv) in fixed 1 MiB chunks. Subsequent scans reuse a digest
 when stat identity/size/time are unchanged. Overlapping authorised roots have

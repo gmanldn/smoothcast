@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import stat
 import sys
@@ -50,7 +51,8 @@ class StateTests(unittest.TestCase):
 
     def test_record_is_private_atomic_and_leaves_no_temp_file(self):
         hw.record_failure(self.path, KEY)
-        self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
+        if os.name == "posix":                      # Windows has no POSIX permission bits
+            self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
         self.assertEqual([p.name for p in self.path.parent.iterdir()], [hw.STATE_NAME])
 
     def test_unwritable_location_reports_failure_without_raising(self):

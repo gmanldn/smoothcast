@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from gui_source import main_window_methods
+import progress_model
 import stream_watchdog
 
 
@@ -115,14 +116,14 @@ def test_gui_wiring_restarts_own_hls_once_at_source_clock_and_never_blocks():
     w, session = fake_window()
     with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
         clock[0] = 0
-        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8, progress="continue"), 75)
         clock[0] = 21
-        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8, progress="continue"), 75)
         assert w.busy
         w._restart_at.assert_called_once_with(session, 75)
         w._console.assert_called_once()
         clock[0] = 50
-        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "continue"}, 75)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8, progress="continue"), 75)
     w._restart_at.assert_called_once()
 
 
@@ -132,9 +133,9 @@ def test_gui_wiring_refuses_remote_takeover_of_unrelated_content():
     w.device_info["content_id"] = "http://192.168.1.10:8767/other.m3u8"
     with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
         clock[0] = 0
-        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8), 20)
         clock[0] = 100
-        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8), 20)
     w._restart_at.assert_not_called()
     assert not w.busy
 
@@ -143,13 +144,13 @@ def test_gui_wiring_never_restarts_completed_or_paused_movie():
     w, _ = fake_window()
     with mock.patch.object(stream_watchdog.time, "monotonic", side_effect=lambda: clock[0]):
         clock[0] = 0
-        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8), 20)
         w.device_state = "PAUSED"
         clock[0] = 100
-        stream_watchdog.recover_window(w, {"out_time": 8}, 20)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8), 20)
         w.device_state = "PLAYING"
         clock[0] = 101
-        stream_watchdog.recover_window(w, {"out_time": 8, "progress": "end"}, 130)
+        stream_watchdog.recover_window(w, progress_model.Progress(out_time=8, progress="end"), 130)
     w._restart_at.assert_not_called()
 
 

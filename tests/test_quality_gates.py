@@ -139,5 +139,30 @@ class CiConcurrencyTests(unittest.TestCase):
         self.assertNotIn("github.ref }}\n", block)
 
 
+
+class FakeReceiverDocTests(unittest.TestCase):
+    def test_harness_is_documented_and_exercised_by_real_code_paths(self):
+        doc = read("docs/agents/testing.md")
+        for needle in ("tests/fake_receivers.py", "FakeDlnaRenderer", "FakeCast",
+                       "allow_loopback", "advance(seconds)"):
+            self.assertIn(needle, doc)
+        usage = read("tests/test_fake_receivers.py")
+        for needle in ("dlna.Session()", "start_direct", "cli_control.main", "castctl.scan()"):
+            self.assertIn(needle, usage)
+
+
+class NativeOsPortableTests(unittest.TestCase):
+    def test_portable_suite_gates_on_macos_and_windows_headless(self):
+        workflow = read(".github/workflows/verify.yml")
+        job = workflow.split("  portable-tests-native:", 1)[1].split("\n  media-integration:", 1)[0]
+        for needle in ("os: [macos-15, windows-2025]", "python -m pytest -q tests", "psutil"):
+            self.assertIn(needle, job)
+        self.assertNotIn("continue-on-error", job)             # it gates; gaps go in platform_gaps.py
+        self.assertNotIn("test_gui_isolated", job)             # never a GUI
+        promote = workflow.split("  promote-release:", 1)[1]
+        needs = promote.split("needs: [", 1)[1].split("]", 1)[0]
+        self.assertIn("portable-tests-native", needs)          # and it gates release promotion
+
+
 if __name__ == "__main__":
     unittest.main()

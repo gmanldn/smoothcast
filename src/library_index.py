@@ -29,6 +29,17 @@ class IndexError(RuntimeError):
     """An index input cannot be safely processed."""
 
 
+def _sqlite_file_id(value: int) -> int | str:
+    """Store full Windows 64/128-bit file IDs without SQLite integer overflow.
+
+    SQLite INTEGER is signed 64-bit, whereas Windows volume serials and inode
+    numbers can be unsigned 64/128-bit. Prefix only out-of-range values with
+    'u:' so INTEGER affinity cannot silently round or truncate them. Existing
+    POSIX numeric IDs stay compatible with previously created indexes.
+    """
+    return value if -(1 << 63) <= value < (1 << 63) else f"u:{value}"
+
+
 def _db_open(db: Path) -> sqlite3.Connection:
     # Local media paths and fingerprints are private. Never leave new cache
     # files world-readable under a permissive umask or follow a cache symlink.
@@ -144,7 +155,11 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         try:
-                            if entry.is_symlink():
+                            if (entry.is_symlink() or
+                                    (getattr(entry, "is_junction", lambda: False)())):
+                                # NTFS junctions are reparse points, not always
+                                # classified as symbolic links. Never recurse
+                                # into an unapproved directory through one.
                                 counts["skipped_symlinks"] += 1
                                 continue
                             if entry.is_dir(follow_symlinks=False):
@@ -162,12 +177,23 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                                 counts["complete"] = False
                                 break
                             counts["files_seen"] += 1
-                            info = entry.stat(follow_symlinks=False)
+                            # On Windows DirEntry.stat() reports zero for
+                            # st_dev/st_ino even for normal files. Comparing
+                            # that cached snapshot with os.fstat(fd) then
+                            # rejects *every* film as changed. A fresh path
+                            # stat gives the real file identity on all OSes.
+                            info = os.stat(path, follow_symlinks=False)
+                            if not stat.S_ISREG(info.st_mode):
+                                counts["skipped_symlinks"] += 1
+                                continue
                             prior = connection.execute(
                                 "SELECT size,mtime_ns,ctime_ns,dev,inode,sha256,metadata,probed FROM media WHERE path=? AND root=?",
                                 (str(path), root_key)).fetchone()
+                            disk_id = (_sqlite_file_id(info.st_dev),
+                                       _sqlite_file_id(info.st_ino))
                             unchanged = (prior is not None and prior[:5] == (
-                                info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_dev, info.st_ino))
+                                info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+                                *disk_id))
                             if unchanged:
                                 digest, previous_json, probed = prior[5:]
                                 metadata = json.loads(previous_json)
@@ -189,8 +215,9 @@ def scan(root: Path, db: Path, *, probe: bool = False, max_files: int = 10000,
                                 dev=excluded.dev,inode=excluded.inode,sha256=excluded.sha256,
                                 metadata=excluded.metadata,probed=excluded.probed,
                                 scan_id=excluded.scan_id,indexed_at=excluded.indexed_at""",
-                                (str(path), root_key, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_dev,
-                                 info.st_ino, digest, json.dumps(metadata, separators=(",", ":")),
+                                (str(path), root_key, info.st_size, info.st_mtime_ns,
+                                 info.st_ctime_ns, *disk_id, digest,
+                                 json.dumps(metadata, separators=(",", ":")),
                                  int(bool(probed)), ident, datetime.now(timezone.utc).isoformat()))
                         except (OSError, ValueError, sqlite3.DatabaseError, IndexError):
                             counts["errors"] += 1

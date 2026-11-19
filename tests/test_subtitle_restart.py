@@ -225,7 +225,8 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
         session = mock.Mock(mode="transcode", state=selection)
         window, (work, _, _) = restart_window(session)
         source_media = media(track(index=7))
-        with mock.patch.object(streamer, "ffprobe", return_value=source_media):
+        with mock.patch.object(streamer, "ffprobe", return_value=source_media), \
+             mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)):
             work()
         session.stop.assert_called_once_with("TV", send_stop=False)
         args = session.start_transcode.call_args

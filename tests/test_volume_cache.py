@@ -115,6 +115,7 @@ class VolumeCacheTests(unittest.TestCase):
             movie.write_bytes(b"x" * 64)
             media = streamer.MediaInfo(path=movie, duration=120.0)
             session = streamer.Session()
+            session.used_software_fallback = False   # a VAAPI-capable (Linux) host
             proc = mock.MagicMock(pid=12345)
             proc.poll.return_value = None
             volume_runs = []
@@ -126,6 +127,7 @@ class VolumeCacheTests(unittest.TestCase):
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                  mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                  mock.patch.object(streamer, "host_ip", return_value="192.168.1.23"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(5, 0)), \
                  mock.patch.object(session, "_start_server"), \
                  mock.patch.object(session, "_wait_for_segments", side_effect=[False, True]), \
                  mock.patch.object(streamer, "_terminate"), \

@@ -22,12 +22,15 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import cache_policy
+import cache_privacy
+import ffmpeg_compat
 import castctl
 import hw_encoder_state
 import lan_interfaces
 import playback_state
 import process_identity
 import process_priority
+import progress_model
 import server as hls_server
 import subtitle_delay
 import subtitle_encoding
@@ -417,6 +420,14 @@ def _usable_ipv4(value: str) -> bool:
         return False
     return not (addr.is_loopback or addr.is_link_local or
                 addr.is_unspecified or addr.is_multicast)
+
+
+def require_compatible_ffmpeg() -> tuple[int, int]:
+    """Fail before changing active Cast ownership if HLS features are missing."""
+    try:
+        return ffmpeg_compat.require_supported_ffmpeg()
+    except ffmpeg_compat.FFmpegVersionError as exc:
+        raise StreamError(str(exc)) from exc
 
 
 def host_ip(device_host: str | None = None) -> str:
@@ -858,6 +869,7 @@ class SessionState:
 
 def load_session() -> SessionState | None:
     try:
+        cache_privacy.ensure_private_directory(SESSION_FILE.parent)
         raw = json.loads(SESSION_FILE.read_text())
     except (OSError, ValueError):
         return None
@@ -871,10 +883,7 @@ def load_session() -> SessionState | None:
 
 
 def _save_session(state: SessionState) -> None:
-    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SESSION_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(asdict(state)))
-    tmp.replace(SESSION_FILE)
+    cache_privacy.write_private_json_atomic(SESSION_FILE, asdict(state))
 
 
 def clear_session() -> None:
@@ -902,7 +911,7 @@ class Session:
         # belongs to this Session, so a retired session's values are never used
         # after the window swaps to a new one.
         self._snapshot_lock = threading.Lock()
-        self._progress_snapshot: dict = {}
+        self._progress_snapshot = progress_model.EMPTY
         self._segments_snapshot = 0
         self._sampler_stop = threading.Event()
         self._sampler: threading.Thread | None = None
@@ -960,42 +969,31 @@ class Session:
         if self.mode == "transcode":
             if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
                 return True
-            return self.progress().get("progress") == "end"
+            return self.progress().done
         if self.mode == "direct":
             return self.caster is not None and self.caster.poll() is not None
         return False
 
-    def progress(self) -> dict:
+    def progress(self) -> progress_model.Progress:
         """Return the last background progress snapshot (never reads disk)."""
         with self._snapshot_lock:
-            return dict(self._progress_snapshot)
+            return self._progress_snapshot
 
     def segment_count(self) -> int:
         """Return the last background segment count (never globs on the GTK thread)."""
         with self._snapshot_lock:
             return self._segments_snapshot
 
-    def _read_progress(self, path=None) -> dict:
+    def _read_progress(self, path=None) -> progress_model.Progress:
         progress_path = PROGRESS_FILE if path is None else path
-        out: dict = {}
         try:
             size = progress_path.stat().st_size
             with open(progress_path, "rb") as handle:
                 handle.seek(max(0, size - 8192))
                 tail = handle.read().decode("utf-8", "replace")
         except OSError:
-            return out
-        for line in tail.splitlines():
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            out[key.strip()] = value.strip()
-        try:
-            us = float(out.get("out_time_us") or 0)
-            out["out_time"] = us / 1_000_000 if us else float(out.get("out_time_ms") or 0) / 1_000_000
-        except ValueError:
-            out["out_time"] = 0.0
-        return out
+            return progress_model.EMPTY
+        return progress_model.parse_progress(tail)
 
     def _count_segments(self, root=None, pattern=None) -> int:
         segment_root = ROOT if root is None else root
@@ -1163,7 +1161,7 @@ class Session:
             raise StreamError(f"Unsupported subtitle file format: {extension or 'unknown'}")
         if receiver and extension != ".srt":
             raise StreamError("Only SRT supports receiver subtitle normalisation")
-        ROOT.mkdir(parents=True, exist_ok=True)
+        cache_privacy.ensure_private_directory(ROOT)
         staged = ROOT / ("receiver_subs.srt" if receiver else f"burned_subs{extension}")
         if extension == ".srt":
             try:
@@ -1294,12 +1292,14 @@ class Session:
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
+        # Fail before touching existing streaming resources or launching FFmpeg.
+        require_compatible_ffmpeg()
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
         rotation = normalize_rotation(rotation)
-        ROOT.mkdir(parents=True, exist_ok=True)
+        cache_privacy.ensure_private_directory(ROOT)
         # File names, not just query parameters, identify each encoder
         # generation: stale TV requests cannot read the replacement film.
         generation = secrets.token_hex(16)

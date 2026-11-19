@@ -130,6 +130,7 @@ class SubtitleSenderIntegrationTests(unittest.TestCase):
                      mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                      mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                      mock.patch.object(streamer, "host_ip", return_value="192.168.1.7"), \
+                     mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                      mock.patch.object(streamer, "_save_session"), \
                      mock.patch.object(session, "_start_server"), \
                      mock.patch.object(session, "_wait_for_segments", return_value=True), \

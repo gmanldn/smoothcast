@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import progress_model
 import streamer
 
 
@@ -15,6 +16,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             root = Path(work)
             media = streamer.MediaInfo(path=root / "movie.mp4", duration=120.0)
             session = streamer.Session()
+            session.used_software_fallback = False   # a VAAPI-capable (Linux) host
             proc = mock.MagicMock()
             proc.pid = 12345
             proc.poll.return_value = None  # Hardware encoder hangs, never exits.
@@ -22,6 +24,7 @@ class StreamerReliabilityTests(unittest.TestCase):
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                  mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                  mock.patch.object(streamer, "host_ip", return_value="192.168.1.23"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                  mock.patch.object(session, "_start_server"), \
                  mock.patch.object(session, "_wait_for_segments", side_effect=[False, True]) as wait, \
                  mock.patch.object(streamer, "_terminate") as terminate, \
@@ -349,23 +352,23 @@ class ProgressSamplerTests(unittest.TestCase):
 
     def test_progress_and_segment_count_are_cache_only(self):
         session = streamer.Session()
-        session._progress_snapshot = {"speed": "1.5x", "out_time": 4.0}
+        session._progress_snapshot = progress_model.Progress(speed=1.5, out_time=4.0)
         session._segments_snapshot = 7
         with mock.patch.object(
                 streamer.Session, "_read_progress",
                 side_effect=AssertionError("must not read disk")), \
              mock.patch.object(streamer, "ROOT") as root:
-            self.assertEqual(session.progress()["speed"], "1.5x")
+            self.assertEqual(session.progress().speed, 1.5)
             self.assertEqual(session.segment_count(), 7)
             root.glob.assert_not_called()
 
     def test_sampler_primes_the_snapshot_and_stops_cleanly(self):
         session = streamer.Session()
         with mock.patch.object(session, "_read_progress",
-                               return_value={"speed": "2x"}), \
+                               return_value=progress_model.Progress(speed=2.0)), \
              mock.patch.object(session, "_count_segments", return_value=3):
             session._start_sampler()
-            self.assertEqual(session.progress(), {"speed": "2x"})
+            self.assertEqual(session.progress(), progress_model.Progress(speed=2.0))
             self.assertEqual(session.segment_count(), 3)
             session._stop_sampler()
         self.assertIsNone(session._sampler)

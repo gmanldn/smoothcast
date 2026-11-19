@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import subprocess
@@ -346,8 +347,10 @@ class RoutingAndIsolationTests(unittest.TestCase):
                 "assert 'gi' not in sys.modules, sorted(m for m in sys.modules if m.startswith('gi')); "
                 "assert not [m for m in sys.modules if m.startswith('cast_')], 'GUI module imported'"
                 % str(ROOT / "src"))
+        keep = ("PATH", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE")
+        env = {k: v for k, v in os.environ.items() if k in keep}      # no display/session vars
         result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True,
-                                timeout=60, env={"PATH": "/usr/bin:/bin"})
+                                timeout=60, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
 
 

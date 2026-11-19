@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -13,6 +15,101 @@ MODULE = Path(__file__).resolve().parents[1] / "src" / "library_index.py"
 spec = importlib.util.spec_from_file_location("library_index", MODULE)
 index = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(index)
+
+
+def test_windows_large_file_ids_fit_losslessly_in_sqlite(tmp_path):
+    import sqlite3
+    ids = [0, 1, (1 << 63) - 1, 1 << 63, (1 << 64) - 1,
+           (1 << 128) - 1]
+    db = tmp_path / "ids.sqlite3"
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE ids (serial INTEGER NOT NULL)")
+        for number in ids:
+            connection.execute(
+                "INSERT INTO ids(serial) VALUES (?)",
+                (index._sqlite_file_id(number),),
+            )
+        stored = [row[0] for row in connection.execute("SELECT serial FROM ids")]
+    assert stored == [index._sqlite_file_id(n) for n in ids]
+    assert isinstance(stored[2], int)
+    assert isinstance(stored[3], str)
+
+
+def test_windows_direntry_zero_identity_does_not_reject_existing_media(tmp_path):
+    """Simulate Windows DirEntry.stat() without needing a Windows runner."""
+    root, db = tmp_path / "media", tmp_path / "index.sqlite3"
+    root.mkdir()
+    movie = root / "real.mkv"
+    movie.write_bytes(b"valid film bytes")
+
+    original_scandir = index.os.scandir
+
+    class WindowsDirEntry:
+        def __init__(self, original):
+            self.path = original.path
+            self._original = original
+
+        def is_symlink(self):
+            return self._original.is_symlink()
+
+        def is_junction(self):
+            return False
+
+        def is_dir(self, *, follow_symlinks=True):
+            return self._original.is_dir(follow_symlinks=follow_symlinks)
+
+        def is_file(self, *, follow_symlinks=True):
+            return self._original.is_file(follow_symlinks=follow_symlinks)
+
+        def stat(self, *, follow_symlinks=True):
+            info = self._original.stat(follow_symlinks=follow_symlinks)
+            return SimpleNamespace(
+                st_size=info.st_size, st_mtime_ns=info.st_mtime_ns,
+                st_ctime_ns=info.st_ctime_ns, st_dev=0, st_ino=0,
+            )
+
+    def fake_scandir(path):
+        if Path(path) != root:
+            return original_scandir(path)
+        with original_scandir(path) as entries:
+            return nullcontext([WindowsDirEntry(entry) for entry in entries])
+
+    with mock.patch.object(index.os, "scandir", side_effect=fake_scandir):
+        result = index.scan(root, db)
+    assert result["hashed"] == 1 and result["errors"] == 0, result
+    assert result["complete"], result
+    assert len(index.list_media(db)) == 1
+    assert index.list_media(db)[0]["sha256"] == hashlib.sha256(movie.read_bytes()).hexdigest()
+
+
+def test_windows_directory_junction_is_not_traversed(tmp_path):
+    root, db = tmp_path / "media", tmp_path / "index.sqlite3"
+    other = root / "linked"
+    other.mkdir(parents=True)
+    (other / "external.mp4").write_bytes(b"not authorised")
+    original_scandir = index.os.scandir
+
+    class JunctionProxy:
+        def __init__(self, entry):
+            self.path = entry.path
+            self._entry = entry
+
+        def is_symlink(self):
+            return self._entry.is_symlink()
+
+        def is_junction(self):
+            return True
+
+    def fake_scandir(path):
+        if Path(path) != root:
+            return original_scandir(path)
+        with original_scandir(path) as entries:
+            return nullcontext([JunctionProxy(entry) for entry in entries])
+
+    with mock.patch.object(index.os, "scandir", side_effect=fake_scandir):
+        result = index.scan(root, db)
+    assert result["skipped_symlinks"] == 1 and result["errors"] == 0, result
+    assert result["hashed"] == 0 and index.list_media(db) == []
 
 
 def test_indexes_in_chunks_and_reuses_stable_media(tmp_path):

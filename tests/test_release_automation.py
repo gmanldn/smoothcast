@@ -175,7 +175,10 @@ class WorkflowContractTests(unittest.TestCase):
         jobs = re.findall(r"^  ([a-z-]+):$", section, re.MULTILINE)
         self.assertEqual(jobs[-1], "promote-release")
         needs = self.job.split("needs: [", 1)[1].split("]", 1)[0].replace(" ", "").split(",")
-        self.assertEqual(sorted(needs), sorted(jobs[:-1]))
+        # Informational jobs (continue-on-error) may not gate a release; any other
+        # job must. Name each exception here so adding one is a conscious decision.
+        informational: set[str] = set()   # name any continue-on-error job here
+        self.assertEqual(sorted(needs), sorted(set(jobs[:-1]) - informational))
         self.assertIn("github.ref == 'refs/heads/develop'", self.job)
         self.assertIn("github.event_name == 'push'", self.job)
 

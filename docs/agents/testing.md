@@ -20,32 +20,42 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
-**Quality gates (#250, #252, #253, #262):** `ruff check src scripts setup tests
-sc.py setup.py` (rules in `pyproject.toml`; `ruff format` is configured but not
-gated) fails CI on new violations. The Python 3.13 portable job also runs
-`--cov=src --cov-fail-under=38` (measured baseline 40% on 19 Nov 2026; raise
-the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
-update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
-compileall locally (`pip install pre-commit && pre-commit install`).
+**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests sc.py
+setup.py` fails on new violations; the 3.13 job gates `--cov-fail-under=38`
+(raise, never lower). **Types (#251):** `mypy` gates only `[tool.mypy] files`;
+widen by making `mypy src/<module>.py` clean, then listing it. `pip-audit`,
+CodeQL, Dependabot and `.pre-commit-config.yaml` back this; `catt` is bounded
+`>=0.12,<0.14` in `pyproject.toml` and `setup/bootstrap.py` (a test keeps them
+equal). **Fuzzing:** `tests/test_fuzz_parsers.py` (Hypothesis, seeded) holds
+parsers to their documented error; add each find as a regression.
 
-**Types (#251):** `mypy` (config in `pyproject.toml`) gates only the modules
-listed under `[tool.mypy] files`; CI fails on any error there. To widen it, fix
-a module until `mypy src/<module>.py` is clean, then add it to the list (new
-modules should start typed). GTK-facing modules stay out until typed.
+**Action integrity (#256):** all remote `uses:` entries in
+`.github/workflows/*.yml` must pin the immutable 40-character upstream commit
+SHA and retain the upstream major version as a comment (`# v4`). This avoids
+trusting a movable tag while remaining compatible with weekly Dependabot
+GitHub Actions updates. `tests/test_actions_sha_pinning.py` scans all present
+and newly added workflows; update pinned refs only after reviewing their
+upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 
-**Fuzzing (#260):** `tests/test_fuzz_parsers.py` property-tests the SRT decoder,
-M3U loader, DLNA description/fault XML and ffprobe JSON handling with
-Hypothesis (seeded, 150 examples each, ~3 s). Parsers may only raise their
-documented error. CI installs `hypothesis`; locally `pip install hypothesis`
-(the file skips if it is missing). For a deeper hunt raise `max_examples` and set
-`derandomize=False` in a scratch copy, then add each find as a fixed regression.
+**Fake receivers (#278):** `tests/fake_receivers.py` tests playback without a
+TV and mocks nothing in `dlna`/`castctl`: `FakeDlnaRenderer` (real HTTP/SOAP on
+loopback, inside `allow_loopback()`) and `FakeCast` (a stand-in `catt`, POSIX).
+Time moves only on `advance(seconds)`; script `fail`, `drop`/`go_offline`,
+`delay`; read `calls`. Examples: `tests/test_fake_receivers.py`. They do not
+replace device tests.
 
-**Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
-`pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
-CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
-pushes and weekly. To adopt a new catt minor: test it against a receiver,
-raise the upper bound in both files and the setup docs, then run the suite.
-Triage CodeQL findings in the Security tab; record dismissals with a reason.
+**Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
+bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;
+SmoothCast requires FFmpeg 5.0+ for `-readrate` and
+`scale:force_divisible_by`. New-cast and restart workers check before
+stopping previous streams; transcode paths recheck before launching an encoder.
+`tests/test_ffmpeg_version_guard.py` mocks all subprocess calls and verifies
+rejecting unknown/broken/older builds without sending Cast commands.
+
+**macOS/Windows (#258):** `portable-tests-native` runs this suite there
+(it gates, incl. release promotion). A test that cannot pass is listed by exact id, with a reason, in
+`tests/platform_gaps.py` and skipped on that OS only; fix the cause and delete
+the entry. "PRODUCT BUG" marks a SmoothCast defect, not a test quirk.
 
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
@@ -99,6 +109,13 @@ user and argv with `tests/test_process_identity_portable.py`; never signal a
 real PID in routine tests. Legacy sessions without birth evidence cannot
 reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
 separate from portable CI.
+
+**Cache privacy (#233):** `src/cache_privacy.py` creates or restricts the
+SmoothCast cache to mode 0700 on POSIX and atomically replaces session JSON
+through an exclusive mode-0600 file. Do not bypass this helper when persisting
+private media paths; preserve existing session data if write/fsync/replace fails.
+`tests/test_cache_privacy.py` uses temporary directories and simulated
+failures only; the symlink and foreign-user guards never touch real user files.
 
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
