@@ -180,8 +180,12 @@ def cleanup_before_window(
         has_server = any(p.kind == "server" for p in processes)
     report.retained_stream = bool(keep_streaming and state and (
         state.mode == "direct" or
-        (state.mode == "transcode" and has_server)
+        (state.mode == "transcode" and
+         (has_server or platform.system() != "Linux"))
     ))
+    # On macOS/Windows a missed/inaccessible process inventory cannot prove
+    # that the receiver has stopped consuming this HLS playlist. Fail safe:
+    # preserve kept-stream media rather than deleting it on uncertain recovery.
     protected: set[int] = set()
     if report.retained_stream and state and state.mode == "transcode":
         protected.update(p.pid for p in processes if p.kind == "server")
