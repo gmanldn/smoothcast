@@ -182,6 +182,8 @@ class H(SimpleHTTPRequestHandler):
             return self.request_version == "HTTP/1.0"
         if len(hosts) != 1:
             return False
+        if not isinstance(self.server, ThreadingHTTPServer):
+            return False
         address = self.server.server_address[0]
         host = hosts[0].strip()
         return host in {address, f"{address}:{self.server.server_port}"}
