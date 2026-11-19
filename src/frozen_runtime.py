@@ -60,10 +60,10 @@ def dispatch_frozen_helper(args: list[str]) -> int | None:
     if not is_frozen() or not args:
         return None
     if args[0] == SERVER_FLAG:
-        if len(args) != 1:
+        if len(args) not in (1, 3) or (len(args) == 3 and args[1] != "--bind"):
             return 2
         from server import main as serve
-        serve()
+        serve(args[1:])
         return 0
     if args[0] == CATT_FLAG:
         from catt.cli import main as catt_main
