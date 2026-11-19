@@ -62,3 +62,19 @@ def _stub_ffmpeg_version_probe(request):
         return
     with mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)):
         yield
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip documented per-platform gaps (tests/platform_gaps.py), by exact id."""
+    import sys
+
+    import pytest
+
+    from platform_gaps import GAPS
+
+    gaps = GAPS.get(sys.platform, {})   # Linux has no entries: it skips nothing
+    for item in items:
+        reason = gaps.get(item.nodeid.split("tests/", 1)[-1])
+        if reason:
+            item.add_marker(pytest.mark.skip(
+                reason=f"known {sys.platform} gap (#258): {reason}"))

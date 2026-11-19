@@ -73,7 +73,10 @@ class CapTests(unittest.TestCase):
             (root / "sub").mkdir()
             (root / "sub" / "b").write_bytes(b"y" * 20)
             Path(outside.name).write_bytes(b"z" * 1000)
-            os.symlink(outside.name, root / "link")
+            try:
+                os.symlink(outside.name, root / "link")
+            except (OSError, NotImplementedError):
+                self.skipTest("this platform or account cannot create symlinks")
             self.assertEqual(cp.directory_size(root), 30)
             self.assertEqual(cp.directory_size(root / "missing"), 0)
 

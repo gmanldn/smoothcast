@@ -15,6 +15,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             root = Path(work)
             media = streamer.MediaInfo(path=root / "movie.mp4", duration=120.0)
             session = streamer.Session()
+            session.used_software_fallback = False   # a VAAPI-capable (Linux) host
             proc = mock.MagicMock()
             proc.pid = 12345
             proc.poll.return_value = None  # Hardware encoder hangs, never exits.

@@ -19,7 +19,9 @@ sys.path.insert(0, str(ROOT / "src"))
 import update_control
 import version
 
-HAVE_GPG = shutil.which("gpg") is not None
+# Real signature tests need a POSIX gpg-agent (short socket paths under /tmp); the
+# opt-out tests below need only git and run on every platform.
+HAVE_GPG = os.name == "posix" and shutil.which("gpg") is not None
 VERSION = "MAJOR = 1\nMINOR = 0\nPATCH = {}\n"
 
 
