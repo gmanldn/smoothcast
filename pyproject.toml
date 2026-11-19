@@ -33,7 +33,7 @@ py-modules = [
     "cast_control", "castctl", "config_control", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
-    "local_playback", "startup_cleanup", "streamer", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
+    "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
     "cast_widgets", "cast_ui", "cast_queue", "cast_session", "cast_av", "cast_lifecycle",
 ]
 

@@ -23,6 +23,10 @@ import streamer
 
 import playback_state
 
+import direct_probe
+
+import stream_watchdog
+
 import preflight
 
 import url_control
@@ -175,6 +179,8 @@ class SessionMixin:
                             subs_disabled=(subs_mode == "off"), title=title,
                             offset=offset,
                         )
+                        if direct_probe.verify_direct_start(device, title) == "rejected":
+                            raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
                         return session, media
                     except streamer.StreamError:
                         # The failed direct attempt can leave a catt subprocess.
@@ -678,6 +684,7 @@ class SessionMixin:
         following = playback_state.next_media(
             item, self.queue, repeat_current=bool(self.cfg.get("loop")),
             auto_next=bool(self.cfg.get("autonext")),
+            repeat_all=bool(self.cfg.get("loop_all")),
         )
         if following:
             next_path = pathlib.Path(following)
@@ -767,6 +774,8 @@ class SessionMixin:
                 self.session.state.offset, snapshot.get("out_time"), duration,
                 speed=self.session.state.speed,
             )
+        # Pure watchdog: no blocking I/O on the GTK tick.
+        stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:

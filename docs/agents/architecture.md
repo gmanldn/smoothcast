@@ -32,6 +32,42 @@ is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
 not assume a display name alone proves ownership; issue #15 (SC-008)
 still tracks duplicate-name, stale-IP and real-device qualification.
 
+## HLS stall watchdog (P0 SC-010)
+
+`stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
+The existing GUI tick supplies *cached* FFmpeg `out_time` and receiver
+`current_time`; the watchdog performs no disk, network, GTK or process work.
+A sustained encoder stall (24 s) or a receiver that stops advancing while
+FFmpeg continues (36 s) can trigger **one** automatic HLS restart at the
+source-file playback position. It requires the receiver to report the **exact
+saved stream URL and optional title**, and refuses paused, offline, busy,
+unknown/foreign or completed playback. The one-restart budget survives
+FFmpeg generation changes; a subsequent failure displays an error instead of
+looping forever. A confirmed receiver IDLE/end is handled by the existing
+completion path and never converted into a restart.
+
+The asynchronous restart goes through `SessionMixin._restart_at`. Do not
+schedule extra background polling or launch GTK to test; deterministic unit
+and UI-wiring checks live in `tests/test_stream_watchdog.py`. Real-device
+buffering and first-frame behavior still require qualification under
+[GitHub issue #17](https://github.com/gmanldn/smoothcast/issues/17).
+
+## Direct Cast acceptance and safe HLS fallback
+
+`src/direct_probe.py` classifies receiver status after the `catt`
+direct-cast command returns: verified PLAYING/PAUSED with matching title is
+accepted; three consecutive explicit IDLE reports mean the decoder failed
+and a background HLS handoff may be attempted at the **same source position,
+audio setting and sidecar subtitles**. An unavailable/ambiguous status
+retains the direct stream rather than guessing it failed. A known foreign
+active title aborts automatic fallback without sending a remote Stop.
+
+All polling runs in the existing cast-start worker, not GTK or routine test
+runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
+`tests/test_direct_failover_probe.py` exercises both the pure classifier
+and the actual cast worker's direct-to-HLS branch with fakes. Real device
+decoder/subtitle negotiation remains P0 issue #18.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,

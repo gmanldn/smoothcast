@@ -49,9 +49,9 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
         if key in _OPTIONS:
             if isinstance(value, str) and value in _OPTIONS[key]:
                 cfg[key] = value
-        elif key in {"recents", "cast_targets"}:
+        elif key in {"recents", "favourites", "cast_targets"}:
             if isinstance(value, list):
-                limit = 8 if key == "recents" else 32
+                limit = 8 if key == "recents" else (16 if key == "favourites" else 32)
                 cfg[key] = [
                     item for item in value[:_MAX_ITEMS]
                     if isinstance(item, str) and 0 < len(item) <= _MAX_PATH

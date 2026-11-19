@@ -28,6 +28,8 @@ import streamer
 
 import smoothcast_assets
 
+import stream_watchdog
+
 import audio_monitor
 
 import responsive_layout
@@ -79,6 +81,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
+        self._stream_watchdog = stream_watchdog.StreamWatchdog()
         self._volume_job: int | None = None
         self._volume_target: str | None = None
         self._volume_user_ts = 0.0
@@ -146,6 +149,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
             GLib.timeout_add(400, self._initial_scan)
             GLib.timeout_add(600, self._adopt_session)
             GLib.timeout_add_seconds(5, self._sleep_tick)
+            GLib.timeout_add_seconds(600, self._theme_tick)
 
 
 """Cast Control — modern Chromecast companion."""
@@ -240,6 +244,9 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("custom-speed", lambda *a: self._window().action_custom_speed())
+        simple("loop-all", lambda *a: self._window()._toggle_loop_all())
+        simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
         simple("load-playlist", lambda *a: self._window()._load_playlist())
         simple("theater", lambda *a: self._window()._toggle_theater())
@@ -254,11 +261,17 @@ class CastControlApp(Adw.Application):
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
+        simple("favourite", lambda *a: self._window()._toggle_favourite())
+        simple("clear-favourites", lambda *a: self._window()._clear_favourites())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
             action = Gio.SimpleAction.new(f"recent-{index}", None)
             action.connect("activate", lambda _a, _p, i=index: self._window().open_recent(i))
+            self.add_action(action)
+        for index in range(16):
+            action = Gio.SimpleAction.new(f"favourite-{index}", None)
+            action.connect("activate", lambda _a, _p, i=index: self._window()._open_favourite(i))
             self.add_action(action)
         scheme = Gio.SimpleAction.new_stateful(
             "color-scheme", GLib.VariantType.new("s"), GLib.Variant("s", "prefer-dark")
@@ -273,6 +286,8 @@ class CastControlApp(Adw.Application):
         window = self.window
         if window is not None:
             window.cfg["color_scheme"] = value
+            # An explicit choice overrides the time-based schedule.
+            window.cfg["auto_theme"] = False
             save_config(window.cfg)
             window._apply_color_scheme()
 

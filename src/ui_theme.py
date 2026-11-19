@@ -6,6 +6,12 @@ overrides across the UI widgets.
 """
 from __future__ import annotations
 
+
+def is_dark_hour(hour: int) -> bool:
+    """True during the scheduled night window (19:00–06:59 local time)."""
+    return hour >= 19 or hour < 7
+
+
 PALETTE = {
     "canvas": "#0b111b",
     "surface": "#151f2d",
