@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "catt>=0.12,<0.14",
+    "psutil>=5.9,<8",  # Verified process identity and native LAN discovery
 ]
 
 [project.optional-dependencies]
@@ -38,7 +39,7 @@ py-modules = [
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
     "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "network_route_ui", "subtitle_restart", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
-    "async_jobs", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "watch_history", "benchmark", "library_index", "queue_metadata",
+    "async_jobs", "process_identity", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "watch_history", "benchmark", "library_index", "queue_metadata",
     "preferences_ui", "preference_choices",
 ]
 

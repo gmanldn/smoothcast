@@ -94,6 +94,12 @@ unpreviewed queue rows before scheduling FFmpeg; test with
 `tests/test_film_screenshot_selection.py`. Real-device frame qualification
 remains separate.
 
+**P0 cross-platform process ownership (#237):** mock process birth time,
+user and argv with `tests/test_process_identity_portable.py`; never signal a
+real PID in routine tests. Legacy sessions without birth evidence cannot
+reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
+separate from portable CI.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
