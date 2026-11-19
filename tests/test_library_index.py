@@ -193,3 +193,19 @@ def test_installed_cli_dispatch_remains_headless_in_test_context(monkeypatch):
 def test_index_module_is_in_wheel_build_configuration():
     config = (MODULE.parents[1] / "pyproject.toml").read_text(encoding="utf-8")
     assert '"library_index"' in config
+
+
+def test_same_size_and_reset_mtime_still_rehashes(tmp_path):
+    root, db = tmp_path / "media", tmp_path / "index.sqlite3"
+    root.mkdir()
+    media = root / "video.mkv"
+    media.write_bytes(b"aaaa")
+    index.scan(root, db)
+    previous = media.stat()
+    media.write_bytes(b"bbbb")
+    import os
+    os.utime(media, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+    assert media.stat().st_ctime_ns != previous.st_ctime_ns
+    result = index.scan(root, db)
+    assert result["hashed"] == 1 and result["reused"] == 0
+    assert index.list_media(db)[0]["sha256"] == hashlib.sha256(b"bbbb").hexdigest()
