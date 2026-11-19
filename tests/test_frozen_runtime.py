@@ -148,6 +148,11 @@ class FrozenRuntimeTests(unittest.TestCase):
         self.assertIn('console_exe = EXE(', spec)
         self.assertIn('BUNDLE(', spec)
         self.assertIn('verify(ROOT / "dist")', driver)
+        workflow = (repo / ".github" / "workflows" / "package.yml").read_text("utf-8")
+        # MSYS2 UCRT64 cannot build upstream psutil from PyPI using pip's
+        # native Windows extension toolchain: use the distro binary wheel.
+        self.assertIn("mingw-w64-ucrt-x86_64-python-psutil", workflow)
+        self.assertIn("venv --system-site-packages", workflow)
 
 
 if __name__ == "__main__":
