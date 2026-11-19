@@ -59,7 +59,7 @@ class PreferenceChoiceTests(unittest.TestCase):
 
     def test_registered_and_accessible_preferences(self):
         control = source("cast_control.py")
-        player = source("cast_ui.py")
+        player = source("cast_ui.py") + source("cast_settings.py")
         package = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('simple("preferences", lambda *a: self._window().action_preferences())', control)
         self.assertIn('self.set_accels_for_action("app.preferences", ["<Control>comma"])', control)
