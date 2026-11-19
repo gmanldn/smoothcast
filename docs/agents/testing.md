@@ -53,6 +53,19 @@ running any installed code. This is a Python/package compatibility check,
 lives in `src/smoothcast_assets/local.cast-control.png`, not relative to a
 Git checkout.
 
+**Screenshot provenance (P1 SC-131):** selecting a queue row during
+an owned Cast must not silently replace the active film's metadata, seek
+clock, screenshot target or resume offset. The screenshot action uses
+`self.media` for the actual loaded film and the receiver's authoritative
+tracker position; if the tracker is unknown, or the saved session file
+does not match the loaded media, it reports an error rather than silently
+taking the first frame. Local preview screenshots use the local decoder
+timestamp or the explicitly selected preview film's offset. Run the
+GTK-free extracted-handler regressions in
+`tests/test_film_screenshot_selection.py`, using mocked FFmpeg and window
+collaborators; no real TV, desktop or filesystem screenshots are produced.
+Physical playback screenshot verification remains on #140.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
