@@ -97,10 +97,18 @@ jobs:
         shell: msys2 {0}
         run: |
           python -m venv --system-site-packages .packaging-venv
-          .packaging-venv/Scripts/python.exe -m pip install -e '.[packaging]' pytest
-          .packaging-venv/Scripts/python.exe -m pytest -q tests/test_frozen_runtime.py
-          .packaging-venv/Scripts/python.exe scripts/build_release.py
-          .packaging-venv/Scripts/python.exe scripts/ci/archive_frozen_artifact.py
+          if test -x .packaging-venv/bin/python; then
+            VENV_PY=.packaging-venv/bin/python
+          elif test -x .packaging-venv/Scripts/python.exe; then
+            VENV_PY=.packaging-venv/Scripts/python.exe
+          else
+            echo "MSYS2 venv Python executable not found" >&2
+            exit 1
+          fi
+          "$VENV_PY" -m pip install -e '.[packaging]' 'pytest>=8,<10'
+          "$VENV_PY" -m pytest -q tests/test_frozen_runtime.py
+          "$VENV_PY" scripts/build_release.py
+          "$VENV_PY" scripts/ci/archive_frozen_artifact.py
       - uses: actions/upload-artifact@v4
         with:
           name: smoothcast-windows
