@@ -28,6 +28,7 @@ class StreamerReliabilityTests(unittest.TestCase):
                  mock.patch.object(streamer, "_terminate") as terminate, \
                  mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
                 session.start_transcode(
                     media, 45.0, device="TV", device_ip="192.168.1.42",
@@ -82,6 +83,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             proc.returncode = 0
             with mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc):
                 session.start_direct(
                     media, device="TV", title="Film", subs_file=None,
@@ -99,6 +101,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             caster.returncode = 0
             with mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=caster), \
                  mock.patch.object(streamer.castctl, "seek", return_value=(True, "")) as seek:
                 session.start_direct(
@@ -117,6 +120,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             caster.poll.return_value = 0
             caster.returncode = 0
             with mock.patch.object(streamer.time, "sleep"), \
+            mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=caster), \
                  mock.patch.object(streamer.castctl, "seek", return_value=(False, "Not seekable")):
                 with self.assertRaisesRegex(streamer.StreamError, "Direct resume seek failed"):

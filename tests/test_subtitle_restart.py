@@ -137,6 +137,7 @@ def restart_window(session):
     namespace = {
         "pathlib": __import__("pathlib"),
         "streamer": streamer,
+        "subtitle_delay": __import__("subtitle_delay"),
         "subtitle_restart": subtitle_restart,
         "castctl": castctl,
         "DEFAULTS": {"audio_gain": 0.0},
@@ -238,7 +239,7 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
 
 def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget():
     text = main_window_methods()["_restart_at"]
-    assert text.index("subtitle_restart.validate_restart(state, media)") < (
+    assert text.index("subtitle_restart.validate_restart(state, media, delay)") < (
         text.index("session.stop(device, send_stop=False)")
     )
     assert "subs_file=captions.external" in text

@@ -13,15 +13,70 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
+from typing import IO
+
+try:
+    import fcntl
+except ImportError:  # Windows: startup cleanup deliberately skips scratch sweeping.
+    fcntl = None  # type: ignore[assignment]
 
 DEFAULT_CAP_MB = 8192
 MAX_CAP_MB = 1_000_000
 SCRATCH_PREFIX = "smoothcast-dlna-"
+SCRATCH_LEASE_NAME = ".smoothcast-active.lock"
 # A scratch directory younger than this may belong to a conversion that is
 # still being prepared; only older ones are treated as crash debris.
 MIN_STALE_AGE_SECONDS = 600.0
 MB = 1024 * 1024
+
+def hold_scratch_lease(directory: Path) -> IO[bytes] | None:
+    """Hold an exclusive kernel lock until this DLNA session has fully stopped.
+
+    POSIX FFmpeg children inherit the locked descriptor via pass_fds: if the
+    GUI crashes during conversion, cleanup must wait for FFmpeg to exit too.
+    On platforms without safe POSIX locking the startup sweep is disabled.
+    """
+    if fcntl is None or not hasattr(os, "O_NOFOLLOW"):
+        return None
+    fd = os.open(
+        directory / SCRATCH_LEASE_NAME,
+        os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return os.fdopen(fd, "r+b", buffering=0)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def claim_abandoned_scratch(directory: Path) -> IO[bytes] | None:
+    """Return a held reaper lock only when no live process owns the scratch.
+
+    A missing, symlinked, foreign-owned or already locked marker is *not*
+    evidence of abandonment. Never infer ownership from directory age alone.
+    Keep this descriptor open until the scratch directory has been removed.
+    """
+    if fcntl is None or not hasattr(os, "O_NOFOLLOW"):
+        return None
+    try:
+        fd = os.open(directory / SCRATCH_LEASE_NAME, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or info.st_nlink != 1):
+            os.close(fd)
+            return None
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return os.fdopen(fd, "rb", buffering=0)
+    except (OSError, ValueError):
+        os.close(fd)
+        return None
 
 
 def valid_cap_mb(value: object) -> int | None:

@@ -80,7 +80,7 @@ be available). The application checks local free space, refuses a conversion
 larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
 default 8192 MB, `0` = unlimited) before FFmpeg starts, sweeps scratch left by a
 crash (`smoothcast-dlna-*` in the system temp directory, once older than 10
-minutes) at the next startup, and reports conversion errors. The DLNA target path currently uses normal playback speed, no video
+minutes) at the next startup, and reports conversion errors. FFmpeg runs at below-normal priority (nice 10 on Linux/macOS, `BELOW_NORMAL_PRIORITY_CLASS` on Windows) so the desktop stays responsive during software encodes; set `"lower_ffmpeg_priority": false` in the same config file to opt out. The DLNA target path currently uses normal playback speed, no video
 rotation and the original sound profile; Chromecast still supports its own
 transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
 support in your FFmpeg build.
@@ -89,6 +89,14 @@ DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
 prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
 also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
+
+On POSIX systems, each DLNA scratch directory has a process-held exclusive
+lease. The FFmpeg converter inherits that lease, so a concurrent SmoothCast
+startup never deletes an old-but-active conversion or playback file. A crashed
+session's directory is reclaimed after the stale-age threshold only once its
+lease can be acquired. Legacy directories without a verifiable lease are kept
+rather than risking another active instance's film. Windows scratch sweeping
+remains disabled pending a safe cross-process ownership mechanism.
 DLNA has automated protocol tests but **has not yet been verified on a real
 television**; device-specific MIME/codec negotiation is a follow-up in
 [GitHub issue #8 (SC-001)](https://github.com/gmanldn/smoothcast/issues/8).
@@ -125,6 +133,18 @@ particular track and language; an embedded track is burned into the
 transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
 **not yet rendered**. Missing or incompatible subtitle files return a
 visible error instead of silently proceeding with another track.
+
+**Subtitle delay:** if captions run early or late, use **Subtitle delay** in
+the main menu, or press **G** (100 ms earlier) / **H** (100 ms later); *Reset
+delay* clears it. The offset is whole milliseconds, limited to ±30 s, and is
+remembered per film. While casting over HLS or DLNA the stream restarts at the
+current position so the new timing is burned in. A non-zero delay always burns
+captions into the picture (a Cast receiver cannot time-shift a sidecar track),
+so it needs the slower transcode path and is not applied to direct play; the
+saved value is used on your next cast instead. Burn-in timing is checked with
+real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
+verified on physical receivers yet. Streams resumed or seeked to a later
+position also now draw burned-in captions at the correct film time.
 
 ## Interface and visual design
 
@@ -175,7 +195,7 @@ the stream; it validates the software decoding and selected subtitle path.
 
 ## Playback reliability
 
-Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
+If VAAPI stalls and the software retry then succeeds, SmoothCast records that in `~/.cache/cast-control/hw_encoder.json` (keyed by the ffmpeg binary, render device, DRM driver and kernel, expiring after 14 days) and skips the 15 s hardware wait on later casts; upgrading ffmpeg or the kernel re-probes automatically, and `smoothcast --reprobe-encoder` clears the record. The volume measurement used for dialogue auto-trim is cached per file (size/mtime) and audio track, so retries and seek restarts do not repeat it. Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
 
 Stop and Pause remain available while the TV consumes a completed HLS buffer. SmoothCast also rejects outdated device replies and avoids switching TV targets mid-cast. A saved direct cast is only reattached when the Chromecast still reports compatible playback.
 
@@ -190,6 +210,32 @@ running instance, `GApplicationCommandLine.get_cwd()` supplies the original
 caller's directory. This also prevents a same-named file in the checkout from
 silently replacing a missing caller file. Absolute paths and `file://` media
 URIs keep their original meaning.
+
+## Command-line control (headless)
+
+Control a **Chromecast** without opening the GUI — no display, GTK or desktop session is needed, so it works over SSH and in scripts:
+
+```sh
+smoothcast cast Film.mkv -d "Living Room"            # direct play if compatible, else transcode
+smoothcast cast Film.mkv -d 192.168.1.50 --offset 1:02:03 --subs Film.en.srt
+smoothcast pause|resume|stop -d "Living Room"
+smoothcast seek 1:30 -d "Living Room"                # seconds, MM:SS or HH:MM:SS
+smoothcast status -d "Living Room" --json
+```
+
+Give the receiver with `-d/--device` (name or IPv4) or the `SMOOTHCAST_DEVICE` environment variable. `cast` also takes `--mode auto|direct|transcode`, `--quality`, `--audio`, `--no-subs` and `--title`; it replaces any earlier SmoothCast-owned cast and leaves the stream running after the command returns. `stop` also ends SmoothCast's own encoder, server and catt processes for that cast. Seeking a live transcode restarts the encoder at the new position with the same settings, as the application does.
+
+`--json` prints exactly one object: `{"ok": true, "command": "status", "state": "PLAYING", "position": 65.0, ...}` or `{"ok": false, "command": "pause", "error": "failed", "message": "..."}`; human-readable output goes to stdout on success and errors to stderr.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | the operation failed (receiver or catt refused it, or the cast did not start) |
+| 2 | usage error: bad arguments, time or no receiver given |
+| 3 | receiver unreachable or offline |
+| 4 | media problem: file missing, unreadable or unsupported |
+
+DLNA renderers are not supported from the command line yet, and a real-receiver check of these commands is device-pending. Portable tests run them against mocked receivers.
 
 ## Playlists, resume and safe playback transitions
 
@@ -244,13 +290,15 @@ A second launcher click raises the existing window rather than silently exiting.
 
 ## Streaming reliability and local-network safety
 
-The HLS server listens on port 8767 for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver is published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. HLS responses omit cross-origin wildcard headers; native receiver playback must be qualified on hardware. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
+The HLS server prefers port 8767 (set `"hls_port"` in `config.json` to use another, 1024–65535). If another program holds that port SmoothCast uses the next free one in 8767–8798, passes it to the server, the stream URL and `session.json`, and reuses a kept-alive SmoothCast server wherever it is listening; if every port is taken the cast fails with a clear error. `smoothcast --network-check` probes the port of the active stream. The server listens on its port for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver and the **active stream generation** (a random 128-bit token in the playlist and segment names) are published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It serves only the active generation (`movie-<token>.m3u8`, `segment-<token>-N.ts`): any other token, a previous cast's URL and the old fixed `/movie.m3u8` name get 404, and stopping a cast revokes its token. It exposes only the generated playlist and segment media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. HLS responses omit cross-origin wildcard headers; native receiver playback must be qualified on hardware. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
 Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
 
 ## Sleep timer
 
 The Sleep timer menu now stops the active SmoothCast session after the selected interval (15–60 minutes). The deadline is saved across application restarts, and can be cancelled with **Off**. The application must remain running for the timer to fire; closing it with Keep streaming enabled does not leave a background scheduler running.
+
+On a Google Cast receiver the volume fades out over the last `sleep_fade_seconds` (default 30, `0` disables, maximum 600; set in `~/.config/cast-control/config.json`) before playback stops. The receiver's original volume is read once at the start of the fade and restored after the cast has stopped, or immediately if you cancel or re-arm the timer; changing the selected receiver abandons the fade without touching the new one. A receiver whose volume cannot be read is left alone. DLNA renderers are not faded (no readable volume), and a crash or force-quit during a fade leaves the volume lowered until you raise it.
 
 ## Clean startup and orphan recovery
 
@@ -278,7 +326,9 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Automatic updates without blocking startup
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally.
+
+**Controlling updates** (keys in `~/.config/cast-control/config.json`): set `"auto_update": false` to disable the startup pull entirely (no git or network access at all). Set `"verify_updates": true` to fetch first and fast-forward **only** to a commit — or a tag on that commit — whose signature passes `git verify-commit` / `git verify-tag` against *your own* GPG keyring (import the maintainers' key first); if verification fails SmoothCast reports the pending update and leaves the checkout untouched. Local commits, a dirty tree and non-release branches are never updated either way. There is no Preferences toggle for these yet. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
 ## Runtime dependencies
 
@@ -401,6 +451,10 @@ smoothcast --diagnostics /tmp/sc.json
 
 The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
 
+The bundle records the active receiver's **protocol and model** (no address or name) so reports are comparable. To share how SmoothCast behaves on your TV or Chromecast, use the **Device compatibility report** issue form; results are collected in [docs/DEVICE_COMPATIBILITY.md](docs/DEVICE_COMPATIBILITY.md).
+
+The HLS server also keeps a **bounded `server.log`** in `~/.cache/cast-control/` (same size limits as the error log) recording failed requests (403/404), startup and bind failures; successful requests are not logged. Its redacted tail is included in the diagnostics bundle under `server_log`.
+
 ## License
 
 MIT
@@ -428,5 +482,6 @@ preserve earlier research. Agents should start with
 `python3 scripts/ticket_digest.py --next`, a bounded read-only index rather
 than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
-not by adding a second TODO document. Issue branches and pull requests target
-`develop`; `main` is protected and receives release merges only.
+not by adding a second TODO document. All work is committed directly to
+`develop`; `main` is release-only and is updated automatically by a develop→main
+pull request when a verified `develop` commit bumps `src/version.py`.

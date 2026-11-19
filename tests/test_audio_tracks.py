@@ -87,6 +87,7 @@ class AudioTrackTests(unittest.TestCase):
                  mock.patch.object(session, "_wait_for_segments", return_value=True), \
                  mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
                 session.start_transcode(
                     media, 71.5, device="TV", quality="balanced",
@@ -133,6 +134,7 @@ class AudioTrackTests(unittest.TestCase):
                  mock.patch.object(streamer, "_terminate"), \
                  mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
                 session.start_transcode(
                     media, 15.0, device="TV", quality="balanced",

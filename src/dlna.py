@@ -22,11 +22,13 @@ import subprocess
 import tempfile
 import threading
 import time
+from typing import IO
 from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 import cache_policy
+import process_priority
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -530,8 +532,9 @@ class ProgressiveFileServer:
 
 def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
-                audio_track: int = 0,
-                cancel: threading.Event | None = None) -> Path:
+                audio_track: int = 0, subtitle_delay_ms: int = 0,
+                cancel: threading.Event | None = None,
+                scratch_lease_fd: int | None = None) -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -598,6 +601,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
             video_size=(media.width, media.height),
+            subtitle_delay_ms=subtitle_delay_ms,
         )
         args += vf
         if media.fps > 30.01:
@@ -611,10 +615,14 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     # Cancel/Stop button can abort immediately and no orphan FFmpeg remains.
     with tempfile.TemporaryFile() as error_log:
         try:
+            low_priority = process_priority.enabled()
             proc = subprocess.Popen(
                 args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=error_log, start_new_session=True,
+                pass_fds=(scratch_lease_fd,) if scratch_lease_fd is not None else (),
+                **process_priority.launch_kwargs(low_priority),
             )
+            process_priority.lower(proc, low_priority)
         except OSError as exc:
             output.unlink(missing_ok=True)
             raise DlnaError(f"Cannot start FFmpeg: {exc}") from exc
@@ -660,6 +668,7 @@ class Session:
         self._owns_renderer = False
         self.http: ProgressiveFileServer | None = None
         self.tmp: tempfile.TemporaryDirectory | None = None
+        self._scratch_lease: IO[bytes] | None = None
         self.used_software_fallback = True
         self.audio_chain: list = []
 
@@ -679,6 +688,7 @@ class Session:
     def start(self, media, *, renderer: Renderer, local_ip: str, offset: float,
               title: str, subtitle_file: Path | None = None,
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
+              subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None) -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
@@ -688,6 +698,7 @@ class Session:
         # without ever sending a Stop to a renderer still playing its own film.
         self._owns_renderer = False
         try:
+            self._scratch_lease = cache_policy.hold_scratch_lease(Path(self.tmp.name))
             path = Path(media.path)
             direct = (
                 path.suffix.lower() in {".mp4", ".m4v"}
@@ -703,7 +714,10 @@ class Session:
                     media, Path(self.tmp.name) / "movie.mp4",
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
-                    audio_track=audio_track, cancel=cancel,
+                    audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
+                    cancel=cancel,
+                    scratch_lease_fd=(self._scratch_lease.fileno()
+                                      if self._scratch_lease is not None else None),
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
@@ -721,6 +735,7 @@ class Session:
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(
                     embedded_subtitle_index if embedded_subtitle_index is not None else -1),
+                subtitle_delay_ms=subtitle_delay_ms,
                 started_at=time.time(),
             )
         except Exception:
@@ -736,9 +751,14 @@ class Session:
         if self.http is not None:
             self.http.close()
             self.http = None
-        if self.tmp is not None:
-            self.tmp.cleanup()
-            self.tmp = None
+        try:
+            if self.tmp is not None:
+                self.tmp.cleanup()
+                self.tmp = None
+        finally:
+            if self._scratch_lease is not None:
+                self._scratch_lease.close()
+                self._scratch_lease = None
         self.state = None
         self._owns_renderer = False
         self.renderer = None
