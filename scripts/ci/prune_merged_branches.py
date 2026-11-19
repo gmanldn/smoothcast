@@ -79,6 +79,30 @@ def github_pr(number: int, token: str | None = None, repository: str = REPOSITOR
     return data
 
 
+def github_open_pr_refs(token: str | None = None) -> set[tuple[str, str]]:
+    """Fail closed unless all currently open same-repository heads are known."""
+    headers = {"Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    heads: set[tuple[str, str]] = set()
+    for page in range(1, 12):
+        url = (f"https://api.github.com/repos/{REPOSITORY}/pulls"
+               f"?state=open&per_page=100&page={page}")
+        with urlopen(Request(url, headers=headers), timeout=12) as response:
+            records = json.load(response)
+        if not isinstance(records, list):
+            raise ValueError("Could not validate open PR branch inventory")
+        for pr in records:
+            head = pr.get("head") or {}
+            repo = head.get("repo") or {}
+            if repo.get("full_name") == REPOSITORY:
+                heads.add((REPOSITORY, head.get("ref")))
+        if len(records) < 100:
+            return heads
+    raise RuntimeError("Open PR inventory exceeded the bounded page limit")
+
+
 def run_git(*args: str) -> str:
     result = subprocess.run(
         ["git", *args], capture_output=True, text=True, check=True, timeout=30,
@@ -100,12 +124,15 @@ def event_candidates(event_name: str, event: dict | None) -> tuple:
 
 
 def prune(number: int, branch: str, expected: str, *,
-          fetch=github_pr, git=run_git, apply: bool = False) -> str:
+          fetch=github_pr, git=run_git, apply: bool = False,
+          open_refs: set[tuple[str, str]] | None = None) -> str:
     """Return READY/DELETED/SKIP; never attempt to delete unmerged/changed refs."""
     if not isinstance(number, int) or isinstance(number, bool) or number < 1:
         return "SKIP invalid PR"
     if not _safe_branch(branch) or not isinstance(expected, str) or not SHA.fullmatch(expected):
         return "SKIP unsafe ref"
+    if open_refs is not None and (REPOSITORY, branch) in open_refs:
+        return f"SKIP {branch}: still used by another open PR"
     pr = fetch(number)
     head = pr.get("head") or {}
     src = head.get("repo") or {}
@@ -145,11 +172,12 @@ def main(argv: list[str] | None = None) -> int:
     if opts.event == "pull_request":
         payload = json.loads(opts.event_file.read_text(encoding="utf-8"))
     token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    open_refs = github_open_pr_refs(token)
     failures = 0
     for number, branch, sha in event_candidates(opts.event, payload):
         try:
             outcome = prune(number, branch, sha, fetch=lambda n: github_pr(n, token),
-                            apply=opts.apply)
+                            apply=opts.apply, open_refs=open_refs)
             print(outcome, flush=True)
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             print(f"ERROR {branch}: {type(exc).__name__}", flush=True)
