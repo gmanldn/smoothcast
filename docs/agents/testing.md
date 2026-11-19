@@ -100,6 +100,13 @@ real PID in routine tests. Legacy sessions without birth evidence cannot
 reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
 separate from portable CI.
 
+**Cache privacy (#233):** `src/cache_privacy.py` creates or restricts the
+SmoothCast cache to mode 0700 on POSIX and atomically replaces session JSON
+through an exclusive mode-0600 file. Do not bypass this helper when persisting
+private media paths; preserve existing session data if write/fsync/replace fails.
+`tests/test_cache_privacy.py` uses temporary directories and simulated
+failures only; the symlink and foreign-user guards never touch real user files.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
