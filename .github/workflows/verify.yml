@@ -21,7 +21,10 @@ jobs:
   portable-tests:
     name: Portable regressions (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    # Python 3.10 can take >12 minutes on a loaded shared runner: the old
+    # timeout cancelled pytest at 92% without reporting any test failure.
+    # Keep full headless tests and use a bounded job timeout for both versions.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
