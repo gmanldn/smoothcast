@@ -52,6 +52,12 @@ is **not** GitHub issue `#58`. Resolve the current GitHub issue by search.
 or unmerged branches; never force-reset without explicit permission. A
 diverged checkout requires backup/reconciliation, not `git reset --hard`.
 
+**Merged-branch cleanup:** `.github/workflows/prune-merged-branches.yml`
+prunes only merged same-repository source branches still at their recorded
+head SHA and unused by open PRs; `scripts/ci/prune_merged_branches.py`
+defaults to dry-run. The trusted `develop` workflow uses Git ref leases;
+never delete active branches, worktrees, or protected refs.
+
 **Version authority:** `src/version.py` only. Bump semantic versions at an
 intentional release boundary, **not** for each commit. Distinguish loaded
 runtime release, on-disk version and Git SHA in diagnostics.
