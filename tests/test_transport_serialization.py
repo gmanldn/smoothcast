@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from gui_source import main_window_methods
+import hls_pause_recovery
 
 
 def fixture(mode="direct", *, paused=False):
@@ -31,6 +32,7 @@ def fixture(mode="direct", *, paused=False):
             run=lambda work, done=None, failed=None, **_kwargs: jobs.append((work, done, failed))
         ),
         "castctl": cast,
+        "hls_pause_recovery": hls_pause_recovery,
         "dlna": dlna,
         "pathlib": pathlib,
         "fmt_time": lambda seconds: str(int(seconds)),
@@ -43,11 +45,17 @@ def fixture(mode="direct", *, paused=False):
             self._closing = False
             self.external = False
             self.device_state = "PAUSED" if paused else "PLAYING"
-            self.session = SimpleNamespace(mode=mode, state=SimpleNamespace(file="/film.mkv"))
+            self.session = SimpleNamespace(mode=mode, state=SimpleNamespace(
+                file="/film.mkv", device="TV A", title="Film",
+                stream_url="http://192.168.1.50:8767/movie.m3u8",
+            ))
             self.tracker = mock.Mock()
             self.tracker.duration = 120.0
             self.media = None
-            self.device_info = {"player_state": self.device_state}
+            self.device_info = {
+                "player_state": self.device_state, "title": "Film",
+                "content_id": self.session.state.stream_url,
+            }
             self.seekbar = mock.Mock()
             self.seekbar.buffered = 0.0
             self._preview_path = None
@@ -127,6 +135,71 @@ def test_dlna_pause_exception_is_reported_and_releases_lock():
     assert "Network down" in window.toast.call_args.args[0]
     window.tracker.set_state.assert_not_called()
     window._poll_device.assert_called_once()
+
+
+def test_long_paused_hls_rebuilds_from_frozen_source_time_at_one_and_two_x():
+    for speed, position in ((1.0, 42.125), (2.0, 91.25)):
+        window, jobs, cast, _ = fixture(mode="transcode", paused=True)
+        window.external = False
+        window.tracker.known = True
+        window.tracker.playing = False
+        window.tracker.paused_for.return_value = 35.0
+        window.tracker.value.return_value = position
+        window.session.state.speed = speed
+        window.toggle_play()
+        assert window.busy
+        assert jobs == []  # no stale castctl.play against deleted HLS segments
+        cast.play.assert_not_called()
+        window._restart_at.assert_called_once_with(
+            window.session, position, resume_after_pause=True,
+        )
+        window.toggle_play()
+        window._restart_at.assert_called_once()
+
+
+def test_short_or_unknown_hls_pause_preserves_normal_receiver_resume():
+    for pause_age, position in ((4.0, 40.0), (60.0, None)):
+        window, jobs, cast, _ = fixture(mode="transcode", paused=True)
+        window.tracker.known = True
+        window.tracker.playing = False
+        window.tracker.paused_for.return_value = pause_age
+        window.tracker.value.return_value = position
+        window.toggle_play()
+        window._restart_at.assert_not_called()
+        assert len(jobs) == 1
+        run_job(jobs)
+        cast.play.assert_called_once_with("TV A")
+        window.tracker.set_state.assert_called_once_with(True)
+
+
+def test_long_pause_refuses_foreign_cast_even_if_device_and_title_match():
+    window, jobs, cast, _ = fixture(mode="transcode", paused=True)
+    window.tracker.known = True
+    window.tracker.playing = False
+    window.tracker.paused_for.return_value = 120.0
+    window.tracker.value.return_value = 30.0
+    window.device_info["content_id"] = "http://192.168.1.50:8767/foreign.m3u8"
+    window.toggle_play()
+    window._restart_at.assert_not_called()
+    assert len(jobs) == 0
+    cast.play.assert_not_called()
+    assert not window.busy
+    window.toast.assert_called_once_with(
+        "Receiver is playing different media; resume cancelled", error=True,
+    )
+
+
+def test_long_pause_does_not_restart_nonowned_or_noncast_stream():
+    for mode, owner in (("dlna", "TV A"), ("direct", "TV A"), ("transcode", "TV B")):
+        window, jobs, _, _ = fixture(mode=mode, paused=True)
+        window.session.state.device = owner
+        window.tracker.known = True
+        window.tracker.playing = False
+        window.tracker.paused_for.return_value = 100.0
+        window.tracker.value.return_value = 42.0
+        window.toggle_play()
+        window._restart_at.assert_not_called()
+        assert len(jobs) == 1
 
 
 def test_direct_seek_is_single_flight_and_success_resyncs():
