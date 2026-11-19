@@ -20,6 +20,17 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
+**CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
+subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
+`ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed
+packages from Ubuntu's official archive with strict wall-time bounds, then
+falls back to the runner's configured apt sources (also bounded). It never
+suppresses installation failures or skips codec/filter assertions. Offline
+tests in `tests/test_ffmpeg_ci_install.py` inject subprocess behaviour:
+**do not run apt/sudo from pytest**. If FFmpeg integration CI fails, inspect
+the installer step independently of playback regressions and record which
+signed mirror failed. This is a bounded CI reliability slice of P0 #19.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.

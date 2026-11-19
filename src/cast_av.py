@@ -462,6 +462,7 @@ class AvMixin:
         if stream is not None and stream.get_playing():
             self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
             stream.pause()
+            self._stop_local_meter()
             self._refresh_controls()
             return
         if stream is not None and stream.get_error() is not None:
@@ -484,6 +485,7 @@ class AvMixin:
                 self._on_local_prepared(stream, None, path)
         elif stream is not None and self._local_start_pending is None:
             stream.play()
+            self._start_local_meter(self._preview_position)
         self.preview_picture.set_visible(False)
         self.local_video.set_visible(True)
         self._refresh_controls()
@@ -491,6 +493,44 @@ class AvMixin:
 
     def _local_stream(self):
         return self.local_video.get_media_stream() if self._local_video_path else None
+
+
+    def _preview_monitor_chain(self) -> tuple[list, str]:
+        """Meter chain and hint for the audio of the locally previewed file."""
+        profile = str(self.cfg.get("audio", "dialogue"))
+        gain = float(self.cfg.get("audio_gain", 0.0) or 0.0)
+        hint = f"Local preview · {streamer.AUDIO_LABELS.get(profile, profile)}"
+        if gain > 0:
+            hint += f" · +{gain:g} dB"
+        return streamer.audio_filters(profile, gain), hint
+
+
+    def _start_local_meter(self, position: float) -> None:
+        """Feed the line meters from the file playing in the local preview."""
+        path = self._local_video_path or self._preview_path
+        if path is None:
+            return
+        chain, hint = self._preview_monitor_chain()
+        self._start_monitor(path, max(0.0, position), chain)
+        self._set_levels_hint(hint)
+
+
+    def _stop_local_meter(self) -> None:
+        """Idle the meters when local playback stops, never a cast's meter."""
+        if self._local_video_path is None:
+            return
+        self._stop_monitor()
+        self._set_levels_hint("")
+
+
+    def _meter_position(self) -> float | None:
+        """Position (seconds) of the audio the meters are showing."""
+        stream = self._local_stream()
+        if stream is not None and self._local_video_path is not None:
+            if not stream.get_playing():
+                return None
+            return max(0.0, stream.get_timestamp() / 1_000_000)
+        return self.tracker.value()
 
 
     def _play_locally(self) -> None:
@@ -518,9 +558,11 @@ class AvMixin:
             return
         if self._local_start_pending is None:
             return
-        stream.seek(int(self._local_start_pending * 1_000_000))
+        start = float(self._local_start_pending)
+        stream.seek(int(start * 1_000_000))
         self._local_start_pending = None
         stream.play()
+        self._start_local_meter(start)
         self._refresh_controls()
 
 
@@ -537,6 +579,7 @@ class AvMixin:
 
 
     def _unload_local_video(self) -> None:
+        self._stop_local_meter()
         stream = self._local_stream()
         if stream is not None:
             stream.pause()
@@ -602,7 +645,7 @@ class AvMixin:
             if meter is not None:
                 meter.set_sample(None)
             return True
-        position = self.tracker.value()
+        position = self._meter_position()
         if position is None:
             meter.set_sample(None)
         else:

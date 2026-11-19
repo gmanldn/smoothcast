@@ -25,6 +25,8 @@ import playback_state
 
 import direct_probe
 
+import stream_watchdog
+
 import preflight
 
 import url_control
@@ -771,6 +773,8 @@ class SessionMixin:
                 self.session.state.offset, snapshot.get("out_time"), duration,
                 speed=self.session.state.speed,
             )
+        # Pure watchdog: no blocking I/O on the GTK tick.
+        stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
@@ -1122,14 +1126,6 @@ class SessionMixin:
         self.toast(f"Cast failed: {message}", error=True)
         self._console(f"Cast failed: {message}")
         self._refresh_controls()
-
-
-    def _seek_percent(self, tenth: int) -> None:
-        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        if not duration and self._preview_path and self.session is None:
-            duration = self.queue_durations.get(self._preview_path, 0.0)
-        if duration:
-            self.seek_to(duration * tenth / 10.0)
 
 
     def _skip(self, delta: float) -> None:

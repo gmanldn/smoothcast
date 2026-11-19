@@ -32,6 +32,26 @@ is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
 not assume a display name alone proves ownership; issue #15 (SC-008)
 still tracks duplicate-name, stale-IP and real-device qualification.
 
+## HLS stall watchdog (P0 SC-010)
+
+`stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
+The existing GUI tick supplies *cached* FFmpeg `out_time` and receiver
+`current_time`; the watchdog performs no disk, network, GTK or process work.
+A sustained encoder stall (24 s) or a receiver that stops advancing while
+FFmpeg continues (36 s) can trigger **one** automatic HLS restart at the
+source-file playback position. It requires the receiver to report the **exact
+saved stream URL and optional title**, and refuses paused, offline, busy,
+unknown/foreign or completed playback. The one-restart budget survives
+FFmpeg generation changes; a subsequent failure displays an error instead of
+looping forever. A confirmed receiver IDLE/end is handled by the existing
+completion path and never converted into a restart.
+
+The asynchronous restart goes through `SessionMixin._restart_at`. Do not
+schedule extra background polling or launch GTK to test; deterministic unit
+and UI-wiring checks live in `tests/test_stream_watchdog.py`. Real-device
+buffering and first-frame behavior still require qualification under
+[GitHub issue #17](https://github.com/gmanldn/smoothcast/issues/17).
+
 ## Direct Cast acceptance and safe HLS fallback
 
 `src/direct_probe.py` classifies receiver status after the `catt`
