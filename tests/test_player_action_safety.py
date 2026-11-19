@@ -156,5 +156,16 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn("cast_targets.record_use(", self.methods["_note_device_used"])
 
 
+    def test_watch_history_is_wired(self):
+        # SC-114 #123: bounded history with preview/cast distinction and clear.
+        self.assertIn("app.clear-history", self.methods["_build_menu"])
+        record = self.methods["_record_watch"]
+        self.assertIn("watch_history.record(", record)
+        self.assertIn('"resumed"', record)
+        self.assertIn('self._record_watch("start")', self.methods["_cast_path"])
+        self.assertIn('self._record_watch("completed")', self.methods["_on_finished"])
+        self.assertIn('self._record_watch("stop")', self.methods["stop_stream"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -90,7 +90,7 @@ def window(*names):
             for name in ("_refresh_controls", "_poll_device", "_rebuild_queue",
                          "_start_monitor", "_set_levels_hint",
                          "_set_now_playing_labels", "_stop_monitor",
-                         "_console", "toast", "_cast_failed"):
+                         "_console", "toast", "_cast_failed", "_record_watch"):
                 setattr(self, name, mock.Mock())
             self._finished_handled = False
 

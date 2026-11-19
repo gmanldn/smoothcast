@@ -248,6 +248,7 @@ class SessionMixin:
             )
             self._add_recent(str(path))
             self._note_device_used()
+            self._record_watch("start")
             self._set_now_playing_labels(media, session)
             # Update preview screen with video info.
             if self.preview is not None and media:
@@ -305,6 +306,7 @@ class SessionMixin:
             # command, so another app's cast is never disturbed.
             self._refresh_controls()
             return
+        self._record_watch("stop")
         self.busy = True
         self._refresh_controls()
         device = self._device()
@@ -673,6 +675,7 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        self._record_watch("completed")
         self._stop_monitor()
         self._set_levels_hint("")
         item = self.now_playing

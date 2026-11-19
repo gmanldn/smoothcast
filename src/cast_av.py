@@ -563,6 +563,7 @@ class AvMixin:
         self._local_start_pending = None
         stream.play()
         self._start_local_meter(start)
+        self._record_watch("start")
         self._refresh_controls()
 
 
@@ -580,6 +581,7 @@ class AvMixin:
 
     def _unload_local_video(self) -> None:
         self._stop_local_meter()
+        self._record_watch("stop")
         stream = self._local_stream()
         if stream is not None:
             stream.pause()
