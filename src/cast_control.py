@@ -14,13 +14,9 @@ from position_tracker import PositionTracker
 import pathlib
 
 import sys
-
-from position_tracker import PositionTracker
 import threading
 
 import castctl
-
-import diagnostics
 
 import dlna
 
@@ -95,7 +91,6 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
-        self.master_meter: MasterMeter | None = None
         self.preview: PreviewScreen | None = None
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None

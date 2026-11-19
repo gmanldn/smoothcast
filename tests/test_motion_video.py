@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import streamer
 import screenshot
 import dlna
+import preflight
 from gui_source import main_window_methods
 
 
@@ -205,6 +206,9 @@ class RealMkvArtworkTests(unittest.TestCase):
             media = streamer.ffprobe(movie)
             self.assertEqual(media.video_stream_index, 1)
             self.assertEqual(media.resolution, "160x90")
+            # Real decoder preflight must consume motion frames, not stream-0 cover art.
+            report = preflight.check_media(media)
+            self.assertGreater(report.bytes_rendered, 100)
             jpeg = screenshot.preview_frame(movie, 1.0,
                                             video_stream_index=media.video_stream_index)
             self.assertTrue(jpeg.startswith(b"\xff\xd8"))

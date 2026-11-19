@@ -12,7 +12,6 @@ import pathlib
 import time
 
 from utils import pretty_title
-import streamer
 import cast_targets
 import watch_history
 
