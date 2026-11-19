@@ -28,6 +28,11 @@ the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
 update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
 compileall locally (`pip install pre-commit && pre-commit install`).
 
+**Types (#251):** `mypy` (config in `pyproject.toml`) gates only the modules
+listed under `[tool.mypy] files`; CI fails on any error there. To widen it, fix
+a module until `mypy src/<module>.py` is clean, then add it to the list (new
+modules should start typed). GTK-facing modules stay out until typed.
+
 **Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
 `pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
 CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,

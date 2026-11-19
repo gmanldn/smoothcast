@@ -20,6 +20,7 @@ dev = [
     "pytest-mock",
     "pytest-cov",
     "ruff",
+    "mypy",
 ]
 
 [project.scripts]
@@ -78,3 +79,18 @@ branch = false
 [tool.coverage.report]
 show_missing = false
 skip_empty = true
+
+# Incremental type checking (#251): only modules listed here are gated. Add a
+# module once `mypy` is clean for it; GTK-facing modules are out of scope until
+# typed. Run: mypy (reads this table).
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+files = [
+    "src/playlist_control.py", "src/version.py", "src/utils.py",
+    "src/watch_history.py", "src/queue_metadata.py", "src/preflight.py",
+    "src/network_routes.py", "src/dlna.py", "src/server.py",
+]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true

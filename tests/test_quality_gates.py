@@ -58,5 +58,25 @@ class DependencyGateTests(unittest.TestCase):
         self.assertIn("pip_audit", read(".github/workflows/verify.yml"))
 
 
+
+class TypeCheckGateTests(unittest.TestCase):
+    def test_mypy_is_configured_with_an_explicit_module_list_and_gated(self):
+        config = read("pyproject.toml")
+        self.assertIn("[tool.mypy]", config)
+        self.assertIn('"src/server.py"', config)
+        self.assertIn("mypy", config.split("dev = [", 1)[1].split("]", 1)[0])
+        workflow = read(".github/workflows/verify.yml")
+        self.assertIn("run: mypy", workflow)
+        self.assertIn("Types (#251)", read("docs/agents/testing.md"))
+
+    def test_gated_modules_exist(self):
+        import re
+        block = read("pyproject.toml").split("[tool.mypy]", 1)[1].split("]", 1)[0]
+        listed = re.findall(r'"(src/[a-z_]+\.py)"', block)
+        self.assertGreaterEqual(len(listed), 5)
+        for name in listed:
+            self.assertTrue((ROOT / name).is_file(), name)
+
+
 if __name__ == "__main__":
     unittest.main()

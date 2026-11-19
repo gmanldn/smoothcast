@@ -120,7 +120,7 @@ class H(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
-    def guess_type(self, path: str) -> str:
+    def guess_type(self, path: "str | os.PathLike[str]") -> str:
         """Use stable Cast/HLS MIME types, independent of OS MIME tables."""
         suffix = Path(path).suffix.lower()
         if suffix == ".m3u8":
