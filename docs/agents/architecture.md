@@ -52,6 +52,22 @@ and UI-wiring checks live in `tests/test_stream_watchdog.py`. Real-device
 buffering and first-frame behavior still require qualification under
 [GitHub issue #17](https://github.com/gmanldn/smoothcast/issues/17).
 
+## Direct Cast acceptance and safe HLS fallback
+
+`src/direct_probe.py` classifies receiver status after the `catt`
+direct-cast command returns: verified PLAYING/PAUSED with matching title is
+accepted; three consecutive explicit IDLE reports mean the decoder failed
+and a background HLS handoff may be attempted at the **same source position,
+audio setting and sidecar subtitles**. An unavailable/ambiguous status
+retains the direct stream rather than guessing it failed. A known foreign
+active title aborts automatic fallback without sending a remote Stop.
+
+All polling runs in the existing cast-start worker, not GTK or routine test
+runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
+`tests/test_direct_failover_probe.py` exercises both the pure classifier
+and the actual cast worker's direct-to-HLS branch with fakes. Real device
+decoder/subtitle negotiation remains P0 issue #18.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
