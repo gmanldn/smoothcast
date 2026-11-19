@@ -59,8 +59,21 @@ class FrozenRuntimeTests(unittest.TestCase):
         with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \
              mock.patch.dict(sys.modules, {"server": fake_server}):
             self.assertEqual(frozen_runtime.dispatch_frozen_helper([frozen_runtime.SERVER_FLAG]), 0)
+            self.assertEqual(
+                frozen_runtime.dispatch_frozen_helper(
+                    [frozen_runtime.SERVER_FLAG, "--bind", "192.168.1.23"]
+                ), 0,
+            )
             self.assertEqual(frozen_runtime.dispatch_frozen_helper([frozen_runtime.SERVER_FLAG, "junk"]), 2)
-        fake_server.main.assert_called_once_with()
+            self.assertEqual(
+                frozen_runtime.dispatch_frozen_helper(
+                    [frozen_runtime.SERVER_FLAG, "--extra", "not-allowed"]
+                ), 2,
+            )
+        self.assertEqual(
+            [call.args for call in fake_server.main.call_args_list],
+            [([],), (["--bind", "192.168.1.23"],)],
+        )
 
     def test_catt_child_receives_unmodified_args_and_restores_parent_argv(self):
         fake_package = types.ModuleType("catt")
