@@ -205,8 +205,28 @@ def test_same_size_and_reset_mtime_still_rehashes(tmp_path):
     media.write_bytes(b"bbbb")
     import os
     os.utime(media, ns=(previous.st_atime_ns, previous.st_mtime_ns))
-    assert media.stat().st_ctime_ns != previous.st_ctime_ns
-    result = index.scan(root, db)
+    current = media.stat()
+    assert (current.st_size, current.st_mtime_ns) == (
+        previous.st_size, previous.st_mtime_ns,
+    )
+
+    # Some filesystems do not advance ctime after write + utime, even when
+    # file contents change. Exercise the index's change-time invalidation
+    # deterministically by making the *cached* ctime stale instead.
+    import sqlite3
+    connection = sqlite3.connect(db)
+    try:
+        modified = connection.execute(
+            "UPDATE media SET ctime_ns = ? WHERE path = ?",
+            (current.st_ctime_ns - 1, str(media)),
+        )
+        assert modified.rowcount == 1
+        connection.commit()
+    finally:
+        connection.close()
+    with mock.patch.object(index, "_fingerprint", wraps=index._fingerprint) as digest:
+        result = index.scan(root, db)
+    digest.assert_called_once()
     assert result["hashed"] == 1 and result["reused"] == 0
     assert index.list_media(db)[0]["sha256"] == hashlib.sha256(b"bbbb").hexdigest()
 
