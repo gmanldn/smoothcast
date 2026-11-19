@@ -7,6 +7,7 @@ HLS helper/artwork from an unrelated cwd with no PYTHONPATH and no GTK.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -22,11 +23,14 @@ ICON = SOURCE / "data" / "cast-control.png"
 VERIFY = r"""
 import hashlib
 import importlib.metadata as metadata
+import importlib.util
+import json
 from pathlib import Path
 import sys
 
 source = Path(sys.argv[1]).resolve()
 expected_icon_hash = sys.argv[2]
+expected_modules = json.loads(sys.argv[3])
 distribution = metadata.distribution("smoothcast")
 import smoothcast_assets
 import streamer
@@ -43,6 +47,18 @@ for module in (smoothcast_assets, streamer, server, version):
     path = Path(module.__file__).resolve()
     assert source not in (path, *path.parents), (
         "Imported uninstalled checkout code", path
+    )
+
+# Every top-level source module must survive wheel packaging, including
+# modules that import GTK and therefore MUST NOT be executed in this test.
+for name in expected_modules:
+    specification = importlib.util.find_spec(name)
+    assert specification is not None and specification.origin, (
+        "Module omitted from installed wheel", name
+    )
+    origin = Path(specification.origin).resolve()
+    assert source not in (origin, *origin.parents), (
+        "Wheel module resolved to checkout", name, origin
     )
 
 icon = smoothcast_assets.icon_path()
@@ -112,6 +128,22 @@ def entry_path(venv: Path, name: str) -> Path:
 def main() -> int:
     if not ICON.is_file():
         raise RuntimeError("Repository's original icon is missing")
+    # Avoid a silent packaging regression when a new stream/watchdog/receiver
+    # module is added but forgotten in setuptools' explicit py-modules list.
+    # tomllib is used only by the Python 3.13 CI build runner; ordinary
+    # Python 3.10 portable tests may import this script without it.
+    import tomllib
+
+    metadata = tomllib.loads((SOURCE / "pyproject.toml").read_text(encoding="utf-8"))
+    expected_modules = sorted(p.stem for p in (SOURCE / "src").glob("*.py")
+                              if p.name != "__init__.py")
+    declared_modules = sorted(metadata["tool"]["setuptools"]["py-modules"])
+    if expected_modules != declared_modules:
+        raise RuntimeError(
+            "Top-level source files and packaged py-modules differ: "
+            f"source-only={sorted(set(expected_modules) - set(declared_modules))}, "
+            f"declared-only={sorted(set(declared_modules) - set(expected_modules))}"
+        )
     icon_hash = hashlib.sha256(ICON.read_bytes()).hexdigest()
     env = clean_environment()
     with tempfile.TemporaryDirectory(prefix="smoothcast-artifact-ci-") as folder:
@@ -156,7 +188,8 @@ def main() -> int:
         # No installed dependency is needed for the version/UI-free
         # contract; real GTK, catt and FFmpeg are checked separately.
         check = execute(
-            [str(python), "-I", "-c", VERIFY, str(SOURCE), icon_hash],
+            [str(python), "-I", "-c", VERIFY, str(SOURCE), icon_hash,
+             json.dumps(expected_modules)],
             cwd=outside, env=env, timeout=30,
         )
         print(check.stdout.strip())
