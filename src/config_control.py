@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shutil
 
+import cache_policy
 import watch_history
 
 
@@ -104,7 +105,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                 cfg[key] = value
         elif type(baseline) is int:
             lo, hi = (-100000, 100000) if key in {"window_x", "window_y"} else (
-                (0, 1440) if key == "sleep_timer_minutes" else (1, 10000)
+                (0, 1440) if key == "sleep_timer_minutes" else (
+                    (0, cache_policy.MAX_CAP_MB) if key == "cache_cap_mb" else (1, 10000))
             )
             if type(value) is int and lo <= value <= hi:
                 cfg[key] = value

@@ -19,7 +19,16 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
-## Release packages — PyInstaller\n\n**PyInstaller is the canonical release packager** for native SmoothCast desktop\nbundles; existing Python-first setup scripts remain available for source/developer\ninstalls. See [build, platform requirements, headless artefact checks and\nlimitations](docs/PACKAGING.md). Do not treat a Python wheel as an end-user\ndesktop release or assume an unsigned CI bundle has passed real-device tests.\n\n## Install — Python-first, all three desktops
+## Release packages — PyInstaller
+
+**PyInstaller is the canonical release packager** for native SmoothCast desktop
+bundles. Existing Python-first setup scripts remain source/developer installation
+paths. See the [packaging guide](docs/PACKAGING.md) for build requirements,
+platform qualification, checksums and headless artefact checks. A Python wheel
+is not a native desktop release, and unsigned CI builds still require real-device
+qualification.
+
+## Install — Python-first, all three desktops
 
 **The only manual prerequisite is Python 3.10+**. Setup will check and, where necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and `catt`. The installer uses the host package manager and may request administrator permission. Internet access is required for missing packages.
 
@@ -65,8 +74,11 @@ with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
 non-default audio tracks or selected subtitles require full FFmpeg
 transcoding and burn-in **before playback starts**. For long films this can
 take significant time and disk space (roughly twice the source-file size must
-be available). The application checks local free space and reports conversion
-errors. The DLNA target path currently uses normal playback speed, no video
+be available). The application checks local free space, refuses a conversion
+larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
+default 8192 MB, `0` = unlimited) before FFmpeg starts, sweeps scratch left by a
+crash (`smoothcast-dlna-*` in the system temp directory, once older than 10
+minutes) at the next startup, and reports conversion errors. The DLNA target path currently uses normal playback speed, no video
 rotation and the original sound profile; Chromecast still supports its own
 transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
 support in your FFmpeg build.
@@ -414,5 +426,6 @@ preserve earlier research. Agents should start with
 `python3 scripts/ticket_digest.py --next`, a bounded read-only index rather
 than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
-not by adding a second TODO document. Issue branches and pull requests target
-`develop`; `main` is protected and receives release merges only.
+not by adding a second TODO document. All work is committed directly to
+`develop`; `main` is release-only and is updated automatically by a develop→main
+pull request when a verified `develop` commit bumps `src/version.py`.

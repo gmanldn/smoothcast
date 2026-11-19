@@ -94,5 +94,36 @@ class FuzzGateTests(unittest.TestCase):
             self.assertIn(parser, source)
 
 
+
+class AgentHygieneTests(unittest.TestCase):
+    def test_develop_only_rule_is_first_and_loud_in_agents_md(self):
+        agents = read("AGENTS.md")
+        self.assertLess(agents.index("Branch rule"), agents.index("## Rules"))
+        for needle in ("`develop` is the only branch anyone commits to",
+                       "git worktree add --detach ../smoothcast-N origin/develop",
+                       "git push origin HEAD:develop", "never with `--force`",
+                       "Never commit or push to `main`", "bump_version.py",
+                       "workflow.md"):
+            self.assertIn(needle, agents)
+        self.assertLess(len(agents), 2500)
+
+    def test_workflow_documents_trunk_flow_hygiene_and_automatic_release(self):
+        workflow = read("docs/agents/workflow.md")
+        for needle in ("Everyone — humans and agents — commits to `develop`",
+                       "git worktree add --detach", "git worktree remove",
+                       "git push origin HEAD:develop", "Keep `develop` green",
+                       "Stage files by name", "Mind the CI queue",
+                       "promote_release.py", "head pinned to the verified commit", "bump_version.py",
+                       "Allow GitHub Actions to create and approve pull"):
+            self.assertIn(needle, workflow)
+
+    def test_no_document_still_tells_agents_to_use_feature_branches_or_agent_prs(self):
+        for name in ("AGENTS.md", "CONTRIBUTING.md", "docs/ISSUES.md", "docs/agents/workflow.md"):
+            text = read(name).lower()
+            for stale in ("issue-specific branch", "open prs against", "every issue branch",
+                          "work on a branch off", "open a pr referencing"):
+                self.assertNotIn(stale, text, f"{name}: {stale}")
+
+
 if __name__ == "__main__":
     unittest.main()
