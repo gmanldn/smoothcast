@@ -68,6 +68,29 @@ runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
 and the actual cast worker's direct-to-HLS branch with fakes. Real device
 decoder/subtitle negotiation remains P0 issue #18.
 
+## HLS generation identity (P1 SC-062)
+
+Every new `streamer.Session.start_transcode` generates a cryptographically
+random 128-bit stream ID. The playlist is
+`movie-<32 lowercase hex>.m3u8`, with matching
+`segment-<same ID>-00000.ts` files. **Both paths must change** on every
+seek/restart or film switch: merely putting an ID in a URL query would allow
+a delayed old request to load replacement bytes through the same file.
+
+The LAN HTTP server permits only exact generated playlist/segment basenames
+(and read-only legacy names for already saved sessions). It never exposes
+directories, logs, subtitle staging, configuration or arbitrary files. New
+starts remove stale HLS assets; a stale receiver request returns 404 instead
+of frames from a different film or seek point. Persist the exact generation
+URL in `SessionState.stream_url`: watchdog, receiver ownership and recovery
+compare that full URL. Finalised single-segment HLS recovery must verify
+every playlist segment belongs to its saved generation.
+
+`tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
+cross-generation stale requests, narrow allowlists, encoder arguments and
+finalised recovery. All tests use mock encoders/TV and ephemeral local
+servers; do not launch GTK or send commands to a receiver.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
