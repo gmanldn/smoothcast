@@ -176,3 +176,20 @@ def test_traversal_depth_limit_is_not_a_complete_scan(tmp_path):
     capped = index.scan(root, db, max_depth=0)
     assert not capped["complete"] and capped["removed"] == 0
     assert len(index.list_media(db)) == 1
+
+
+def test_installed_cli_dispatch_remains_headless_in_test_context(monkeypatch):
+    import os
+    import sys
+    import cli
+    with mock.patch.dict(sys.modules, {"library_index": index}):
+        with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "1"}):
+            with mock.patch.object(sys, "argv", ["smoothcast", "--library-index", "list"]):
+                with mock.patch.object(index, "main", return_value=7) as handler:
+                    assert cli.main() == 7
+                    handler.assert_called_once_with(["list"])
+
+
+def test_index_module_is_in_wheel_build_configuration():
+    config = (MODULE.parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"library_index"' in config
