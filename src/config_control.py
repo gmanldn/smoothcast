@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 
 import cache_policy
+import subtitle_delay
 import watch_history
 
 
@@ -25,7 +26,7 @@ _OPTIONS = {
 }
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
-    "device_last_used",
+    "device_last_used", "subtitle_delay_by_file",
 })
 _MAX_PATH = 4096
 _MAX_ITEMS = 512
@@ -94,6 +95,10 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                     if key in {"positions", "device_last_used"}:
                         if _number(selection) and 0 <= selection <= 1e12:
                             clean[path] = float(selection)
+                    elif key == "subtitle_delay_by_file":
+                        if (type(selection) is int and selection != 0
+                                and -subtitle_delay.LIMIT_MS <= selection <= subtitle_delay.LIMIT_MS):
+                            clean[path] = selection
                     elif type(selection) is int and -1 <= selection <= 1024:
                         clean[path] = selection
                 cfg[key] = clean

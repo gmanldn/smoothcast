@@ -18,6 +18,10 @@ def main() -> int:
         # Explicit diagnostic command; does not import GTK or start a cast.
         import network_routes
         return network_routes.main(sys.argv[2:])
+    if sys.argv[1:2] and sys.argv[1] in ("cast", "pause", "resume", "stop", "seek", "status"):
+        # Headless Chromecast control (#268): never imports GTK or opens a window.
+        import cli_control
+        return cli_control.main(sys.argv[1:])
     if sys.argv[1:2] == ["--reprobe-encoder"]:
         # Explicit, headless: forget a recorded VAAPI failure (#236).
         import hw_encoder_state

@@ -51,9 +51,10 @@ from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_lifecycle import LifecycleMixin
+from cast_subtitles import SubtitleMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -249,6 +250,9 @@ class CastControlApp(Adw.Application):
         simple("loop", lambda *a: self._window()._toggle_loop())
         simple("custom-speed", lambda *a: self._window().action_custom_speed())
         simple("loop-all", lambda *a: self._window()._toggle_loop_all())
+        simple("subtitle-earlier", lambda *a: self._window()._adjust_subtitle_delay(-1))
+        simple("subtitle-later", lambda *a: self._window()._adjust_subtitle_delay(1))
+        simple("subtitle-reset", lambda *a: self._window()._adjust_subtitle_delay(0))
         simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
         simple("load-playlist", lambda *a: self._window()._load_playlist())

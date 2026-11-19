@@ -73,9 +73,10 @@ amend commits that are already on `origin`.
 - **Keep `develop` green.** Trunk has no PR gate, so your local checks are the
   gate. If a push turns CI red, fixing it (or `git revert <sha>`) comes before
   new work, whoever caused it.
-- **Mind the CI queue.** Verify runs one job per ref and a newer push cancels
-  the pending run, so batch related commits into one push instead of pushing
-  every small change.
+- **Every push to `develop` is verified in its own CI run** (runs are keyed by
+  commit, never cancelled), so a red commit is attributable to its author.
+  Still batch related commits into one push: each push costs a full run, and
+  the release promotion waits for a *complete* green run.
 - **No stray branches or worktrees.** Do not push topic branches. Remove your
   worktree after pushing. The prune workflow deletes any merged remote branch
   that slips through; do not leave stale ones.

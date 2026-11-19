@@ -115,6 +115,18 @@ transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
 **not yet rendered**. Missing or incompatible subtitle files return a
 visible error instead of silently proceeding with another track.
 
+**Subtitle delay:** if captions run early or late, use **Subtitle delay** in
+the main menu, or press **G** (100 ms earlier) / **H** (100 ms later); *Reset
+delay* clears it. The offset is whole milliseconds, limited to ±30 s, and is
+remembered per film. While casting over HLS or DLNA the stream restarts at the
+current position so the new timing is burned in. A non-zero delay always burns
+captions into the picture (a Cast receiver cannot time-shift a sidecar track),
+so it needs the slower transcode path and is not applied to direct play; the
+saved value is used on your next cast instead. Burn-in timing is checked with
+real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
+verified on physical receivers yet. Streams resumed or seeked to a later
+position also now draw burned-in captions at the correct film time.
+
 ## Interface and visual design
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
@@ -179,6 +191,32 @@ running instance, `GApplicationCommandLine.get_cwd()` supplies the original
 caller's directory. This also prevents a same-named file in the checkout from
 silently replacing a missing caller file. Absolute paths and `file://` media
 URIs keep their original meaning.
+
+## Command-line control (headless)
+
+Control a **Chromecast** without opening the GUI — no display, GTK or desktop session is needed, so it works over SSH and in scripts:
+
+```sh
+smoothcast cast Film.mkv -d "Living Room"            # direct play if compatible, else transcode
+smoothcast cast Film.mkv -d 192.168.1.50 --offset 1:02:03 --subs Film.en.srt
+smoothcast pause|resume|stop -d "Living Room"
+smoothcast seek 1:30 -d "Living Room"                # seconds, MM:SS or HH:MM:SS
+smoothcast status -d "Living Room" --json
+```
+
+Give the receiver with `-d/--device` (name or IPv4) or the `SMOOTHCAST_DEVICE` environment variable. `cast` also takes `--mode auto|direct|transcode`, `--quality`, `--audio`, `--no-subs` and `--title`; it replaces any earlier SmoothCast-owned cast and leaves the stream running after the command returns. `stop` also ends SmoothCast's own encoder, server and catt processes for that cast. Seeking a live transcode restarts the encoder at the new position with the same settings, as the application does.
+
+`--json` prints exactly one object: `{"ok": true, "command": "status", "state": "PLAYING", "position": 65.0, ...}` or `{"ok": false, "command": "pause", "error": "failed", "message": "..."}`; human-readable output goes to stdout on success and errors to stderr.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | the operation failed (receiver or catt refused it, or the cast did not start) |
+| 2 | usage error: bad arguments, time or no receiver given |
+| 3 | receiver unreachable or offline |
+| 4 | media problem: file missing, unreadable or unsupported |
+
+DLNA renderers are not supported from the command line yet, and a real-receiver check of these commands is device-pending. Portable tests run them against mocked receivers.
 
 ## Playlists, resume and safe playback transitions
 
