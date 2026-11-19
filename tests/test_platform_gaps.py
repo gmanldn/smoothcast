@@ -44,7 +44,8 @@ class RegisterTests(unittest.TestCase):
 
 
 class HookTests(unittest.TestCase):
-    ENTRY = next(iter(platform_gaps.GAPS["win32"]))
+    # A Windows-only entry (not also registered for macOS), so cross-platform checks are exact.
+    ENTRY = next(k for k in platform_gaps.GAPS["win32"] if k not in platform_gaps.GAPS["darwin"])
 
     def run_hook(self, platform: str, nodeid: str):
         item = fake_item(nodeid)
