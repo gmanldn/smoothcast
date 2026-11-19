@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 
 import streamer
+import playback_state
 
 
 def resume_from_long_pause(window, session, device, renderer, want_play: bool) -> bool:
@@ -25,6 +26,11 @@ def resume_from_long_pause(window, session, device, renderer, want_play: bool) -
         or window.external
         or window._closing
         or getattr(session.state, "device", None) != device
+        or not playback_state.hls_session_matches(
+            window.device_info,
+            getattr(session.state, "stream_url", ""),
+            getattr(session.state, "title", ""),
+        )
         or not window.tracker.known
         or window.tracker.playing
         or window.tracker.paused_for() < streamer.HLS_PAUSE_RESTART_AFTER
