@@ -180,6 +180,6 @@ def test_preview_source_timestamp_is_used_and_unrelated_preview_rejected():
 
 def test_film_screenshot_source_check_executes_before_any_async_work():
     src = main_window_methods()["_screenshot"]
-    assert src.index("state = self.session.state") < src.index("Async.run(")
+    assert src.index('state = getattr(self.session, "state", None)') < src.index("Async.run(")
     assert src.index("position = self.tracker.value()") < src.index("Async.run(")
     assert 'position is unknown' in src
