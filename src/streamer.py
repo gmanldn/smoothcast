@@ -1273,6 +1273,8 @@ class Session:
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1507,6 +1509,8 @@ class Session:
         title: str,
         offset: float = 0.0,
     ) -> None:
+        if not device.strip():
+            raise StreamError(castctl.NO_DEVICE_MESSAGE)
         args = ["-d", device, "cast", "--stream-type", "buffered", "-l", title]
         if subs_disabled:
             args.append("--no-subs")
