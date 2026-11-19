@@ -115,5 +115,18 @@ class PlayerActionSafetyTests(unittest.TestCase):
         self.assertIn('snapshot.get("out_time")', details)
 
 
+    def test_loop_all_and_shuffle_are_wired(self):
+        # SC-120 #129: loop-all wraps the queue; shuffle permutes it in place.
+        self.assertIn('app.loop-all', self.methods["_build_menu"])
+        self.assertIn('app.shuffle-queue', self.methods["_build_menu"])
+        self.assertIn(
+            'repeat_all=bool(self.cfg.get("loop_all"))',
+            self.methods["_on_finished"],
+        )
+        shuffle = self.methods["_shuffle_queue"]
+        self.assertIn("playback_state.shuffle_order(", shuffle)
+        self.assertIn("self._rebuild_queue()", shuffle)
+
+
 if __name__ == "__main__":
     unittest.main()

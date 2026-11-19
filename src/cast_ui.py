@@ -115,6 +115,8 @@ class UiMixin:
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Loop all", "app.loop-all")
+        playback.append("Shuffle queue", "app.shuffle-queue")
         playback.append("Save playlist", "app.save-playlist")
         playback.append("Load playlist", "app.load-playlist")
         playback.append("Theater mode", "app.theater")

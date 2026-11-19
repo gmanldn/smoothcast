@@ -61,6 +61,8 @@ DEFAULTS: dict = {
     "recents": [],
     "positions": {},
     "loop": False,
+    "loop_all": False,
+    "shuffle_seed": 1,
     "playback_speed": 1.0,
     "rotation": 0,
     "sleep_timer_minutes": 0,

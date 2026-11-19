@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 
 PLAYING_STATES = frozenset({"PLAYING", "BUFFERING", "PAUSED"})
 
@@ -33,19 +34,40 @@ def playback_ended(previous: str, current: str, *, has_session: bool, busy: bool
 def next_media(
     current: str | None, queue: list[str], *,
     repeat_current: bool, auto_next: bool,
+    repeat_all: bool = False, order: list[str] | None = None,
 ) -> str | None:
-    """Choose successor after playback: repeat-one overrides auto-next."""
+    """Choose the successor after playback.
+
+    Precedence: repeat-one, then (unless auto-next is off) the next entry in the
+    play order; ``repeat_all`` wraps the last entry back to the first. ``order``
+    lets a shuffled play order drive auto-advance while ``queue`` keeps the
+    displayed order.
+    """
     if not current:
         return None
     if repeat_current:
         return current
     if not auto_next:
         return None
+    sequence = list(order) if order else list(queue)
     try:
-        index = queue.index(current)
+        index = sequence.index(current)
     except ValueError:
         return None
-    return queue[index + 1] if index + 1 < len(queue) else None
+    if index + 1 < len(sequence):
+        return sequence[index + 1]
+    return sequence[0] if repeat_all and sequence else None
+
+
+def shuffle_order(queue: list[str], seed: int) -> list[str]:
+    """Return a deterministic permutation of *queue* for a given *seed*.
+
+    Pure and reproducible: the same queue and seed always yield the same order,
+    so a shuffled play order can be rebuilt and tested.
+    """
+    items = list(queue)
+    random.Random(int(seed)).shuffle(items)
+    return items
 
 
 def sleep_deadline(now: float, minutes: int) -> float:

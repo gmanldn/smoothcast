@@ -14,6 +14,8 @@ import threading
 
 import diagnostics
 
+import playback_state
+
 import screenshot
 
 import version
@@ -319,3 +321,23 @@ class LifecycleMixin:
                 f"Screenshot failed: {message}", error=True,
             ),
         )
+
+
+    def _toggle_loop_all(self) -> None:
+        """Loop the whole queue (wrap last -> first); independent of repeat-one."""
+        self.cfg["loop_all"] = not bool(self.cfg.get("loop_all", False))
+        save_config(self.cfg)
+        self.toast("Loop all on" if self.cfg["loop_all"] else "Loop all off")
+
+
+    def _shuffle_queue(self) -> None:
+        """Deterministically permute the queue so display and skip stay in sync."""
+        if len(self.queue) < 2:
+            self.toast("Nothing to shuffle")
+            return
+        seed = int(self.cfg.get("shuffle_seed", 1)) % 9999 + 1
+        self.cfg["shuffle_seed"] = seed
+        save_config(self.cfg)
+        self.queue = playback_state.shuffle_order(self.queue, seed)
+        self._rebuild_queue()
+        self.toast("Queue shuffled")
