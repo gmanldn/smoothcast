@@ -75,6 +75,7 @@ class PreferenceChoiceTests(unittest.TestCase):
         for snippet in (
             "Adw.PreferencesWindow",
             "self.set_search_enabled(True)",
+            "self.set_default_size(660, 520)",
             "self.sync_from_owner()",
             "self.owner.app.scheme_action.activate",
             "getattr(self.owner, widgets[key]).set_selected",
