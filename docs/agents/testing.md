@@ -47,6 +47,14 @@ pushes and weekly. To adopt a new catt minor: test it against a receiver,
 raise the upper bound in both files and the setup docs, then run the suite.
 Triage CodeQL findings in the Security tab; record dismissals with a reason.
 
+**Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
+bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;
+SmoothCast requires FFmpeg 5.0+ for `-readrate` and
+`scale:force_divisible_by`. New-cast and restart workers check before
+stopping previous streams; transcode paths recheck before launching an encoder.
+`tests/test_ffmpeg_version_guard.py` mocks all subprocess calls and verifies
+rejecting unknown/broken/older builds without sending Cast commands.
+
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed
