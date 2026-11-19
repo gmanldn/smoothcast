@@ -30,7 +30,7 @@ FFMPEG_LOG = ROOT / "ffmpeg.log"
 PORT = 8767
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
-_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\\.m3u8\\Z")
+_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
 
 
 def _hls_names_from_url(url: str) -> tuple[str, str]:
@@ -1303,11 +1303,11 @@ class Session:
             # absolute paths or unrelated temporary files.
             playlist_name = getattr(self, "_playlist_name", HLS_NAME)
             if playlist_name == HLS_NAME:
-                valid = re.fullmatch(r"segment-[0-9]+\\.ts", name) is not None
+                valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
             else:
                 match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
                 valid = bool(match and re.fullmatch(
-                    rf"segment-{match.group(1)}-[0-9]+\\.ts", name,
+                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
                 ))
             if not valid:
                 return False
