@@ -105,7 +105,7 @@ class RescanOwnershipTests(unittest.TestCase):
         callbacks = []
         class Async:
             @staticmethod
-            def run(work, done=None, failed=None):
+            def run(work, done=None, failed=None, **_kwargs):
                 callbacks.append((work, done, failed))
         namespace = {"Async": Async, "castctl": SimpleNamespace(scan=lambda: []),
                      "dlna": SimpleNamespace(discover=lambda: [])}

@@ -28,7 +28,7 @@ def fixture(mode="direct", *, paused=False):
     dlna = mock.Mock()
     namespace = {
         "Async": SimpleNamespace(
-            run=lambda work, done=None, failed=None: jobs.append((work, done, failed))
+            run=lambda work, done=None, failed=None, **_kwargs: jobs.append((work, done, failed))
         ),
         "castctl": cast,
         "dlna": dlna,
