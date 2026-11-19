@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field
 import castctl
 import lan_interfaces
 import process_identity
+import process_priority
 import server as hls_server
 import subtitle_encoding
 
@@ -1276,11 +1277,14 @@ class Session:
             str(ROOT / self._playlist_name),
         ]
         with open(FFMPEG_LOG, "w") as log:
+            low_priority = process_priority.enabled()
             self.ffmpeg = subprocess.Popen(
                 args, cwd=str(ROOT),
                 stdout=subprocess.DEVNULL, stderr=log,
                 start_new_session=True,
+                **process_priority.launch_kwargs(low_priority),
             )
+            process_priority.lower(self.ffmpeg, low_priority)
         try:
             self._start_server(local_ip, device_ip)
         except Exception:

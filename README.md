@@ -69,7 +69,7 @@ be available). The application checks local free space, refuses a conversion
 larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
 default 8192 MB, `0` = unlimited) before FFmpeg starts, sweeps scratch left by a
 crash (`smoothcast-dlna-*` in the system temp directory, once older than 10
-minutes) at the next startup, and reports conversion errors. The DLNA target path currently uses normal playback speed, no video
+minutes) at the next startup, and reports conversion errors. FFmpeg runs at below-normal priority (nice 10 on Linux/macOS, `BELOW_NORMAL_PRIORITY_CLASS` on Windows) so the desktop stays responsive during software encodes; set `"lower_ffmpeg_priority": false` in the same config file to opt out. The DLNA target path currently uses normal playback speed, no video
 rotation and the original sound profile; Chromecast still supports its own
 transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
 support in your FFmpeg build.

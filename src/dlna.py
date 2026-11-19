@@ -27,6 +27,7 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 import cache_policy
+import process_priority
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -611,10 +612,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     # Cancel/Stop button can abort immediately and no orphan FFmpeg remains.
     with tempfile.TemporaryFile() as error_log:
         try:
+            low_priority = process_priority.enabled()
             proc = subprocess.Popen(
                 args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=error_log, start_new_session=True,
+                **process_priority.launch_kwargs(low_priority),
             )
+            process_priority.lower(proc, low_priority)
         except OSError as exc:
             output.unlink(missing_ok=True)
             raise DlnaError(f"Cannot start FFmpeg: {exc}") from exc

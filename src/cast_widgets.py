@@ -77,6 +77,7 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
+    "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 
