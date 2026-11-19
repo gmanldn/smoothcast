@@ -15,6 +15,8 @@ import shutil
 import signal
 import tempfile
 import time
+import sys
+import frozen_runtime
 
 import streamer
 
@@ -43,6 +45,9 @@ def process_kind(argv: tuple[str, ...]) -> str | None:
         return None
     executable = Path(argv[0]).name
     if len(argv) >= 2 and argv[1] == str(streamer.SERVER_SCRIPT) and executable.startswith("python"):
+        return "server"
+    if (len(argv) >= 2 and argv[1] == frozen_runtime.SERVER_FLAG
+            and Path(argv[0]).resolve() == Path(sys.executable).resolve()):
         return "server"
     if executable == "ffmpeg":
         if "-progress" in argv and str(streamer.PROGRESS_FILE) in argv:

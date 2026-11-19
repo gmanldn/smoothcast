@@ -6,6 +6,22 @@ import sys
 
 
 def main() -> int:
+    from frozen_runtime import dispatch_frozen_helper, is_frozen
+    child = dispatch_frozen_helper(sys.argv[1:])
+    if child is not None:
+        return child
+    if sys.argv[1:] == ["--_smoothcast-package-check"]:
+        if not is_frozen():
+            print("Package integrity check is for frozen artefacts only.", file=sys.stderr)
+            return 2
+        import hashlib
+        import gi
+        from smoothcast_assets import icon_path
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Adw", "1")
+        from gi.repository import Gtk, Adw  # noqa: F401; import without a display
+        print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
+        return 0
     if sys.argv[1:] in (["--version"], ["-V"]):
         from version import label
         print(f"SmoothCast {label()}")

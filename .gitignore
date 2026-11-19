@@ -23,3 +23,6 @@ errors.log.tmp
 # Virtualenv created by platform setup scripts (see setup/)
 .venv/
 .venv-incompatible-*/
+# PyInstaller native bundles and packaging build environments
+.packaging-venv/
+*.spec.bak

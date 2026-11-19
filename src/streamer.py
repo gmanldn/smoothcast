@@ -11,6 +11,7 @@ import re
 import secrets
 import socket
 import subprocess
+import frozen_runtime
 import sys
 import threading
 import time
@@ -459,13 +460,17 @@ def _pid_is_ours(pid: int | None, role: str) -> bool:
     except OSError:
         return False
     if role == "server":
-        return str(SERVER_SCRIPT) in argv
+        return str(SERVER_SCRIPT) in argv or (len(argv) >= 2
+                and argv[1] == frozen_runtime.SERVER_FLAG
+                and pathlib.Path(argv[0]).resolve() == pathlib.Path(sys.executable).resolve())
     if role == "encoder":
         return (bool(argv) and pathlib.Path(argv[0]).name.startswith("ffmpeg")
                 and str(PROGRESS_FILE) in argv)
     if role == "caster":
         return ("-d" in argv and "cast" in argv
-                and any(pathlib.Path(arg).name == "catt" for arg in argv[:2]))
+                and (any(pathlib.Path(arg).name == "catt" for arg in argv[:2])
+                     or (len(argv) >= 2 and argv[1] == frozen_runtime.CATT_FLAG
+                         and pathlib.Path(argv[0]).resolve() == pathlib.Path(sys.executable).resolve())))
     return False
 
 
@@ -968,7 +973,7 @@ class Session:
                 return  # Verified server left alive by keep-streaming.
             raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT)],
+            frozen_runtime.server_command(SERVER_SCRIPT),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1244,7 +1249,7 @@ class Session:
         else:
             cast_args += ["--no-subs"]
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *cast_args],
+            castctl.catt_command(cast_args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
@@ -1344,7 +1349,7 @@ class Session:
             args += ["-s", str(receiver_subs)]
         args.append(str(media.path))
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *args],
+            castctl.catt_command(args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
