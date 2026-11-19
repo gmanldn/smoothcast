@@ -11,8 +11,6 @@ import pathlib
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
-
 import process_identity as identity
 import startup_cleanup
 import streamer
