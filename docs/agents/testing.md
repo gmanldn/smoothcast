@@ -110,10 +110,6 @@ real PID in routine tests. Legacy sessions without birth evidence cannot
 reattach unverified helper PIDs. Real Windows/macOS runtime checks remain
 separate from portable CI.
 
-**Control API (#269):** `tests/test_control_api.py` runs the real `ThreadingHTTPServer` on 127.0.0.1 with an ephemeral port and fake `cli_control.HANDLERS` (restored after every test); it never contacts a receiver or binds a LAN address, and the module is mypy-gated. Never start `smoothcast --control-api serve` from a test.
-
-**Typed models (#249):** `src/progress_model.py` holds the immutable `Progress` snapshot of FFmpeg's progress file (`Session.progress()` returns it; use `.out_time`, `.done`, `.speed_text`, not dict keys) and the `ReceiverInfo` TypedDict for catt's `info` payload. It is mypy-gated; `tests/test_progress_model.py` covers tolerant parsing.
-
 **Cache privacy (#233):** `src/cache_privacy.py` creates or restricts the
 SmoothCast cache to mode 0700 on POSIX and atomically replaces session JSON
 through an exclusive mode-0600 file. Do not bypass this helper when persisting
