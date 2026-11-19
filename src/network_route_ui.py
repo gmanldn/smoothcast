@@ -15,7 +15,7 @@ def summary(result: dict) -> str:
     route = f"{source} ({interface})" if interface else source
     link = result["second_host_health_url"]
     instructions = (
-        f"From another device on the same LAN, open: {link}"
+        f"While HLS is running, open from another LAN device: {link}"
         if link else "No private source IPv4 available for a second-device HLS check."
     )
     error = result["route_error"]
@@ -52,7 +52,7 @@ def start(window, run_async) -> None:
             return
         window.network_check_button.set_sensitive(True)
         window.network_detail.set_text(
-            message if window._device() == device
+            message if (window._device() == device and window._device_host(device) == host)
             else "Receiver changed; run the connection check again."
         )
 
