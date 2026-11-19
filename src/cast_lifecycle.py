@@ -343,7 +343,7 @@ class LifecycleMixin:
         # A row selection is not playback ownership. Never substitute the
         # first frame when the current Cast/local decoder clock is unknown.
         if self.session is not None:
-            state = self.session.state
+            state = getattr(self.session, "state", None)
             if state is None or pathlib.Path(state.file) != source:
                 self.toast("Active film and media metadata do not match", error=True)
                 return
@@ -355,9 +355,14 @@ class LifecycleMixin:
             stream = self._local_stream()
             timestamp = stream.get_timestamp() if stream is not None else -1
             if timestamp < 0:
-                self.toast("Cannot capture: local playback position is unknown", error=True)
-                return
-            position = timestamp / 1_000_000
+                if self._preview_path != str(source):
+                    self.toast("Cannot capture: local playback position is unknown", error=True)
+                    return
+                # The same film's explicitly scrubbed still is an honest
+                # fallback; never default to frame zero or a different film.
+                position = self._preview_position
+            else:
+                position = timestamp / 1_000_000
         elif self._preview_path == str(source):
             position = self._preview_position
         else:
