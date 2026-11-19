@@ -62,13 +62,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install FFmpeg without holding up the portable test suite
+      - name: Install FFmpeg with bounded signed-mirror failover
         run: |
-          # Hosted mirrors sometimes take >180s for apt dependency downloads;
-          # keep actual decoder integration rather than hiding a failed job.
-          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-            sudo timeout 540 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 install -y --no-install-recommends ffmpeg
-          fi
+          # Avoid unbounded downloads from a regionally slow apt mirror;
+          # failure is NOT a pass: actual FFmpeg codec tests remain mandatory.
+          python scripts/ci/ensure_ffmpeg.py
           command -v ffmpeg
           command -v ffprobe
       - name: Verify required encoders and caption filter
