@@ -27,7 +27,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._audio_labels = None
         self._embedded_labels = None
         self.set_title("SmoothCast Preferences")
-        self.set_default_size(670, 630)
+        self.set_default_size(660, 520)
         self.set_search_enabled(True)
         self._build()
         self.sync_from_owner()
