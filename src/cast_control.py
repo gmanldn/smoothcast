@@ -266,6 +266,7 @@ class CastControlApp(Adw.Application):
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
         simple("preferences", lambda *a: self._window().action_preferences())
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
+        simple("report-problem", lambda *a: self._window().action_report_problem())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("benchmark", lambda *a: self._window().action_benchmark())

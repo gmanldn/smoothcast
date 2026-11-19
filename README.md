@@ -445,7 +445,7 @@ smoothcast --diagnostics            # writes ~/.config/cast-control/diagnostics-
 smoothcast --diagnostics /tmp/sc.json
 ```
 
-The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
+The same bundle is available from the app menu under **Save diagnostics…**. **Report a problem…** (same menu) opens a prefilled GitHub bug form in your browser with only the SmoothCast version and a coarse operating-system label filled in; nothing is sent by the app, and you attach the saved diagnostics file yourself. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
 
 The bundle records the active receiver's **protocol and model** (no address or name) so reports are comparable. To share how SmoothCast behaves on your TV or Chromecast, use the **Device compatibility report** issue form; results are collected in [docs/DEVICE_COMPATIBILITY.md](docs/DEVICE_COMPATIBILITY.md).
 
