@@ -23,6 +23,7 @@ import playback_state
 
 import cast_targets
 import playlist_control
+import queue_metadata
 
 from cast_widgets import save_config, fmt_time, Async
 
@@ -50,13 +51,9 @@ class QueueMixin:
             files = dialog.open_multiple_finish(result)
         except GLib.Error:
             return
-        paths = []
-        for index in range(files.get_n_items()):
-            gfile = files.get_item(index)
-            path = gfile.get_path()
-            if path:
-                paths.append(path)
-        self._enqueue(paths)
+        self._enqueue(playlist_control.natural_order([
+            path for index in range(files.get_n_items())
+            if (path := files.get_item(index).get_path())]))
 
 
     def _file_chosen(self, dialog, result) -> None:
@@ -72,6 +69,7 @@ class QueueMixin:
     def open_paths(self, paths: list[str]) -> None:
         if not paths:
             return
+        paths = playlist_control.natural_order(paths)
         first = paths[0]
         self.set_selection(first)
         if len(paths) > 1:
@@ -245,18 +243,18 @@ class QueueMixin:
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
-        def probe():
-            for path in paths:
-                if path in self.queue_durations:
-                    continue
-                try:
-                    media = streamer.ffprobe(pathlib.Path(path))
-                    self.queue_durations[path] = media.duration
-                except Exception:
-                    self.queue_durations[path] = 0.0
-            return True
+        missing = tuple(dict.fromkeys(p for p in paths if p not in self.queue_durations))
 
-        Async.run(probe, done=lambda _r: self._rebuild_queue(), domain="media", valid=lambda: not self._closing)
+        def probe():
+            return queue_metadata.inspect(
+                missing, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
+            )
+
+        def done(durations):
+            queue_metadata.publish(self.queue_durations, self.queue, durations)
+            self._rebuild_queue()
+
+        Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:

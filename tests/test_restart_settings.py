@@ -12,6 +12,8 @@ import time
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from gui_source import main_window_methods
 import castctl
 import playback_state
@@ -141,7 +143,10 @@ def test_recovery_after_long_pause_restores_play_and_two_x_source_clock():
     pause.assert_not_called()
     assert session.start_transcode.call_args.kwargs["speed"] == 2.0
     assert w.tracker.playing is True
-    assert w.tracker.value(now=w.tracker._epoch + 5.0) == 52.0
+    # 42 s + 5 s of wall clock at 2x. Float rounding depends on the magnitude
+    # of the monotonic clock (51.99999999999997 on one CI runner), so compare
+    # with a tolerance rather than bit-exactly.
+    assert w.tracker.value(now=w.tracker._epoch + 5.0) == pytest.approx(52.0)
 
 
 def test_playing_restart_stays_playing():

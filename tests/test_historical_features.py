@@ -46,7 +46,7 @@ class HistoricalFeatureTests(unittest.TestCase):
             self.assertEqual(skipped, 0)
 
     def test_multi_file_open_selects_first_and_queues_the_rest(self):
-        namespace = {}
+        namespace = {"playlist_control": playlist_control}
         code = "class M:\n" + textwrap.indent(
             textwrap.dedent(main_window_methods()["open_paths"]), "    ")
         exec(compile(code, "<open-paths>", "exec"), namespace)

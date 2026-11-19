@@ -44,11 +44,16 @@ timeout/cancellation checks.
 backpressure, callback-thread ownership, stale validation and shutdown,
 without running GTK, probing a LAN or touching the user's TV.
 
-Next inspect `cast_av.py` for high-frequency volume/mute coalescing and
-`cast_queue.py::_enqueue` for replacing worker-side `queue_durations`
-mutations with a returned snapshot applied on the main context. Review
-device-ownership policies under issues #16 and #194 before applying any
-further cancellation or stale-result filters.
+Queue durations are now handled through `src/queue_metadata.py`.
+`QueueMixin._enqueue` snapshots missing paths on the GTK thread;
+FFprobe returns an independent dictionary from a media worker, and its
+GLib callback publishes only still-queued paths without overwriting
+newer media metadata. `tests/test_queue_metadata.py` executes that
+handler with a thread-bound dictionary and checks cancellation, duplicate
+paths and stale results. No worker reads `queue_durations` or widgets.
+
+Next inspect `cast_av.py` for high-frequency volume/mute coalescing,
+then add protocol-aware cancellation under issues #16 and #194.
 
 References: [GTK4 threading](https://docs.gtk.org/gtk4/section-threading.html)
 and [PyGObject idle callback guidance](https://gnome.pages.gitlab.gnome.org/pygobject/guide/threading.html).

@@ -1,12 +1,10 @@
 """P0 #17: deterministic, GTK-free playback stall and retry tests."""
 from __future__ import annotations
 
-import math
 from types import SimpleNamespace
 from unittest import mock
 
 from gui_source import main_window_methods
-import playback_state
 import stream_watchdog
 
 

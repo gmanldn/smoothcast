@@ -114,6 +114,20 @@ visible error instead of silently proceeding with another track.
 
 ## Interface and visual design
 
+**Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
+or select **Open Preferences…** in the Playback settings card. A searchable,
+native libadwaita window groups Picture and delivery, Queue behaviour, Audio,
+Captions and Appearance with per-setting explanations and explicit notes about
+when a new cast or encoder restart is required. The main playback card starts
+compact; expand **Show inline playback controls** to use the familiar controls.
+Both views edit the same saved preferences through the existing callbacks.
+Film-specific audio/embedded caption tracks are only enabled when available.
+No settings operation contacts a TV merely by opening the window.
+
+This follows GNOME's guidance on [adaptive layouts](https://developer.gnome.org/hig/guidelines/adaptive.html),
+[application preferences](https://developer.gnome.org/hig/patterns/controls/menus.html)
+and [GTK main-thread ownership](https://docs.gtk.org/gtk4/section-threading.html).
+
 SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
@@ -216,7 +230,7 @@ A second launcher click raises the existing window rather than silently exiting.
 
 ## Streaming reliability and local-network safety
 
-The HLS server listens on port 8767 for Chromecast access, but exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
+The HLS server listens on port 8767 for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver is published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
 Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
 
