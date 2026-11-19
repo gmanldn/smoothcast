@@ -35,6 +35,17 @@ On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms
 
 **Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI.
 
+### FFmpeg compatibility
+
+SmoothCast requires **FFmpeg 5.0 or newer** for its HLS encoding and
+MKV decoder pipeline: it uses `-readrate` and the scale filter's
+`force_divisible_by` option. A fast, bounded `ffmpeg -version` check runs
+off the GTK thread **before any existing receiver is stopped** for a new
+cast or HLS restart. An outdated, missing, hung or unrecognised FFmpeg build
+produces an actionable error rather than a partially started stream.
+The normal platform setup scripts provision FFmpeg; if your distribution
+ships an older release, upgrade the FFmpeg package before casting.
+
 ### Development installs with pip
 
 For an environment where GTK4/libadwaita and FFmpeg are already available, the Python package can be installed with `python -m pip install -e .`. Plain `pip install` cannot provide the required native GTK stack; the platform setup scripts are the recommended first-install path.
