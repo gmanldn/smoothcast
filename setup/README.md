@@ -91,6 +91,21 @@ automatically during launch, and no network I/O is done by routine tests.
 The existing redacted support bundle intentionally omits private IPs; this
 local command prints them solely for the person troubleshooting.
 
+### In-window Cast connection check
+
+The **Output device → Check connection** button runs the same private-LAN
+route and TCP 8009/HLS checks for the **selected Google Cast receiver**.
+It is opt-in and runs off the GTK thread; it does not send Play, Seek or
+Stop, change the output target, or begin automatic background probing.
+DLNA devices have different control protocols and are not checked by this
+Cast-specific button.
+
+The result is selectable text, including the exact media-port health URL
+to open **from a second device while SmoothCast's HLS server is running**.
+A healthy local check is not proof of receiver-to-PC reachability.
+If a different receiver is selected before completion, the old result is
+discarded. Do not export private receiver/local IPs in a support bundle.
+
 ## Clean installed wheel, outside the source checkout
 
 Besides source-checkout setup, the CI artifact matrix checks packaging on

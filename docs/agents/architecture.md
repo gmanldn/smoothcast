@@ -108,6 +108,12 @@ cross-generation stale requests, narrow allowlists, encoder arguments and
 finalised recovery. All tests use mock encoders/TV and ephemeral local
 servers; do not launch GTK or send commands to a receiver.
 
+## Explicit Cast diagnostics
+
+The opt-in device-card action calls `network_route_ui.start` (GTK-free),
+which runs `network_routes.report` off-thread and rejects stale results.
+See [setup instructions](../../setup/README.md) for second-device checks.
+
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
