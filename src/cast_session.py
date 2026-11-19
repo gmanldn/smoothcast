@@ -29,6 +29,8 @@ import direct_probe
 
 import stream_watchdog
 
+import hls_pause_recovery
+
 import preflight
 
 import url_control
@@ -88,7 +90,7 @@ class SessionMixin:
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
             self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
-            self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
+            self._cast_preflight_failed("DLNA receiver is not currently discovered; scan your network again")
             return
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
@@ -96,7 +98,7 @@ class SessionMixin:
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
         if subs_mode == "pick" and subs_path is None:
-            self._cast_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
+            self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
             return
         # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
         # FFmpeg rather than advertised as unsupported receiver-side tracks.
@@ -282,7 +284,7 @@ class SessionMixin:
                 self._cast_failed(message)
 
         self._cast_starting = True
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="media")
 
 
     def stop_stream(self) -> None:
@@ -355,7 +357,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg))
+        Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg), domain="transport")
 
 
     def toggle_play(self) -> None:
@@ -371,7 +373,9 @@ class SessionMixin:
         session = self.session
         renderer = self._dlna_renderer(device)
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
-        # Serialize async transport, including queued shortcut/seek signals.
+        if hls_pause_recovery.resume_from_long_pause(self, session, device, renderer, want_play):
+            return
+        # Serialise transport.
         self.busy = True
         self._refresh_controls()
 
@@ -414,7 +418,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="transport")
 
 
     def seek_to(self, target: float) -> None:
@@ -499,19 +503,19 @@ class SessionMixin:
                 self._refresh_controls()
                 self._poll_device()
 
-            Async.run(work, done=done, failed=failed)
+            Async.run(work, done=done, failed=failed, domain="transport")
             return
 
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
-        # Update the tracker immediately while HLS restarts; _restart_at
-        # persists the requested source-film time after a successful restart.
+        # Keep the seekbar at the requested source time during restart.
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
-                    audio_track_override: int | None = None) -> None:
+                    audio_track_override: int | None = None,
+                    resume_after_pause: bool = False) -> None:
         if session.mode == "dlna":
             # DLNA restarts use progressive AVTransport.
             self.busy = False
@@ -534,11 +538,11 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
-        # Verify exact captions before remote teardown.
+        # Validate captions before teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
-        # Remember pause state.
-        was_paused = (self.device_state == "PAUSED"
-                      or (self.tracker.known and not self.tracker.playing))
+        was_paused = (not resume_after_pause and
+                      (self.device_state == "PAUSED" or
+                       (self.tracker.known and not self.tracker.playing)))
 
         def work():
             nonlocal media
@@ -565,7 +569,7 @@ class SessionMixin:
                     pass
                 raise
             if was_paused:
-                # Preserve the previous pause state across encoder restart.
+                # Retain pause on ordinary restarts.
                 try:
                     castctl.pause(device)
                 except (OSError, ValueError, TypeError):
@@ -597,11 +601,11 @@ class SessionMixin:
             else:
                 self._cast_failed(message)
 
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="media")
 
 
     def _skip_back1(self) -> None:
-        self._skip(-1)
+        self._frame_step(-1)
 
 
     def _skip_back10(self) -> None:
@@ -613,7 +617,7 @@ class SessionMixin:
 
 
     def _skip_forward1(self) -> None:
-        self._skip(1)
+        self._frame_step(1)
 
 
     def _skip_forward10(self) -> None:
@@ -938,7 +942,7 @@ class SessionMixin:
                 self._adopting_session = None
             self._console(f"Saved cast inspection failed: {message}")
 
-        Async.run(probe, done=probed, failed=failed)
+        Async.run(probe, done=probed, failed=failed, domain="status")
         self._refresh_controls()
         self._poll_device()
         return False
@@ -996,7 +1000,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
 
 
     def _open_url(self) -> None:
@@ -1104,7 +1108,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
 
 
     def _toggle_auto_shutdown(self) -> None:

@@ -12,7 +12,6 @@ import pathlib
 import time
 
 from utils import pretty_title
-import streamer
 import cast_targets
 import watch_history
 
@@ -24,7 +23,8 @@ import ui_theme
 
 import version
 
-from cast_widgets import APP_NAME, DEFAULTS, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen
+from cast_widgets import APP_NAME, DEFAULTS, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async
+import network_route_ui
 class UiMixin:
 
 
@@ -493,6 +493,17 @@ class UiMixin:
         manual.append(self.cast_ip_entry)
         manual.append(self.add_ip_button)
         body.append(manual)
+        # Explicit opt-in: no connection probes during UI creation or normal tests.
+        self.network_check_button = Gtk.Button(label="Check connection")
+        self.network_check_button.add_css_class("flat")
+        self.network_check_button.connect(
+            "clicked", lambda _button: network_route_ui.start(self, Async.run)
+        )
+        body.append(self.network_check_button)
+        self.network_detail = Gtk.Label(label="", xalign=0.0, wrap=True)
+        self.network_detail.set_selectable(True)  # Copy second-host test URL.
+        self.network_detail.add_css_class("section-caption")
+        body.append(self.network_detail)
         self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)

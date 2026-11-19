@@ -126,7 +126,7 @@ def cast_worker(status="rejected"):
         "pretty_title": lambda path: path.stem,
         "DEFAULTS": {"audio_gain": 0.0},
         "Async": SimpleNamespace(
-            run=lambda work, done=None, failed=None: jobs.append((work, done, failed))
+            run=lambda work, done=None, failed=None, **_kwargs: jobs.append((work, done, failed))
         ),
     }
     exec(compile(code, "<direct-handoff>", "exec"), namespace)

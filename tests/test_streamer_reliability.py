@@ -48,6 +48,11 @@ class StreamerReliabilityTests(unittest.TestCase):
             self.assertIn("setpts=PTS/1.5", ",".join(second_args))
             self.assertIn("transpose=1", ",".join(second_args))
             self.assertIn("atempo=1.5", ",".join(second_args))
+            self.assertEqual(second_args[second_args.index("-hls_time") + 1], "4")
+            self.assertEqual(second_args[second_args.index("-hls_list_size") + 1], "12")
+            self.assertIn("delete_segments", second_args[second_args.index("-hls_flags") + 1])
+            self.assertLess(streamer.HLS_PAUSE_RESTART_AFTER,
+                            streamer.HLS_SEGMENT_SECONDS * streamer.HLS_PLAYLIST_SEGMENTS)
             self.assertEqual(session.state.speed, 1.5)
             self.assertEqual(session.state.rotation, 90)
             self.assertIn("192.168.1.23:8767", session.state.stream_url)

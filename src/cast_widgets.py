@@ -23,6 +23,8 @@ import ui_theme
 
 import error_log
 
+import async_jobs
+
 
 
 APP_ID = "local.cast-control"
@@ -106,20 +108,32 @@ def fmt_time(seconds: float | None) -> str:
 
 
 class Async:
-    @staticmethod
-    def run(work, done=None, failed=None):
-        def runner():
-            try:
-                result = work()
-            except Exception as exc:
-                error_log.log("Async.run failure", exc_info=True)
-                if failed is not None:
-                    GLib.idle_add(failed, str(exc))
-                return
-            if done is not None:
-                GLib.idle_add(done, result)
+    """GTK-facing adapter for bounded, domain-specific background work."""
 
-        threading.Thread(target=runner, daemon=True).start()
+    _domains: async_jobs.WorkDomains | None = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def run(cls, work, done=None, failed=None, *, domain="background", valid=None):
+        # The singleton is lazy: importing widgets or running a GUI smoke test
+        # neither starts network I/O nor creates background threads.
+        with cls._lock:
+            if cls._domains is None:
+                cls._domains = async_jobs.WorkDomains(
+                    GLib.idle_add, on_error=error_log.log,
+                )
+            domains = cls._domains
+        return domains.submit(
+            work, done=done, failed=failed, domain=domain, valid=valid,
+        )
+
+    @classmethod
+    def shutdown(cls):
+        """Cancel pending jobs and suppress late GTK callbacks on app exit."""
+        with cls._lock:
+            domains = cls._domains
+        if domains is not None:
+            domains.shutdown()
 
 
 class SeekBar(Gtk.DrawingArea):

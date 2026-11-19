@@ -12,6 +12,7 @@ import textwrap
 from unittest import mock
 
 from gui_source import main_window_methods
+import screenshot as screenshot_module
 
 
 CURRENT = "/films/playing.mkv"
@@ -29,7 +30,10 @@ def make_window():
     capture = mock.Mock(return_value=Path("/screens/active.png"))
     ns = {
         "pathlib": pathlib,
-        "screenshot": SimpleNamespace(capture_frame=capture),
+        "screenshot": SimpleNamespace(
+            capture_frame=capture, owned_frame_time=screenshot_module.owned_frame_time,
+            CaptureError=screenshot_module.CaptureError,
+        ),
         "Async": SimpleNamespace(
             run=lambda work, done=None, failed=None: jobs.append((work, done, failed))
         ),
@@ -191,6 +195,5 @@ def test_preview_source_timestamp_is_used_and_unrelated_preview_rejected():
 
 def test_film_screenshot_source_check_executes_before_any_async_work():
     src = main_window_methods()["_screenshot"]
-    assert src.index('state = getattr(self.session, "state", None)') < src.index("Async.run(")
-    assert src.index("position = self.tracker.value()") < src.index("Async.run(")
-    assert 'position is unknown' in src
+    assert src.index("screenshot.owned_frame_time(") < src.index("Async.run(")
+    assert "except screenshot.CaptureError" in src

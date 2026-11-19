@@ -282,6 +282,60 @@ def test_position_tracker_basic_advance(monkeypatch):
     assert t.value() == 100.0
 
 
+def test_position_tracker_started_paused_never_advances_without_device_updates(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
+    for rate in (1.0, 2.0):
+        tracker = position_tracker.PositionTracker()
+        tracker.start(42.125, 200.0, playing=False, rate=rate)
+        assert tracker.known and not tracker.playing
+        assert tracker.value() == 42.125
+        now[0] += 120.0  # longer than the encoder's HLS segment window
+        assert tracker.value() == 42.125
+        tracker.set_state(False)  # repeated paused report is a no-op
+        assert tracker.value() == 42.125
+
+
+def test_position_tracker_started_paused_resumes_at_original_source_clock(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
+    tracker = position_tracker.PositionTracker()
+    tracker.start(91.25, 200.0, playing=False, rate=2.0)
+    now[0] += 60.0
+    assert tracker.value() == 91.25
+    tracker.set_state(True)
+    assert tracker.value() == 91.25
+    now[0] += 5.0
+    assert tracker.value() == 101.25
+    tracker.set_state(False)
+    now[0] += 30.0
+    assert tracker.value() == 101.25
+    tracker.rebase(105.5)
+    now[0] += 30.0
+    assert not tracker.playing
+    assert tracker.value() == 105.5
+
+
+def test_pause_duration_tracks_restart_age_but_never_play_time(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(position_tracker.time, "monotonic", lambda: now[0])
+    tracker = position_tracker.PositionTracker()
+    assert tracker.paused_for() == 0.0
+    tracker.start(30.0, 180.0, playing=False, rate=2.0)
+    assert tracker.paused_for() == 0.0
+    now[0] += 25.0
+    assert tracker.paused_for() == 25.0
+    assert tracker.value() == 30.0
+    tracker.set_state(True)
+    now[0] += 100.0
+    assert tracker.paused_for() == 0.0
+    tracker.set_state(False)
+    now[0] += 12.0
+    assert tracker.paused_for() == 12.0
+    tracker.clear()
+    assert tracker.paused_for() == 0.0
+
+
 def test_position_tracker_pause_resume_accumulates(monkeypatch):
     t = position_tracker.PositionTracker()
     now = [1000.0]

@@ -13,6 +13,43 @@ class CaptureError(RuntimeError):
     """A screenshot could not be captured."""
 
 
+def owned_frame_time(
+    source: Path, *, session: object | None, external: bool, tracker: object,
+    local_video_path: str | None, local_stream: object | None,
+    preview_path: str | None, preview_position: float,
+) -> float:
+    """Choose the timestamp of the *owned* visible film, never an unrelated row."""
+    if external:
+        raise CaptureError("Cannot capture another application's TV stream")
+    if session is not None:
+        state = getattr(session, "state", None)
+        if state is None or Path(getattr(state, "file", "")) != source:
+            raise CaptureError("Active film and media metadata do not match")
+        position = tracker.value()
+        if position is None:
+            raise CaptureError("Cannot capture: receiver position is unknown")
+    elif local_video_path == str(source):
+        try:
+            stream = local_stream() if callable(local_stream) else local_stream
+            timestamp = stream.get_timestamp() if stream is not None else -1
+        except (OSError, TypeError, ValueError, AttributeError) as exc:
+            raise CaptureError("Cannot capture: local playback position is unknown") from exc
+        if not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp) or timestamp < 0:
+            if preview_path != str(source):
+                raise CaptureError("Cannot capture: local playback position is unknown")
+            position = preview_position
+        else:
+            position = timestamp / 1_000_000
+    elif preview_path == str(source):
+        position = preview_position
+    else:
+        raise CaptureError("Select and preview a film before capturing")
+    if (isinstance(position, bool) or not isinstance(position, (int, float))
+            or not math.isfinite(position) or position < 0):
+        raise CaptureError("Cannot capture: playback position is invalid")
+    return float(position)
+
+
 def capture_frame(
     source: Path, position: float, directory: Path, *, timeout: int = 30,
     video_stream_index: int = 0,

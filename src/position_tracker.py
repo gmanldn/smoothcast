@@ -33,10 +33,13 @@ class PositionTracker:
         self.duration = duration or self.duration
         self.rate = max(0.05, float(rate))
         self._base = max(0.0, base)
-        self._epoch = time.monotonic()
+        now = time.monotonic()
+        self._epoch = now
         self._playing = playing
         self._paused_accum = 0.0
-        self._pause_started = None
+        # A restarted receiver may already be PAUSED. Without an initial
+        # pause timestamp estimated source time drifts while paused.
+        self._pause_started = None if playing else now
         # Clearing device position falls back to the estimated model.
         self._device_pos = None
         self._device_epoch = 0.0
@@ -91,6 +94,13 @@ class PositionTracker:
         if self.duration:
             value = min(value, self.duration)
         return max(0.0, value)
+
+    def paused_for(self, now: float | None = None) -> float:
+        """Elapsed wall-clock pause time; zero when playing or unknown."""
+        if not self.known or self._playing or self._pause_started is None:
+            return 0.0
+        now = time.monotonic() if now is None else now
+        return max(0.0, now - self._pause_started)
 
     def clear(self) -> None:
         self.known = False

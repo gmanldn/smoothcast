@@ -55,6 +55,8 @@ def check_media(
     path = pathlib.Path(media.path)
     if not path.is_file():
         raise PreflightError("The selected movie no longer exists")
+    if type(media.video_stream_index) is not int or media.video_stream_index < 0:
+        raise PreflightError("The selected video stream index is invalid")
     tracks = media.audio_streams
     if audio_track_index >= 0:
         if not any(t.index == audio_track_index for t in tracks):
@@ -97,7 +99,7 @@ def check_media(
         args = [
             "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-i", str(path),
-            "-map", "0:v:0", "-map", audio_map,
+            "-map", f"0:{media.video_stream_index}", "-map", audio_map,
             "-t", "0.8", "-vf", ",".join(video_filters),
             "-r", "15", "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "28", "-c:a", "aac", "-ac", "2",

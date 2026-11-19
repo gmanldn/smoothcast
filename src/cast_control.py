@@ -14,13 +14,9 @@ from position_tracker import PositionTracker
 import pathlib
 
 import sys
-
-from position_tracker import PositionTracker
 import threading
 
 import castctl
-
-import diagnostics
 
 import dlna
 
@@ -46,7 +42,7 @@ import local_playback
 
 import startup_cleanup
 
-from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen
+from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
@@ -95,7 +91,6 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
-        self.master_meter: MasterMeter | None = None
         self.preview: PreviewScreen | None = None
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None
@@ -220,6 +215,8 @@ class CastControlApp(Adw.Application):
         except Exception:
             pass
         error_log.install_excepthook()
+        # Stop accepting queued work and discard callbacks after GTK exits.
+        self.connect("shutdown", lambda _app: Async.shutdown())
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(

@@ -214,7 +214,7 @@ class QueueMixin:
             self._console(f"FFprobe failed for {pathlib.Path(path).name}: {message}")
 
         if cached is None or cached[0] != fingerprint:
-            Async.run(work, done=done, failed=failed)
+            Async.run(work, done=done, failed=failed, domain="media")
         else:
             self.preview.set_video(pretty_title(path), " · ".join(
                 x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
@@ -256,7 +256,7 @@ class QueueMixin:
                     self.queue_durations[path] = 0.0
             return True
 
-        Async.run(probe, done=lambda _r: self._rebuild_queue())
+        Async.run(probe, done=lambda _r: self._rebuild_queue(), domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:
@@ -547,7 +547,7 @@ class QueueMixin:
                 return
             self._scan_failed(message)
 
-        Async.run(work, done=completed, failed=failed)
+        Async.run(work, done=completed, failed=failed, domain="discovery")
 
 
     def _initial_scan(self) -> bool:
@@ -661,7 +661,7 @@ class QueueMixin:
         renderer = self._dlna_renderer(device)
         Async.run(
             (lambda: dlna.info(renderer)) if renderer else (lambda: castctl.info(device)),
-            done=completed, failed=failed,
+            done=completed, failed=failed, domain="status",
         )
         return True
 

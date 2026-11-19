@@ -400,4 +400,5 @@ preserve earlier research. Agents should start with
 `python3 scripts/ticket_digest.py --next`, a bounded read-only index rather
 than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
-not by adding a second TODO document.
+not by adding a second TODO document. Issue branches and pull requests target
+`develop`; `main` is protected and receives release merges only.

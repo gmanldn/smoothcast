@@ -140,7 +140,7 @@ def restart_window(session):
         "subtitle_restart": subtitle_restart,
         "castctl": castctl,
         "DEFAULTS": {"audio_gain": 0.0},
-        "Async": SimpleNamespace(run=lambda work, done=None, failed=None:
+        "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:
                                  jobs.append((work, done, failed))),
     }
     exec(compile(code, "<subtitle-restart-worker>", "exec"), namespace)
