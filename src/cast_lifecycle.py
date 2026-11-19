@@ -341,3 +341,9 @@ class LifecycleMixin:
         self.queue = playback_state.shuffle_order(self.queue, seed)
         self._rebuild_queue()
         self.toast("Queue shuffled")
+
+
+    def _theme_tick(self) -> bool:
+        """Re-evaluate the time-based theme so it switches at the day boundary."""
+        self._apply_color_scheme()
+        return True
