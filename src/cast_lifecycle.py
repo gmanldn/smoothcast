@@ -11,7 +11,6 @@ from gi.repository import Adw, Gtk
 import pathlib
 
 import threading
-import time
 
 import diagnostics
 
@@ -406,13 +405,3 @@ class LifecycleMixin:
         """Step one source frame (1 s fallback) using the media frame rate."""
         fps = self.media.fps if self.media and self.media.fps else 0.0
         self._skip(direction * playback_state.frame_step_delta(fps))
-
-
-    def _sleep_fade_tick(self) -> bool:
-        """Fade Cast volume before the sleep timer fires; restore after (#270)."""
-        self._sleep_fader.tick(
-            now=time.time(), deadline=self.cfg.get("sleep_timer_deadline", 0.0),
-            fade_seconds=self.cfg.get("sleep_fade_seconds", 0), device=self._device(),
-            active=(self.session is not None or self._url_cast_url is not None)
-            and self._dlna_renderer() is None)
-        return True
