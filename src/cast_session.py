@@ -121,8 +121,6 @@ class SessionMixin:
 
         def work():
             media = streamer.ffprobe(path)
-            # Check runtime compatibility before replacing any active receiver.
-            # A direct-cast decoder failure may need HLS fallback, too.
             streamer.require_compatible_ffmpeg()
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
@@ -138,9 +136,7 @@ class SessionMixin:
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if path.suffix.lower() == ".mkv":
-                # Decoder/caption failures must be reported before interrupting
-                # the current receiver. One short private CPU render per file
-                # fingerprint/track selection; no Cast commands in preflight.
+                # Sample MKV off-TV before interrupting an existing receiver.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
