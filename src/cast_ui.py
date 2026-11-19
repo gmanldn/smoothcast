@@ -101,6 +101,18 @@ class UiMixin:
         self.set_content(self.toasts)
 
 
+    def action_report_problem(self) -> None:
+        """Open a prefilled GitHub bug form in the browser; nothing is sent by the app (#274)."""
+        import issue_report
+
+        try:
+            Gio.AppInfo.launch_default_for_uri(issue_report.report_url(version.label()), None)
+        except GLib.Error as exc:
+            self.toast(f"Could not open the browser: {exc.message}", error=True)
+            return
+        self.toast("Opening GitHub. Attach the file from Save diagnostics… to your report.")
+
+
     def action_preferences(self) -> None:
         """Reuse one searchable preferences window, keeping the player clean."""
         from preferences_ui import PreferencesWindow
@@ -159,6 +171,11 @@ class UiMixin:
             speed.append(f"{s}x", f"app.speed-{str(s).replace('.','_')}")
         speed.append("Custom…", "app.custom-speed")
         menu.append_submenu("Speed", speed)
+        captions = Gio.Menu()
+        captions.append("Earlier by 100 ms (G)", "app.subtitle-earlier")
+        captions.append("Later by 100 ms (H)", "app.subtitle-later")
+        captions.append("Reset delay", "app.subtitle-reset")
+        menu.append_submenu("Subtitle delay", captions)
         sleep = Gio.Menu()
         for m in (0, 15, 30, 45, 60):
             sleep.append(f"{m} min" if m else "Off", f"app.sleep-{m}")
@@ -174,6 +191,7 @@ class UiMixin:
         help_menu = Gio.Menu()
         help_menu.append("Keyboard shortcuts", "app.shortcuts")
         help_menu.append("Save diagnostics…", "app.save-diagnostics")
+        help_menu.append("Report a problem…", "app.report-problem")
         help_menu.append("About Cast Control", "app.about")
         help_menu.append("Quit", "app.quit")
         menu.append_section(None, help_menu)
@@ -487,7 +505,7 @@ class UiMixin:
         body.append(row_status)
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]])
+        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]] if self.cfg["device"] else [])
         self.device_dropdown.set_hexpand(True)
         self.device_dropdown.connect("notify::selected", self._on_device_selected)
         refresh = self._icon_button(
@@ -673,6 +691,8 @@ class UiMixin:
         add("m", self.toggle_mute)
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
+        add("g", lambda: self._adjust_subtitle_delay(-1))
+        add("h", lambda: self._adjust_subtitle_delay(1))
         add("s", self.stop_stream)
         add("p", self.on_prev)
         add("n", self.on_next)

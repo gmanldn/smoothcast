@@ -1,0 +1,204 @@
+"""Update opt-out and signature-verified fast-forward (issue #230).
+
+Uses real temporary git repositories and, where gpg is installed, a real
+ephemeral signing key: nothing here touches the network or the user's keyring.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+import update_control
+import version
+
+HAVE_GPG = shutil.which("gpg") is not None
+VERSION = "MAJOR = 1\nMINOR = 0\nPATCH = {}\n"
+
+
+def clean_env(extra: dict | None = None) -> dict:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+        "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+    })
+    env.update(extra or {})
+    return env
+
+
+def git(cwd: Path, *args: str, env: dict | None = None) -> str:
+    return subprocess.run(["git", *args], cwd=cwd, env=env or clean_env(), check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+class RepoCase(unittest.TestCase):
+    """origin (bare) + local (checkout under test) + dev (pushes updates)."""
+
+    gnupg: str | None = None
+    fingerprint = ""
+
+    @classmethod
+    def setUpClass(cls):
+        if HAVE_GPG:
+            cls.gnupg = tempfile.mkdtemp(prefix="g", dir="/tmp")   # short: gpg-agent socket path
+            os.chmod(cls.gnupg, 0o700)
+            env = clean_env({"GNUPGHOME": cls.gnupg})
+            subprocess.run(
+                ["gpg", "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+                 "--quick-generate-key", "Test <t@example.invalid>", "ed25519", "sign", "never"],
+                env=env, check=True, capture_output=True, timeout=60)
+            listing = subprocess.run(["gpg", "--batch", "--with-colons", "--list-secret-keys"],
+                                     env=env, capture_output=True, text=True, check=True).stdout
+            cls.fingerprint = next(line.split(":")[9] for line in listing.splitlines()
+                                   if line.startswith("fpr:"))
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.gnupg:
+            subprocess.run(["gpgconf", "--kill", "all"], env=clean_env({"GNUPGHOME": cls.gnupg}),
+                           capture_output=True)
+            shutil.rmtree(cls.gnupg, ignore_errors=True)
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        self.origin, self.local, self.dev = base / "origin.git", base / "local", base / "dev"
+        git(base, "init", "-q", "--bare", "-b", "main", str(self.origin))
+        git(base, "clone", "-q", str(self.origin), str(self.dev))
+        git(self.dev, "checkout", "-q", "-b", "main")
+        self.commit(self.dev, 1)
+        git(self.dev, "push", "-q", "origin", "main")
+        git(base, "clone", "-q", "-b", "main", str(self.origin), str(self.local))
+        patcher = mock.patch.object(version, "__version__", "1.0.1")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def commit(self, repo: Path, patch: int, *, signed: bool = False) -> str:
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "version.py").write_text(VERSION.format(patch))
+        git(repo, "add", "-A")
+        if signed:
+            git(repo, "-c", f"user.signingkey={self.fingerprint}", "commit", "-q", "-S",
+                "-m", f"release {patch}", env=clean_env({"GNUPGHOME": self.gnupg}))
+        else:
+            git(repo, "commit", "-q", "-m", f"release {patch}")
+        return git(repo, "rev-parse", "HEAD")
+
+    def head(self, repo: Path | None = None) -> str:
+        return git(repo or self.local, "rev-parse", "HEAD")
+
+    def refresh(self, **kwargs):
+        return update_control.refresh_checkout(self.local, timeout=30, **kwargs)
+
+
+class OptOutTests(RepoCase):
+    def test_disabled_updates_never_run_git_even_with_a_pending_update(self):
+        self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        before = self.head()
+        with mock.patch.object(update_control.subprocess, "run",
+                               side_effect=AssertionError("git must not run")):
+            self.assertIsNone(update_control.refresh_checkout(self.local, enabled=False))
+            self.assertIsNone(update_control.refresh_checkout(self.local, enabled=False, verify=True))
+        self.assertEqual(self.head(), before)
+
+    def test_default_behaviour_is_unchanged_a_plain_fast_forward_pull(self):
+        target = self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        notice = self.refresh()
+        self.assertEqual(self.head(), target)
+        self.assertIn("v1.0.2 downloaded", notice)
+
+    def test_settings_exist_with_the_documented_defaults_and_reach_the_updater(self):
+        source = (ROOT / "src" / "cast_widgets.py").read_text("utf-8")
+        self.assertIn('"auto_update": True', source)
+        self.assertIn('"verify_updates": False', source)
+        control = (ROOT / "src" / "cast_control.py").read_text("utf-8")
+        self.assertIn('enabled=bool(cfg.get("auto_update", True))', control)
+        self.assertIn('verify=bool(cfg.get("verify_updates", False))', control)
+
+
+@unittest.skipUnless(HAVE_GPG, "gpg is needed for real signature verification")
+class VerifiedUpdateTests(RepoCase):
+    def push_new(self, patch: int, *, signed: bool) -> str:
+        sha = self.commit(self.dev, patch, signed=signed)
+        git(self.dev, "push", "-q", "origin", "main")
+        return sha
+
+    def verify_env(self):
+        return mock.patch.dict(os.environ, {"GNUPGHOME": self.gnupg, "GIT_CONFIG_GLOBAL": os.devnull,
+                                            "GIT_CONFIG_SYSTEM": os.devnull})
+
+    def test_signed_commit_is_applied(self):
+        target = self.push_new(2, signed=True)
+        with self.verify_env():
+            notice = self.refresh(verify=True)
+        self.assertEqual(self.head(), target)
+        self.assertIn("v1.0.2 downloaded", notice)
+
+    def test_unsigned_commit_is_reported_not_applied(self):
+        before = self.head()
+        target = self.push_new(2, signed=False)
+        with self.verify_env():
+            notice = self.refresh(verify=True)
+        self.assertEqual(self.head(), before)                # working tree untouched
+        self.assertIn(target[:8], notice)
+        self.assertIn("signature could not be verified", notice)
+        self.assertIn("verify_updates", notice)
+
+    def test_signed_tag_on_an_unsigned_commit_is_accepted(self):
+        target = self.push_new(2, signed=False)
+        git(self.dev, "-c", f"user.signingkey={self.fingerprint}", "tag", "-s", "-m", "v1.0.2", "v1.0.2",
+            env=clean_env({"GNUPGHOME": self.gnupg}))
+        git(self.dev, "push", "-q", "origin", "v1.0.2")
+        with self.verify_env():
+            self.refresh(verify=True)
+        self.assertEqual(self.head(), target)
+
+    def test_signature_from_a_key_the_user_does_not_trust_is_rejected(self):
+        before = self.head()
+        self.push_new(2, signed=True)
+        with tempfile.TemporaryDirectory(dir="/tmp") as empty:   # a keyring without that key
+            os.chmod(empty, 0o700)
+            with mock.patch.dict(os.environ, {"GNUPGHOME": empty, "GIT_CONFIG_GLOBAL": os.devnull,
+                                              "GIT_CONFIG_SYSTEM": os.devnull}):
+                notice = self.refresh(verify=True)
+        self.assertEqual(self.head(), before)
+        self.assertIn("not applied", notice)
+
+    def test_diverged_local_history_is_never_touched(self):
+        local_commit = self.commit(self.local, 7)            # local-only commit, clean tree
+        self.push_new(2, signed=True)
+        with self.verify_env():
+            self.assertIsNone(self.refresh(verify=True))
+        self.assertEqual(self.head(), local_commit)
+
+    def test_already_up_to_date_and_unreachable_origin_are_quiet(self):
+        with self.verify_env():
+            self.assertIsNone(self.refresh(verify=True))      # nothing new
+            shutil.rmtree(self.origin)
+            self.assertIsNone(self.refresh(verify=True))      # fetch fails
+
+    def test_dirty_tree_and_non_release_branch_are_never_updated_even_when_verified(self):
+        self.push_new(2, signed=True)
+        (self.local / "scratch.txt").write_text("uncommitted work")
+        before = self.head()
+        with self.verify_env():
+            self.assertIsNone(self.refresh(verify=True))
+            (self.local / "scratch.txt").unlink()
+            git(self.local, "checkout", "-q", "-b", "feature")
+            self.assertIsNone(self.refresh(verify=True))
+        self.assertEqual(self.head(), before)
+
+
+if __name__ == "__main__":
+    unittest.main()

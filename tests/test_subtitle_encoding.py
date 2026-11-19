@@ -101,6 +101,7 @@ class SubtitleSenderIntegrationTests(unittest.TestCase):
             with mock.patch.object(streamer, "ROOT", root), \
                  mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
                 session.start_direct(
                     media, device="TV", subs_file=source,
@@ -133,6 +134,7 @@ class SubtitleSenderIntegrationTests(unittest.TestCase):
                      mock.patch.object(session, "_start_server"), \
                      mock.patch.object(session, "_wait_for_segments", return_value=True), \
                      mock.patch.object(streamer.time, "sleep"), \
+                     mock.patch.object(session, "_await_receiver"), \
                      mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
                     session.start_transcode(
                         media, 12, device="TV", quality="balanced",

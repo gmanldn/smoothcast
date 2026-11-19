@@ -25,7 +25,61 @@ def _git(repo: Path, args: list[str], timeout: int) -> str | None:
     return result.stdout.strip()
 
 
-def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
+def _downloaded_notice(repo: Path) -> str | None:
+    """Tell the user a new release was downloaded; never claim it is running."""
+    downloaded = version.read_checkout_version(repo / "src" / "version.py")
+    running = version.__version__
+    if downloaded and downloaded != running:
+        return (
+            f"SmoothCast v{downloaded} downloaded; running v{running}. "
+            "Restart after playback to apply."
+        )
+    # Git commits can change without any semantic release. Those edits must
+    # not repeatedly prompt the user to restart "the same version" every
+    # launch. The downloaded code still takes effect on a normal relaunch.
+    return None
+
+
+def _signature_ok(repo: Path, sha: str, timeout: int) -> bool:
+    """True if *sha*, or a tag pointing at it, passes git's GPG verification.
+
+    The trust decision is the user's own keyring: only signatures from keys
+    they have imported can verify. ``_git`` returns None for a non-zero exit.
+    """
+    if _git(repo, ["verify-commit", sha], timeout) is not None:
+        return True
+    tags = (_git(repo, ["tag", "--points-at", sha], timeout) or "").splitlines()
+    return any(_git(repo, ["verify-tag", tag], timeout) is not None for tag in tags[:20])
+
+
+def _verified_update(repo: Path, branch: str, before: str, timeout: int) -> str | None:
+    """Fetch, authenticate and only then fast-forward; never pull blindly."""
+    if _git(repo, ["fetch", "--quiet", "origin", branch], timeout) is None:
+        return None
+    # Signed release tags are not fetched with the branch. Best effort: a tag
+    # that clashes with a local one must not block an otherwise valid update.
+    _git(repo, ["fetch", "--quiet", "--tags", "origin"], timeout)
+    target = _git(repo, ["rev-parse", "FETCH_HEAD^{commit}"], timeout)
+    if not target or target == before:
+        return None
+    if _git(repo, ["merge-base", "--is-ancestor", before, target], timeout) is None:
+        return None  # not a fast-forward: leave local history alone
+    if not _signature_ok(repo, target, timeout):
+        return (
+            f"A SmoothCast update ({target[:8]}) is available but was not applied: "
+            "its signature could not be verified. Update manually or turn off "
+            "'verify_updates' in config.json."
+        )
+    if _git(repo, ["merge", "--ff-only", target], timeout) is None:
+        return None
+    after = _git(repo, ["rev-parse", "HEAD"], timeout)
+    if after is None or after == before:
+        return None
+    return _downloaded_notice(repo)
+
+
+def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = True,
+                     verify: bool = False) -> str | None:
     """Pull a clean git checkout from a worker after the first window is visible.
 
     Running Python modules remain loaded; new checkout code takes effect on the
@@ -33,10 +87,19 @@ def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
     detached HEAD, a non-release branch or uncommitted work is never touched.
     Whether anything changed is decided by comparing HEAD before and after the
     pull, so a localised or atypically quiet git cannot fake or hide a change.
+
+    ``enabled=False`` (the ``auto_update`` setting) skips everything, including
+    any git or network access. ``verify=True`` (``verify_updates``) fetches and
+    fast-forwards only to a commit, or a tag on it, whose signature passes
+    ``git verify-commit`` / ``git verify-tag``; otherwise it reports instead
+    of pulling.
     """
+    if not enabled:
+        return None
     if not (repo / ".git").exists():
         return None
-    if _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout) not in ELIGIBLE_BRANCHES:
+    branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
+    if branch not in ELIGIBLE_BRANCHES:
         return None
     status = _git(repo, ["status", "--porcelain"], timeout)
     if status is None or status:
@@ -44,6 +107,8 @@ def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
     before = _git(repo, ["rev-parse", "HEAD"], timeout)
     if before is None:
         return None
+    if verify:
+        return _verified_update(repo, str(branch), before, timeout)
     try:
         pulled = subprocess.run(
             ["git", "pull", "--ff-only"], cwd=repo,
@@ -56,16 +121,4 @@ def refresh_checkout(repo: Path, timeout: int = 8) -> str | None:
     after = _git(repo, ["rev-parse", "HEAD"], timeout)
     if after is None or after == before:
         return None
-    # A pull changes files on disk; never claim a new release is *running*
-    # until the process actually restarts and imports that checkout.
-    downloaded = version.read_checkout_version(repo / "src" / "version.py")
-    running = version.__version__
-    if downloaded and downloaded != running:
-        return (
-            f"SmoothCast v{downloaded} downloaded; running v{running}. "
-            "Restart after playback to apply."
-        )
-    # Git commits can change without any semantic release. Those edits must
-    # not repeatedly prompt the user to restart "the same version" every
-    # launch. The downloaded code still takes effect on a normal relaunch.
-    return None
+    return _downloaded_notice(repo)

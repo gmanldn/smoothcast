@@ -233,6 +233,8 @@ class LifecycleMixin:
             ("Up", "Volume up 5%"),
             ("Down", "Volume down 5%"),
             ("M", "Mute"),
+            ("G", "Subtitles 100 ms earlier"),
+            ("H", "Subtitles 100 ms later"),
             ("S", "Stop the stream"),
             ("P", "Previous in queue"),
             ("N", "Next in queue"),
@@ -318,10 +320,12 @@ class LifecycleMixin:
         self.toast("Collecting diagnostics…")
         activity = list(self.console_lines)
         config = dict(self.cfg)
+        receiver = diagnostics.receiver_report(self._dlna_renderer(), next(
+            (d for d in self.devices if d.name == self.cfg["device"]), None))
         # Collecting tool versions and reading the log may touch the disk;
         # never block the GTK event loop.
         Async.run(
-            lambda: diagnostics.export(activity=activity, config=config),
+            lambda: diagnostics.export(activity=activity, config=config, receiver=receiver),
             done=lambda path: self.toast(f"Diagnostics saved: {path.name}"),
             failed=lambda message: self.toast(
                 f"Diagnostics failed: {message}", error=True,

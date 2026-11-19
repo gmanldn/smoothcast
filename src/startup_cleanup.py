@@ -241,8 +241,19 @@ def cleanup_before_window(
                 continue
             if any(str(folder) in " ".join(p.argv) for p in surviving):
                 continue
-            shutil.rmtree(folder)
-            report.temp_dirs_removed += 1
+            # Age is insufficient proof: a live conversion does not update its
+            # parent directory's mtime while FFmpeg writes movie.mp4.
+            # Claim a kernel lease and hold it across rmtree. Legacy scratch
+            # without a verifiable lease stays untouched (fail closed).
+            lease = cache_policy.claim_abandoned_scratch(folder) if min_age else None
+            if min_age and lease is None:
+                continue
+            try:
+                shutil.rmtree(folder)
+                report.temp_dirs_removed += 1
+            finally:
+                if lease is not None:
+                    lease.close()
         except OSError as exc:
             report.errors.append(f"cleanup {folder.name}: {exc}")
     return report

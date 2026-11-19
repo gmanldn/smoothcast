@@ -1,0 +1,40 @@
+name: "Bug report"
+description: "Something in SmoothCast did not work (Help > Report a problem... opens this form)"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Nothing is sent automatically: the version and
+        operating system below were prefilled by the app, and you choose what to submit.
+        Attach the redacted diagnostics file (see the last box) so we do not need to ask for it.
+  - type: input
+    id: version
+    attributes:
+      label: SmoothCast version
+      description: "Prefilled by the app; otherwise the output of `smoothcast --version`"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Computer operating system
+      description: "Prefilled by the app, e.g. Ubuntu 24.04, macOS 15, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: "Steps you took, the receiver (Chromecast model or TV), the file type, and any error text."
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        In the app use Help > Save diagnostics... (or run `smoothcast --diagnostics`) and drag the
+        redacted JSON file it writes into this box. Private addresses and file paths are masked.
+        Do not attach anything you consider private.

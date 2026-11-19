@@ -1,3 +1,6 @@
+<!-- Pull requests are for external contributors (target `develop`) and the automatic
+release PR. Maintainers and agents commit directly to `develop`: see CONTRIBUTING.md. -->
+
 ## Issue
 Fixes #  <!-- use "Refs #" if device verification is still pending -->
 
