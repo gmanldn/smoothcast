@@ -121,6 +121,9 @@ class SessionMixin:
 
         def work():
             media = streamer.ffprobe(path)
+            # Check runtime compatibility before replacing any active receiver.
+            # A direct-cast decoder failure may need HLS fallback, too.
+            streamer.require_compatible_ffmpeg()
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
                     "The selected audio track is no longer in this film; choose Auto or another track"
@@ -549,6 +552,7 @@ class SessionMixin:
             if media is None:
                 media = streamer.ffprobe(file_path)
             captions = subtitle_restart.validate_restart(state, media)
+            streamer.require_compatible_ffmpeg()
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
