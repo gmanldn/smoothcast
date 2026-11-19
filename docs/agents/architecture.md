@@ -62,11 +62,10 @@ audio setting and sidecar subtitles**. An unavailable/ambiguous status
 retains the direct stream rather than guessing it failed. A known foreign
 active title aborts automatic fallback without sending a remote Stop.
 
-All polling runs in the existing cast-start worker, not GTK or routine test
-runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
-`tests/test_direct_failover_probe.py` exercises both the pure classifier
-and the actual cast worker's direct-to-HLS branch with fakes. Real device
-decoder/subtitle negotiation remains P0 issue #18.
+Polling runs in the existing cast-start worker, never GTK. The probe is
+bounded (three calls, two 0.6 s pauses); `tests/test_direct_failover_probe.py`
+covers the classifier and the worker's direct-to-HLS branch with fakes. Real
+device decoder/subtitle negotiation remains P0 issue #18.
 
 ## Subtitle selection on encoder restarts (P0 SC-015)
 
@@ -81,52 +80,52 @@ always burn in, even if an old persisted state mistakenly says otherwise.
 `tests/test_subtitle_restart.py` executes the real handler with fakes and
 checks no Cast command is sent when selection validation fails.
 
-Subtitle *delay*, changing forced-track overrides, real device renderer
-transfers and timing need additional implementation/physical validation under
-[issue #22](https://github.com/gmanldn/smoothcast/issues/22).
+Subtitle delay, forced-track overrides and real-device transfers remain open
+in [issue #22](https://github.com/gmanldn/smoothcast/issues/22).
 
 ## HLS generation identity (P1 SC-062)
 
-Every new `streamer.Session.start_transcode` generates a cryptographically
-random 128-bit stream ID. The playlist is
-`movie-<32 lowercase hex>.m3u8`, with matching
+Every `streamer.Session.start_transcode` generates a random 128-bit stream ID
+(`secrets.token_hex(16)`). The playlist is `movie-<32 hex>.m3u8` with matching
 `segment-<same ID>-00000.ts` files. **Both paths must change** on every
-seek/restart or film switch: merely putting an ID in a URL query would allow
-a delayed old request to load replacement bytes through the same file.
+seek/restart or film switch: an ID in a URL query would let a delayed old
+request load replacement bytes through the same file.
 
-The LAN HTTP server permits only exact generated playlist/segment basenames
-(and read-only legacy names for already saved sessions). It never exposes
-directories, logs, subtitle staging, configuration or arbitrary files. New
-starts remove stale HLS assets; a stale receiver request returns 404 instead
-of frames from a different film or seek point. Persist the exact generation
-URL in `SessionState.stream_url`: watchdog, receiver ownership and recovery
-compare that full URL. Finalised single-segment HLS recovery must verify
+`src/server.py` (binds `0.0.0.0:8767`) serves only exact generated basenames,
+the health endpoint and read-only legacy names (`movie.m3u8`, `segment-N.ts`)
+for already saved sessions; never directories, logs, subtitle staging or
+configuration. A stale request gets 404, not another film's frames. Persist the
+exact URL in `SessionState.stream_url`: watchdog, receiver ownership and
+recovery compare the full URL. Finalised single-segment recovery must verify
 every playlist segment belongs to its saved generation.
 
-`tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
-cross-generation stale requests, narrow allowlists, encoder arguments and
-finalised recovery. All tests use mock encoders/TV and ephemeral local
-servers; do not launch GTK or send commands to a receiver.
+`tests/test_hls_generation_identity.py` uses loopback servers and mock
+encoders/TV; do not launch GTK or command a receiver.
 
 ## Cast diagnostics and workers
 
-`network_route_ui.start` runs opt-in Cast checks off-thread; late
-results are rejected. See [setup](../../setup/README.md).
-`Async.run` now uses bounded, separate I/O queues with GLib callback
-delivery. See [worker domains](../ASYNC_WORKERS.md).
+`network_route_ui.start` runs opt-in Cast checks off-thread and rejects late
+results ([setup](../../setup/README.md)). `Async.run` uses bounded per-domain
+queues with GLib callbacks ([worker domains](../ASYNC_WORKERS.md)).
 
 ## Other subsystems
 
 - Media pipeline: `src/streamer.py`, `src/preflight.py`,
   `src/subtitle_encoding.py`, `src/audio_monitor.py`.
-- Preview and responsiveness: `src/local_playback.py`,
-  `src/responsive_layout.py`, `src/position_tracker.py`.
-- Receiver protocols: `src/castctl.py` and `src/dlna.py`.
-- Reliability and diagnostics: `src/startup_cleanup.py`,
-  `src/update_control.py`, `src/diagnostics.py`.
+- Receivers: `src/castctl.py` (runs the `catt` CLI as a subprocess per
+  command), `src/cast_targets.py`, `src/dlna.py`, `src/url_control.py`.
+- Preview and state: `src/local_playback.py`, `src/playback_state.py`,
+  `src/position_tracker.py`, `src/responsive_layout.py`,
+  `src/watch_history.py`.
+- Workers, diagnostics, recovery: `src/async_jobs.py`,
+  `src/network_routes.py`, `src/diagnostics.py`, `src/startup_cleanup.py`,
+  `src/update_control.py`, `src/library_index.py`, `src/benchmark.py`.
+- Headless entry `src/cli.py`: `--version`, `--diagnostics`,
+  `--network-check`, `--library-index`. Only the seven GUI modules above
+  import `gi`; keep all other modules GTK-free.
 - Launch and desktop: `setup/`, `scripts/install_desktop.py`,
-  `src/version.py`.
-- Tests and CI: `tests/`, `.github/workflows/verify.yml`.
+  `src/version.py`. Tests and CI: `tests/`, `.github/workflows/verify.yml`.
+- Roadmap: epic [#201](https://github.com/gmanldn/smoothcast/issues/201).
 
 ## Asynchronous receiver transport safety
 
@@ -139,10 +138,9 @@ release the guard on both success and failure. On failure, poll the receiver
 to resynchronise the displayed state; never infer success from an issued
 command alone. Stop and cast transitions are separate ownership paths.
 
-This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
-cancellation, retry policy and full physical receiver acceptance remain
-open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
+This is a slice of P0 SC-009 (issue #16); cancellation, retry policy and
+physical receiver acceptance remain open. Tests:
+`tests/test_transport_serialization.py`.
 
-Search symbols and affected callers before opening large files; follow runtime
-state ownership through the whole cast/cleanup lifecycle. For historical
-edge-case notes see [archived instructions](../AGENT_REFERENCE.md).
+Follow runtime state ownership through the whole cast/cleanup lifecycle.
+Historical edge cases: [archive](../AGENT_REFERENCE.md).

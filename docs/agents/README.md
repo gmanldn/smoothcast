@@ -1,6 +1,8 @@
 # Agent handbook — read by task, not in full
 
-The root [AGENTS.md](../../AGENTS.md) is the **only always-read entry point**.
+The root [AGENTS.md](../../AGENTS.md) is the **only always-read entry point**
+(Claude Code reads [CLAUDE.md](../../CLAUDE.md), which imports it and adds
+Claude-specific notes).
 For a deterministic short recommendation, run
 `python3 scripts/agent_context.py route src/cast_av.py subtitles` from the
 repository root. This routing page is the human-readable fallback: open

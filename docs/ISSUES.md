@@ -26,6 +26,9 @@ choose work.
    gh issue edit "$ISSUE" --add-assignee @me
    gh issue comment "$ISSUE" --body "Claim: <agent> on fix/issue-$ISSUE; scope: <files>"
    ```
+   In Claude Code web sessions `gh issue ...` fails with HTTP 403 (GraphQL is
+   blocked), as does the digest. Use the REST equivalents in
+   [agent workflow](agents/workflow.md#github-cli-in-claude-code-web-sessions).
 4. Use an isolated worktree and issue-specific branch. Do not modify or
    force-reset another checkout.
 5. Validate targeted tests first, then the full headless suite when the change
@@ -63,12 +66,13 @@ financial saving without an A/B usage measurement.
 | --- | --- |
 | Unfinished improvements and bugs | [Open issues](https://github.com/gmanldn/smoothcast/issues?q=is%3Aissue+is%3Aopen) |
 | All issues, including completed work | [Closed and open issues](https://github.com/gmanldn/smoothcast/issues?q=is%3Aissue) |
+| Reliability, reach and distribution programme | Epic [#201](https://github.com/gmanldn/smoothcast/issues/201) and its sub-issues (coordination issue, not an implementation unit) |
 | Highest priority | Search the Issues tab for `is:issue is:open in:title "[P0]"` |
 | Next priority | Search for `is:issue is:open in:title "[P1]"`, then `[P2]` |
 | A specific migrated idea | Search the Issues tab for `SC-058`, substituting its original number |
 | Changes awaiting review/merge | [Pull requests](https://github.com/gmanldn/smoothcast/pulls) |
 | Automated validation | [Verify SmoothCast actions](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml) |
-| Current instructions for code agents | Root [AGENTS.md](../AGENTS.md), followed by this document |
+| Current instructions for code agents | Root [AGENTS.md](../AGENTS.md) (Claude Code: [CLAUDE.md](../CLAUDE.md), which imports it), followed by this document |
 | Historic original 50 ideas | [Verbatim snapshot](IMPROVEMENTS_ORIGINAL_50_20261118.md), **not** a current work queue |
 | Migration and historical evidence | [18 November 2026 migration reference](ISSUES_MIGRATION_20261118.md) |
 

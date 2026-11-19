@@ -23,3 +23,7 @@ errors.log.tmp
 # Virtualenv created by platform setup scripts (see setup/)
 .venv/
 .venv-incompatible-*/
+
+# Claude Code local overrides (personal, never committed)
+CLAUDE.local.md
+.claude/settings.local.json

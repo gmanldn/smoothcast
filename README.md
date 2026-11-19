@@ -175,7 +175,7 @@ When one film finishes, the UI holds incoming cast commands until the old server
 
 The application no longer requires fullscreen or a 1400-pixel-wide minimum window. Saved startup dimensions are bounded by the detected monitor's logical geometry, leaving space for decorations. Layout automatically reflows on resize: **1180+ logical px** shows two columns; narrower widths stack cards. Transport controls and action buttons wrap as needed, preview height and card padding become more compact, and one outer vertical scroller keeps every card accessible even when the window is shorter than the full interface. Resizing wider restores the two-column layout. The app avoids shrinking controls to unreadable sizes.
 
-The geometry and breakpoint decisions are independently testable in `src/responsive_layout.py`. Run `python3 -m unittest discover -s tests -v` for breakpoint and GTK structure regression checks.
+The geometry and breakpoint decisions are independently testable in `src/responsive_layout.py`. Run `python3 -m pytest -q tests` for breakpoint and GTK structure regression checks.
 
 ## Desktop launcher and dock
 
@@ -212,13 +212,13 @@ pretending that the same release installed again.
 
 If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `python3 sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
-A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
+A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m pytest -q tests`.
 
 ## Streaming reliability and local-network safety
 
-The HLS server listens on port 8767 for Chromecast access, but exposes only the generated `movie.m3u8` playlist and `segment-*.ts` media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
+The HLS server listens on `0.0.0.0:8767` for Chromecast access. Every transcode start gets a random 128-bit generation ID, so the playlist is `movie-<32 hex>.m3u8` with matching `segment-<ID>-N.ts` files; the server exposes only those exact names, a health endpoint and, read-only, the legacy fixed names (`movie.m3u8`, `segment-N.ts`) for casts saved by older versions. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible, and a stale request returns 404 rather than another film's frames. Anyone on the local network who learns a current URL can fetch that stream; the port is not authenticated (see [#215](https://github.com/gmanldn/smoothcast/issues/215)). SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
-Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
+Run `python3 -m pytest -q tests` for the desktop, HTTP server and streamer regression tests.
 
 ## Sleep timer
 
@@ -230,7 +230,7 @@ When a **new primary SmoothCast process** launches, it recovers from any old cra
 
 The recovery clears stale HLS playlist/segments, progress metadata and orphaned audio-meter scratch directories. Configuration, diagnostic logs and video files are retained. An existing cast deliberately left playing through **Keep streaming after closing** is preserved and reattached normally; a direct cast keeps its session record but drops unused HLS output. A second click on the dock simply raises the existing application and never repeats cleanup. `--self-test` also skips recovery to avoid disturbing your running session.
 
-Startup recovery reports its actions in the terminal and the application's activity console. Pure-Python regression checks: `python3 -m unittest tests.test_startup_cleanup -v` (or the complete suite with `python3 -m unittest discover -s tests -v`).
+Startup recovery reports its actions in the terminal and the application's activity console. Pure-Python regression checks: `python3 -m pytest -q tests/test_startup_cleanup.py` (or the complete suite with `python3 -m pytest -q tests`).
 
 ## Canonical version and build identity
 
@@ -250,25 +250,30 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Automatic updates without blocking startup
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+A **clean git checkout on `main` or `master`** performs one background `git pull --ff-only` after the first window appears, not before GTK starts; a detached HEAD, another branch or uncommitted work is never pulled. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, non-release-branch or non-git folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
 ## Runtime dependencies
 
 Python 3.10+ is the only dependency users must install themselves. The platform setup scripts automatically detect or provision native GTK4, libadwaita, PyGObject, FFmpeg/ffprobe/ffplay, and `catt` inside the project virtual environment. This still requires network access, a supported system package manager and permission to install system packages. Verify without modifying anything using `--check`.
 
-## Token-efficient coding agents
+## Coding-agent instructions
 
-SmoothCast includes project-scoped [Caveman](.kilo/skills/caveman/SKILL.md)
-(concise technical responses) and
-[Ponytail](.kilo/skills/ponytail/SKILL.md)
-(minimal complete diffs) instruction skills. The root
-[AGENTS.md](AGENTS.md) has been reduced by **88% in characters**;
-the original instructions remain intact in
-[docs/AGENT_REFERENCE.md](docs/AGENT_REFERENCE.md).
-See [agent token efficiency](docs/AGENT_TOKEN_EFFICIENCY.md) for
-measurement limitations and optional official upstream plugins. These
-repo-local instructions do **not** install a proxy, change user
-credentials or add SmoothCast runtime dependencies.
+[AGENTS.md](AGENTS.md) is the tool-neutral entry point for coding agents. It is
+kept under 2,500 characters (enforced by tests) and routes to a tiered
+[handbook](docs/agents/README.md) so agents load only the topic they need; the
+original notes remain in [docs/AGENT_REFERENCE.md](docs/AGENT_REFERENCE.md).
+[CLAUDE.md](CLAUDE.md) imports it for Claude Code and adds Claude-specific
+guidance. A Claude Code hook (`.claude/settings.json`,
+`scripts/claude_hooks/block_gui_launch.py`) refuses commands that would open
+the real GTK window during development.
+
+Project-scoped [Caveman](.kilo/skills/caveman/SKILL.md) (concise technical
+responses) and [Ponytail](.kilo/skills/ponytail/SKILL.md) (minimal complete
+diffs) skills are included. See [agent token
+efficiency](docs/AGENT_TOKEN_EFFICIENCY.md) for measurement limitations and
+optional official upstream plugins. These repo-local instructions do **not**
+install a proxy, change user credentials or add SmoothCast runtime
+dependencies.
 
 ## Testing — never steal desktop focus
 
@@ -315,30 +320,46 @@ responsive layout tests are included in normal pytest.
 
 ```
 smoothcast/
-├── pyproject.toml    # canonical packaging metadata + console-script entry points
-├── setup.py          # shim delegating to pyproject.toml
-├── setup/              # Python-only bootstrap, native OS installers and launchers
-│   ├── winsetup.bat    # Windows/MSYS2 UCRT64 bootstrap
-│   ├── macsetup.sh     # macOS/Homebrew bootstrap
-│   ├── linuxsetup.sh   # apt/dnf/pacman bootstrap
-│   ├── bootstrap.py    # dependency installation and validation
-│   ├── launch.py       # portable non-mutating runtime launcher
-│   └── shortcuts.py    # native desktop integration
-├── scripts/
-│   └── install_desktop.py # user XDG launcher/icon installer
+├── pyproject.toml      # packaging metadata, dependencies, console scripts
+├── setup.py            # shim delegating to pyproject.toml
+├── smoothcast, sc.py   # Unix launcher and cross-platform launcher
+├── AGENTS.md           # coding-agent entry point (CLAUDE.md imports it)
+├── setup/              # Python-only bootstrap, native OS installers, launcher
+│   ├── linuxsetup.sh · macsetup.sh · winsetup.bat
+│   └── bootstrap.py · launch.py · native_runtime.py · shortcuts.py
+├── scripts/            # install_desktop.py, test_gui_isolated.py,
+│                       # ticket_digest.py, agent_context.py, ci/, claude_hooks/
 ├── src/
-│   ├── cast_control.py # main GTK4/Adw app — UI, LevelMeter, MainWindow
-│   ├── streamer.py     # HLS transcode, direct play, ffmpeg chains, auto-trim
-│   ├── audio_monitor.py# fast precompute + lookup-by-position level analysis
-│   ├── castctl.py      # catt CLI wrapper
-│   ├── server.py       # HLS static file server
-│   ├── playlist_control.py # portable M3U playlist I/O
-│   ├── error_log.py    # ring-buffer error log (10k lines, gitignored)
-│   ├── position_tracker.py — playback position estimation (no GTK dep)
-│   └── utils.py        # pure text helpers (pretty_title)
+│   ├── cli.py          # GTK-free entry: --version, --diagnostics,
+│   │                   #   --network-check, --library-index
+│   ├── cast_control.py # GTK4/Adw app shell; MainWindow assembled from mixins:
+│   ├── cast_ui.py · cast_queue.py · cast_session.py · cast_av.py
+│   ├── cast_lifecycle.py · cast_widgets.py   # the only modules importing gi
+│   ├── streamer.py     # HLS transcode, direct play, FFmpeg chains, auto-trim
+│   ├── stream_watchdog.py · direct_probe.py · preflight.py · subtitle_*.py
+│   ├── castctl.py      # catt CLI wrapper (one subprocess per command)
+│   ├── cast_targets.py · dlna.py · url_control.py   # receivers and URLs
+│   ├── server.py       # HLS static file server (port 8767)
+│   ├── audio_monitor.py # fast precompute + lookup-by-position level analysis
+│   ├── local_playback.py · playback_state.py · position_tracker.py
+│   ├── async_jobs.py   # bounded worker domains (docs/ASYNC_WORKERS.md)
+│   ├── network_routes.py · network_route_ui.py · diagnostics.py
+│   ├── startup_cleanup.py · update_control.py · error_log.py
+│   ├── config_control.py · playlist_control.py · watch_history.py
+│   ├── library_index.py · benchmark.py · screenshot.py
+│   ├── responsive_layout.py · ui_theme.py · gui_test_safety.py
+│   ├── smoothcast_assets/  # packaged icon
+│   └── utils.py · version.py
+├── tests/              # headless pytest suite (never opens the GUI)
+├── docs/               # issue workflow, agent handbook, subsystem notes
+├── .claude/ · .kilo/   # Claude Code hook settings; Kilo agents and skills
 └── data/
     └── cast-control.png
 ```
+
+Every module in `src/` appears above; `ls src` is authoritative for newer
+files. Per-module detail for contributors is in
+[docs/agents/architecture.md](docs/agents/architecture.md).
 
 ## How the compressor meter works
 
@@ -354,7 +375,7 @@ A MASTER bouncing-line meter sits below the PUMP strip in the LevelMeter widget.
 
 ## Troubleshooting tests and GTK sizing
 
-Use `python3 -m unittest discover -s tests -v` to run all GTK-independent regression tests. A previously observed set of local-playback test errors was caused by using the `mock.patch` context manager object instead of the object returned by `patcher.start()`; make sure the current `tests/test_local_playback.py` is committed and all patches are stopped in teardown. Screenshot capture now verifies input and output using filesystem metadata, including that FFmpeg actually produced a non-empty file.
+Use `python3 -m pytest -q tests` to run all GTK-independent regression tests. A previously observed set of local-playback test errors was caused by using the `mock.patch` context manager object instead of the object returned by `patcher.start()`; make sure the current `tests/test_local_playback.py` is committed and all patches are stopped in teardown. Screenshot capture now verifies input and output using filesystem metadata, including that FFmpeg actually produced a non-empty file.
 
 For the main window, the queue and activity list scrollers have fixed height bounds and no longer propagate unstable child natural heights into the parent box. The **outer** page scroller still makes all controls available on smaller displays. This addresses a potential cause of GTK measure warnings; actual on-screen validation is still required.
 
@@ -372,6 +393,16 @@ smoothcast --diagnostics /tmp/sc.json
 ```
 
 The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
+
+### Other headless commands
+
+None of these import GTK, open a window or discover receivers unless stated.
+
+```sh
+smoothcast --network-check 192.168.1.50   # explicit route and Cast-port probe for one private receiver IPv4
+smoothcast --library-index scan ~/Videos  # private SQLite index of media you choose; see docs/LIBRARY_INDEX.md
+smoothcast --version                      # canonical version, GUI-free
+```
 
 ## License
 
@@ -401,3 +432,8 @@ preserve earlier research. Agents should start with
 than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
 not by adding a second TODO document.
+
+The reliability, reach and distribution programme (event-driven Cast backend,
+protocol-level fake receivers, real-device qualification, headless core,
+signed packaging, i18n) is tracked by epic
+[#201](https://github.com/gmanldn/smoothcast/issues/201) and its sub-issues.

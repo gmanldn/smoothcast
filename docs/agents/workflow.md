@@ -22,6 +22,29 @@ The retired root `IMPROVEMENTS.md` is **not** an active backlog.
 **Identifier caveat:** `[P0][SC-058]` contains a legacy issue ID; `SC-058`
 is **not** GitHub issue `#58`. Resolve the current GitHub issue by search.
 
+**Epics:** [#201](https://github.com/gmanldn/smoothcast/issues/201) is the
+reliability, reach and distribution programme. It is a coordination issue, not
+an implementation unit: claim and close its sub-issues, not the epic.
+
+## GitHub CLI in Claude Code web sessions
+
+There `gh issue list|view|edit|create` use GraphQL and fail with HTTP 403, so
+`scripts/ticket_digest.py` fails too. The repository must also be attached with
+push access (otherwise REST returns 403 "access ... not enabled"). Use REST,
+and keep field lists short:
+
+```sh
+R=repos/gmanldn/smoothcast
+gh api "$R/issues?state=open&per_page=30" --jq '.[] | select(.pull_request|not) | "#\(.number) \(.title)"'
+gh api "$R/issues/N" --jq '{number,title,state,assignees:[.assignees[].login],body}'
+gh api -X POST "$R/issues/N/assignees" -f "assignees[]=$(gh api user --jq .login)"
+gh api -X POST "$R/issues/N/comments" -f body='Claim: <agent> on fix/issue-N; scope: <files>'
+gh api -X POST "$R/pulls" -f title=T -f head=BRANCH -f base=main -f body=B
+```
+
+`gh auth status` can report an invalid token while `gh api` works; trust
+`gh api user`. Use `--paginate` for more than 100 issues.
+
 **Protect the user's work:** don't discard dirty files, local commits, stashes,
 or unmerged branches; never force-reset without explicit permission. A
 diverged checkout requires backup/reconciliation, not `git reset --hard`.
