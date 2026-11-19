@@ -67,7 +67,9 @@ jobs:
   portable-tests:
     name: Portable regressions (Python ${{ matrix.python-version }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    # Full Python 3.10 pytest exceeded 12 minutes on loaded shared runners.
+    # Do not skip tests or weaken coverage; use a bounded larger allowance.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
