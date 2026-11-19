@@ -132,7 +132,6 @@ class StreamSelectionTests(unittest.TestCase):
             self.assertEqual(command[command.index("-map") + 1], "0:1")
 
     def test_selected_absolute_index_is_used_in_cast_and_dlna(self):
-        from types import SimpleNamespace
         import inspect
         body = inspect.getsource(streamer.Session.start_transcode)
         self.assertIn('f"0:{media.video_stream_index}"', body)

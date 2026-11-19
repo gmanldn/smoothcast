@@ -123,8 +123,8 @@ def test_both_input_actions_reject_changes_during_owned_cast():
             if state == "external":
                 w.external = True
             # Both GUI signals are wired to the same guarded callback.
-            assert f'self.cast_ip_entry.connect("activate", lambda _entry: self._add_cast_target())' in combined_source()
-            assert f'self.add_ip_button.connect("clicked", lambda _button: self._add_cast_target())' in combined_source()
+            assert 'self.cast_ip_entry.connect("activate", lambda _entry: self._add_cast_target())' in combined_source()
+            assert 'self.add_ip_button.connect("clicked", lambda _button: self._add_cast_target())' in combined_source()
             w._add_cast_target()
             assert w._device() == "192.168.1.10", (state, signal)
             assert w.cfg["cast_targets"] == [], (state, signal)

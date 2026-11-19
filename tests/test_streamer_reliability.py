@@ -147,25 +147,83 @@ class StreamerReliabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(streamer.StreamError, "LAN IPv4"):
                 streamer.host_ip("192.168.1.42")
 
+    def _server_env(self):
+        from contextlib import ExitStack
+        from tempfile import TemporaryDirectory
+        stack = ExitStack()
+        root = Path(stack.enter_context(TemporaryDirectory()))
+        stack.enter_context(mock.patch.object(streamer, "ROOT", root))
+        self.addCleanup(stack.close)
+        return root
+
     def test_an_unrelated_port_owner_is_not_reused(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=True), \
-             mock.patch.object(streamer, "_server_healthy", return_value=False), \
+             mock.patch.object(streamer, "_server_probe", return_value=(False, None, None)), \
              mock.patch.object(streamer.subprocess, "Popen") as popen:
             with self.assertRaisesRegex(streamer.StreamError, "occupied"):
                 session._start_server()
             popen.assert_not_called()
 
     def test_existing_healthy_server_is_reused(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=True), \
-             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer, "_server_probe",
+                               return_value=(True, "192.168.1.23", 4321)), \
              mock.patch.object(streamer.subprocess, "Popen") as popen:
-            session._start_server()
+            session._start_server("192.168.1.23", "192.168.1.50")
             popen.assert_not_called()
             self.assertIsNone(session.server)
 
+    def test_server_is_bound_to_chosen_interface_and_policy_published(self):
+        import server
+        root = self._server_env()
+        session = streamer.Session()
+        with mock.patch.object(streamer, "_port_open", return_value=False), \
+             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            session._start_server("192.168.1.23", "192.168.1.50")
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
+        self.assertNotIn("0.0.0.0", command)
+        policy = server.load_policy(root)
+        self.assertEqual(policy.hosts, frozenset({"192.168.1.50"}))
+        self.assertFalse(policy.any_private)
+
+    def test_reused_server_on_another_interface_is_replaced_only_if_ours(self):
+        self._server_env()
+        session = streamer.Session()
+        stale = (True, "192.168.1.99", 4321)
+        with mock.patch.object(streamer, "_port_open", side_effect=[True, False]), \
+             mock.patch.object(streamer, "_server_probe", return_value=stale), \
+             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer, "_pid_is_ours", return_value=True), \
+             mock.patch.object(streamer, "_terminate_pid") as terminate, \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            session._start_server("192.168.1.23", "192.168.1.50")
+        terminate.assert_called_once_with(4321, "server")
+        popen.assert_called_once()
+
+    def test_unverifiable_unbound_server_is_not_killed_or_reused(self):
+        self._server_env()
+        session = streamer.Session()
+        legacy = (True, None, 4321)  # Predates the access restriction.
+        with mock.patch.object(streamer, "_port_open", return_value=True), \
+             mock.patch.object(streamer, "_server_probe", return_value=legacy), \
+             mock.patch.object(streamer, "_pid_is_ours", return_value=False), \
+             mock.patch.object(streamer, "_terminate_pid") as terminate, \
+             mock.patch.object(streamer.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(streamer.StreamError, "different address"):
+                session._start_server("192.168.1.23", "192.168.1.50")
+        terminate.assert_not_called()
+        popen.assert_not_called()
+
     def test_failed_server_process_is_detected_immediately(self):
+        self._server_env()
         session = streamer.Session()
         with mock.patch.object(streamer, "_port_open", return_value=False), \
              mock.patch.object(streamer, "_server_healthy", return_value=False), \

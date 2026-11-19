@@ -1,7 +1,6 @@
 """Installer contract tests: offline, without GTK, Homebrew, sudo or MSYS2."""
 from __future__ import annotations
 
-from contextlib import nullcontext
 import hashlib
 import io
 import json
