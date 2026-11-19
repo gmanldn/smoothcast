@@ -229,6 +229,7 @@ class CastControlApp(Adw.Application):
         self.set_accels_for_action("app.open", ["<Control>o"])
         self.set_accels_for_action("app.add-files", ["<Control>a"])
         self.set_accels_for_action("app.shortcuts", ["<Control>question"])
+        self.set_accels_for_action("app.preferences", ["<Control>comma"])
         self.set_accels_for_action("app.stop-stream", ["<Control>w"])
         self.set_accels_for_action("app.quit", ["<Control>q"])
 
@@ -257,6 +258,7 @@ class CastControlApp(Adw.Application):
         for m in (0, 15, 30, 45, 60):
             simple(f"sleep-{m}", lambda *a, mm=m: self._window()._sleep_timer(mm))
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
+        simple("preferences", lambda *a: self._window().action_preferences())
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())
