@@ -29,10 +29,11 @@ smoothcast-gui = "cli:main"
 
 [tool.setuptools]
 packages = ["smoothcast_assets"]
+# Keep every src/*.py here; the portable test and wheel matrix enforce parity.
 py-modules = [
     "cast_control", "castctl", "cast_targets", "config_control", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
-    "ui_theme", "responsive_layout", "url_control", "version",
+    "ui_theme", "responsive_layout", "url_control", "watch_history", "version",
     "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
     "cast_widgets", "cast_ui", "cast_queue", "cast_session", "cast_av", "cast_lifecycle",
 ]
