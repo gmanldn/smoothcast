@@ -16,12 +16,13 @@ from test_discovery_identity import device, window
 
 
 def test_default_device_is_empty_and_survives_config_loading():
-    import cast_widgets  # lazy: importing it loads GTK, which other tests forbid
     assert castctl.DEFAULT_DEVICE == ""
-    assert cast_widgets.DEFAULTS["device"] == ""
+    # The GUI defaults take the device from the constant (parsed, not imported: no GTK).
+    assert '"device": castctl.DEFAULT_DEVICE' in (ROOT / "src" / "cast_widgets.py").read_text()
+    defaults = {"device": castctl.DEFAULT_DEVICE}
     for raw in ({}, {"device": ""}, {"device": "   "}):
-        assert config_control.sanitise_config(raw, cast_widgets.DEFAULTS)["device"] == ""
-    kept = config_control.sanitise_config({"device": "Kitchen"}, cast_widgets.DEFAULTS)
+        assert config_control.sanitise_config(raw, defaults)["device"] == ""
+    kept = config_control.sanitise_config({"device": "Kitchen"}, defaults)
     assert kept["device"] == "Kitchen"
 
 
