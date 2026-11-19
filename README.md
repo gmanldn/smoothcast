@@ -78,6 +78,14 @@ DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
 prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
 also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
+
+On POSIX systems, each DLNA scratch directory has a process-held exclusive
+lease. The FFmpeg converter inherits that lease, so a concurrent SmoothCast
+startup never deletes an old-but-active conversion or playback file. A crashed
+session's directory is reclaimed after the stale-age threshold only once its
+lease can be acquired. Legacy directories without a verifiable lease are kept
+rather than risking another active instance's film. Windows scratch sweeping
+remains disabled pending a safe cross-process ownership mechanism.
 DLNA has automated protocol tests but **has not yet been verified on a real
 television**; device-specific MIME/codec negotiation is a follow-up in
 [GitHub issue #8 (SC-001)](https://github.com/gmanldn/smoothcast/issues/8).
@@ -278,6 +286,8 @@ Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and 
 ## Sleep timer
 
 The Sleep timer menu now stops the active SmoothCast session after the selected interval (15–60 minutes). The deadline is saved across application restarts, and can be cancelled with **Off**. The application must remain running for the timer to fire; closing it with Keep streaming enabled does not leave a background scheduler running.
+
+On a Google Cast receiver the volume fades out over the last `sleep_fade_seconds` (default 30, `0` disables, maximum 600; set in `~/.config/cast-control/config.json`) before playback stops. The receiver's original volume is read once at the start of the fade and restored after the cast has stopped, or immediately if you cancel or re-arm the timer; changing the selected receiver abandons the fade without touching the new one. A receiver whose volume cannot be read is left alone. DLNA renderers are not faded (no readable volume), and a crash or force-quit during a fade leaves the volume lowered until you raise it.
 
 ## Clean startup and orphan recovery
 

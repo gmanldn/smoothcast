@@ -18,6 +18,8 @@ import threading
 
 import castctl
 
+import sleep_fade
+
 import dlna
 
 import streamer
@@ -69,6 +71,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         # so the sleep timer can stop our own stream but never a replacement.
         self._url_cast_url: str | None = None
         self._url_cast_seen = False
+        self._sleep_fader = sleep_fade.make_fader(Async.run)
         self.busy = False
         self._dlna_cancel: threading.Event | None = None
         self.poll_busy = False
@@ -146,6 +149,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             GLib.timeout_add(400, self._initial_scan)
             GLib.timeout_add(600, self._adopt_session)
             GLib.timeout_add_seconds(5, self._sleep_tick)
+            GLib.timeout_add_seconds(3, self._sleep_fade_tick)
             GLib.timeout_add_seconds(600, self._theme_tick)
 
 

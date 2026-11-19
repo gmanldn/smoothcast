@@ -188,6 +188,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("pull-requests: write", self.job)
         self.assertIn("promote_release.py check", self.job)
 
+    def test_setup_prerequisite_failure_explains_itself(self):
+        # Seen on GitHub: "GitHub Actions is not permitted to create or approve
+        # pull requests". The log must say which setting to enable.
+        self.assertIn("::error title=Release promotion needs a repository setting::", self.job)
+        self.assertIn("Allow GitHub Actions to create and approve pull requests", self.job)
+        self.assertIn("::error title=Release promotion could not merge::", self.job)
+
     def test_nothing_else_in_ci_writes_to_main(self):
         for name in ("verify.yml", "codeql.yml", "release.yml", "prune-merged-branches.yml"):
             text = (ROOT / ".github/workflows" / name).read_text("utf-8")
