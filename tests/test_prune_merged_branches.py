@@ -61,6 +61,26 @@ def test_ref_advanced_after_merge_must_never_be_deleted():
     assert not any(row[0] == "push" for row in calls)
 
 
+def test_merged_branch_reused_by_open_pr_is_never_deleted():
+    with mock.patch.object(cleanup, "run_git",
+                           side_effect=AssertionError("remote read forbidden")):
+        assert cleanup.prune(
+            17, BRANCH, SHA, fetch=lambda n: pr(), git=cleanup.run_git,
+            open_refs={(cleanup.REPOSITORY, BRANCH)}, apply=True,
+        ).startswith("SKIP")
+    assert "still used by another open PR" in cleanup.prune(
+        17, BRANCH, SHA, fetch=lambda n: pr(),
+        open_refs={(cleanup.REPOSITORY, BRANCH)}, apply=True,
+    )
+
+
+def test_inventory_rejection_is_fail_closed():
+    with mock.patch.object(cleanup, "urlopen") as get:
+        get.return_value.__enter__.return_value.read.return_value = b'{"bad":"shape"}'
+        with pytest.raises(ValueError, match="inventory"):
+            cleanup.github_open_pr_refs()
+
+
 def test_missing_remote_branch_is_harmless():
     calls, git = git_fixture(sha="")
     assert "already absent" in cleanup.prune(
@@ -119,6 +139,7 @@ def test_main_defaults_to_dry_run_and_verifies_repository(monkeypatch, capsys):
     recorded = []
     monkeypatch.setattr(cleanup, "run_git",
                         lambda *args: "https://github.com/gmanldn/smoothcast.git\n")
+    monkeypatch.setattr(cleanup, "github_open_pr_refs", lambda token: set())
     monkeypatch.setattr(cleanup, "prune",
                         lambda number, branch, sha, **kwargs:
                         recorded.append(kwargs["apply"]) or "READY sample")
