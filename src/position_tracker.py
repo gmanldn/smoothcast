@@ -33,10 +33,13 @@ class PositionTracker:
         self.duration = duration or self.duration
         self.rate = max(0.05, float(rate))
         self._base = max(0.0, base)
-        self._epoch = time.monotonic()
+        now = time.monotonic()
+        self._epoch = now
         self._playing = playing
         self._paused_accum = 0.0
-        self._pause_started = None
+        # A restarted receiver may already be PAUSED. Without an initial
+        # pause timestamp estimated source time drifts while paused.
+        self._pause_started = None if playing else now
         # Clearing device position falls back to the estimated model.
         self._device_pos = None
         self._device_epoch = 0.0
