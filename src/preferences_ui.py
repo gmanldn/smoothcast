@@ -83,8 +83,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "Repeat this film instead of advancing the queue.")
         self._switch(queue, "loop_all", "Repeat the whole queue",
                      "After the final item, return to the first.")
-        self._switch(queue, "auto_shutdown", "Stop after the playlist ends",
-                     "Stop playback when the configured queue completes.")
+        self._switch(queue, "auto_shutdown", "Close app after the final film",
+                     "Close SmoothCast when playback finishes; receiver behaviour follows the keep-casting setting.")
 
         sound = self._page("Sound & subtitles", "audio-speakers-symbolic")
         audio = self._group(
