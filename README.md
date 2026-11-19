@@ -19,7 +19,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
 
-## Install — Python-first, all three desktops
+## Release packages — PyInstaller\n\n**PyInstaller is the canonical release packager** for native SmoothCast desktop\nbundles; existing Python-first setup scripts remain available for source/developer\ninstalls. See [build, platform requirements, headless artefact checks and\nlimitations](docs/PACKAGING.md). Do not treat a Python wheel as an end-user\ndesktop release or assume an unsigned CI bundle has passed real-device tests.\n\n## Install — Python-first, all three desktops
 
 **The only manual prerequisite is Python 3.10+**. Setup will check and, where necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and `catt`. The installer uses the host package manager and may request administrator permission. Internet access is required for missing packages.
 

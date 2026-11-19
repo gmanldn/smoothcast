@@ -23,7 +23,7 @@ Do not load the entire handbook or
 - **Precise, concise output:** results, evidence and blockers; never hide
   errors or compress commands/code inaccurately.
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
+- **Packaging authority:** `packaging/SmoothCast.spec` via `python scripts/build_release.py`; read [packaging guide](docs/PACKAGING.md) before release. Source installers are development paths.\n- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
   identifies a development revision; `./smoothcast --version` is GUI-free.
 
 ## Testing — no desktop focus

@@ -1,0 +1,122 @@
+name: Package SmoothCast
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'scripts/build_release.py'
+      - 'scripts/ci/verify_frozen_artifact.py'
+      - 'scripts/ci/archive_frozen_artifact.py'
+      - 'src/frozen_*'
+      - 'src/castctl.py'
+      - 'src/streamer.py'
+      - 'src/cli.py'
+      - 'pyproject.toml'
+      - '.github/workflows/package.yml'
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# Never start the actual GUI or contact a receiver during artifact checks.
+env:
+  SMOOTHCAST_TEST_CONTEXT: '1'
+
+jobs:
+  linux:
+    name: PyInstaller / Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK4/libadwaita, Python GI and media prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-venv gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gstreamer-1.0 gstreamer1.0-plugins-good libgtk-4-media-gstreamer ffmpeg
+      - name: Build and smoke native package without a desktop
+        run: |
+          /usr/bin/python3 -m venv --system-site-packages .packaging-venv
+          .packaging-venv/bin/python -m pip install -e '.[packaging]' 'pytest>=8,<10'
+          .packaging-venv/bin/python -m pytest -q tests/test_frozen_runtime.py
+          .packaging-venv/bin/python scripts/build_release.py
+          .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoothcast-linux
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  macos:
+    name: PyInstaller / macOS
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Homebrew's matching native Python and GTK runtime
+        run: |
+          brew install python pygobject3 gtk4 libadwaita gstreamer gst-plugins-good ffmpeg
+      - name: Build and smoke native package without a desktop
+        run: |
+          BREW_PYTHON="$(brew --prefix)/bin/python3"
+          "$BREW_PYTHON" -m venv --system-site-packages .packaging-venv
+          .packaging-venv/bin/python -m pip install -e '.[packaging]' pytest
+          .packaging-venv/bin/python -m pytest -q tests/test_frozen_runtime.py
+          .packaging-venv/bin/python scripts/build_release.py
+          .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoothcast-macos
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  windows:
+    name: PyInstaller / Windows UCRT64
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-pip
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-python-pillow
+            mingw-w64-ucrt-x86_64-python-zeroconf
+            mingw-w64-ucrt-x86_64-pyinstaller
+            mingw-w64-ucrt-x86_64-yt-dlp
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libadwaita
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-ffmpeg
+      - name: Build and smoke native package without a desktop
+        shell: msys2 {0}
+        run: |
+          python -m venv --system-site-packages .packaging-venv
+          if test -x .packaging-venv/bin/python; then
+            VENV_PY=.packaging-venv/bin/python
+          elif test -x .packaging-venv/Scripts/python.exe; then
+            VENV_PY=.packaging-venv/Scripts/python.exe
+          else
+            echo "MSYS2 venv Python executable not found" >&2
+            exit 1
+          fi
+          "$VENV_PY" -m pip install -e '.[packaging]' 'pytest>=8,<10'
+          "$VENV_PY" -m pytest -q tests/test_frozen_runtime.py
+          "$VENV_PY" scripts/build_release.py
+          "$VENV_PY" scripts/ci/archive_frozen_artifact.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoothcast-windows
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
