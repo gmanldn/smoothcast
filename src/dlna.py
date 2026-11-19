@@ -456,8 +456,26 @@ class ProgressiveFileServer:
         resource = "/media/" + self.token
 
         class Handler(BaseHTTPRequestHandler):
+            def setup(self) -> None:
+                super().setup()
+                # Bound each accepted connection (including request headers
+                # and slow streaming clients), not only the accept loop.
+                self.connection.settimeout(15.0)
+
             def log_message(self, _format: str, *_args) -> None:
                 pass
+
+            def _host_allowed(self) -> bool:
+                hosts = self.headers.get_all("Host", [])
+                if not hosts:
+                    # DLNA devices sometimes use HTTP/1.0 without Host.
+                    return self.request_version == "HTTP/1.0"
+                if len(hosts) != 1:
+                    return False
+                host = hosts[0].strip()
+                return host in {
+                    bind_ip, f"{bind_ip}:{self.server.server_port}",
+                }
 
             def do_HEAD(self) -> None:
                 self._serve(False)
@@ -469,12 +487,23 @@ class ProgressiveFileServer:
                 if self.client_address[0] not in allowed or self.path != resource:
                     self.send_error(404)
                     return
+                if not self._host_allowed():
+                    # Reject DNS-rebinding and Host-header ambiguities even
+                    # when the client guessed the session capability token.
+                    self.send_error(400, "Invalid DLNA Host header")
+                    return
                 try:
                     size = source.stat().st_size
                     raw = self.headers.get("Range")
                     start, end = 0, size - 1
                     partial = False
                     if raw is not None:
+                        # Huge numeric ranges can trigger Python's int digit
+                        # conversion limit. Reject them as 416, not an
+                        # uncaught handler exception or unbounded parse.
+                        if len(raw) > 128:
+                            self._range_error(size)
+                            return
                         match = RANGE_RE.fullmatch(raw.strip())
                         if match is None or not (match.group(1) or match.group(2)):
                             self._range_error(size)

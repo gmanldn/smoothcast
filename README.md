@@ -90,7 +90,13 @@ interface routed to the selected receiver, never all interfaces. An invalid,
 missing or unbindable local interface prevents a new cast and does not stop
 another receiver's playback; loopback binding is used only by isolated tests.
 Receiver IP and an unguessable per-session URL still restrict requests.
-This does not replace host-header hardening or real-device qualification.
+HTTP/1.1 requests also require a Host header matching the bound interface
+(optionally including the port), so a malicious Host cannot use DNS rebinding
+to fetch the film. Duplicate/mismatched Host headers are rejected; optional
+HTTP/1.0 Host is retained for older DLNA devices. Connections time out after
+15 seconds without socket activity, and oversized byte-range headers return
+HTTP 416 without parsing unbounded integers. These guards do not replace
+real-device protocol qualification or the remaining HLS hardening work.
 
 DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may

@@ -247,6 +247,28 @@ class DlnaRangeServerTests(unittest.TestCase):
             status, _, _ = self._request("GET", forbidden)
             self.assertEqual(status, 404)
 
+    def test_host_header_must_match_the_bound_interface(self):
+        path = "/media/" + self.server.token
+        for host in (f"127.0.0.1:{self.server.port}", "127.0.0.1"):
+            with self.subTest(host=host):
+                self.assertEqual(self._request("GET", path, {"Host": host})[0], 200)
+        for host in ("evil.example", "192.168.12.2", "127.0.0.1:9999",
+                     "127.0.0.1.evil.example", "[::1]"):
+            with self.subTest(host=host):
+                self.assertEqual(self._request("GET", path, {"Host": host})[0], 400)
+                self.assertEqual(self._request("HEAD", path, {"Host": host})[0], 400)
+
+    def test_oversized_range_is_416_without_crashing_server(self):
+        path = "/media/" + self.server.token
+        status, headers, body = self._request(
+            "GET", path, {"Range": "bytes=" + "9" * 512},
+        )
+        self.assertEqual(status, 416)
+        self.assertEqual(headers["Content-Range"], f"bytes */{len(self.data)}")
+        self.assertEqual(body, b"")
+        # A malformed client must not kill the server's accept loop.
+        self.assertEqual(self._request("GET", path)[0], 200)
+
     def test_receiver_routed_binding_is_exact_and_never_wildcard(self):
         # No NIC or TV required: assert the actual socket bind arguments.
         with mock.patch.object(dlna, "ThreadingHTTPServer") as server_class, \
