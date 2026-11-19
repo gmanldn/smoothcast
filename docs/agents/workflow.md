@@ -4,10 +4,20 @@
 [GitHub Issues](https://github.com/gmanldn/smoothcast/issues).
 The retired root `IMPROVEMENTS.md` is **not** an active backlog.
 
+## Branch model
+
+- `develop` is the integration branch: every issue branch and pull request
+  targets `develop`.
+- `main` is **protected** and release-only. It receives release merges from
+  `develop`; never push to it directly and never open a feature PR against it.
+- `src/version.py` is bumped on `develop` at a release boundary; promoting
+  `develop` into `main` publishes that release.
+
 1. Read the relevant GitHub issue and its acceptance criteria first; check
    related PRs, existing implementation and relevant logs. Prioritise P0/P1.
 2. **claim the issue** in a comment before work; avoid duplicating another
-   agent's active task. Use an isolated branch/worktree, not a dirty `main`.
+   agent's active task. Use an isolated branch/worktree off `develop`, never
+   the shared checkout.
 3. Locate the changed symbols, callers and tests. Choose a minimal **complete**
    fix; reuse helpers and standard library where sensible. Preserve validation,
    casting ownership, accessibility, existing behaviour and diagnostics.

@@ -66,7 +66,8 @@ financial saving without an A/B usage measurement.
 | Highest priority | Search the Issues tab for `is:issue is:open in:title "[P0]"` |
 | Next priority | Search for `is:issue is:open in:title "[P1]"`, then `[P2]` |
 | A specific migrated idea | Search the Issues tab for `SC-058`, substituting its original number |
-| Changes awaiting review/merge | [Pull requests](https://github.com/gmanldn/smoothcast/pulls) |
+| Changes awaiting review/merge | [Pull requests](https://github.com/gmanldn/smoothcast/pulls) targeting `develop` |
+| Integration branch | `develop` takes all issue branches and PRs; `main` is **protected** and release-only |
 | Automated validation | [Verify SmoothCast actions](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml) |
 | Current instructions for code agents | Root [AGENTS.md](../AGENTS.md), followed by this document |
 | Historic original 50 ideas | [Verbatim snapshot](IMPROVEMENTS_ORIGINAL_50_20261118.md), **not** a current work queue |
