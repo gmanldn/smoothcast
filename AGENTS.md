@@ -17,6 +17,9 @@ Do not load the entire handbook or
   [issues](docs/ISSUES.md).
 - **Never lose work:** preserve user changes, local commits and stashes; no
   force-reset or destructive cleanup. Commit and push tested, cohesive fixes.
+- **Worktree per issue, clean repo:** `git worktree add ../smoothcast-N -b fix/N-slug origin/develop`;
+  never edit the shared checkout; stage files by name; push batched, merge never
+  rebase/force. See [hygiene](docs/agents/workflow.md#worktrees-and-repo-hygiene).
 - **Smallest complete fix:** inspect callers; reuse existing code; retain
   validation, privacy, device ownership, compatibility and regression tests.
   [Ponytail](.kilo/skills/ponytail/SKILL.md).

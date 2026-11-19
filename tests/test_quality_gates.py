@@ -94,5 +94,20 @@ class FuzzGateTests(unittest.TestCase):
             self.assertIn(parser, source)
 
 
+
+class AgentHygieneTests(unittest.TestCase):
+    def test_worktree_and_hygiene_rules_are_documented_for_agents(self):
+        workflow = read("docs/agents/workflow.md")
+        section = workflow.split("## Worktrees and repo hygiene", 1)[1].split("**Identifier caveat:**", 1)[0]
+        for needle in ("git worktree add", "origin/develop", "git worktree remove",
+                       "git branch -d", "git status", "never by rewriting",
+                       "CI queue", "Do not take over a claimed issue"):
+            self.assertIn(needle, section)
+        agents = read("AGENTS.md")
+        self.assertIn("git worktree add", agents)
+        self.assertIn("workflow.md#worktrees-and-repo-hygiene", agents)
+        self.assertLess(len(agents), 2500)
+
+
 if __name__ == "__main__":
     unittest.main()

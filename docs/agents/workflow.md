@@ -45,6 +45,43 @@ The retired root `IMPROVEMENTS.md` is **not** an active backlog.
 CI success is not receiver, macOS or Windows qualification
 ([release qualification](../RELEASE_QUALIFICATION.md)).
 
+## Worktrees and repo hygiene
+
+Never edit in the shared checkout. Every issue gets its **own worktree and
+branch**, created from a fresh `origin/develop`, so parallel agents cannot
+overwrite each other's files, stashes or index:
+
+```sh
+git fetch origin
+git worktree add ../smoothcast-N -b fix/N-short-slug origin/develop
+cd ../smoothcast-N          # work, test and commit only here
+```
+
+- **Naming:** `fix/N-slug`, `feat/N-slug` or `docs/N-slug`, one issue per
+  branch; `N` is the GitHub issue number. Never reuse a branch name.
+- **Before you start:** `git worktree list` and `git branch -r` — if another
+  branch or open PR already covers the issue, join it instead of duplicating.
+- **Before every commit:** `git status` and `git diff --stat` show only files
+  you meant to change. Never commit `__pycache__`, logs, caches, scratch or
+  generated files, credentials or `.env`; stage files by name, not `git add -A`
+  in a dirty tree.
+- **Commit and push small, coherent changes.** Run
+  `python3 -m pytest -q tests`, `python3 -m compileall -q src scripts setup tests`
+  and `ruff check src scripts setup tests sc.py setup.py` first (and `mypy` if
+  you touched a gated module).
+- **Sync by merging, never by rewriting:** `git fetch origin` then
+  `git merge origin/develop`. No rebase, amend or force-push on a pushed or
+  shared branch, and no `git reset --hard` on work you have not backed up.
+- **Mind the CI queue.** Verify runs one job per ref; a newer push cancels the
+  pending run. Batch related commits and push once instead of pushing every
+  small change, or no full run ever completes.
+- **After merge, clean up your own work:** `git worktree remove ../smoothcast-N`
+  and `git branch -d fix/N-slug`. Squash merges leave the source branch behind;
+  the prune workflow removes merged remote branches, so do not leave stale
+  ones, and never delete another agent's worktree, branch or stash.
+- **Do not take over a claimed issue.** Check assignees and comments, claim
+  before editing, and release the claim with a comment if you stop.
+
 **Identifier caveat:** `[P0][SC-058]` contains a legacy issue ID; `SC-058`
 is **not** GitHub issue `#58`. Resolve the current GitHub issue by search.
 
