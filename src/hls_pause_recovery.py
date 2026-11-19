@@ -26,14 +26,22 @@ def resume_from_long_pause(window, session, device, renderer, want_play: bool) -
         or window.external
         or window._closing
         or getattr(session.state, "device", None) != device
-        or not playback_state.hls_session_matches(
-            window.device_info,
-            getattr(session.state, "stream_url", ""),
-            getattr(session.state, "title", ""),
-        )
         or not window.tracker.known
         or window.tracker.playing
         or window.tracker.paused_for() < streamer.HLS_PAUSE_RESTART_AFTER
+    ):
+        return False
+
+    info = window.device_info if isinstance(window.device_info, dict) else {}
+    actual = str(info.get("content_id") or "").strip()
+    expected = str(getattr(session.state, "stream_url", "") or "").strip()
+    if actual and expected and actual != expected:
+        # Never resume a different application's film because our old session
+        # still occupies a local slot.
+        window.toast("Receiver is playing different media; resume cancelled", error=True)
+        return True
+    if not playback_state.hls_session_matches(
+        info, expected, getattr(session.state, "title", ""),
     ):
         return False
 
