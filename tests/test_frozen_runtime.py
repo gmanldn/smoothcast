@@ -139,6 +139,16 @@ class FrozenRuntimeTests(unittest.TestCase):
         self.assertIsNone(startup_cleanup.process_kind(("/usr/bin/unrelated", frozen_runtime.SERVER_FLAG)))
         self.assertIsNone(startup_cleanup.process_kind((sys.executable, frozen_runtime.SERVER_FLAG)))
 
+    def test_package_workflow_uses_immutable_upstream_action_refs(self):
+        import re
+        root = Path(__file__).resolve().parents[1]
+        yaml = (root / ".github" / "workflows" / "package.yml").read_text("utf-8")
+        refs = [line.strip().removeprefix("- uses: ").strip()
+                for line in yaml.splitlines() if "- uses:" in line]
+        self.assertEqual(len(refs), 7)
+        for ref in refs:
+            self.assertRegex(ref, r"^[\w./-]+@[a-f0-9]{40} # v\d+$")
+
     def test_spec_and_packaging_driver_are_versioned(self):
         repo = Path(__file__).resolve().parents[1]
         spec = (repo / "packaging" / "SmoothCast.spec").read_text(encoding="utf-8")
