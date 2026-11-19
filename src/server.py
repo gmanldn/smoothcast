@@ -130,8 +130,8 @@ class H(SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def end_headers(self):
-        if public_resource(self.path):
-            self.send_header("Access-Control-Allow-Origin", "*")
+        # Native receivers fetch HLS without browser CORS access.
+        # Do not expose stream bytes to arbitrary LAN web-page origins.
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
