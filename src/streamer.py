@@ -7,11 +7,14 @@ import math
 import os
 import pathlib
 import platform
+import re
+import secrets
 import socket
 import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
@@ -27,6 +30,25 @@ FFMPEG_LOG = ROOT / "ffmpeg.log"
 PORT = 8767
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
+_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
+
+
+def _hls_names_from_url(url: str) -> tuple[str, str]:
+    """Recover a safe exact-generation playlist and segment glob from a URL.
+
+    Legacy fixed URLs can be recovered only while their old files exist;
+    all newly encoded casts use distinct random resource names.
+    """
+    path = urlsplit(url).path
+    if path == "/movie.m3u8":
+        return HLS_NAME, SEGMENT_GLOB
+    match = _GENERATION_PLAYLIST.fullmatch(path.removeprefix("/"))
+    if not path.startswith("/") or not match:
+        return "", ""
+    token = match.group(1)
+    return f"movie-{token}.m3u8", f"segment-{token}-*.ts"
+
+
 VAAPI_PATH = "/dev/dri/renderD128"
 
 VIDEO_EXTS = {
@@ -781,6 +803,9 @@ class Session:
 
     def restore(self, state: SessionState) -> None:
         self.state = state
+        self._playlist_name, self._segment_pattern = _hls_names_from_url(
+            state.stream_url if state.mode == "transcode" else "",
+        )
         self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
         self.ffmpeg = PidHandle(state.ffmpeg_pid, "encoder") if _pid_is_ours(state.ffmpeg_pid, "encoder") else None
         self.server = PidHandle(state.server_pid, "server") if _pid_is_ours(state.server_pid, "server") else None
@@ -808,7 +833,11 @@ class Session:
             return False
         if self.ffmpeg is not None and self.ffmpeg.poll() is None:
             return False
-        return self._playlist_is_complete(ROOT / HLS_NAME) and _server_healthy()
+        playlist, pattern = _hls_names_from_url(self.state.stream_url)
+        if not playlist or not pattern:
+            return False
+        self._playlist_name, self._segment_pattern = playlist, pattern
+        return self._playlist_is_complete(ROOT / playlist) and _server_healthy()
 
     def encoder_finished(self) -> bool:
         if self.mode == "transcode":
@@ -854,6 +883,10 @@ class Session:
     def _count_segments(self, root=None, pattern=None) -> int:
         segment_root = ROOT if root is None else root
         segment_pattern = SEGMENT_GLOB if pattern is None else pattern
+        if not segment_pattern:
+            # Older/invalid saved state has no verified HLS generation.
+            # Never treat an empty glob as all media or crash background load.
+            return 0
         try:
             return len(list(segment_root.glob(segment_pattern)))
         except OSError:
@@ -867,7 +900,7 @@ class Session:
         # environment cannot later read the real cache.
         progress_path = PROGRESS_FILE
         root = ROOT
-        pattern = SEGMENT_GLOB
+        pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
         # Prime synchronously so the first UI tick already has data.
         progress = self._read_progress(progress_path)
         segments = self._count_segments(root, pattern)
@@ -916,8 +949,11 @@ class Session:
         if send_stop:
             castctl.stop(device)
         clear_session()
-        for segment in ROOT.glob(SEGMENT_GLOB):
+        for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
+        playlist = getattr(self, "_playlist_name", HLS_NAME)
+        if playlist == HLS_NAME or _GENERATION_PLAYLIST.fullmatch(playlist):
+            (ROOT / playlist).unlink(missing_ok=True)
         for suffix in SUBTITLE_EXTS:
             (ROOT / f"burned_subs{suffix}").unlink(missing_ok=True)
         (ROOT / "receiver_subs.srt").unlink(missing_ok=True)
@@ -1082,9 +1118,18 @@ class Session:
         speed = max(0.05, float(speed))
         rotation = normalize_rotation(rotation)
         ROOT.mkdir(parents=True, exist_ok=True)
+        # File names, not just query parameters, identify each encoder
+        # generation: stale TV requests cannot read the replacement film.
+        generation = secrets.token_hex(16)
+        self._playlist_name = f"movie-{generation}.m3u8"
+        self._segment_pattern = f"segment-{generation}-*.ts"
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
             segment.unlink(missing_ok=True)
+        # Remove only generated HLS playlists, not arbitrary cache content.
+        for playlist in ROOT.glob("movie-*.m3u8"):
+            if _GENERATION_PLAYLIST.fullmatch(playlist.name):
+                playlist.unlink(missing_ok=True)
         (ROOT / HLS_NAME).unlink(missing_ok=True)
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
@@ -1155,8 +1200,8 @@ class Session:
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
             "-f", "hls", "-hls_time", "4", "-hls_list_size", "12",
             "-hls_flags", "delete_segments+independent_segments",
-            "-hls_segment_filename", str(ROOT / "segment-%05d.ts"),
-            str(ROOT / HLS_NAME),
+            "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
+            str(ROOT / self._playlist_name),
         ]
         with open(FFMPEG_LOG, "w") as log:
             self.ffmpeg = subprocess.Popen(
@@ -1192,7 +1237,7 @@ class Session:
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
-        url = f"http://{local_ip}:{PORT}/{HLS_NAME}"
+        url = f"http://{local_ip}:{PORT}/{self._playlist_name}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
         if not burn_subs and receiver_subs is not None and receiver_subs.suffix.lower() in CAST_SUBTITLE_EXTS:
             cast_args += ["-s", str(receiver_subs)]
@@ -1231,8 +1276,9 @@ class Session:
     def _wait_for_segments(self, timeout: float) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            playlist = ROOT / HLS_NAME
-            if playlist.exists() and len(list(ROOT.glob(SEGMENT_GLOB))) >= 2:
+            playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
+            pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
+            if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:
                 return True
             if self.ffmpeg is not None and self.ffmpeg.poll() is not None:
                 # A two-second clip, or a seek into a film's final seconds, can
@@ -1259,8 +1305,15 @@ class Session:
             # Only files the HLS HTTP server is permitted to expose can
             # establish recoverability. Do not follow playlist traversal,
             # absolute paths or unrelated temporary files.
-            if not (name.startswith("segment-") and name.endswith(".ts")
-                    and name[len("segment-"):-len(".ts")].isdigit()):
+            playlist_name = getattr(self, "_playlist_name", HLS_NAME)
+            if playlist_name == HLS_NAME:
+                valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
+            else:
+                match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
+                valid = bool(match and re.fullmatch(
+                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
+                ))
+            if not valid:
                 return False
             try:
                 segment = ROOT / name
