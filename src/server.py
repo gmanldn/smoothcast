@@ -211,19 +211,29 @@ def _listen_addresses(bind: str | None) -> list[str]:
     return [LOOPBACK] if ip.is_loopback else [LOOPBACK, str(ip)]
 
 
+def listen_port(args: list[str]) -> int:
+    """``--port N`` if it is a valid unprivileged TCP port, else the default."""
+    try:
+        port = int(args[args.index("--port") + 1]) if "--port" in args[:-1] else PORT
+    except ValueError:
+        return PORT
+    return port if 1024 <= port <= 65535 else PORT
+
+
 def main(argv: list[str] | None = None) -> None:
     global BIND
     args = sys.argv[1:] if argv is None else argv
+    port = listen_port(args)
     bind = args[args.index("--bind") + 1] if "--bind" in args[:-1] else None
     addresses = _listen_addresses(bind)
     BIND = addresses[-1]
     ROOT.mkdir(parents=True, exist_ok=True)
     try:
-        servers = [ThreadingHTTPServer((address, PORT), H) for address in addresses]
+        servers = [ThreadingHTTPServer((address, port), H) for address in addresses]
     except OSError:
-        log_event(f"cannot listen on {addresses} port {PORT}", exc_info=True)
+        log_event(f"cannot listen on {addresses} port {port}", exc_info=True)
         raise
-    log_event(f"listening on {', '.join(addresses)} port {PORT}")
+    log_event(f"listening on {', '.join(addresses)} port {port}")
     try:
         for extra in servers[:-1]:
             threading.Thread(target=extra.serve_forever, daemon=True).start()
