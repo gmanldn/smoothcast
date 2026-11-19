@@ -68,6 +68,23 @@ runs. The probe is deliberately bounded (three calls, two 0.6 s pauses);
 and the actual cast worker's direct-to-HLS branch with fakes. Real device
 decoder/subtitle negotiation remains P0 issue #18.
 
+## Subtitle selection on encoder restarts (P0 SC-015)
+
+`SessionMixin._restart_at` preserves the exact saved external subtitle
+file, its burn-in mode, or the selected embedded *stream index*. It first
+probes the current source and calls `subtitle_restart.validate_restart`
+**inside the existing background worker and before stopping the old stream**.
+A vanished/unsupported sidecar or a missing/bitmap replacement for an
+explicit embedded text track is a visible error; do not silently choose the
+new preferred/forced track or restart without captions. ASS/SSA files must
+always burn in, even if an old persisted state mistakenly says otherwise.
+`tests/test_subtitle_restart.py` executes the real handler with fakes and
+checks no Cast command is sent when selection validation fails.
+
+Subtitle *delay*, changing forced-track overrides, real device renderer
+transfers and timing need additional implementation/physical validation under
+[issue #22](https://github.com/gmanldn/smoothcast/issues/22).
+
 ## HLS generation identity (P1 SC-062)
 
 Every new `streamer.Session.start_transcode` generates a cryptographically
