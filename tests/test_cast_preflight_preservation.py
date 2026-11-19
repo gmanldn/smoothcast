@@ -22,7 +22,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None):
         textwrap.indent(textwrap.dedent(methods[name]), "    ")
         for name in names
     )
-    ns = {"playback_state": playback_state, "threading": threading}
+    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib}
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(
         state=SimpleNamespace(device=device if owner is None else owner),
