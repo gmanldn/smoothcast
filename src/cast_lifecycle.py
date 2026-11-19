@@ -24,6 +24,20 @@ from cast_widgets import APP_NAME, ICON_NAME, save_config, fmt_time, Async
 
 
 class LifecycleMixin:
+    def _cast_preflight_failed(self, message: str) -> None:
+        """A rejected new cast must not tear down its still-owned predecessor."""
+        self._dlna_cancel = None
+        prior = self.session
+        if (prior is not None and prior.active()
+                and getattr(prior.state, "device", None) == self._device()):
+            self.busy = False
+            self.toast(f"Cast not started: {message}", error=True)
+            self._console(f"Cast preparation failed: {message}")
+            self._refresh_controls()
+            return
+        self._cast_failed(message)
+
+
     def _on_close(self, _window) -> bool:
         self._closing = True
         if self._dlna_cancel is not None:
