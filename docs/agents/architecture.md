@@ -11,7 +11,6 @@ The main GTK application is assembled by `src/cast_control.py`, which has
 | Concern | Module |
 | --- | --- |
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
-| Inline settings, searchable preferences | `src/cast_settings.py`, `src/preferences_ui.py` |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`) |
@@ -108,6 +107,12 @@ every playlist segment belongs to its saved generation.
 cross-generation stale requests, narrow allowlists, encoder arguments and
 finalised recovery. All tests use mock encoders/TV and ephemeral local
 servers; do not launch GTK or send commands to a receiver.
+
+## Explicit Cast diagnostics
+
+The opt-in device-card action calls `network_route_ui.start` (GTK-free),
+which runs `network_routes.report` off-thread and rejects stale results.
+See [setup instructions](../../setup/README.md) for second-device checks.
 
 ## Other subsystems
 
