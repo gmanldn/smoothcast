@@ -165,7 +165,10 @@ class PlaylistTests(unittest.TestCase):
         self.assertIn('self.cfg["loop"]', methods["_toggle_loop"])
         self.assertNotIn('self.cfg["loop"]', methods["_load_playlist"])
         self.assertNotIn("self.queue_draw()", methods["_load_playlist"])
-        self.assertIn("self._enqueue(additions)", methods["_load_playlist"])
+        # The chooser lives in _load_playlist; enqueueing happens after the
+        # off-thread parse succeeds in the chosen-file callback.
+        self.assertIn("dialog.open(", methods["_load_playlist"])
+        self.assertIn("self._enqueue(additions)", methods["_playlist_open_chosen"])
         self.assertIn('simple("loop", lambda *a: self._window()._toggle_loop())', source)
 
 
