@@ -20,9 +20,19 @@ import playback_state
 import version
 
 from cast_widgets import APP_NAME, DEFAULTS, fmt_time, SeekBar, LevelMeter, PreviewScreen
-
-
 class UiMixin:
+
+
+    def present(self) -> None:
+        """A launch must always end with a visible, focused window.
+
+        GTK's own present() raises and focuses, but a minimised window stays
+        minimised on some sessions, so clear that first.
+        """
+        self.unminimize()
+        super().present()
+
+
     def _build_ui(self) -> None:
         # Keep the *running* release in the prominent title, not an easily
         # truncated device/status subtitle or a live on-disk git lookup.
@@ -187,6 +197,10 @@ class UiMixin:
         transport = Gtk.Grid(column_spacing=8, row_spacing=8)
         transport.set_halign(Gtk.Align.CENTER)
         self.transport_grid = transport
+        self.start_button = self._icon_button(
+            "media-skip-backward-symbolic", "Back to start (Home)",
+            "transport", self._back_to_start, size=28,
+        )
         self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=28)
         self.back30_button = self._text_button("−30", "Back 30 seconds (Shift+←)", self._skip_back30)
         self.back30_button.add_css_class("transport-step")
@@ -208,9 +222,9 @@ class UiMixin:
         self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=28)
         self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport stop-control", self.stop_stream, size=28)
         self.transport_controls = (
-            self.prev_button, self.back30_button, self.back10_button,
-            self.play_button, self.fwd10_button, self.fwd30_button,
-            self.next_button, self.stop_button,
+            self.start_button, self.prev_button, self.back30_button,
+            self.back10_button, self.play_button, self.fwd10_button,
+            self.fwd30_button, self.next_button, self.stop_button,
         )
         for index, widget in enumerate(self.transport_controls):
             transport.attach(widget, index, 0, 1, 1)
@@ -717,6 +731,20 @@ class UiMixin:
         return button
 
 
+    def _back_to_start(self) -> None:
+        """Send the active cast, or the local preview, back to the start."""
+        self.seek_to(0.0)
+
+
+    def _seek_percent(self, tenth: int) -> None:
+        """Seek to a tenth of the current film (transport digit shortcuts)."""
+        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        if not duration and self._preview_path and self.session is None:
+            duration = self.queue_durations.get(self._preview_path, 0.0)
+        if duration:
+            self.seek_to(duration * tenth / 10.0)
+
+
     def _install_shortcuts(self) -> None:
         controller = Gtk.ShortcutController()
 
@@ -727,6 +755,7 @@ class UiMixin:
 
         add("space", self.toggle_play)
         add("k", self.toggle_play)
+        add("Home", self._back_to_start)
         add("Left", self._skip_back10)
         add("Right", self._skip_forward10)
         add("comma", self._skip_back1)
@@ -1089,7 +1118,8 @@ class UiMixin:
         )
         can_seek = not busy and ((online and not self.external and self.tracker.known and active)
                                  or (local_ready and bool(self.media and self.media.duration)))
-        for button in (self.back10_button, self.back30_button, self.fwd10_button, self.fwd30_button):
+        for button in (self.start_button, self.back10_button, self.back30_button,
+                       self.fwd10_button, self.fwd30_button):
             button.set_sensitive(can_seek)
         has_queue = bool(self.queue)
         index = self.queue.index(self.now_playing) if self.now_playing in self.queue else None

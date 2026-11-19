@@ -172,6 +172,9 @@ class CastControlApp(Adw.Application):
         self.window: MainWindow | None = None
         self.selftest = selftest
         self.selftest_failed = False
+        # Set when the window could not be built: this process must then end
+        # instead of holding the application id with nothing on screen.
+        self.fatal = False
         self._update_started = False
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
@@ -272,10 +275,26 @@ class CastControlApp(Adw.Application):
     def _window(self) -> MainWindow:
         window = self.window
         if window is None:
-            window = MainWindow(self)
+            try:
+                window = MainWindow(self)
+            except Exception as exc:
+                # A window that cannot be built must never leave this process as
+                # a windowless D-Bus primary: every later launch would forward
+                # here and show nothing. Fail loudly and release the app id.
+                self.fatal = True
+                print(f"{APP_NAME} could not build its window: {exc}", file=sys.stderr)
+                GLib.idle_add(self._quit_fatal)
+                raise
             self.window = window
             self.scheme_action.set_state(GLib.Variant("s", window.cfg["color_scheme"]))
         return window
+
+
+    def _quit_fatal(self) -> bool:
+        """End a process whose window failed so the next launch can take over."""
+        self.quit()
+        return False
+
 
     def do_activate(self) -> None:
         window = self._window()
@@ -352,6 +371,7 @@ class CastControlApp(Adw.Application):
         if paths:
             window.open_paths(paths)
 
+
     def do_command_line(self, command_line) -> int:
         raw = command_line.get_arguments()[1:]
         # For GApplication's forwarded command lines, get_cwd() refers to
@@ -422,6 +442,11 @@ def main() -> int:
         result = app.run(argv)
     except Exception as exc:  # pragma: no cover - defensive
         print(f"Cast Control error: {exc}", file=sys.stderr)
+        return 1
+    if app.fatal:
+        # The window was never built: report failure instead of a silent,
+        # windowless process that would swallow the next launch.
+        print("Cast Control stopped: the window could not be built", file=sys.stderr)
         return 1
     if selftest and result == 0:
         if app.selftest_failed:

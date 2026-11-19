@@ -22,6 +22,16 @@ For source-level GUI tests use `tests/gui_source.py`:
 `main_window_methods()` for AST method lookup. **Do not** rebuild a giant
 single GUI file or import GTK during ordinary tests.
 
+## Discovered receiver identity
+
+The selected Cast receiver has a human-friendly `device` and (when mDNS
+provides one) a persisted `device_uuid`. An idle discovery scan may recover
+a renamed receiver **only** if both its UUID and new display name are unique.
+Never migrate selection while a cast, remote URL, startup or transport command
+is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
+not assume a display name alone proves ownership; issue #15 (SC-008)
+still tracks duplicate-name, stale-IP and real-device qualification.
+
 ## HLS stall watchdog (P0 SC-010)
 
 `stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.

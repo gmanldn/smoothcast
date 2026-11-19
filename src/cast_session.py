@@ -1124,14 +1124,6 @@ class SessionMixin:
         self._refresh_controls()
 
 
-    def _seek_percent(self, tenth: int) -> None:
-        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
-        if not duration and self._preview_path and self.session is None:
-            duration = self.queue_durations.get(self._preview_path, 0.0)
-        if duration:
-            self.seek_to(duration * tenth / 10.0)
-
-
     def _skip(self, delta: float) -> None:
         position = (self._preview_position if self.session is None and self._preview_path is not None
                     and not self.external else self.tracker.value())
