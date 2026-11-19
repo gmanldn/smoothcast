@@ -28,6 +28,13 @@ the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
 update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
 compileall locally (`pip install pre-commit && pre-commit install`).
 
+**Dependencies (#254, #255):** `catt` is bounded `>=0.12,<0.14` in
+`pyproject.toml` and `setup/bootstrap.py` (keep them equal; a test checks it).
+CI runs `pip-audit` on the resolved install and CodeQL for Python on PRs,
+pushes and weekly. To adopt a new catt minor: test it against a receiver,
+raise the upper bound in both files and the setup docs, then run the suite.
+Triage CodeQL findings in the Security tab; record dismissals with a reason.
+
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed

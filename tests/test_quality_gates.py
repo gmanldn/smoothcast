@@ -44,5 +44,19 @@ class QualityGateTests(unittest.TestCase):
             self.assertIn(field, template)
 
 
+
+class DependencyGateTests(unittest.TestCase):
+    def test_catt_bound_is_identical_everywhere_and_capped(self):
+        bound = "catt>=0.12,<0.14"
+        self.assertIn(bound, read("pyproject.toml"))
+        self.assertIn(bound, read("setup/bootstrap.py"))
+
+    def test_codeql_and_pip_audit_run_in_ci(self):
+        codeql = read(".github/workflows/codeql.yml")
+        for needle in ("languages: python", "pull_request:", "security-events: write"):
+            self.assertIn(needle, codeql)
+        self.assertIn("pip_audit", read(".github/workflows/verify.yml"))
+
+
 if __name__ == "__main__":
     unittest.main()

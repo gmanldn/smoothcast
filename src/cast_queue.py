@@ -51,13 +51,9 @@ class QueueMixin:
             files = dialog.open_multiple_finish(result)
         except GLib.Error:
             return
-        paths = []
-        for index in range(files.get_n_items()):
-            gfile = files.get_item(index)
-            path = gfile.get_path()
-            if path:
-                paths.append(path)
-        self._enqueue(paths)
+        self._enqueue(playlist_control.natural_order([
+            path for index in range(files.get_n_items())
+            if (path := files.get_item(index).get_path())]))
 
 
     def _file_chosen(self, dialog, result) -> None:
@@ -73,6 +69,7 @@ class QueueMixin:
     def open_paths(self, paths: list[str]) -> None:
         if not paths:
             return
+        paths = playlist_control.natural_order(paths)
         first = paths[0]
         self.set_selection(first)
         if len(paths) > 1:
