@@ -38,9 +38,13 @@ class RegisterTests(unittest.TestCase):
             for nodeid in entries:
                 self.assertGreaterEqual(nodeid.count("::"), 1, nodeid)    # keeps passing tests running
 
-    def test_product_bugs_are_labelled_so_they_are_not_mistaken_for_test_quirks(self):
-        bugs = [n for e in platform_gaps.GAPS.values() for n, r in e.items() if r.startswith("PRODUCT BUG")]
-        self.assertTrue(bugs, "the Windows library-index defect must stay visible")
+    def test_windows_library_index_is_never_silently_skipped_again(self):
+        # #304 is fixed. A register with zero known product bugs is a success,
+        # not a reason to demand a permanent defect in the codebase.
+        for platform, entries in platform_gaps.GAPS.items():
+            for nodeid in entries:
+                self.assertFalse(nodeid.startswith("test_library_index.py::"),
+                                 f"{platform} is suppressing a real media-index regression: {nodeid}")
 
 
 class HookTests(unittest.TestCase):

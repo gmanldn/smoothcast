@@ -17,6 +17,24 @@ index = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(index)
 
 
+def test_windows_large_file_ids_fit_losslessly_in_sqlite(tmp_path):
+    import sqlite3
+    ids = [0, 1, (1 << 63) - 1, 1 << 63, (1 << 64) - 1,
+           (1 << 128) - 1]
+    db = tmp_path / "ids.sqlite3"
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE ids (serial INTEGER NOT NULL)")
+        for number in ids:
+            connection.execute(
+                "INSERT INTO ids(serial) VALUES (?)",
+                (index._sqlite_file_id(number),),
+            )
+        stored = [row[0] for row in connection.execute("SELECT serial FROM ids")]
+    assert stored == [index._sqlite_file_id(n) for n in ids]
+    assert isinstance(stored[2], int)
+    assert isinstance(stored[3], str)
+
+
 def test_windows_direntry_zero_identity_does_not_reject_existing_media(tmp_path):
     """Simulate Windows DirEntry.stat() without needing a Windows runner."""
     root, db = tmp_path / "media", tmp_path / "index.sqlite3"
