@@ -317,13 +317,13 @@ class CastctlSubprocessTests(unittest.TestCase):
             self.assertEqual(castctl.play_toggle("TV"), (True, "done"))
             self.assertEqual(castctl.stop("TV"), (True, "done"))
 
-    def test_seek_clamps_and_passes_int(self):
+    def test_seek_clamps_and_rounds_to_int(self):
         with self._patched_run(returncode=0, stdout="") as _m:
             castctl.seek("TV", -5)
             castctl.seek("TV", 90.7)
         calls = _m.call_args_list
         self.assertEqual(calls[0].args[0][1:], ["-d", "TV", "seek", "0"])
-        self.assertEqual(calls[1].args[0][1:], ["-d", "TV", "seek", "90"])
+        self.assertEqual(calls[1].args[0][1:], ["-d", "TV", "seek", "91"])
 
     def test_volume_clamps(self):
         with self._patched_run(returncode=0, stdout="") as _m:
