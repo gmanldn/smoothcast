@@ -17,6 +17,8 @@ import responsive_layout
 
 import playback_state
 
+import ui_theme
+
 import version
 
 from cast_widgets import APP_NAME, DEFAULTS, fmt_time, SeekBar, LevelMeter, PreviewScreen
@@ -115,6 +117,8 @@ class UiMixin:
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
+        playback.append("Loop all", "app.loop-all")
+        playback.append("Shuffle queue", "app.shuffle-queue")
         playback.append("Save playlist", "app.save-playlist")
         playback.append("Load playlist", "app.load-playlist")
         playback.append("Theater mode", "app.theater")
@@ -768,6 +772,8 @@ class UiMixin:
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("s", self.stop_stream)
+        add("p", self.on_prev)
+        add("n", self.on_next)
         add("<Control>f", lambda: self.queue_search.grab_focus())
         for digit in range(1, 10):
             add(str(digit), lambda d=digit: self._seek_percent(d))
@@ -836,8 +842,8 @@ class UiMixin:
     def _apply_color_scheme(self) -> None:
         if self.cfg.get("auto_theme"):
             import datetime
-            h = datetime.datetime.now().hour
-            scheme = Adw.ColorScheme.PREFER_DARK if (h >= 19 or h < 7) else Adw.ColorScheme.FORCE_LIGHT
+            dark = ui_theme.is_dark_hour(datetime.datetime.now().hour)
+            scheme = Adw.ColorScheme.PREFER_DARK if dark else Adw.ColorScheme.FORCE_LIGHT
             Adw.StyleManager.get_default().set_color_scheme(scheme)
             return
         scheme = {

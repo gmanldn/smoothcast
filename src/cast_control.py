@@ -147,6 +147,7 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
             GLib.timeout_add(400, self._initial_scan)
             GLib.timeout_add(600, self._adopt_session)
             GLib.timeout_add_seconds(5, self._sleep_tick)
+            GLib.timeout_add_seconds(600, self._theme_tick)
 
 
 """Cast Control — modern Chromecast companion."""
@@ -236,6 +237,8 @@ class CastControlApp(Adw.Application):
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
+        simple("loop-all", lambda *a: self._window()._toggle_loop_all())
+        simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
         simple("load-playlist", lambda *a: self._window()._load_playlist())
         simple("theater", lambda *a: self._window()._toggle_theater())
@@ -269,6 +272,8 @@ class CastControlApp(Adw.Application):
         window = self.window
         if window is not None:
             window.cfg["color_scheme"] = value
+            # An explicit choice overrides the time-based schedule.
+            window.cfg["auto_theme"] = False
             save_config(window.cfg)
             window._apply_color_scheme()
 

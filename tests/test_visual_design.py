@@ -112,5 +112,24 @@ class VisualDesignTests(unittest.TestCase):
         self.assertNotIn("Gtk.Paned(", self.source)
 
 
+    def test_auto_theme_schedule_boundaries(self):
+        # SC-125 #134: night is 19:00-06:59 local time.
+        for dark in (19, 23, 0, 6):
+            self.assertTrue(ui_theme.is_dark_hour(dark), dark)
+        for light in (7, 12, 18):
+            self.assertFalse(ui_theme.is_dark_hour(light), light)
+
+    def test_manual_scheme_overrides_auto_theme_and_schedule_reruns(self):
+        control = (ROOT / "src/cast_control.py").read_text("utf-8")
+        # A manual choice must disable the schedule so it actually applies.
+        self.assertIn('window.cfg["auto_theme"] = False', control)
+        # The schedule is re-evaluated while the app runs, not only at startup.
+        self.assertIn("self._theme_tick", control)
+        ui = (ROOT / "src/cast_ui.py").read_text("utf-8")
+        self.assertIn("ui_theme.is_dark_hour(", ui)
+        lifecycle = (ROOT / "src/cast_lifecycle.py").read_text("utf-8")
+        self.assertIn("def _theme_tick", lifecycle)
+
+
 if __name__ == "__main__":
     unittest.main()

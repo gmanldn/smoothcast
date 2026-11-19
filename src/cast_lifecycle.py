@@ -14,6 +14,8 @@ import threading
 
 import diagnostics
 
+import playback_state
+
 import screenshot
 
 import version
@@ -213,6 +215,9 @@ class LifecycleMixin:
             ("<Shift>Right", "Skip forward 30 seconds"),
             ("J", "Skip back 10 seconds"),
             ("L", "Skip forward 10 seconds"),
+            ("comma", "Step back one frame"),
+            ("period", "Step forward one frame"),
+            ("Home", "Back to start"),
             ("Up", "Volume up 5%"),
             ("Down", "Volume down 5%"),
             ("M", "Mute"),
@@ -222,6 +227,9 @@ class LifecycleMixin:
             ("<Control>o", "Open a video"),
             ("<Control>a", "Add videos to queue"),
             ("<Control>f", "Search queue"),
+            ("<Control>w", "Stop the stream"),
+            ("<Control>q", "Quit"),
+            ("<Control>question", "This shortcuts window"),
         ]
         for accel, title in shortcuts:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -237,6 +245,13 @@ class LifecycleMixin:
         row.append(label)
         row.append(chips)
         box.append(row)
+        note = Gtk.Label(
+            label="While previewing locally these act on the preview; while "
+                  "casting they act on the TV.",
+            wrap=True, xalign=0.0,
+        )
+        note.add_css_class("dim-label")
+        box.append(note)
         scroller = Gtk.ScrolledWindow()
         scroller.set_child(box)
         toolbar.set_content(scroller)
@@ -319,3 +334,29 @@ class LifecycleMixin:
                 f"Screenshot failed: {message}", error=True,
             ),
         )
+
+
+    def _toggle_loop_all(self) -> None:
+        """Loop the whole queue (wrap last -> first); independent of repeat-one."""
+        self.cfg["loop_all"] = not bool(self.cfg.get("loop_all", False))
+        save_config(self.cfg)
+        self.toast("Loop all on" if self.cfg["loop_all"] else "Loop all off")
+
+
+    def _shuffle_queue(self) -> None:
+        """Deterministically permute the queue so display and skip stay in sync."""
+        if len(self.queue) < 2:
+            self.toast("Nothing to shuffle")
+            return
+        seed = int(self.cfg.get("shuffle_seed", 1)) % 9999 + 1
+        self.cfg["shuffle_seed"] = seed
+        save_config(self.cfg)
+        self.queue = playback_state.shuffle_order(self.queue, seed)
+        self._rebuild_queue()
+        self.toast("Queue shuffled")
+
+
+    def _theme_tick(self) -> bool:
+        """Re-evaluate the time-based theme so it switches at the day boundary."""
+        self._apply_color_scheme()
+        return True

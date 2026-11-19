@@ -684,6 +684,7 @@ class SessionMixin:
         following = playback_state.next_media(
             item, self.queue, repeat_current=bool(self.cfg.get("loop")),
             auto_next=bool(self.cfg.get("autonext")),
+            repeat_all=bool(self.cfg.get("loop_all")),
         )
         if following:
             next_path = pathlib.Path(following)
