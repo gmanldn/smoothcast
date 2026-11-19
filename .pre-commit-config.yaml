@@ -1,0 +1,16 @@
+# Mirrors the CI gates (.github/workflows/verify.yml). Headless only: no hook
+# launches the GTK app or touches a receiver. Install: pip install pre-commit
+# && pre-commit install   (see docs/agents/testing.md).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff
+  - repo: local
+    hooks:
+      - id: compileall
+        name: compileall (src scripts setup tests)
+        entry: python3 -m compileall -q src scripts setup tests
+        language: system
+        pass_filenames: false
+        types: [python]

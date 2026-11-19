@@ -12,7 +12,6 @@ from gui_source import main_window_methods
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-import castctl
 import direct_probe
 import playback_state
 import streamer

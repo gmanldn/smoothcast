@@ -1,7 +1,6 @@
 """Unit tests for pure-logic modules (no GTK/display/device required)."""
 
 import math
-import sys
 
 import pytest
 

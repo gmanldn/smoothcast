@@ -20,6 +20,14 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
+**Quality gates (#250, #252, #253, #262):** `ruff check src scripts setup tests
+sc.py setup.py` (rules in `pyproject.toml`; `ruff format` is configured but not
+gated) fails CI on new violations. The Python 3.13 portable job also runs
+`--cov=src --cov-fail-under=38` (measured baseline 40% on 19 Nov 2026; raise
+the gate, never lower it). Dependabot opens weekly pip and GitHub Actions
+update PRs against `develop`. `.pre-commit-config.yaml` runs Ruff and
+compileall locally (`pip install pre-commit && pre-commit install`).
+
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed

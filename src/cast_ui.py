@@ -23,7 +23,7 @@ import ui_theme
 
 import version
 
-from cast_widgets import APP_NAME, DEFAULTS, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async
+from cast_widgets import APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async
 import network_route_ui
 class UiMixin:
 
