@@ -11,7 +11,7 @@ The main GTK application is assembled by `src/cast_control.py`, which has
 | Concern | Module |
 | --- | --- |
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
-| Searchable detailed settings (delegates to original controls) | `src/preferences_ui.py` and pure `src/preference_choices.py` |
+| Inline settings, searchable preferences | `src/cast_settings.py`, `src/preferences_ui.py` |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`) |
@@ -140,22 +140,3 @@ open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
 Search symbols and affected callers before opening large files; follow runtime
 state ownership through the whole cast/cleanup lifecycle. For historical
 edge-case notes see [archived instructions](../AGENT_REFERENCE.md).
-
-## Preferences and worker ownership
-
-The main player keeps its original live controls inside a collapsed inline
-expander so existing Cast and subtitle handlers retain one source of truth.
-The separate, searchable libadwaita Preferences window is built on demand,
-reads `MainWindow.cfg`, and routes edits through those **same** handlers.
-Never duplicate subtitle validation or issue receiver commands from this view.
-Colour scheme changes go through the registered application action.
-The pure option/index mapping is in `src/preference_choices.py`.
-
-**GTK must remain on the main GLib context.** Network and FFmpeg work is
-already offloaded using `cast_widgets.Async` and explicit media threads.
-Before introducing thread pools or additional asynchronous work, track
-session/receiver generation, completion/cancellation, and callback delivery:
-an unbounded daemon-thread-per-request helper is a target for a separate
-bounded, domain-aware worker lifecycle change. A global fixed pool must not
-put a long-running DLNA conversion ahead of critical transport or device
-polling. See the concurrency/maintainability issue in GitHub Issues.
