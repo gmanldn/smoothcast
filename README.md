@@ -164,7 +164,7 @@ the stream; it validates the software decoding and selected subtitle path.
 
 ## Playback reliability
 
-Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
+If VAAPI stalls and the software retry then succeeds, SmoothCast records that in `~/.cache/cast-control/hw_encoder.json` (keyed by the ffmpeg binary, render device, DRM driver and kernel, expiring after 14 days) and skips the 15 s hardware wait on later casts; upgrading ffmpeg or the kernel re-probes automatically, and `smoothcast --reprobe-encoder` clears the record. The volume measurement used for dialogue auto-trim is cached per file (size/mtime) and audio track, so retries and seek restarts do not repeat it. Speed and rotation selections are preserved if the VAAPI encoder stalls and restarts with the software encoder. For faster/slower playback, FFmpeg reads input at the selected speed (`-readrate`) while rescaling video and audio presentation timestamps. The seekbar, saved position and live device/encoder feedback remain in source-video seconds. Changing speed during direct play transparently starts a transcode of the selected video.
 
 Stop and Pause remain available while the TV consumes a completed HLS buffer. SmoothCast also rejects outdated device replies and avoids switching TV targets mid-cast. A saved direct cast is only reattached when the Chromecast still reports compatible playback.
 
@@ -267,7 +267,9 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Automatic updates without blocking startup
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally.
+
+**Controlling updates** (keys in `~/.config/cast-control/config.json`): set `"auto_update": false` to disable the startup pull entirely (no git or network access at all). Set `"verify_updates": true` to fetch first and fast-forward **only** to a commit — or a tag on that commit — whose signature passes `git verify-commit` / `git verify-tag` against *your own* GPG keyring (import the maintainers' key first); if verification fails SmoothCast reports the pending update and leaves the checkout untouched. Local commits, a dirty tree and non-release branches are never updated either way. There is no Preferences toggle for these yet. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
 
 ## Runtime dependencies
 
@@ -389,6 +391,8 @@ smoothcast --diagnostics /tmp/sc.json
 ```
 
 The same bundle is available from the app menu under **Save diagnostics…**. It works without GTK, a display or a working virtual environment, so it is usable even when setup has failed.
+
+The HLS server also keeps a **bounded `server.log`** in `~/.cache/cast-control/` (same size limits as the error log) recording failed requests (403/404), startup and bind failures; successful requests are not logged. Its redacted tail is included in the diagnostics bundle under `server_log`.
 
 ## License
 

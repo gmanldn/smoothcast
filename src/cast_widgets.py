@@ -77,6 +77,8 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
+    "auto_update": True,  # Startup git pull of a release checkout (#230).
+    "verify_updates": False,  # Require a GPG-verified commit or tag to update.
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 

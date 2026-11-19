@@ -16,6 +16,8 @@ import sys
 import threading
 from urllib.parse import urlsplit
 
+import error_log
+
 ROOT = Path.home() / ".cache" / "cast-control"
 PORT = 8767
 HEALTH_PATH = "/_smoothcast/health"
@@ -23,6 +25,7 @@ HEALTH_BODY = b"SmoothCast HLS server v1\n"
 # Written by the streamer before each cast; read per request so a server kept
 # alive between casts always honours the *current* receiver.
 POLICY_NAME = "server_access.json"
+LOG_NAME = "server.log"
 LOOPBACK = "127.0.0.1"
 # Address this process was told to listen on (health header, for reuse checks).
 BIND = LOOPBACK
@@ -116,9 +119,47 @@ def load_policy(root: Path) -> AccessPolicy:
         return AccessPolicy()  # fail closed: loopback only
 
 
+_LOGS: dict[str, error_log.ErrorLog] = {}
+_LOGS_LOCK = threading.Lock()
+
+
+def server_log() -> error_log.ErrorLog:
+    """Bounded server.log in the cache directory (#232).
+
+    Reuses ErrorLog, so it has the same line, byte and compaction limits as the
+    application error log. One instance per file, safe across handler threads.
+    """
+    path = str(ROOT / LOG_NAME)
+    with _LOGS_LOCK:
+        if path not in _LOGS:
+            _LOGS[path] = error_log.ErrorLog(path)
+        return _LOGS[path]
+
+
+def log_event(message: str, *, exc_info: bool = False) -> None:
+    """Best-effort: a full disk or bad permissions must never break streaming."""
+    try:
+        server_log().add(message, exc_info=exc_info)
+    except Exception:
+        pass
+
+
 class H(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002 (stdlib signature)
+        # Only errors reach this: successful requests are not logged below.
+        log_event(f"{self.address_string()} {format % args}")
+
+    def log_request(self, code="-", size="-") -> None:
+        # A film is thousands of 200 responses; log only failed requests.
+        try:
+            failed = int(code) >= 400
+        except (TypeError, ValueError):
+            failed = True
+        if failed:
+            super().log_request(code, size)
 
     def guess_type(self, path: "str | os.PathLike[str]") -> str:
         """Use stable Cast/HLS MIME types, independent of OS MIME tables."""
@@ -177,11 +218,19 @@ def main(argv: list[str] | None = None) -> None:
     addresses = _listen_addresses(bind)
     BIND = addresses[-1]
     ROOT.mkdir(parents=True, exist_ok=True)
-    servers = [ThreadingHTTPServer((address, PORT), H) for address in addresses]
+    try:
+        servers = [ThreadingHTTPServer((address, PORT), H) for address in addresses]
+    except OSError:
+        log_event(f"cannot listen on {addresses} port {PORT}", exc_info=True)
+        raise
+    log_event(f"listening on {', '.join(addresses)} port {PORT}")
     try:
         for extra in servers[:-1]:
             threading.Thread(target=extra.serve_forever, daemon=True).start()
         servers[-1].serve_forever()
+    except Exception:
+        log_event("server stopped unexpectedly", exc_info=True)
+        raise
     finally:
         for httpd in servers:
             httpd.server_close()

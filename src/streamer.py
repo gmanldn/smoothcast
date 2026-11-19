@@ -14,12 +14,14 @@ import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
 from urllib.parse import urlsplit
 from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
+import hw_encoder_state
 import lan_interfaces
 import process_identity
 import server as hls_server
@@ -181,6 +183,24 @@ def rotation_filters(degrees: int) -> list[str]:
     return list(_ROTATION_FILTERS.get(normalize_rotation(degrees), []))
 
 
+_VOLUME_CACHE: "OrderedDict[tuple, float]" = OrderedDict()
+_VOLUME_CACHE_LIMIT = 64
+_VOLUME_LOCK = threading.Lock()
+
+
+def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
+    """Identity of one measurement; None when the file cannot be identified.
+
+    Size and mtime invalidate the entry when the film changes; the track and
+    window are part of the key because each is a different measurement.
+    """
+    try:
+        info = os.stat(path)
+        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds)
+    except OSError:
+        return None
+
+
 def measure_mean_volume(path: str, max_seconds: int = 60,
                         audio_track_index: int = 0) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of one audio track.
@@ -194,6 +214,16 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     """
     track = (audio_track_index if type(audio_track_index) is int
              and audio_track_index >= 0 else 0)
+    # Results are cached for the running app: a VAAPI-to-software retry and
+    # every seek restart would otherwise repeat a pass that can take 30 s.
+    # Only successful measurements are kept, so a transient failure or
+    # timeout is retried rather than remembered.
+    key = _volume_cache_key(path, max_seconds, track)
+    if key is not None:
+        with _VOLUME_LOCK:
+            if key in _VOLUME_CACHE:
+                _VOLUME_CACHE.move_to_end(key)
+                return _VOLUME_CACHE[key]
     try:
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
@@ -205,9 +235,15 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     for line in result.stderr.splitlines():
         if "mean_volume:" in line:
             try:
-                return float(line.split("mean_volume:")[1].split("dB")[0].strip())
+                value = float(line.split("mean_volume:")[1].split("dB")[0].strip())
             except (ValueError, IndexError):
-                pass
+                continue
+            if key is not None and math.isfinite(value):
+                with _VOLUME_LOCK:
+                    _VOLUME_CACHE[key] = value
+                    while len(_VOLUME_CACHE) > _VOLUME_CACHE_LIMIT:
+                        _VOLUME_CACHE.popitem(last=False)
+            return value
     return None
 
 
@@ -829,6 +865,7 @@ class Session:
         # VAAPI requires Linux's /dev/dri. Windows/macOS use libx264 from
         # the first frame rather than stalling for 15 s on impossible VAAPI.
         self.used_software_fallback = platform.system() != "Linux"
+        self._vaapi_stalled = False  # set only while retrying on software
         self.audio_chain: list = []
         # Progress and segment counts are read by background sampling so GTK
         # callbacks (seekbar/details) never touch the filesystem. The snapshot
@@ -1098,6 +1135,14 @@ class Session:
             temporary.unlink(missing_ok=True)
         return staged
 
+    def _hw_state_path(self) -> pathlib.Path:
+        return ROOT / hw_encoder_state.STATE_NAME
+
+    def _vaapi_known_bad(self) -> bool:
+        """A fresh, matching record says VAAPI stalled here before (#236)."""
+        return hw_encoder_state.is_known_bad(
+            self._hw_state_path(), hw_encoder_state.current_key(VAAPI_PATH))
+
     def _hwaccel_args(self, software: bool) -> list[str]:
         """Hardware decoder args — must come BEFORE -i (input options)."""
         if software:
@@ -1228,6 +1273,9 @@ class Session:
         if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
+        if not self.used_software_fallback and self._vaapi_known_bad():
+            # Skip a hardware start that already stalled on this exact setup.
+            self.used_software_fallback = True
         software = self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
@@ -1298,6 +1346,9 @@ class Session:
                 _terminate(self.ffmpeg)
                 self.ffmpeg = None
                 self.used_software_fallback = True
+                # Persist only if the software retry then succeeds: a broken
+                # source must not get hardware encoding disabled.
+                self._vaapi_stalled = True
                 self.start_transcode(
                     media, offset, device=device, quality=quality,
                     audio_profile=audio_profile, subs_file=subs_file,
@@ -1309,6 +1360,10 @@ class Session:
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
+        if self._vaapi_stalled:
+            self._vaapi_stalled = False
+            hw_encoder_state.record_failure(
+                self._hw_state_path(), hw_encoder_state.current_key(VAAPI_PATH))
         url = f"http://{local_ip}:{PORT}/{self._playlist_name}"
         cast_args = ["-d", device, "cast", "--stream-type", "live", "-l", title, url]
         if not burn_subs and receiver_subs is not None and receiver_subs.suffix.lower() in CAST_SUBTITLE_EXTS:

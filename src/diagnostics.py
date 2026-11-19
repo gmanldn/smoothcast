@@ -22,6 +22,7 @@ import time
 MAX_BUNDLE_BYTES = 256 * 1024
 MAX_ERROR_LINES = 200
 MAX_ACTIVITY_LINES = 100
+MAX_SERVER_LINES = 100
 MAX_STRING = 500
 MAX_LOG_READ = 2 * 1024 * 1024
 
@@ -119,7 +120,7 @@ def redact_config(config: object, *, home: str | None = None) -> object:
     return config
 
 
-def collect(*, error_log=None, activity=None, config=None, home=None) -> dict:
+def collect(*, error_log=None, activity=None, config=None, home=None, server_log=None) -> dict:
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
 
@@ -135,6 +136,9 @@ def collect(*, error_log=None, activity=None, config=None, home=None) -> dict:
                    for line in _tail(error_log, MAX_ERROR_LINES)],
         "activity": [redact(line, home=home_value)
                      for line in _tail(activity, MAX_ACTIVITY_LINES)],
+        # HLS server errors (bad requests, bind failures, crashes), redacted.
+        "server_log": [redact(line, home=home_value)
+                       for line in _tail(server_log, MAX_SERVER_LINES)],
         "config": redact_config(config or {}, home=home_value),
     }
     for name, args in (
@@ -177,6 +181,10 @@ def default_error_log_path() -> Path:
     return Path.home() / ".config" / "cast-control" / "errors.log"
 
 
+def default_server_log_path() -> Path:
+    return Path.home() / ".cache" / "cast-control" / "server.log"
+
+
 def default_path(*, directory=None, now: float | None = None) -> Path:
     base = Path(directory) if directory else Path.home() / ".config" / "cast-control"
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
@@ -184,11 +192,14 @@ def default_path(*, directory=None, now: float | None = None) -> Path:
 
 
 def export(*, destination=None, error_log=None, activity=None, config=None,
-           home=None) -> Path:
+           home=None, server_log=None) -> Path:
     """Collect and write a bounded, redacted bundle; return the written path."""
     if error_log is None:
         error_log = default_error_log_path()
-    payload = collect(error_log=error_log, activity=activity, config=config, home=home)
+    if server_log is None:
+        server_log = default_server_log_path()
+    payload = collect(error_log=error_log, activity=activity, config=config, home=home,
+                      server_log=server_log)
     return write_bundle(destination or default_path(), payload)
 
 

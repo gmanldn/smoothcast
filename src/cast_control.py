@@ -352,8 +352,11 @@ class CastControlApp(Adw.Application):
             ).start()
 
     def _background_update(self) -> None:
+        cfg = getattr(self.window, "cfg", None) or {}
         notice = update_control.refresh_checkout(
             pathlib.Path(__file__).resolve().parent.parent,
+            enabled=bool(cfg.get("auto_update", True)),
+            verify=bool(cfg.get("verify_updates", False)),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
