@@ -30,3 +30,35 @@ for name in (
     "SMOOTHCAST_GUI_TEST_ISOLATED",
 ):
     os.environ.pop(name, None)
+
+
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+from unittest import mock  # noqa: E402
+
+import pytest  # noqa: E402
+
+# Only this module exercises the real FFmpeg version probe (#242).
+_REAL_FFMPEG_PROBE_MODULES = {"test_ffmpeg_version_guard"}
+
+
+@pytest.fixture(autouse=True)
+def _stub_ffmpeg_version_probe(request):
+    """Tests that mock subprocesses must not hit the real ``ffmpeg -version`` probe.
+
+    ``Session.start_transcode`` now verifies the FFmpeg version first (a
+    subprocess). Tests that drive it with a mocked ``Popen`` would otherwise
+    depend on whether the machine has a compatible ffmpeg and on how Popen is
+    mocked, so the probe is stubbed everywhere except its own tests.
+    """
+    if request.module.__name__ in _REAL_FFMPEG_PROBE_MODULES:
+        yield
+        return
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    try:
+        import streamer
+    except ImportError:
+        yield
+        return
+    with mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)):
+        yield
