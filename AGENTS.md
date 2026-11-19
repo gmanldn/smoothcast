@@ -22,7 +22,7 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 
 ## Rules
 
-- **Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
+- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
   before work, `Refs #N` in commits, close only when every acceptance criterion
   (incl. hardware) is verified. [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
@@ -30,7 +30,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
   device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- **Release authority:** `src/version.py`; the commit SHA names a dev revision.
+- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
+  names a development revision; `./smoothcast --version` is GUI-free.
 
 ## Testing — no desktop focus
 

@@ -98,7 +98,7 @@ amend commits that are already on `origin`.
 3. Merges made with the workflow token do not start new workflow runs, so
    `main` is not re-verified; its tree is identical to the verified `develop`
    commit by construction.
-4. **Publishing** is separate and explicit. Dry-run *Release SmoothCast* from
+4. **Publishing** is separate and explicit. **Dry run first:** run *Release SmoothCast* from
    Actions (`tag=vX.Y.Z`, *publish* off: builds the sdist and wheel, installs
    the wheel headlessly, writes `SHA256SUMS` and notes, uploads them as a
    workflow artifact), then tag the release commit on `main`
