@@ -30,7 +30,23 @@ class IndexError(RuntimeError):
 
 
 def _db_open(db: Path) -> sqlite3.Connection:
-    db.parent.mkdir(parents=True, exist_ok=True)
+    # Local media paths and fingerprints are private. Never leave new cache
+    # files world-readable under a permissive umask or follow a cache symlink.
+    db.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if db.is_symlink():
+        raise IndexError("Refusing a symbolic link as the library database")
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(db, flags | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        fd = os.open(db, flags | getattr(os, "O_NONBLOCK", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise IndexError("Library database must be a regular file")
+        if os.name == "posix":
+            os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
     connection = sqlite3.connect(db, timeout=5)
     connection.execute("PRAGMA busy_timeout=5000")
     connection.execute("""CREATE TABLE IF NOT EXISTS media (
