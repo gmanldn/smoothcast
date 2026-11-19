@@ -168,6 +168,7 @@ def test_each_encoder_start_generates_unreused_url_and_segment_template():
             for i in range(2):
                 session = streamer.Session()
                 stack.enter_context(mock.patch.object(session, "_start_server"))
+                stack.enter_context(mock.patch.object(session, "_await_receiver"))
                 stack.enter_context(mock.patch.object(session, "_start_sampler"))
                 stack.enter_context(mock.patch.object(session, "_wait_for_segments", return_value=True))
                 session.start_transcode(

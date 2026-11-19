@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from urllib.parse import urlsplit
 from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
@@ -24,6 +25,7 @@ import cache_policy
 import castctl
 import hw_encoder_state
 import lan_interfaces
+import playback_state
 import process_identity
 import process_priority
 import server as hls_server
@@ -1445,14 +1447,10 @@ class Session:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
-        time.sleep(2.0)
-        if self.caster.poll() not in (None, 0):
-            output = ""
-            try:
-                output = self.caster.stdout.read() if self.caster.stdout else ""
-            except Exception:
-                pass
-            raise StreamError((output or "casting failed").strip()[-300:])
+        self._await_receiver(
+            device,
+            lambda info: playback_state.hls_session_matches(info, url, title),
+        )
         self.state = SessionState(
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
@@ -1489,6 +1487,42 @@ class Session:
                 return self.ffmpeg.returncode == 0 and self._playlist_is_complete(playlist)
             time.sleep(0.25)
         return False
+
+    def _await_receiver(
+        self, device: str, matches: Callable[[dict | None], bool], *,
+        timeout: float = 10.0, interval: float = 0.25,
+    ) -> None:
+        """Confirm the receiver plays our media before a cast is treated as started.
+
+        A fixed sleep cannot tell a successful cast from one that fails a moment
+        later. Poll the receiver's own state until it reports our content, or a
+        clear timeout; a catt process that exits non-zero fails immediately.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.caster is not None and self.caster.poll() not in (None, 0):
+                raise StreamError(self._caster_output("casting failed"))
+            try:
+                info = castctl.info(device)
+            except (OSError, ValueError, TypeError):
+                info = None
+            if matches(info):
+                return
+            if time.monotonic() >= deadline:
+                raise StreamError(self._caster_output(
+                    "The receiver did not start playing this title in time"))
+            time.sleep(interval)
+
+    def _caster_output(self, fallback: str) -> str:
+        """Best-effort catt output for an error; never block on a live catt."""
+        output = ""
+        try:
+            if (self.caster is not None and self.caster.stdout is not None
+                    and self.caster.poll() is not None):
+                output = self.caster.stdout.read()
+        except Exception:
+            pass
+        return (output or fallback).strip()[-300:]
 
     def _playlist_is_complete(self, playlist: pathlib.Path) -> bool:
         """True when a finalised playlist references only complete segments."""
@@ -1551,14 +1585,10 @@ class Session:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
-        time.sleep(2.5)
-        if self.caster.poll() is not None and self.caster.returncode != 0:
-            output = ""
-            try:
-                output = self.caster.stdout.read() if self.caster.stdout else ""
-            except Exception:
-                pass
-            raise StreamError((output or "direct play failed").strip()[-300:])
+        self._await_receiver(
+            device,
+            lambda info: playback_state.direct_session_matches(info, title),
+        )
         # A previously watched file must resume on the TV, not merely report
         # its old position in the GUI. Fail the direct attempt if the receiver
         # cannot seek, so the caller can recover using an offset transcoder.

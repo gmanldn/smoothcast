@@ -175,6 +175,7 @@ class StreamerIntegrationTests(unittest.TestCase):
                  mock.patch.object(session, "_wait_for_segments", return_value=True), \
                  mock.patch.object(streamer, "_save_session"), \
                  mock.patch.object(streamer.time, "sleep"), \
+                 mock.patch.object(session, "_await_receiver"), \
                  mock.patch.object(streamer.subprocess, "Popen", return_value=proc):
                 session.start_transcode(
                     media, 0.0, device="TV", device_ip="192.168.1.50", quality="balanced",

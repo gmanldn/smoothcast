@@ -120,6 +120,7 @@ class StartupBehaviourTests(unittest.TestCase):
              mock.patch.object(streamer, "_terminate"), \
              mock.patch.object(streamer, "_save_session"), \
              mock.patch.object(streamer.time, "sleep"), \
+             mock.patch.object(session, "_await_receiver"), \
              mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
             try:
                 session.start_transcode(
