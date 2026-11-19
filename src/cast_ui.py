@@ -101,6 +101,23 @@ class UiMixin:
         self.set_content(self.toasts)
 
 
+    def action_preferences(self) -> None:
+        """Reuse one searchable preferences window, keeping the player clean."""
+        from preferences_ui import PreferencesWindow
+
+        preferences = getattr(self, "_preferences_window", None)
+        if preferences is None:
+            preferences = PreferencesWindow(self)
+            preferences.connect("close-request", self._preferences_closed)
+            self._preferences_window = preferences
+        preferences.sync_from_owner()
+        preferences.present()
+
+    def _preferences_closed(self, _window) -> bool:
+        self._preferences_window = None
+        return False
+
+
     def _build_menu(self) -> Gio.Menu:
         menu = Gio.Menu()
         section = Gio.Menu()
@@ -153,6 +170,7 @@ class UiMixin:
             item.set_action_and_target_value("app.color-scheme", GLib.Variant("s", value))
             scheme.append_item(item)
         menu.append_submenu("Appearance", scheme)
+        menu.append("Preferences…", "app.preferences")
         help_menu = Gio.Menu()
         help_menu.append("Keyboard shortcuts", "app.shortcuts")
         help_menu.append("Save diagnostics…", "app.save-diagnostics")
@@ -505,6 +523,20 @@ class UiMixin:
         )
         card.add_css_class("settings-card")
         body.set_spacing(11)
+        # The player stays media-first. Existing controls remain available
+        # without a duplicated handler or broken cross-module widget reference.
+        preferences_button = Gtk.Button(label="Open Preferences…")
+        preferences_button.set_halign(Gtk.Align.START)
+        preferences_button.set_tooltip_text("Search all playback, sound, subtitle and appearance settings (Ctrl+,)")
+        preferences_button.connect("clicked", lambda _button: self.action_preferences())
+        body.append(preferences_button)
+        inline = Gtk.Expander(label="Show inline playback controls")
+        inline.set_expanded(False)
+        inline.set_tooltip_text("The familiar quality, sound and caption controls")
+        inline_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=11)
+        inline.set_child(inline_body)
+        body.append(inline)
+        body = inline_body
         self._syncing = True
 
         def group(title: str) -> None:
@@ -629,7 +661,7 @@ class UiMixin:
             bool(self.cfg["direct"]),
             self._on_direct,
         )
-        self._switch_row(
+        self.keep_switch = self._switch_row(
             body,
             "Keep streaming after closing",
             "The TV keeps playing if the app exits",
