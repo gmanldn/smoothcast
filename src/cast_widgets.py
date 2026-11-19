@@ -62,6 +62,7 @@ DEFAULTS: dict = {
     "auto_theme": False,
     "recents": [],
     "favourites": [],
+    "watch_history": [],
     "positions": {},
     "loop": False,
     "loop_all": False,

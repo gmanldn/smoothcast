@@ -135,5 +135,20 @@ class ConfigRecoveryTests(unittest.TestCase):
         self.assertEqual(cfg["device_last_used"], {"TV": 5.0})
 
 
+    def test_watch_history_entries_are_validated_and_bounded(self):
+        defaults = real_defaults()
+        raw = {"watch_history": [
+            {"path": "/a.mkv", "event": "start", "source": "cast",
+             "position": 1.0, "at": 2.0},
+            {"path": "/b.mkv", "event": "bogus", "source": "cast",
+             "position": 1.0, "at": 2.0},
+            {"path": "/c.mkv", "event": "stop", "source": "weird",
+             "position": 1.0, "at": 2.0},
+            "not-a-dict",
+        ]}
+        cfg = config_control.sanitise_config(raw, defaults)
+        self.assertEqual([e["path"] for e in cfg["watch_history"]], ["/a.mkv"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ import time
 from utils import pretty_title
 import streamer
 import cast_targets
+import watch_history
 
 import responsive_layout
 
@@ -114,6 +115,7 @@ class UiMixin:
             recents.append("Clear recent files", "app.clear-recents")
         menu.append("Open URL…", "app.open-url")
         menu.append("Screenshot", "app.screenshot")
+        menu.append("Benchmark playback quality…", "app.benchmark")
         menu.append_submenu("Open recent", recents)
         favourites = Gio.Menu()
         for index, path in enumerate(self.cfg["favourites"][:16]):
@@ -127,6 +129,7 @@ class UiMixin:
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
         playback.append("Pin or unpin receiver", "app.pin-receiver")
+        playback.append("Clear watch history", "app.clear-history")
         playback.append("Loop all", "app.loop-all")
         playback.append("Shuffle queue", "app.shuffle-queue")
         playback.append("Save playlist", "app.save-playlist")
@@ -1273,3 +1276,29 @@ class UiMixin:
         save_config(self.cfg)
         self.menu_button.set_menu_model(self._build_menu())
         self.toast(f"{'Pinned' if pinned else 'Unpinned'} receiver: {device}")
+
+
+    def _record_watch(self, event: str) -> None:
+        """Append a bounded watch-history entry for the current film."""
+        previewing = self.session is None and self._preview_path is not None
+        path = self._preview_path if previewing else self.now_playing
+        if not path:
+            return
+        source = "preview" if previewing else "cast"
+        position = self._preview_position if previewing else (self.tracker.value() or 0.0)
+        history = watch_history.record(
+            self.cfg.get("watch_history"), path, event, position, time.time(),
+            source=source,
+        )
+        if event == "start" and position:
+            history = watch_history.record(
+                history, path, "resumed", position, time.time(), source=source,
+            )
+        self.cfg["watch_history"] = history
+        save_config(self.cfg)
+
+
+    def _clear_watch_history(self) -> None:
+        self.cfg["watch_history"] = watch_history.clear()
+        save_config(self.cfg)
+        self.toast("Watch history cleared")

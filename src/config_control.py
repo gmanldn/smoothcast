@@ -9,6 +9,8 @@ from copy import deepcopy
 from itertools import islice
 import math
 
+import watch_history
+
 
 _OPTIONS = {
     "quality": frozenset({"high", "balanced", "saver"}),
@@ -50,6 +52,26 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
         if key in _OPTIONS:
             if isinstance(value, str) and value in _OPTIONS[key]:
                 cfg[key] = value
+        elif key == "watch_history":
+            if isinstance(value, list):
+                clean = []
+                for item in islice(value, _MAX_ITEMS):
+                    if not isinstance(item, dict):
+                        continue
+                    path = item.get("path")
+                    event = item.get("event")
+                    source = item.get("source")
+                    position = item.get("position")
+                    at = item.get("at")
+                    if (isinstance(path, str) and 0 < len(path) <= _MAX_PATH
+                            and event in watch_history.EVENTS
+                            and source in watch_history.SOURCES
+                            and _number(position) and _number(at)):
+                        clean.append({
+                            "path": path, "event": event, "source": source,
+                            "position": float(position), "at": float(at),
+                        })
+                cfg[key] = clean[:watch_history.LIMIT]
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (
