@@ -1,5 +1,9 @@
 # SmoothCast releases — PyInstaller is canonical
 
+**Integration flow:** package changes are reviewed and tested on `develop`;
+`main` receives release merges only. Keep the runtime version authority in
+`src/version.py` and do not publish directly from an unqualified feature PR.
+
 **Use PyInstaller for distributed applications.** A Python wheel is still
 validated for library/install contract tests; it is not the end-user release
 format. The existing `setup/linuxsetup.sh`, `setup/macsetup.sh` and
