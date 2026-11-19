@@ -13,9 +13,13 @@ permissions:
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
+# Every push to develop or main gets its own run (the group is the commit SHA),
+# so no integration commit is ever cancelled or replaced while queued: each one
+# is verified and the release promotion job can fire. Pull requests share one
+# group per branch and a newer push cancels the superseded run.
 concurrency:
-  group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: smoothcast-verify-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
