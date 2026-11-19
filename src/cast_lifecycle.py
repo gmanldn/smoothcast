@@ -160,8 +160,6 @@ class LifecycleMixin:
         # Reset level meters.
         if self.meter is not None:
             self.meter.reset()
-        if self.master_meter is not None:
-            self.master_meter.reset()
 
         # Reset details card labels.
         if hasattr(self, "detail_labels"):
