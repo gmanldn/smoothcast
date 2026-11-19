@@ -16,6 +16,7 @@ import signal
 import tempfile
 import time
 
+import cache_policy
 import streamer
 import process_identity
 
@@ -200,7 +201,7 @@ def cleanup_before_window(
         # HLS artefacts. Leave diagnostic logs and all user media untouched.
         root = streamer.ROOT
         files = [streamer.PROGRESS_FILE, root / streamer.HLS_NAME,
-                 *root.glob(streamer.SEGMENT_GLOB)]
+                 *root.glob(streamer.SEGMENT_GLOB), *root.glob("movie-*.m3u8")]
         if not report.retained_stream:
             files.insert(0, streamer.SESSION_FILE)
             # Never remove the captions from a deliberately retained cast;
@@ -222,15 +223,21 @@ def cleanup_before_window(
     surviving = [p for p in processes if p.kind == "monitor"
                  and p.pid not in report.stopped]
     try:
-        candidates = list(scratch_root.glob("cast-mon-*"))[:256]
+        # DLNA conversions leave a multi-GB scratch MP4 if the app is killed;
+        # sweep those too, but only once old enough not to be in preparation.
+        candidates = [(f, 0.0) for f in list(scratch_root.glob("cast-mon-*"))[:256]]
+        candidates += [(f, cache_policy.MIN_STALE_AGE_SECONDS) for f in
+                       list(scratch_root.glob(cache_policy.SCRATCH_PREFIX + "*"))[:256]]
     except OSError:
         candidates = []
-    for folder in candidates:
+    for folder, min_age in candidates:
         try:
             stat = folder.lstat()
             if (not folder.is_dir() or folder.is_symlink()
                     or platform.system() == "Windows"
                     or stat.st_uid != os.getuid()):
+                continue
+            if min_age and time.time() - stat.st_mtime < min_age:
                 continue
             if any(str(folder) in " ".join(p.argv) for p in surviving):
                 continue

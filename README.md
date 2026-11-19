@@ -65,8 +65,11 @@ with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
 non-default audio tracks or selected subtitles require full FFmpeg
 transcoding and burn-in **before playback starts**. For long films this can
 take significant time and disk space (roughly twice the source-file size must
-be available). The application checks local free space and reports conversion
-errors. The DLNA target path currently uses normal playback speed, no video
+be available). The application checks local free space, refuses a conversion
+larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
+default 8192 MB, `0` = unlimited) before FFmpeg starts, sweeps scratch left by a
+crash (`smoothcast-dlna-*` in the system temp directory, once older than 10
+minutes) at the next startup, and reports conversion errors. The DLNA target path currently uses normal playback speed, no video
 rotation and the original sound profile; Chromecast still supports its own
 transcode and audio processing. SRT/ASS burn-in on DLNA depends on libass
 support in your FFmpeg build.
