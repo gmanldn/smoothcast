@@ -64,6 +64,9 @@ def test_ci_builds_wheel_from_sdist_not_checkout_and_scrubs_desktop():
     assert 'import smoothcast_assets' in source
     assert 'assert helper.is_file()' in source
     assert 'assert "gi" not in sys.modules' in source
+    assert "expected_modules = sorted(p.stem" in source
+    assert 'metadata["tool"]["setuptools"]["py-modules"]' in source
+    assert "importlib.util.find_spec(name)" in source
     workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text()
     assert "installed-artifact:" in workflow
     assert "python scripts/ci/verify_installed_artifact.py" in workflow
