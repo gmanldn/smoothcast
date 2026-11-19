@@ -124,6 +124,26 @@ def test_paused_restart_seeks_and_stays_paused():
     assert w.tracker.value(now=w.tracker._epoch + 90.0) == 42.0
 
 
+def test_recovery_after_long_pause_restores_play_and_two_x_source_clock():
+    w, jobs, _ = window("_restart_at")
+    w.device_state = "PAUSED"
+    w.tracker.start(10.0, 200.0, False)
+    session = mock.Mock()
+    session.mode = "transcode"
+    session.state = state()
+    session.state.speed = 2.0
+    media = SimpleNamespace(path=pathlib.Path("/film.mkv"), duration=200.0)
+    with mock.patch.object(streamer, "ffprobe", return_value=media), \
+         mock.patch.object(castctl, "pause", return_value=(True, "")) as pause:
+        w._restart_at(session, 42.0, resume_after_pause=True)
+        work, done, _ = jobs.pop()
+        done(work())
+    pause.assert_not_called()
+    assert session.start_transcode.call_args.kwargs["speed"] == 2.0
+    assert w.tracker.playing is True
+    assert w.tracker.value(now=w.tracker._epoch + 5.0) == 52.0
+
+
 def test_playing_restart_stays_playing():
     w, jobs, _ = window("_restart_at")
     w.jobs = jobs
