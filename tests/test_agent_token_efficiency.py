@@ -42,10 +42,10 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             ROOT / "AGENTS.md",
             *(ROOT / "docs" / "agents").glob("*.md"),
         ]
-        self.assertEqual(len(files), 6, "Expected root plus five handbook pages")
+        self.assertEqual(len(files), 7, "Expected root plus six focused handbook pages")
         index = (ROOT / "docs/agents/README.md").read_text("utf-8")
         for page in ("workflow.md", "testing.md", "architecture.md",
-                     "efficiency.md"):
+                     "efficiency.md", "preferences.md"):
             self.assertIn(page, index)
         for file in files:
             with self.subTest(file=str(file.relative_to(ROOT))):
@@ -62,6 +62,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         testing = (ROOT / "docs/agents/testing.md").read_text("utf-8")
         architecture = (ROOT / "docs/agents/architecture.md").read_text("utf-8")
         efficiency = (ROOT / "docs/agents/efficiency.md").read_text("utf-8")
+        preferences = (ROOT / "docs/agents/preferences.md").read_text("utf-8")
         for word in ("claim", "worktree", "close", "src/version.py"):
             self.assertIn(word, workflow)
         for word in ("focus", "Xvfb", "pytest", "DBus"):
@@ -72,6 +73,8 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             self.assertIn(name, architecture)
         for word in ("Caveman", "Ponytail", "provider tokens"):
             self.assertIn(word, efficiency)
+        for word in ("cast_settings.py", "preferences_ui", "GLib.idle_add"):
+            self.assertIn(word, preferences)
 
     def test_named_skills_are_discoverable_and_do_not_skip_correctness(self):
         for name, must_contain in (
@@ -100,6 +103,9 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             "cast_control.py": 25_000,
             "cast_widgets.py": 32_000,
             "cast_ui.py": 62_000,
+            "cast_settings.py": 10_000,
+            "preferences_ui.py": 14_000,
+            "preference_choices.py": 5_000,
             "cast_queue.py": 36_000,
             "cast_session.py": 48_000,
             "cast_av.py": 28_000,
@@ -124,13 +130,13 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         self.assertEqual(own, ["__init__"], "MainWindow should only define __init__")
         bases = [b.id for b in window.bases if isinstance(b, ast.Name)]
         self.assertEqual(
-            bases[:5],
-            ["UiMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin"],
+            bases[:6],
+            ["UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin"],
         )
 
     def test_gui_source_helper_still_sees_every_main_window_method(self):
         methods = main_window_methods()
-        for name in ("_build_ui", "_cast_path", "_on_close", "toggle_play", "seek_to"):
+        for name in ("_build_ui", "_build_settings_card", "_cast_path", "_on_close", "toggle_play", "seek_to"):
             with self.subTest(method=name):
                 self.assertIn(name, methods)
         self.assertGreaterEqual(len(methods), 148)
