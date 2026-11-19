@@ -361,9 +361,10 @@ class LifecycleMixin:
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
         ).expanduser()
         self.toast("Capturing screenshot…")
+        video_index = media.video_stream_index
         Async.run(
             lambda: screenshot.capture_frame(
-                source, position, output_dir, video_stream_index=media.video_stream_index,
+                source, position, output_dir, video_stream_index=video_index,
             ),
             done=lambda out: self.toast(f"Screenshot saved: {out.name}"),
             failed=lambda message: self.toast(f"Screenshot failed: {message}", error=True),
