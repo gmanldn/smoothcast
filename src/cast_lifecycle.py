@@ -337,7 +337,7 @@ class LifecycleMixin:
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
         ).expanduser()
-        if self.external and self.session is None:
+        if self.external:
             self.toast("Cannot capture another application's TV stream", error=True)
             return
         # A row selection is not playback ownership. Never substitute the
