@@ -282,7 +282,7 @@ class SessionMixin:
                 self._cast_failed(message)
 
         self._cast_starting = True
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="media")
 
 
     def stop_stream(self) -> None:
@@ -355,7 +355,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg))
+        Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg), domain="transport")
 
 
     def toggle_play(self) -> None:
@@ -414,7 +414,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="transport")
 
 
     def seek_to(self, target: float) -> None:
@@ -499,7 +499,7 @@ class SessionMixin:
                 self._refresh_controls()
                 self._poll_device()
 
-            Async.run(work, done=done, failed=failed)
+            Async.run(work, done=done, failed=failed, domain="transport")
             return
 
         self.busy = True
@@ -597,7 +597,7 @@ class SessionMixin:
             else:
                 self._cast_failed(message)
 
-        Async.run(work, done=done, failed=failed)
+        Async.run(work, done=done, failed=failed, domain="media")
 
 
     def _skip_back1(self) -> None:
@@ -938,7 +938,7 @@ class SessionMixin:
                 self._adopting_session = None
             self._console(f"Saved cast inspection failed: {message}")
 
-        Async.run(probe, done=probed, failed=failed)
+        Async.run(probe, done=probed, failed=failed, domain="status")
         self._refresh_controls()
         self._poll_device()
         return False
@@ -996,7 +996,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
 
 
     def _open_url(self) -> None:
@@ -1104,7 +1104,7 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
 
 
     def _toggle_auto_shutdown(self) -> None:
