@@ -189,14 +189,14 @@ def markdown(result: dict) -> str:
         if status == "STALE":
             evidence = f"stale commit; {evidence}"
         elif status == "UNSUPPORTED":
-            evidence = str(item.get("notes", "not supported")).replace("|", "\|").replace("\n", " ")
+            evidence = str(item.get("notes", "not supported")).replace("|", "\\|").replace("\n", " ")
         lines.append(f"| {area} | {label} | {'Yes' if required else 'No'} | {status} | {evidence} |")
     lines += ["", f"**Missing required passes:** {result['pending_required']}",
               f"**Unresolved known failures:** {len(result['known_failures'])}", ""]
     if result["known_failures"]:
         lines.append("## Known failures")
         for failure in result["known_failures"]:
-            label = failure["summary"].replace("\n", " ").replace("|", "\|")
+            label = failure["summary"].replace("\n", " ").replace("|", "\\|")
             lines.append(f"- {label} — [issue]({failure['issue']})")
         lines.append("")
     lines.append("Physical receiver checks require named hardware and recorded results; CI cannot replace them.")
