@@ -589,7 +589,16 @@ class SessionMixin:
             self._refresh_controls()
             self._poll_device()
 
-        Async.run(work, done=done, failed=self._cast_failed)
+        def failed(message):
+            if self.session is session and session.active():
+                self.busy = False
+                self.toast(f"Restart cancelled: {message}", error=True)
+                self._console(f"Original cast preserved: {message}")
+                self._refresh_controls()
+            else:
+                self._cast_failed(message)
+
+        Async.run(work, done=done, failed=failed)
 
 
     def _skip_back1(self) -> None:
