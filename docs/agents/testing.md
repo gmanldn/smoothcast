@@ -53,6 +53,13 @@ running any installed code. This is a Python/package compatibility check,
 lives in `src/smoothcast_assets/local.cast-control.png`, not relative to a
 Git checkout.
 
+**P0 early Cast preparation safety (#13):** missing selected subtitles or an
+undiscovered DLNA renderer must reject the new cast without clearing the
+original active receiver's session, playback clock or audio monitor.
+`tests/test_cast_preflight_preservation.py` executes the real GUI handlers
+with injected objects and no GTK or TV commands. Full retry/alternate
+encoding/device tests and physical receiver verification are separate.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
