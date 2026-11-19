@@ -185,6 +185,8 @@ class H(SimpleHTTPRequestHandler):
         if not isinstance(self.server, ThreadingHTTPServer):
             return False
         address = self.server.server_address[0]
+        if not isinstance(address, str):
+            return False
         host = hosts[0].strip()
         return host in {address, f"{address}:{self.server.server_port}"}
 

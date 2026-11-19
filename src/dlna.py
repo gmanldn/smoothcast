@@ -472,6 +472,8 @@ class ProgressiveFileServer:
                     return self.request_version == "HTTP/1.0"
                 if len(hosts) != 1:
                     return False
+                if not isinstance(self.server, ThreadingHTTPServer):
+                    return False
                 host = hosts[0].strip()
                 return host in {
                     bind_ip, f"{bind_ip}:{self.server.server_port}",
