@@ -181,7 +181,12 @@ def test_long_pause_refuses_foreign_cast_even_if_device_and_title_match():
     window.device_info["content_id"] = "http://192.168.1.50:8767/foreign.m3u8"
     window.toggle_play()
     window._restart_at.assert_not_called()
-    assert len(jobs) == 1  # Existing transport handling; never a takeover cast.
+    assert len(jobs) == 0
+    cast.play.assert_not_called()
+    assert not window.busy
+    window.toast.assert_called_once_with(
+        "Receiver is playing different media; resume cancelled", error=True,
+    )
 
 
 def test_long_pause_does_not_restart_nonowned_or_noncast_stream():
