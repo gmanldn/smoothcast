@@ -233,7 +233,8 @@ class StreamerReliabilityTests(unittest.TestCase):
                 session._start_server()
 
     def test_reused_pid_is_never_killed(self):
-        with mock.patch.object(streamer, "pid_alive", return_value=True), \
+        with mock.patch.object(streamer.process_identity, "psutil", None), \
+             mock.patch.object(streamer, "pid_alive", return_value=True), \
              mock.patch.object(Path, "read_bytes", return_value=b"/usr/bin/firefox\0--new-window\0"), \
              mock.patch.object(streamer.os, "kill") as kill:
             for role in ("server", "encoder", "caster"):
@@ -247,7 +248,8 @@ class StreamerReliabilityTests(unittest.TestCase):
             ("encoder", f"ffmpeg\0-progress\0{streamer.PROGRESS_FILE}\0".encode()),
             ("caster", b"/usr/bin/python3\0/usr/local/bin/catt\0-d\0TV\0cast\0"),
         )
-        with mock.patch.object(streamer, "pid_alive", return_value=True):
+        with mock.patch.object(streamer.process_identity, "psutil", None), \
+             mock.patch.object(streamer, "pid_alive", return_value=True):
             for role, command in cases:
                 with self.subTest(role=role), mock.patch.object(Path, "read_bytes", return_value=command):
                     self.assertTrue(streamer._pid_is_ours(12345, role))
