@@ -30,6 +30,10 @@ FFMPEG_LOG = ROOT / "ffmpeg.log"
 PORT = 8767
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
+HLS_SEGMENT_SECONDS = 4
+HLS_PLAYLIST_SEGMENTS = 12
+# A half-window margin avoids resuming into deleted live HLS segments.
+HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
 _GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
 
 
@@ -1198,7 +1202,8 @@ class Session:
             args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-            "-f", "hls", "-hls_time", "4", "-hls_list_size", "12",
+            "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS),
+            "-hls_list_size", str(HLS_PLAYLIST_SEGMENTS),
             "-hls_flags", "delete_segments+independent_segments",
             "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
             str(ROOT / self._playlist_name),
