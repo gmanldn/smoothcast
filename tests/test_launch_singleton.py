@@ -106,7 +106,6 @@ class AppFailureTests(unittest.TestCase):
         raise AssertionError(f"{class_name} not found")
 
     def test_activation_always_presents_the_window(self):
-        source = CONTROL.read_text(encoding="utf-8")
         for handler in ("do_activate", "do_open", "do_command_line"):
             segment = self.methods("CastControlApp")[handler]
             self.assertIn("window.present()", segment)

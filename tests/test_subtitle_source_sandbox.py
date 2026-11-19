@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import random
-import tempfile
 from unittest import mock
 
 import pytest
