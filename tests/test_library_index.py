@@ -209,3 +209,27 @@ def test_same_size_and_reset_mtime_still_rehashes(tmp_path):
     result = index.scan(root, db)
     assert result["hashed"] == 1 and result["reused"] == 0
     assert index.list_media(db)[0]["sha256"] == hashlib.sha256(b"bbbb").hexdigest()
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX permissions")
+def test_private_sqlite_cache_has_restricted_permissions(tmp_path):
+    import stat
+    root, db = tmp_path / "films", tmp_path / "private" / "index.sqlite3"
+    root.mkdir()
+    (root / "film.mkv").write_bytes(b"a")
+    assert index.scan(root, db)["complete"]
+    assert stat.S_IMODE(db.stat().st_mode) == 0o600
+    assert stat.S_IMODE(db.parent.stat().st_mode) == 0o700
+
+
+def test_symlink_database_is_refused(tmp_path):
+    root = tmp_path / "films"
+    root.mkdir()
+    (root / "movie.mp4").write_bytes(b"a")
+    private = tmp_path / "target.sqlite3"
+    private.write_bytes(b"do not overwrite")
+    link = tmp_path / "index.sqlite3"
+    link.symlink_to(private)
+    with pytest.raises(index.IndexError, match="symbolic link"):
+        index.scan(root, link)
+    assert private.read_bytes() == b"do not overwrite"
