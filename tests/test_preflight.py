@@ -149,6 +149,43 @@ class PreflightTests(unittest.TestCase):
         self.assertIn("self._preflight_ok.add(fingerprint)", work)
         self.assertIn("if previous is not None and previous is self.session", body)
 
+    def test_preflight_maps_motion_video_absolute_index_not_cover_art(self):
+        with TemporaryDirectory() as folder:
+            media = self.media(Path(folder))
+            # The first video stream is artwork; the motion video is stream 3.
+            media.video_stream_index = 3
+            rendered = []
+
+            def complete(args, **_kwargs):
+                if args[0] == "ffprobe":
+                    return subprocess.CompletedProcess(
+                        args, 0, '{"streams":[{"nb_read_frames":"12"}]}', "",
+                    )
+                rendered.append(args)
+                Path(args[-1]).write_bytes(b"encoded motion sample")
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            with mock.patch.object(preflight.subprocess, "run", side_effect=complete):
+                result = preflight.check_media(media)
+            self.assertGreater(result.bytes_rendered, 0)
+            self.assertEqual(len(rendered), 1)
+            args = rendered[0]
+            self.assertEqual(args[args.index("-map") + 1], "0:3")
+            self.assertIn("0:a:0", args)
+
+    def test_invalid_motion_video_index_fails_closed_before_ffmpeg(self):
+        with TemporaryDirectory() as folder:
+            media = self.media(Path(folder))
+            with mock.patch.object(preflight.subprocess, "run") as run:
+                for index in (-1, True, "1", None):
+                    with self.subTest(index=index):
+                        media.video_stream_index = index
+                        with self.assertRaisesRegex(
+                            preflight.PreflightError, "video stream index",
+                        ):
+                            preflight.check_media(media)
+                run.assert_not_called()
+
     def test_real_local_ffmpeg_renders_mkv_when_encoders_installed(self):
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg is None or shutil.which("ffprobe") is None:
