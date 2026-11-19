@@ -225,3 +225,28 @@ def test_missing_psutil_fails_closed_on_windows_and_does_not_kill(monkeypatch):
         assert report.stopped == []
         assert streamer._pid_is_ours(50001, "encoder") is False
         streamer._terminate_pid(50001, "encoder")
+
+
+
+def test_keep_streaming_never_erases_unverified_portable_hls(monkeypatch, tmp_path):
+    """Failed process enumeration is uncertainty, not proof the TV is idle."""
+    monkeypatch.setattr(identity, "psutil", fake_psutil())
+    state = streamer.SessionState(
+        file="/media/movie.mkv", mode="transcode", offset=0,
+        duration=100, device="TV", title="Movie", server_pid=50002,
+    )
+    playlist = tmp_path / "movie.m3u8"
+    playlist.write_text("#EXTM3U\n", encoding="utf-8")
+    saved = tmp_path / "session.json"
+    saved.write_text("streaming", encoding="utf-8")
+    with mock.patch.object(startup_cleanup.platform, "system", return_value="Windows"), \
+         mock.patch.object(streamer, "load_session", return_value=state), \
+         mock.patch.object(streamer, "ROOT", tmp_path), \
+         mock.patch.object(streamer, "SESSION_FILE", saved), \
+         mock.patch.object(streamer, "PROGRESS_FILE", tmp_path / "progress.log"), \
+         mock.patch.object(startup_cleanup, "_stop_orphans") as stop:
+        report = startup_cleanup.cleanup_before_window(
+            keep_streaming=True, temp_root=tmp_path)
+    assert report.retained_stream
+    assert saved.exists() and playlist.exists()
+    assert stop.call_args.args[0] == []
