@@ -11,6 +11,7 @@ repository root. This routing page is the human-readable fallback: open
 | Claim, implement, review or close an issue | [Workflow](workflow.md) and [canonical issues](../ISSUES.md) |
 | Test a change; debug GTK, CI, casting or local state | [Testing and safety](testing.md) |
 | Find code owners; modify playback, devices, UI or setup | [Architecture](architecture.md) |
+| Preferences, UI hierarchy and safe worker ownership | [Preferences & concurrency](preferences.md) |
 | Reduce context, tool output or code size | [Agent efficiency](efficiency.md), [Caveman](../../.kilo/skills/caveman/SKILL.md), [Ponytail](../../.kilo/skills/ponytail/SKILL.md) |
 | Historical rationale, old invariants or regressions | [Full original notes](../AGENT_REFERENCE.md) — **historical; not policy** |
 

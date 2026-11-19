@@ -114,6 +114,20 @@ visible error instead of silently proceeding with another track.
 
 ## Interface and visual design
 
+**Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
+or select **Open Preferences…** in the Playback settings card. A searchable,
+native libadwaita window groups Picture and delivery, Queue behaviour, Audio,
+Captions and Appearance with per-setting explanations and explicit notes about
+when a new cast or encoder restart is required. The main playback card starts
+compact; expand **Show inline playback controls** to use the familiar controls.
+Both views edit the same saved preferences through the existing callbacks.
+Film-specific audio/embedded caption tracks are only enabled when available.
+No settings operation contacts a TV merely by opening the window.
+
+This follows GNOME's guidance on [adaptive layouts](https://developer.gnome.org/hig/guidelines/adaptive.html),
+[application preferences](https://developer.gnome.org/hig/patterns/controls/menus.html)
+and [GTK main-thread ownership](https://docs.gtk.org/gtk4/section-threading.html).
+
 SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
