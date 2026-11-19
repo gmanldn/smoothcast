@@ -35,10 +35,10 @@ class StreamServerTests(unittest.TestCase):
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
 
-    def request(self, path, method="GET"):
+    def request(self, path, method="GET", headers=None):
         conn = HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=3)
         try:
-            conn.request(method, path)
+            conn.request(method, path, headers=headers or {})
             response = conn.getresponse()
             return response.status, response.read(), dict(response.getheaders())
         finally:
@@ -53,6 +53,33 @@ class StreamServerTests(unittest.TestCase):
         self.assertEqual((status, body), (200, b"mpeg-ts"))
         status, body, _ = self.request("/segment-00000.ts", "HEAD")
         self.assertEqual((status, body), (200, b""))
+
+    def test_host_header_rejects_rebinding_on_media_and_health(self):
+        allowed = f"127.0.0.1:{self.httpd.server_address[1]}"
+        for path in ("/movie.m3u8", "/segment-00000.ts", server.HEALTH_PATH):
+            for method in ("GET", "HEAD"):
+                with self.subTest(path=path, method=method):
+                    self.assertEqual(self.request(path, method, {"Host": allowed})[0], 200)
+                    for invalid in ("evil.example", "127.0.0.1.evil.example",
+                                    "127.0.0.1:9999", "8.8.8.8"):
+                        self.assertEqual(
+                            self.request(path, method, {"Host": invalid})[0], 400,
+                            (path, method, invalid),
+                        )
+        self.assertEqual(self.request("/movie.m3u8")[0], 200)
+
+    def test_duplicate_host_headers_are_rejected(self):
+        conn = HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=3)
+        try:
+            conn.putrequest("GET", "/movie.m3u8", skip_host=True)
+            conn.putheader("Host", f"127.0.0.1:{self.httpd.server_address[1]}")
+            conn.putheader("Host", "evil.example")
+            conn.endheaders()
+            response = conn.getresponse()
+            self.assertEqual(response.status, 400)
+            response.read()
+        finally:
+            conn.close()
 
     def test_playlists_and_segments_send_no_cors_wildcard(self):
         # A page on the network must not be able to read the stream through

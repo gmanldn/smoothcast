@@ -171,6 +171,21 @@ class H(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def setup(self) -> None:
+        super().setup()
+        # Slow clients must not occupy a handler thread indefinitely.
+        self.connection.settimeout(15.0)
+
+    def _host_allowed(self) -> bool:
+        hosts = self.headers.get_all("Host", [])
+        if not hosts:
+            return self.request_version == "HTTP/1.0"
+        if len(hosts) != 1:
+            return False
+        address = self.server.server_address[0]
+        host = hosts[0].strip()
+        return host in {address, f"{address}:{self.server.server_port}"}
+
     def log_message(self, format: str, *args) -> None:  # noqa: A002 (stdlib signature)
         # Only errors reach this: successful requests are not logged below.
         log_event(f"{self.address_string()} {format % args}")
@@ -203,6 +218,10 @@ class H(SimpleHTTPRequestHandler):
         policy = load_policy(ROOT)
         if not client_allowed(self.client_address[0], policy):
             self.send_error(403, "Forbidden")
+        elif not self._host_allowed():
+            # The HLS URL uses an interface IP, not an arbitrary hostname.
+            # Reject DNS-rebinding and duplicate Host headers.
+            self.send_error(400, "Invalid HLS Host header")
         elif urlsplit(self.path).path == HEALTH_PATH:
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
