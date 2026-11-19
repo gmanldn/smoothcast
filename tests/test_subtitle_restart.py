@@ -60,6 +60,16 @@ def test_original_external_srt_keeps_selected_file_and_burn_mode(tmp_path):
     assert burned.burn is True
 
 
+def test_selected_filename_with_legal_trailing_space_is_not_normalised(tmp_path):
+    filename = tmp_path / "captions.srt "
+    filename.write_text("caption")
+    # An unusual but valid filename must be preserved byte-for-byte.
+    with pytest.raises(streamer.StreamError, match="missing or unsupported"):
+        subtitle_restart.validate_restart(state(subs=filename), media())
+    # The supported extension guard must not silently choose an unrelated
+    # captions.srt file by trimming/normalising a selected filename.
+
+
 def test_ass_subtitles_never_silently_disappear_if_old_burn_flag_is_false(tmp_path):
     path = tmp_path / "chosen.ass"
     path.write_text("[Script Info]\nTitle: chosen")
