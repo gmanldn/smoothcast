@@ -21,6 +21,8 @@ import dlna
 
 import streamer
 
+import subtitle_restart
+
 import playback_state
 
 import direct_probe
@@ -530,11 +532,7 @@ class SessionMixin:
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
         )
-        burn = bool(state.burn_subs) if state else False
-        subs_path = None
-        if state and state.subs:
-            candidate = pathlib.Path(state.subs)
-            subs_path = candidate if candidate.is_file() else None
+        # Recheck the saved exact caption selection before remote teardown.
         media = self.media if (self.media and file_path and self.media.path == file_path) else None
         # A restart must not silently resume a paused film. Read the intent
         # before the async worker replaces the session/tracker.
@@ -545,19 +543,18 @@ class SessionMixin:
             nonlocal media
             if media is None:
                 media = streamer.ffprobe(file_path)
+            captions = subtitle_restart.validate_restart(state, media)
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
                     media, target, device=device, quality=quality,
-                    audio_profile=audio, subs_file=subs_path, burn_subs=burn, title=title,
+                    audio_profile=audio, subs_file=captions.external,
+                    burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
-                    embedded_subtitle_index=(
-                        state.embedded_subtitle_index
-                        if state is not None and state.embedded_subtitle_index >= 0 else None
-                    ),
+                    embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                 )
             except Exception:
