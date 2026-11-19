@@ -21,7 +21,7 @@ dev = [
 ]
 packaging = [
     "pyinstaller>=6.21,<7",
-    "pillow>=11,<13",
+    "pillow>=11,<14",
 ]
 
 [project.scripts]
