@@ -151,5 +151,19 @@ class FakeReceiverDocTests(unittest.TestCase):
             self.assertIn(needle, usage)
 
 
+class NativeOsPortableTests(unittest.TestCase):
+    def test_portable_suite_runs_on_macos_and_windows_headless_and_is_informational(self):
+        workflow = read(".github/workflows/verify.yml")
+        job = workflow.split("  portable-tests-native:", 1)[1].split("\n  media-integration:", 1)[0]
+        for needle in ("os: [macos-15, windows-2025]", "python -m pytest -q tests",
+                       "continue-on-error: true", "psutil"):
+            self.assertIn(needle, job)
+        self.assertNotIn("test_gui_isolated", job)             # never a GUI
+        # Informational: it must not gate release promotion until it is green.
+        promote = workflow.split("  promote-release:", 1)[1]
+        needs = promote.split("needs: [", 1)[1].split("]", 1)[0]
+        self.assertNotIn("portable-tests-native", needs)
+
+
 if __name__ == "__main__":
     unittest.main()
