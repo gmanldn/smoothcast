@@ -12,6 +12,12 @@ from __future__ import annotations
 # platform -> {test id relative to tests/: reason}
 GAPS: dict[str, dict[str, str]] = {
     "darwin": {
+        "test_caller_media_paths.py::CallerMediaPathTests::test_forwarded_command_line_uses_callers_cwd_not_running_process":
+            "caller working-directory translation assumes POSIX absolute-path semantics",
+        "test_setup_bootstrap.py::SetupContractTests::test_macos_and_windows_never_try_linux_pid_cleanup":
+            "the test assumes psutil is absent; the native job installs psutil, so cleanup runs (test should patch psutil to None)",
+        "test_streamer_reliability.py::StreamerReliabilityTests::test_only_expected_process_command_lines_can_be_restored":
+            "fixture reads a Linux /proc/PID/cmdline tree",
         "test_caller_media_paths.py::CallerMediaPathTests::test_argument_translation_precedes_launcher_chdir":
             "macOS temp dirs resolve through /private; the test compares the unresolved path (test-side)",
         "test_caller_media_paths.py::CallerMediaPathTests::test_missing_caller_media_must_not_fall_back_to_checkout_decoy":
@@ -32,6 +38,14 @@ GAPS: dict[str, dict[str, str]] = {
             "fixture fakes a Linux /proc tree; macOS uses the psutil path",
     },
     "win32": {
+        "test_caller_media_paths.py::CallerMediaPathTests::test_forwarded_command_line_uses_callers_cwd_not_running_process":
+            "caller working-directory translation assumes POSIX absolute-path semantics",
+        "test_setup_bootstrap.py::SetupContractTests::test_macos_and_windows_never_try_linux_pid_cleanup":
+            "the test assumes psutil is absent; the native job installs psutil, so cleanup runs (test should patch psutil to None)",
+        "test_streamer_reliability.py::StreamerReliabilityTests::test_only_expected_process_command_lines_can_be_restored":
+            "fixture reads a Linux /proc/PID/cmdline tree",
+        "test_agent_token_efficiency.py::AgentTokenEfficiencyTests::test_gui_modules_stay_small_enough_to_read_narrowly":
+            "source-size budgets are measured on a CRLF checkout (Windows adds a byte per line)",
         "test_audio_monitor.py::AudioMonitorReadBoundsTests::test_large_metadata_file_is_consumed_incrementally":
             "scratch file still open when deleted (Windows forbids it)",
         "test_caller_media_paths.py::CallerMediaPathTests::test_action_option_and_uri_are_preserved":
