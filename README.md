@@ -78,6 +78,14 @@ DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
 prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
 also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
+
+On POSIX systems, each DLNA scratch directory has a process-held exclusive
+lease. The FFmpeg converter inherits that lease, so a concurrent SmoothCast
+startup never deletes an old-but-active conversion or playback file. A crashed
+session's directory is reclaimed after the stale-age threshold only once its
+lease can be acquired. Legacy directories without a verifiable lease are kept
+rather than risking another active instance's film. Windows scratch sweeping
+remains disabled pending a safe cross-process ownership mechanism.
 DLNA has automated protocol tests but **has not yet been verified on a real
 television**; device-specific MIME/codec negotiation is a follow-up in
 [GitHub issue #8 (SC-001)](https://github.com/gmanldn/smoothcast/issues/8).
