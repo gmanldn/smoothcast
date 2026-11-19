@@ -100,12 +100,12 @@ def test_closed_pr_event_only_accepts_merged_develop_source():
         {},
     ):
         assert cleanup.event_candidates("pull_request", changed) == ()
-    assert len(cleanup.event_candidates("push", {})) == 8
+    assert len(cleanup.event_candidates("push", {})) == 32
     assert cleanup.event_candidates("schedule", {}) == ()
 
 
 def test_backfill_is_fixed_merged_refs_only_and_excludes_protected():
-    assert len(cleanup.BACKFILL) == 8
+    assert len(cleanup.BACKFILL) == 32
     assert len(set(number for number, _, _ in cleanup.BACKFILL)) == 8
     for number, name, sha in cleanup.BACKFILL:
         assert number > 0 and cleanup._safe_branch(name)
@@ -120,8 +120,8 @@ def test_main_defaults_to_dry_run_and_verifies_repository(monkeypatch, capsys):
                         lambda number, branch, sha, **kwargs:
                         recorded.append(kwargs["apply"]) or "READY sample")
     assert cleanup.main(["--event", "backfill"]) == 0
-    assert recorded == [False] * 8
-    assert capsys.readouterr().out.count("READY sample") == 8
+    assert recorded == [False] * 32
+    assert capsys.readouterr().out.count("READY sample") == 32
 
 
 def test_main_refuses_other_remote(monkeypatch):
