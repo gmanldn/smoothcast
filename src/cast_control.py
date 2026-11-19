@@ -26,6 +26,8 @@ import dlna
 
 import streamer
 
+import smoothcast_assets
+
 import audio_monitor
 
 import responsive_layout
@@ -203,9 +205,14 @@ class CastControlApp(Adw.Application):
                 print(f"SmoothCast startup recovery failed: {exc}", file=sys.stderr)
         GLib.set_prgname(APP_ID)
         Gtk.Window.set_default_icon_name(ICON_NAME)
-        _data_dir = pathlib.Path(__file__).resolve().parent.parent / "data"
+        # The icon must resolve from a built wheel, never depend on an
+        # adjacent Git checkout's data/ directory.
+        _icon = smoothcast_assets.icon_path()
         try:
-            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(_data_dir))
+            if _icon.is_file():
+                Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(
+                    str(_icon.parent)
+                )
         except Exception:
             pass
         error_log.install_excepthook()
