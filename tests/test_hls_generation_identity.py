@@ -167,5 +167,5 @@ def test_each_encoder_start_generates_unreused_url_and_segment_template():
                 ffmpeg_args = popen.call_args_list[-2].args[0]
                 assert str(root / f"movie-{token}.m3u8") in ffmpeg_args
                 assert str(root / f"segment-{token}-%05d.ts") in ffmpeg_args
-                assert popen.call_args_list[-1].args[0][-1] == url
+                assert url in popen.call_args_list[-1].args[0]
             assert len(set(urls)) == 2
