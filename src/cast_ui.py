@@ -101,6 +101,18 @@ class UiMixin:
         self.set_content(self.toasts)
 
 
+    def action_report_problem(self) -> None:
+        """Open a prefilled GitHub bug form in the browser; nothing is sent by the app (#274)."""
+        import issue_report
+
+        try:
+            Gio.AppInfo.launch_default_for_uri(issue_report.report_url(version.label()), None)
+        except GLib.Error as exc:
+            self.toast(f"Could not open the browser: {exc.message}", error=True)
+            return
+        self.toast("Opening GitHub. Attach the file from Save diagnostics… to your report.")
+
+
     def action_preferences(self) -> None:
         """Reuse one searchable preferences window, keeping the player clean."""
         from preferences_ui import PreferencesWindow
@@ -179,6 +191,7 @@ class UiMixin:
         help_menu = Gio.Menu()
         help_menu.append("Keyboard shortcuts", "app.shortcuts")
         help_menu.append("Save diagnostics…", "app.save-diagnostics")
+        help_menu.append("Report a problem…", "app.report-problem")
         help_menu.append("About Cast Control", "app.about")
         help_menu.append("Quit", "app.quit")
         menu.append_section(None, help_menu)
