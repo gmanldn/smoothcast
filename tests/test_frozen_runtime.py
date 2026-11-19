@@ -43,14 +43,14 @@ class FrozenRuntimeTests(unittest.TestCase):
                 )
 
     def test_frozen_catt_requires_console_companion(self):
-        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \\
+        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \
              mock.patch.object(frozen_runtime.sys, "executable", "/tmp/SmoothCast"):
             with mock.patch.object(Path, "is_file", return_value=False):
                 with self.assertRaisesRegex(FileNotFoundError, "console helper"):
                     frozen_runtime.catt_command("catt", ["scan", "-j"])
 
     def test_frozen_catt_helper_identity_is_exact(self):
-        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \\
+        with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \
              mock.patch.object(frozen_runtime, "companion_executable", return_value=Path("/tmp/SmoothCastCLI")):
             self.assertTrue(frozen_runtime.is_our_catt_helper("/tmp/SmoothCastCLI"))
             self.assertFalse(frozen_runtime.is_our_catt_helper("/tmp/NotSmoothCastCLI"))
@@ -112,11 +112,12 @@ class FrozenRuntimeTests(unittest.TestCase):
 
     def test_streamer_direct_and_hls_catt_calls_share_frozen_command(self):
         with mock.patch.object(frozen_runtime, "is_frozen", return_value=True), \
+             mock.patch.object(frozen_runtime, "companion_executable", return_value=Path("/tmp/SmoothCastCLI")), \
              mock.patch.object(castctl.subprocess, "run") as runner:
             castctl._run(["scan", "-j"])
         self.assertEqual(
             runner.call_args.args[0],
-            [sys.executable, frozen_runtime.CATT_FLAG, "scan", "-j"],
+            ["/tmp/SmoothCastCLI", frozen_runtime.CATT_FLAG, "scan", "-j"],
         )
 
     def test_cleanup_recognises_only_our_frozen_server_signature(self):
