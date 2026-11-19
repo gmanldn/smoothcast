@@ -31,6 +31,15 @@ tests in `tests/test_ffmpeg_ci_install.py` inject subprocess behaviour:
 the installer step independently of playback regressions and record which
 signed mirror failed. This is a bounded CI reliability slice of P0 #19.
 
+**Explicit network diagnosis (P0 SC-007):** `smoothcast --network-check
+<private receiver IPv4>` is a local, GTK-free troubleshooting command. The
+route and Cast-port probes are allowed only after the user invokes it.
+`tests/test_network_routes.py` injects fake UDP sockets, TCP connections,
+OS route outputs and HLS responses; running pytest never sends LAN packets.
+A successful local loopback check must never be described as receiver-side
+inbound reachability, nor is VPN/firewall causation proven without a second
+host. Keep printed private IPs out of exported support bundles.
+
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
