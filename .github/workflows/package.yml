@@ -34,7 +34,7 @@ jobs:
       - name: Install GTK4/libadwaita, Python GI and media prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi python3-venv gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gstreamer-1.0 gstreamer1.0-plugins-good gstreamer1.0-gtk4 ffmpeg
+          sudo apt-get install -y python3-gi python3-venv gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gstreamer-1.0 gstreamer1.0-plugins-good libgtk-4-media-gstreamer ffmpeg
       - name: Build and smoke native package without a desktop
         run: |
           /usr/bin/python3 -m venv --system-site-packages .packaging-venv
