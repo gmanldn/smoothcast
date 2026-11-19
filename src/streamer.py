@@ -883,6 +883,10 @@ class Session:
     def _count_segments(self, root=None, pattern=None) -> int:
         segment_root = ROOT if root is None else root
         segment_pattern = SEGMENT_GLOB if pattern is None else pattern
+        if not segment_pattern:
+            # Older/invalid saved state has no verified HLS generation.
+            # Never treat an empty glob as all media or crash background load.
+            return 0
         try:
             return len(list(segment_root.glob(segment_pattern)))
         except OSError:
