@@ -250,6 +250,28 @@ Give the receiver with `-d/--device` (name or IPv4) or the `SMOOTHCAST_DEVICE` e
 
 DLNA renderers are not supported from the command line yet, and a real-receiver check of these commands is device-pending. Portable tests run them against mocked receivers.
 
+## Local control API (opt-in, for Home Assistant and scripts)
+
+A small headless HTTP API controls a Chromecast without the GUI. It is **off by default**: nothing listens until you run it yourself, and it never imports GTK.
+
+```sh
+smoothcast --control-api token          # creates ~/.config/cast-control/control_api_token (0600) and prints it
+smoothcast --control-api serve          # 127.0.0.1:8800, casting disabled
+smoothcast --control-api serve --bind 192.168.1.20 --port 8800 --media-root ~/Videos
+```
+
+Security: every request needs `Authorization: Bearer <token>` (compared in constant time; the token may also come from `SMOOTHCAST_CONTROL_TOKEN`, at least 16 characters). `--bind` accepts only loopback or a private LAN IPv4 address, never `0.0.0.0` or a public one. No CORS headers are sent, so web pages cannot call it. `POST /v1/cast` is refused unless `--media-root DIR` is given, and then only files inside those directories (after resolving `..` and symlinks) can be cast. Request bodies are limited to 64 KiB, one receiver command runs at a time, and the server logs method, path and status only, never tokens. It speaks plain HTTP: keep it on loopback or a trusted LAN, or put a TLS proxy in front.
+
+| Endpoint | Body or query | Result |
+| --- | --- | --- |
+| `GET /v1/health` | none | `{"ok": true, "version": "v1.0.60"}` |
+| `GET /v1/status?device=NAME` | `device` | state, position, duration, title, volume, muted, session |
+| `POST /v1/pause`, `/v1/resume`, `/v1/stop` | `{"device": NAME}` | `{"ok": true, ...}` |
+| `POST /v1/seek` | `{"device": NAME, "time": 90 or "1:02:03"}` | new position and method |
+| `POST /v1/cast` | `{"device": NAME, "file": PATH, "mode", "offset", "subs", "no_subs", "quality", "audio", "title"}` | stream details |
+
+Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad request), 401 (token), 403 (cast not allowed or outside the media roots), 404, 405, 413, 422 (media), 502 (receiver refused) or 503 (receiver unreachable). `device` is a receiver name or IPv4, exactly as for the command line; DLNA renderers are not supported yet. Example: `curl -H "Authorization: Bearer $TOKEN" -d '{"device": "Living Room"}' http://127.0.0.1:8800/v1/pause`. A real-receiver check is still pending; the API is covered by portable tests with fake handlers.
+
 ## Playlists, resume and safe playback transitions
 
 **Save playlist** writes an atomic local `smoothcast_playlist.m3u` under your home directory. **Load playlist** accepts M3U comments and relative paths, skips missing/unavailable entries and removes duplicates without changing the Loop setting. The Loop menu action independently toggles repeat-one.
