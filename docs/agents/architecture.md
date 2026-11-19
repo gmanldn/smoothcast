@@ -35,8 +35,8 @@ still tracks duplicate-name, stale-IP and real-device qualification.
 ## HLS stall watchdog (P0 SC-010)
 
 `stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
-The existing GUI tick supplies *cached* FFmpeg `out_time` and receiver
-`current_time`; the watchdog performs no disk, network, GTK or process work.
+The GUI tick supplies cached FFmpeg and receiver progress; the
+watchdog performs no disk, network, GTK or process work.
 A sustained encoder stall (24 s) or a receiver that stops advancing while
 FFmpeg continues (36 s) can trigger **one** automatic HLS restart at the
 source-file playback position. It requires the receiver to report the **exact
@@ -107,6 +107,13 @@ every playlist segment belongs to its saved generation.
 cross-generation stale requests, narrow allowlists, encoder arguments and
 finalised recovery. All tests use mock encoders/TV and ephemeral local
 servers; do not launch GTK or send commands to a receiver.
+
+## Cast diagnostics and workers
+
+`network_route_ui.start` runs opt-in Cast checks off-thread; late
+results are rejected. See [setup](../../setup/README.md).
+`Async.run` now uses bounded, separate I/O queues with GLib callback
+delivery. See [worker domains](../ASYNC_WORKERS.md).
 
 ## Other subsystems
 

@@ -20,7 +20,7 @@ new partial replacement and **restores the prior directory**. Brand-new
 partial installs are cleaned up on failure. Compatible venvs repaired in place,
 native OS packages, shortcuts and uninstall are not yet fully transactional;
 see P0 issue SC-018 (#25). It then verifies that the actual environment can import GTK4 and
-libadwaita, that stable `catt >= 0.12` is installed (prerelease builds
+libadwaita, that stable `catt >= 0.12, < 0.14` is installed (prerelease builds
 below that floor are rejected even with `python -O`), and that `ffmpeg`,
 `ffprobe`, and `ffplay` **actually start and return success** from bounded
 `-version` probes; PATH presence alone is not sufficient. It registers a per-user application shortcut:
@@ -90,6 +90,21 @@ unavailable; the source IP is still reported. No diagnostic scan is run
 automatically during launch, and no network I/O is done by routine tests.
 The existing redacted support bundle intentionally omits private IPs; this
 local command prints them solely for the person troubleshooting.
+
+### In-window Cast connection check
+
+The **Output device → Check connection** button runs the same private-LAN
+route and TCP 8009/HLS checks for the **selected Google Cast receiver**.
+It is opt-in and runs off the GTK thread; it does not send Play, Seek or
+Stop, change the output target, or begin automatic background probing.
+DLNA devices have different control protocols and are not checked by this
+Cast-specific button.
+
+The result is selectable text, including the exact media-port health URL
+to open **from a second device while SmoothCast's HLS server is running**.
+A healthy local check is not proof of receiver-to-PC reachability.
+If a different receiver is selected before completion, the old result is
+discarded. Do not export private receiver/local IPs in a support bundle.
 
 ## Clean installed wheel, outside the source checkout
 

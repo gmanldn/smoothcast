@@ -112,7 +112,7 @@ class ConfigRecoveryTests(unittest.TestCase):
         package = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"config_control"', package)
         self.assertIn("import config_control", GUI_SOURCE)
-        self.assertIn("config_control.sanitise_config(raw, DEFAULTS)", GUI_SOURCE)
+        self.assertIn("config_control.load_file(CONFIG_FILE, DEFAULTS)", GUI_SOURCE)
 
 
     def test_favourites_are_bounded_strings(self):

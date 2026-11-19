@@ -21,6 +21,7 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import castctl
+import server as hls_server
 import subtitle_encoding
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
@@ -31,6 +32,10 @@ FFMPEG_LOG = ROOT / "ffmpeg.log"
 PORT = 8767
 HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
+HLS_SEGMENT_SECONDS = 4
+HLS_PLAYLIST_SEGMENTS = 12
+# A half-window margin avoids resuming into deleted live HLS segments.
+HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
 _GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
 
 
@@ -600,7 +605,20 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     )
     if result.returncode != 0:
         raise StreamError("ffprobe could not read this file")
-    data = json.loads(result.stdout or "{}")
+    try:
+        data = json.loads(result.stdout or "{}")
+        if not isinstance(data, dict):
+            raise ValueError("ffprobe JSON is not an object")
+        _read_probe(media, data)
+    except (ValueError, TypeError, AttributeError, ArithmeticError, RecursionError) as exc:
+        # ffprobe output is untrusted (damaged file, replaced binary): any
+        # malformed shape is one clear error, never a crash in the GTK thread.
+        raise StreamError("ffprobe returned unusable data for this file") from exc
+    return media
+
+
+def _read_probe(media: MediaInfo, data: dict) -> None:
+    """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
     try:
@@ -669,7 +687,6 @@ def ffprobe(path: pathlib.Path) -> MediaInfo:
     if not media.vcodec:
         raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
-    return media
 
 
 def _direct_capable(media: MediaInfo) -> tuple[bool, str]:
@@ -718,17 +735,29 @@ def _port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _server_healthy() -> bool:
-    """Verify our HLS server is listening; never mistake another app for it."""
+def _server_probe() -> tuple[bool, str | None, int | None]:
+    """Return (healthy, listen address, pid) for the server on our port.
+
+    The address and pid come from headers added with the access restriction;
+    an older server that predates them reports ``(True, None, None)``.
+    """
     connection = HTTPConnection("127.0.0.1", PORT, timeout=0.4)
     try:
         connection.request("GET", "/_smoothcast/health")
         response = connection.getresponse()
-        return response.status == 200 and response.read(64) == b"SmoothCast HLS server v1\n"
+        if response.status != 200 or response.read(64) != b"SmoothCast HLS server v1\n":
+            return False, None, None
+        pid = response.getheader("X-SmoothCast-Pid", "")
+        return True, response.getheader("X-SmoothCast-Bind"), int(pid) if pid.isdigit() else None
     except (OSError, ValueError, HTTPException):
-        return False
+        return False, None, None
     finally:
         connection.close()
+
+
+def _server_healthy() -> bool:
+    """Verify our HLS server is listening; never mistake another app for it."""
+    return _server_probe()[0]
 
 
 @dataclass
@@ -967,13 +996,34 @@ class Session:
         self.server = None
         self.caster = None
 
-    def _start_server(self) -> None:
+    def _start_server(self, bind_ip: str | None = None,
+                      receiver_ip: str | None = None) -> None:
+        """Start (or reuse) the HLS server, reachable only by the receiver.
+
+        The server listens on loopback plus *bind_ip* (never 0.0.0.0) and
+        rejects other clients per the access policy published here before
+        any reuse, so a server kept alive for a previous receiver follows the
+        new one. A kept server bound to a different interface, or one that
+        predates this restriction, is replaced only if its PID is verified
+        as our own server; otherwise the cast is refused.
+        """
+        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip))
         if _port_open(PORT):
-            if _server_healthy():
+            healthy, bound, pid = _server_probe()
+            if not healthy:
+                raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+            if bind_ip is None or bound == bind_ip:
                 return  # Verified server left alive by keep-streaming.
-            raise StreamError(f"Port {PORT} is already occupied by an unrecognised server")
+            if not _pid_is_ours(pid, "server"):
+                raise StreamError(
+                    f"A SmoothCast streaming server on port {PORT} is bound to a different "
+                    "address and could not be verified for replacement; stop it and retry")
+            _terminate_pid(pid, "server")
+            if _port_open(PORT):
+                raise StreamError(f"Port {PORT} is still in use by the previous streaming server")
         self.server = subprocess.Popen(
             frozen_runtime.server_command(SERVER_SCRIPT),
+            [sys.executable, str(SERVER_SCRIPT)] + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -1203,7 +1253,8 @@ class Session:
             args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-            "-f", "hls", "-hls_time", "4", "-hls_list_size", "12",
+            "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS),
+            "-hls_list_size", str(HLS_PLAYLIST_SEGMENTS),
             "-hls_flags", "delete_segments+independent_segments",
             "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
             str(ROOT / self._playlist_name),
@@ -1215,7 +1266,7 @@ class Session:
                 start_new_session=True,
             )
         try:
-            self._start_server()
+            self._start_server(local_ip, device_ip)
         except Exception:
             _terminate(self.ffmpeg)
             self.ffmpeg = None

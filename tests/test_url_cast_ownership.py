@@ -32,7 +32,7 @@ def extracted(*names, async_runs):
         "castctl": castctl,
         "url_control": url_control,
         "time": time,
-        "Async": SimpleNamespace(run=lambda work, done=None, failed=None:
+        "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:
                                  async_runs.append((work, done, failed))),
         "save_config": lambda _cfg: None,
     }

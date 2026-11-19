@@ -10,9 +10,10 @@ Do not load the entire handbook or
 
 - **GitHub Issues are authoritative:** start with
   `python3 scripts/ticket_digest.py --next` for the next unclaimed issue, then
-  read and claim that issue before work; use an isolated branch/worktree, link
-  PRs, and close only when all acceptance criteria (including hardware checks if
-  required) are verified. See [workflow](docs/agents/workflow.md) and
+  read and claim that issue before work; work on an isolated branch/worktree and
+  open PRs against **`develop`** (`main` is protected, release-only), closing
+  only when all acceptance criteria (including hardware checks if required) are
+  verified. See [workflow](docs/agents/workflow.md) and
   [issues](docs/ISSUES.md).
 - **Never lose work:** preserve user changes, local commits and stashes; no
   force-reset or destructive cleanup. Commit and push tested, cohesive fixes.

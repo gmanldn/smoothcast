@@ -11,13 +11,17 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
-    "catt>=0.12",
+    "catt>=0.12,<0.14",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-mock",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "hypothesis",
 ]
 packaging = [
     "pyinstaller>=6.21,<7",
@@ -37,8 +41,9 @@ py-modules = [
     "frozen_entry", "frozen_runtime", "cast_control", "castctl", "cast_targets", "config_control", "audio_monitor", "server", "update_control",
     "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "url_control", "version",
-    "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "subtitle_restart", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
-    "cast_widgets", "cast_ui", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "watch_history", "benchmark",
+    "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "network_route_ui", "subtitle_restart", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
+    "async_jobs", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_lifecycle", "watch_history", "benchmark", "library_index", "queue_metadata",
+    "preferences_ui", "preference_choices",
 ]
 
 [tool.setuptools.package-dir]
@@ -53,3 +58,44 @@ version = {attr = "version.__version__"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Lint gate (CI + pre-commit): correctness rules only, so the gate flags real
+# defects without churning the whole code base. Run: ruff check src scripts setup tests
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["smoothcast"]  # extension-less bash launcher, not Python
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+    # sys.path.insert(0, ".../src") before the import is the repo-wide test and
+    # script idiom; imports cannot precede it.
+    "E402",
+]
+
+[tool.ruff.format]
+# Configured for opt-in use; the gate is lint-only until the tree is reformatted.
+quote-style = "double"
+
+[tool.coverage.run]
+source = ["src"]
+branch = false
+
+[tool.coverage.report]
+show_missing = false
+skip_empty = true
+
+# Incremental type checking (#251): only modules listed here are gated. Add a
+# module once `mypy` is clean for it; GTK-facing modules are out of scope until
+# typed. Run: mypy (reads this table).
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+files = [
+    "src/playlist_control.py", "src/version.py", "src/utils.py",
+    "src/watch_history.py", "src/queue_metadata.py", "src/preflight.py",
+    "src/network_routes.py", "src/dlna.py", "src/server.py",
+]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true

@@ -14,13 +14,9 @@ from position_tracker import PositionTracker
 import pathlib
 
 import sys
-
-from position_tracker import PositionTracker
 import threading
 
 import castctl
-
-import diagnostics
 
 import dlna
 
@@ -46,15 +42,16 @@ import local_playback
 
 import startup_cleanup
 
-from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen
+from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
+from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_lifecycle import LifecycleMixin
 
 
-class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -95,7 +92,6 @@ class MainWindow(UiMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, Adw
         self._last_state = "IDLE"
         self._play_icon_name = "media-playback-start-symbolic"
         self.meter: LevelMeter | None = None
-        self.master_meter: MasterMeter | None = None
         self.preview: PreviewScreen | None = None
         self.monitor: audio_monitor.AudioMonitor | None = None
         self._mon_path: pathlib.Path | None = None
@@ -220,6 +216,8 @@ class CastControlApp(Adw.Application):
         except Exception:
             pass
         error_log.install_excepthook()
+        # Stop accepting queued work and discard callbacks after GTK exits.
+        self.connect("shutdown", lambda _app: Async.shutdown())
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
@@ -229,6 +227,7 @@ class CastControlApp(Adw.Application):
         self.set_accels_for_action("app.open", ["<Control>o"])
         self.set_accels_for_action("app.add-files", ["<Control>a"])
         self.set_accels_for_action("app.shortcuts", ["<Control>question"])
+        self.set_accels_for_action("app.preferences", ["<Control>comma"])
         self.set_accels_for_action("app.stop-stream", ["<Control>w"])
         self.set_accels_for_action("app.quit", ["<Control>q"])
 
@@ -257,6 +256,7 @@ class CastControlApp(Adw.Application):
         for m in (0, 15, 30, 45, 60):
             simple(f"sleep-{m}", lambda *a, mm=m: self._window()._sleep_timer(mm))
         simple("shortcuts", lambda *a: self._window().action_shortcuts())
+        simple("preferences", lambda *a: self._window().action_preferences())
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("open-url", lambda *a: self._window()._open_url())
         simple("screenshot", lambda *a: self._window()._screenshot())

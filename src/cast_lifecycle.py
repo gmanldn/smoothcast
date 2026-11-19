@@ -24,6 +24,20 @@ from cast_widgets import APP_NAME, ICON_NAME, save_config, fmt_time, Async
 
 
 class LifecycleMixin:
+    def _cast_preflight_failed(self, message: str) -> None:
+        """A rejected new cast must not tear down its still-owned predecessor."""
+        self._dlna_cancel = None
+        prior = self.session
+        if (prior is not None and prior.active()
+                and getattr(prior.state, "device", None) == self._device()):
+            self.busy = False
+            self.toast(f"Cast not started: {message}", error=True)
+            self._console(f"Cast preparation failed: {message}")
+            self._refresh_controls()
+            return
+        self._cast_failed(message)
+
+
     def _on_close(self, _window) -> bool:
         self._closing = True
         if self._dlna_cancel is not None:
@@ -160,8 +174,6 @@ class LifecycleMixin:
         # Reset level meters.
         if self.meter is not None:
             self.meter.reset()
-        if self.master_meter is not None:
-            self.master_meter.reset()
 
         # Reset details card labels.
         if hasattr(self, "detail_labels"):
@@ -334,36 +346,28 @@ class LifecycleMixin:
             self.toast("No media loaded", error=True)
             return
         source = pathlib.Path(media.path)
+        try:
+            position = screenshot.owned_frame_time(
+                source, session=self.session, external=self.external,
+                tracker=self.tracker, local_video_path=self._local_video_path,
+                local_stream=self._local_stream if self._local_video_path else None,
+                preview_path=self._preview_path,
+                preview_position=self._preview_position,
+            )
+        except screenshot.CaptureError as exc:
+            self.toast(str(exc), error=True)
+            return
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
         ).expanduser()
-        if self.external and self.session is None:
-            self.toast("Cannot capture another application's TV stream", error=True)
-            return
-        # The cast tracker measures receiver playback, not the local film
-        # preview. Choose the clock that actually owns the visible frame.
-        if self.session is not None:
-            position = self.tracker.value() or 0.0
-        else:
-            position = self._preview_position if self._preview_path == str(source) else 0.0
-            if self._local_video_path == str(source):
-                stream = self._local_stream()
-                if stream is not None:
-                    timestamp = stream.get_timestamp()
-                    if timestamp >= 0:
-                        position = timestamp / 1_000_000
         self.toast("Capturing screenshot…")
-        # FFmpeg, filesystem access and a corrupt input file may block for
-        # seconds. Keep all of it off the GTK event loop.
         video_index = media.video_stream_index
         Async.run(
             lambda: screenshot.capture_frame(
                 source, position, output_dir, video_stream_index=video_index,
             ),
             done=lambda out: self.toast(f"Screenshot saved: {out.name}"),
-            failed=lambda message: self.toast(
-                f"Screenshot failed: {message}", error=True,
-            ),
+            failed=lambda message: self.toast(f"Screenshot failed: {message}", error=True),
         )
 
 

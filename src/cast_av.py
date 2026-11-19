@@ -73,7 +73,7 @@ class AvMixin:
         renderer = self._dlna_renderer(device)
         if renderer is not None:
             Async.run(lambda: dlna.volume(renderer, value),
-                      failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"))
+                      failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"), domain="transport")
         else:
             def done(result):
                 ok, message = result
@@ -82,7 +82,7 @@ class AvMixin:
 
             Async.run(lambda: castctl.volume(device, value),
                       done=done,
-                      failed=lambda msg: self._reject_volume(f"Volume: {msg}"))
+                      failed=lambda msg: self._reject_volume(f"Volume: {msg}"), domain="transport")
         return False
 
 
@@ -117,9 +117,10 @@ class AvMixin:
         renderer = self._dlna_renderer(device)
         if renderer is not None:
             Async.run(lambda: dlna.set_muted(renderer, muted),
-                      failed=lambda msg: self.toast(f"DLNA mute: {msg}", error=True))
+                      failed=lambda msg: self.toast(f"DLNA mute: {msg}", error=True), domain="transport")
         else:
-            Async.run(lambda: castctl.set_muted(device, muted))
+            Async.run(lambda: castctl.set_muted(device, muted), domain="transport",
+                      failed=lambda msg: self.toast(f"Mute failed: {msg}", error=True))
         self.toast("Muted" if muted else "Sound on")
 
 
@@ -386,7 +387,12 @@ class AvMixin:
                 self._restore_cc_toggle(not on)
             self.toast("Captions on" if on and ok else ("Captions off" if ok else (message or "Caption toggle failed")))
 
-        Async.run(work, done=done)
+        def failed(message):
+            self._restore_cc_toggle(not on)
+            self.toast(f"Captions failed: {message}", error=True)
+
+        Async.run(work, done=done, failed=failed, domain="transport",
+                  valid=lambda: not self._closing and self._device() == device)
 
 
     def _restore_cc_toggle(self, active: bool) -> None:
@@ -435,7 +441,7 @@ class AvMixin:
             lambda: screenshot.preview_frame(
                 pathlib.Path(path), position, video_stream_index=video_index,
             ),
-            done=finish, failed=lambda _error: finish(),
+            done=finish, failed=lambda _error: finish(), domain="media",
         )
         return False
 

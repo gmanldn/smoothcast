@@ -7,7 +7,6 @@ No external Python dependencies. Injectable functions support offline tests.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import platform
 import re

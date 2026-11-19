@@ -8,6 +8,7 @@ import textwrap
 import unittest
 
 from gui_source import main_window_methods
+import screenshot as screenshot_module
 
 
 class FakeAsync:
@@ -29,7 +30,11 @@ class CaptureClockTests(unittest.TestCase):
             capture_frame=lambda source, position, output, *, video_stream_index:
                 invocations.append((str(source), position, video_stream_index)) or Path("saved.png")
         )
-        namespace = {"Async": FakeAsync, "pathlib": pathlib, "screenshot": screenshot}
+        namespace = {"Async": FakeAsync, "pathlib": pathlib, "screenshot": SimpleNamespace(
+            capture_frame=screenshot.capture_frame,
+            owned_frame_time=screenshot_module.owned_frame_time,
+            CaptureError=screenshot_module.CaptureError,
+        )}
         code = main_window_methods()["_screenshot"]
         exec(compile("class Window:\n" + textwrap.indent(code, "    "),
                      "<screenshot-window>", "exec"), namespace)
@@ -62,7 +67,7 @@ class CaptureClockTests(unittest.TestCase):
 
     def test_owned_cast_uses_receiver_clock_even_if_local_preview_is_stale(self):
         win, calls, _ = self.make_window()
-        win.session = object()
+        win.session = SimpleNamespace(state=SimpleNamespace(file="/fixtures/film.mkv"))
         win._local_video_path = "/fixtures/film.mkv"
         win._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: 91_000_000)
         win.tracker = SimpleNamespace(value=lambda: 25.25)
