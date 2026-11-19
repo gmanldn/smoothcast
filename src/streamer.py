@@ -824,8 +824,10 @@ class Session:
         )
         self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
         def recovered(pid: int, role: str, created_at: float):
-            if not created_at or not _pid_is_ours(pid, role, created_at):
-                return None  # Older session files lack safe PID-reuse evidence.
+            if (type(created_at) not in (int, float)
+                    or not math.isfinite(created_at) or created_at <= 0
+                    or not _pid_is_ours(pid, role, created_at)):
+                return None  # Old, malformed or reused PID: fail closed.
             return PidHandle(pid, role, created_at)
 
         self.ffmpeg = recovered(state.ffmpeg_pid, "encoder", state.ffmpeg_created_at)
@@ -966,7 +968,7 @@ class Session:
                 (self.state.ffmpeg_pid, "encoder", self.state.ffmpeg_created_at),
                 (self.state.caster_pid, "caster", self.state.caster_created_at),
             ):
-                if created > 0:
+                if type(created) in (int, float) and math.isfinite(created) and created > 0:
                     _terminate_pid(pid, role, created)
         if send_stop:
             castctl.stop(device)
