@@ -130,8 +130,10 @@ class H(SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def end_headers(self):
-        if public_resource(self.path):
-            self.send_header("Access-Control-Allow-Origin", "*")
+        # No Access-Control-Allow-Origin: receivers fetch HLS natively (media
+        # element and native fetches are not CORS-checked) and DLNA renderers
+        # use plain HTTP, so the wildcard only let an unrelated page on the LAN
+        # read the stream. See issue #229.
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 

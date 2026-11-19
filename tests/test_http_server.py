@@ -54,6 +54,18 @@ class StreamServerTests(unittest.TestCase):
         status, body, _ = self.request("/segment-00000.ts", "HEAD")
         self.assertEqual((status, body), (200, b""))
 
+    def test_playlists_and_segments_send_no_cors_wildcard(self):
+        # A page on the network must not be able to read the stream through
+        # CORS; receivers use native media fetches that ignore it (issue #229).
+        for path in ("/movie.m3u8", "/segment-00000.ts"):
+            for method in ("GET", "HEAD"):
+                with self.subTest(path=path, method=method):
+                    status, _, headers = self.request(path, method)
+                    self.assertEqual(status, 200)
+                    headers_ci = {name.lower(): value for name, value in headers.items()}
+                    self.assertNotIn("access-control-allow-origin", headers_ci)
+                    self.assertEqual(headers_ci.get("cache-control"), "no-store")
+
     def test_hls_content_types_and_lengths_are_stable_for_get_and_head(self):
         samples = (
             ("/movie.m3u8", "application/vnd.apple.mpegurl",
