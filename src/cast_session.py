@@ -88,7 +88,7 @@ class SessionMixin:
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
             self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
-            self._cast_failed("DLNA receiver is not currently discovered; scan your network again")
+            self._cast_preflight_failed("DLNA receiver is not currently discovered; scan your network again")
             return
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
@@ -96,7 +96,7 @@ class SessionMixin:
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
         if subs_mode == "pick" and subs_path is None:
-            self._cast_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
+            self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
             return
         # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
         # FFmpeg rather than advertised as unsupported receiver-side tracks.
