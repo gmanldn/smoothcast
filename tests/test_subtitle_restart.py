@@ -158,7 +158,7 @@ def restart_window(session):
             for method_name in (
                 "_cast_failed", "_update_audio_choices", "_start_monitor",
                 "_set_levels_hint", "_refresh_controls", "_poll_device",
-                "_console", "_stop_monitor",
+                "_console", "_stop_monitor", "toast",
             ):
                 setattr(self, method_name, mock.Mock())
 
