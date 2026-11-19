@@ -19,6 +19,7 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+import cache_privacy
 import castctl
 import process_identity
 import server as hls_server
@@ -780,6 +781,7 @@ class SessionState:
 
 def load_session() -> SessionState | None:
     try:
+        cache_privacy.ensure_private_directory(SESSION_FILE.parent)
         raw = json.loads(SESSION_FILE.read_text())
     except (OSError, ValueError):
         return None
@@ -793,10 +795,7 @@ def load_session() -> SessionState | None:
 
 
 def _save_session(state: SessionState) -> None:
-    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SESSION_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(asdict(state)))
-    tmp.replace(SESSION_FILE)
+    cache_privacy.write_private_json_atomic(SESSION_FILE, asdict(state))
 
 
 def clear_session() -> None:
@@ -1055,7 +1054,7 @@ class Session:
             raise StreamError(f"Unsupported subtitle file format: {extension or 'unknown'}")
         if receiver and extension != ".srt":
             raise StreamError("Only SRT supports receiver subtitle normalisation")
-        ROOT.mkdir(parents=True, exist_ok=True)
+        cache_privacy.ensure_private_directory(ROOT)
         staged = ROOT / ("receiver_subs.srt" if receiver else f"burned_subs{extension}")
         if extension == ".srt":
             try:
@@ -1173,7 +1172,7 @@ class Session:
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
         rotation = normalize_rotation(rotation)
-        ROOT.mkdir(parents=True, exist_ok=True)
+        cache_privacy.ensure_private_directory(ROOT)
         # File names, not just query parameters, identify each encoder
         # generation: stale TV requests cannot read the replacement film.
         generation = secrets.token_hex(16)
