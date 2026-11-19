@@ -1,8 +1,6 @@
 """Headless frozen-runtime regression tests; never start GUI or a real receiver."""
 from __future__ import annotations
 
-import importlib
-import os
 from pathlib import Path
 import sys
 import types
