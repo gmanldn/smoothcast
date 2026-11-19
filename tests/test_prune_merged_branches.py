@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from unittest import mock
+import shutil
+import subprocess
 
+import pytest
 from scripts.ci import prune_merged_branches as cleanup
 
 
@@ -129,3 +132,50 @@ def test_main_refuses_other_remote(monkeypatch):
                         lambda *args: "https://github.com/someone/other.git")
     with __import__("pytest").raises(RuntimeError, match="expected repository"):
         cleanup.main(["--event", "backfill", "--apply"])
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="Git unavailable")
+def test_real_git_lease_deletes_only_exact_remote_sha(tmp_path):
+    """A concurrent remote update must defeat the compare-and-delete lease."""
+    remote, checkout = tmp_path / "remote.git", tmp_path / "checkout"
+
+    def git(*args, ok=True):
+        result = subprocess.run(
+            ["git", "-C", str(checkout), *args],
+            capture_output=True, text=True, timeout=15,
+        )
+        if ok:
+            assert result.returncode == 0, result.stderr
+        return result
+
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True,
+                   capture_output=True, timeout=15)
+    subprocess.run(["git", "init", str(checkout)], check=True,
+                   capture_output=True, timeout=15)
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    git("remote", "add", "origin", str(remote))
+    source = checkout / "marker.txt"
+    source.write_text("first", encoding="utf-8")
+    git("add", "marker.txt")
+    git("commit", "-m", "first")
+    git("push", "origin", "HEAD:refs/heads/fix/example")
+    first = git("ls-remote", "--heads", "origin", "refs/heads/fix/example").stdout.split()[0]
+    assert cleanup.SHA.fullmatch(first)
+
+    # Simulate another agent updating the ref between eligibility read and push.
+    source.write_text("second", encoding="utf-8")
+    git("commit", "-am", "second")
+    git("push", "origin", "HEAD:refs/heads/fix/example")
+    second = git("ls-remote", "--heads", "origin", "refs/heads/fix/example").stdout.split()[0]
+    assert first != second
+    ref = "refs/heads/fix/example"
+    denied = git("push", "--porcelain", f"--force-with-lease={ref}:{first}",
+                 "origin", f":{ref}", ok=False)
+    assert denied.returncode != 0
+    assert git("ls-remote", "--heads", "origin", ref).stdout.split()[0] == second
+
+    # The *current* exact SHA may be deleted, and no unrelated refs touched.
+    git("push", "--porcelain", f"--force-with-lease={ref}:{second}",
+        "origin", f":{ref}")
+    assert not git("ls-remote", "--heads", "origin", ref).stdout.strip()
