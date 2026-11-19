@@ -20,7 +20,9 @@ python scripts/build_release.py
 
 Use a virtual environment with `--system-site-packages` if GTK bindings are
 distro/Homebrew/MSYS2-managed. On Windows, use MSYS2 UCRT64 Python for both
-PyGObject and PyInstaller; do **not** mix it with python.org CPython. On macOS,
+PyGObject and PyInstaller; do **not** mix it with python.org CPython.
+Use pacman for native PyInstaller, Pillow and zeroconf: UCRT64 pip may
+otherwise attempt unsupported source builds instead of Windows wheels. On macOS,
 use the Homebrew Python matching the installed PyGObject. Builds use
 `packaging/SmoothCast.spec` and the canonical release version in
 `src/version.py`; neither spec nor build script increments it.

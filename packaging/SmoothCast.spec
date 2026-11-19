@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-ROOT = Path(SPECPATH).resolve().parent.parent
+ROOT = Path(SPECPATH).resolve().parent
 ICON_ROOT = ROOT / "build" / "pyinstaller" / "icons"
 ICON = ICON_ROOT / ("SmoothCast.ico" if sys.platform == "win32" else "SmoothCast.icns")
 if sys.platform in {"win32", "darwin"} and not ICON.is_file():
