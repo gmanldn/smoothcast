@@ -26,6 +26,8 @@ from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+import cache_policy
+
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
 DEVICE_TYPE = "urn:schemas-upnp-org:device:MediaRenderer:1"
@@ -551,6 +553,12 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     free = shutil.disk_usage(output.parent).free
     if free < max(512 * 1024 * 1024, source.stat().st_size * 2):
         raise DlnaError("Not enough free space to prepare a DLNA-compatible MP4")
+    blocked = cache_policy.conversion_blocker(
+        source.stat().st_size * 2, cache_policy.configured_cap_mb(),
+        cache_policy.scratch_in_use(Path(tempfile.gettempdir())) - cache_policy.directory_size(output.parent),
+    )
+    if blocked:
+        raise DlnaError(blocked)
 
     audio_track = int(audio_track)
     selected_audio = next(
