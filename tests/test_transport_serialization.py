@@ -45,11 +45,17 @@ def fixture(mode="direct", *, paused=False):
             self._closing = False
             self.external = False
             self.device_state = "PAUSED" if paused else "PLAYING"
-            self.session = SimpleNamespace(mode=mode, state=SimpleNamespace(file="/film.mkv", device="TV A"))
+            self.session = SimpleNamespace(mode=mode, state=SimpleNamespace(
+                file="/film.mkv", device="TV A", title="Film",
+                stream_url="http://192.168.1.50:8767/movie.m3u8",
+            ))
             self.tracker = mock.Mock()
             self.tracker.duration = 120.0
             self.media = None
-            self.device_info = {"player_state": self.device_state}
+            self.device_info = {
+                "player_state": self.device_state, "title": "Film",
+                "content_id": self.session.state.stream_url,
+            }
             self.seekbar = mock.Mock()
             self.seekbar.buffered = 0.0
             self._preview_path = None
@@ -164,6 +170,18 @@ def test_short_or_unknown_hls_pause_preserves_normal_receiver_resume():
         run_job(jobs)
         cast.play.assert_called_once_with("TV A")
         window.tracker.set_state.assert_called_once_with(True)
+
+
+def test_long_pause_refuses_foreign_cast_even_if_device_and_title_match():
+    window, jobs, cast, _ = fixture(mode="transcode", paused=True)
+    window.tracker.known = True
+    window.tracker.playing = False
+    window.tracker.paused_for.return_value = 120.0
+    window.tracker.value.return_value = 30.0
+    window.device_info["content_id"] = "http://192.168.1.50:8767/foreign.m3u8"
+    window.toggle_play()
+    window._restart_at.assert_not_called()
+    assert len(jobs) == 1  # Existing transport handling; never a takeover cast.
 
 
 def test_long_pause_does_not_restart_nonowned_or_noncast_stream():
