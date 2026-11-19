@@ -273,9 +273,15 @@ def main(argv: list[str] | None = None) -> None:
     addresses = _listen_addresses(bind)
     BIND = addresses[-1]
     ROOT.mkdir(parents=True, exist_ok=True)
+    servers: list[ThreadingHTTPServer] = []
     try:
-        servers = [ThreadingHTTPServer((address, port), H) for address in addresses]
+        for address in addresses:
+            servers.append(ThreadingHTTPServer((address, port), H))
     except OSError:
+        # Partial listen failures must not leak a loopback socket. Otherwise
+        # each retry can consume the port and prevent healthy restarts.
+        for httpd in servers:
+            httpd.server_close()
         log_event(f"cannot listen on {addresses} port {port}", exc_info=True)
         raise
     log_event(f"listening on {', '.join(addresses)} port {port}")

@@ -148,6 +148,23 @@ class StreamServerTests(unittest.TestCase):
         self.assertEqual((status, body), (200, b""))
 
 
+class ListenLifecycleTests(unittest.TestCase):
+    def test_partial_multibind_failure_closes_first_socket_before_retry(self):
+        with tempfile.TemporaryDirectory() as work:
+            first = mock.Mock(spec=ThreadingHTTPServer)
+            with mock.patch.object(server, "ROOT", Path(work)), \
+                 mock.patch.object(server, "_listen_addresses",
+                                   return_value=["127.0.0.1", "192.168.1.5"]), \
+                 mock.patch.object(server, "ThreadingHTTPServer",
+                                   side_effect=[first, OSError("address unavailable")]) as bind, \
+                 mock.patch.object(server, "log_event"):
+                with self.assertRaisesRegex(OSError, "address unavailable"):
+                    server.main(["--port", "8767", "--bind", "192.168.1.5"])
+            self.assertEqual(bind.call_count, 2)
+            first.server_close.assert_called_once_with()
+            first.serve_forever.assert_not_called()
+
+
 class AccessPolicyTests(unittest.TestCase):
     RECEIVER = server.make_policy("192.168.1.50")
 
