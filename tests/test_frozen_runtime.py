@@ -140,7 +140,6 @@ class FrozenRuntimeTests(unittest.TestCase):
         self.assertIsNone(startup_cleanup.process_kind((sys.executable, frozen_runtime.SERVER_FLAG)))
 
     def test_package_workflow_uses_immutable_upstream_action_refs(self):
-        import re
         root = Path(__file__).resolve().parents[1]
         yaml = (root / ".github" / "workflows" / "package.yml").read_text("utf-8")
         refs = [line.strip().removeprefix("- uses: ").strip()
