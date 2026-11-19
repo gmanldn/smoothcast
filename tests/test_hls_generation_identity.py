@@ -35,6 +35,24 @@ def test_generation_names_accept_only_canonical_128_bit_hex_identifiers():
         assert streamer._hls_names_from_url(invalid) == ("", "")
 
 
+def test_missing_saved_stream_url_cannot_scan_all_cached_media(tmp_path):
+    session = streamer.Session()
+    assert session._count_segments(tmp_path, "") == 0
+    state = streamer.SessionState(
+        file="/missing.mkv", mode="transcode", offset=0, duration=9,
+        device="TV", title="Old", stream_url="",
+    )
+    # Exercise real restore/sampler lifecycle but without reading live cache.
+    with mock.patch.object(streamer, "ROOT", tmp_path), \
+         mock.patch.object(streamer, "_pid_is_ours", return_value=False):
+        session.restore(state)
+        try:
+            assert session.segment_count() == 0
+            assert session.recoverable_hls() is False
+        finally:
+            session._stop_sampler()
+
+
 def test_allowed_resources_reject_aliases_and_other_private_files():
     token = "b" * 32
     for allowed in (
