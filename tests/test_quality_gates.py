@@ -139,5 +139,17 @@ class CiConcurrencyTests(unittest.TestCase):
         self.assertNotIn("github.ref }}\n", block)
 
 
+
+class FakeReceiverDocTests(unittest.TestCase):
+    def test_harness_is_documented_and_exercised_by_real_code_paths(self):
+        doc = read("docs/agents/testing.md")
+        for needle in ("tests/fake_receivers.py", "FakeDlnaRenderer", "FakeCast",
+                       "allow_loopback", "advance(seconds)"):
+            self.assertIn(needle, doc)
+        usage = read("tests/test_fake_receivers.py")
+        for needle in ("dlna.Session()", "start_direct", "cli_control.main", "castctl.scan()"):
+            self.assertIn(needle, usage)
+
+
 if __name__ == "__main__":
     unittest.main()
