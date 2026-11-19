@@ -118,6 +118,17 @@ def test_external_tv_content_is_not_captured_from_stale_local_media():
     assert "another application" in w.toast.call_args.args[0]
 
 
+def test_external_takeover_with_stale_session_cannot_capture_old_film():
+    w, jobs, capture = make_window()
+    # The former local session can persist while a different application
+    # becomes the actual visible receiver owner.
+    w.external = True
+    w._screenshot()
+    assert jobs == []
+    capture.assert_not_called()
+    assert "another application" in w.toast.call_args.args[0]
+
+
 def test_local_video_uses_decoder_timestamp_not_selected_queue_or_cast_clock():
     w, jobs, capture = make_window()
     w.session = None
