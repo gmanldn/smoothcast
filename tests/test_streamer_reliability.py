@@ -22,6 +22,7 @@ class StreamerReliabilityTests(unittest.TestCase):
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                  mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                  mock.patch.object(streamer, "host_ip", return_value="192.168.1.23"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                  mock.patch.object(session, "_start_server"), \
                  mock.patch.object(session, "_wait_for_segments", side_effect=[False, True]) as wait, \
                  mock.patch.object(streamer, "_terminate") as terminate, \

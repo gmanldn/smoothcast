@@ -82,6 +82,7 @@ class AudioTrackTests(unittest.TestCase):
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                  mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                  mock.patch.object(streamer, "host_ip", return_value="192.168.1.9"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                  mock.patch.object(session, "_start_server"), \
                  mock.patch.object(session, "_wait_for_segments", return_value=True), \
                  mock.patch.object(streamer, "_save_session"), \
@@ -103,6 +104,7 @@ class AudioTrackTests(unittest.TestCase):
             media = self.media(Path(folder))
             session = streamer.Session()
             with mock.patch.object(streamer, "host_ip", return_value="192.168.1.9"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                  mock.patch.object(streamer.subprocess, "Popen") as popen, \
                  mock.patch.object(session, "_start_server") as server:
                 with self.assertRaisesRegex(streamer.StreamError, "unavailable"):
@@ -126,6 +128,7 @@ class AudioTrackTests(unittest.TestCase):
                  mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
                  mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
                  mock.patch.object(streamer, "host_ip", return_value="192.168.1.9"), \
+                 mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
                  mock.patch.object(session, "_start_server"), \
                  mock.patch.object(session, "_wait_for_segments", side_effect=[False, True]), \
                  mock.patch.object(streamer, "_terminate"), \

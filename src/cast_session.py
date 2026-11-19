@@ -125,6 +125,7 @@ class SessionMixin:
 
         def work():
             media = streamer.ffprobe(path)
+            streamer.require_compatible_ffmpeg()
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
                     "The selected audio track is no longer in this film; choose Auto or another track"
@@ -220,10 +221,7 @@ class SessionMixin:
             self._cast_starting = False
             self._dlna_cancel = None
             if self._closing:
-                # The hidden window and held GApplication remain alive until
-                # this callback. Route through normal close policy: stop
-                # the new session unless keep-streaming is enabled (DLNA
-                # always stops because its HTTP server lives in this process).
+                # Closing after cast completion must respect keep-streaming policy.
                 self.session = session
                 self.busy = False
                 self._finish_delayed_close()
@@ -555,6 +553,7 @@ class SessionMixin:
             if media is None:
                 media = streamer.ffprobe(file_path)
             captions = subtitle_restart.validate_restart(state, media, delay)
+            streamer.require_compatible_ffmpeg()
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
@@ -693,9 +692,7 @@ class SessionMixin:
         self._set_levels_hint("")
         item = self.now_playing
         session, self.session = self.session, None
-        # Completing a movie is still a lifecycle transition: the old
-        # session is tearing down its server and deleting shared HLS files.
-        # Block new commands until that cleanup has finished.
+        # Block new commands until the old HLS server and media are cleaned up.
         self.busy = session is not None
         self._refresh_controls()
         following = playback_state.next_media(

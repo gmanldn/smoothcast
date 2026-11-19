@@ -22,6 +22,7 @@ from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
 import cache_policy
+import ffmpeg_compat
 import castctl
 import hw_encoder_state
 import lan_interfaces
@@ -417,6 +418,14 @@ def _usable_ipv4(value: str) -> bool:
         return False
     return not (addr.is_loopback or addr.is_link_local or
                 addr.is_unspecified or addr.is_multicast)
+
+
+def require_compatible_ffmpeg() -> tuple[int, int]:
+    """Fail before changing active Cast ownership if HLS features are missing."""
+    try:
+        return ffmpeg_compat.require_supported_ffmpeg()
+    except ffmpeg_compat.FFmpegVersionError as exc:
+        raise StreamError(str(exc)) from exc
 
 
 def host_ip(device_host: str | None = None) -> str:
@@ -1294,6 +1303,8 @@ class Session:
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
+        # Fail before touching existing streaming resources or launching FFmpeg.
+        require_compatible_ffmpeg()
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
