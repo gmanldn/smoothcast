@@ -64,12 +64,13 @@ class LaunchTests(unittest.TestCase):
 
 class WiringTests(unittest.TestCase):
     def test_setting_default_and_validation(self):
-        import cast_widgets  # noqa: PLC0415 (no GTK import at module load)
         import config_control
-        self.assertIs(cast_widgets.DEFAULTS["lower_ffmpeg_priority"], True)
-        cfg = config_control.sanitise_config({"lower_ffmpeg_priority": False}, cast_widgets.DEFAULTS)
+        from test_config_control import real_defaults  # source parse: no GTK
+        defaults = real_defaults()
+        self.assertIs(defaults["lower_ffmpeg_priority"], True)
+        cfg = config_control.sanitise_config({"lower_ffmpeg_priority": False}, defaults)
         self.assertIs(cfg["lower_ffmpeg_priority"], False)
-        cfg = config_control.sanitise_config({"lower_ffmpeg_priority": "no"}, cast_widgets.DEFAULTS)
+        cfg = config_control.sanitise_config({"lower_ffmpeg_priority": "no"}, defaults)
         self.assertIs(cfg["lower_ffmpeg_priority"], True)
 
     def test_encoder_launches_use_the_helper(self):
