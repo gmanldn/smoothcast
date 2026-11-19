@@ -137,10 +137,12 @@ def test_close_invalidates_delayed_metadata_callback():
 
 
 def test_no_second_probe_for_duplicate_enqueue():
-    w, jobs, _ = window()
+    w, jobs, ffprobe = window()
     w._enqueue(["a.mkv", "a.mkv"])
     assert w.queue == ["a.mkv"]
     assert len(jobs) == 1
+    jobs[0][0]()
+    assert ffprobe.call_count == 1
     w._enqueue(["a.mkv"])
     assert len(jobs) == 1
     w.toast.assert_called_once()
