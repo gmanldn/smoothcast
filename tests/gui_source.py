@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GUI_MODULES = (
     "cast_widgets.py",
     "cast_ui.py",
+    "cast_settings.py",
     "preferences_ui.py",
     "cast_queue.py",
     "cast_session.py",
@@ -36,7 +37,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin")
+MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
