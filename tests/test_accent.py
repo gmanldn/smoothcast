@@ -108,11 +108,11 @@ def test_preference_choices_mirror_the_presets():
 
 
 def test_wiring_layers_a_second_provider_and_never_touches_the_gtk_theme():
-    control = (ROOT / "src" / "cast_control.py").read_text()
+    control = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
     assert "STYLE_PROVIDER_PRIORITY_APPLICATION + 1" in control and "remove_provider_for_display" in control
     assert "apply_accent(load_config().get(\"accent\"))" in control
     assert "gtk-theme-name" not in control and "Settings.get_default" not in control
-    prefs = (ROOT / "src" / "preferences_ui.py").read_text()
+    prefs = (ROOT / "src" / "preferences_ui.py").read_text(encoding="utf-8")
     assert 'key == "accent"' in prefs and "apply_accent(value)" in prefs
-    assert '"accent": "default"' in (ROOT / "src" / "cast_widgets.py").read_text()
-    assert '"accent"' in (ROOT / "pyproject.toml").read_text()
+    assert '"accent": "default"' in (ROOT / "src" / "cast_widgets.py").read_text(encoding="utf-8")
+    assert '"accent"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")

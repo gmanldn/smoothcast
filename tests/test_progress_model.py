@@ -89,5 +89,5 @@ def test_receiver_info_is_typed_for_the_helpers_castctl_exposes():
 
 
 def test_module_is_installed_and_in_the_mypy_gate():
-    text = (ROOT / "pyproject.toml").read_text()
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert '"progress_model"' in text and "src/progress_model.py" in text

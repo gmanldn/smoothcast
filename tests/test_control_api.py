@@ -349,8 +349,8 @@ def test_module_and_cli_entry_do_not_import_gtk():
 
 
 def test_cli_routes_the_flag_and_module_is_installed():
-    assert '["--control-api"]' in (ROOT / "src" / "cli.py").read_text()
-    assert '"control_api"' in (ROOT / "pyproject.toml").read_text()
+    assert '["--control-api"]' in (ROOT / "src" / "cli.py").read_text(encoding="utf-8")
+    assert '"control_api"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
 
 def test_zz_rigs_leave_the_cli_handlers_untouched(rig):

@@ -27,7 +27,7 @@ def test_parse_checks_reads_only_well_formed_check_lines():
 
 
 def test_every_parent_scenario_exists_in_the_child_and_vice_versa():
-    tree = ast.parse((ROOT / "scripts" / "gui_checks_child.py").read_text())
+    tree = ast.parse((ROOT / "scripts" / "gui_checks_child.py").read_text(encoding="utf-8"))
     child = next(n for n in tree.body if isinstance(n, ast.Assign)
                  and any(getattr(t, "id", "") == "SCENARIOS" for t in n.targets))
     child_names = {k.value for k in child.value.keys}
@@ -60,7 +60,7 @@ def test_missing_xvfb_is_a_safe_skip_not_a_fallback_to_the_desktop(monkeypatch, 
 
 
 def test_child_refuses_without_the_isolated_session_and_patches_the_browser():
-    child = (ROOT / "scripts" / "gui_checks_child.py").read_text()
+    child = (ROOT / "scripts" / "gui_checks_child.py").read_text(encoding="utf-8")
     assert "CheckApp(selftest=True)" in child                # the app itself enforces isolation
     assert "launch_default_for_uri = staticmethod(" in child        # no real browser is ever launched
     result = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "gui_checks_child.py"), "first-run"],

@@ -249,16 +249,16 @@ def test_plan_filters_precede_burned_in_subtitles(tmp_path):
 
 
 def test_start_transcode_and_dlna_plan_before_choosing_the_encoder():
-    text = (ROOT / "src" / "streamer.py").read_text()
+    text = (ROOT / "src" / "streamer.py").read_text(encoding="utf-8")
     assert text.index("video_policy.make_plan(") < text.index("self.used_software_fallback = True")
     assert "video_plan=video_plan," in text
-    assert "video_policy.make_plan(" in (ROOT / "src" / "dlna.py").read_text()
+    assert "video_policy.make_plan(" in (ROOT / "src" / "dlna.py").read_text(encoding="utf-8")
 
 
 def test_defaults_keep_both_policies_off():
-    text = (ROOT / "src" / "cast_widgets.py").read_text()
+    text = (ROOT / "src" / "cast_widgets.py").read_text(encoding="utf-8")
     assert '"auto_crop": False' in text and '"auto_deinterlace": False' in text
-    assert '"video_policy"' in (ROOT / "pyproject.toml").read_text()
+    assert '"video_policy"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
 
 # --- preview and its plain-language description (Preferences > Check this film) -------------------
@@ -284,9 +284,9 @@ def test_preview_runs_both_detectors_regardless_of_the_flags_and_never_caches(tm
 
 
 def test_preferences_expose_the_switches_and_the_film_check():
-    prefs = (ROOT / "src" / "preferences_ui.py").read_text()
+    prefs = (ROOT / "src" / "preferences_ui.py").read_text(encoding="utf-8")
     assert '"auto_crop"' in prefs and '"auto_deinterlace"' in prefs
     assert "picture_check.PictureCheck(self.owner)" in prefs and "save_config(owner.cfg)" in prefs
-    check = (ROOT / "src" / "picture_check.py").read_text()
+    check = (ROOT / "src" / "picture_check.py").read_text(encoding="utf-8")
     assert "video_policy.preview(" in check and "domain=\"background\"" in check
-    assert '"picture_check"' in (ROOT / "pyproject.toml").read_text()
+    assert '"picture_check"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")

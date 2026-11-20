@@ -223,5 +223,5 @@ def test_image_subtitle_tracks_are_still_never_selected(monkeypatch, tmp_path):
 
 
 def test_module_is_installed_and_mypy_gated():
-    text = (ROOT / "pyproject.toml").read_text()
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert '"language_prefs"' in text and "src/language_prefs.py" in text
