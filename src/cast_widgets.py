@@ -64,6 +64,7 @@ DEFAULTS: dict = {
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
     "accent": "default",  # Accent colour preset; "default" adds no override (#135).
+    "density": "comfortable",  # compact | comfortable | spacious; comfortable adds no override (#136).
     "auto_theme": False,
     "recents": [],
     "favourites": [],

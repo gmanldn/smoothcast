@@ -36,6 +36,10 @@ SCENARIOS: dict[str, str | None] = {
     "accent": None,
     "accent-saved": '{"accent": "violet"}\n',
     "accent-junk": '{"accent": "<script>"}\n',
+    "density": None,
+    "density-saved": '{"density": "spacious"}\n',
+    "density-junk": '{"density": "<huge>"}\n',
+    "text-fit": None,
 }
 
 

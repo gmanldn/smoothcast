@@ -156,6 +156,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "Use a light theme during the day and a dark theme at night.")
         self._choice(visual, "accent", "Accent colour",
                      "Highlights buttons, sliders and switches. Every option keeps text readable; Default restores the original blue.")
+        self._choice(visual, "density", "Interface density",
+                     "Scales spacing and control sizes. Long text wraps in narrow windows and under large fonts instead of being clipped.")
 
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""
@@ -202,6 +204,11 @@ class PreferencesWindow(Adw.PreferencesWindow):
             self.owner.cfg["accent"] = str(value)
             save_config(self.owner.cfg)
             self.owner.app.apply_accent(value)
+        elif key == "density":
+            self.owner.cfg["density"] = str(value)
+            save_config(self.owner.cfg)
+            self.owner.app.apply_density(value)
+            self.owner._refresh_responsive_layout()
         else:
             widgets = {
                 "quality": "quality_dropdown",

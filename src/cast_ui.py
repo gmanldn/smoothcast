@@ -19,6 +19,7 @@ import responsive_layout
 
 import playback_state
 import progress_model
+import text_fit
 
 import smoothcast_assets
 import ui_theme
@@ -711,7 +712,9 @@ class UiMixin:
         width = self.get_width() or self._startup_width
         height = self.get_height() or self._startup_height
         self._remember_normal_geometry()
-        state = responsive_layout.layout_for_size(width, height)
+        state = responsive_layout.layout_for_size(width, height, self.cfg.get("density"))
+        if width < text_fit.NARROW_WIDTH:
+            text_fit.fit_labels(self)  # long text wraps/ellipsizes instead of widening the window (#136)
         if state == self._layout_state:
             return True
         self._layout_state = state

@@ -18,6 +18,7 @@ import threading
 
 import accent
 import castctl
+import density
 
 import sleep_fade
 
@@ -231,6 +232,8 @@ class CastControlApp(Adw.Application):
         )
         self._accent_provider: Gtk.CssProvider | None = None
         self.apply_accent(load_config().get("accent"))
+        self._density_provider: Gtk.CssProvider | None = None
+        self.apply_density(load_config().get("density"))
         self._register_actions()
         self.set_accels_for_action("app.open", ["<Control>o"])
         self.set_accels_for_action("app.add-files", ["<Control>a"])
@@ -253,6 +256,21 @@ class CastControlApp(Adw.Application):
                 display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
             )
             self._accent_provider = provider
+
+    def apply_density(self, value) -> None:
+        """Layer the density override over the stylesheet; comfortable removes it (#136)."""
+        display = Gdk.Display.get_default()
+        if self._density_provider is not None:
+            Gtk.StyleContext.remove_provider_for_display(display, self._density_provider)
+            self._density_provider = None
+        css = density.css_for(value)
+        if css:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css)
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2
+            )
+            self._density_provider = provider
 
     def _register_actions(self) -> None:
         def simple(name, callback):

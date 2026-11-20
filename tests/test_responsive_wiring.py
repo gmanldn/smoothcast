@@ -24,7 +24,7 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
     def test_layout_reads_actual_window_allocation(self):
         self.assertIn("width = self.get_width() or self._startup_width", self.source)
         self.assertIn("height = self.get_height() or self._startup_height", self.source)
-        self.assertIn("responsive_layout.layout_for_size(width, height)", self.source)
+        self.assertIn('responsive_layout.layout_for_size(width, height, self.cfg.get("density"))', self.source)
         self.assertIn("GLib.timeout_add(200, self._refresh_responsive_layout)", self.source)
 
     def test_transport_and_actions_reflow_in_grids(self):

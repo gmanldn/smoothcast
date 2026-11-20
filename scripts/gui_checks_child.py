@@ -334,9 +334,134 @@ def accent_junk(app, window) -> None:
           and app._accent_provider is None, repr(window.cfg.get("accent")))
 
 
+def _narrow_helpers(window):
+    """Helpers that put the window's layout logic into a real 360 px state and measure it."""
+    window.get_width = lambda: 360          # exactly what the reflow code reads in a 360 px window
+    window.get_height = lambda: 800
+
+    def settle() -> None:
+        for _ in range(4):                  # the 200 ms reflow timer does not run in self-test mode
+            window._refresh_responsive_layout()
+            pump(0.4)
+
+    def minwidth() -> int:
+        return window.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+
+    def find(css_class: str):
+        stack = [window]
+        while stack:
+            widget = stack.pop()
+            if css_class in widget.get_css_classes():
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        return None
+
+    return settle, minwidth, find
+
+
+def density_choice(app, window) -> None:
+    """Interface density: live, saved, scales spacing/controls, never clips at 360 px or large fonts (#136)."""
+    import density
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("density")
+    check("the Interface density choice has one entry per preset",
+          combo is not None and combo.get_model().get_n_items() == len(density.PRESETS))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    settle, minwidth, find = _narrow_helpers(window)
+    settle()
+    ids = [p for p, _l, _s in density.PRESETS]
+    measured: dict[str, dict[str, int]] = {}
+    for name in ("compact", "comfortable", "spacious"):
+        combo.set_selected(ids.index(name))
+        pump(0.4)
+        settle()
+        big_play, card = find("big-play"), find("hero-card")
+        measured[name] = {
+            "margin": window.page.get_margin_start(),
+            "big_play": big_play.measure(Gtk.Orientation.HORIZONTAL, -1)[0],
+            "card_height": card.measure(Gtk.Orientation.VERTICAL, 340)[0],
+        }
+        check(f"{name}: saved to config.json and applied",
+              window.cfg["density"] == name and saved().get("density") == name
+              and (app._density_provider is None) == (name == "comfortable"), repr(saved().get("density")))
+        check(f"{name}: the 360 px layout is not wider than 360 px", minwidth() <= 360, f"min={minwidth()}")
+    for key in ("margin", "big_play", "card_height"):
+        a, b, c = (measured[n][key] for n in ("compact", "comfortable", "spacious"))
+        check(f"spacing scales with density: {key} compact < comfortable < spacious", a < b < c,
+              f"{a} / {b} / {c}")
+    check("the big-play control matches the scaled stylesheet value",
+          measured["spacious"]["big_play"] == density.px(density.BASE_COMPACT["big_play"], 1.25)
+          and measured["compact"]["big_play"] == density.px(density.BASE_COMPACT["big_play"], 0.85),
+          repr({k: v["big_play"] for k, v in measured.items()}))
+
+    settings = Gtk.Settings.get_default()
+    for font in ("Sans 14", "Sans 18", "Sans 22"):
+        settings.set_property("gtk-font-name", font)
+        for name in ("compact", "comfortable", "spacious"):
+            combo.set_selected(ids.index(name))
+            pump(0.3)
+            settle()
+            check(f"{font} / {name}: still not wider than 360 px", minwidth() <= 360, f"min={minwidth()}")
+    combo.set_selected(ids.index("comfortable"))
+    pump(0.4)
+    check("back to comfortable: the override is gone and it is saved",
+          app._density_provider is None and saved().get("density") == "comfortable")
+
+
+def density_saved(app, window) -> None:
+    """A saved density applies at startup and shows as selected (#136)."""
+    import density
+    settle, _minwidth, _find = _narrow_helpers(window)
+    settle()
+    check("the saved density is applied at startup", app._density_provider is not None
+          and window.cfg.get("density") == "spacious", repr(window.cfg.get("density")))
+    check("the layout uses the spacious scale", window.page.get_margin_start() == density.px(8, 1.25, 4),
+          str(window.page.get_margin_start()))
+    window.action_preferences()
+    pump(0.4)
+    check("Preferences shows it as selected",
+          window._preferences_window._combos["density"].get_selected() == 2,
+          str(window._preferences_window._combos["density"].get_selected()))
+
+
+def density_junk(app, window) -> None:
+    """A corrupt density value is ignored: normal look, no crash (#136)."""
+    check("a junk density falls back to comfortable", window.cfg.get("density") == "comfortable"
+          and app._density_provider is None, repr(window.cfg.get("density")))
+
+
+def text_fit_wide(app, window) -> None:
+    """The text-fit pass is narrow-only: a wide window keeps its labels exactly as designed (#136)."""
+    import text_fit
+    window.get_width = lambda: text_fit.NARROW_WIDTH + 200      # a wide window, from the very first reflow
+    window.get_height = lambda: 900
+    for _ in range(3):
+        window._refresh_responsive_layout()
+        pump(0.3)
+    changed = text_fit.fit_labels(window)
+    check("a wide window's reflow left every label as designed (there is still work for the pass to do)",
+          changed > 0, str(changed))
+    check("fitting is idempotent", text_fit.fit_labels(window) == 0)
+    window.get_width = lambda: 360                              # now narrow: nothing new to change, and it stays that way
+    window._refresh_responsive_layout()
+    pump(0.3)
+    check("a narrow reflow afterwards changes nothing more", text_fit.fit_labels(window) == 0)
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "picture-options": picture_options, "accent": accent_choice,
-             "accent-saved": accent_saved, "accent-junk": accent_junk}
+             "accent-saved": accent_saved, "accent-junk": accent_junk,
+             "density": density_choice, "density-saved": density_saved,
+             "density-junk": density_junk, "text-fit": text_fit_wide}
 
 
 class CheckApp(cast_control.CastControlApp):
