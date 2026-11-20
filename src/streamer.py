@@ -29,6 +29,7 @@ import castctl
 import frozen_runtime
 import hw_encoder_state
 import lan_interfaces
+import language_prefs
 import playback_state
 import process_identity
 import process_priority
@@ -333,6 +334,9 @@ def preferred_audio_track(media: "MediaInfo", requested: int = -1) -> AudioTrack
     """Resolve a requested relative audio index, or default/first in auto mode."""
     if requested >= 0:
         return next((t for t in media.audio_streams if t.index == requested), None)
+    chosen = language_prefs.choose_audio(media.audio_streams, language_prefs.load(media.path))
+    if chosen is not None:
+        return chosen
     return next((t for t in media.audio_streams if t.default), None) or (
         media.audio_streams[0] if media.audio_streams else None
     )
@@ -371,6 +375,11 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
     text_tracks = [t for t in media.subtitle_tracks if t.is_text]
     if not text_tracks:
         return None
+    prefs = language_prefs.load(media.path)
+    if prefs.subtitles:
+        decision = language_prefs.choose_subtitle(text_tracks, prefs, preferred_audio_track(media))
+        if decision.decided:
+            return decision.track
     return min(text_tracks, key=lambda t: (
         not t.forced, not t.default, t.language.lower() not in {"en", "eng", "english"}, t.index
     ))

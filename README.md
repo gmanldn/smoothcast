@@ -169,6 +169,20 @@ real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
 verified on physical receivers yet. Streams resumed or seeked to a later
 position also now draw burned-in captions at the correct film time.
 
+### Language preferences
+
+Set preferred audio and subtitle languages once in `~/.config/cast-control/config.json` and SmoothCast applies them to every film that has no explicit per-file track choice:
+
+```json
+{
+  "preferred_audio_languages": ["ja", "en"],
+  "preferred_subtitle_languages": ["en"],
+  "language_overrides": {"some show": {"audio": ["fr"]}}
+}
+```
+
+Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR`). The first preference with a matching audio track wins; commentary and audio-description tracks are used only if nothing else matches. **Forced** captions (foreign-language dialogue only) and **full** subtitles are handled separately: when the chosen audio is already in a preferred subtitle language you get that language's forced track, or no subtitles if it has none; when the audio is in another language you get the full track in your first matching language. If no preference matches, or none is set, the previous behaviour applies unchanged (the file's default audio; forced, then default, then English subtitles). An override applies to files named like `Some.Show.S01E02.mkv` and replaces only the lists it sets; files without an episode marker are films and never match one. A track you pick by hand always wins, image-based subtitles (PGS) are never selected, and there is no Preferences control yet: edit the file.
+
 ## Interface and visual design
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,

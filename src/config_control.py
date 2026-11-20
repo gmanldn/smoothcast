@@ -15,6 +15,7 @@ import shutil
 
 import cache_policy
 import subtitle_delay
+import language_prefs
 import watch_history
 
 
@@ -86,6 +87,10 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                     item for item in value[:_MAX_ITEMS]
                     if isinstance(item, str) and 0 < len(item) <= _MAX_PATH
                 ][:limit]
+        elif key in {"preferred_audio_languages", "preferred_subtitle_languages"}:
+            cfg[key] = language_prefs.clean_languages(value)
+        elif key == "language_overrides":
+            cfg[key] = language_prefs.clean_overrides(value)
         elif key in _LIMITED_MAPS:
             if isinstance(value, dict):
                 clean: dict = {}
