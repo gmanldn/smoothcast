@@ -614,7 +614,13 @@ class ProgressiveFileServer:
 
 
 def _selected_audio(media, index: int):
-    return next((track for track in media.audio_streams if track.index == index), None)
+    try:
+        tracks = media.audio_streams
+    except (AttributeError, TypeError):
+        return None
+    if not isinstance(tracks, (list, tuple)):
+        return None
+    return next((track for track in tracks if track.index == index), None)
 
 
 def _downmix(track, profile: str) -> str | None:

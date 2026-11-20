@@ -52,12 +52,13 @@ from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
+from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, AudioSyncMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app

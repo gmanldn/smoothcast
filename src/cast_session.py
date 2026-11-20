@@ -65,15 +65,14 @@ class SessionMixin:
 
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
-        # None means "resume saved position"; explicit 0 is always rewind.
-        # This avoids a seek-to-start silently jumping to a previous stop.
+        # None resumes saved position; explicit 0 always rewinds.
+        # This prevents seek-to-start from jumping to the previous stop.
         offset = playback_state.start_offset(
             offset, (self.cfg.get("positions") or {}).get(str(path)),
         )
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
-        # Pause and release the local decoder before starting Chromecast.
         if str(path) == self._local_video_path and self.session is None:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -106,7 +105,6 @@ class SessionMixin:
         if subs_mode == "pick" and subs_path is None:
             self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
             return
-        # catt takes SRT/VTT/TTML sidecars; ASS/SSA is rendered by FFmpeg.
         delay = subtitle_delay.get(cfg, path)
         adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
@@ -114,10 +112,8 @@ class SessionMixin:
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
             or delay != 0 or preset != subtitle_style.DEFAULT
         )
-        # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
-        # Device-native streams cannot apply ffmpeg filters (speed, rotation, audio delay).
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
