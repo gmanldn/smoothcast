@@ -44,7 +44,7 @@ py-modules = [
     "cache_policy", "accent", "picture_check", "video_policy", "language_prefs", "control_api", "progress_model", "issue_report", "cli_control", "sleep_fade", "hw_encoder_state", "process_priority", "error_log", "utils", "screenshot", "position_tracker", "playback_state",
     "ui_theme", "responsive_layout", "density", "text_fit", "url_control", "version",
     "local_playback", "startup_cleanup", "streamer", "stream_watchdog", "direct_probe", "network_routes", "network_route_ui", "subtitle_restart", "subtitle_delay", "playlist_control", "cli", "subtitle_encoding", "preflight", "gui_test_safety", "dlna", "diagnostics",
-    "async_jobs", "process_identity", "lan_interfaces", "cache_privacy", "ffmpeg_compat", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_subtitle_files", "cast_lifecycle", "cast_subtitles", "cast_audio_sync", "audio_delay", "watch_history", "benchmark", "library_index", "queue_metadata",
+    "async_jobs", "process_identity", "lan_interfaces", "portal", "cast_portal", "cache_privacy", "ffmpeg_compat", "hls_pause_recovery", "cast_widgets", "cast_ui", "cast_settings", "cast_queue", "cast_session", "cast_av", "cast_subtitle_files", "cast_lifecycle", "cast_subtitles", "cast_audio_sync", "audio_delay", "watch_history", "benchmark", "library_index", "queue_metadata",
     "preferences_ui", "preference_choices",
 ]
 

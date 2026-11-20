@@ -9,6 +9,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Dialogue-first surround downmix** — with the Dialogue or Night profile, 5.0/5.1/6.1/7.1 and quad tracks are mixed to stereo with the centre channel lifted ~5 dB over FFmpeg's default matrix, surrounds lowered, the LFE dropped and no clipping; the level used for auto-trim is measured on that same mix. Original, stereo/mono and unrecognised layouts keep the plain `-ac 2` downmix
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
+- **PIN-protected LAN dashboard** — view current playback and queue from another device on the local network, with play/pause, stop, seek and volume controls
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
@@ -335,6 +336,16 @@ Security: every request needs `Authorization: Bearer <token>` (compared in const
 | `POST /v1/cast` | `{"device": NAME, "file": PATH, "mode", "offset", "subs", "no_subs", "quality", "audio", "title"}` | stream details |
 
 Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad request), 401 (token), 403 (cast not allowed or outside the media roots), 404, 405, 413, 422 (media), 502 (receiver refused) or 503 (receiver unreachable). `device` is a receiver name or IPv4, exactly as for the command line; DLNA renderers are not supported yet. Example: `curl -H "Authorization: Bearer $TOKEN" -d '{"device": "Living Room"}' http://127.0.0.1:8800/v1/pause`. A real-receiver check is still pending; the API is covered by portable tests with fake handlers.
+
+## LAN dashboard
+
+The desktop app starts an authenticated, browser-based dashboard while it is
+running. The main screen shows its private-LAN URL and a fresh six-character
+PIN. A paired browser can view playback state and queue, then use the supported
+playback controls. The portal uses the Python standard library and adds no web
+framework dependency. It stops with the app and restarts with a new PIN if the
+selected LAN interface changes. See the [LAN dashboard guide](docs/LAN_PORTAL.md)
+for pairing, security and verification details.
 
 ## Playlists, resume and safe playback transitions
 

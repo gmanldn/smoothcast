@@ -5,8 +5,7 @@ and DLNA. Native setup is under `setup/`; ordinary tests do not import GTK.
 
 ## GTK window: seven smaller modules
 
-The main GTK application is assembled by `src/cast_control.py`, which has
-`MainWindow.__init__`, `CastControlApp` and `main`. The window inherits:
+Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 
 | Concern | Module |
 | --- | --- |
@@ -16,6 +15,7 @@ The main GTK application is assembled by `src/cast_control.py`, which has
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |
+| Authenticated LAN dashboard lifecycle and GTK dispatch | `src/cast_portal.py` |
 
 For source-level GUI tests use `tests/gui_source.py`:
 `combined_source()` for substring assertions and

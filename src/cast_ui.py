@@ -85,6 +85,7 @@ class UiMixin:
         self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.right_column.set_valign(Gtk.Align.START)
         self.right_column.append(self._build_device_card())
+        self.right_column.append(self._build_portal_card())
         self.right_column.append(self._build_settings_card())
         self.right_column.append(self._build_console_card())
         self.right_column.append(self._build_details_card())
@@ -562,6 +563,32 @@ class UiMixin:
         self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
+        return card
+
+
+    def _build_portal_card(self) -> Gtk.Box:
+        card, body = self._card(
+            "LAN dashboard", "Open this address on another device on your local network."
+        )
+        self.portal_status_label = Gtk.Label(label="Starting local portal…", xalign=0.0, wrap=True)
+        self.portal_status_label.add_css_class("section-caption")
+        body.append(self.portal_status_label)
+        body.append(Gtk.Label(label="Address", xalign=0.0))
+        self.portal_url_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
+        self.portal_url_label.add_css_class("mono")
+        body.append(self.portal_url_label)
+        body.append(Gtk.Label(label="Access PIN", xalign=0.0))
+        self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
+        self.portal_pin_label.add_css_class("hero-title")
+        self.portal_pin_label.add_css_class("mono")
+        body.append(self.portal_pin_label)
+        note = Gtk.Label(
+            label="Anyone on your local network with this PIN can control playback. "
+                  "The PIN changes when the portal restarts.",
+            xalign=0.0, wrap=True,
+        )
+        note.add_css_class("dim-label")
+        body.append(note)
         return card
 
 

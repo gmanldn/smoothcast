@@ -37,6 +37,7 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
+from cast_portal import PortalMixin
 
 import version
 
@@ -58,7 +59,7 @@ from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -95,6 +96,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._hover_time: float | None = None
         self._finished_handled = False
         self._closing = False
+        self._portal = None
+        self._portal_ip: str | None = None
         self._cast_starting = False
         self._closing_hold = False
         self._last_state = "IDLE"
@@ -143,6 +146,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._apply_color_scheme()
         self._refresh_controls()
         if not app.selftest:
+            self._refresh_portal()
+            GLib.timeout_add_seconds(15, self._refresh_portal)
             # A GUI smoke test builds widgets only: it must not scan LANs,
             # adopt casts, poll receivers or run media/telemetry timers.
             GLib.timeout_add(500, self._tick)
@@ -155,16 +160,6 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             GLib.timeout_add_seconds(5, self._sleep_tick)
             GLib.timeout_add_seconds(3, self._sleep_fade_tick)
             GLib.timeout_add_seconds(600, self._theme_tick)
-
-
-"""Cast Control — modern Chromecast companion."""
-
-
-gi.require_version("Gtk", "4.0")
-
-
-gi.require_version("Adw", "1")
-
 
 class CastControlApp(Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:

@@ -38,6 +38,8 @@ a = Analysis(
         "gi.repository.Gio",
         "gi.repository.GLib",
         "gi.repository.Gst",
+        "portal",
+        "cast_portal",
     ],
     hookspath=[],
     hooksconfig={

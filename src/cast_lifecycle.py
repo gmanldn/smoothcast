@@ -40,6 +40,7 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
+        self._stop_portal()
         if self._dlna_cancel is not None:
             self._dlna_cancel.set()
         if self._cast_starting:
