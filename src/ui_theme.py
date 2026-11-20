@@ -67,10 +67,10 @@ button.big-play {
     padding: 0;
     border-radius: 99px;
 }
-button.transport, button.transport-step, button.pill { border-radius: 10px; }
-button.transport { min-width: 40px; min-height: 40px; padding: 3px; }
+button.transport, button.transport-step, button.pill { border-radius: 10px; min-height: 44px; }
+button.transport { min-width: 44px; min-height: 44px; padding: 3px; }
 button.stop-control { color: @error_color; }
-button.action-control { min-width: 84px; }
+button.action-control { min-width: 84px; min-height: 44px; }
 .volume-row { margin-top: 6px; }
 row.queue-row { border-radius: 8px; }
 row.queue-row.current {
@@ -88,6 +88,6 @@ row.queue-row.current {
 .compact .card { padding: 12px; border-radius: 11px; }
 .compact .hero-title { font-size: 1.4em; }
 .compact button.big-play { min-width: 52px; min-height: 52px; }
-.compact button.transport { min-width: 36px; min-height: 36px; }
-.compact button.transport-step, .compact button.pill { padding: 5px 8px; }
+.compact button.transport { min-width: 44px; min-height: 44px; }
+.compact button.transport-step, .compact button.pill { min-height: 44px; padding: 5px 5px; }
 """.encode("utf-8")

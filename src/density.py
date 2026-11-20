@@ -26,11 +26,11 @@ _SCALES = {preset_id: scale for preset_id, _label, scale in PRESETS}
 BASE = {
     "card_padding": 18, "hero_padding": 22, "empty_padding": 18,
     "chip_pad_y": 4, "chip_pad_x": 10,
-    "big_play": 62, "transport": 40, "action_min_width": 84,
+    "big_play": 62, "transport": 44, "action_min_width": 84, "action_min_height": 44,
     "setting_group_top": 8, "volume_row_top": 6,
 }
 BASE_COMPACT = {
-    "card_padding": 12, "big_play": 52, "transport": 36, "pill_pad_y": 5, "pill_pad_x": 8,
+    "card_padding": 12, "big_play": 52, "transport": 44, "pill_pad_y": 5, "pill_pad_x": 5,
 }
 
 
@@ -61,12 +61,12 @@ def css_for(value: object) -> str:
 .empty-state {{ padding: {px(n['empty_padding'], s)}px; }}
 .chip, .device-badge {{ padding: {px(n['chip_pad_y'], s)}px {px(n['chip_pad_x'], s)}px; }}
 button.big-play {{ min-width: {px(n['big_play'], s)}px; min-height: {px(n['big_play'], s)}px; }}
-button.transport {{ min-width: {px(n['transport'], s)}px; min-height: {px(n['transport'], s)}px; }}
-button.action-control {{ min-width: {px(n['action_min_width'], s)}px; }}
+button.transport {{ min-width: {px(n['transport'], s, 44)}px; min-height: {px(n['transport'], s, 44)}px; }}
+button.action-control {{ min-width: {px(n['action_min_width'], s)}px; min-height: {px(n['action_min_height'], s, 44)}px; }}
 .setting-group {{ margin-top: {px(n['setting_group_top'], s)}px; }}
 .volume-row {{ margin-top: {px(n['volume_row_top'], s)}px; }}
 .compact .card {{ padding: {px(c['card_padding'], s)}px; }}
 .compact button.big-play {{ min-width: {px(c['big_play'], s)}px; min-height: {px(c['big_play'], s)}px; }}
-.compact button.transport {{ min-width: {px(c['transport'], s)}px; min-height: {px(c['transport'], s)}px; }}
-.compact button.transport-step, .compact button.pill {{ padding: {px(c['pill_pad_y'], s)}px {px(c['pill_pad_x'], s)}px; }}
+.compact button.transport {{ min-width: {px(c['transport'], s, 44)}px; min-height: {px(c['transport'], s, 44)}px; }}
+.compact button.transport-step, .compact button.pill {{ min-height: {px(44, s, 44)}px; padding: {px(c['pill_pad_y'], s)}px {px(c['pill_pad_x'], s)}px; }}
 """

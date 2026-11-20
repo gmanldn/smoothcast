@@ -63,12 +63,16 @@ def test_base_values_mirror_ui_theme():
     assert value("button.big-play", "min-width") == [b["big_play"]]
     assert value("button.big-play", "min-height") == [b["big_play"]]
     assert value("button.transport", "min-width") == [b["transport"]]
+    assert value("button.transport", "min-height") == [b["transport"]]
+    assert value("button.action-control", "min-height") == [b["action_min_height"]]
     assert value("button.action-control", "min-width") == [b["action_min_width"]]
     assert value(".setting-group", "margin-top") == [b["setting_group_top"]]
     assert value(".volume-row", "margin-top") == [b["volume_row_top"]]
     assert value(".compact .card", "padding") == [c["card_padding"]]
     assert value(".compact button.big-play", "min-width") == [c["big_play"]]
     assert value(".compact button.transport", "min-width") == [c["transport"]]
+    assert value(".compact button.transport", "min-height") == [c["transport"]]
+    assert value(".compact button.transport-step, .compact button.pill", "min-height") == [44]
     assert value(".compact button.transport-step, .compact button.pill", "padding") == [c["pill_pad_y"], c["pill_pad_x"]]
 
 
@@ -100,7 +104,7 @@ def test_spacious_and_compact_scale_from_the_base_values():
     assert declared_numbers(spacious, ".card", "padding") == [density.px(density.BASE["card_padding"], 1.25)]
     assert declared_numbers(spacious, "button.big-play", "min-width") == [density.px(density.BASE["big_play"], 1.25)]
     compact = density.css_for("compact")
-    assert declared_numbers(compact, ".compact button.transport", "min-width") == [density.px(density.BASE_COMPACT["transport"], 0.85)]
+    assert declared_numbers(compact, ".compact button.transport", "min-width") == [density.px(density.BASE_COMPACT["transport"], 0.85, 44)]
 
 
 # --- the responsive layout -----------------------------------------------------------------
