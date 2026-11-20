@@ -20,6 +20,7 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+import audio_downmix
 import cache_policy
 import cache_privacy
 import ffmpeg_compat
@@ -197,7 +198,8 @@ _VOLUME_CACHE_LIMIT = 64
 _VOLUME_LOCK = threading.Lock()
 
 
-def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
+def _volume_cache_key(path: str, max_seconds: int, track: int,
+                      downmix: str | None = None) -> tuple | None:
     """Identity of one measurement; None when the file cannot be identified.
 
     Size and mtime invalidate the entry when the film changes; the track and
@@ -205,13 +207,14 @@ def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
     """
     try:
         info = os.stat(path)
-        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds)
+        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds, downmix)
     except OSError:
         return None
 
 
 def measure_mean_volume(path: str, max_seconds: int = 60,
-                        audio_track_index: int = 0) -> float | None:
+                        audio_track_index: int = 0,
+                        downmix: str | None = None) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of one audio track.
 
     ``audio_track_index`` is the relative ``0:a:N`` stream, matching the track
@@ -219,7 +222,8 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     soundtrack. Skips video (``-vn``) so this is fast even for large files.
     Returns mean volume in dBFS, or ``None`` when the file has no audio stream
     or ffmpeg fails. Bounded by a 30-second timeout so a corrupt file cannot
-    stall cast startup.
+    stall cast startup. ``downmix`` is an optional ``pan`` filter applied
+    first, so the level is measured on the signal that will actually be sent.
     """
     track = (audio_track_index if type(audio_track_index) is int
              and audio_track_index >= 0 else 0)
@@ -227,7 +231,7 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     # every seek restart would otherwise repeat a pass that can take 30 s.
     # Only successful measurements are kept, so a transient failure or
     # timeout is retried rather than remembered.
-    key = _volume_cache_key(path, max_seconds, track)
+    key = _volume_cache_key(path, max_seconds, track, downmix)
     if key is not None:
         with _VOLUME_LOCK:
             if key in _VOLUME_CACHE:
@@ -236,7 +240,9 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     try:
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
-             "-t", str(max_seconds), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+             "-t", str(max_seconds), "-vn",
+             "-af", ",".join([downmix, "volumedetect"] if downmix else ["volumedetect"]),
+             "-f", "null", "-"],
             capture_output=True, text=True, timeout=30,
         )
     except Exception:
@@ -256,7 +262,8 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     return None
 
 
-def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0) -> float:
+def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0,
+                   downmix: str | None = None) -> float:
     """Return the dB gain needed so the compressor is always engaging.
 
     Measures the input's selected audio track and computes a trim that brings
@@ -267,7 +274,9 @@ def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0) -> float
     """
     if profile == "original":
         return 0.0
-    mean = measure_mean_volume(path, audio_track_index=audio_track_index)
+    mean = (measure_mean_volume(path, audio_track_index=audio_track_index,
+                                downmix=downmix) if downmix else
+            measure_mean_volume(path, audio_track_index=audio_track_index))
     if mean is None:
         return 0.0
     lo, hi = _AUTO_TRIM_CLAMP_DB
@@ -1323,10 +1332,10 @@ class Session:
             burn_subs = True
         # Explicit selections must fail before starting a new encoder. Keep
         # the optional audio map for silent videos with no audio streams.
-        track = preferred_audio_track(media, audio_track_index)
-        if audio_track_index >= 0 and track is None:
+        audio_track = preferred_audio_track(media, audio_track_index)
+        if audio_track_index >= 0 and audio_track is None:
             raise StreamError(f"Audio track {audio_track_index + 1} is unavailable in this file")
-        audio_map = f"0:a:{track.index}" if track is not None else "0:a:0?"
+        audio_map = f"0:a:{audio_track.index}" if audio_track is not None else "0:a:0?"
         staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
         receiver_subs = (
             self._stage_subs(subs_file, receiver=True)
@@ -1361,6 +1370,8 @@ class Session:
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
         )
+        downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
+                   if audio_track is not None else None)
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
             # Auto-trim the selected soundtrack so the compressor always
@@ -1368,10 +1379,13 @@ class Session:
             # total so the monitor and resume paths use the exact same chain.
             trim = auto_trim_gain(
                 str(media.path), audio_profile,
-                audio_track_index=(track.index if track is not None else 0),
+                audio_track_index=(audio_track.index if audio_track is not None else 0),
+                downmix=downmix,
             )
             effective_gain = trim + audio_gain_db
             filters = audio_filters(audio_profile, effective_gain)
+            if downmix:
+                filters = [downmix] + filters  # matrix first, then gain/compressor
         else:
             effective_gain = 0.0
         if speed != 1.0:
