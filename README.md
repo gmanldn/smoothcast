@@ -204,6 +204,8 @@ Two detectors can clean up the picture before it is encoded for the TV. Both are
 
 ## Interface and visual design
 
+**Accent colour.** Preferences > Appearance > Accent colour offers seven presets (Default blue, Teal, Green, Amber, Orange, Rose, Violet) that recolour suggested-action and play buttons, sliders, checked switches and the current queue row, live and without a restart. Every preset is checked for accessibility: button text reaches at least 4.5:1 contrast on the accent and its hover shade (the text colour, dark or white, is calculated from the accent), and the accent itself reaches at least 3:1 against the app surfaces. The choice is stored as `"accent"` in `config.json` (a corrupt value falls back to the default). It is an extra stylesheet layered over SmoothCast's own; the system GTK theme is never edited, and **Default blue** removes the override entirely.
+
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
 or select **Open Preferences…** in the Playback settings card. A searchable,
 native libadwaita window groups Picture and delivery, Queue behaviour, Audio,

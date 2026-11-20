@@ -16,6 +16,7 @@ import pathlib
 import sys
 import threading
 
+import accent
 import castctl
 
 import sleep_fade
@@ -228,6 +229,8 @@ class CastControlApp(Adw.Application):
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
+        self._accent_provider: Gtk.CssProvider | None = None
+        self.apply_accent(load_config().get("accent"))
         self._register_actions()
         self.set_accels_for_action("app.open", ["<Control>o"])
         self.set_accels_for_action("app.add-files", ["<Control>a"])
@@ -235,6 +238,21 @@ class CastControlApp(Adw.Application):
         self.set_accels_for_action("app.preferences", ["<Control>comma"])
         self.set_accels_for_action("app.stop-stream", ["<Control>w"])
         self.set_accels_for_action("app.quit", ["<Control>q"])
+
+    def apply_accent(self, preset) -> None:
+        """Layer the accent override over the base stylesheet; the default removes it (#135)."""
+        display = Gdk.Display.get_default()
+        if self._accent_provider is not None:
+            Gtk.StyleContext.remove_provider_for_display(display, self._accent_provider)
+            self._accent_provider = None
+        css = accent.css_for(preset)
+        if css:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css)
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            )
+            self._accent_provider = provider
 
     def _register_actions(self) -> None:
         def simple(name, callback):

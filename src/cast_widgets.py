@@ -63,6 +63,7 @@ DEFAULTS: dict = {
     "auto_shutdown": False,
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
+    "accent": "default",  # Accent colour preset; "default" adds no override (#135).
     "auto_theme": False,
     "recents": [],
     "favourites": [],

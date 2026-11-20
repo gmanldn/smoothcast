@@ -22,13 +22,14 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import accent  # noqa: E402
 import cast_targets  # noqa: E402
 import castctl  # noqa: E402
 import cast_control  # noqa: E402
 import streamer  # noqa: E402
 import version  # noqa: E402
 import video_policy  # noqa: E402
-from gi.repository import Gio, GLib  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 else ""
 RESULTS: list[tuple[str, bool, str]] = []
@@ -234,8 +235,108 @@ def picture_options(app, window) -> None:
     shutil.rmtree(folder, ignore_errors=True)
 
 
+def accent_choice(app, window) -> None:
+    """Preferences > Appearance > Accent colour: bounded presets, live, reversible, no theme edits (#135)."""
+    errors: list[str] = []
+    for preset_id, _label, _hex in accent.PRESETS:
+        provider = Gtk.CssProvider()
+        provider.connect("parsing-error", lambda _p, _section, error: errors.append(error.message))
+        provider.load_from_data(accent.css_for(preset_id) or "window { }")
+    check("every preset's CSS parses in real GTK without errors", errors == [], repr(errors))
+
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("accent")
+    check("the Accent colour choice exists with one entry per preset",
+          combo is not None and combo.get_model().get_n_items() == len(accent.PRESETS))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    # A probe label that takes the accent through the stylesheet: .queue-row.current .queue-title
+    probe_window = Gtk.Window()
+    row = Gtk.Box()
+    row.add_css_class("queue-row")
+    row.add_css_class("current")
+    label = Gtk.Label(label="probe")
+    label.add_css_class("queue-title")
+    row.append(label)
+    probe_window.set_child(row)
+    probe_window.present()
+    pump(0.4)
+
+    def colour() -> tuple[int, int, int]:
+        c = label.get_color()
+        return round(c.red * 255), round(c.green * 255), round(c.blue * 255)
+
+    def expected(preset_id: str) -> tuple[int, int, int]:
+        hover = accent.mix(accent.accent_hex(preset_id), accent.LIGHT_TEXT, 0.18)
+        return int(hover[1:3], 16), int(hover[3:5], 16), int(hover[5:7], 16)
+
+    original = colour()   # whatever the stylesheet's own colour is today (it has changed before)
+    check("default: no override is installed and Default is selected",
+          app._accent_provider is None and combo.get_selected() == 0, f"{original}")
+    check("an accent is detectable: the default differs from every preset's colour",
+          all(expected(p) != original for p, _l, _h in accent.PRESETS if p != accent.DEFAULT_ID), f"{original}")
+    for preset_id in ("amber", "violet", "teal"):
+        index = [p for p, _l, _h in accent.PRESETS].index(preset_id)
+        combo.set_selected(index)
+        pump(0.5)
+        check(f"{preset_id}: applied live through the stylesheet", colour() == expected(preset_id),
+              f"{colour()} != {expected(preset_id)}")
+        check(f"{preset_id}: saved to config.json", window.cfg["accent"] == preset_id
+              and saved().get("accent") == preset_id, repr(saved().get("accent")))
+    check("switching presets replaces the override instead of stacking providers",
+          app._accent_provider is not None and colour() == expected("teal"))
+    combo.set_selected(0)
+    pump(0.5)
+    check("Default removes the override and restores the original colour",
+          app._accent_provider is None and colour() == original, f"{colour()}")
+    check("Default is saved too", saved().get("accent") == "default", repr(saved().get("accent")))
+    check("the GTK theme setting is untouched",
+          "theme" not in json.dumps(saved()).lower().replace("auto_theme", ""))
+    probe_window.destroy()
+
+
+def accent_saved(app, window) -> None:
+    """An accent saved in an earlier session is applied at startup, and junk values are ignored (#135)."""
+    probe_window = Gtk.Window()
+    row = Gtk.Box()
+    row.add_css_class("queue-row")
+    row.add_css_class("current")
+    label = Gtk.Label(label="probe")
+    label.add_css_class("queue-title")
+    row.append(label)
+    probe_window.set_child(row)
+    probe_window.present()
+    pump(0.4)
+    c = label.get_color()
+    hover = accent.mix(accent.accent_hex("violet"), accent.LIGHT_TEXT, 0.18)
+    want = (int(hover[1:3], 16), int(hover[3:5], 16), int(hover[5:7], 16))
+    got = (round(c.red * 255), round(c.green * 255), round(c.blue * 255))
+    check("the saved accent is applied at startup", app._accent_provider is not None and got == want,
+          f"{got} != {want}")
+    check("the window's setting matches", window.cfg.get("accent") == "violet", repr(window.cfg.get("accent")))
+    window.action_preferences()
+    pump(0.4)
+    check("Preferences shows the saved accent as selected",
+          window._preferences_window._combos["accent"].get_selected()
+          == [p for p, _l, _h in accent.PRESETS].index("violet"),
+          str(window._preferences_window._combos["accent"].get_selected()))
+    probe_window.destroy()
+
+
+def accent_junk(app, window) -> None:
+    """A corrupt accent value in config.json is ignored: default look, no crash (#135)."""
+    check("a junk accent falls back to the default", window.cfg.get("accent") == "default"
+          and app._accent_provider is None, repr(window.cfg.get("accent")))
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
-             "picture-options": picture_options}
+             "picture-options": picture_options, "accent": accent_choice,
+             "accent-saved": accent_saved, "accent-junk": accent_junk}
 
 
 class CheckApp(cast_control.CastControlApp):

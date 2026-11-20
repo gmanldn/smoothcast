@@ -33,6 +33,9 @@ SCENARIOS: dict[str, str | None] = {
     "saved-device": '{"device": "Seeded TV"}\n',
     "report-problem": None,
     "picture-options": None,
+    "accent": None,
+    "accent-saved": '{"accent": "violet"}\n',
+    "accent-junk": '{"accent": "<script>"}\n',
 }
 
 

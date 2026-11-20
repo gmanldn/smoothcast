@@ -154,6 +154,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "A manual choice turns off automatic day/night switching.")
         self._switch(visual, "auto_theme", "Switch theme by time of day",
                      "Use a light theme during the day and a dark theme at night.")
+        self._choice(visual, "accent", "Accent colour",
+                     "Highlights buttons, sliders and switches. Every option keeps text readable; Default restores the original blue.")
 
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""
@@ -196,6 +198,10 @@ class PreferencesWindow(Adw.PreferencesWindow):
             return
         if key == "color_scheme":
             self.owner.app.scheme_action.activate(GLib.Variant("s", value))
+        elif key == "accent":
+            self.owner.cfg["accent"] = str(value)
+            save_config(self.owner.cfg)
+            self.owner.app.apply_accent(value)
         else:
             widgets = {
                 "quality": "quality_dropdown",
