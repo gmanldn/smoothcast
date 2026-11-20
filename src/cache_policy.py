@@ -16,7 +16,7 @@ import os
 import stat
 from pathlib import Path
 import sys
-from typing import IO
+from typing import Any, IO
 
 try:
     import fcntl
@@ -66,7 +66,7 @@ def hold_scratch_lease(directory: Path) -> IO[bytes] | None:
         raise
 
 
-def encoder_lease_kwargs(lease: IO[bytes] | int | None) -> dict[str, object]:
+def encoder_lease_kwargs(lease: IO[bytes] | int | None) -> dict[str, Any]:
     """Return subprocess options that keep a scratch lease through FFmpeg.
 
     Windows can inherit only explicitly listed OS handles. Popen marks these
