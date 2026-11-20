@@ -292,7 +292,7 @@ def test_a_busy_window_ignores_the_key_press():
 def test_restart_passes_the_saved_delay_to_the_new_encode():
     w, jobs, _ = window("_restart_at")
     w.jobs = jobs
-    w.cfg[ad.CONFIG_KEY] = {"/film.mkv": -250}
+    w.cfg[ad.CONFIG_KEY] = {str(Path("/film.mkv")): -250}   # the restart keys by str(media.path)
     session = mock.Mock()
     session.mode = "transcode"
     session.state = state()
