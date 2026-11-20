@@ -13,6 +13,8 @@ from unittest import mock
 import castctl
 import cli_control
 import dlna
+import playback_state
+import playlist_control
 import streamer
 from fake_receivers import FakeCast, FakeDlnaRenderer, allow_loopback
 
@@ -271,6 +273,130 @@ class FakeCastTests(unittest.TestCase):
                  self.assertRaisesRegex(streamer.StreamError, "Failed to find chromecast"):
                 session.start_direct(streamer.MediaInfo(path=movie, duration=60.0),
                                      device="Living Room", subs_file=None, subs_disabled=True, title="F")
+
+
+@unittest.skipUnless(os.name == "posix", "FakeCast is a POSIX shebang script")
+class QueueAdvanceAgainstFakeCastTests(unittest.TestCase):
+    """The queue-advance protocol of cast_queue/cast_session, end to end against a fake Chromecast.
+
+    The GUI polls the receiver and, when ``playback_ended`` says the receiver
+    itself went from playing to IDLE, asks ``next_media`` for the successor and
+    casts it. Here the same two decision functions and the real ``castctl`` /
+    ``streamer.Session`` run against FakeCast with nothing mocked but the clock.
+    """
+
+    DEVICE = "Living Room"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cast = FakeCast(tmp.name)
+        self.cast.__enter__()
+        self.addCleanup(self.cast.__exit__)
+        self.cast.add_device(self.DEVICE)
+        folder = Path(tmp.name) / "media"
+        folder.mkdir()
+        names = ["Show.S01E10.mp4", "Show.S01E02.mp4", "Show.S01E01.mp4"]
+        self.queue = playlist_control.natural_order([str(folder / n) for n in names])
+        for item in self.queue:
+            Path(item).write_bytes(b"x")
+        for patcher in (mock.patch.object(streamer.time, "sleep"), mock.patch.object(streamer, "_save_session")):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.session = None
+        self.cast_titles: list[str] = []
+
+    def cast_item(self, path: str) -> None:
+        if self.session is not None:
+            self.session.stop(self.DEVICE, send_stop=False)     # end our previous cast, as the GUI does
+        media = streamer.MediaInfo(path=Path(path), duration=100.0)
+        self.session = streamer.Session()
+        self.session.start_direct(media, device=self.DEVICE, subs_file=None,
+                                  subs_disabled=True, title=Path(path).stem)
+        self.cast.update(self.DEVICE, duration=100)
+        self.cast_titles.append(self.cast.device(self.DEVICE)["title"])
+
+    def poll(self, previous: str, *, busy: bool = False) -> tuple[str, bool]:
+        """One status poll: the receiver's state and whether the queue should advance."""
+        state = castctl.player_state(castctl.info(self.DEVICE))
+        return state, playback_state.playback_ended(
+            previous, state, has_session=self.session is not None, busy=busy)
+
+    def run_queue(self, **options) -> None:
+        """Play the queue to its end the way the GUI loop does."""
+        current, previous = self.queue[0], "IDLE"
+        self.cast_item(current)
+        for _ in range(20):                                        # bounded: a bug must not hang the test
+            previous, _ended = self.poll(previous)
+            self.cast.advance(self.DEVICE, 100)                    # the film plays to its end
+            state, ended = self.poll(previous)
+            if not ended:
+                previous = state
+                continue
+            current = playback_state.next_media(current, self.queue, **options)
+            if current is None:
+                return
+            self.cast_item(current)
+            previous = "IDLE"
+
+    def titles(self, *indexes: int) -> list[str]:
+        return [Path(self.queue[i]).stem for i in indexes]
+
+    def test_each_finished_item_casts_its_successor_until_the_queue_ends(self):
+        self.run_queue(repeat_current=False, auto_next=True)
+        self.assertEqual(self.cast_titles, self.titles(0, 1, 2))   # natural order: E01, E02, E10
+        self.assertEqual(self.cast_titles[-1], "Show.S01E10")
+        self.assertEqual(castctl.player_state(castctl.info(self.DEVICE)), "IDLE")
+        _state, again = self.poll("IDLE")                          # the end must not re-trigger
+        self.assertFalse(again)
+
+    def test_auto_next_off_stops_after_one_item(self):
+        self.run_queue(repeat_current=False, auto_next=False)
+        self.assertEqual(self.cast_titles, self.titles(0))
+
+    def test_repeat_all_wraps_and_shuffle_order_drives_the_sequence(self):
+        order = playback_state.shuffle_order(self.queue, 7)
+        self.assertEqual(sorted(order), sorted(self.queue))
+        current = order[0]
+        sequence = [current]
+        for _ in range(len(order)):
+            current = playback_state.next_media(current, self.queue, repeat_current=False,
+                                                auto_next=True, repeat_all=True, order=order)
+            sequence.append(current)
+        self.assertEqual(sequence, order + [order[0]])             # visits every item, then wraps
+        for item in sequence[:3]:                                  # cast the shuffled sequence for real
+            self.cast_item(item)
+            self.cast.advance(self.DEVICE, 100)
+        self.assertEqual(self.cast_titles, [Path(i).stem for i in sequence[:3]])
+
+    def test_the_queue_never_advances_on_anything_but_a_real_finish(self):
+        self.cast_item(self.queue[0])
+        state, ended = self.poll("IDLE")                           # first poll after the cast
+        self.assertEqual((state, ended), ("PLAYING", False))
+        castctl.pause(self.DEVICE)
+        state, ended = self.poll("PLAYING")                        # paused is not finished
+        self.assertEqual((state, ended), ("PAUSED", False))
+        castctl.play(self.DEVICE)
+        self.cast.advance(self.DEVICE, 100)                        # finished, but a command is in flight
+        self.assertFalse(self.poll("PLAYING", busy=True)[1])
+        self.cast.go_offline(self.DEVICE)                          # an unreachable receiver is not IDLE
+        state, ended = self.poll("PLAYING")
+        self.assertEqual((state, ended), ("OFFLINE", False))
+        self.assertEqual(self.cast_titles, self.titles(0))
+
+    def test_a_failed_next_cast_raises_and_leaves_nothing_playing(self):
+        self.cast_item(self.queue[0])
+        self.cast.advance(self.DEVICE, 100)
+        self.assertTrue(self.poll("PLAYING")[1])
+        self.cast.fail("cast", "Failed to connect", times=1)
+        with self.assertRaises(streamer.StreamError) as caught:
+            self.cast_item(playback_state.next_media(self.queue[0], self.queue,
+                                                     repeat_current=False, auto_next=True))
+        self.assertIn("Failed to connect", str(caught.exception))
+        self.assertEqual(self.cast_titles, self.titles(0))         # no second cast was recorded
+        self.assertEqual(castctl.player_state(castctl.info(self.DEVICE)), "IDLE")
+        self.cast_item(self.queue[1])                              # a retry after the fault works
+        self.assertEqual(self.cast_titles, self.titles(0, 1))
 
 
 @unittest.skipUnless(os.name == "posix", "FakeCast is a POSIX shebang script")
