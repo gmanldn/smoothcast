@@ -93,6 +93,9 @@ class DlnaDiscoveryTests(unittest.TestCase):
             ("http://localhost/desc", "192.168.12.25"),
             ("http://foo@192.168.12.25/desc", "192.168.12.25"),
             ("https://192.168.12.25/desc", "192.168.12.25"),
+            # Malformed URLs from a broken device must be rejected, not crash.
+            ("http://[/desc", "192.168.12.25"),
+            ("http://192.168.12.25]/desc", "192.168.12.25"),
         ]:
             with self.subTest(location=location), self.assertRaises(dlna.DlnaError):
                 dlna.parse_renderer(DESCRIPTION, location, sender)

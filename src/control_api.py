@@ -291,7 +291,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- verbs -------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802
-        parts = urlsplit(self.path)
+        parts = _split(self.path)
         if not self._authorised():
             return self._fail("auth", 401, "missing or invalid bearer token")
         if parts.path == "/v1/health":
@@ -303,7 +303,7 @@ class _Handler(BaseHTTPRequestHandler):
                    "not found" if not parts.path.startswith("/v1/") else "use POST for this endpoint")
 
     def do_POST(self) -> None:  # noqa: N802
-        path = urlsplit(self.path).path
+        path = _split(self.path).path
         if not self._authorised():
             return self._fail("auth", 401, "missing or invalid bearer token")
         command = path.removeprefix("/v1/")
@@ -319,6 +319,14 @@ class _Handler(BaseHTTPRequestHandler):
         self._fail("method", 405, "method not allowed")
 
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _not_allowed  # noqa: N815
+
+
+def _split(target: str):
+    """urlsplit that never raises: an unparsable target is just an unknown path."""
+    try:
+        return urlsplit(target)
+    except ValueError:
+        return urlsplit("/invalid")
 
 
 def make_server(bind: str, port: int, token: str, roots: list[Path]) -> ControlServer:

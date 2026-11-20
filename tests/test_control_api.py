@@ -363,3 +363,16 @@ def test_zz_rigs_leave_the_cli_handlers_untouched(rig):
 
 def test_zzz_handlers_are_pristine_after_every_previous_test():
     assert dict(cli_control.HANDLERS) == PRISTINE
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_unparsable_request_target_is_rejected_cleanly(rig, method):
+    # urlsplit raises ValueError for "//a]b"; the server must answer, not drop.
+    import socket
+    rig = rig()
+    with socket.create_connection(("127.0.0.1", rig.port), timeout=5) as sock:
+        sock.sendall(f"{method} //a]b HTTP/1.0\r\nAuthorization: Bearer {TOKEN}\r\n"
+                     "Content-Length: 0\r\n\r\n".encode())
+        status = sock.makefile("rb").readline()
+    assert status.split()[1] in (b"404", b"405")
+    assert rig.request("GET", "/v1/health")[0] == 200   # server still alive

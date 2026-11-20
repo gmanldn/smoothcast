@@ -98,8 +98,11 @@ def _private_host(host: str) -> bool:
 
 
 def _url(url: str, *, expected_host: str = "") -> tuple[str, int, str]:
-    parts = urlsplit(url)
-    host = parts.hostname or ""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError as exc:  # e.g. "http://[" from a broken or hostile device
+        raise DlnaError("Renderer URL is malformed") from exc
     if (parts.scheme != "http" or not _private_host(host)
             or (expected_host and host != expected_host)
             or parts.username is not None or parts.password is not None):
