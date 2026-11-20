@@ -120,7 +120,7 @@ failures only; the symlink and foreign-user guards never touch real user files.
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
-It quits promptly and forcibly terminates its process group on timeout.
+It quits promptly and forcibly terminates its process group on timeout. `scripts/gui_checks.py` runs real-widget behaviour checks the same way.
 Do not call the smoke runner inside pytest or point it at the active desktop.
 
 **Real-device tests:** require an intentionally available receiver and clear

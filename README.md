@@ -439,6 +439,8 @@ These commands do not launch SmoothCast or bring an existing window to the
 foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
 `--self-test` on the normal launcher is refused before bootstrap.
 
+Opt-in, outside pytest: `python3 scripts/gui_checks.py` runs real GTK widgets through first-run receiver choice, a saved device and Help > Report a problem inside a private Xvfb session (private XDG directories, no session bus, no LAN scan, no receiver contact, browser launch patched). It needs Linux with `xvfb`, `xauth` and GTK 4/libadwaita, and prints one PASS/FAIL line per check.
+
 **Version coverage:** GitHub Actions runs the **entire** portable pytest suite
 and Python syntax check using both Python **3.10** (the published minimum)
 and Python **3.13** (the primary development interpreter). Unlike bare

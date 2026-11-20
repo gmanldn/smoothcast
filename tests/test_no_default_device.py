@@ -51,27 +51,46 @@ def test_streamer_rejects_a_blank_device_before_any_process(starter):
     popen.assert_not_called()
 
 
-def test_first_run_scan_selects_nothing_and_asks_the_user_to_choose():
+def names_in(dropdown):
+    model = dropdown.model
+    return [model.get_string(i) for i in range(model.get_n_items())]
+
+
+def test_first_run_scan_shows_a_placeholder_and_saves_nothing_until_the_user_picks():
+    import cast_targets
     w, saves = window(name="", uuid="")
     w._scan_done([device("Kitchen", "uuid-a")])
     assert w.cfg["device"] == ""
-    assert w.device_dropdown.selected == 2 ** 32 - 1  # Gtk.INVALID_LIST_POSITION
-    assert [w.device_dropdown.model.get_string(i)
-            for i in range(w.device_dropdown.model.get_n_items())] == ["Kitchen"]
+    # GTK's DropDown cannot show "nothing selected" over a non-empty list, so the
+    # placeholder row is what is selected (verified with real widgets by scripts/gui_checks.py).
+    assert names_in(w.device_dropdown) == [cast_targets.CHOOSE_RECEIVER, "Kitchen"]
+    assert w.device_dropdown.selected == 0
     assert w.badges[-1] == "NOT FOUND"  # existing "choose another receiver" prompt
     assert saves == []
 
 
+def test_selecting_the_placeholder_never_becomes_a_receiver_but_a_real_pick_is_saved():
+    w, saves = window(name="", uuid="")
+    w._scan_done([device("Kitchen", "uuid-a")])
+    w._on_device_selected(w.device_dropdown, None)             # the placeholder row
+    assert w.cfg["device"] == "" and saves == [] and w.polls == 0
+    w.device_dropdown.selected = 1                              # the user picks Kitchen
+    w._on_device_selected(w.device_dropdown, None)
+    assert w.cfg["device"] == "Kitchen"
+
+
 def test_first_run_with_no_receivers_reports_not_found():
+    import cast_targets
     w, _ = window(name="", uuid="")
     w._scan_done([])
     assert w.badges[-1] == "NOT FOUND"
-    assert w.device_dropdown.model.get_n_items() == 0
+    assert names_in(w.device_dropdown) == [cast_targets.CHOOSE_RECEIVER]
 
 
-def test_select_index_adds_saved_device_and_never_invents_one():
+def test_select_index_adds_saved_device_and_uses_a_placeholder_when_unset():
     import cast_targets
     names = ["B", "C"]
     assert cast_targets.select_index(names, "A") == 0 and names == ["A", "B", "C"]
     assert cast_targets.select_index(names, "C") == 2
-    assert cast_targets.select_index(["B"], "") == cast_targets.NO_SELECTION
+    unset = ["B"]
+    assert cast_targets.select_index(unset, "") == 0 and unset == [cast_targets.CHOOSE_RECEIVER, "B"]

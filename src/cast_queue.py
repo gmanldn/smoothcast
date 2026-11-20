@@ -776,6 +776,8 @@ class QueueMixin:
         if index == Gtk.INVALID_LIST_POSITION or model is None:
             return
         name = model.get_string(index)
+        if name == cast_targets.CHOOSE_RECEIVER:
+            return
         if (name and name != self.cfg["device"]
                 and (self.session is not None or self.busy
                      or self._cast_starting or self.external)):

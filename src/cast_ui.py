@@ -506,7 +506,7 @@ class UiMixin:
         body.append(row_status)
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]] if self.cfg["device"] else [])
+        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"] or cast_targets.CHOOSE_RECEIVER])
         self.device_dropdown.set_hexpand(True)
         self.device_dropdown.connect("notify::selected", self._on_device_selected)
         refresh = self._icon_button(
