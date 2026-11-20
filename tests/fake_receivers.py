@@ -52,6 +52,7 @@ import castctl
 import dlna
 
 SOAP_ENV = "http://schemas.xmlsoap.org/soap/envelope/"
+CM = "urn:schemas-upnp-org:service:ConnectionManager:1"
 AV = "urn:schemas-upnp-org:service:AVTransport:1"
 RC = "urn:schemas-upnp-org:service:RenderingControl:1"
 
@@ -158,7 +159,8 @@ class FakeDlnaRenderer:
             name=self.name, host="127.0.0.1", location=self.location,
             transport_url=f"{base}/upnp/control/av", transport_service=AV,
             rendering_url=f"{base}/upnp/control/render" if self.rendering_control else "",
-            rendering_service=RC if self.rendering_control else "", model=self.model)
+            rendering_service=RC if self.rendering_control else "", model=self.model,
+            connection_url=f"{base}/upnp/control/connection", connection_service=CM)
 
     def description_xml(self) -> bytes:
         rendering = (
@@ -170,7 +172,9 @@ class FakeDlnaRenderer:
             "<deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>"
             f"<friendlyName>{escape(self.name)}</friendlyName><modelName>{escape(self.model)}</modelName>"
             f"<serviceList><service><serviceType>{AV}</serviceType>"
-            f"<controlURL>/upnp/control/av</controlURL></service>{rendering}</serviceList>"
+            f"<controlURL>/upnp/control/av</controlURL></service>{rendering}"
+            f"<service><serviceType>{CM}</serviceType>"
+            "<controlURL>/upnp/control/connection</controlURL></service></serviceList>"
             "</device></root>").encode()
 
     # -- scripting
@@ -232,6 +236,12 @@ class FakeDlnaRenderer:
         action = _local(call.tag)
         params = {_local(c.tag): (c.text or "") for c in call}
         service = call.tag.split("}")[0].lstrip("{") if "}" in call.tag else AV
+        if action == "GetProtocolInfo" and (
+            service != CM or handler.path != "/upnp/control/connection" or params
+            or handler.headers.get("SOAPAction") != f'"{CM}#GetProtocolInfo"'
+        ):
+            handler.send_error(400)
+            return
         with self._lock:
             self.calls.append((action, params))
             delay = self._delays.get(action, 0.0)
@@ -276,6 +286,8 @@ class FakeDlnaRenderer:
 
     def _perform(self, action: str, params: dict[str, str]):
         """Transport semantics; returns response fields or ('fault', code, text)."""
+        if action == "GetProtocolInfo":
+            return {"Source": "", "Sink": "http-get:*:video/mp4:*"}
         if action == "SetAVTransportURI":
             self.uri, self.metadata = params.get("CurrentURI", ""), params.get("CurrentURIMetaData", "")
             self.state, self.position = "STOPPED", 0.0

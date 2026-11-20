@@ -61,6 +61,13 @@ class FakeDlnaTests(unittest.TestCase):
         self.assertEqual(parsed.transport_url, self.renderer.transport_url)
         self.assertEqual(parsed.rendering_url, self.renderer.rendering_url)
 
+    def test_connection_manager_query_is_read_only_and_tolerates_fault(self):
+        renderer = dlna.parse_renderer(self.tv.description_xml(), self.tv.location, "127.0.0.1")
+        self.assertEqual(dlna.advertised_http_formats(renderer), {"video/mp4"})
+        self.tv.fail("GetProtocolInfo")
+        self.assertEqual(dlna.advertised_http_formats(renderer), set())
+        self.assertEqual(self.tv.calls, [("GetProtocolInfo", {}), ("GetProtocolInfo", {})])
+
     def test_full_transport_lifecycle_through_the_real_client(self):
         self.assertEqual(dlna.info(self.renderer)["player_state"], "IDLE")      # NO_MEDIA_PRESENT
         dlna.set_uri(self.renderer, MEDIA, "A & <B>")

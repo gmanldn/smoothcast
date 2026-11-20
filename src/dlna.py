@@ -82,6 +82,8 @@ class Renderer:
     rendering_url: str = ""
     rendering_service: str = ""
     model: str = ""
+    connection_url: str = ""
+    connection_service: str = ""
 
     @property
     def key(self) -> str:
@@ -167,6 +169,7 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
     _url(base, expected_host=sender_host)
     transport = None
     rendering = None
+    connection = None
     for service in device.iter():
         if _local(service.tag) != "service":
             continue
@@ -180,6 +183,8 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
             transport = (endpoint, service_type)
         elif service_type.startswith(SERVICE_PREFIX + "RenderingControl:"):
             rendering = (endpoint, service_type)
+        elif service_type.startswith(SERVICE_PREFIX + "ConnectionManager:"):
+            connection = (endpoint, service_type)
     if transport is None:
         raise DlnaError("UPnP MediaRenderer has no AVTransport service")
     name = _child_text(device, "friendlyName") or sender_host
@@ -189,6 +194,8 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
         rendering_url=rendering[0] if rendering else "",
         rendering_service=rendering[1] if rendering else "",
         model=_child_text(device, "modelName")[:120],
+        connection_url=connection[0] if connection else "",
+        connection_service=connection[1] if connection else "",
     )
 
 
@@ -302,8 +309,10 @@ def _upnp_fault(data: bytes) -> str:
 
 
 def _soap(renderer: Renderer, action: str, params: dict[str, str],
-          *, rendering: bool = False) -> ET.Element:
-    if rendering:
+          *, rendering: bool = False, connection: bool = False) -> ET.Element:
+    if connection:
+        url, service = renderer.connection_url, renderer.connection_service
+    elif rendering:
         if not renderer.rendering_url:
             raise DlnaError("This renderer does not expose RenderingControl")
         url, service = renderer.rendering_url, renderer.rendering_service
@@ -349,6 +358,32 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
 def _value(root: ET.Element, key: str) -> str:
     return next((str(node.text or "").strip() for node in root.iter()
                  if _local(node.tag) == key), "")
+
+
+def advertised_http_formats(renderer: Renderer) -> frozenset[str]:
+    """Return advertised HTTP MIME types, or an empty set when unknown."""
+    if not renderer.connection_url:
+        return frozenset()
+    try:
+        response = _soap(renderer, "GetProtocolInfo", {}, connection=True)
+    except DlnaError:
+        return frozenset()
+
+    formats = set()
+    for entry in _value(response, "Sink").split(","):
+        fields = entry.strip().split(":", 3)
+        if len(fields) == 4 and fields[0].lower() in {"http-get", "*"}:
+            mime = fields[2].strip().lower()
+            if mime == "*" or "/" in mime:
+                formats.add(mime)
+    return frozenset(formats)
+
+
+def require_mp4_output(renderer: Renderer) -> None:
+    """Check whether the advertised formats include our progressive output."""
+    formats = advertised_http_formats(renderer)
+    if formats and formats.isdisjoint({MEDIA_TYPE, "video/*", "*"}):
+        raise DlnaError("The receiver does not advertise MP4 playback over HTTP")
 
 
 def _seconds(clock: str) -> float:

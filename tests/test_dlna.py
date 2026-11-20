@@ -36,6 +36,48 @@ DESCRIPTION = b"""<?xml version="1.0"?>
 LOCATION = "http://192.168.12.25:1400/desc.xml"
 
 
+class DlnaCapabilityTests(unittest.TestCase):
+    def test_sink_formats_exclude_source_and_other_transports(self):
+        from dataclasses import replace
+        from xml.etree import ElementTree
+
+        renderer = replace(
+            dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25"),
+            connection_url="http://192.168.12.25:1400/connection",
+        )
+        response = ElementTree.fromstring(
+            "<GetProtocolInfoResponse>"
+            "<Source>http-get:*:audio/aac:*</Source>"
+            "<Sink>http-get:*:Video/MP4:*,rtsp-rtp-udp:*:video/mpeg:*,"
+            "malformed,http-get:*:video/webm:DLNA.ORG_OP=01</Sink>"
+            "</GetProtocolInfoResponse>"
+        )
+        with mock.patch.object(dlna, "_soap", return_value=response) as soap:
+            self.assertEqual(dlna.advertised_http_formats(renderer),
+                             {"video/mp4", "video/webm"})
+        soap.assert_called_once_with(renderer, "GetProtocolInfo", {}, connection=True)
+
+        with mock.patch.object(dlna, "_soap", side_effect=dlna.DlnaError("timeout")):
+            self.assertEqual(dlna.advertised_http_formats(renderer), set())
+
+    def test_mp4_preflight_accepts_wildcards_and_unknown_but_rejects_other_formats(self):
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        for formats in (set(), {"video/mp4"}, {"video/*"}, {"*"}):
+            with self.subTest(formats=formats), mock.patch.object(
+                dlna, "advertised_http_formats", return_value=formats
+            ):
+                dlna.require_mp4_output(renderer)
+        with mock.patch.object(dlna, "advertised_http_formats", return_value={"video/mpeg"}):
+            with self.assertRaisesRegex(dlna.DlnaError, "does not advertise MP4"):
+                dlna.require_mp4_output(renderer)
+
+    def test_absent_service_does_not_make_a_request(self):
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        with mock.patch.object(dlna, "_soap") as soap:
+            self.assertEqual(dlna.advertised_http_formats(renderer), set())
+        soap.assert_not_called()
+
+
 class DlnaDiscoveryTests(unittest.TestCase):
     def test_parser_extracts_renderer_and_services(self):
         renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
@@ -45,6 +87,22 @@ class DlnaDiscoveryTests(unittest.TestCase):
         self.assertIn("AVTransport:1", renderer.transport_service)
         self.assertIn("DLNA · Living & Room TV", renderer.key)
         self.assertIn("RenderingControl", renderer.rendering_service)
+
+    def test_parser_extracts_optional_connection_manager(self):
+        service = b"""
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+        <controlURL>/upnp/control/connection</controlURL>
+      </service>
+"""
+        description = DESCRIPTION.replace(b"</serviceList>", service + b"</serviceList>")
+        renderer = dlna.parse_renderer(description, LOCATION, "192.168.12.25")
+        self.assertEqual(renderer.connection_url,
+                         "http://192.168.12.25:1400/upnp/control/connection")
+        self.assertEqual(renderer.connection_service,
+                         "urn:schemas-upnp-org:service:ConnectionManager:1")
+        self.assertEqual(dlna.parse_renderer(
+            DESCRIPTION, LOCATION, "192.168.12.25").connection_url, "")
 
     def test_description_must_be_media_renderer(self):
         xml = DESCRIPTION.replace(b"MediaRenderer:1", b"MediaServer:1")

@@ -81,6 +81,10 @@ the Google Cast backend. A receiver must advertise a compatible DLNA
 AVTransport service; some TVs with only UPnP *media browsing* are not
 MediaRenderers and will not be listed.
 
+If a receiver reports HTTP media formats through ConnectionManager, SmoothCast
+checks that the list allows MP4 before replacing an active cast. Receivers that
+return no usable format information can still use the normal MP4 path.
+
 For compatible H.264/AAC MP4 files, DLNA playback starts directly. An MKV
 with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
 non-default audio tracks or selected subtitles require full FFmpeg

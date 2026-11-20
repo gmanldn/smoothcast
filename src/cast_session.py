@@ -159,6 +159,14 @@ class SessionMixin:
                     if len(self._preflight_ok) >= 256:
                         self._preflight_ok.clear()
                     self._preflight_ok.add(fingerprint)
+            if renderer is not None:
+                if speed != 1.0 or rotation != 0:
+                    raise dlna.DlnaError(
+                        "DLNA currently supports normal speed and unrotated video; reset these settings"
+                    )
+                dlna.require_mp4_output(renderer)
+                if self._dlna_cancel is not None and self._dlna_cancel.is_set():
+                    raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             if previous is not None:
@@ -169,10 +177,6 @@ class SessionMixin:
             title = pretty_title(path)
             try:
                 if renderer is not None:
-                    if speed != 1.0 or rotation != 0:
-                        raise dlna.DlnaError(
-                            "DLNA currently supports normal speed and unrotated video; reset these settings"
-                        )
                     audio_choice = streamer.preferred_audio_track(media, audio_track)
                     session.start(
                         media, renderer=renderer,
@@ -276,6 +280,7 @@ class SessionMixin:
 
         def failed(message):
             self._cast_starting = False
+            self._dlna_cancel = None
             if self._closing:
                 self.busy = False
                 self._finish_delayed_close()
