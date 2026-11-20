@@ -118,6 +118,30 @@ class DownmixFfmpegTests(unittest.TestCase):
         text = self.run_ffmpeg("-i", path, *extra, "-af", chain, "-f", "null", "-")
         return float(re.search(r"max_volume: (-?[\d.]+|-inf) dB", text).group(1))
 
+    def test_downmix_preserves_audio_alignment_after_mp4_encoding(self):
+        # A white frame and a centre-only tone both begin at 480 ms.
+        mix = audio_downmix.downmix_filter(8, "7.1", "dialogue")
+        with TemporaryDirectory() as folder:
+            output = str(Path(folder) / "downmixed.mp4")
+            self.run_ffmpeg(
+                "-f", "lavfi", "-i",
+                "color=black:size=64x64:rate=25:duration=1,"
+                "drawbox=color=white:t=fill:enable='gte(t,0.48)'",
+                "-f", "lavfi", "-i",
+                "aevalsrc=0|0|0.8*sin(2*PI*440*t)*gte(t\\,0.48)|0|0|0|0|0:"
+                "s=48000:d=1:c=7.1",
+                "-af", mix, "-c:v", "mpeg4", "-c:a", "aac", output,
+            )
+            measured = self.run_ffmpeg(
+                "-i", output, "-vf", "blackdetect=d=0.2",
+                "-af", "silencedetect=n=-30dB:d=0.2", "-f", "null", "-",
+            )
+        video_onset = float(re.search(r"black_end:([\d.]+)", measured).group(1))
+        audio_onset = float(re.search(r"silence_end: ([\d.]+)", measured).group(1))
+        self.assertAlmostEqual(video_onset, 0.48, delta=0.001)
+        self.assertAlmostEqual(audio_onset, 0.48, delta=0.02)
+        self.assertLessEqual(abs(video_onset - audio_onset), 0.04)
+
     def test_filter_runs_and_lifts_centre_relative_to_default_downmix(self):
         """Measured against FFmpeg's own stereo conversion, inside the graph."""
         default = "aformat=channel_layouts=stereo,volumedetect"
