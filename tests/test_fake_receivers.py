@@ -29,6 +29,28 @@ class FakeDlnaTests(unittest.TestCase):
         self.addCleanup(patcher.__exit__, None, None, None)
         self.renderer = self.tv.renderer()
 
+    def test_soap_bodies_with_dtds_or_entities_or_excess_size_are_refused(self):
+        import urllib.error
+        import urllib.request
+        url = self.renderer.transport_url
+        env = ('<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+               '<u:GetTransportInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">'
+               '<InstanceID>0</InstanceID></u:GetTransportInfo></s:Body></s:Envelope>')
+
+        def post(body: bytes) -> int:
+            request = urllib.request.Request(url, data=body, headers={
+                "Content-Type": "text/xml",
+                "SOAPAction": '"urn:schemas-upnp-org:service:AVTransport:1#GetTransportInfo"'})
+            try:
+                return urllib.request.urlopen(request, timeout=3).status
+            except urllib.error.HTTPError as exc:
+                return exc.code
+
+        self.assertEqual(post(env.encode()), 200)  # control: the same action is accepted
+        self.assertEqual(post(b'<!DOCTYPE x [<!ENTITY a "a">]>' + env.encode()), 400)
+        self.assertEqual(post(b"<!doctype x>" + env.encode()), 400)
+        self.assertEqual(post(env.encode() + b" " * (256 * 1024)), 400)
+
     def test_discovery_description_parses_to_the_same_endpoints(self):
         import urllib.request
         body = urllib.request.urlopen(self.tv.location, timeout=3).read()

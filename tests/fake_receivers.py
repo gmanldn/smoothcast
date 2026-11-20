@@ -218,6 +218,11 @@ class FakeDlnaRenderer:
         return fault
 
     def _serve_soap(self, handler: BaseHTTPRequestHandler, body: bytes) -> None:
+        # The SOAP body comes from the app under test, but still refuse DTDs and
+        # entity declarations (billion-laughs) and oversized bodies outright.
+        if len(body) > 256 * 1024 or b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
+            handler.send_error(400)
+            return
         try:
             root = ET.fromstring(body)
             call = next(n for n in root.iter() if _local(n.tag) not in ("Envelope", "Body"))
