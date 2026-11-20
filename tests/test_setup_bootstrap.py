@@ -358,7 +358,11 @@ class SetupContractTests(unittest.TestCase):
             with self.subTest(platform=system), \
                  mock.patch.object(startup_cleanup.platform, "system",
                                    return_value=system), \
+                 mock.patch.object(startup_cleanup.process_identity, "psutil",
+                                   None), \
                  mock.patch.object(startup_cleanup, "discover") as discover:
+                # Without psutil the cleanup fails closed off Linux, whether or
+                # not the host running the tests happens to have it installed.
                 report = startup_cleanup.cleanup_before_window(
                     keep_streaming=False,
                 )
