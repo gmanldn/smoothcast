@@ -15,6 +15,7 @@ import shutil
 
 import cache_policy
 import subtitle_delay
+import subtitle_style
 import language_prefs
 import watch_history
 
@@ -24,6 +25,7 @@ _OPTIONS = {
     "audio": frozenset({"original", "dialogue", "night"}),
     "subs": frozenset({"off", "auto", "pick", "embedded"}),
     "color_scheme": frozenset({"default", "force-light", "prefer-dark"}),
+    "subtitle_style": frozenset(subtitle_style.PRESETS),
 }
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",

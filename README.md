@@ -169,6 +169,15 @@ real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
 verified on physical receivers yet. Streams resumed or seeked to a later
 position also now draw burned-in captions at the correct film time.
 
+**Subtitle style:** set `"subtitle_style"` in the config file to `large`,
+`high-contrast` (bold, on a translucent box) or `raised` (higher margin, clear
+of overscan); `default` changes nothing. A preset burns captions into the
+picture, so, like a delay, it needs the transcode path and applies from your
+next cast or restart. It is applied only to plain-text subtitles (SRT, WebVTT,
+embedded SubRip/mov_text); ASS/SSA keep their own authored styling. Presets are
+checked with real libass renders in `tests/test_subtitle_style.py`. There is no
+Preferences control yet, and it has not been checked on physical receivers.
+
 ### Language preferences
 
 Set preferred audio and subtitle languages once in `~/.config/cast-control/config.json` and SmoothCast applies them to every film that has no explicit per-file track choice:

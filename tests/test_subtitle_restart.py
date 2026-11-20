@@ -138,6 +138,7 @@ def restart_window(session):
         "pathlib": __import__("pathlib"),
         "streamer": streamer,
         "subtitle_delay": __import__("subtitle_delay"),
+        "subtitle_style": __import__("subtitle_style"),
         "subtitle_restart": subtitle_restart,
         "castctl": castctl,
         "DEFAULTS": {"audio_gain": 0.0},

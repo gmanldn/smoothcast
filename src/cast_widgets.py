@@ -55,6 +55,7 @@ DEFAULTS: dict = {
     "subs_path": "",
     "subtitle_track_by_file": {},
     "subtitle_delay_by_file": {},
+    "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,

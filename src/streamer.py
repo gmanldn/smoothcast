@@ -37,6 +37,7 @@ import progress_model
 import server as hls_server
 import subtitle_delay
 import subtitle_encoding
+import subtitle_style
 import video_policy
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
@@ -1282,7 +1283,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
         chain: list[str] = []
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
@@ -1292,9 +1293,10 @@ class Session:
         chain.extend(plan_filters)
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
-            sub_filter = f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}"
+            sub_filter = (f"subtitles=filename={self._filter_path(embedded_source)}"
+                          f":si={embedded_subtitle_index}{subtitle_force_style}")
         elif burn_subs and staged is not None:
-            sub_filter = f"subtitles=filename={staged.name}"
+            sub_filter = f"subtitles=filename={staged.name}{subtitle_force_style}"
         if sub_filter is not None:
             # libass sees encode-relative timestamps: re-add the -ss start and
             # apply the user delay, then restore the stream's own timeline.
@@ -1344,6 +1346,7 @@ class Session:
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
         subtitle_delay_ms: int = 0,
+        subtitle_preset: str = subtitle_style.DEFAULT,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
@@ -1370,11 +1373,13 @@ class Session:
         (ROOT / HLS_NAME).unlink(missing_ok=True)
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
+        embedded_codec = ""
         if embedded_subtitle_index is not None:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
             if track is None or not track.is_text:
                 raise StreamError("Selected MKV subtitle track cannot be burned into video")
+            embedded_codec = track.codec
             burn_subs = True
         # Explicit selections must fail before starting a new encoder. Keep
         # the optional audio map for silent videos with no audio streams.
@@ -1419,6 +1424,8 @@ class Session:
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
+            subtitle_force_style=subtitle_style.force_style(
+                subtitle_preset, codec=embedded_codec, path=staged) or "",
         )
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)

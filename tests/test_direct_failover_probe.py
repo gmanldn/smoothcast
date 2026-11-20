@@ -16,6 +16,7 @@ import direct_probe
 import playback_state
 import streamer
 import subtitle_delay
+import subtitle_style
 
 
 def test_direct_status_classifier_is_conservative():
@@ -117,6 +118,7 @@ def cast_worker(status="rejected"):
     namespace = {
         "playback_state": playback_state,
         "subtitle_delay": subtitle_delay,
+        "subtitle_style": subtitle_style,
         "streamer": fake_streamer,
         "direct_probe": SimpleNamespace(
             verify_direct_start=probe,

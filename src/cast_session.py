@@ -22,6 +22,7 @@ import dlna
 import streamer
 
 import subtitle_delay
+import subtitle_style
 
 import subtitle_restart
 
@@ -107,9 +108,10 @@ class SessionMixin:
         # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
         # FFmpeg rather than advertised as unsupported receiver-side tracks.
         delay = subtitle_delay.get(cfg, path)
+        preset = subtitle_style.from_config(cfg)
         burn = subs_path is not None and (
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
-            or delay != 0
+            or delay != 0 or preset != subtitle_style.DEFAULT
         )
         # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
@@ -207,7 +209,7 @@ class SessionMixin:
                     rotation=rotation,
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
-                    subtitle_delay_ms=delay,
+                    subtitle_delay_ms=delay, subtitle_preset=preset,
                 )
                 return session, media
             except Exception:
@@ -569,6 +571,7 @@ class SessionMixin:
                     embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=captions.delay_ms,
+                    subtitle_preset=subtitle_style.from_config(self.cfg),
                 )
             except Exception:
                 try:
