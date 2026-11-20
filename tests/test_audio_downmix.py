@@ -118,6 +118,34 @@ class DownmixFfmpegTests(unittest.TestCase):
         text = self.run_ffmpeg("-i", path, *extra, "-af", chain, "-f", "null", "-")
         return float(re.search(r"max_volume: (-?[\d.]+|-inf) dB", text).group(1))
 
+    @unittest.skipUnless(shutil.which("ffprobe"), "ffprobe required")
+    def test_encoded_surround_tracks_keep_dialogue_and_drop_lfe(self):
+        encoders = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+        for encoder, codec in (("eac3", "eac3"), ("dca", "dts"), ("truehd", "truehd")):
+            with self.subTest(codec=codec), TemporaryDirectory() as folder:
+                if not re.search(rf"^\s+A\S*\s+{encoder}\s", encoders, re.MULTILINE):
+                    self.skipTest(f"FFmpeg lacks the {encoder} encoder")
+                levels = {}
+                for channel in ("FC", "LFE"):
+                    output = str(Path(folder) / f"{channel}.mkv")
+                    self.run_ffmpeg(
+                        "-f", "lavfi", "-i", "color=black:size=64x64:duration=0.5",
+                        "-f", "lavfi", "-i", "sine=frequency=80:duration=0.5:sample_rate=48000",
+                        "-af", f"pan=5.1|{channel}=1*c0", "-c:v", "mpeg4",
+                        "-c:a", encoder, "-strict", "experimental", output,
+                    )
+                    track = streamer.ffprobe(Path(output)).audio_streams[0]
+                    self.assertEqual(track.codec, codec)
+                    self.assertEqual(track.channels, 6)
+                    mix = audio_downmix.downmix_filter(track.channels, track.layout, "dialogue")
+                    self.assertIsNotNone(mix)
+                    levels[channel] = self.level(output, f"{mix},volumedetect")
+                self.assertGreater(levels["FC"], -35)
+                self.assertLess(levels["LFE"], -60)
+
     def test_downmix_preserves_audio_alignment_after_mp4_encoding(self):
         # A white frame and a centre-only tone both begin at 480 ms.
         mix = audio_downmix.downmix_filter(8, "7.1", "dialogue")
