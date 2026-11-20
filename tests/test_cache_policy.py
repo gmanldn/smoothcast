@@ -27,13 +27,19 @@ class CapTests(unittest.TestCase):
         windows_lock = mock.Mock(get_osfhandle=mock.Mock(return_value=1234))
         lease = mock.Mock()
         lease.fileno.return_value = 17
+        duplicate_fd = mock.Mock(return_value=23)
         with mock.patch.object(cp, "fcntl", None), \
              mock.patch.object(cp, "msvcrt", windows_lock), \
+             mock.patch.object(cp.os, "dup", duplicate_fd), \
+             mock.patch.object(cp.os, "set_handle_inheritable", create=True) as inheritable, \
+             mock.patch.object(cp.os, "close") as close, \
              mock.patch("subprocess.STARTUPINFO", return_value=startup, create=True):
-            options = cp.encoder_lease_kwargs(lease)
-        self.assertEqual(options, {"startupinfo": startup})
-        self.assertEqual(startup.lpAttributeList, {"handle_list": [1234]})
-        windows_lock.get_osfhandle.assert_called_once_with(17)
+            with cp.encoder_lease_kwargs(lease) as options:
+                self.assertEqual(options, {"startupinfo": startup})
+                self.assertEqual(startup.lpAttributeList, {"handle_list": [1234]})
+                inheritable.assert_called_once_with(1234, True)
+            close.assert_called_once_with(23)
+        windows_lock.get_osfhandle.assert_called_once_with(23)
 
     def test_windows_temp_sweep_requires_the_current_users_local_temp(self):
         with tempfile.TemporaryDirectory() as work:
@@ -185,7 +191,8 @@ class StartupSweepTests(unittest.TestCase):
             stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
             os.utime(old, (stamp, stamp))
             try:
-                self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
+                if os.name == "posix":
+                    self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
                 self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
                 self.assertTrue((old / "movie.mp4").exists())
             finally:
@@ -206,12 +213,12 @@ class StartupSweepTests(unittest.TestCase):
             # it old *after* the lock is held to reproduce the reported race.
             stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
             os.utime(old, (stamp, stamp))
-            proc = subprocess.Popen(
-                [sys.executable, "-c", "import time; time.sleep(2)"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                **cp.encoder_lease_kwargs(lease),
-            )
+            with cp.encoder_lease_kwargs(lease) as lease_kwargs:
+                proc = subprocess.Popen(
+                    [sys.executable, "-c", "import time; time.sleep(2)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, **lease_kwargs,
+                )
             try:
                 lease.close()  # Simulate GUI crash while FFmpeg keeps writing.
                 self.assertEqual(self.sweep(root).temp_dirs_removed, 0)

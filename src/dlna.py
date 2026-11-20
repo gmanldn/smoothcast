@@ -726,13 +726,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     with tempfile.TemporaryFile() as error_log:
         try:
             low_priority = process_priority.enabled()
-            lease_kwargs = cache_policy.encoder_lease_kwargs(scratch_lease_fd)
-            proc = subprocess.Popen(
-                args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=error_log, start_new_session=True,
-                **lease_kwargs,
-                **process_priority.launch_kwargs(low_priority),
-            )
+            with cache_policy.encoder_lease_kwargs(scratch_lease_fd) as lease_kwargs:
+                proc = subprocess.Popen(
+                    args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=error_log, start_new_session=True,
+                    **lease_kwargs,
+                    **process_priority.launch_kwargs(low_priority),
+                )
             process_priority.lower(proc, low_priority)
         except OSError as exc:
             output.unlink(missing_ok=True)
@@ -868,14 +868,12 @@ class Session:
         if self.http is not None:
             self.http.close()
             self.http = None
-        try:
-            if self.tmp is not None:
-                self.tmp.cleanup()
-                self.tmp = None
-        finally:
-            if self._scratch_lease is not None:
-                self._scratch_lease.close()
-                self._scratch_lease = None
+        if self._scratch_lease is not None:
+            self._scratch_lease.close()
+            self._scratch_lease = None
+        if self.tmp is not None:
+            self.tmp.cleanup()
+            self.tmp = None
         self.state = None
         self._owns_renderer = False
         self.renderer = None

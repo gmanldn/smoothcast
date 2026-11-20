@@ -16,7 +16,8 @@ import os
 import stat
 from pathlib import Path
 import sys
-from typing import Any, IO
+from contextlib import contextmanager
+from typing import Any, IO, Iterator
 
 try:
     import fcntl
@@ -66,24 +67,34 @@ def hold_scratch_lease(directory: Path) -> IO[bytes] | None:
         raise
 
 
-def encoder_lease_kwargs(lease: IO[bytes] | int | None) -> dict[str, Any]:
-    """Return subprocess options that keep a scratch lease through FFmpeg.
+@contextmanager
+def encoder_lease_kwargs(lease: IO[bytes] | int | None) -> Iterator[dict[str, Any]]:
+    """Yield subprocess options that keep a scratch lease through FFmpeg.
 
-    Windows can inherit only explicitly listed OS handles. Popen marks these
-    inheritable for process creation and closes the child-side copy on exit.
+    Windows can inherit only explicitly listed OS handles. Use a temporary
+    duplicate so concurrent process launches cannot inherit the app's handle.
     """
     if lease is None:
-        return {}
+        yield {}
+        return
     fd = lease if isinstance(lease, int) else lease.fileno()
     if fcntl is not None:
-        return {"pass_fds": (fd,)}
+        yield {"pass_fds": (fd,)}
+        return
     if msvcrt is None:
-        return {}
+        yield {}
+        return
     import subprocess
 
-    startup = subprocess.STARTUPINFO()
-    startup.lpAttributeList = {"handle_list": [msvcrt.get_osfhandle(fd)]}
-    return {"startupinfo": startup}
+    duplicate_fd = os.dup(fd)
+    try:
+        handle = msvcrt.get_osfhandle(duplicate_fd)
+        os.set_handle_inheritable(handle, True)
+        startup = subprocess.STARTUPINFO()
+        startup.lpAttributeList = {"handle_list": [handle]}
+        yield {"startupinfo": startup}
+    finally:
+        os.close(duplicate_fd)
 
 
 def claim_abandoned_scratch(directory: Path) -> IO[bytes] | None:
