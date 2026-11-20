@@ -36,9 +36,21 @@ _SEGMENT = re.compile(r"/segment-[0-9]+\.ts\Z")
 _GENERATION = re.compile(r"/(?:movie-[0-9a-f]{32}\.m3u8|segment-[0-9a-f]{32}-[0-9]+\.ts)\Z")
 
 
+def _url_path(url: str) -> str:
+    """Path of a request target, or "" when it cannot be parsed.
+
+    ``urlsplit`` raises ValueError for targets such as ``//a]b`` ("Invalid IPv6
+    URL"); a hostile or broken client must get a 404, not a dropped connection.
+    """
+    try:
+        return urlsplit(url).path
+    except ValueError:
+        return ""
+
+
 def public_resource(url: str, token: str = "") -> bool:
     """Is *url* a servable HLS resource? With *token*, only that generation."""
-    path = urlsplit(url).path
+    path = _url_path(url)
     # Exact basenames only: traversal, encoded slashes, paths and accidental
     # new files under ROOT never become LAN-visible. Query strings don't
     # change the identity of the underlying generation-specific resource.
@@ -226,7 +238,7 @@ class H(SimpleHTTPRequestHandler):
             # The HLS URL uses an interface IP, not an arbitrary hostname.
             # Reject DNS-rebinding and duplicate Host headers.
             self.send_error(400, "Invalid HLS Host header")
-        elif urlsplit(self.path).path == HEALTH_PATH:
+        elif _url_path(self.path) == HEALTH_PATH:
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(HEALTH_BODY)))

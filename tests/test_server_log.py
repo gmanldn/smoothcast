@@ -50,6 +50,16 @@ class ServerLogTests(unittest.TestCase):
     def lines(self) -> list[str]:
         return self.log_path.read_text("utf-8").splitlines() if self.log_path.exists() else []
 
+    def test_unparsable_request_target_is_a_404_not_a_dropped_connection(self):
+        import socket
+        for target in ("//a]b", "//[::1", "//x]/movie.m3u8"):
+            with self.subTest(target=target), socket.create_connection(
+                    ("127.0.0.1", self.httpd.server_address[1]), timeout=3) as sock:
+                sock.sendall(f"GET {target} HTTP/1.0\r\n\r\n".encode())
+                status = sock.makefile("rb").readline()
+                self.assertIn(b" 404 ", status)
+        self.assertFalse(server.public_resource("//a]b"))
+
     def test_failed_requests_are_logged_but_successful_ones_are_not(self):
         self.assertEqual(self.get("/movie.m3u8"), 200)
         self.assertEqual(self.get(server.HEALTH_PATH), 200)
