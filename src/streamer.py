@@ -1,6 +1,7 @@
 """Casting session management: ffmpeg HLS transcode, direct play, device cast."""
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import json
 import math
@@ -885,8 +886,37 @@ def load_session() -> SessionState | None:
     if not isinstance(raw, dict):
         return None
     known = {k: v for k, v in raw.items() if k in SessionState.__dataclass_fields__}
+    return _checked_state(known)
+
+
+def _field_ok(value: object, expected: type) -> bool:
+    if expected is bool:
+        return isinstance(value, bool)
+    if isinstance(value, bool):
+        return False
+    if expected is float:
+        return isinstance(value, (int, float)) and math.isfinite(value)
+    return isinstance(value, expected)
+
+
+def _checked_state(known: dict) -> SessionState | None:
+    """Build a SessionState from untrusted JSON, never trusting field types.
+
+    A hand-edited or corrupt session.json (``"server_pid": []``) must not crash
+    startup cleanup or process signalling. Required fields of the wrong type
+    reject the whole file; optional ones fall back to their defaults.
+    """
+    clean: dict = {}
+    for name, spec in SessionState.__dataclass_fields__.items():
+        required = spec.default is dataclasses.MISSING
+        expected = str if required and name not in ("offset", "duration") else (
+            float if name in ("offset", "duration") else type(spec.default))
+        if name in known and _field_ok(known[name], expected):
+            clean[name] = known[name]
+        elif required:
+            return None
     try:
-        return SessionState(**known)
+        return SessionState(**clean)
     except TypeError:
         return None
 
