@@ -394,7 +394,7 @@ class DlnaPrepareTests(unittest.TestCase):
                 width=1280, height=720, fps=24, duration=5,
                 audio_streams=[
                     streamer.AudioTrack(index=0, codec="aac", default=True),
-                    streamer.AudioTrack(index=1, codec="dts"),
+                    streamer.AudioTrack(index=1, codec="dts", channels=6, layout="5.1"),
                 ],
             )
             target = Path(dirname) / "prepared.mp4"
@@ -418,6 +418,15 @@ class DlnaPrepareTests(unittest.TestCase):
             self.assertIn("0:a:0?", args)
             self.assertEqual(args[args.index("-c:v") + 1], "copy")
             self.assertEqual(args[args.index("-c:a") + 1], "copy")
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as ffmpeg:
+                dlna.prepare_mp4(media, target, audio_track=1, audio_profile="dialogue",
+                                 audio_delay_ms=50)
+            args = ffmpeg.call_args.args[0]
+            self.assertIn("0:a:1?", args)
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            filters = args[args.index("-af") + 1]
+            self.assertTrue(filters.startswith("pan=stereo|"))
+            self.assertIn(",adelay=delays=50:all=1", filters)
 
     def test_missing_selected_audio_fails_before_ffmpeg(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -439,7 +448,7 @@ class DlnaPrepareTests(unittest.TestCase):
             source = Path(dirname) / "dual-tone.mkv"
             output = Path(dirname) / "selected.mp4"
             # AAC is the default soundtrack. FLAC is a deliberately
-            # incompatible alternative, like DTS, and should be transcoded
+            # incompatible surround alternative, like DTS, and should be transcoded
             # while preserving the H.264 picture without re-encoding.
             command = [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -448,23 +457,25 @@ class DlnaPrepareTests(unittest.TestCase):
                 "-f", "lavfi", "-i", "sine=frequency=880:duration=2",
                 "-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-c:a:0", "aac", "-c:a:1", "flac",
+                "-c:a:0", "aac", "-c:a:1", "flac", "-filter:a:1", "pan=5.1|FC=c0",
                 "-disposition:a:0", "default",
                 "-disposition:a:1", "0", "-shortest", str(source),
             ]
             subprocess.run(command, check=True, capture_output=True, timeout=25)
             media = streamer.ffprobe(source)
             self.assertEqual([t.codec for t in media.audio_streams], ["aac", "flac"])
-            dlna.prepare_mp4(media, output, audio_track=1)
+            self.assertEqual(media.audio_streams[1].channels, 6)
+            dlna.prepare_mp4(media, output, audio_track=1, audio_profile="dialogue")
             probe = subprocess.run(
                 ["ffprobe", "-v", "error", "-show_entries",
-                 "stream=codec_type,codec_name", "-of", "json", str(output)],
+                 "stream=codec_type,codec_name,channels", "-of", "json", str(output)],
                 check=True, capture_output=True, text=True, timeout=10,
             )
             streams = json.loads(probe.stdout)["streams"]
             self.assertEqual(
-                [item["codec_name"] for item in streams if item["codec_type"] == "audio"],
-                ["aac"],
+                [(item["codec_name"], item["channels"])
+                 for item in streams if item["codec_type"] == "audio"],
+                [("aac", 2)],
             )
             self.assertEqual(
                 [item["codec_name"] for item in streams if item["codec_type"] == "video"],

@@ -185,7 +185,7 @@ class SessionMixin:
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
                         subtitle_delay_ms=delay, audio_delay_ms=adelay,
-                        cancel=self._dlna_cancel,
+                        cancel=self._dlna_cancel, audio_profile=cfg["audio"],
                     )
                     return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
@@ -253,7 +253,7 @@ class SessionMixin:
                     hint += f" · +{gain:g} dB"
             else:
                 chain = []
-                hint = ("DLNA progressive MP4 · original audio"
+                hint = ("DLNA progressive MP4"
                         if session.mode == "dlna" else "Original audio (direct play)")
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)

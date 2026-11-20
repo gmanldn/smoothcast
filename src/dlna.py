@@ -28,6 +28,7 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
 import audio_delay
+import audio_downmix
 import cache_policy
 import process_priority
 import video_policy
@@ -612,12 +613,22 @@ class ProgressiveFileServer:
         self.thread.join(timeout=2)
 
 
+def _selected_audio(media, index: int):
+    return next((track for track in media.audio_streams if track.index == index), None)
+
+
+def _downmix(track, profile: str) -> str | None:
+    if track is None:
+        return None
+    return audio_downmix.downmix_filter(track.channels, track.layout, profile)
+
+
 def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
                 audio_track: int = 0, subtitle_delay_ms: int = 0,
                 cancel: threading.Event | None = None,
                 scratch_lease_fd: int | None = None,
-                audio_delay_ms: int = 0) -> Path:
+                audio_delay_ms: int = 0, audio_profile: str = "original") -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -647,10 +658,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         raise DlnaError(blocked)
 
     audio_track = int(audio_track)
-    selected_audio = next(
-        (track for track in media.audio_streams if track.index == audio_track),
-        None,
-    )
+    selected_audio = _selected_audio(media, audio_track)
     if audio_track < 0 or (
         media.audio_streams and selected_audio is None
     ) or (audio_track != 0 and not media.audio_streams):
@@ -665,7 +673,11 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     has_audio = bool(media.audio_streams or media.acodec)
     audio_delay_ms = audio_delay.normalize(audio_delay_ms)
     # A copied stream cannot be shifted: a lip-sync delay needs a re-encode (#113).
-    copy_audio = ((not has_audio) or selected_codec in {"aac", "mp3"}) and audio_delay_ms == 0
+    downmix = _downmix(selected_audio, audio_profile)
+    copy_audio = (
+        (not has_audio or selected_codec in {"aac", "mp3"})
+        and audio_delay_ms == 0 and downmix is None
+    )
     copy_video = (
         media.vcodec == "h264"
         and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
@@ -697,9 +709,10 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     if copy_audio:
         args += ["-c:a", "copy"]
     else:
-        shift = audio_delay.filters(audio_delay_ms)
-        if shift:
-            args += ["-af", ",".join(shift)]
+        filters = [downmix] if downmix else []
+        filters.extend(audio_delay.filters(audio_delay_ms))
+        if filters:
+            args += ["-af", ",".join(filters)]
         args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
     args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
     # A full-film conversion is slow. Poll the child process so the UI's
@@ -781,7 +794,7 @@ class Session:
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
               subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None,
-              audio_delay_ms: int = 0) -> None:
+              audio_delay_ms: int = 0, audio_profile: str = "original") -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
@@ -800,6 +813,7 @@ class Session:
                 and media.width <= 1920 and media.height <= 1080 and media.fps <= 30.01
                 and subtitle_file is None and embedded_subtitle_index is None
                 and audio_track == 0
+                and _downmix(_selected_audio(media, audio_track), audio_profile) is None
                 and audio_delay.normalize(audio_delay_ms) == 0
             )
             if not direct:
@@ -808,7 +822,7 @@ class Session:
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
-                    audio_delay_ms=audio_delay_ms, cancel=cancel,
+                    audio_delay_ms=audio_delay_ms, audio_profile=audio_profile, cancel=cancel,
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
                 )
@@ -825,7 +839,7 @@ class Session:
             self.state = SessionState(
                 file=str(media.path), mode="dlna", offset=max(0.0, offset),
                 duration=media.duration, device=renderer.key, title=title,
-                audio="original", audio_track_index=audio_track,
+                audio=audio_profile, audio_track_index=audio_track,
                 subs=str(subtitle_file or ""),
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(

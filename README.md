@@ -88,7 +88,9 @@ return no usable format information can still use the normal MP4 path.
 For compatible H.264/AAC MP4 files, DLNA playback starts directly. An MKV
 with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
 non-default audio tracks or selected subtitles require full FFmpeg
-transcoding and burn-in **before playback starts**. For long films this can
+transcoding and burn-in **before playback starts**. With Dialogue or Night
+selected, known surround layouts are mixed to stereo with extra weight on
+the centre channel and no LFE contribution. For long films preparation can
 take significant time and disk space (roughly twice the source-file size must
 be available). The application checks local free space, refuses a conversion
 larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
