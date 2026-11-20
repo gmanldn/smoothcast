@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 import pathlib
 import time
 
@@ -244,6 +244,9 @@ class UiMixin:
         self.local_video.set_hexpand(True)
         self.local_video.set_vexpand(True)
         self.preview_overlay.add_overlay(self.local_video)
+        subtitle_drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        subtitle_drop.connect("drop", self._drop_subtitle)
+        self.preview_overlay.add_controller(subtitle_drop)
         body.append(self.preview_overlay)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
