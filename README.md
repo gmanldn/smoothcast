@@ -157,6 +157,16 @@ transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
 **not yet rendered**. Missing or incompatible subtitle files return a
 visible error instead of silently proceeding with another track.
 
+**Audio delay (lip-sync):** if the sound is ahead of or behind the picture, use
+**Audio delay (lip-sync)** in the main menu, or press **Shift+G** (sound 50 ms
+earlier) / **Shift+H** (50 ms later); *Reset delay* clears it. The offset is
+limited to ±5 s and is remembered per film. While casting over HLS or DLNA the
+stream restarts at the current position. A non-zero delay needs a transcode
+(DLNA re-encodes the audio), so it is not applied to direct play; the saved
+value is used on your next cast. The FFmpeg arguments are covered by
+`tests/test_audio_delay.py`; it has **not** been verified on a physical
+receiver yet.
+
 **Subtitle delay:** if captions run early or late, use **Subtitle delay** in
 the main menu, or press **G** (100 ms earlier) / **H** (100 ms later); *Reset
 delay* clears it. The offset is whole milliseconds, limited to ±30 s, and is
