@@ -37,6 +37,7 @@ import progress_model
 import server as hls_server
 import subtitle_delay
 import subtitle_encoding
+import video_policy
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
@@ -1281,8 +1282,14 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None) -> list[str]:
         chain: list[str] = []
+        # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
+        # the picture that is actually sent and every later size check sees it.
+        plan_filters = video_plan.filters() if video_plan is not None else []
+        if plan_filters and video_size and video_plan is not None:
+            video_size = video_plan.output_size(*video_size)
+        chain.extend(plan_filters)
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
             sub_filter = f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}"
@@ -1312,7 +1319,7 @@ class Session:
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
                                 or embedded_subtitle_index is not None)
-        force_software = not software and rotation != 0
+        force_software = not software and (rotation != 0 or bool(plan_filters))
         if (not software and need_subtitle_filter) or force_software:
             return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
         if chain:
@@ -1383,7 +1390,10 @@ class Session:
         )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
-        out_w, out_h = _rotated_dimensions(media.width, media.height, rotation)
+        video_plan = video_policy.make_plan(
+            str(media.path), media.duration, media.width, media.height,
+            video_stream=media.video_stream_index)
+        out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
         if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
@@ -1408,6 +1418,7 @@ class Session:
             video_size=(media.width, media.height),
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
+            video_plan=video_plan,
         )
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)

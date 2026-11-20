@@ -183,6 +183,16 @@ Set preferred audio and subtitle languages once in `~/.config/cast-control/confi
 
 Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR`). The first preference with a matching audio track wins; commentary and audio-description tracks are used only if nothing else matches. **Forced** captions (foreign-language dialogue only) and **full** subtitles are handled separately: when the chosen audio is already in a preferred subtitle language you get that language's forced track, or no subtitles if it has none; when the audio is in another language you get the full track in your first matching language. If no preference matches, or none is set, the previous behaviour applies unchanged (the file's default audio; forced, then default, then English subtitles). An override applies to files named like `Some.Show.S01E02.mkv` and replaces only the lists it sets; files without an episode marker are films and never match one. A track you pick by hand always wins, image-based subtitles (PGS) are never selected, and there is no Preferences control yet: edit the file.
 
+### Automatic crop and deinterlace (opt-in)
+
+Two detectors can clean up the picture before it is encoded for the TV. Both are **off by default** because detection adds a few seconds to a cast start; enable either in `~/.config/cast-control/config.json`:
+
+```json
+{"auto_crop": true, "auto_deinterlace": true}
+```
+
+`auto_crop` samples three short windows with FFmpeg's `cropdetect` and crops only when most samples agree on one even, in-frame rectangle that removes at least 2% of the picture and keeps at least 40% of it (so dark scenes never produce a bad crop). `auto_deinterlace` runs a short `idet` field analysis and applies `yadif` only when most frames are interlaced **and** share one field order, so progressive video is never blurred. Detection is bounded (12 s per pass), cached per file so seeks and retries are free, and any failure means no filter is applied. The filters run before subtitles are burned in, apply to HLS and DLNA transcodes (not direct play or a copied DLNA stream), and make a hardware encode download frames to the CPU for the filter. Tests that run real FFmpeg on synthetic clips are in `tests/test_video_policy_ffmpeg.py` (set `SMOOTHCAST_REAL_FFMPEG=1`; CI does).
+
 ## Interface and visual design
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,

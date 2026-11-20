@@ -166,7 +166,9 @@ jobs:
       - name: Install pytest
         run: python -m pip install 'pytest>=8,<10'
       - name: Run actual FFmpeg decoder and subtitle tests
-        run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py tests/test_dlna.py
+        env:
+          SMOOTHCAST_REAL_FFMPEG: "1"   # enables tests/test_video_policy_ffmpeg.py
+        run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py tests/test_dlna.py tests/test_video_policy_ffmpeg.py
 
   setup-contract:
     name: Setup contract (${{ matrix.os }})

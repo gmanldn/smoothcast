@@ -86,6 +86,8 @@ DEFAULTS: dict = {
     "preferred_audio_languages": [],  # e.g. ["ja", "en"]; empty = file default (#38)
     "preferred_subtitle_languages": [],  # e.g. ["en"]; empty = previous behaviour (#38)
     "language_overrides": {},  # {"series name": {"audio": [...], "subtitles": [...]}} (#38)
+    "auto_crop": False,  # Detect and crop black bars before casting (#54).
+    "auto_deinterlace": False,  # Deinterlace only when the film is clearly interlaced (#54).
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 

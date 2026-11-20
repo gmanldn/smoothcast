@@ -29,6 +29,7 @@ from xml.sax.saxutils import escape
 
 import cache_policy
 import process_priority
+import video_policy
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -647,6 +648,9 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             embedded_source=source if embedded_subtitle_index is not None else None,
             video_size=(media.width, media.height),
             subtitle_delay_ms=subtitle_delay_ms,
+            video_plan=video_policy.make_plan(
+                str(source), media.duration, media.width, media.height,
+                video_stream=media.video_stream_index),
         )
         args += vf
         if media.fps > 30.01:
