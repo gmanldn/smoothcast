@@ -137,6 +137,7 @@ def restart_window(session):
     namespace = {
         "pathlib": __import__("pathlib"),
         "streamer": streamer,
+        "audio_delay": __import__("audio_delay"),
         "subtitle_delay": __import__("subtitle_delay"),
         "subtitle_style": __import__("subtitle_style"),
         "subtitle_restart": subtitle_restart,

@@ -27,6 +27,7 @@ from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+import audio_delay
 import cache_policy
 import process_priority
 import video_policy
@@ -580,7 +581,8 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
                 audio_track: int = 0, subtitle_delay_ms: int = 0,
                 cancel: threading.Event | None = None,
-                scratch_lease_fd: int | None = None) -> Path:
+                scratch_lease_fd: int | None = None,
+                audio_delay_ms: int = 0) -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -626,7 +628,9 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         else (media.acodec or "").lower()
     )
     has_audio = bool(media.audio_streams or media.acodec)
-    copy_audio = (not has_audio) or selected_codec in {"aac", "mp3"}
+    audio_delay_ms = audio_delay.normalize(audio_delay_ms)
+    # A copied stream cannot be shifted: a lip-sync delay needs a re-encode (#113).
+    copy_audio = ((not has_audio) or selected_codec in {"aac", "mp3"}) and audio_delay_ms == 0
     copy_video = (
         media.vcodec == "h264"
         and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
@@ -658,6 +662,9 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     if copy_audio:
         args += ["-c:a", "copy"]
     else:
+        shift = audio_delay.filters(audio_delay_ms)
+        if shift:
+            args += ["-af", ",".join(shift)]
         args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
     args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
     # A full-film conversion is slow. Poll the child process so the UI's
@@ -738,7 +745,8 @@ class Session:
               title: str, subtitle_file: Path | None = None,
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
               subtitle_delay_ms: int = 0,
-              cancel: threading.Event | None = None) -> None:
+              cancel: threading.Event | None = None,
+              audio_delay_ms: int = 0) -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
@@ -757,6 +765,7 @@ class Session:
                 and media.width <= 1920 and media.height <= 1080 and media.fps <= 30.01
                 and subtitle_file is None and embedded_subtitle_index is None
                 and audio_track == 0
+                and audio_delay.normalize(audio_delay_ms) == 0
             )
             if not direct:
                 path = prepare_mp4(
@@ -764,7 +773,7 @@ class Session:
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
-                    cancel=cancel,
+                    audio_delay_ms=audio_delay_ms, cancel=cancel,
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
                 )
@@ -787,6 +796,7 @@ class Session:
                 embedded_subtitle_index=(
                     embedded_subtitle_index if embedded_subtitle_index is not None else -1),
                 subtitle_delay_ms=subtitle_delay_ms,
+                audio_delay_ms=audio_delay.normalize(audio_delay_ms),
                 started_at=time.time(),
             )
         except Exception:

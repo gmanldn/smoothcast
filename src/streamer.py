@@ -35,6 +35,7 @@ import process_identity
 import process_priority
 import progress_model
 import server as hls_server
+import audio_delay
 import subtitle_delay
 import subtitle_encoding
 import subtitle_style
@@ -886,6 +887,7 @@ class SessionState:
     caster_created_at: float = 0.0
     stream_url: str = ""
     subtitle_delay_ms: int = 0
+    audio_delay_ms: int = 0
 
 
 def load_session() -> SessionState | None:
@@ -1347,12 +1349,14 @@ class Session:
         audio_track_index: int = -1,
         subtitle_delay_ms: int = 0,
         subtitle_preset: str = subtitle_style.DEFAULT,
+        audio_delay_ms: int = 0,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Fail before touching existing streaming resources or launching FFmpeg.
         require_compatible_ffmpeg()
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
+        audio_delay_ms = audio_delay.normalize(audio_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1450,6 +1454,8 @@ class Session:
             # and audio is resampled with atempo so A/V stay in sync.
             filters += atempo_filters(speed)
         self.audio_chain = filters
+        # Lip-sync delay last, after atempo, so it is measured in output time (#113).
+        filters = filters + audio_delay.filters(audio_delay_ms)
         if filters:
             args += ["-af", ",".join(filters)]
         if media.fps > 30.01:
@@ -1500,6 +1506,7 @@ class Session:
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
                     subtitle_delay_ms=subtitle_delay_ms,
+                    audio_delay_ms=audio_delay_ms,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -1532,6 +1539,7 @@ class Session:
             speed=speed,
             rotation=rotation,
             subtitle_delay_ms=subtitle_delay_ms,
+            audio_delay_ms=audio_delay_ms,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,

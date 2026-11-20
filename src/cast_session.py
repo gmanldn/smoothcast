@@ -21,6 +21,7 @@ import dlna
 
 import streamer
 
+import audio_delay
 import subtitle_delay
 import subtitle_style
 
@@ -105,9 +106,9 @@ class SessionMixin:
         if subs_mode == "pick" and subs_path is None:
             self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
             return
-        # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
-        # FFmpeg rather than advertised as unsupported receiver-side tracks.
+        # catt takes SRT/VTT/TTML sidecars; ASS/SSA is rendered by FFmpeg.
         delay = subtitle_delay.get(cfg, path)
+        adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
         burn = subs_path is not None and (
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
@@ -116,15 +117,14 @@ class SessionMixin:
         # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
-        # A device-native stream cannot apply ffmpeg speed/rotation filters.
-        # Always transcode when either transform is enabled, even for H.264/AAC.
+        # Device-native streams cannot apply ffmpeg filters (speed, rotation, audio delay).
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
-            and speed == 1.0 and rotation == 0 and audio_track < 0
+            and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
         )
 
         def work():
@@ -144,8 +144,7 @@ class SessionMixin:
                         "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
                     )
             if path.suffix.lower() == ".mkv":
-                # Report caption/decoder failures before interrupting the
-                # receiver; one private CPU render per selection, no Cast calls.
+                # Report caption/decoder failures before touching the receiver.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
@@ -181,7 +180,7 @@ class SessionMixin:
                         offset=offset, title=title, subtitle_file=subs_path,
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
-                        subtitle_delay_ms=delay,
+                        subtitle_delay_ms=delay, audio_delay_ms=adelay,
                         cancel=self._dlna_cancel,
                     )
                     return session, media
@@ -210,6 +209,7 @@ class SessionMixin:
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=delay, subtitle_preset=preset,
+                    audio_delay_ms=adelay,
                 )
                 return session, media
             except Exception:
@@ -572,6 +572,7 @@ class SessionMixin:
                     audio_track_index=audio_track,
                     subtitle_delay_ms=captions.delay_ms,
                     subtitle_preset=subtitle_style.from_config(self.cfg),
+                    audio_delay_ms=audio_delay.get(self.cfg, file_path),
                 )
             except Exception:
                 try:

@@ -15,6 +15,7 @@ from unittest import mock
 import pytest
 
 from gui_source import main_window_methods
+import audio_delay
 import castctl
 import playback_state
 import position_tracker
@@ -33,6 +34,7 @@ def extracted(*names, async_runs, saves):
     )
     namespace = {
         "streamer": streamer,
+        "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,
         "subtitle_restart": subtitle_restart,
