@@ -726,10 +726,11 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     with tempfile.TemporaryFile() as error_log:
         try:
             low_priority = process_priority.enabled()
+            lease_kwargs = cache_policy.encoder_lease_kwargs(scratch_lease_fd)
             proc = subprocess.Popen(
                 args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=error_log, start_new_session=True,
-                pass_fds=(scratch_lease_fd,) if scratch_lease_fd is not None else (),
+                **lease_kwargs,
                 **process_priority.launch_kwargs(low_priority),
             )
             process_priority.lower(proc, low_priority)

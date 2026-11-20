@@ -15,12 +15,18 @@ import json
 import os
 import stat
 from pathlib import Path
+import sys
 from typing import IO
 
 try:
     import fcntl
-except ImportError:  # Windows: startup cleanup deliberately skips scratch sweeping.
+except ImportError:  # Windows/non-POSIX
     fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt
+except ImportError:  # POSIX
+    msvcrt = None  # type: ignore[assignment]
 
 DEFAULT_CAP_MB = 8192
 MAX_CAP_MB = 1_000_000
@@ -36,21 +42,48 @@ def hold_scratch_lease(directory: Path) -> IO[bytes] | None:
 
     POSIX FFmpeg children inherit the locked descriptor via pass_fds: if the
     GUI crashes during conversion, cleanup must wait for FFmpeg to exit too.
-    On platforms without safe POSIX locking the startup sweep is disabled.
+    Windows FFmpeg receives the lease handle through STARTUPINFO.handle_list.
+    If neither platform's locking primitive is available, cleanup fails closed.
     """
-    if fcntl is None or not hasattr(os, "O_NOFOLLOW"):
+    if fcntl is None and msvcrt is None:
         return None
-    fd = os.open(
-        directory / SCRATCH_LEASE_NAME,
-        os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW,
-        0o600,
-    )
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(directory / SCRATCH_LEASE_NAME, flags, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # msvcrt.locking requires a byte range; a one-byte marker also makes
+        # empty, hand-created files fail closed during the abandoned sweep.
+        os.write(fd, b"\0")
+        os.lseek(fd, 0, os.SEEK_SET)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         return os.fdopen(fd, "r+b", buffering=0)
     except BaseException:
         os.close(fd)
         raise
+
+
+def encoder_lease_kwargs(lease: IO[bytes] | int | None) -> dict[str, object]:
+    """Return subprocess options that keep a scratch lease through FFmpeg.
+
+    Windows can inherit only explicitly listed OS handles. Popen marks these
+    inheritable for process creation and closes the child-side copy on exit.
+    """
+    if lease is None:
+        return {}
+    fd = lease if isinstance(lease, int) else lease.fileno()
+    if fcntl is not None:
+        return {"pass_fds": (fd,)}
+    if msvcrt is None:
+        return {}
+    import subprocess
+
+    startup = subprocess.STARTUPINFO()
+    startup.lpAttributeList = {"handle_list": [msvcrt.get_osfhandle(fd)]}
+    return {"startupinfo": startup}
 
 
 def claim_abandoned_scratch(directory: Path) -> IO[bytes] | None:
@@ -58,25 +91,63 @@ def claim_abandoned_scratch(directory: Path) -> IO[bytes] | None:
 
     A missing, symlinked, foreign-owned or already locked marker is *not*
     evidence of abandonment. Never infer ownership from directory age alone.
-    Keep this descriptor open until the scratch directory has been removed.
+    Keep this descriptor open while deleting on POSIX. Windows closes it only
+    immediately before an atomic directory rename, which an inherited live
+    lease handle prevents.
     """
-    if fcntl is None or not hasattr(os, "O_NOFOLLOW"):
+    if fcntl is None and msvcrt is None:
         return None
+    marker = directory / SCRATCH_LEASE_NAME
     try:
-        fd = os.open(directory / SCRATCH_LEASE_NAME, os.O_RDONLY | os.O_NOFOLLOW)
+        before = marker.lstat()
+        if not stat.S_ISREG(before.st_mode) or marker.is_symlink():
+            return None
+        flags = os.O_RDWR
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(marker, flags)
     except OSError:
         return None
     try:
         info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1):
+        if (not stat.S_ISREG(info.st_mode)
+                or (hasattr(info, "st_uid") and hasattr(os, "getuid")
+                    and info.st_uid != os.getuid())
+                or info.st_nlink != 1
+                or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)
+                or info.st_size != 1):
             os.close(fd)
             return None
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.lseek(fd, 0, os.SEEK_SET)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         return os.fdopen(fd, "rb", buffering=0)
     except (OSError, ValueError):
         os.close(fd)
         return None
+
+
+def current_user_temp_root(path: Path) -> bool:
+    """Whether *path* is the current Windows user's private Temp directory.
+
+    Windows does not expose POSIX ``st_uid`` ownership. Only sweep its usual
+    per-user LocalAppData Temp root; custom/shared roots fail closed.
+    """
+    if not sys.platform.startswith("win"):
+        return True
+    if msvcrt is None:
+        return False
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return False
+    try:
+        expected = Path(local_app_data, "Temp").resolve(strict=True)
+        actual = path.resolve(strict=True)
+    except OSError:
+        return False
+    return os.path.normcase(str(actual)) == os.path.normcase(str(expected))
 
 
 def valid_cap_mb(value: object) -> int | None:
