@@ -14,7 +14,9 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+import picture_check
 import preference_choices
+from cast_widgets import save_config
 
 
 class PreferencesWindow(Adw.PreferencesWindow):
@@ -72,6 +74,12 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "Send a compatible file unchanged; sound filters and rotation may require conversion.")
         self._switch(output, "keep_streaming", "Keep casting after closing",
                      "Chromecast may continue playing; DLNA's local server always stops on exit.")
+        self._switch(output, "auto_crop", "Crop black bars automatically",
+                     "Detects letterboxing before a transcode and crops it; adds a few seconds to a cast start.")
+        self._switch(output, "auto_deinterlace", "Deinterlace automatically",
+                     "Only when the film is clearly interlaced; progressive video is never touched.")
+        self.picture = picture_check.PictureCheck(self.owner)
+        output.add(self.picture.row)
 
         queue = self._group(
             playback, "Queue behaviour",
@@ -217,6 +225,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
+        elif key in ("auto_crop", "auto_deinterlace"):
+            owner.cfg[key] = active  # read from config.json at the next transcode (#54)
+            save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
             getattr(owner, toggles[key])()
         self.sync_from_owner()

@@ -32,6 +32,7 @@ SCENARIOS: dict[str, str | None] = {
     "first-run": None,
     "saved-device": '{"device": "Seeded TV"}\n',
     "report-problem": None,
+    "picture-options": None,
 }
 
 

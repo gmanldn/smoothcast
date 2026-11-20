@@ -194,6 +194,34 @@ def detect_interlaced(path: str, duration: float, *, video_stream: int = 0,
     return is_interlaced(parse_idet(text))
 
 
+# --- preview (what the detectors would do, without applying anything) ---------------
+
+@dataclass(frozen=True)
+class Detection:
+    crop: Crop | None = None
+    interlaced: bool = False
+
+
+def preview(path: str, duration: float, width: int, height: int, *, video_stream: int = 0,
+            runner: Runner = subprocess.run) -> Detection:
+    """Run both detectors regardless of the config flags; nothing is cached or applied."""
+    return Detection(
+        crop=detect_crop(path, duration, width, height, video_stream=video_stream, runner=runner),
+        interlaced=detect_interlaced(path, duration, video_stream=video_stream, runner=runner),
+    )
+
+
+def describe(found: Detection, width: int, height: int) -> str:
+    """One plain-language line for the Preferences preview."""
+    if found.crop is not None and width > 0 and height > 0:
+        removed = round(100 * (1 - (found.crop.width * found.crop.height) / (width * height)))
+        bars = f"Black bars: crop to {found.crop.width}\u00d7{found.crop.height} (removes {removed}% of the picture)"
+    else:
+        bars = "No black bars found"
+    lines = "Interlaced: deinterlacing would apply" if found.interlaced else "Progressive: no deinterlacing needed"
+    return f"{bars} \u00b7 {lines}"
+
+
 # --- configuration and the cached plan --------------------------------------------------
 
 def config_path() -> Path:

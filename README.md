@@ -185,7 +185,7 @@ Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR
 
 ### Automatic crop and deinterlace (opt-in)
 
-Two detectors can clean up the picture before it is encoded for the TV. Both are **off by default** because detection adds a few seconds to a cast start; enable either in `~/.config/cast-control/config.json`:
+Two detectors can clean up the picture before it is encoded for the TV. Both are **off by default** because detection adds a few seconds to a cast start. Turn them on in **Preferences > Playback > Picture and delivery** (the **Check this film** row there previews what each would do to the selected film, for example "crop to 1920×800 (removes 26% of the picture)", without changing anything), or in `~/.config/cast-control/config.json`:
 
 ```json
 {"auto_crop": true, "auto_deinterlace": true}

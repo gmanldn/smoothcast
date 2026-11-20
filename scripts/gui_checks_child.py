@@ -9,8 +9,13 @@ line per check. The browser launcher is patched, so nothing external ever opens.
 """
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 import traceback
 from urllib.parse import parse_qs, urlsplit
 
@@ -20,7 +25,9 @@ sys.path.insert(0, str(ROOT / "src"))
 import cast_targets  # noqa: E402
 import castctl  # noqa: E402
 import cast_control  # noqa: E402
+import streamer  # noqa: E402
 import version  # noqa: E402
+import video_policy  # noqa: E402
 from gi.repository import Gio, GLib  # noqa: E402
 
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -154,7 +161,77 @@ def report_problem(app, window) -> None:
           any("Could not open the browser" in m and err for m, err in toasts), repr(toasts))
 
 
-SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem}
+def picture_options(app, window) -> None:
+    """Preferences > Picture: crop/deinterlace switches persist and the film preview works (#54)."""
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    check("the preferences window opens with both switches",
+          prefs is not None and {"auto_crop", "auto_deinterlace"} <= set(prefs._switches))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    check("both options start off", video_policy.load_flags() == (False, False), repr(video_policy.load_flags()))
+    prefs._switches["auto_crop"].set_active(True)
+    pump(0.3)
+    check("turning crop on saves it and the transcoder reads it",
+          saved().get("auto_crop") is True and video_policy.load_flags() == (True, False),
+          f"{saved().get('auto_crop')!r} {video_policy.load_flags()}")
+    prefs._switches["auto_deinterlace"].set_active(True)
+    pump(0.3)
+    check("turning deinterlace on saves it too", video_policy.load_flags() == (True, True), repr(video_policy.load_flags()))
+    prefs._switches["auto_crop"].set_active(False)
+    pump(0.3)
+    check("turning crop off is reversible", video_policy.load_flags() == (False, True)
+          and saved().get("auto_crop") is False, repr(saved()))
+
+    window.media = None
+    prefs.picture.button.emit("clicked")
+    check("checking with no film selected says so and changes nothing",
+          prefs.picture.row.get_subtitle() == "Select a film first." and prefs.picture.button.get_sensitive(),
+          repr(prefs.picture.row.get_subtitle()))
+
+    if shutil.which("ffmpeg") is None:
+        check("film preview (skipped: ffmpeg is not installed)", True)
+        return
+    folder = Path(tempfile.mkdtemp(prefix="smoothcast-picture-"))
+    clip = folder / "letterbox.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "testsrc2=size=640x480:rate=25:duration=6,drawbox=x=0:y=0:w=640:h=60:color=black:t=fill,"
+                    "drawbox=x=0:y=420:w=640:h=60:color=black:t=fill",
+                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-y", str(clip)],
+                   check=True, capture_output=True, timeout=60)
+    window.media = streamer.MediaInfo(path=clip, duration=6.0, width=640, height=480)
+    prefs.sync_from_owner()
+    prefs.picture.button.emit("clicked")
+    check("the check shows progress and locks the button while it runs",
+          prefs.picture.row.get_subtitle().startswith("Checking") and not prefs.picture.button.get_sensitive())
+    for _ in range(300):
+        pump(0.1)
+        if prefs.picture.button.get_sensitive():
+            break
+    text = prefs.picture.row.get_subtitle()
+    check("the preview reports the black bars that would be cropped",
+          text.startswith("Black bars: crop to 640\u00d7360") and "removes 25%" in text, repr(text))
+    check("the preview reports the film as progressive", "Progressive" in text, repr(text))
+    check("the button is usable again", prefs.picture.button.get_sensitive())
+
+    prefs.picture.button.emit("clicked")
+    window.media = None                                         # the user picks another film mid-check
+    for _ in range(300):
+        pump(0.1)
+        if prefs.picture.button.get_sensitive():
+            break
+    check("changing film during a check never leaves the row stuck",
+          prefs.picture.button.get_sensitive() and "Checking" not in prefs.picture.row.get_subtitle(),
+          repr(prefs.picture.row.get_subtitle()))
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+             "picture-options": picture_options}
 
 
 class CheckApp(cast_control.CastControlApp):

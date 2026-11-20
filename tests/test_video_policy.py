@@ -259,3 +259,34 @@ def test_defaults_keep_both_policies_off():
     text = (ROOT / "src" / "cast_widgets.py").read_text()
     assert '"auto_crop": False' in text and '"auto_deinterlace": False' in text
     assert '"video_policy"' in (ROOT / "pyproject.toml").read_text()
+
+
+# --- preview and its plain-language description (Preferences > Check this film) -------------------
+
+def test_describe_reports_crop_percentage_and_interlacing():
+    both = vp.describe(vp.Detection(crop=LETTERBOX, interlaced=True), 640, 480)
+    assert both == "Black bars: crop to 640×360 (removes 25% of the picture) · Interlaced: deinterlacing would apply"
+    none = vp.describe(vp.Detection(), 640, 480)
+    assert none == "No black bars found · Progressive: no deinterlacing needed"
+    assert vp.describe(vp.Detection(crop=LETTERBOX), 0, 0).startswith("No black bars found")  # unknown size: never divide
+
+
+def test_preview_runs_both_detectors_regardless_of_the_flags_and_never_caches(tmp_path):
+    movie = tmp_path / "m.mkv"
+    movie.write_bytes(b"x")
+    calls: list[list[str]] = []
+    run = runner_returning(CROP_LOG + IDET_LOG, calls=calls)
+    found = vp.preview(str(movie), 7200, 640, 480, runner=run)    # flags are off (default config)
+    assert found == vp.Detection(crop=LETTERBOX, interlaced=True)
+    assert len(calls) == 4 and not vp._CACHE
+    quiet = vp.preview(str(movie), 7200, 640, 480, runner=runner_returning(error=OSError("x")))
+    assert quiet == vp.Detection()                                 # a failed pass means 'nothing found'
+
+
+def test_preferences_expose_the_switches_and_the_film_check():
+    prefs = (ROOT / "src" / "preferences_ui.py").read_text()
+    assert '"auto_crop"' in prefs and '"auto_deinterlace"' in prefs
+    assert "picture_check.PictureCheck(self.owner)" in prefs and "save_config(owner.cfg)" in prefs
+    check = (ROOT / "src" / "picture_check.py").read_text()
+    assert "video_policy.preview(" in check and "domain=\"background\"" in check
+    assert '"picture_check"' in (ROOT / "pyproject.toml").read_text()
