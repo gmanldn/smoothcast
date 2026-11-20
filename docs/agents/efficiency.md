@@ -89,8 +89,8 @@ structure stays in the handbook, read on demand.
 
 ## GitHub CLI in Claude Code web sessions
 
-There `gh issue list|view|edit|create` use GraphQL and fail with HTTP 403, so
-`scripts/ticket_digest.py` fails too. The repository must also be attached with
+There `gh issue list|view|edit|create` use GraphQL and fail with HTTP 403;
+`scripts/ticket_digest.py` falls back to REST on that error. The repository must also be attached with
 push access (otherwise REST returns 403 "access ... not enabled"). Use REST,
 and keep field lists short:
 

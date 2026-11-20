@@ -193,6 +193,73 @@ def _run_gh(args: Sequence[str], timeout: int = 30) -> str:
     return result.stdout
 
 
+def _graphql_blocked(error: DigestError) -> bool:
+    """`gh issue …` uses GraphQL, which some proxied sessions answer with 403."""
+    text = str(error)
+    return "HTTP 403" in text or "graphql" in text.lower()
+
+
+def _rest_issue(issue: dict[str, Any]) -> dict[str, Any]:
+    """Map a REST issue to the field names `gh issue --json` returns."""
+    return {
+        "number": issue.get("number"),
+        "title": issue.get("title"),
+        "state": str(issue.get("state") or "open").upper(),
+        "labels": issue.get("labels"),
+        "assignees": issue.get("assignees"),
+        "updatedAt": issue.get("updated_at"),
+        "url": issue.get("html_url"),
+        "body": issue.get("body"),
+    }
+
+
+def _rest_json(path: str, params: dict[str, str] | None = None) -> Any:
+    args = ["api", path, "--method", "GET"]
+    for key, value in (params or {}).items():
+        args.extend(["-f", f"{key}={value}"])
+    try:
+        return json.loads(_run_gh(args))
+    except json.JSONDecodeError:
+        raise DigestError("gh returned invalid JSON") from None
+
+
+def _rest_list(
+    repository: str, state: str, scan: int, search: str | None, labels: Sequence[str]
+) -> list[dict[str, Any]]:
+    limit = clamp_scan(scan)
+    if search:
+        query = f"repo:{repository} is:issue {search}"
+        if state != "all":
+            query += f" is:{state}"
+        query += "".join(f' label:"{label}"' for label in labels)
+        found: list[Any] = []
+        page = 1
+        while len(found) < limit:
+            data = _rest_json(
+                "search/issues",
+                {"q": query, "per_page": "100", "page": str(page)},
+            )
+            items = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(items, list) or not items:
+                break
+            found.extend(items)
+            page += 1
+        return [_rest_issue(i) for i in found[:limit] if isinstance(i, dict)]
+    found = []
+    page = 1
+    while len(found) < limit:
+        params = {"state": state, "per_page": "100", "page": str(page)}
+        if labels:
+            params["labels"] = ",".join(labels)
+        data = _rest_json(f"repos/{repository}/issues", params)
+        if not isinstance(data, list) or not data:
+            break
+        # The issues endpoint also returns pull requests.
+        found.extend(i for i in data if isinstance(i, dict) and "pull_request" not in i)
+        page += 1
+    return [_rest_issue(i) for i in found[:limit]]
+
+
 def fetch_issues(
     repository: str,
     state: str,
@@ -220,12 +287,31 @@ def fetch_issues(
         payload = json.loads(_run_gh(args))
     except json.JSONDecodeError:
         raise DigestError("gh returned invalid JSON") from None
+    except DigestError as error:
+        if not _graphql_blocked(error):
+            raise
+        payload = _rest_list(repository, state, scan, search, labels)
     if not isinstance(payload, list):
         raise DigestError("gh returned an unexpected issue payload")
     return [
         normalize(issue)
         for issue in payload
         if isinstance(issue, dict) and isinstance(issue.get("number"), int)
+    ]
+
+
+def _rest_comments(repository: str, number: int) -> list[dict[str, Any]]:
+    data = _rest_json(f"repos/{repository}/issues/{number}/comments", {"per_page": "100"})
+    if not isinstance(data, list):
+        raise DigestError("gh returned an unexpected issue payload")
+    return [
+        {
+            "author": {"login": (c.get("user") or {}).get("login")},
+            "createdAt": c.get("created_at"),
+            "body": c.get("body"),
+        }
+        for c in data
+        if isinstance(c, dict)
     ]
 
 
@@ -247,6 +333,12 @@ def fetch_issue(repository: str, number: int, comments: bool) -> dict[str, Any]:
         )
     except json.JSONDecodeError:
         raise DigestError("gh returned invalid JSON") from None
+    except DigestError as error:
+        if not _graphql_blocked(error):
+            raise
+        payload = _rest_issue(_rest_json(f"repos/{repository}/issues/{number}"))
+        if comments:
+            payload["comments"] = _rest_comments(repository, number)
     if not isinstance(payload, dict):
         raise DigestError("gh returned an unexpected issue payload")
     issue = normalize(payload)

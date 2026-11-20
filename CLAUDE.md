@@ -13,8 +13,8 @@ with `/doctor prompt-audit`. Block comments like this one are not loaded.
   `scripts/claude_hooks/block_gui_launch.py` before every Bash call and refuses
   commands that would open the real window. Do not work around it; use
   `python3 scripts/test_gui_isolated.py`.
-- **`gh issue …` may fail with HTTP 403 in web sessions** (GraphQL is blocked,
-  so `scripts/ticket_digest.py` fails too). Use the REST commands in
+- **`gh issue …` may fail with HTTP 403 in web sessions** (GraphQL is blocked;
+  `scripts/ticket_digest.py` falls back to REST). For other issue actions use
   [REST cheat sheet](docs/agents/efficiency.md#github-cli-in-claude-code-web-sessions).
 - **Plan first** (plan mode) before changing receiver or stream ownership:
   `src/cast_session.py`, `src/streamer.py`, `src/startup_cleanup.py`,

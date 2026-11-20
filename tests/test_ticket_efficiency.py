@@ -172,5 +172,68 @@ class TicketDocumentationTests(unittest.TestCase):
         self.assertFalse((ROOT / "IMPROVEMENTS.md").exists())
 
 
+class RestFallbackTests(unittest.TestCase):
+    """`gh issue …` is GraphQL and answers 403 in proxied web sessions."""
+
+    BLOCKED = "gh exited 1: HTTP 403: Resource not accessible (graphql)"
+
+    def run_with(self, handler):
+        calls = []
+
+        def fake(args, timeout=30):
+            calls.append(list(args))
+            return handler(list(args))
+
+        original = digest._run_gh
+        digest._run_gh = fake
+        self.addCleanup(setattr, digest, "_run_gh", original)
+        return calls
+
+    def test_list_falls_back_to_rest_and_skips_pull_requests(self):
+        rest = [
+            {"number": 5, "title": "[P1] Real", "state": "open",
+             "labels": [{"name": "bug"}], "assignees": [{"login": "me"}],
+             "updated_at": "2026-11-19T00:00:00Z", "html_url": "u5"},
+            {"number": 6, "title": "A PR", "state": "open", "pull_request": {}},
+        ]
+
+        def handler(args):
+            if args[0] == "issue":
+                raise digest.DigestError(self.BLOCKED)
+            return json.dumps(rest if "page=1" in args else [])
+
+        calls = self.run_with(handler)
+        result = digest.fetch_issues("o/r", "open", 10)
+        self.assertEqual([i["number"] for i in result], [5])
+        self.assertEqual(result[0]["claim"], ["me"])
+        self.assertEqual(result[0]["state"], "open")
+        self.assertEqual(result[0]["updated"], "2026-11-19T00:00:00Z")
+        self.assertEqual(calls[1][:2], ["api", "repos/o/r/issues"])
+
+    def test_view_falls_back_to_rest_with_comments(self):
+        def handler(args):
+            if args[0] == "issue":
+                raise digest.DigestError(self.BLOCKED)
+            if args[1].endswith("/comments"):
+                return json.dumps([{"user": {"login": "bob"},
+                                    "created_at": "t", "body": "hi"}])
+            return json.dumps({"number": 7, "title": "T", "state": "open",
+                               "body": "B", "labels": [], "assignees": []})
+
+        self.run_with(handler)
+        got = digest.fetch_issue("o/r", 7, True)
+        self.assertEqual(got["body"], "B")
+        self.assertEqual(got["comments"][0]["author"]["login"], "bob")
+
+    def test_other_gh_failures_are_not_masked_by_the_fallback(self):
+        def handler(args):
+            raise digest.DigestError("gh exited 1: could not resolve host")
+
+        calls = self.run_with(handler)
+        with self.assertRaises(digest.DigestError):
+            digest.fetch_issues("o/r", "open", 10)
+        self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
