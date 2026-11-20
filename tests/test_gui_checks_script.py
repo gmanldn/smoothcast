@@ -44,6 +44,7 @@ def test_the_harness_refuses_to_run_inside_pytest():
 
 def test_unknown_scenarios_are_rejected_before_anything_starts(monkeypatch):
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
+    monkeypatch.setattr(gui_checks.sys, "platform", "linux")      # the harness is Linux-only; pin it for every OS
     monkeypatch.setattr(gui_checks.shutil, "which", lambda name: "/usr/bin/" + name)
     monkeypatch.setattr(gui_checks, "run_scenario", lambda name: (_ for _ in ()).throw(AssertionError("started")))
     assert gui_checks.main(["no-such-scenario"]) == 2
@@ -51,6 +52,7 @@ def test_unknown_scenarios_are_rejected_before_anything_starts(monkeypatch):
 
 def test_missing_xvfb_is_a_safe_skip_not_a_fallback_to_the_desktop(monkeypatch, capsys):
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
+    monkeypatch.setattr(gui_checks.sys, "platform", "linux")
     monkeypatch.setattr(gui_checks.shutil, "which", lambda name: None)
     monkeypatch.setattr(gui_checks, "run_scenario", lambda name: (_ for _ in ()).throw(AssertionError("started")))
     assert gui_checks.main([]) == 2
@@ -65,3 +67,11 @@ def test_child_refuses_without_the_isolated_session_and_patches_the_browser():
                             cwd=ROOT, capture_output=True, text=True, timeout=60,
                             env={"PATH": os.environ.get("PATH", ""), "HOME": str(ROOT)})
     assert result.returncode != 0 and "CHECK|" not in result.stdout
+
+
+def test_the_harness_declines_politely_on_other_platforms(monkeypatch, capsys):
+    monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
+    for platform in ("darwin", "win32"):
+        monkeypatch.setattr(gui_checks.sys, "platform", platform)
+        assert gui_checks.main([]) == 2
+        assert "Linux/Xvfb" in capsys.readouterr().err
