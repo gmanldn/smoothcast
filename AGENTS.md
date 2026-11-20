@@ -30,6 +30,7 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
   device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
+- **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
 - **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
   names a development revision; `./smoothcast --version` is GUI-free.
 

@@ -195,12 +195,33 @@ class StreamerReliabilityTests(unittest.TestCase):
              mock.patch.object(streamer.subprocess, "Popen") as popen:
             popen.return_value.poll.return_value = None
             session._start_server("192.168.1.23", "192.168.1.50")
+        self.assertEqual(len(popen.call_args.args), 1, "Popen accepts one argv list")
         command = popen.call_args.args[0]
         self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
         self.assertNotIn("0.0.0.0", command)
         policy = server.load_policy(root)
         self.assertEqual(policy.hosts, frozenset({"192.168.1.50"}))
         self.assertFalse(policy.any_private)
+
+    def test_server_command_carries_port_bind_and_frozen_launcher(self):
+        """Source and PyInstaller launches both pass --port and --bind through."""
+        import frozen_runtime
+        for frozen, head in (
+            (False, [sys.executable, str(streamer.SERVER_SCRIPT)]),
+            (True, [sys.executable, frozen_runtime.SERVER_FLAG]),
+        ):
+            with self.subTest(frozen=frozen):
+                self._server_env()
+                session = streamer.Session()
+                with mock.patch.object(frozen_runtime, "is_frozen", return_value=frozen), \
+                     mock.patch.object(streamer, "_port_open", return_value=False), \
+                     mock.patch.object(streamer, "_server_healthy", return_value=True), \
+                     mock.patch.object(streamer.subprocess, "Popen") as popen:
+                    popen.return_value.poll.return_value = None
+                    session._start_server("192.168.1.23", "192.168.1.50")
+                self.assertEqual(
+                    popen.call_args.args[0],
+                    head + ["--port", str(session.port), "--bind", "192.168.1.23"])
 
     def test_reused_server_on_another_interface_is_replaced_only_if_ours(self):
         self._server_env()

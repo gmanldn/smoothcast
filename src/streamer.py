@@ -11,7 +11,6 @@ import re
 import secrets
 import socket
 import subprocess
-import sys
 import threading
 import time
 from collections import OrderedDict
@@ -25,6 +24,7 @@ import cache_policy
 import cache_privacy
 import ffmpeg_compat
 import castctl
+import frozen_runtime
 import hw_encoder_state
 import lan_interfaces
 import playback_state
@@ -1129,7 +1129,7 @@ class Session:
                     f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
             self.port = free
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT), "--port", str(self.port)]
+            frozen_runtime.server_command(SERVER_SCRIPT) + ["--port", str(self.port)]
             + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1443,7 +1443,7 @@ class Session:
         else:
             cast_args += ["--no-subs"]
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *cast_args],
+            castctl.catt_command(cast_args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
@@ -1581,7 +1581,7 @@ class Session:
             args += ["-s", str(receiver_subs)]
         args.append(str(media.path))
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *args],
+            castctl.catt_command(args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )

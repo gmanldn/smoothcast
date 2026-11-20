@@ -351,7 +351,7 @@ class CastControlApp(Adw.Application):
             # The only permitted self-test display is the disposable Xvfb
             # session. Exit promptly and avoid persistent user state.
             GLib.timeout_add(1500, self._selftest_quit)
-        elif not self._update_started:
+        elif not self._update_started and not getattr(sys, "frozen", False):
             self._update_started = True
             # Never delay the first window while DNS/network/git is unresponsive.
             threading.Thread(
