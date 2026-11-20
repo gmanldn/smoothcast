@@ -457,11 +457,45 @@ def text_fit_wide(app, window) -> None:
     check("a narrow reflow afterwards changes nothing more", text_fit.fit_labels(window) == 0)
 
 
+def audio_delay_menu(app, window) -> None:
+    """The real app actions move, save and reset a per-film audio delay (#113)."""
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()).get("audio_delay_by_file", {}) if config_file.exists() else {}
+
+    def press(name: str) -> None:
+        action = app.lookup_action(name)
+        action.activate(None)
+        pump(0.2)
+
+    actions = ("audio-earlier", "audio-later", "audio-reset")
+    check("the three audio-delay actions exist and are enabled",
+          all(app.lookup_action(n) is not None and app.lookup_action(n).get_enabled() for n in actions))
+    press("audio-later")
+    check("with no film open nothing is saved", saved() == {} and window.cfg.get("audio_delay_by_file", {}) == {})
+    film = "/tmp/smoothcast-gui-check-film.mkv"
+    window._preview_path = film
+    press("audio-later")
+    press("audio-later")
+    check("two presses of 'later' save +100 ms for that film only", saved() == {film: 100}, repr(saved()))
+    press("audio-earlier")
+    check("'earlier' moves it back by 50 ms", saved() == {film: 50}, repr(saved()))
+    press("audio-reset")
+    check("reset clears the saved delay", saved() == {}, repr(saved()))
+    for _ in range(3):
+        press("audio-earlier")
+    check("earlier goes negative and is saved", saved() == {film: -150}, repr(saved()))
+    window._preview_path = "/tmp/another-film.mkv"
+    check("another film starts with no delay", window.cfg["audio_delay_by_file"].get(window._preview_path) is None)
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
-             "density-junk": density_junk, "text-fit": text_fit_wide}
+             "density-junk": density_junk, "text-fit": text_fit_wide,
+             "audio-delay": audio_delay_menu}
 
 
 class CheckApp(cast_control.CastControlApp):

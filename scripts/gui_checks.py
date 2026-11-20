@@ -40,6 +40,7 @@ SCENARIOS: dict[str, str | None] = {
     "density-saved": '{"density": "spacious"}\n',
     "density-junk": '{"density": "<huge>"}\n',
     "text-fit": None,
+    "audio-delay": None,
 }
 
 
