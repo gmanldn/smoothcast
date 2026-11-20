@@ -282,6 +282,9 @@ class UiMixin:
         self.play_image.set_pixel_size(50)
         self.play_button.set_child(self.play_image)
         self.play_button.set_tooltip_text("Play / Pause (Space)")
+        self.play_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Play or pause"]
+        )
         self.play_button.connect("clicked", lambda _b: self.toggle_play())
         self.fwd10_button = self._text_button("+10", "Forward 10 seconds (→)", self._skip_forward10)
         self.fwd10_button.add_css_class("transport-step")
@@ -306,10 +309,16 @@ class UiMixin:
         self.mute_button = Gtk.ToggleButton()
         self.mute_button.set_icon_name("audio-volume-high-symbolic")
         self.mute_button.set_tooltip_text("Mute (M)")
+        self.mute_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Mute"]
+        )
         self.mute_button.add_css_class("flat")
         self.mute_button.connect("toggled", self._on_mute)
         self.volume_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
         self.volume_scale.set_draw_value(False)
+        self.volume_scale.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Volume"]
+        )
         self.volume_scale.set_hexpand(True)
         self._syncing = True
         self.volume_scale.set_value(50)
@@ -350,6 +359,9 @@ class UiMixin:
         self.cc_button = Gtk.ToggleButton(label="CC")
         self.cc_button.add_css_class("action-control")
         self.cc_button.set_tooltip_text("Toggle captions on the TV")
+        self.cc_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Captions"]
+        )
         self.cc_button.connect("toggled", self._on_cc_toggled)
         self.action_controls = (
             open_button, self.cast_button, self.local_button, self.stop_tv_button, self.cc_button,
@@ -648,6 +660,7 @@ class UiMixin:
         image.set_pixel_size(size)
         button.set_child(image)
         button.set_tooltip_text(tooltip)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [tooltip])
         for cls in style_class.split():
             button.add_css_class(cls)
         button.connect("clicked", lambda _b: callback())
@@ -657,6 +670,7 @@ class UiMixin:
     def _text_button(self, label, tooltip, callback) -> Gtk.Button:
         button = Gtk.Button(label=label)
         button.set_tooltip_text(tooltip)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [tooltip])
         button.add_css_class("pill")
         button.connect("clicked", lambda _b: callback())
         return button

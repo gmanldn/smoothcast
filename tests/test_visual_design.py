@@ -57,6 +57,15 @@ class VisualDesignTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.source)
 
+    def test_icon_only_transport_controls_have_accessible_labels(self):
+        for label in (
+            "Play or pause", "Mute", "Volume", "Captions",
+            "Previous in queue (P)", "Next in queue (N)",
+        ):
+            with self.subTest(label=label):
+                self.assertIn(label, self.source)
+        self.assertIn("Gtk.AccessibleProperty.LABEL", self.source)
+
     def test_original_playback_actions_remain_wired(self):
         for snippet in (
             'self.play_button.connect("clicked", lambda _b: self.toggle_play())',
