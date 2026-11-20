@@ -72,6 +72,10 @@ def dropdown_names(dropdown) -> list[str]:
 
 def first_run(app, window) -> None:
     """No saved receiver: nothing selected, nothing commanded, user is asked to choose (#239)."""
+    for button, label in ((window.open_button, "Open video"), (window.cast_button, "Cast to TV"),
+                          (window.stop_tv_button, "Stop TV")):
+        check(f"player action displays {label}", button.get_label() == label)
+
     calls: list[list[str]] = []
 
     def record(args, timeout=10):  # a catt subprocess would be spawned through this

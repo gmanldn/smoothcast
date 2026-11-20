@@ -696,7 +696,7 @@ class PreviewScreen(Gtk.DrawingArea):
 
         cr.select_font_face("Sans")
         cr.set_font_size(17 if height >= 140 else 14)
-        heading = "READY FOR YOUR NEXT FILM" if empty else title
+        heading = "Video preview" if empty else title
         if empty:
             display_title = fit(heading, width - 30)
             text_x = max(10, (width - cr.text_extents(display_title).width) / 2)
@@ -708,7 +708,7 @@ class PreviewScreen(Gtk.DrawingArea):
         cr.set_source_rgb(0.93, 0.96, 1.0)
         cr.move_to(text_x, text_y)
         cr.show_text(display_title)
-        subheading = "Open a video to start casting" if empty else info
+        subheading = "" if empty else info
         if subheading:
             cr.set_font_size(12)
             subtitle = fit(subheading, width - 32 if empty else width - text_x - 18)
