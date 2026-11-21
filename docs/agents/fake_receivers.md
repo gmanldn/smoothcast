@@ -17,3 +17,10 @@ Use this guide when a real television reveals a repeatable DLNA quirk.
 Run the focused fake-receiver tests and the full headless suite. Loopback
 results improve deterministic coverage but do not replace testing on the
 capturing television.
+
+## Google Cast backend boundary (#202)
+
+`castctl.CastBackend` currently abstracts discovery, status and commands;
+`CattBackend` preserves the existing CLI adapter. `tests/test_cast_backend.py`
+checks that boundary headlessly. It is not the planned persistent, push-driven
+backend or protocol-level fake receiver, so issue #202 remains open.

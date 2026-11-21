@@ -11,7 +11,7 @@ import sys
 
 import frozen_runtime
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 from progress_model import ReceiverInfo
 
@@ -97,7 +97,7 @@ def catt_command(args: list[str]) -> list[str]:
     return frozen_runtime.catt_command(str(CATT), args)
 
 
-def scan(timeout: float = 30) -> list[Device]:
+def _catt_scan(timeout: float = 30) -> list[Device]:
     result = _run(["scan", "-j"], timeout=timeout)
     if result.returncode != 0:
         raise CastError((result.stderr or "device scan failed").strip())
@@ -150,7 +150,7 @@ def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
     return matches[0].host if len(matches) == 1 else None
 
 
-def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
+def _catt_info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():
         return None
@@ -169,7 +169,7 @@ def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     return cast(ReceiverInfo, payload)
 
 
-def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if not device.strip():
         return False, NO_DEVICE_MESSAGE
     try:
@@ -182,6 +182,54 @@ def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if result.returncode != 0:
         return False, message or "The command failed."
     return True, message
+
+
+@runtime_checkable
+class CastBackend(Protocol):
+    """GTK-free receiver boundary used by the existing Cast control helpers.
+
+    This transitional contract captures the operations SmoothCast currently
+    exposes through ``castctl``. It deliberately does not yet claim push
+    status, connection ownership, or media loading; those belong to the
+    complete in-process backend contract tracked by issue #202.
+    """
+
+    def scan(self, timeout: float = 30) -> list[Device]: ...
+
+    def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None: ...
+
+    def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]: ...
+
+
+class CattBackend:
+    """Compatibility adapter for the current catt command implementation."""
+
+    def scan(self, timeout: float = 30) -> list[Device]:
+        return _catt_scan(timeout)
+
+    def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
+        return _catt_info(device, timeout)
+
+    def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+        return _catt_command(device, *args, timeout=timeout)
+
+
+_backend: CastBackend = CattBackend()
+
+
+def scan(timeout: float = 30) -> list[Device]:
+    """Discover receivers using the active Cast backend."""
+    return _backend.scan(timeout)
+
+
+def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
+    """Return receiver status using the active Cast backend."""
+    return _backend.info(device, timeout)
+
+
+def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+    """Run a receiver command using the active Cast backend."""
+    return _backend.command(device, *args, timeout=timeout)
 
 
 def play(device: str) -> tuple[bool, str]:
