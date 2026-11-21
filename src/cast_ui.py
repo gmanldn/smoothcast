@@ -41,6 +41,7 @@ class UiMixin(BookmarkUiMixin):
 
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
+        self._sync_ui_timers()
         if not self.is_active() or not refresh_config(self.cfg):
             return
         self.app.apply_accent(self.cfg.get("accent", "default"))
@@ -1361,6 +1362,7 @@ class UiMixin(BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        self._sync_ui_timers()
 
 
     def _refresh_direct_note(self) -> None:

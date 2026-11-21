@@ -1071,6 +1071,7 @@ class SessionMixin:
             f"Sleep timer armed: {minutes} min" if minutes
             else "Sleep timer cancelled"
         )
+        self._sync_ui_timers()
 
 
     def _sleep_tick(self) -> bool:

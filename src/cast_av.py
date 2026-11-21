@@ -634,6 +634,7 @@ class AvMixin:
             )
         except Exception:
             self.monitor = None
+        self._sync_ui_timers()
 
 
     def _stop_monitor(self, reset: bool = True) -> None:
@@ -651,6 +652,7 @@ class AvMixin:
             ).start()
         if reset and self.meter is not None:
             self.meter.reset()
+        self._sync_ui_timers()
 
 
     def _resume_monitor(self) -> None:

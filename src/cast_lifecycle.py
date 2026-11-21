@@ -42,6 +42,7 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
+        self._stop_ui_timers()
         reliability_metrics.finish_active(self, "interrupted", Async.run)
         getattr(self, "_cancel_music_import", lambda: None)()
         self._cancel_queue_prewarm()
