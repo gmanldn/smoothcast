@@ -10,9 +10,9 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Every device is a screen.** Open the room's `/screen` page on a TV, tablet, laptop or spare phone and it becomes a display or speaker for the shared queue. Chromecast, DLNA TVs and browsers all appear as targets; formats a browser cannot play are converted on the host automatically.
 - **Host or client, your choice.** A computer with the media runs SmoothCast as the host; every other device only needs a browser. Several hosts can coexist on one network.
 - **Bullet-proof by design.** Fenced, idempotent commands; stale or double taps cannot skip a film; a failing guest, screen or receiver never interrupts what is playing; recoveries are automatic and every failure is explained in plain words.
-- **Private by default.** Everything stays on your network. The room is PIN-protected, sessions expire, any guest can be ejected instantly, and the host decides whether guest devices may receive media at all.
+- **Built for the home network.** Everything stays on your LAN and is never reachable from the internet. Anyone you've given the Wi-Fi password is trusted to join; today the room asks for a PIN, which is becoming optional. Sessions expire and the host can sign guests out at any time.
 
-See [what makes SmoothCast different](docs/PRODUCT.md) for the roles, guarantees and roadmap.
+See [what makes SmoothCast different](docs/PRODUCT.md) for the roles and guarantees, and the [vision](docs/VISION.md) for where it is going: one smart mesh of media nodes, web clients and casting targets, controlled as one, with a shared queue.
 
 ## Features
 

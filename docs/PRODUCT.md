@@ -18,8 +18,13 @@ promise, the guarantees behind it and the honest limits today.
 4. **It does not break.** Playback is owned by one party at a time, commands are
    sequenced and idempotent, and a misbehaving phone, screen or receiver cannot
    interrupt what is playing.
-5. **It stays yours.** No account, no cloud, no tracking. Access is a PIN on
-   your own network and can be revoked per guest at any time.
+5. **It stays yours.** No account, no cloud, no tracking, never reachable from
+   outside your home. Being on the home Wi-Fi is the invitation: SmoothCast
+   trusts the people on your LAN (see the [trust model](VISION.md#trust-model-the-trusted-home-lan)).
+   The room PIN that exists today is being made optional.
+
+The long-term direction — one mesh of nodes, web clients and targets controlled
+as one, with a shared queue — is set out in [VISION.md](VISION.md).
 
 ## Roles
 
@@ -48,7 +53,9 @@ owner wants to listen privately, also a speaker.
 
 ## Honest limits today
 
-- The room is plain HTTP on a trusted LAN; trusted HTTPS is tracked in #340.
+- The room is plain HTTP on the trusted home LAN by design; HTTPS (#340) is
+  only needed where browsers demand a secure context. Today the room still
+  asks for a PIN; per the vision it becomes an optional house PIN.
 - Screens are driven from the room; the host's output dropdown does not yet list
   screens as a Cast-style receiver (#356) and screens do not synchronise with
   each other (multi-room sync is future work).

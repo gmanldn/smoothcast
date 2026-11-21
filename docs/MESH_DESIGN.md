@@ -5,6 +5,13 @@ this document is implemented yet except what `src/peer_discovery.py`,
 `src/mesh_transport.py` and the room portal already do. Where this page and a
 ticket disagree, the ticket's acceptance criteria win; update both.
 
+> **Trust model update (21 Nov 2026).** [VISION.md](VISION.md#trust-model-the-trusted-home-lan)
+> adopts a *trusted home LAN*: nodes on the LAN join the mesh automatically and
+> web clients need no PIN. Principle 2 and "Security tiers" below predate that
+> decision. Keep their bounds, validation and identity pinning (to detect
+> duplicate or confused nodes) but treat explicit pairing and PIN tiers as
+> optional, off-by-default settings when implementing M1–M12.
+
 ## Goal
 
 Every SmoothCast **full node** (the desktop app) continuously knows, within a
