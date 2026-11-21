@@ -220,7 +220,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             self._timer_ids[name] = GLib.timeout_add(interval, callback)
 
     def _sync_ui_timers(self) -> None:
-        if not self._timers_enabled or self._closing:
+        if not getattr(self, "_timers_enabled", False) or self._closing:
             return
         sleep_armed = idle_timers.active_deadline(self.cfg.get("sleep_timer_deadline"))
         schedule = idle_timers.timer_plan(
@@ -229,6 +229,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             has_sleep=sleep_armed,
             fade_enabled=bool(sleep_fade.valid_seconds(self.cfg.get("sleep_fade_seconds"))),
             fade_active=self._sleep_fader.phase is not None,
+            transcoding=bool(self.session and getattr(self.session, "mode", None) == "transcode"
+                             and getattr(self.session, "state", None)),
         )
         wake_seek = schedule.seek_ms is not None and "seek" not in self._timer_ids
         self._set_ui_timer("seek", schedule.seek_ms, self._tick)
@@ -236,8 +238,17 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._set_ui_timer("poll", schedule.poll_ms, self._poll_device)
         self._set_ui_timer("sleep", schedule.sleep_ms, self._scheduled_sleep_tick)
         self._set_ui_timer("fade", schedule.fade_ms, self._scheduled_fade_tick)
+        self._set_ui_timer("watchdog", schedule.watchdog_ms, self._hidden_watchdog_tick)
         if wake_seek:
             GLib.idle_add(lambda: (self._tick(), False)[1])
+
+    def _hidden_watchdog_tick(self) -> bool:
+        """Preserve HLS stall recovery while seekbar/meter updates are hidden."""
+        session = self.session
+        if (session is not None and getattr(session, "mode", None) == "transcode"
+                and getattr(session, "state", None) is not None):
+            stream_watchdog.recover_window(self, session.progress(), self.tracker.value())
+        return True
 
     def _scheduled_sleep_tick(self) -> bool:
         self._sleep_tick()

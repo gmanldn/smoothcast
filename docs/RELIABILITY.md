@@ -68,3 +68,7 @@ callbacks over a simulated hidden, idle minute (including existing LAN/theme
 checks) and enforces at most one wakeup per second. This is a *scheduler*
 budget, not a physical CPU/battery benchmark; only isolated Xvfb tests may
 exercise GTK, and physical receivers need separate qualification.
+
+Hidden transcoding sessions retain a separate 1-second stall-watchdog tick;
+only the visual seekbar and audio-meter callbacks stop. This preserves HLS
+recovery during minimised/hidden playback without waking an idle window.
