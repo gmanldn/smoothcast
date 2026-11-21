@@ -67,7 +67,8 @@ DEFAULTS: dict = {
     "auto_shutdown": False,
     "notifications": True,  # Notify when the window is unfocused (#267)
     "portal_screens": True,
-    "house_pin_enabled": False,  # Trusted home LAN: no PIN unless the host opts in (#416)
+    "house_pin_enabled": False,
+    "library_folders": [],
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
     "accent": "default",  # Accent preset; "default" = no override (#135).

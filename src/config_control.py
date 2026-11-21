@@ -25,6 +25,7 @@ import accent
 import density
 import subtitle_style
 import language_prefs
+import library_folders
 import loudness
 import watch_history
 
@@ -77,6 +78,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             cfg[key] = watch_history.clean(value)
         elif key == "bookmarks":
             cfg[key] = bookmarks.clean(value)
+        elif key == "library_folders":
+            cfg[key] = library_folders.to_config(library_folders.load({key: value}))
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (

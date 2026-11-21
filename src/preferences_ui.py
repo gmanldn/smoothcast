@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+import library_folders_ui
 import picture_check
 import preference_choices
 from cast_widgets import save_config
@@ -26,6 +27,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.set_default_size(660, 520)
         self.set_search_enabled(True)
         self._build()
+        self.library_page = library_folders_ui.LibraryFoldersPage(self)
         self.sync_from_owner()
 
     def _page(self, title: str, icon: str):
