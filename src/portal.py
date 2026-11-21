@@ -1376,7 +1376,7 @@ function renderQueue(items){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
     const target=row&&Array.from(row.children[1].children)
       .find(item=>item.dataset.queueAction===focusTarget.action);
-    if(target!==focused)(target||queue).focus({preventScroll:true});
+    (target||queue).focus({preventScroll:true});
   }
 }
 let statusRequest=null,statusTimer=null,statusFailures=0;
