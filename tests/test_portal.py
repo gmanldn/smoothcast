@@ -795,13 +795,23 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
         busy=False,
         queue=queue,
         queue_durations={},
+        now_playing=None,
+        session=None,
+        selected_index=None,
         _enqueue=lambda paths: queue.extend(paths),
+        _remove_queue=lambda index: queue.pop(index),
     )
     host._portal_upload_path = MethodType(
         cast_portal_queue.PortalQueueMixin._portal_upload_path, host,
     )
     host._portal_observe_queue = MethodType(
         cast_portal_queue.PortalQueueMixin._portal_observe_queue, host,
+    )
+    host._portal_check_queue_revision = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_check_queue_revision, host,
+    )
+    host._portal_queue_index = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_queue_index, host,
     )
     try:
         _, login_result, cookie = login(rig)
@@ -853,13 +863,25 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
             assert status == 202 and len(rig.calls) == call_count
 
         assert len(queue) == 3
-        assert {row["title"] for row in
-                cast_portal_queue.PortalQueueMixin._portal_queue_status(host)} == {
+        rows = cast_portal_queue.PortalQueueMixin._portal_queue_status(host)
+        assert {row["title"] for row in rows} == {
             f"guest-track-{index}.mp3" for index in range(1, 4)
         }
         assert len({upload_id for upload_id, _payload in finalized}) == 3
         assert all(Path(payload["path"]).is_file() for _upload_id, payload in finalized)
         assert all(action != "cast_upload" for action, _payload in rig.calls)
+        active_path = queue[0]
+        active_session = SimpleNamespace(state=object())
+        host.now_playing = active_path
+        host.session = active_session
+        host.selected_index = 0
+        cast_portal_queue.PortalQueueMixin._portal_queue_action(host, "queue_remove", {
+            "id": rows[0]["id"], "queue_revision": host._portal_queue_revision,
+        })
+        assert active_path not in queue
+        assert host.now_playing == active_path and host.session is active_session
+        assert Path(active_path).is_file()
+        cast_portal_queue.PortalQueueMixin._portal_queue_status(host)
         queue.clear()
         assert cast_portal_queue.PortalQueueMixin._portal_queue_status(host) == []
         assert host._portal_queue_display_names == {}
