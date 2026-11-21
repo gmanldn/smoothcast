@@ -61,7 +61,7 @@ amend commits that are already on `origin`.
 
 - **Before every commit:** run focused tests covering changed behavior,
   `python3 -m compileall -q src scripts setup tests` and
-  `ruff check src scripts setup tests sc.py setup.py` (plus `mypy` if you touched
+  `ruff check src scripts setup tests smoothcast setup.py` (plus `mypy` if you touched
   a gated module). `git status` and `git diff --stat` must show only files you
   meant to change.
 - **Stage files by name**, not `git add -A` in a dirty tree. Never commit

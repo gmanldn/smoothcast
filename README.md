@@ -45,7 +45,7 @@ qualification.
 
 The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which verifies an isolated `.venv` before registering the desktop shortcut. Rerunning setup checks for missing dependencies; `--check` performs read-only health checks. `--no-shortcuts` skips desktop integration. See [setup/README.md](setup/README.md) for platform-specific details and limitations.
 
-On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms. Version lookup remains side-effect free: `smoothcast --version` (Unix) or `python src/version.py` (any OS).
+The single `./smoothcast` launcher is a Python script that runs on Linux, macOS and Windows (use `python smoothcast` on Windows). It bootstraps a project-local `.venv` when needed, then hands off to the GTK runtime. Version lookup remains side-effect free: `./smoothcast --version` (Unix), `python smoothcast --version` (Windows), or `python src/version.py` (any OS).
 
 **Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI. See the dated [platform status matrix](docs/PLATFORM_STATUS.md) for the current CI evidence and unverified native checks.
 
@@ -401,12 +401,12 @@ grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
 The dock must point to the **absolute path to the launcher in this checkout**.
-Running `python3 sc.py` from this directory bypasses any old dock entry.
+Running `./smoothcast` from this directory bypasses any old dock entry.
 A dependency repair now installs from `pyproject.toml`, not a missing
 `requirements.txt`; repair failures print the actual error rather than
 pretending that the same release installed again.
 
-If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `python3 sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
+If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `./smoothcast` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 

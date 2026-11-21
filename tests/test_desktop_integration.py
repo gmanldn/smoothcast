@@ -58,15 +58,15 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
 
     def test_launcher_recovers_partial_python_environment(self):
-        script = (Path(__file__).resolve().parents[1] / "smoothcast").read_text()
-        self.assertIn('RUNTIME="$DIR/.venv/bin/python"', script)
-        self.assertIn('m.version("catt")', script)
-        self.assertIn('m.version("PyChromecast")', script)
-        self.assertIn('match=re.fullmatch(', script)
-        self.assertIn('sys.exit(0 if match', script)
-        self.assertNotIn('assert tuple(v)', script)
-        self.assertIn('for tool in ffmpeg ffprobe ffplay; do', script)
-        self.assertIn('"$DIR/setup/bootstrap.py" --target "$TARGET"', script)
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "smoothcast").read_text()
+        runtime = (root / "setup/launch.py").read_text()
+        self.assertIn("launch.runtime_ready()", script)
+        self.assertIn('str(SETUP / "bootstrap.py")', script)
+        self.assertIn('"install_desktop.py"', script)
+        self.assertIn("bootstrap.GUI_CHECK", runtime)
+        self.assertIn("bootstrap.CAST_DEPENDENCIES_CHECK", runtime)
+        self.assertIn('for tool in ("ffmpeg", "ffprobe", "ffplay")', runtime)
 
     def test_runtime_launcher_uses_project_root_for_dock_launch(self):
         script = (Path(__file__).resolve().parents[1] / "setup/launch.py").read_text()

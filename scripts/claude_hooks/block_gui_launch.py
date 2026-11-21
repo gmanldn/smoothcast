@@ -25,7 +25,7 @@ SAFE_FIRST_ARGS = frozenset({
     "--library-index",
 })
 LAUNCHERS = frozenset({"smoothcast", "smoothcast-gui"})
-GUI_SCRIPTS = frozenset({"sc.py", "cast_control.py", "cli.py", "launch.py"})
+GUI_SCRIPTS = frozenset({"smoothcast", "cast_control.py", "cli.py", "launch.py"})
 GUI_MODULES = frozenset({"cast_control", "cli", "launch"})
 WRAPPERS = frozenset({"sudo", "env", "time", "nohup", "exec", "command", "setsid"})
 # Wrapper options that consume the following word, so it is not the command.

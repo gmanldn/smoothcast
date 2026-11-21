@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.machinery
+import importlib.util
 import io
 import json
 import os
@@ -35,10 +37,9 @@ class SetupContractTests(unittest.TestCase):
                 self.assertIn("bootstrap.py", script)
                 self.assertIn("--target " + target, script)
         if os.name != "nt" and shutil.which("bash"):
-            for filename in ("linuxsetup.sh", "macsetup.sh", "smoothcast"):
+            for filename in ("linuxsetup.sh", "macsetup.sh"):
                 result = subprocess.run(
-                    ["bash", "-n", str(ROOT / ("setup" if filename.endswith(".sh")
-                                              else ".") / filename)],
+                    ["bash", "-n", str(ROOT / "setup" / filename)],
                     capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -105,7 +106,7 @@ class SetupContractTests(unittest.TestCase):
         source = bootstrap.python_ok.__code__
         self.assertIn("sys.exit", source.co_consts[-1])
         launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
-        self.assertIn("sys.exit(0 if sys.version_info", launcher)
+        self.assertIn("sys.version_info < (3, 10)", launcher)
         self.assertNotIn("assert sys.version_info", launcher)
 
     def test_cast_dependency_bounds_rejected_under_optimized_python(self):
@@ -149,9 +150,8 @@ class SetupContractTests(unittest.TestCase):
                                   optimize=optimize):
                     self.assertEqual(code == 0, accepted,
                                      (catt_version, pycast_version, optimize, result.stderr))
-        launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
-        self.assertNotIn("assert tuple(v)", launcher)
-        self.assertIn("re.fullmatch", launcher)
+        self.assertNotIn("assert tuple(v)", launch.RUNTIME_CHECK)
+        self.assertIn("re.fullmatch", launch.RUNTIME_CHECK)
 
     def test_ffmpeg_tool_probe_handles_missing_loader_timeout_and_exit(self):
         outcomes = {
@@ -401,11 +401,38 @@ class SetupContractTests(unittest.TestCase):
                                return_value="Linux"):
             self.assertFalse(streamer.Session().used_software_fallback)
 
-    def test_original_launcher_delegates_to_shared_bootstrap(self):
+    def test_canonical_launcher_delegates_to_shared_bootstrap(self):
         script = (ROOT / "smoothcast").read_text()
-        self.assertIn("setup/bootstrap.py", script)
-        self.assertIn("setup/launch.py", script)
-        self.assertIn('exec "$PYTHON" "$DIR/src/version.py"', script)
+        self.assertTrue(script.startswith("#!/usr/bin/env python3\n"))
+        self.assertIn('str(SETUP / "bootstrap.py")', script)
+        self.assertIn("launch.runtime_ready()", script)
+        self.assertIn("launch.main(args)", script)
+        self.assertIn('"install_desktop.py"', script)
+        self.assertNotIn("sc.py", script)
+
+    def test_canonical_launcher_keeps_headless_queries_out_of_bootstrap(self):
+        loader = importlib.machinery.SourceFileLoader(
+            "smoothcast_launcher", str(ROOT / "smoothcast"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        launcher = importlib.util.module_from_spec(spec)
+        loader.exec_module(launcher)
+        old = os.environ.pop("SMOOTHCAST_TEST_CONTEXT", None)
+        try:
+            for argv in (["--version"], ["-V"], ["--diagnostics"],
+                         ["--diagnostics", "/tmp/report"], ["--self-test", "x"]):
+                with self.subTest(argv=argv):
+                    self.assertTrue(launcher._headless(argv))
+            for argv in ([], ["film.mkv"], ["--version", "extra"],
+                         ["--network-check"]):
+                with self.subTest(argv=argv):
+                    self.assertFalse(launcher._headless(argv))
+            os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"
+            self.assertTrue(launcher._headless([]))
+        finally:
+            if old is None:
+                os.environ.pop("SMOOTHCAST_TEST_CONTEXT", None)
+            else:
+                os.environ["SMOOTHCAST_TEST_CONTEXT"] = old
 
 
 if __name__ == "__main__":

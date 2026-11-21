@@ -38,7 +38,7 @@ jobs:
       - name: Install Ruff
         run: python -m pip install 'ruff==0.16.9'
       - name: Lint (configuration in pyproject.toml)
-        run: ruff check src scripts setup tests sc.py setup.py
+        run: ruff check src scripts setup tests smoothcast setup.py
 
   typecheck:
     name: Type check (mypy)
@@ -105,6 +105,9 @@ jobs:
 
       - name: Check Python syntax without GTK
         run: python -m compileall -q src scripts setup tests
+
+      - name: Check canonical launcher syntax
+        run: python -m py_compile smoothcast
 
       - name: Install portable test dependencies
         run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'PyChromecast>=14.1.1,<15; python_version >= "3.11"'

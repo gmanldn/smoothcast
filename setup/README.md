@@ -36,11 +36,11 @@ Options:
   and removes it immediately to detect missing `python3-venv`.
 - `--no-shortcuts`: install the runtime but skip desktop registration
 
-The original `./smoothcast` launcher on Linux/macOS also bootstraps a fresh
-checkout automatically. After setup, it directly starts the isolated Python
-runtime. `python3 sc.py` works as a launcher on all three operating systems;
-on Windows run the batch setup first. `./smoothcast --version` remains
-side-effect free.
+The canonical `smoothcast` launcher is Python-only and works on all three
+operating systems (`./smoothcast` on Linux/macOS, `python smoothcast` on
+Windows). It bootstraps a fresh checkout automatically, then starts the
+isolated Python runtime. On Windows run the batch setup first.
+`./smoothcast --version` remains side-effect free.
 
 ## Security and portability
 

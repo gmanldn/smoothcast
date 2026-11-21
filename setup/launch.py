@@ -14,13 +14,15 @@ import subprocess
 import sys
 import time
 
+import bootstrap
 import native_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
+RUNTIME_CHECK = bootstrap.GUI_CHECK + "; " + bootstrap.CAST_DEPENDENCIES_CHECK
 
 
-def python_path() -> Path:
+def runtime_python() -> Path | None:
     candidates = (
         VENV / "bin" / "python",
         VENV / "Scripts" / "python.exe",
@@ -29,9 +31,37 @@ def python_path() -> Path:
     for candidate in candidates:
         if candidate.is_file():
             return candidate
-    raise FileNotFoundError(
-        f"SmoothCast is not installed under {VENV}. Run the setup script first."
-    )
+    return None
+
+
+def python_path() -> Path:
+    candidate = runtime_python()
+    if candidate is None:
+        raise FileNotFoundError(
+            f"SmoothCast is not installed under {VENV}. Run the setup script first."
+        )
+    return candidate
+
+
+def runtime_ready() -> bool:
+    """True when the project runtime and media tools can start without setup."""
+    runtime = runtime_python()
+    if runtime is None:
+        return False
+    try:
+        result = subprocess.run(
+            [str(runtime), "-c", RUNTIME_CHECK],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode != 0:
+        return False
+    try:
+        path = runtime_environment().get("PATH")
+    except (OSError, RuntimeError):
+        path = os.environ.get("PATH")
+    return all(shutil.which(tool, path=path) for tool in ("ffmpeg", "ffprobe", "ffplay"))
 
 
 def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, str]:

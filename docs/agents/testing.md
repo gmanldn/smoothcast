@@ -20,7 +20,7 @@ Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
-**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests sc.py
+**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests smoothcast
 setup.py` fails on new violations; the 3.13 job gates `--cov-fail-under=38`
 (raise, never lower). **Types (#251):** `mypy` gates only `[tool.mypy] files`;
 widen by making `mypy src/<module>.py` clean, then listing it. `pip-audit`,

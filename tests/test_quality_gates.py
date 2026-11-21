@@ -13,7 +13,7 @@ class QualityGateTests(unittest.TestCase):
     def test_ruff_is_configured_and_gated_in_ci(self):
         self.assertIn("[tool.ruff.lint]", read("pyproject.toml"))
         workflow = read(".github/workflows/verify.yml")
-        self.assertIn("ruff check src scripts setup tests sc.py setup.py", workflow)
+        self.assertIn("ruff check src scripts setup tests smoothcast setup.py", workflow)
         self.assertIn("ruff", read("pyproject.toml").split("dev = [", 1)[1].split("]", 1)[0])
 
     def test_coverage_runs_on_primary_python_with_a_threshold(self):

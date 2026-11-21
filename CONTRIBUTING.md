@@ -24,7 +24,7 @@ for the repository rules; do not add a parallel Markdown feature list.
    ```sh
    python3 -m pytest -q tests
    python3 -m compileall -q src scripts setup tests
-   ruff check src scripts setup tests sc.py setup.py
+   ruff check src scripts setup tests smoothcast setup.py
    ```
 
 4. Commit small and coherent (`Refs #N`), integrate with
