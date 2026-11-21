@@ -589,7 +589,7 @@ class UiMixin(BookmarkUiMixin):
 
     def _build_portal_card(self) -> Gtk.Box:
         card, body = self._card(
-            "LAN dashboard", "Open this address on another device on your local network."
+            "Shared room", "Open this address on a phone on your local network to join the queue and control playback."
         )
         self.portal_status_label = Gtk.Label(
             label="Starting local portal…", xalign=0.0, wrap=False,
@@ -610,13 +610,13 @@ class UiMixin(BookmarkUiMixin):
         )
         self.portal_url_label.add_css_class("mono")
         body.append(self.portal_url_label)
-        body.append(Gtk.Label(label="6-digit PIN", xalign=0.0))
+        body.append(Gtk.Label(label="6-digit room PIN", xalign=0.0))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")
         self.portal_pin_label.add_css_class("mono")
         body.append(self.portal_pin_label)
         note = Gtk.Label(
-            label="Anyone on your local network with this PIN can control playback. "
+            label="Anyone with this PIN can join the queue, vote and control playback. "
                   "The PIN changes when the portal restarts.",
             xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
         )

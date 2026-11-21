@@ -18,13 +18,14 @@ PIN = "234567"
 
 
 class PortalRig:
-    def __init__(self, uploads=None, clock=None):
+    def __init__(self, uploads=None, clock=None, queue=None):
         self.calls = []
+        self.queue = list(queue or [])
 
         def dispatch(action, payload):
             self.calls.append((action, payload))
             if action == "status":
-                return {"title": "sample.mp4", "state": "PLAYING", "queue": []}
+                return {"title": "sample.mp4", "state": "PLAYING", "queue": self.queue}
             return "accepted"
 
         self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch,
@@ -124,6 +125,10 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'title.textContent=item.title' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
+    assert "Add one to the shared queue, or start it now" in page
+    assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
+    assert "queue_vote" in page and "queue_play" in page
+    assert "Add to the shared queue" in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
@@ -134,8 +139,8 @@ def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
     assert rig.calls == []
 
 
-def login(rig, pin=PIN):
-    status, body, headers = rig.request("POST", "/api/login", {"pin": pin},
+def login(rig, pin=PIN, name="Guest"):
+    status, body, headers = rig.request("POST", "/api/login", {"pin": pin, "name": name},
                                         origin=f"http://{rig.host}")
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
 
@@ -152,6 +157,61 @@ def test_pin_login_sets_http_only_session_and_dashboard_reads_main_state(rig):
     assert status == 200 and decode(body)["state"]["title"] == "sample.mp4"
     assert headers["Cache-Control"] == "no-store"
     assert rig.calls == [("status", {})]
+
+
+def test_named_sessions_share_presence_and_votes(rig):
+    first_status, first, cookie = login(rig, PIN, "Sam")
+    assert first_status == 200 and first["participant"]["name"] == "Sam"
+    second_status, second, _ = login(rig, PIN, "Sam")
+    assert second_status == 200
+    assert second["participant"]["name"] == "Sam (2)"
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    room = decode(body)["state"]["room"]
+    assert {person["name"] for person in room["participants"]} == {"Sam", "Sam (2)"}
+    assert room["me"]["name"] == "Sam"
+
+
+def test_queue_votes_are_per_person_and_require_a_live_item():
+    queue = [{"id": "abc123", "title": "film.mkv", "duration": 90}]
+    rig = PortalRig(queue=queue)
+    try:
+        _, first, cookie = login(rig, PIN)
+        origin = f"http://{rig.host}"
+        status, body, _ = rig.request("POST", "/api/action",
+                                      {"action": "queue_vote", "id": "abc123", "value": True},
+                                      cookie=cookie, csrf=first["csrf"], origin=origin)
+        assert status == 404  # queue has not been observed yet
+        rig.request("GET", "/api/status", cookie=cookie)
+        status, body, _ = rig.request("POST", "/api/action",
+                                      {"action": "queue_vote", "id": "abc123", "value": True},
+                                      cookie=cookie, csrf=first["csrf"], origin=origin)
+        assert status == 202
+        status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+        item = decode(body)["state"]["queue"][0]
+        assert item["votes"] == 1 and item["voted"] is True
+        status, _, _ = rig.request("POST", "/api/action",
+                                   {"action": "queue_vote", "id": "missing", "value": True},
+                                   cookie=cookie, csrf=first["csrf"], origin=origin)
+        assert status == 404
+    finally:
+        rig.close()
+
+
+def test_queue_actions_are_forwarded_to_the_gui(rig):
+    rig.queue = [{"id": "one", "title": "one.mkv", "duration": 0}]
+    _, result, cookie = login(rig)
+    rig.request("GET", "/api/status", cookie=cookie)
+    origin = f"http://{rig.host}"
+    for action, extra in (
+            ("next", {}), ("previous", {}),
+            ("queue_play", {"id": "one"}),
+            ("queue_remove", {"id": "one"}),
+            ("queue_move", {"id": "one", "position": 0})):
+        payload = {"action": action, **extra}
+        status, body, _ = rig.request("POST", "/api/action", payload, cookie=cookie,
+                                      csrf=result["csrf"], origin=origin)
+        assert status == 202, (action, body)
 
 
 def test_bad_pin_is_rate_limited_per_client(rig):
@@ -349,6 +409,20 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "self._stop_portal()" in methods["_on_close"]
     assert "_refresh_portal_activity" in methods["_refresh_portal"]
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
+    queue_actions = methods["_portal_queue_action"]
+    for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
+                      "next", "previous"):
+        assert operation in queue_actions
+    assert "portal_queue_id" in methods["_portal_queue_status"]
+    assert "queue_durations" in methods["_portal_queue_status"]
+
+
+def test_queue_ids_are_stable_without_leaking_paths():
+    from cast_portal_queue import portal_queue_id
+    first = portal_queue_id("/media/Films/One.mkv")
+    assert first == portal_queue_id("/media/Films/One.mkv")
+    assert first != portal_queue_id("/media/Films/Two.mkv")
+    assert "media" not in first and "/" not in first
 
 
 def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_path(tmp_path):
@@ -395,6 +469,36 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         assert action == "cast_upload"
         assert Path(payload["path"]).read_bytes() == b"abcdef"
         assert Path(payload["path"]).parent == uploads.root
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads", {"name": "clip.mkv", "size": 6, "queue": True},
+            cookie=cookie, csrf=login_result["csrf"], origin=origin)
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abcdef", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 0-5/6"},
+            content_type="application/octet-stream")
+        assert status == 200
+        status, _, _ = rig.request(
+            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+            csrf=login_result["csrf"], origin=origin)
+        assert status == 202
+        assert rig.calls[-1][0] == "queue_add"
+        assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
     finally:
         rig.close()
         uploads.close()

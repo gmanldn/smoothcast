@@ -133,6 +133,17 @@ def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tm
     uploads.close()
 
 
+def test_queue_only_upload_never_starts_an_early_cast(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 6, queue_only=True)
+    assert uploads.is_queue_only("owner", created["id"]) is True
+    result = uploads.append("owner", created["id"], "bytes 0-5/6", 6, BytesIO(b"abcdef"))
+    assert result["ready_to_cast"] is False
+    path, name, dispatch = uploads.finalize("owner", created["id"])
+    assert dispatch is True and name == "film.mkv" and path.read_bytes() == b"abcdef"
+    uploads.close()
+
+
 def test_indexed_mp4_is_not_cast_before_it_finishes_arriving(tmp_path):
     uploads = manager(tmp_path, early_cast_min_bytes=1)
     created = uploads.create("owner", "film.mp4", len(INDEXED_MP4))

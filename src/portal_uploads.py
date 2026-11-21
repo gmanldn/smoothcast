@@ -97,7 +97,7 @@ def _human_rate(value: int) -> str:
 
 
 def format_portal_activity(uploads: list[dict]) -> str:
-    """One-line summary of LAN client activity for the desktop dashboard card."""
+    """One-line summary of LAN client activity for the desktop shared-room card."""
     if not uploads:
         return "No client activity"
     parts = []
@@ -177,6 +177,7 @@ class _Upload:
     # "idle" -> "requested" -> "active"/"declined"; early casting state.
     early_cast: str = "idle"
     keep_partial: bool = False
+    queue_only: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -227,7 +228,7 @@ class UploadManager:
                 upload.lock.release()
 
     def create(self, owner: str, name_value: object, size_value: object,
-               client: str = "") -> dict:
+               client: str = "", *, queue_only: bool = False) -> dict:
         name, suffix = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
@@ -258,7 +259,8 @@ class UploadManager:
             owner_key = hashlib.sha256(owner.encode("utf-8")).hexdigest()
             now = self._clock()
             upload = _Upload(upload_id, owner_key, name, suffix, size_value, partial,
-                             client=str(client or "")[:64], created_at=now, last_at=now)
+                             client=str(client or "")[:64], created_at=now, last_at=now,
+                             queue_only=bool(queue_only))
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE}
@@ -272,6 +274,10 @@ class UploadManager:
         if upload is None or not hmac.compare_digest(upload.owner, owner_key):
             raise UploadError(404, "Upload not found")
         return upload
+
+    def is_queue_only(self, owner: str, upload_id: str) -> bool:
+        """Whether this upload was created with early casting disabled."""
+        return self._get(owner, upload_id).queue_only
 
     def status(self, owner: str, upload_id: str) -> dict:
         upload = self._get(owner, upload_id)
@@ -399,7 +405,8 @@ class UploadManager:
         Called with ``upload.lock`` held. Returns True on the single append that
         crosses the buffer threshold for a progressively castable container.
         """
-        if (upload.early_cast != "idle" or upload.received < self._early_cast_min_bytes
+        if (upload.queue_only or upload.early_cast != "idle"
+                or upload.received < self._early_cast_min_bytes
                 or upload.received >= upload.size):
             return False
         if not is_progressively_castable(upload.name, upload.partial_path):

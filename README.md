@@ -9,7 +9,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Dialogue-first surround downmix** — with the Dialogue or Night profile, 5.0/5.1/6.1/7.1 and quad tracks are mixed to stereo with the centre channel lifted ~5 dB over FFmpeg's default matrix, surrounds lowered, the LFE dropped and no clipping; the level used for auto-trim is measured on that same mix. Original, stereo/mono and unrecognised layouts keep the plain `-ac 2` downmix
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
-- **PIN-protected LAN dashboard** — view current playback and queue from another device on the local network, with play/pause, stop, seek and volume controls
+- **PIN-protected shared room** — everyone on the local network can join with their name, see who is present, add videos to the shared queue, vote, reorder/remove/play titles, and control play/pause, skip, seek and volume from a phone
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **Desktop notifications** — posts a Gio notification when a cast finishes, fails or the receiver disappears, but never while the window is focused; Preferences > Playback > Notifications turns it off and the choice is stored as `"notifications"` in `config.json`
@@ -348,16 +348,20 @@ Security: every request needs `Authorization: Bearer <token>` (compared in const
 
 Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad request), 401 (token), 403 (cast not allowed or outside the media roots), 404, 405, 413, 422 (media), 502 (receiver refused) or 503 (receiver unreachable). `device` is a receiver name or IPv4, exactly as for the command line; DLNA renderers are not supported yet. Example: `curl -H "Authorization: Bearer $TOKEN" -d '{"device": "Living Room"}' http://127.0.0.1:8800/v1/pause`. A real-receiver check is still pending; the API is covered by portable tests with fake handlers.
 
-## LAN dashboard
+## Shared room
 
-The desktop app starts an authenticated, browser-based dashboard while it is
+The desktop app starts an authenticated, browser-based shared room while it is
 running. The main screen shows a friendly mDNS address such as
 `smoothcast-lounge.local` (with the numeric IP as a fallback) and a fresh
-six-digit PIN. A paired browser can view playback state and queue, then use the supported
-playback controls. The portal uses the Python standard library and adds no web
-framework dependency. It stops with the app and restarts with a new PIN if the
-selected LAN interface changes. See the [LAN dashboard guide](docs/LAN_PORTAL.md)
-for pairing, security and verification details.
+six-digit PIN. Everyone who joins with that PIN and a display name appears in
+the presence list and can add videos to the shared queue, vote, reorder or
+remove titles, start a film, skip forward/back and use play/pause, seek and
+volume. The queue belongs to the running desktop queue; web actions are
+marshalled onto the GTK thread. The portal uses the Python standard library and
+adds no web framework dependency. It stops with the app and restarts with a new
+PIN if the selected LAN interface changes. See the
+[shared room guide](docs/LAN_PORTAL.md) for pairing, security and verification
+details.
 
 ## Playlists, resume and safe playback transitions
 

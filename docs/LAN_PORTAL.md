@@ -1,13 +1,22 @@
-# SmoothCast LAN dashboard
+# SmoothCast shared room
 
-When the SmoothCast desktop app is running, it starts a small web dashboard on
-the selected private LAN IPv4 interface. The **LAN dashboard** card on the main
-screen shows the address and a six-digit PIN. Open that address in a
-browser on the same local network and enter the PIN to view playback state and
-use play/pause, stop, seek and volume controls. The queue is shown read-only.
-The **On your network** card in the desktop app and dashboard also lists
-currently playing, buffering or paused media reported by reachable Cast and
-DLNA receivers discovered on the LAN. It refreshes every 15 seconds, shows the
+When the SmoothCast desktop app is running, it starts a small web room on the
+selected private LAN IPv4 interface. The **Shared room** card on the main
+screen shows the address and a six-digit PIN. Open that address in a browser on
+the same local network, enter your name and the PIN, and you join a shared
+queue with everyone else in the room. The app remains the single owner of the
+queue and the receiver; web actions are marshalled onto the GTK thread.
+
+Each person can add videos from their device, add uploads to the queue instead
+of playing them immediately, vote on titles, reorder or remove queue entries,
+start a title, skip forward/back, and use play/pause, stop, seek and volume.
+The room also shows live presence and a bounded activity feed. Votes are a
+visible signal and are preserved across refreshes; queue order remains under
+the room's control so nobody's film can be silently displaced.
+
+The **On your network** card in the desktop app and dashboard lists currently
+playing, buffering or paused media reported by reachable Cast and DLNA
+receivers discovered on the LAN. It refreshes every 15 seconds, shows the
 receiver, media title and available progress, and never sends commands to those
 other receivers. Unreachable devices are omitted; titles in the dashboard are
 visible only after PIN pairing.
@@ -29,15 +38,23 @@ served locally with no external assets.
 - A new unpredictable PIN is generated each time the portal starts or changes
   interfaces. The PIN uses six digits so it is easy to read aloud.
 - After pairing, the browser receives a temporary, HTTP-only, same-site session
-  cookie. Sessions expire after eight hours or when the portal stops. Reloading
-  the page after expiry asks for the current PIN again.
+  cookie tied to one named participant. Sessions expire after eight hours or
+  when the room stops. Reloading the page after expiry asks for the current PIN
+  again. Up to 32 named participants are shown; duplicate names receive a
+  stable numeric suffix.
 - Five incorrect PIN attempts from one client are rate-limited. The PIN,
   session cookie and PIN-entry request are not written to SmoothCast logs.
 - Every state-changing request checks the allowed Host and Origin and requires
-  a per-session CSRF token. The portal exposes status, queue display, playback
-  controls and an authenticated video upload. It has no file browser, arbitrary
-  filesystem path or arbitrary URL cast.
+  a per-session CSRF token. Queue entries are addressed by opaque short hashes,
+  never by host filesystem paths. The room has no file browser, arbitrary
+  filesystem path or arbitrary URL cast; uploads are the only way to introduce
+  new media.
+- The PIN is the room authority. Use the room only on a trusted LAN, keep the
+  desktop screen and PIN private, and close SmoothCast to stop the listener.
+  There is no separate cloud account or room server.
 - Uploads use sequential 2 MiB HTTP chunks with bounded 64 KiB server reads.
+  Selecting **Add to the shared queue** disables early casting, so a partial
+  file is never offered to the receiver; the completed file is queued instead.
   Each acknowledged chunk is synced to disk; an interrupted chunk rolls back to
   its starting offset, and the browser resumes from the server's confirmed byte
   count. The browser never reads the entire video into memory.
@@ -66,7 +83,7 @@ served locally with no external assets.
   MP4) cannot be probed or cast until they are complete, so they are cast from
   the finished file. If an early cast cannot start, the completed file is cast
   instead; no upload is lost.
-- The LAN dashboard card shows what connected clients are doing: each upload's
+- The Shared room card shows what connected clients are doing: each upload's
   name, progress, transfer rate, phase (receiving, casting while receiving, or
   received) and the client address. The browser shows the same state, including
   "Casting now" once an early cast has started.
@@ -87,9 +104,10 @@ stops the listener.
 ## Verification
 
 Portable tests exercise PIN creation, rate limits, authentication, Host/Origin
-and CSRF checks, action validation, resumable staged uploads, early-cast
-selection and fallback, activity summaries, HTTP responses, and clean listener
-shutdown on loopback. They do not verify reachability from a phone or another
-LAN host, nor real transcoding of a growing file on a device.
-The isolated GUI smoke checks that the dashboard card builds; real second-device
+and CSRF checks, named presence, session expiry, queue votes, queue actions,
+resumable staged uploads, queue-only uploads, early-cast selection and fallback,
+activity summaries, HTTP responses, and clean listener shutdown on loopback.
+They do not verify reachability from a phone or another LAN host, nor real
+transcoding of a growing file on a device.
+The isolated GUI smoke checks that the shared-room card builds; real second-device
 and physical playback-control checks remain device qualification.

@@ -15,7 +15,7 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |
-| LAN dashboard lifecycle and GTK dispatch | `src/cast_portal.py` |
+| LAN dashboard, shared room, dispatch | `src/cast_portal.py`, `src/cast_portal_queue.py` |
 | Command fencing and replay | `src/portal_commands.py` |
 
 For GUI tests use `tests/gui_source.py`:

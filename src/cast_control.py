@@ -37,7 +37,7 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
-from cast_portal import PortalMixin
+from cast_portal import PortalMixin, PortalQueueMixin
 
 import version
 
@@ -60,7 +60,7 @@ from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app

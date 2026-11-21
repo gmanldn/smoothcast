@@ -47,7 +47,9 @@ class _PortalRequestError(Exception):
 def _build_window(tmp_path):
     methods = main_window_methods()
     code = "\n".join(textwrap.indent(methods[name], "    ") for name in (
-        "_portal_handle", "_reconcile_portal_casts", "_retry_portal_cast"))
+        "_portal_upload_path", "_portal_queue_action", "_portal_handle",
+        "_portal_apply_music_autogain", "_reconcile_portal_casts",
+        "_retry_portal_cast"))
     idle: list = []
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),

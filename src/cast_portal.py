@@ -1,10 +1,8 @@
-"""LAN dashboard startup, GTK dispatch and playback snapshot ownership."""
+"""Shared-room portal startup, GTK dispatch and playback snapshot ownership."""
 from __future__ import annotations
 
 import pathlib
 import threading
-import os
-import stat
 import time
 
 import castctl
@@ -90,7 +88,10 @@ class PortalMixin(NetworkActivityMixin):
             activity = uploads.snapshot() if uploads is not None else []
         except Exception:
             activity = []
-        label.set_text(portal_uploads.format_portal_activity(activity))
+        room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
+        count = len(getattr(room, "participants", {}))
+        summary = portal_uploads.format_portal_activity(activity)
+        label.set_text(f"{count} in room · {summary}" if count else summary)
         self._reconcile_portal_casts()
         return True
 
@@ -186,10 +187,7 @@ class PortalMixin(NetworkActivityMixin):
             value = payload.get("value")
             if type(value) is not bool:
                 raise portal.PortalRequestError(400, "Music autogain must be on or off")
-            self.cfg["music_autogain"] = value
-            save_config(self.cfg)
-            return ("Music autogain enabled."
-                    if value else "Music autogain disabled.")
+            return self._portal_apply_music_autogain(value)
         if operation == "command":
             envelope = payload.get("envelope")
             fence = getattr(self, "_portal_fence", None)
@@ -202,7 +200,7 @@ class PortalMixin(NetworkActivityMixin):
             title = self.np_title.get_text()
             if not title and self.now_playing:
                 title = pathlib.Path(self.now_playing).name
-            queue = [pathlib.Path(path).name for path in self.queue[:100]]
+            queue = self._portal_queue_status()
             volume = castctl.volume_percent(self.device_info)
             active = bool(self.session is not None or self.external)
             can_seek = bool(active and self.session is not None and not self.busy
@@ -222,6 +220,9 @@ class PortalMixin(NetworkActivityMixin):
             if fence is not None:
                 state["session_id"], state["revision"], _owner = fence.snapshot()
             return state
+        handled = self._portal_queue_action(operation, payload)
+        if handled is not None:
+            return handled
         if operation == "cast_upload":
             upload_id = payload.get("upload_id")
             early = bool(payload.get("early"))
@@ -230,19 +231,7 @@ class PortalMixin(NetworkActivityMixin):
                 accepted_uploads = self._portal_accepted_uploads = set()
             if upload_id in accepted_uploads:
                 return "Upload received; casting started."
-            portal_instance = getattr(self, "_portal", None)
-            upload_root = getattr(getattr(portal_instance, "server", None), "uploads", None)
-            root = getattr(upload_root, "root", None)
-            if root is None:
-                raise portal.PortalRequestError(503, "Upload storage is unavailable")
-            path = pathlib.Path(payload.get("path", ""))
-            try:
-                info = path.lstat()
-                path.relative_to(root)
-            except (OSError, ValueError):
-                raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
-            if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
-                raise portal.PortalRequestError(400, "Uploaded media is unavailable")
+            path = self._portal_upload_path(payload)
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             if upload_id:
