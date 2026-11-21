@@ -18,6 +18,7 @@ import watch_history
 import responsive_layout
 
 import buffer_health
+import idle_chrome
 import notifications
 import playback_state
 import progress_model
@@ -108,6 +109,8 @@ class UiMixin:
         toolbar.set_content(self.page_scroller)
         self.toasts.set_child(toolbar)
         self.set_content(self.toasts)
+        self.header = header
+        self._idle_chrome = idle_chrome.IdleChrome(self, header)
 
 
     def action_report_problem(self) -> None:

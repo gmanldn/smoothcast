@@ -13,6 +13,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **Desktop notifications** — posts a Gio notification when a cast finishes, fails or the receiver disappears, but never while the window is focused; Preferences > Playback > Notifications turns it off and the choice is stored as `"notifications"` in `config.json`
+- **Fullscreen idle chrome** — hides the header bar after ~2.5 s without input while fullscreen and focused, then restores it on pointer motion, key presses, focus or accessibility changes; leaving fullscreen always restores the chrome
 - **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
