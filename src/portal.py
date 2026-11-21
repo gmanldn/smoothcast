@@ -124,7 +124,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.pin = pin
         self.dispatch = dispatch
         self.uploads = uploads
-        self.room = room or portal_room.PortalRoom()
+        self.room = room or portal_room.PortalRoom(clock=clock)
         self.peer_directory = peer_directory
         self.clock = clock
         self.fence = fence or portal_commands.CommandFence(clock=clock)
@@ -179,7 +179,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._expire_sessions(self.clock())
             live = frozenset(self._sessions)
         self.screens.retain_owner_keys(live.__contains__)
-        self.room.expire_inactive(time.time())
+        self.room.expire_inactive(self.clock())
 
     def host_allowed(self, host: str) -> bool:
         return bool(host) and host.lower() in self._allowed_hosts
@@ -266,7 +266,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             while len(self._sessions) >= 128:
                 key, session = self._sessions.popitem()
                 self.room.leave(session.participant_id)
-            participant = self.room.join(name, now=time.time())
+            participant = self.room.join(name, now=now)
             self._sessions[self._session_key(token)] = _Session(
                 csrf, now + SESSION_SECONDS, participant.id,
             )
@@ -301,7 +301,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             if session is None:
                 return None
             try:
-                self.room.touch(session.participant_id, now=time.time())
+                self.room.touch(session.participant_id, now=now)
             except portal_room.RoomError:
                 self._sessions.pop(key, None)
                 return None
@@ -684,7 +684,7 @@ class _Handler(BaseHTTPRequestHandler):
                       f"Max-Age={SESSION_SECONDS}")
             return self._send(200, {
                 "ok": True, "csrf": csrf,
-                "participant": participant.public(time.time()),
+                "participant": participant.public(self.server.clock()),
                 "room": self.server.room.snapshot(participant.id),
             }, cookie=cookie)
         if path == "/api/profile":
@@ -701,7 +701,7 @@ class _Handler(BaseHTTPRequestHandler):
             except portal_room.RoomError as exc:
                 return self._error(exc.status, exc.message)
             return self._send(200, {"ok": True,
-                                    "participant": participant.public(time.time())})
+                                    "participant": participant.public(self.server.clock())})
         if path == "/api/action":
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
