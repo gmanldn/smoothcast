@@ -2,16 +2,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import ThreadingHTTPServer
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import preflight
+import server as hls_server
 import streamer
+from fakecast.receiver import CastMessage, FakeCastReceiver, NS_MEDIA
+from playback_state import next_media
+from gui_source import main_window_methods
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg required")
@@ -28,7 +37,11 @@ class AudioOnlyMediaTests(unittest.TestCase):
             root = Path(folder)
             fixtures = (("track.mp3", "libmp3lame", "mp3"),
                         ("track.flac", "flac", "flac"),
-                        ("track.m4a", "aac", "aac"))
+                        ("track.m4a", "aac", "aac"),
+                        ("track-vorbis.ogg", "libvorbis", "vorbis"),
+                        ("track-opus.ogg", "libopus", "opus"),
+                        ("track.wav", "pcm_s16le", "pcm_s16le"),
+                        ("track.aiff", "pcm_s16be", "pcm_s16be"))
             for name, encoder, expected_codec in fixtures:
                 with self.subTest(name=name):
                     path = root / name
@@ -41,6 +54,13 @@ class AudioOnlyMediaTests(unittest.TestCase):
                     self.assertGreater(media.duration, 2.0)
                     self.assertFalse(media.direct_ok)
                     self.assertIn("AAC transcode", media.direct_reason)
+
+    def test_valid_audio_extension_does_not_make_corrupt_bytes_playable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "not-really-audio.mp3"
+            path.write_bytes(b"not an MP3, despite the extension")
+            with self.assertRaisesRegex(streamer.StreamError, "ffprobe could not read"):
+                streamer.ffprobe(path)
 
     def test_audio_preflight_decodes_selected_track_without_video(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -78,13 +98,143 @@ class AudioOnlyMediaTests(unittest.TestCase):
                     audio_profile="original", subs_file=None,
                     burn_subs=False, title="Track",
                 )
-            args = popen.call_args_list[0].args[0]
+                args = list(popen.call_args_list[0].args[0])
             self.assertIn("-vn", args)
             self.assertEqual(args[args.index("-map") + 1], "0:a:0")
             self.assertEqual(args[args.index("-c:a") + 1], "aac")
             self.assertFalse(any(value == "-c:v" or value.startswith("-vf") for value in args))
             self.assertFalse(any(value.startswith("0:v") for value in args))
             video_plan.assert_not_called()
+
+            # Execute the exact FFmpeg plan against synthetic audio, then let
+            # the fake receiver fetch the resulting authenticated HLS playlist
+            # and segments through SmoothCast's real HTTP handler.
+            subprocess.run(args, cwd=root, check=True, capture_output=True, timeout=30)
+            playlist = root / session._playlist_name
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries",
+                 "stream=codec_type,codec_name", "-of", "json", str(playlist)],
+                check=True, capture_output=True, text=True, timeout=15,
+            )
+            streams = json.loads(probe.stdout)["streams"]
+            self.assertEqual(streams, [{"codec_name": "aac", "codec_type": "audio"}])
+
+            token = session._playlist_name[len("movie-"):].split(".", 1)[0]
+            token = token.removesuffix("-fmp4")
+            fake_server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), hls_server.H,
+            )
+            with mock.patch.object(hls_server, "ROOT", root):
+                hls_server.write_policy(
+                    root, hls_server.make_policy("127.0.0.1", token=token),
+                )
+                serve_thread = threading.Thread(
+                    target=fake_server.serve_forever, daemon=True,
+                )
+                serve_thread.start()
+                receiver = FakeCastReceiver()
+
+                class RecordingClient:
+                    def __init__(self):
+                        self.frames = []
+
+                    def sendall(self, frame):
+                        self.frames.append(frame)
+
+                client = RecordingClient()
+                request = CastMessage()
+                request.protocol_version = CastMessage.CASTV2_1_0
+                request.source_id = "sender-0"
+                request.destination_id = "receiver-0"
+                request.payload_type = CastMessage.STRING
+                request.namespace = NS_MEDIA
+                url = f"http://127.0.0.1:{fake_server.server_port}/{session._playlist_name}"
+                data = {
+                    "type": "LOAD",
+                    "media": {
+                        "contentId": url,
+                        "contentType": "application/vnd.apple.mpegurl",
+                        "streamType": "BUFFERED",
+                    },
+                }
+                request.payload_utf8 = json.dumps(data)
+                try:
+                    receiver._handle(client, request, data)
+                    deadline = time.monotonic() + 10
+                    while not receiver.media_fetch_results and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertFalse(receiver.media_fetch_errors)
+                    self.assertEqual(len(receiver.media_fetch_results), 1)
+                    result = receiver.media_fetch_results[0]
+                    self.assertTrue(result.ended)
+                    self.assertGreater(result.segment_count, 0)
+                    self.assertEqual(result.requests[0]["content_type"],
+                                     "application/vnd.apple.mpegurl")
+                finally:
+                    receiver.stop()
+                    fake_server.shutdown()
+                    fake_server.server_close()
+                    serve_thread.join(timeout=1)
+                    session._stop_sampler()
+
+    def test_mixed_music_video_queue_keeps_order_across_audio_items(self):
+        queue = ["song.mp3", "album.flac", "film.mkv", "track.m4a"]
+        self.assertEqual(
+            [next_media(item, queue, repeat_current=False, auto_next=True)
+             for item in queue],
+            ["album.flac", "film.mkv", "track.m4a", None],
+        )
+
+    def test_device_completion_casts_each_mixed_queue_successor(self):
+        source = main_window_methods()["_on_finished"]
+        namespace = {
+            "pathlib": pathlib,
+            "playback_state": __import__("playback_state"),
+            "Async": type("Async", (), {
+                "run": staticmethod(lambda work, done=None, failed=None, **_kw:
+                                     done(work()) if done else work()),
+            }),
+            "GLib": type("GLib", (), {
+                "idle_add": staticmethod(lambda callback: callback()),
+            }),
+        }
+        body = "class Extracted:\n" + "\n".join(
+            "    " + line if line else "" for line in source.splitlines()
+        )
+        exec(compile(body, "<mixed-queue-completion>", "exec"), namespace)
+        window = namespace["Extracted"]()
+        queue = ["song.mp3", "album.flac", "film.mkv", "track.m4a"]
+        window.queue = queue
+        window.cfg = {"loop": False, "autonext": True, "loop_all": False}
+        window.busy = False
+        window.session = None
+        window.now_playing = queue[0]
+        window._finished_handled = False
+        window._device = lambda: "Cast fake"
+        window._record_watch = lambda *_args: None
+        window._stop_monitor = lambda: None
+        window._set_levels_hint = lambda *_args: None
+        window._refresh_controls = lambda: None
+        window._rebuild_queue = lambda: None
+        window._notify = lambda *_args: None
+        window.toast = lambda *_args, **_kwargs: None
+        window._cast_path = unittest.mock.Mock()
+
+        class EndedSession:
+            def stop(self, _device, *, send_stop):
+                assert send_stop is False
+                return True
+
+        advanced = []
+        for current in queue[:-1]:
+            window.now_playing = current
+            window.session = EndedSession()
+            window._on_finished()
+            advanced.append(window._cast_path.call_args.args)
+        self.assertEqual(
+            advanced,
+            [(Path(queue[index]), 0.0) for index in range(1, len(queue))],
+        )
 
 
 if __name__ == "__main__":
