@@ -1168,7 +1168,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
-const SHORTCUTS=__SC_SHORTCUTS__,shortcutMap=new Map(SHORTCUTS.map(entry=>[entry.key,entry]));
+const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortcutMap=new Map(SHORTCUTS.map(entry=>[entry.key,entry]));
 let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
