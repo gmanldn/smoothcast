@@ -52,7 +52,7 @@ class PendingSession:
     def __init__(self, *, recoverable=True):
         self.state = None
         self.recoverable = recoverable
-        self.stop = mock.Mock()
+        self.stop = mock.Mock(side_effect=lambda _device, *, send_stop=True: bool(send_stop))
 
     def restore(self, state):
         self.state = state
