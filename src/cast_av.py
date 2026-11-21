@@ -123,6 +123,7 @@ class AvMixin:
             self._syncing = True
             button.set_active(castctl.volume_muted(self.device_info))
             self._syncing = False
+            self._apply_volume_icon()
             self.toast("This DLNA receiver does not provide mute control", error=True)
             return
         device = self._device()

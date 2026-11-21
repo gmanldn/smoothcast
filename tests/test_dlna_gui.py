@@ -34,6 +34,8 @@ class DlnaGuiContracts(unittest.TestCase):
         self.assertIn("self._volume_control_available()", volume)
         self.assertIn("self._volume_control_available()", mute)
         self.assertIn("self._volume_control_available()", METHODS["_nudge_volume"])
+        reset = mute.index("button.set_active(castctl.volume_muted")
+        self.assertGreater(mute.index("self._apply_volume_icon()", reset), reset)
         self.assertIn("This DLNA receiver does not provide volume control", volume)
         self.assertIn("This DLNA receiver does not provide mute control", mute)
 
