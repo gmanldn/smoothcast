@@ -26,8 +26,11 @@ PIN = "234567"
 class RoomHarness:
     def __init__(self, count: int = 20,
                  uploads: portal_uploads.UploadManager | None = None) -> None:
+        media = ("mp3", "flac", "mp4")
         self.queue = [
-            {"id": f"item-{index}", "title": f"track-{index}.mp3", "duration": 30}
+            {"id": f"item-{index}", "title": f"track-{index}.{media[index % len(media)]}",
+             "source_kind": "video" if media[index % len(media)] == "mp4" else "audio",
+             "duration": 30}
             for index in range(count)
         ]
         self.calls: list[tuple[str, dict]] = []
@@ -153,6 +156,10 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     assert all(len(view["participants"]) == client_count for view in room_views)
     assert all({person["id"] for person in view["participants"]}
                == {client.participant_id for client in clients} for view in room_views)
+    queue_views = [body["state"]["queue"] for _status, body, _headers in snapshots]
+    assert all(view == queue_views[0] for view in queue_views)
+    assert {entry["source_kind"] for entry in queue_views[0]} == {"audio", "video"}
+    original_titles = {entry["id"]: entry["title"] for entry in queue_views[0]}
 
     for index, client in enumerate(clients):
         item_id = f"item-{index}"
@@ -178,6 +185,8 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     assert [item["id"] for item in final["state"]["queue"]] == [
         f"item-{index}" for index in range(client_count, 20)
     ]
+    assert all(item["title"] == original_titles[item["id"]]
+               for item in final["state"]["queue"])
     assert sum(action == "queue_remove" for action, _payload in room.calls) == client_count
 
 
