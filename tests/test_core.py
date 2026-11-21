@@ -39,11 +39,11 @@ class CastctlTests(unittest.TestCase):
 
     def test_fmt_time(self):
         self.assertEqual(castctl.fmt_time(None), "--:--")
-        self.assertEqual(castctl.fmt_time(0), "00:00")
-        self.assertEqual(castctl.fmt_time(5), "00:05")
-        self.assertEqual(castctl.fmt_time(65), "01:05")
+        self.assertEqual(castctl.fmt_time(0), "0:00")
+        self.assertEqual(castctl.fmt_time(5), "0:05")
+        self.assertEqual(castctl.fmt_time(65), "1:05")
         self.assertEqual(castctl.fmt_time(3661), "1:01:01")
-        self.assertEqual(castctl.fmt_time(-3), "00:00")
+        self.assertEqual(castctl.fmt_time(-3), "0:00")
 
     def test_player_state(self):
         self.assertEqual(castctl.player_state(None), "OFFLINE")
