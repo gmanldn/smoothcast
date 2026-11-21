@@ -117,8 +117,8 @@ def test_real_window_timer_callbacks_under_fake_glib_clock():
     names = ("_set_ui_timer", "_sync_ui_timers", "_ui_playing",
              "_scheduled_sleep_tick", "_scheduled_fade_tick", "_stop_ui_timers")
     sources = main_window_methods()
-    code = "class Window:\\n" + "\\n".join(
-        textwrap.indent(textwrap.dedent(sources[name]), "    ") + "\\n"
+    code = "class Window:\n" + "\n".join(
+        textwrap.indent(textwrap.dedent(sources[name]), "    ") + "\n"
         for name in names
     )
     clock = Clock()
