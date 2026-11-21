@@ -5,6 +5,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 import sys
 import threading
+import json
 
 import pytest
 
@@ -16,7 +17,7 @@ PIN = "234567"
 
 
 class PortalRig:
-    def __init__(self):
+    def __init__(self, uploads=None):
         self.calls = []
 
         def dispatch(action, payload):
@@ -25,7 +26,7 @@ class PortalRig:
                 return {"title": "sample.mp4", "state": "PLAYING", "queue": []}
             return "accepted"
 
-        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch)
+        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch, uploads=uploads)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.02}, daemon=True)
@@ -35,7 +36,8 @@ class PortalRig:
     def host(self):
         return f"127.0.0.1:{self.port}"
 
-    def request(self, method, path, body=None, *, cookie=None, csrf=None, origin=None, host=None):
+    def request(self, method, path, body=None, *, cookie=None, csrf=None, origin=None, host=None,
+                content_type=None, extra_headers=None):
         headers = {"Host": host or self.host}
         if origin is not None:
             headers["Origin"] = origin
@@ -44,9 +46,12 @@ class PortalRig:
         if csrf is not None:
             headers["X-CSRF-Token"] = csrf
         if body is not None:
-            import json
-            headers["Content-Type"] = "application/json"
-            body = json.dumps(body).encode()
+            if isinstance(body, dict):
+                headers["Content-Type"] = "application/json"
+                body = json.dumps(body).encode()
+            elif content_type:
+                headers["Content-Type"] = content_type
+        headers.update(extra_headers or {})
         conn = HTTPConnection("127.0.0.1", self.port, timeout=3)
         try:
             conn.request(method, path, body=body, headers=headers)
@@ -199,3 +204,52 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
+
+
+def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_path(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        status, _, _ = rig.request("POST", "/api/uploads", {"name": "clip.mp4", "size": 6},
+                                   origin=f"http://{rig.host}")
+        assert status == 403
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "../clip.mp4", "size": 6},
+                                     cookie=cookie, csrf=login_result["csrf"], origin=origin)
+        assert status == 201
+        created = decode(raw)
+        upload_id = created["id"]
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
+            extra_headers={"Content-Range": "bytes 0-2/6"},
+            content_type="application/octet-stream")
+        assert status == 403  # unauthenticated chunks never reach the store
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 0-2/6"},
+            content_type="application/octet-stream")
+        assert status == 200 and decode(raw)["received"] == 3
+        status, raw, _ = rig.request(
+            "GET", f"/api/uploads/{upload_id}", cookie=cookie)
+        assert status == 200 and decode(raw)["received"] == 3
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 3-5/6"},
+            content_type="application/octet-stream")
+        assert status == 200 and decode(raw)["complete"]
+        status, raw, _ = rig.request("POST", f"/api/uploads/{upload_id}/complete", {},
+                                     cookie=cookie, csrf=login_result["csrf"], origin=origin)
+        assert status == 202 and decode(raw)["ok"]
+        action, payload = rig.calls[-1]
+        assert action == "cast_upload"
+        assert Path(payload["path"]).read_bytes() == b"abcdef"
+        assert Path(payload["path"]).parent == uploads.root
+    finally:
+        rig.close()
+        uploads.close()

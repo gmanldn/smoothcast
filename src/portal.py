@@ -19,6 +19,8 @@ import time
 from typing import Callable
 from urllib.parse import urlsplit
 
+import portal_uploads
+
 
 PIN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 PIN_LENGTH = 6
@@ -57,10 +59,12 @@ class _PortalHTTPServer(ThreadingHTTPServer):
     block_on_close = False
     allow_reuse_address = True
 
-    def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic) -> None:
+    def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
+                 uploads: portal_uploads.UploadManager | None = None) -> None:
         super().__init__(address, _Handler)
         self.pin = pin
         self.dispatch = dispatch
+        self.uploads = uploads
         self.clock = clock
         self._lock = threading.Lock()
         self._sessions: dict[str, tuple[str, float]] = {}
@@ -248,12 +252,68 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception:
                 return self._error(503, "SmoothCast is not ready to report playback state")
             return self._send(200, {"ok": True, "state": state})
+        upload_id = self._upload_route(path)
+        if upload_id and self._authenticated():
+            if self.server.uploads is None:
+                return self._error(503, "Upload storage is unavailable")
+            try:
+                return self._send(200, {"ok": True, **self.server.uploads.status(
+                    self._cookie_token() or "", upload_id)})
+            except portal_uploads.UploadError as exc:
+                return self._error(exc.status, exc.message)
+        if upload_id:
+            return self._error(401, "Enter the PIN shown in SmoothCast")
         return self._error(404, "Not found")
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         path = self._path()
+        if path == "/api/uploads":
+            if not self._authenticated(csrf=True):
+                return self._error(403, "Session expired or request token invalid")
+            try:
+                if self.server.uploads is None:
+                    return self._error(503, "Upload storage is unavailable")
+                body = self._body()
+                created = self.server.uploads.create(
+                    self._cookie_token() or "", body.get("name"), body.get("size"))
+            except PortalRequestError as exc:
+                return self._error(exc.status, exc.message)
+            except portal_uploads.UploadError as exc:
+                return self._error(exc.status, exc.message)
+            return self._send(201, {"ok": True, **created})
+        upload_id = self._upload_complete_route(path)
+        if upload_id:
+            if not self._authenticated(csrf=True):
+                return self._error(403, "Session expired or request token invalid")
+            try:
+                if self.server.uploads is None:
+                    return self._error(503, "Upload storage is unavailable")
+                self._body()
+                media_path, name, dispatch = self.server.uploads.finalize(
+                    self._cookie_token() or "", upload_id)
+                if dispatch:
+                    try:
+                        self.server.dispatch("cast_upload", {
+                            "path": str(media_path), "name": name,
+                            "upload_id": upload_id,
+                        })
+                    except PortalRequestError:
+                        self.server.uploads.finish_dispatch(
+                            self._cookie_token() or "", upload_id, accepted=False)
+                        raise
+                    except Exception as exc:
+                        self.server.uploads.finish_dispatch(
+                            self._cookie_token() or "", upload_id, accepted=False)
+                        raise PortalRequestError(503, "SmoothCast could not start this upload") from exc
+                return self._send(202, {"ok": True, "message": "Upload received; casting started."})
+            except PortalRequestError as exc:
+                return self._error(exc.status, exc.message)
+            except portal_uploads.UploadError as exc:
+                return self._error(exc.status, exc.message)
+        if not self._safe_origin(required=True):
+            return self._error(403, "Request origin is not allowed")
         try:
             body = self._body()
         except PortalRequestError as exc:
@@ -296,16 +356,76 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(202, {"ok": True, "message": result or "Command accepted"})
         return self._error(404, "Not found")
 
+    @staticmethod
+    def _upload_route(path: str) -> str | None:
+        prefix = "/api/uploads/"
+        if path.startswith(prefix) and "/" not in path[len(prefix):]:
+            return path[len(prefix):]
+        return None
+
+    @staticmethod
+    def _upload_complete_route(path: str) -> str | None:
+        prefix, suffix = "/api/uploads/", "/complete"
+        if path.startswith(prefix) and path.endswith(suffix):
+            upload_id = path[len(prefix):-len(suffix)]
+            if upload_id and "/" not in upload_id:
+                return upload_id
+        return None
+
+    def do_PUT(self) -> None:  # noqa: N802
+        if not self._authenticated(csrf=True):
+            return self._error(403, "Session expired or request token invalid")
+        upload_id = self._upload_route(self._path())
+        if not upload_id:
+            return self._error(404, "Not found")
+        if self.headers.get("Transfer-Encoding"):
+            return self._error(400, "Chunked transfer encoding is not supported")
+        raw_length = self.headers.get("Content-Length")
+        if self.server.uploads is None:
+            return self._error(503, "Upload storage is unavailable")
+        try:
+            length = int(raw_length or "")
+        except ValueError:
+            return self._error(400, "Invalid upload chunk length")
+        if length <= 0 or length > portal_uploads.CHUNK_SIZE:
+            return self._error(413, "Upload chunks must be at most 2 MiB")
+        try:
+            result = self.server.uploads.append(
+                self._cookie_token() or "", upload_id,
+                self.headers.get("Content-Range", ""), length, self.rfile)
+            return self._send(200, {"ok": True, **result})
+        except portal_uploads.UploadError as exc:
+            self.close_connection = True
+            return self._error(exc.status, exc.message)
+        except OSError:
+            self.close_connection = True
+            return self._error(507, "Could not store this upload chunk")
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        if not self._authenticated(csrf=True):
+            return self._error(403, "Session expired or request token invalid")
+        upload_id = self._upload_route(self._path())
+        if not upload_id:
+            return self._error(404, "Not found")
+        if self.server.uploads is None:
+            return self._error(503, "Upload storage is unavailable")
+        try:
+            self.server.uploads.cancel(self._cookie_token() or "", upload_id)
+            return self._send(200, {"ok": True})
+        except portal_uploads.UploadError as exc:
+            return self._error(exc.status, exc.message)
+
     def _not_allowed(self) -> None:
         self._error(405, "Method not allowed")
 
-    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _not_allowed  # noqa: N815
+    do_PATCH = do_OPTIONS = do_HEAD = _not_allowed  # noqa: N815
 
 
 class Portal:
     """One-interface LAN portal with a per-run PIN and clean thread shutdown."""
 
-    def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None) -> None:
+    def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
+                 uploads: portal_uploads.UploadManager | None = None) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -321,7 +441,9 @@ class Portal:
         if len(self.pin) != PIN_LENGTH or any(char not in PIN_ALPHABET for char in self.pin):
             raise PortalError("PIN must contain six characters from the portal alphabet")
         self.bind_ip = str(address)
-        self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch)
+        self.uploads = uploads or portal_uploads.UploadManager()
+        self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch,
+                                        uploads=self.uploads)
         self.port = int(self.server.server_address[1])
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.thread = threading.Thread(target=self.server.serve_forever,
@@ -334,6 +456,8 @@ class Portal:
             self.server.shutdown()
             self.thread.join(timeout=2)
         self.server.server_close()
+        if self.server.uploads is not None:
+            self.server.uploads.close()
 
 
 _HTML = """<!doctype html>
@@ -360,11 +484,15 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
-<section><h2>Queue</h2><ul id="queue"><li>No videos queued</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div></main>
+<section><h2>Queue</h2><ul id="queue"><li>No videos queued</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
+<section id="uploadCard" hidden><h2>Cast a video from this device</h2><p>The selected video is securely copied to SmoothCast before it is cast.</p>
+<label for="videoFile">Video file</label><input id="videoFile" type="file" accept="video/*,.mkv,.ts,.wmv">
+<progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
+<div class="actions"><button id="uploadButton" type="button">Upload and cast</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
-$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
+$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
 async function refresh(){if(!csrf||busy)return;try{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"Connection lost");const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
@@ -373,5 +501,8 @@ document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.ac
 async function act(action,value){if(busy)return;busy=true;try{const body={action};if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+async function uploadRequest(method,path,body,headers={}){const r=await fetch(path,{method,credentials:"same-origin",headers:{"X-CSRF-Token":csrf,...headers},body});const d=await r.json();if(!r.ok)throw Error(d.error||"Upload request failed");return d}
+$("uploadButton").addEventListener("click",async()=>{const file=$("videoFile").files[0];if(!file||uploading)return;uploading=true;cancelUpload=false;$("uploadButton").disabled=true;$("cancelUpload").hidden=false;showError("uploadStatus","Preparing upload…");$("uploadProgress").value=0;let id="";try{let state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size}),{"Content-Type":"application/json"});id=state.id;const chunk=state.chunk_size;let offset=state.received;while(offset<file.size){if(cancelUpload)throw Error("Upload cancelled");const end=Math.min(offset+chunk,file.size),part=file.slice(offset,end);let accepted=false,lastError;for(let attempt=0;attempt<5&&!accepted;attempt++){try{state=await uploadRequest("PUT","/api/uploads/"+id,part,{"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`});accepted=true}catch(err){lastError=err;if(attempt<4){await new Promise(resolve=>setTimeout(resolve,250*Math.pow(2,attempt)));try{state=await fetch("/api/uploads/"+id,{credentials:"same-origin",cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||"Could not resume upload");return d});accepted=state.received>=end}catch(_){}}} }if(!accepted)throw lastError||Error("Upload could not be resumed");offset=state.received;$("uploadProgress").max=file.size;$("uploadProgress").value=offset;showError("uploadStatus",`Uploading ${file.name}: ${Math.floor(offset*100/file.size)}%`)}if(cancelUpload)throw Error("Upload cancelled");const result=await uploadRequest("POST","/api/uploads/"+id+"/complete","{}",{"Content-Type":"application/json"});showError("uploadStatus",result.message||"Upload complete") }catch(err){showError("uploadStatus",err.message);if(id&&cancelUpload){try{await uploadRequest("DELETE","/api/uploads/"+id)}catch(_){}}}finally{uploading=false;$("uploadButton").disabled=false;$("cancelUpload").hidden=true;$("videoFile").disabled=false}});
+$("cancelUpload").addEventListener("click",()=>{cancelUpload=true;showError("uploadStatus","Cancelling upload…")});
 setInterval(refresh,2000);
 </script></body></html>"""

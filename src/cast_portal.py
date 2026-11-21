@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pathlib
 import threading
+import os
+import stat
 
 import castctl
 import lan_interfaces
@@ -87,6 +89,32 @@ class PortalMixin:
                 "queue": queue, "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
             }
+        if operation == "cast_upload":
+            upload_id = payload.get("upload_id")
+            accepted_uploads = getattr(self, "_portal_accepted_uploads", None)
+            if accepted_uploads is None:
+                accepted_uploads = self._portal_accepted_uploads = set()
+            if upload_id in accepted_uploads:
+                return "Upload received; casting started."
+            portal_instance = getattr(self, "_portal", None)
+            upload_root = getattr(getattr(portal_instance, "server", None), "uploads", None)
+            root = getattr(upload_root, "root", None)
+            if root is None:
+                raise portal.PortalRequestError(503, "Upload storage is unavailable")
+            path = pathlib.Path(payload.get("path", ""))
+            try:
+                info = path.lstat()
+                path.relative_to(root)
+            except (OSError, ValueError):
+                raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
+            if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
+                raise portal.PortalRequestError(400, "Uploaded media is unavailable")
+            if self.busy:
+                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            self.set_selection(str(path))
+            self._cast_path(path, 0)
+            accepted_uploads.add(upload_id)
+            return "Upload received; casting started."
         if self.busy:
             raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
         if operation == "play_pause":
