@@ -411,7 +411,7 @@ class SessionMixin:
             self._toggle_local_preview()
             return
         if self.device_state == "OFFLINE":
-            self.toast("Device is offline", error=True)
+            self.toast("Receiver offline. Check its power and network connection.", error=True)
             return
         device = self._device()
         session = self.session
@@ -980,8 +980,8 @@ class SessionMixin:
             return
         try:
             url = url_control.validate_media_url(value)
-        except ValueError as exc:
-            self.toast(str(exc), error=True)
+        except ValueError:
+            self.toast("Enter a valid HTTP or HTTPS media URL and try again.", error=True)
             return
         if self.busy:
             self.toast("Hold on — finishing the last command")
