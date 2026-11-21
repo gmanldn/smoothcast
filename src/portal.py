@@ -122,7 +122,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.fence = fence or portal_commands.CommandFence(clock=clock)
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
         self._queue_command_cache: OrderedDict[tuple[str, str], tuple] = OrderedDict()
         self._sessions: dict[str, _Session] = {}
@@ -186,6 +186,51 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             if session.expiry <= now:
                 self._sessions.pop(key, None)
                 self.room.leave(session.participant_id)
+
+    def login(self, client: str, pin: str,
+              name: object = "Guest") -> tuple[str, str, portal_room.Participant]:
+        """Authenticate and create the session under one revocation lock.
+
+        A PIN validated before a rotation must never mint a new cookie after it.
+        """
+        with self._lock:
+            if not self.pin_allowed(client, pin):
+                raise PortalRequestError(401, "Incorrect PIN or too many attempts")
+            return self.create_session(name)
+
+    def revoke_participant(self, participant_id: str) -> int:
+        """Host-only: drop every session for one room identity, not playback."""
+        with self._queue_command_lock, self._lock:
+            keys = [key for key, value in self._sessions.items()
+                    if value.participant_id == participant_id]
+            for key in keys:
+                self._sessions.pop(key, None)
+            if keys:
+                self.room.leave(participant_id)
+                for key in list(self._queue_command_cache):
+                    if key[0] == participant_id:
+                        self._queue_command_cache.pop(key, None)
+                # Invalidate queued/late transport envelopes, never stop media.
+                self.fence.rotate()
+            return len(keys)
+
+    def revoke_all(self) -> str:
+        """Host-only: sign out everyone and rotate the room PIN atomically."""
+        with self._queue_command_lock, self._lock:
+            participants = {session.participant_id for session in self._sessions.values()}
+            self._sessions.clear()
+            for participant_id in participants:
+                self.room.leave(participant_id)
+            self._queue_command_cache.clear()
+            old_pin = self.pin
+            new_pin_value = new_pin()
+            while new_pin_value == old_pin:
+                new_pin_value = new_pin()
+            self.pin = new_pin_value
+            self._attempts.clear()
+            self._lockouts.clear()
+            self.fence.rotate()
+            return new_pin_value
 
     def create_session(self, name: object = "Guest") -> tuple[str, str, portal_room.Participant]:
         token = secrets.token_urlsafe(32)
@@ -519,14 +564,12 @@ class _Handler(BaseHTTPRequestHandler):
             if not isinstance(pin, str):
                 pin = ""
             client = self.client_address[0]
-            if not self.server.pin_allowed(client, pin):
-                return self._error(401, "Incorrect PIN or too many attempts")
             name = body.get("name", "Guest")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
             try:
-                token, csrf, participant = self.server.create_session(name)
-            except portal_room.RoomError as exc:
+                token, csrf, participant = self.server.login(client, pin, name)
+            except (portal_room.RoomError, PortalRequestError) as exc:
                 return self._error(exc.status, exc.message)
             cookie = (f"sc_portal_session={token}; Path=/; HttpOnly; SameSite=Strict; "
                       f"Max-Age={SESSION_SECONDS}")
@@ -775,6 +818,15 @@ class Portal:
                                        kwargs={"poll_interval": 0.1},
                                        name="smoothcast-portal", daemon=True)
         self.thread.start()
+
+    def revoke_guest(self, participant_id: str) -> int:
+        """Host desktop operation: eject one participant without affecting playback."""
+        return self.server.revoke_participant(participant_id)
+
+    def end_guest_access(self) -> str:
+        """Host desktop operation: invalidate every cookie and replace the PIN."""
+        self.pin = self.server.revoke_all()
+        return self.pin
 
     def _advertise(self) -> None:
         """Best-effort mDNS advertisement so the friendly name resolves."""

@@ -152,6 +152,83 @@ def login(rig, pin=PIN, name="Guest"):
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
 
 
+def test_host_can_revoke_one_guest_without_stopping_playback_or_others(rig):
+    status, first, cookie_a = login(rig, PIN, "Alice")
+    assert status == 200
+    status, second, cookie_b = login(rig, PIN, "Bob")
+    assert status == 200
+    participant = first["participant"]["id"]
+    assert rig.server.revoke_participant(participant) == 1
+    assert rig.server.revoke_participant(participant) == 0
+    assert rig.request("GET", "/api/status", cookie=cookie_a)[0] == 401
+    assert rig.request("GET", "/api/status", cookie=cookie_b)[0] == 200
+    status, _data, _headers = rig.request(
+        "POST", "/api/action", {"action": "seek", "value": 30},
+        cookie=cookie_a, csrf=first["csrf"], origin=f"http://{rig.host}")
+    assert status == 403
+    assert all(name not in {"seek", "stop"} for name, _ in rig.calls)
+    assert {p["name"] for p in rig.server.room.snapshot()["participants"]} == {"Bob"}
+    assert second["participant"]["id"] in rig.server.room.participants
+
+
+def test_host_rotates_pin_and_signs_out_all_without_touching_receiver(rig):
+    _, alice, cookie_a = login(rig, PIN, "Alice")
+    _, bob, cookie_b = login(rig, PIN, "Bob")
+    old_fence = rig.server.fence.snapshot()
+    new_access_pin = rig.server.revoke_all()
+    assert new_access_pin.isdigit() and len(new_access_pin) == portal.PIN_LENGTH
+    assert new_access_pin != PIN
+    assert rig.server.fence.snapshot()[:2] != old_fence[:2]
+    assert rig.request("GET", "/api/status", cookie=cookie_a)[0] == 401
+    assert rig.request("GET", "/api/status", cookie=cookie_b)[0] == 401
+    assert login(rig, PIN, "Old PIN")[0] == 401
+    status, guest, cookie_c = login(rig, new_access_pin, "New Guest")
+    assert status == 200 and guest["participant"]["name"] == "New Guest"
+    assert rig.request("GET", "/api/status", cookie=cookie_c)[0] == 200
+    assert len(rig.server.room.snapshot()["participants"]) == 1
+    assert all(name not in {"seek", "stop", "next", "previous"} for name, _ in rig.calls)
+    assert alice["participant"]["id"] != bob["participant"]["id"]
+
+
+def test_public_http_has_no_guest_revocation_or_pin_rotation_api(rig):
+    _status, guest, cookie = login(rig, PIN)
+    for path in ("/api/revoke", "/api/rotate-pin", "/api/revoke-all"):
+        status, _body, _headers = rig.request(
+            "POST", path, {}, cookie=cookie, csrf=guest["csrf"],
+            origin=f"http://{rig.host}")
+        assert status == 404
+
+
+def test_login_is_serialised_with_host_rotation(rig, monkeypatch):
+    # A concurrent PIN rotation cannot intervene after the PIN check but
+    # before the cookie is entered in the session table.
+    entered = threading.Event()
+    proceed = threading.Event()
+    original = rig.server.create_session
+    def delayed_create(name):
+        entered.set()
+        assert proceed.wait(2)
+        return original(name)
+    monkeypatch.setattr(rig.server, "create_session", delayed_create)
+    login_result = {}
+    def run_login():
+        login_result["value"] = login(rig, PIN, "Alice")
+    thread = threading.Thread(target=run_login)
+    thread.start()
+    assert entered.wait(2)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(rig.server.revoke_all)
+        assert not future.done()
+        proceed.set()
+        thread.join(3)
+        new_access_pin = future.result(timeout=3)
+    assert login_result["value"][0] == 200
+    _status, _body, old_cookie = login_result["value"]
+    assert rig.request("GET", "/api/status", cookie=old_cookie)[0] == 401
+    assert login(rig, new_access_pin)[0] == 200
+
+
 def test_pin_login_sets_http_only_session_and_dashboard_reads_main_state(rig):
     status, raw, headers = rig.request("POST", "/api/login", {"pin": PIN},
                                       origin=f"http://{rig.host}")
