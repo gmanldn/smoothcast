@@ -1,7 +1,6 @@
 """SC-028: bounded, source-owned, seek-time sidecar subtitle preview."""
 from __future__ import annotations
 
-from pathlib import Path
 import math
 from types import SimpleNamespace
 from unittest import mock
