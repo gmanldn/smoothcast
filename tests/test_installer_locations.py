@@ -210,7 +210,7 @@ class VirginEntrypointTests(unittest.TestCase):
         section = project.split("dependencies = [", 1)[1].split("]", 1)[0]
         dependencies = re.findall('"([A-Za-z][^"]+)"', section)
         self.assertEqual(set(dependencies), set(bootstrap.PIP_PACKAGES))
-        for name in ("psutil", "zeroconf", "smoothcast"):
+        for name in ("psutil", "zeroconf", "segno", "smoothcast"):
             self.assertIn(name, bootstrap.PROJECT_DEPENDENCIES_CHECK)
 
     def test_project_runtime_version_ranges(self):
@@ -224,9 +224,9 @@ class VirginEntrypointTests(unittest.TestCase):
             ("8.0.0", "0.132.0", False),
             ("6.1.0", "1.0.0", False),
         ]
-        modules = {name: types.ModuleType(name) for name in ('psutil', 'zeroconf')}
+        modules = {name: types.ModuleType(name) for name in ('psutil', 'zeroconf', 'segno')}
         for psutil, zeroconf, accepted in cases:
-            versions = {'smoothcast': '3.2.0', 'psutil': psutil, 'zeroconf': zeroconf}
+            versions = {'smoothcast': '3.2.0', 'psutil': psutil, 'zeroconf': zeroconf, 'segno': '1.6.1'}
             with self.subTest(psutil=psutil, zeroconf=zeroconf), \
                  mock.patch.dict(sys.modules, modules), \
                  mock.patch.object(importlib.metadata, 'version',

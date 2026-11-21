@@ -6,27 +6,29 @@ import threading
 import time
 
 import castctl
+import state_labels
 import lan_interfaces
 import portal
 import portal_commands
+import portal_join
+import peer_discovery_ui
 import portal_uploads
 import network_activity
+from cast_portal_host import PortalHostMixin
+from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
-from gi.repository import GLib
+from gi.repository import Gdk, GLib, Gtk
 
-# An early portal cast that has not started playing within this many seconds is
-# treated as failed, so the completed file is cast instead of being skipped.
-PORTAL_CAST_GRACE_SECONDS = 5.0
-
-
-class PortalMixin(NetworkActivityMixin):
+class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
             return False
-        receiver = self._device_host(self._device())
-        address = lan_interfaces.select_private_lan_ip(receiver)
+        # The portal serves phones and other LAN clients. Its reachable
+        # interface is independent of the selected Cast receiver's route:
+        # on a multi-NIC/VPN host that route can point at a different network.
+        address = lan_interfaces.select_private_lan_ip()
         if address == self._portal_ip and self._portal is not None:
             return True
         self._stop_portal()
@@ -41,22 +43,55 @@ class PortalMixin(NetworkActivityMixin):
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
-                                         commands=commands, fence=fence)
+                                         commands=commands, fence=fence,
+                                         pin_required=bool(self.cfg.get("house_pin_enabled", False)),
+                                         preferred_port=int(self.cfg.get("portal_port", 0)))
         except (OSError, portal.PortalError) as exc:
             self._portal = None
             self._portal_ip = None
             self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
             return True
         self._portal_ip = address
+        # Reuse the same port across launches; never store a failed preferred bind.
+        old_port = self.cfg.get("portal_port", 0)
+        if old_port != self._portal.port:
+            self.cfg["portal_port"] = self._portal.port
+            save_config(self.cfg)
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.friendly_url)
-        self.portal_pin_label.set_text(self._portal.pin)
-        self.portal_status_label.set_text(
-            f"Available on your local network · IP {self._portal.url}")
+        self.portal_url_label.set_text(self._portal.url)
+        self.portal_copy_button.set_sensitive(True)
+        self.portal_pin_label.set_text(
+            self._portal.pin if self._portal.server.pin_required else "Not required")
+        self._ensure_library_indexer()
+        if self._portal.port_fallback:
+            self.portal_status_label.set_text(
+                f"Previous room port {old_port} was in use. New link: {self._portal.url}"
+            )
+        else:
+            self.portal_status_label.set_text("Listening on your local network")
+        self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True
+
+    def _show_portal_qr(self, url: str | None) -> None:
+        picture = self.portal_qr_picture
+        texture = None
+        if url is not None:
+            try:
+                png = portal_join.qr_png(url)
+                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(png))
+            except (ImportError, ValueError, GLib.Error):
+                self.portal_status_label.set_text("QR unavailable. Use Copy link to join.")
+        picture.set_paintable(texture)
+        self.portal_qr_button.set_sensitive(texture is not None)
+
+    def _copy_portal_link(self, _button: Gtk.Button) -> None:
+        current = self._portal
+        if current is not None:
+            self.get_clipboard().set(current.url)
+            self.toast("Room link copied")
 
     def _stop_portal(self) -> None:
         current, self._portal = getattr(self, "_portal", None), None
@@ -72,10 +107,14 @@ class PortalMixin(NetworkActivityMixin):
             current.stop()
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
+            self.portal_copy_button.set_sensitive(False)
+            self._show_portal_qr(None)
             self.portal_url_label.set_text("—")
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
             self.portal_activity_label.set_text("No client activity")
+        peer_discovery_ui.refresh_peer_links(
+            self, [], available=False, status="Peer discovery stopped")
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
@@ -89,54 +128,45 @@ class PortalMixin(NetworkActivityMixin):
         except Exception:
             activity = []
         room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
-        count = len(getattr(room, "participants", {}))
+        participants = room.snapshot().get("participants", []) if room is not None else []
+        names = [person["name"] for person in participants if isinstance(person, dict)
+                 and isinstance(person.get("name"), str)]
+        roster = ", ".join(names[:4])
+        if len(names) > 4:
+            roster += f", +{len(names) - 4} more"
+        ids = tuple(person["id"] for person in participants
+                    if isinstance(person, dict) and isinstance(person.get("id"), str))
+        if hasattr(self, "portal_guest_dropdown") and ids != getattr(self, "portal_guest_ids", ()):
+            prior = getattr(self, "portal_guest_ids", ())
+            selected = self.portal_guest_dropdown.get_selected()
+            chosen = prior[selected] if selected < len(prior) else None
+            labels = [str(person.get("name", "Guest")) for person in participants
+                      if isinstance(person, dict) and isinstance(person.get("id"), str)]
+            self.portal_guest_ids = ids
+            self.portal_guest_dropdown.set_model(
+                Gtk.StringList.new(labels if labels else ["No guests connected"]))
+            self.portal_guest_dropdown.set_selected(
+                ids.index(chosen) if chosen in ids else 0)
+            self.portal_guest_dropdown.set_sensitive(bool(ids))
+            self.portal_revoke_button.set_sensitive(bool(ids))
         summary = portal_uploads.format_portal_activity(activity)
-        label.set_text(f"{count} in room · {summary}" if count else summary)
+        presence = f"In room: {roster}" if roster else "No guests connected"
+        screens = getattr(getattr(self._portal, "server", None), "screens", None)
+        try:
+            screen_rows = screens.snapshot() if screens is not None else []
+        except Exception:
+            screen_rows = []
+        ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
+                 if isinstance(row, dict) and row.get("ready")]
+        shown = f" · Screens: {', '.join(ready)}" if ready else ""
+        label.set_text(f"{presence} · {summary}{shown}")
+        peers = getattr(getattr(self, "_portal", None), "peers", None)
+        peer_list = peers.snapshot() if peers is not None else []
+        available = getattr(getattr(self, "_portal", None),
+                            "peer_discovery_available", False)
+        peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
         self._reconcile_portal_casts()
         return True
-
-    def _reconcile_portal_casts(self) -> None:
-        """Drop early casts that never started so the finished file still casts."""
-        casting = getattr(self, "_portal_cast_uploads", None)
-        if not casting:
-            return
-        for upload_id, (path, _started) in list(casting.items()):
-            if self.now_playing == path:
-                casting.pop(upload_id, None)  # confirmed playing; no longer tracked
-        now = time.monotonic()
-        stale = portal_uploads.stale_early_casts(
-            casting, now=now, busy=bool(self.busy),
-            now_playing=self.now_playing, grace=PORTAL_CAST_GRACE_SECONDS)
-        if not stale:
-            return
-        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
-        accepted = getattr(self, "_portal_accepted_uploads", None)
-        for upload_id in stale:
-            path = casting.pop(upload_id, (None, 0.0))[0]
-            if accepted is not None:
-                accepted.discard(upload_id)
-            if uploads is None or path is None:
-                continue
-            uploads.mark_early_cast(upload_id, accepted=False)
-            status = uploads.by_id(upload_id)
-            if status and status.get("complete"):
-                retried = getattr(self, "_portal_cast_retried", None)
-                if retried is not None and upload_id not in retried:
-                    retried.add(upload_id)
-                    GLib.idle_add(self._retry_portal_cast, upload_id, path)
-
-    def _retry_portal_cast(self, upload_id: str, path: str) -> bool:
-        if self.busy or getattr(self, "_closing", False):
-            return False
-        casting = getattr(self, "_portal_cast_uploads", None)
-        if casting is None:
-            return False
-        casting[upload_id] = (path, time.monotonic())
-        accepted = getattr(self, "_portal_accepted_uploads", None)
-        if accepted is not None:
-            accepted.add(upload_id)
-        self._cast_path(pathlib.Path(path), 0)
-        return False
 
     def _portal_apply_music_autogain(self, value: bool) -> str:
         self.cfg["music_autogain"] = value
@@ -183,6 +213,11 @@ class PortalMixin(NetworkActivityMixin):
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+        session_key = payload.get("_portal_auth_key")
+        if session_key is not None:
+            current = getattr(self, "_portal", None)
+            if current is None or not current.server.session_key_active(session_key):
+                raise portal.PortalRequestError(401, "Room access was revoked")
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:
@@ -207,8 +242,13 @@ class PortalMixin(NetworkActivityMixin):
                             and not self.external and self.tracker.known)
             state = {
                 "title": title, "receiver": self._device(), "state": self.device_state,
+                "state_label": state_labels.present(self.device_state).label,
+                "state_short": state_labels.present(self.device_state).short,
+                "state_description": state_labels.present(self.device_state).accessible,
+                "state_icon": state_labels.present(self.device_state).icon,
                 "position": position, "duration": duration, "volume": volume,
-                "queue": queue, "active": active, "busy": bool(self.busy),
+                "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
                 "network_activity": network_activity.portal_entries(

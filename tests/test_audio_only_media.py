@@ -33,6 +33,37 @@ class AudioOnlyMediaTests(unittest.TestCase):
              "-y", str(path)], check=True, capture_output=True, timeout=20,
         )
 
+    def test_media_probe_reads_case_insensitive_music_tags_and_track_totals(self):
+        media = streamer.MediaInfo(Path("song.flac"))
+        streamer._read_probe(media, {"format": {"duration": "12.5", "tags": {
+            "TITLE": "  Song title ", "ARTIST": " Artist ", "ALBUM": " Record ",
+            "TRACK": "3/12", "DISCNUMBER": "2/2",
+        }}, "streams": [{"codec_type": "audio", "codec_name": "flac",
+                        "channels": 2, "channel_layout": "stereo"}]})
+
+        self.assertEqual((media.title, media.artist, media.album),
+                         ("Song title", "Artist", "Record"))
+        self.assertEqual((media.track_number, media.disc_number), (3, 2))
+        self.assertEqual(media.duration, 12.5)
+
+    def test_ffprobe_reads_embedded_music_tags(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "track.mp3"
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", "sine=frequency=440:duration=0.5", "-metadata", "title=Song title",
+                 "-metadata", "artist=Artist", "-metadata", "album=Album",
+                 "-metadata", "track=3/12", "-metadata", "disc=2/2",
+                 "-c:a", "libmp3lame", "-y", str(path)],
+                check=True, capture_output=True, timeout=20,
+            )
+
+            media = streamer.ffprobe(path)
+
+        self.assertEqual((media.title, media.artist, media.album),
+                         ("Song title", "Artist", "Album"))
+        self.assertEqual((media.track_number, media.disc_number), (3, 2))
+
     def test_mp3_flac_and_aac_are_probeable_as_audio_only(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

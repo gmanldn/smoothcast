@@ -3,10 +3,14 @@ from __future__ import annotations
 
 from http.client import HTTPConnection
 from pathlib import Path
+import shutil
+import subprocess
+from types import MethodType, SimpleNamespace
 import sys
 import threading
 import json
 import time
+from unittest import mock
 
 import pytest
 
@@ -105,6 +109,139 @@ def test_portal_rejects_non_rfc1918_addresses():
             portal.Portal(address, lambda *_args: {})
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_up_next_render_preserves_focus_and_labels_queue_actions():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index("let queueRenderKey=null;"):source.index("let statusRequest=null")]
+    harness = r"""
+const assert = require("node:assert/strict");
+class Element {
+  constructor(tag){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.listeners={};this.parentElement=null;this.className="";this.textContent="";this.classList={add:name=>{this.className+=(this.className?" ":"")+name}}}
+  append(...items){for(const item of items){item.parentElement=this;this.children.push(item)}}
+  replaceChildren(...items){this.children=[];this.append(...items)}
+  addEventListener(name,handler){this.listeners[name]=handler}
+  setAttribute(name,value){this.attributes[name]=String(value)}
+  getAttribute(name){return this.attributes[name]??null}
+  closest(selector){if(selector!=="[data-queue-id]")return null;for(let node=this;node;node=node.parentElement)if(node.dataset.queueId)return node;return null}
+  focus(){document.activeElement=this}
+}
+const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
+const document={activeElement:null,createElement:tag=>new Element(tag)};
+const elements={queue};function $(id){return elements[id]}
+const calls=[];function act(...args){calls.push(args)}
+"""
+    scenario = r"""
+const initial=[{id:"a",title:"Alpha",votes:2},{id:"b",title:"Beta",voted:true}];
+renderQueue(initial);
+const originalRow=queue.children[0];
+assert.equal(queue.children[0].getAttribute("aria-posinset"),"1");
+assert.equal(queue.children[1].getAttribute("aria-setsize"),"2");
+const buttons=queue.children[0].children[1].children;
+assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
+  "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Move Alpha later in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
+assert.equal(buttons[2].disabled,true,"the first item cannot move earlier");
+assert.equal(buttons[3].disabled,false,"the first item can move later");
+buttons[3].listeners.click();
+assert.deepEqual(calls[0], ["queue_move",undefined,{id:"a",position:1}]);
+const betaRow=queue.children[1], betaNext=betaRow.children[1].children[4];
+betaNext.focus();
+renderQueue(initial.map(item=>({...item})));
+assert.equal(queue.children[0],originalRow,"unchanged polling must retain the existing DOM row");
+renderQueue([initial[1],initial[0]]);
+const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
+assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
+renderQueue([initial[0]]);
+assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_browser_status_poll_handles_timeout_visibility_and_expired_session():
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    harness = """
+const assert = require("node:assert/strict");
+const listeners = new Map(), timers = new Map();
+const elements = new Map();
+function element(id) {
+  if(!elements.has(id)){
+    elements.set(id, {files: [], addEventListener(){}, focus(){this.focused=true},
+                      querySelector(){return element("loginButton")}});
+  }
+  return elements.get(id);
+}
+const document = {
+  hidden: false,
+  addEventListener(name, handler){listeners.set(name, handler)},
+  getElementById: element,
+  querySelectorAll(){return []},
+};
+const window = {addEventListener(){}};
+let timerId = 0, requests = 0, respond;
+const setTimeout = (callback, delay) => {
+  timers.set(++timerId, {callback, delay});
+  return timerId;
+};
+const clearTimeout = id => timers.delete(id);
+const fetch = (_url, {signal}) => {
+  if(_url==="/api/session")return Promise.resolve({status:401,ok:false,
+    json:async()=>({ok:false,error:"Session expired"})});
+  requests++;
+  return new Promise((resolve, reject) => {
+    respond = resolve;
+    signal.addEventListener("abort", () => reject(signal.reason), {once:true});
+  });
+};
+"""
+    scenario = """
+(async()=>{
+  csrf = "paired";
+  const first = refresh();
+  await refresh();
+  assert.equal(requests, 1);
+  assert.equal(timers.size, 1);
+  const deadline = [...timers.values()][0];
+  assert.equal(deadline.delay, 5000);
+  deadline.callback();
+  await first;
+  assert.match(element("errorDash").textContent, /timed out/);
+  assert.equal(timers.size, 1);
+  const retry = [...timers.values()][0];
+  assert.ok(retry.delay >= 4000 && retry.delay <= 4500);
+  document.hidden = true;
+  listeners.get("visibilitychange")();
+  assert.equal(timers.size, 0);
+  document.hidden = false;
+  listeners.get("visibilitychange")();
+  assert.equal(requests, 2);
+  pendingUpload = {path:"/api/uploads/stale"};
+  uploading = true;
+  activeUploadController = new AbortController();
+  document.getElementById("videoFile").value = "stale.wav";
+  respond({status:401, ok:false, json:async()=>({error:"Session expired"})});
+  for(let index=0;index<3;index++)await Promise.resolve();
+  assert.equal(csrf, "");
+  assert.equal(timers.size, 0);
+  assert.equal(element("dashboard").hidden, true);
+  assert.equal(element("uploadCard").hidden, true);
+  assert.equal(element("login").hidden, false);
+  assert.equal(element("pin").focused, true);
+  assert.match(element("error").textContent, /current PIN/);
+  assert.equal(activeUploadController.signal.aborted, true);
+  assert.equal(element("loginButton").disabled, true);
+  await assert.rejects(uploadRequest("GET", pendingUpload.path), {status:401});
+  assert.equal(requests, 2);
+  finishUpload();
+  assert.equal(element("loginButton").disabled, false);
+  assert.equal(pendingUpload, null);
+  assert.equal(element("videoFile").value, "");
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
 def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     status, body, headers = rig.request("GET", "/")
     assert status == 200
@@ -117,17 +254,26 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "setTimeout(()=>controller.abort(),60000)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume upload to retry" in page
-    assert "start streaming to your receiver while the rest arrives" in page
+    assert "Audio is validated and added to the shared queue" in page
+    assert "video can be queued or streamed" in page
+    assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
+    assert "while(batchIndex<batchFiles.length" in page
     assert "six-digit PIN" in page
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
-    assert 'title.textContent=item.title' in page
+    assert 'title.textContent=itemTitle' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
-    assert "Add one to the shared queue, or start it now" in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
+    assert 'id="peers"' in page and "renderPeers(s.peers" in page
+    assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
+    assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
+    assert 'setAttribute("aria-label",label)' in page
+    assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
+    assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
+    assert "queue_revision=queueRevision" in page and "body.queue_command_id=`q" in page
     assert "Add to the shared queue" in page
 
 
@@ -145,6 +291,194 @@ def login(rig, pin=PIN, name="Guest"):
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
 
 
+def test_session_reload_recovers_same_participant_ten_times_and_login_reuses_it(rig):
+    status, data, cookie = login(rig, name="Sam")
+    assert status == 200
+    participant_id = data["participant"]["id"]
+    csrf = data["csrf"]
+    for _ in range(10):
+        status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+        assert status == 200
+        restored = decode(body)
+        assert restored["csrf"] == csrf
+        assert restored["participant"]["id"] == participant_id
+    status, body, headers = rig.request(
+        "POST", "/api/login", {"pin": "", "name": "Sam"}, cookie=cookie,
+        origin=f"http://{rig.host}")
+    assert status == 200
+    assert headers["Set-Cookie"].split(";", 1)[0] == cookie
+    assert decode(body)["participant"]["id"] == participant_id
+    assert len(rig.server.room.participants) == 1
+
+
+def test_session_recovery_rejects_expired_cookie(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    token = cookie.partition("=")[2]
+    key = rig.server._session_key(token)
+    rig.server._sessions[key].expiry = rig.server.clock() - 1
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 401
+    assert decode(body)["ok"] is False
+
+
+def test_session_recovery_checks_host_and_origin(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       host="evil.example")[0] == 400
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       origin="http://evil.example")[0] == 400
+
+
+def test_join_reclaims_offline_room_slot_before_refusing(rig):
+    # Presence expiry is monotonic, independent of wall-clock corrections.
+    now = rig.server.clock()
+    stale = rig.server.room.join("Offline", now=now - portal.portal_room.ONLINE_SECONDS - 1)
+    for index in range(portal.portal_room.MAX_PARTICIPANTS - 1):
+        rig.server.room.join(f"Guest {index}", now=now)
+    assert len(rig.server.room.participants) == portal.portal_room.MAX_PARTICIPANTS
+    _token, _csrf, joined = rig.server.create_session("New guest")
+    assert joined.id in rig.server.room.participants
+    assert stale.id in rig.server.room._dormant
+
+
+def test_session_capacity_evicts_least_recently_used(monkeypatch, rig):
+    monkeypatch.setattr(portal, "MAX_SESSIONS", 3)
+    tokens = [rig.server.create_session(f"Guest {index}")[0] for index in range(3)]
+    assert rig.server.session_participant(tokens[0]) is not None
+    newest = rig.server.create_session("Guest 3")[0]
+    assert rig.server.session_participant(tokens[0]) is not None
+    assert rig.server.session_participant(tokens[1]) is None
+    assert rig.server.session_participant(tokens[2]) is not None
+    assert rig.server.session_participant(newest) is not None
+
+
+def test_revocation_cancels_private_guest_upload_without_touching_playback(tmp_path):
+    import portal_uploads
+    manager = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads=manager)
+    try:
+        _, participant, cookie = login(rig, PIN, "Uploader")
+        token = cookie.partition("=")[2]
+        created = manager.create(token, "example.mp4", 1024)
+        upload_id = created["id"]
+        path = manager.root / f"{upload_id}.partial"
+        assert path.exists()
+        assert rig.server.revoke_participant(participant["participant"]["id"]) == 1
+        assert not path.exists()
+        assert manager.snapshot() == []
+        status, _body, _headers = rig.request(
+            "POST", "/api/uploads", {"name": "next.mp4", "size": 1024},
+            cookie=cookie, csrf=participant["csrf"], origin=f"http://{rig.host}")
+        assert status == 403
+        assert all(name not in {"stop", "seek", "queue_remove"} for name, _ in rig.calls)
+    finally:
+        rig.close()
+        manager.close()
+
+
+def test_desktop_wires_host_only_revoke_and_confirmed_end_access():
+    from gui_source import main_window_methods
+    methods = main_window_methods()
+    assert "portal_guest_dropdown" in methods["_build_portal_card"]
+    assert "portal_end_access_button" in methods["_build_portal_card"]
+    assert "revoke_guest" in methods["_portal_revoke_selected"]
+    assert "Adw.MessageDialog" in methods["_portal_confirm_end_access"]
+    assert "current.end_guest_access()" in methods["_portal_end_guest_access"]
+
+
+def test_host_can_revoke_one_guest_without_stopping_playback_or_others(rig):
+    status, first, cookie_a = login(rig, PIN, "Alice")
+    assert status == 200
+    status, second, cookie_b = login(rig, PIN, "Bob")
+    assert status == 200
+    participant = first["participant"]["id"]
+    assert rig.server.revoke_participant(participant) == 1
+    assert rig.server.revoke_participant(participant) == 0
+    assert rig.request("GET", "/api/status", cookie=cookie_a)[0] == 401
+    assert rig.request("GET", "/api/status", cookie=cookie_b)[0] == 200
+    status, _data, _headers = rig.request(
+        "POST", "/api/action", {"action": "seek", "value": 30},
+        cookie=cookie_a, csrf=first["csrf"], origin=f"http://{rig.host}")
+    assert status == 403
+    assert all(name not in {"seek", "stop"} for name, _ in rig.calls)
+    assert {p["name"] for p in rig.server.room.snapshot()["participants"]} == {"Bob"}
+    assert second["participant"]["id"] in rig.server.room.participants
+
+
+def test_host_rotates_pin_and_signs_out_all_without_touching_receiver(rig):
+    _, alice, cookie_a = login(rig, PIN, "Alice")
+    _, bob, cookie_b = login(rig, PIN, "Bob")
+    old_fence = rig.server.fence.snapshot()
+    new_access_pin = rig.server.revoke_all()
+    assert new_access_pin.isdigit() and len(new_access_pin) == portal.PIN_LENGTH
+    assert new_access_pin != PIN
+    assert rig.server.fence.snapshot()[:2] != old_fence[:2]
+    assert rig.request("GET", "/api/status", cookie=cookie_a)[0] == 401
+    assert rig.request("GET", "/api/status", cookie=cookie_b)[0] == 401
+    assert login(rig, PIN, "Old PIN")[0] == 401
+    status, guest, cookie_c = login(rig, new_access_pin, "New Guest")
+    assert status == 200 and guest["participant"]["name"] == "New Guest"
+    assert rig.request("GET", "/api/status", cookie=cookie_c)[0] == 200
+    assert len(rig.server.room.snapshot()["participants"]) == 1
+    assert all(name not in {"seek", "stop", "next", "previous"} for name, _ in rig.calls)
+    assert alice["participant"]["id"] != bob["participant"]["id"]
+
+
+def test_authorised_guest_payloads_are_fenced_at_gtk_dispatch_boundary(rig):
+    _, guest, cookie = login(rig, PIN)
+    key = rig.server._session_key(cookie.partition("=")[2])
+    assert rig.server.session_key_active(key)
+    rig.server.revoke_all()
+    assert not rig.server.session_key_active(key)
+    status, _body, _headers = rig.request(
+        "POST", "/api/action", {"action": "next"},
+        cookie=cookie, csrf=guest["csrf"], origin=f"http://{rig.host}")
+    assert status == 403
+    from gui_source import main_window_methods
+    source = main_window_methods()["_portal_handle"]
+    assert "session_key_active(session_key)" in source
+    assert '"_portal_auth_key"' in source
+
+
+def test_public_http_has_no_guest_revocation_or_pin_rotation_api(rig):
+    _status, guest, cookie = login(rig, PIN)
+    for path in ("/api/revoke", "/api/rotate-pin", "/api/revoke-all"):
+        status, _body, _headers = rig.request(
+            "POST", path, {}, cookie=cookie, csrf=guest["csrf"],
+            origin=f"http://{rig.host}")
+        assert status == 404
+
+
+def test_login_is_serialised_with_host_rotation(rig, monkeypatch):
+    # A concurrent PIN rotation cannot intervene after the PIN check but
+    # before the cookie is entered in the session table.
+    entered = threading.Event()
+    proceed = threading.Event()
+    original = rig.server.create_session
+    def delayed_create(name):
+        entered.set()
+        assert proceed.wait(2)
+        return original(name)
+    monkeypatch.setattr(rig.server, "create_session", delayed_create)
+    login_result = {}
+    def run_login():
+        login_result["value"] = login(rig, PIN, "Alice")
+    thread = threading.Thread(target=run_login)
+    thread.start()
+    assert entered.wait(2)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(rig.server.revoke_all)
+        assert not future.done()
+        proceed.set()
+        thread.join(3)
+        new_access_pin = future.result(timeout=3)
+    assert login_result["value"][0] == 200
+    _status, _body, old_cookie = login_result["value"]
+    assert rig.request("GET", "/api/status", cookie=old_cookie)[0] == 401
+    assert login(rig, new_access_pin)[0] == 200
+
+
 def test_pin_login_sets_http_only_session_and_dashboard_reads_main_state(rig):
     status, raw, headers = rig.request("POST", "/api/login", {"pin": PIN},
                                       origin=f"http://{rig.host}")
@@ -159,6 +493,22 @@ def test_pin_login_sets_http_only_session_and_dashboard_reads_main_state(rig):
     assert rig.calls == [("status", {})]
 
 
+def test_authenticated_status_exposes_only_the_peer_directory_snapshot(rig):
+    _, _result, cookie = login(rig)
+    rig.server.peer_directory = SimpleNamespace(snapshot=lambda: [{
+        "id": "a" * 32, "name": "smoothcast-lounge", "version": 1,
+        "compatible": True, "capabilities": ["room"],
+        "url": "http://192.168.1.25:8765/",
+    }])
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    state = decode(body)["state"]
+    assert state["peer_discovery_available"] is True
+    assert state["peers"][0]["name"] == "smoothcast-lounge"
+    assert state["peers"][0]["url"] == "http://192.168.1.25:8765/"
+    assert state["peers"][0]["compatible"] is True
+
+
 def test_named_sessions_share_presence_and_votes(rig):
     first_status, first, cookie = login(rig, PIN, "Sam")
     assert first_status == 200 and first["participant"]["name"] == "Sam"
@@ -170,6 +520,27 @@ def test_named_sessions_share_presence_and_votes(rig):
     room = decode(body)["state"]["room"]
     assert {person["name"] for person in room["participants"]} == {"Sam", "Sam (2)"}
     assert room["me"]["name"] == "Sam"
+
+
+def test_profile_edit_only_changes_the_authenticated_participant(rig):
+    _, first, cookie = login(rig, PIN, "Sam")
+    _, second, other_cookie = login(rig, PIN, "Alex")
+    origin = f"http://{rig.host}"
+    hostile = '<img src=x onerror="alert(1)">'
+    status, body, _ = rig.request(
+        "POST", "/api/profile",
+        {"name": hostile, "participant_id": second["participant"]["id"], "role": "host"},
+        cookie=cookie, csrf=first["csrf"], origin=origin,
+    )
+    assert status == 200 and decode(body)["participant"]["name"] == hostile
+    status, body, _ = rig.request("GET", "/api/status", cookie=other_cookie)
+    assert status == 200
+    people = {person["id"]: person["name"]
+              for person in decode(body)["state"]["room"]["participants"]}
+    assert people == {first["participant"]["id"]: hostile,
+                      second["participant"]["id"]: "Alex"}
+    assert "textContent=person.name" in portal._HTML
+    assert "innerHTML" not in portal._HTML
 
 
 def test_queue_votes_are_per_person_and_require_a_live_item():
@@ -203,15 +574,40 @@ def test_queue_actions_are_forwarded_to_the_gui(rig):
     _, result, cookie = login(rig)
     rig.request("GET", "/api/status", cookie=cookie)
     origin = f"http://{rig.host}"
-    for action, extra in (
+    for index, (action, extra) in enumerate((
             ("next", {}), ("previous", {}),
             ("queue_play", {"id": "one"}),
             ("queue_remove", {"id": "one"}),
-            ("queue_move", {"id": "one", "position": 0})):
+            ("queue_move", {"id": "one", "position": 0}),
+            ("queue_clear", {}))):
         payload = {"action": action, **extra}
+        if action in {"queue_remove", "queue_move", "queue_clear"}:
+            payload.update(queue_command_id=f"test-{index}", queue_revision=0)
         status, body, _ = rig.request("POST", "/api/action", payload, cookie=cookie,
                                       csrf=result["csrf"], origin=origin)
         assert status == 202, (action, body)
+
+
+def test_queue_command_id_replays_and_rejects_altered_payload(rig):
+    _, result, cookie = login(rig)
+    origin = f"http://{rig.host}"
+    command = {"action": "queue_clear", "queue_revision": 0,
+               "queue_command_id": "clear-once"}
+
+    first_status, first_body, _ = rig.request(
+        "POST", "/api/action", command, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+    replay_status, replay_body, _ = rig.request(
+        "POST", "/api/action", command, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+    altered_status, _, _ = rig.request(
+        "POST", "/api/action", {**command, "queue_revision": 1}, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+
+    assert first_status == replay_status == 202
+    assert decode(first_body) == decode(replay_body)
+    assert altered_status == 409
+    assert [action for action, _ in rig.calls].count("queue_clear") == 1
 
 
 def test_bad_pin_is_rate_limited_per_client(rig):
@@ -396,6 +792,29 @@ def test_friendly_hostname_is_allowed_when_configured():
         server.server_close()
 
 
+def test_copy_room_link_uses_only_the_current_listener_url():
+    from textwrap import dedent
+
+    from gui_source import main_window_methods
+
+    namespace = {}
+    exec("from __future__ import annotations\n"
+         + dedent(main_window_methods()["_copy_portal_link"]), namespace)
+    copy = namespace["_copy_portal_link"]
+    clipboard = []
+    window = SimpleNamespace(
+        _portal=None, get_clipboard=lambda: SimpleNamespace(set=clipboard.append),
+        toast=lambda _message: None,
+    )
+    copy(window, None)
+    for url in ("http://192.168.1.20:8765/", "http://192.168.1.21:8766/"):
+        window._portal = SimpleNamespace(url=url, pin=PIN)
+        copy(window, None)
+    window._portal = None
+    copy(window, None)
+    assert clipboard == ["http://192.168.1.20:8765/", "http://192.168.1.21:8766/"]
+
+
 def test_application_wires_portal_into_home_screen_and_closes_it():
     from gui_source import main_window_methods
     methods = main_window_methods()
@@ -403,16 +822,26 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     card = methods["_build_portal_card"]
     assert "portal_status_label" in card and "portal_url_label" in card
     assert "portal_pin_label" in card and "portal_activity_label" in card
+    assert "portal_peers_box" in card
     assert "local network" in card
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
     assert "_refresh_portal_activity" in methods["_refresh_portal"]
+    assert "room.snapshot()" in methods["_refresh_portal_activity"]
+    assert "In room:" in methods["_refresh_portal_activity"]
+    assert "peer_discovery_available" in methods["_refresh_portal_activity"]
+    assert "peer_discovery_ui.refresh_peer_links" in methods["_refresh_portal_activity"]
+    peer_ui = Path(__file__).resolve().parents[1] / "src" / "peer_discovery_ui.py"
+    assert "peer['id'][:6]" in peer_ui.read_text(encoding="utf-8")
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
-                      "next", "previous"):
+                      "queue_clear", "next", "previous"):
         assert operation in queue_actions
+    assert "self.clear_queue()" in queue_actions
+    assert "queue_revision" in queue_actions
+    assert "_portal_observe_queue()" in methods["_portal_handle"]
     assert "portal_queue_id" in methods["_portal_queue_status"]
     assert "queue_durations" in methods["_portal_queue_status"]
 
@@ -437,7 +866,7 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         status, raw, _ = rig.request("POST", "/api/uploads",
-                                     {"name": "../clip.mp4", "size": 6},
+                                     {"name": "../clip.mp4", "size": 6, "queue": False},
                                      cookie=cookie, csrf=login_result["csrf"], origin=origin)
         assert status == 201
         created = decode(raw)
@@ -493,9 +922,251 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
             extra_headers={"Content-Range": "bytes 0-5/6"},
             content_type="application/octet-stream")
         assert status == 200
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video) as probe:
+            status, raw, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            dispatch_count = len(rig.calls)
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            assert len(rig.calls) == dispatch_count
+            assert probe.call_count == 1
+        assert decode(raw)["message"] == "Added to the shared queue."
+        assert rig.calls[-1][0] == "queue_add"
+        assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_queue_only_upload_rejects_invalid_media_without_dispatch(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads", {"name": "broken.mkv", "size": 6, "queue": True},
+            cookie=cookie, csrf=login_result["csrf"], origin=origin,
+        )
+        assert status == 201
+        upload_id = decode(raw)["id"]
         status, _, _ = rig.request(
-            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
-            csrf=login_result["csrf"], origin=origin)
+            "PUT", f"/api/uploads/{upload_id}", b"broken", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 0-5/6"},
+            content_type="application/octet-stream",
+        )
+        assert status == 200
+        with mock.patch("streamer.ffprobe", side_effect=RuntimeError("bad media")):
+            status, body, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin,
+            )
+        assert status == 422
+        assert decode(body)["error"] == "The uploaded file is not readable media"
+        assert rig.calls == []
+        assert not (uploads.root / f"{upload_id}.mkv").exists()
+    finally:
+        rig.close()
+        uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg required")
+def test_phone_audio_upload_is_validated_and_forced_into_shared_queue(tmp_path):
+    import portal_uploads
+
+    audio = tmp_path / "guest-track.mp3"
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+         "-i", "sine=frequency=440:duration=0.5", "-c:a", "libmp3lame", "-y", str(audio)],
+        check=True, capture_output=True, timeout=20,
+    )
+    data = audio.read_bytes()
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads",
+            {"name": audio.name, "size": len(data), "queue": False},
+            cookie=cookie, csrf=csrf, origin=origin,
+        )
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", data, cookie=cookie,
+            csrf=csrf, origin=origin,
+            extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+            content_type="application/octet-stream",
+        )
+        assert status == 200 and decode(raw)["ready_to_cast"] is False
+        status, raw, _ = rig.request(
+            "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+            cookie=cookie, csrf=csrf, origin=origin,
+        )
+        assert status == 202 and decode(raw)["message"] == "Added to the shared queue."
+        action, payload = rig.calls[-1]
+        assert action == "queue_add"
+        assert Path(payload["path"]).read_bytes() == data
+    finally:
+        rig.close()
+        uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg required")
+def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
+    import portal_uploads
+    import cast_portal_queue
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    queue = []
+    host = SimpleNamespace(
+        _portal=SimpleNamespace(server=SimpleNamespace(uploads=uploads)),
+        busy=False,
+        queue=queue,
+        queue_durations={},
+        now_playing=None,
+        session=None,
+        selected_index=None,
+        _enqueue=lambda paths: queue.extend(paths),
+        _remove_queue=lambda index: queue.pop(index),
+    )
+    host._portal_upload_path = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_upload_path, host,
+    )
+    host._portal_observe_queue = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_observe_queue, host,
+    )
+    host._portal_check_queue_revision = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_check_queue_revision, host,
+    )
+    host._portal_queue_index = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_queue_index, host,
+    )
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        finalized = []
+        for index, frequency in enumerate((330, 440, 550), start=1):
+            audio = tmp_path / f"guest-track-{index}.mp3"
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", f"sine=frequency={frequency}:duration=0.25", "-c:a",
+                 "libmp3lame", "-y", str(audio)],
+                check=True, capture_output=True, timeout=20,
+            )
+            data = audio.read_bytes()
+            status, raw, _ = rig.request(
+                "POST", "/api/uploads",
+                {"name": audio.name, "size": len(data), "queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 201
+            upload_id = decode(raw)["id"]
+            status, raw, _ = rig.request(
+                "PUT", f"/api/uploads/{upload_id}", data, cookie=cookie,
+                csrf=csrf, origin=origin,
+                extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+                content_type="application/octet-stream",
+            )
+            assert status == 200 and decode(raw)["ready_to_cast"] is False
+            status, raw, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 202 and decode(raw)["message"] == "Added to the shared queue."
+            action, payload = rig.calls[-1]
+            assert action == "queue_add"
+            assert payload["early"] is False
+            cast_portal_queue.PortalQueueMixin._portal_queue_action(
+                host, "queue_add", payload,
+            )
+            finalized.append((upload_id, payload))
+
+            # Retrying completion is accepted but never dispatches the same item again.
+            call_count = len(rig.calls)
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 202 and len(rig.calls) == call_count
+
+        assert len(queue) == 3
+        rows = cast_portal_queue.PortalQueueMixin._portal_queue_status(host)
+        assert {row["title"] for row in rows} == {
+            f"guest-track-{index}.mp3" for index in range(1, 4)
+        }
+        assert len({upload_id for upload_id, _payload in finalized}) == 3
+        assert all(Path(payload["path"]).is_file() for _upload_id, payload in finalized)
+        assert all(action != "cast_upload" for action, _payload in rig.calls)
+        active_path = queue[0]
+        active_session = SimpleNamespace(state=object())
+        host.now_playing = active_path
+        host.session = active_session
+        host.selected_index = 0
+        cast_portal_queue.PortalQueueMixin._portal_queue_action(host, "queue_remove", {
+            "id": rows[0]["id"], "queue_revision": host._portal_queue_revision,
+        })
+        assert active_path not in queue
+        assert host.now_playing == active_path and host.session is active_session
+        assert Path(active_path).is_file()
+        cast_portal_queue.PortalQueueMixin._portal_queue_status(host)
+        queue.clear()
+        assert cast_portal_queue.PortalQueueMixin._portal_queue_status(host) == []
+        assert host._portal_queue_display_names == {}
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_upload_defaults_to_queue_when_intent_is_omitted(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads", early_cast_min_bytes=1)
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 6},
+                                     cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie, csrf=csrf,
+            origin=origin, extra_headers={"Content-Range": "bytes 0-2/6"},
+            content_type="application/octet-stream")
+        body = decode(raw)
+        assert status == 200 and body["ready_to_cast"] is False
+        assert rig.calls == []
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie, csrf=csrf,
+            origin=origin, extra_headers={"Content-Range": "bytes 3-5/6"},
+            content_type="application/octet-stream")
+        assert status == 200
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video):
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=csrf, origin=origin)
         assert status == 202
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
@@ -513,7 +1184,8 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         csrf = login_result["csrf"]
-        status, raw, _ = rig.request("POST", "/api/uploads", {"name": "clip.mkv", "size": 6},
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 6, "queue": False},
                                      cookie=cookie, csrf=csrf, origin=origin)
         assert status == 201
         upload_id = decode(raw)["id"]
@@ -538,3 +1210,100 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
     finally:
         rig.close()
         uploads.close()
+
+
+def test_page_build_is_embedded_and_status_session_expose_schema(rig):
+    html = portal._page().decode("utf-8")
+    assert portal.page_build() in html
+    assert "__SC_BUILD__" not in html
+    assert "__SC_SCHEMA__" not in html
+    assert 'id="updateNotice"' in html
+    assert 'id="reloadNow"' in html
+    assert '"X-SmoothCast-Client-Build":PAGE_BUILD' in html
+    status, session, cookie = login(rig)
+    assert status == 200
+    assert session["build"] == portal.page_build()
+    assert session["client_schema"] == portal.CLIENT_SCHEMA
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    assert decode(body)["build"] == portal.page_build()
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 200
+    assert decode(body)["client_schema"] == portal.CLIENT_SCHEMA
+
+
+def test_stale_browser_mutations_fail_before_dispatch(rig):
+    origin = f"http://{rig.host}"
+    stale = {
+        "X-SmoothCast-Client-Schema": "0",
+        "X-SmoothCast-Client-Build": "old-build",
+    }
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert not rig.server.room.participants
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers={"Sec-Fetch-Mode": "cors"},
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    status, data, cookie = login(rig)
+    assert status == 200
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert rig.calls == []
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin,
+        extra_headers={
+            "X-SmoothCast-Client-Schema": str(portal.CLIENT_SCHEMA),
+            "X-SmoothCast-Client-Build": portal.page_build(),
+        },
+    )
+    assert status == 202
+    assert len(rig.calls) == 1
+
+
+def test_authenticated_guest_flood_gets_429_and_other_guest_stays_responsive(rig):
+    _status, first, first_cookie = login(rig, name="Noisy")
+    _status, second, second_cookie = login(rig, name="Quiet")
+    origin = f"http://{rig.host}"
+    statuses = []
+    for _ in range(40):
+        status, data, headers = rig.request(
+            "POST", "/api/action", {"action": "stop"}, cookie=first_cookie,
+            csrf=first["csrf"], origin=origin,
+        )
+        statuses.append(status)
+        if status == 429:
+            assert int(headers["Retry-After"]) >= 1
+            assert decode(data)["ok"] is False
+    assert 202 in statuses and 429 in statuses
+    before = len(rig.calls)
+    status, data, _ = rig.request(
+        "POST", "/api/action", {"action": "stop"}, cookie=second_cookie,
+        csrf=second["csrf"], origin=origin,
+    )
+    assert status == 202 and decode(data)["ok"]
+    assert len(rig.calls) == before + 1
+
+
+def test_authenticated_read_rate_limit_does_not_block_room_recovery(rig):
+    _status, data, cookie = login(rig, name="Reader")
+    statuses = [rig.request("GET", "/api/status", cookie=cookie)[0] for _ in range(30)]
+    assert 200 in statuses and 429 in statuses
+    status, body, headers = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 429
+    assert int(headers["Retry-After"]) >= 1
+    # Existing cookie and PIN remain valid. Another participant can read.
+    _, other, other_cookie = login(rig, name="Other")
+    assert rig.request("GET", "/api/status", cookie=other_cookie)[0] == 200
+    assert other["csrf"]

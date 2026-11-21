@@ -211,7 +211,8 @@ def test_windows_stop_uses_verified_psutil_not_os_kill(monkeypatch):
         report = startup_cleanup.CleanupReport()
         startup_cleanup._stop_orphans(
             [process], pathlib.Path("N:/no-proc"), report, 0.0)
-    assert report.stopped == [p.pid]
+    assert report.stopped == []
+    assert report.unresolved == [p.pid]
     assert p.actions == ["TERM", "KILL"]
 
 

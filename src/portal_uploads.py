@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import hmac
+import math
 import os
 from pathlib import Path
 import re
@@ -20,11 +21,16 @@ import cache_privacy
 CHUNK_SIZE = 2 * 1024 * 1024
 READ_SIZE = 64 * 1024
 MAX_UPLOAD_BYTES = 1 << 40  # 1 TiB; available disk space is the practical limit.
+MAX_AUDIO_UPLOAD_BYTES = 512 * 1024 * 1024
+MAX_AUDIO_DURATION_SECONDS = 24 * 60 * 60
 MAX_ACTIVE_UPLOADS = 3
 MIN_FREE_BYTES = 512 * 1024 * 1024
 PARTIAL_TTL_SECONDS = 24 * 60 * 60
 VIDEO_SUFFIXES = frozenset({
     ".mp4", ".m4v", ".mkv", ".mov", ".avi", ".webm", ".ts", ".mpeg", ".mpg", ".wmv",
+})
+AUDIO_SUFFIXES = frozenset({
+    ".mp3", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aiff", ".aif",
 })
 # Start casting while a large upload is still arriving, once this much is
 # buffered. FFmpeg transcodes with ``-readrate``, so on a LAN the transfer
@@ -146,17 +152,17 @@ def default_upload_root() -> Path:
     return Path(cache) / "cast-control" / "portal-uploads"
 
 
-def _safe_name(value: object) -> tuple[str, str]:
+def _safe_name(value: object) -> tuple[str, str, bool]:
     if not isinstance(value, str):
-        raise UploadError(400, "Choose a video file to upload")
+        raise UploadError(400, "Choose an audio or video file to upload")
     name = unicodedata.normalize("NFC", value.strip()).replace("\\", "/").rsplit("/", 1)[-1]
     if (not name or len(name.encode("utf-8")) > 240
             or any(ord(char) < 32 or ord(char) == 127 for char in name)):
         raise UploadError(400, "The selected file name is invalid")
     suffix = Path(name).suffix.lower()
-    if suffix not in VIDEO_SUFFIXES:
-        raise UploadError(422, "Choose a supported video file")
-    return name, suffix
+    if suffix not in VIDEO_SUFFIXES | AUDIO_SUFFIXES:
+        raise UploadError(422, "Choose a supported audio or video file")
+    return name, suffix, suffix in AUDIO_SUFFIXES
 
 
 @dataclass
@@ -178,6 +184,8 @@ class _Upload:
     early_cast: str = "idle"
     keep_partial: bool = False
     queue_only: bool = False
+    audio_only: bool = False
+    media_validated: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -229,9 +237,11 @@ class UploadManager:
 
     def create(self, owner: str, name_value: object, size_value: object,
                client: str = "", *, queue_only: bool = False) -> dict:
-        name, suffix = _safe_name(name_value)
+        name, suffix, audio_only = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
+        if audio_only and size_value > MAX_AUDIO_UPLOAD_BYTES:
+            raise UploadError(413, "Audio uploads are limited to 512 MiB")
         if not isinstance(owner, str) or not owner:
             raise UploadError(401, "Sign in to upload a file")
         with self._lock:
@@ -260,7 +270,8 @@ class UploadManager:
             now = self._clock()
             upload = _Upload(upload_id, owner_key, name, suffix, size_value, partial,
                              client=str(client or "")[:64], created_at=now, last_at=now,
-                             queue_only=bool(queue_only))
+                             queue_only=bool(queue_only or audio_only),
+                             audio_only=audio_only)
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE}
@@ -278,6 +289,10 @@ class UploadManager:
     def is_queue_only(self, owner: str, upload_id: str) -> bool:
         """Whether this upload was created with early casting disabled."""
         return self._get(owner, upload_id).queue_only
+
+    def is_audio_only(self, owner: str, upload_id: str) -> bool:
+        """Whether a validated source is audio-only and must never early-cast."""
+        return self._get(owner, upload_id).audio_only
 
     def status(self, owner: str, upload_id: str) -> dict:
         upload = self._get(owner, upload_id)
@@ -389,6 +404,8 @@ class UploadManager:
                 raise
             finally:
                 os.close(fd)
+            if upload.cancelled:
+                raise UploadError(401, "Room access was revoked during this upload")
             upload.received += written
             upload.last_at = self._clock()
             ready = self._maybe_start_early_cast(upload)
@@ -405,7 +422,7 @@ class UploadManager:
         Called with ``upload.lock`` held. Returns True on the single append that
         crosses the buffer threshold for a progressively castable container.
         """
-        if (upload.queue_only or upload.early_cast != "idle"
+        if (upload.audio_only or upload.queue_only or upload.early_cast != "idle"
                 or upload.received < self._early_cast_min_bytes
                 or upload.received >= upload.size):
             return False
@@ -450,6 +467,38 @@ class UploadManager:
                         if os.name != "nt":
                             raise
                     upload.complete_path = destination
+            if upload.queue_only and not upload.media_validated:
+                try:
+                    import streamer
+                    media = streamer.ffprobe(upload.complete_path)
+                except Exception as exc:
+                    if upload.complete_path != upload.partial_path:
+                        upload.complete_path.unlink(missing_ok=True)
+                    upload.complete_path = None
+                    upload.cancelled = True
+                    upload.partial_path.unlink(missing_ok=True)
+                    message = ("The uploaded file is not readable audio" if upload.audio_only
+                               else "The uploaded file is not readable media")
+                    raise UploadError(422, message) from exc
+                duration_valid = math.isfinite(media.duration) and media.duration > 0
+                playable = bool(media.audio_streams or media.has_video)
+                audio_valid = (not upload.audio_only or (
+                    media.is_audio_only and bool(media.audio_streams)
+                    and duration_valid and media.duration <= MAX_AUDIO_DURATION_SECONDS
+                ))
+                if not playable or not duration_valid or not audio_valid:
+                    if upload.complete_path != upload.partial_path:
+                        upload.complete_path.unlink(missing_ok=True)
+                    upload.complete_path = None
+                    upload.cancelled = True
+                    upload.partial_path.unlink(missing_ok=True)
+                    message = (
+                        "Choose a readable audio file up to 24 hours long"
+                        if upload.audio_only else
+                        "Choose a readable audio or video file with a playable track"
+                    )
+                    raise UploadError(422, message)
+                upload.media_validated = True
             should_dispatch = not upload.cast_submitted
             upload.cast_submitted = True
             return upload.complete_path, upload.name, should_dispatch
@@ -476,6 +525,35 @@ class UploadManager:
             upload.cancelled = True
             with self._lock:
                 self._uploads.pop(upload_id, None)
+
+    def revoke_owner_keys(self, owner_keys: set[str]) -> int:
+        """Cancel a revoked guest's uploads without touching media in playback.
+
+        Owner keys are SHA-256 cookie digests already held by the portal, never
+        raw session secrets. In-flight writes may hold their per-upload lock;
+        mark them cancelled immediately and leave that partial for the normal
+        crash/expiry sweep rather than deleting a file still being written.
+        """
+        with self._lock:
+            targets = []
+            for upload_id, upload in list(self._uploads.items()):
+                if upload.owner in owner_keys:
+                    upload.cancelled = True
+                    targets.append(upload)
+                    self._uploads.pop(upload_id, None)
+        for upload in targets:
+            if upload.cast_submitted or upload.keep_partial:
+                continue  # May be in use by a locally owned receiver session.
+            if not upload.lock.acquire(blocking=False):
+                continue
+            try:
+                try:
+                    (upload.complete_path or upload.partial_path).unlink(missing_ok=True)
+                except OSError:
+                    pass  # Do not break room revocation over disk cleanup.
+            finally:
+                upload.lock.release()
+        return len(targets)
 
     def close(self) -> None:
         """Discard unfinished transfers; keep completed files used by sessions."""

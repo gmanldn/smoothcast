@@ -19,6 +19,7 @@ import responsive_layout
 import buffer_health
 import idle_chrome
 import notifications
+import state_labels
 import playback_state
 import progress_model
 import text_fit
@@ -29,7 +30,7 @@ import ui_theme
 import version
 
 from cast_widgets import (
-    APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
+    APP_NAME, DEFAULTS, fmt_time, refresh_config, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
     BufferHealthGraph,
 )
 import network_route_ui
@@ -37,6 +38,54 @@ from bookmark_ui import BookmarkUiMixin
 
 
 class UiMixin(BookmarkUiMixin):
+
+    def _refresh_config_on_focus(self, *_args) -> None:
+        """Pick up other instances' settings without replacing local edits."""
+        if not self.is_active() or not refresh_config(self.cfg):
+            return
+        self.app.apply_accent(self.cfg.get("accent", "default"))
+        self.app.apply_density(self.cfg.get("density", "comfortable"))
+        self._apply_color_scheme()
+        scheme_action = getattr(self.app, "scheme_action", None)
+        if scheme_action is not None:
+            scheme_action.set_state(GLib.Variant("s", self.cfg["color_scheme"]))
+        self._refresh_direct_note()
+        self._sync_settings_card_from_config()
+        preferences = getattr(self, "_preferences_window", None)
+        if preferences is not None:
+            preferences.sync_from_owner()
+        menu = getattr(self, "menu_button", None)
+        if menu is not None:
+            menu.set_menu_model(self._build_menu())
+
+    def _sync_settings_card_from_config(self) -> None:
+        """Update visible inline controls after another process saves settings."""
+        self._syncing = True
+        try:
+            choices = (
+                ("quality_dropdown", "quality", {"high": 0, "balanced": 1, "saver": 2}),
+                ("audio_dropdown", "audio", {"original": 0, "dialogue": 1, "night": 2}),
+                ("loudness_dropdown", "audio_loudness", {"off": 0, "programme": 1, "album": 2}),
+                ("rotation_dropdown", "rotation", {0: 0, 90: 1, 180: 2, 270: 3}),
+                ("subs_dropdown", "subs", {"off": 0, "auto": 1, "pick": 2, "embedded": 3}),
+            )
+            for name, key, indexes in choices:
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_selected(indexes.get(self.cfg.get(key), 0))
+            for name, key in (
+                ("music_autogain_switch", "music_autogain"),
+                ("burn_switch", "burn_subs"), ("direct_switch", "direct"),
+                ("keep_switch", "keep_streaming"),
+            ):
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_active(bool(self.cfg.get(key, False)))
+            gain = getattr(self, "gain_spin", None)
+            if gain is not None:
+                gain.set_value(float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])))
+        finally:
+            self._syncing = False
 
 
     def present(self) -> None:
@@ -603,13 +652,49 @@ class UiMixin(BookmarkUiMixin):
         )
         self.portal_activity_label.add_css_class("section-caption")
         body.append(self.portal_activity_label)
+        nearby_hosts = Gtk.Expander(label="Nearby SmoothCast hosts")
+        self.portal_peers_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4,
+        )
+        self.portal_peers_box.append(Gtk.Label(
+            label="Looking for SmoothCast hosts…", xalign=0.0, wrap=True,
+        ))
+        nearby_hosts.set_child(self.portal_peers_box)
         body.append(Gtk.Label(label="Address", xalign=0.0))
         self.portal_url_label = Gtk.Label(
             label="—", xalign=0.0, wrap=False, selectable=True,
             ellipsize=Pango.EllipsizeMode.END,
         )
         self.portal_url_label.add_css_class("mono")
-        body.append(self.portal_url_label)
+        self.portal_url_label.set_hexpand(True)
+        address_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        address_row.append(self.portal_url_label)
+        self.portal_copy_button = Gtk.Button(label="Copy link", sensitive=False)
+        self.portal_copy_button.connect("clicked", self._copy_portal_link)
+        address_row.append(self.portal_copy_button)
+        body.append(address_row)
+        self.portal_qr_button = Gtk.MenuButton(label="Show QR code", sensitive=False)
+        address_row.append(self.portal_qr_button)
+        popover = Gtk.Popover()
+        self.portal_qr_button.set_popover(popover)
+        qr_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        popover.set_child(qr_content)
+        self.portal_qr_picture = Gtk.Picture(
+            alternative_text="QR code for the room link", can_shrink=False,
+        )
+        qr_content.append(self.portal_qr_picture)
+        qr_content.append(Gtk.Label(
+            label="Scan with your phone camera, then enter the room PIN.",
+            xalign=0.0, wrap=True,
+        ))
+
+        connection_hint = Gtk.Label(
+            label="Use the same Wi-Fi. If the link does not open, check your VPN "
+                  "or whether guest Wi-Fi blocks connections between devices.",
+            xalign=0.0, wrap=True,
+        )
+        connection_hint.add_css_class("dim-label")
+        body.append(connection_hint)
         body.append(Gtk.Label(label="6-digit room PIN", xalign=0.0))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")
@@ -622,6 +707,28 @@ class UiMixin(BookmarkUiMixin):
         )
         note.add_css_class("dim-label")
         body.append(note)
+        guest_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.portal_guest_ids: tuple[str, ...] = ()
+        self.portal_guest_dropdown = Gtk.DropDown.new_from_strings(["No guests connected"])
+        self.portal_guest_dropdown.set_hexpand(True)
+        self.portal_guest_dropdown.set_sensitive(False)
+        self.portal_guest_dropdown.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Select a room guest to revoke"]
+        )
+        self.portal_revoke_button = Gtk.Button(label="Remove guest")
+        self.portal_revoke_button.set_sensitive(False)
+        self.portal_revoke_button.connect("clicked", self._portal_revoke_selected)
+        guest_row.append(self.portal_guest_dropdown)
+        guest_row.append(self.portal_revoke_button)
+        body.append(guest_row)
+        self.portal_end_access_button = Gtk.Button(label="End guest access / New PIN")
+        self.portal_end_access_button.add_css_class("destructive-action")
+        self.portal_end_access_button.set_tooltip_text(
+            "Sign out all guests and generate a new PIN; playback continues")
+        self.portal_end_access_button.connect(
+            "clicked", self._portal_confirm_end_access)
+        body.append(self.portal_end_access_button)
+        body.append(nearby_hosts)
         return card
 
     def _build_details_card(self) -> Gtk.Box:
@@ -891,14 +998,14 @@ class UiMixin(BookmarkUiMixin):
         if not notifications.should_notify(self.cfg, event, window_active=active):
             return
         if event == notifications.FINISHED:
-            title = "Playback finished"
+            title = notifications.event_title(event)
             name = pathlib.Path(detail).name if detail else ""
             body = f"{name} finished playing." if name else "The cast finished."
         elif event == notifications.ERROR:
-            title = "Cast failed"
+            title = notifications.event_title(event)
             body = detail or "The cast failed."
         else:
-            title = "Receiver lost"
+            title = notifications.event_title(event)
             body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
         try:
             notification = Gio.Notification.new(title)
@@ -1236,17 +1343,17 @@ class UiMixin(BookmarkUiMixin):
         elif local_ready:
             self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
         elif self.device_state == "OFFLINE":
-            self._set_chip("Offline", "offline")
+            self._set_chip(state_labels.present("OFFLINE").short, "offline")
         elif self.busy:
-            self._set_chip("Preparing…", "buffering")
+            self._set_chip(state_labels.present("PREPARING").label, "buffering")
         elif self.external:
-            self._set_chip("External", "paused")
+            self._set_chip(state_labels.present("EXTERNAL").short, "paused")
         elif self.device_state == "BUFFERING":
-            self._set_chip("Buffering…", "buffering")
+            self._set_chip(state_labels.present("BUFFERING").label, "buffering")
         elif playing:
             self._set_chip("Live" if (self.session and self.session.mode == "transcode") else "Playing", "playing")
         elif paused:
-            self._set_chip("Paused", "paused")
+            self._set_chip(state_labels.present("PAUSED").label, "paused")
         else:
             if stream is not None and stream.get_playing():
                 self._set_chip("Playing locally", "playing")

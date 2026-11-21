@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import portal_commands
+import peer_discovery_ui
 import portal_uploads
 from gui_source import main_window_methods
 
@@ -180,3 +181,71 @@ def test_command_branch_runs_fenced_mutation(tmp_path):
     window._portal_fence.rotate(owner="TV")
     with pytest.raises(portal_commands.CommandError):
         window._portal_handle("command", {"envelope": envelope})
+
+
+def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():
+    class Widget:
+        def __init__(self, label="", uri=""):
+            self.label, self.uri = label, uri
+            self.classes = []
+            self.tooltip = ""
+            self.parent = None
+
+        def add_css_class(self, name):
+            self.classes.append(name)
+
+        def set_halign(self, _align):
+            pass
+
+        def set_tooltip_text(self, value):
+            self.tooltip = value
+
+        def get_next_sibling(self):
+            index = self.parent.children.index(self)
+            return self.parent.children[index + 1] if index + 1 < len(
+                self.parent.children) else None
+
+    class Box:
+        def __init__(self):
+            self.children = []
+
+        def get_first_child(self):
+            return self.children[0] if self.children else None
+
+        def remove(self, child):
+            self.children.remove(child)
+            child.parent = None
+
+        def append(self, child):
+            child.parent = self
+            self.children.append(child)
+
+    class LinkButton:
+        @staticmethod
+        def new_with_label(uri, label):
+            return Widget(label=label, uri=uri)
+
+    gtk = SimpleNamespace(
+        Label=lambda **kwargs: Widget(label=kwargs.get("label", "")),
+        LinkButton=LinkButton,
+        Align=SimpleNamespace(START="start"),
+    )
+    window = SimpleNamespace()
+    window.portal_peers_box = Box()
+    rows = [
+        ("a" * 32, "http://192.168.1.20:8765/", "smoothcast-lounge", True),
+        ("b" * 32, "http://192.168.1.21:8765/", "smoothcast-old", False),
+    ]
+    peer_discovery_ui.refresh_peer_links(window, [
+        {"id": peer_id, "url": url, "name": name, "compatible": compatible}
+        for peer_id, url, name, compatible in rows
+    ], available=True, gtk=gtk)
+    first, second = window.portal_peers_box.children
+    assert first.uri == rows[0][1]
+    assert "PIN is required" in first.tooltip
+    assert second.label == "smoothcast-old (incompatible)"
+    assert second.uri == ""
+    peer_discovery_ui.refresh_peer_links(
+        window, [], available=False, status="Peer discovery is unavailable", gtk=gtk)
+    assert [child.label for child in window.portal_peers_box.children] == [
+        "Peer discovery is unavailable"]

@@ -166,6 +166,17 @@ def test_pure_metadata_publish_ignores_removed_and_preserves_known_values():
     assert cache == {"newer": 12.0, "active": 2.0}
 
 
+def test_queue_title_uses_fresh_embedded_tags_and_falls_back_to_filename():
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "track01.flac"
+        path.write_bytes(b"audio")
+        media = SimpleNamespace(title="Track title", artist="Artist", album="Album")
+        cache = {str(path): (queue_metadata.file_fingerprint(path), media)}
+
+        assert queue_metadata.display_title(path, cache) == "Artist — Track title · Album"
+        assert queue_metadata.display_title(path, {}) == "track01.flac"
+
+
 def test_media_metadata_is_fingerprint_checked_and_bounded():
     with tempfile.TemporaryDirectory() as directory:
         path = pathlib.Path(directory) / "film.mkv"

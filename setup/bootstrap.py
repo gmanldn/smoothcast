@@ -48,15 +48,15 @@ CAST_DEPENDENCIES_CHECK = (
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
 PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=13.1.0,<15",
-                "psutil>=5.9,<8", "zeroconf>=0.132,<1")
+                "psutil>=5.9,<8", "zeroconf>=0.132,<1", "segno>=1.6,<2")
 # The project itself must be installed: a venv may have catt from an unrelated app
-# but still lack SmoothCast, psutil or zeroconf. pip enforces version ranges.
+# but still lack SmoothCast or its other runtime dependencies. pip enforces version ranges.
 PROJECT_DEPENDENCIES_CHECK = (
-    "import importlib.metadata as m,sys; import psutil,zeroconf; "
+    "import importlib.metadata as m,sys; import psutil,zeroconf,segno; "
     "p=m.version('psutil').split('.'); z=m.version('zeroconf').split('.'); "
-    "v=m.version('smoothcast'); "
+    "s=m.version('segno').split('.'); v=m.version('smoothcast'); "
     "sys.exit(0 if (5,9) <= tuple(map(int,p[:2])) < (8,0) "
-    "and (0,132) <= tuple(map(int,z[:2])) < (1,0) and v else 1)"
+    "and (0,132) <= tuple(map(int,z[:2])) < (1,0) and (1,6) <= tuple(map(int,s[:2])) < (2,0) and v else 1)"
 )
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
@@ -454,7 +454,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
         if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
                 installed, PROJECT_DEPENDENCIES_CHECK, env=env):
             raise SetupError("SmoothCast runtime packages are missing or invalid "
-                             "(catt, PyChromecast, psutil, zeroconf, smoothcast).")
+                             "(catt, PyChromecast, psutil, zeroconf, segno, smoothcast).")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))
@@ -497,7 +497,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
         if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
                 installed, PROJECT_DEPENDENCIES_CHECK, env=env):
             raise SetupError("SmoothCast runtime packages could not be installed "
-                             "(catt, PyChromecast, psutil, zeroconf, smoothcast).")
+                             "(catt, PyChromecast, psutil, zeroconf, segno, smoothcast).")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))

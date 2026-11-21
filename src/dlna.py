@@ -32,6 +32,7 @@ import audio_downmix
 import cache_policy
 import process_priority
 import video_policy
+import hdr_tonemap
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -730,8 +731,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
         and media.width <= 1920 and media.height <= 1080
         and media.fps <= 30.01
+        and not hdr_tonemap.filter_for(media)
         and subtitle_file is None and embedded_subtitle_index is None
     )
+    try:
+        hdr_tonemap.require_available(media)
+    except hdr_tonemap.TonemapUnavailable as exc:
+        raise DlnaError(str(exc)) from exc
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-y", "-i", str(source)]
     bitmap_track = next((t for t in media.subtitle_tracks
@@ -752,6 +758,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             embedded_bitmap=bitmap_track is not None,
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
+            hdr_filter=hdr_tonemap.filter_for(media),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_policy.make_plan(
                 str(source), media.duration, media.width, media.height,

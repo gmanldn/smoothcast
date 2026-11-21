@@ -459,11 +459,23 @@ def volume_muted(info_dict: ReceiverInfo | None) -> bool:
 
 
 def fmt_time(seconds: float | None) -> str:
-    if seconds is None:
+    """Human display: m:ss below one hour; h:mm:ss afterwards.
+
+    Only seconds and minutes within an hour are padded. Unknown/non-finite
+    positions use --:--; negative source positions clamp to zero.
+    DLNA's HH:MM:SS protocol time is deliberately a different formatter.
+    """
+    if seconds is None or not math.isfinite(seconds):
         return "--:--"
     total = max(0, int(seconds))
     hours, rem = divmod(total, 3600)
     minutes, secs = divmod(rem, 60)
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def fmt_remaining(seconds: float | None) -> str:
+    """Display remaining source time with a leading minus sign."""
+    formatted = fmt_time(seconds)
+    return formatted if formatted == "--:--" else "-" + formatted

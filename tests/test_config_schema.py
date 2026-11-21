@@ -2,17 +2,31 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import config_control as cc
+import config_persistence
 
 DEFAULTS = {"schema_version": 1, "quality": "balanced", "audio_gain": 6.0}
+
+
+def _write_config_key(path: str, key: str, gate) -> None:
+    defaults = {"schema_version": cc.SCHEMA_VERSION, "left": 0, "right": 0}
+    config_path = Path(path)
+    cfg = cc.load_file(config_path, defaults)
+    gate.wait(timeout=20)
+    for value in range(1, 201):
+        cfg[key] = value
+        if not cc.save_file(config_path, cfg):
+            raise RuntimeError(f"config save failed for {key}={value}")
 
 
 class ConfigSchemaTests(unittest.TestCase):
@@ -103,6 +117,13 @@ class ConfigSchemaTests(unittest.TestCase):
         self.assertEqual(self.path.with_name("config.json.corrupt.bak").read_text(), "{not json")
         self.assertTrue(cc.save_file(self.path, cfg))
 
+    def test_new_corruption_is_not_overwritten_without_a_fresh_backup(self):
+        self.write(DEFAULTS)
+        cfg = cc.load_file(self.path, DEFAULTS)
+        self.path.write_text("{new corruption", encoding="utf-8")
+        self.assertFalse(cc.save_file(self.path, cfg))
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "{new corruption")
+
     def test_protection_is_cleared_by_a_later_good_load(self):
         self.write({"schema_version": 99})
         cc.load_file(self.path, DEFAULTS)
@@ -112,7 +133,69 @@ class ConfigSchemaTests(unittest.TestCase):
 
     def test_save_is_atomic_and_leaves_no_temp_file(self):
         self.assertTrue(cc.save_file(self.path, {"quality": "high"}))
-        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["config.json"])
+        self.assertEqual(list(self.path.parent.glob("*.tmp")), [])
+        self.assertEqual(json.loads(self.path.read_text())["quality"], "high")
+        self.assertTrue(self.path.with_name("config.json.lock").is_file())
+
+    def test_external_refresh_keeps_local_edits_and_updates_untouched_keys(self):
+        self.write(DEFAULTS)
+        local = cc.load_file(self.path, DEFAULTS)
+        local["quality"] = "high"
+        external = dict(DEFAULTS)
+        external["audio_gain"] = 9.0
+        self.path.write_text(json.dumps(external), encoding="utf-8")
+
+        self.assertTrue(cc.refresh_file(self.path, local, DEFAULTS))
+        self.assertEqual(local["quality"], "high")
+        self.assertEqual(local["audio_gain"], 9.0)
+
+    def test_two_processes_keep_changed_keys_and_json_readers_never_see_partial_file(self):
+        defaults = {"schema_version": cc.SCHEMA_VERSION, "left": 0, "right": 0}
+        self.assertTrue(cc.save_file(self.path, defaults))
+        context = multiprocessing.get_context("spawn")
+        gate = context.Barrier(3)
+        workers = [
+            context.Process(target=_write_config_key, args=(str(self.path), key, gate))
+            for key in ("left", "right")
+        ]
+        for worker in workers:
+            worker.start()
+        gate.wait(timeout=20)
+        while any(worker.is_alive() for worker in workers):
+            self.assertIsInstance(json.loads(self.path.read_text(encoding="utf-8")), dict)
+        for worker in workers:
+            worker.join(timeout=5)
+            self.assertEqual(worker.exitcode, 0)
+        final = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual((final["left"], final["right"]), (200, 200))
+
+    def test_debounced_writer_coalesces_updates_off_the_calling_thread(self):
+        writes = []
+        caller = threading.get_ident()
+        writer = cc.DebouncedWriter(
+            lambda cfg: writes.append((cfg, threading.get_ident())) or True,
+            delay=60.0,
+        )
+        writer.submit({"value": 1})
+        writer.submit({"value": 2})
+        writer.submit({"value": 3})
+        self.assertTrue(writer.flush())
+        self.assertEqual([item[0] for item in writes], [{"value": 3}])
+        self.assertNotEqual(writes[0][1], caller)
+
+    def test_debounced_writer_reports_failed_persistence_on_flush(self):
+        writer = cc.DebouncedWriter(lambda _cfg: False, delay=60.0)
+        writer.submit({"value": 1})
+        self.assertFalse(writer.flush())
+
+    def test_gui_persistence_bridge_flushes_the_latest_config_snapshot(self):
+        self.write(DEFAULTS)
+        config_persistence.configure(self.path, DEFAULTS, lambda _message: None)
+        cfg = cc.load_file(self.path, DEFAULTS)
+        cfg["quality"] = "high"
+        config_persistence.save_config(cfg)
+        self.assertTrue(config_persistence.flush_config())
+        self.assertEqual(json.loads(self.path.read_text())["quality"], "high")
 
 
 if __name__ == "__main__":

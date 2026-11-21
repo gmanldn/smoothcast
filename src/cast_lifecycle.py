@@ -21,7 +21,7 @@ import screenshot
 
 import version
 
-from cast_widgets import APP_NAME, ICON_NAME, save_config, fmt_time, Async
+from cast_widgets import APP_NAME, ICON_NAME, save_config, flush_config, fmt_time, Async
 
 
 class LifecycleMixin:
@@ -74,6 +74,7 @@ class LifecycleMixin:
             self.cfg["window_width"] = width
             self.cfg["window_height"] = height
         save_config(self.cfg)
+        flush_config()
         # DLNA's local HTTP server is process-owned; unlike Chromecast's HLS
         # keep-streaming path it cannot survive closing this application.
         if self.session is not None and (

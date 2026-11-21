@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gio, GLib, Gtk
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 import music_import
 import streamer
@@ -20,10 +22,13 @@ class MusicImportMixin:
         actions = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         files = Gtk.Button(label="Choose audio files")
         folder = Gtk.Button(label="Add music folder")
+        folders = Gtk.Button(label="Add multiple folders…")
         files.connect("clicked", lambda _b: (popover.popdown(), self.add_music()))
         folder.connect("clicked", lambda _b: (popover.popdown(), self.add_music_folder()))
+        folders.connect("clicked", lambda _b: (popover.popdown(), self.add_music_folders()))
         actions.append(files)
         actions.append(folder)
+        actions.append(folders)
         popover.set_child(actions)
         menu.set_popover(popover)
         return menu
@@ -69,6 +74,10 @@ class MusicImportMixin:
         dialog = Gtk.FileDialog(title="Add a music folder")
         dialog.select_folder(self, None, self._music_folder_chosen)
 
+    def add_music_folders(self) -> None:
+        dialog = Gtk.FileDialog(title="Add music folders")
+        dialog.select_multiple_folders(self, None, self._music_folders_chosen)
+
     def _music_files_chosen(self, dialog, result) -> None:
         try:
             files = dialog.open_multiple_finish(result)
@@ -88,6 +97,17 @@ class MusicImportMixin:
         if path:
             self._start_music_import([path], audio_only=True)
 
+    def _music_folders_chosen(self, dialog, result) -> None:
+        try:
+            files = dialog.select_multiple_folders_finish(result)
+        except GLib.Error:
+            return
+        paths = [
+            path for index in range(files.get_n_items())
+            if (path := files.get_item(index).get_path())
+        ]
+        self._start_music_import(paths, audio_only=True, preview_order=len(paths) > 1)
+
     def _drop_queue_media(self, _target, file_list, _x, _y) -> bool:
         sources = [file.get_path() for file in file_list.get_files() if file.get_path()]
         if not sources:
@@ -98,6 +118,7 @@ class MusicImportMixin:
 
     def _start_music_import(
         self, sources: list[str], *, audio_only: bool, natural_sort: bool = True,
+        preview_order: bool = False,
     ) -> None:
         if not sources:
             return
@@ -115,14 +136,40 @@ class MusicImportMixin:
             GLib.idle_add(self._show_music_import_progress, generation, count)
 
         def work():
-            return music_import.discover(
+            result = music_import.discover(
                 sources, extensions=extensions, cancel=cancel, progress=progress,
                 natural_sort=natural_sort,
             )
+            metadata = {}
+            for index, path in enumerate(result.paths, 1):
+                if cancel.is_set():
+                    break
+                try:
+                    metadata[path] = streamer.ffprobe(
+                        Path(path), cancel=cancel,
+                    )
+                except Exception:
+                    pass
+                if index == 1 or index % 16 == 0 or index == len(result.paths):
+                    GLib.idle_add(
+                        self._show_music_tag_progress, generation, index, len(result.paths),
+                    )
+            skipped = 0
+            for path in result.paths:
+                if path not in metadata:
+                    skipped += 1
+            result = music_import.Discovery(
+                paths=tuple(path for path in result.paths if path in metadata),
+                visited=result.visited,
+                skipped=result.skipped + skipped,
+                truncated=result.truncated,
+                cancelled=result.cancelled or cancel.is_set(),
+            )
+            return result, metadata, preview_order
 
         Async.run(
             work,
-            done=lambda result: self._music_import_done(generation, result),
+            done=lambda result: self._music_import_done(generation, *result),
             failed=lambda message: self._music_import_failed(generation, message),
             domain="media",
             valid=lambda: not self._closing and generation == self._music_scan_generation,
@@ -134,17 +181,72 @@ class MusicImportMixin:
             self._music_scan_bar.pulse()
         return False
 
+    def _show_music_tag_progress(self, generation: int, count: int, total: int) -> bool:
+        if generation == getattr(self, "_music_scan_generation", -1) and not self._closing:
+            self._music_scan_label.set_text(f"Reading track details… {count:,} of {total:,}")
+            self._music_scan_bar.set_fraction(count / max(total, 1))
+        return False
+
     def _finish_music_import(self, generation: int) -> bool:
         if generation == getattr(self, "_music_scan_generation", -1):
             self._music_scan_cancel = None
             self._music_scan_status.set_visible(False)
         return generation == getattr(self, "_music_scan_generation", -1)
 
-    def _music_import_done(self, generation: int, result: music_import.Discovery) -> None:
+    def _music_import_done(
+        self, generation: int, result: music_import.Discovery,
+        metadata: dict[str, streamer.MediaInfo], preview_order: bool,
+    ) -> None:
         if not self._finish_music_import(generation):
             return
-        if result.paths:
-            self._enqueue(list(result.paths))
+        paths = music_import.order_tracks(list(result.paths), metadata)
+        if result.paths and preview_order and not result.cancelled:
+            self._show_music_import_preview(paths, result, metadata)
+        else:
+            self._accept_music_import(paths, result, metadata)
+
+    def _show_music_import_preview(self, paths, result, metadata) -> None:
+        preview = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        for index, path in enumerate(paths[:200], 1):
+            media = metadata.get(path)
+            title = (f"{media.artist} — " if media and media.artist else "")
+            title += (media.title if media and media.title else Path(path).name)
+            if media and media.album:
+                title += f" · {media.album}"
+            label = Gtk.Label(label=f"{index}. {title}", xalign=0.0, wrap=True)
+            label.set_margin_start(8)
+            label.set_margin_end(8)
+            label.set_margin_top(4)
+            label.set_margin_bottom(4)
+            preview.append(label)
+        if len(paths) > 200:
+            preview.append(Gtk.Label(label=f"… and {len(paths) - 200:,} more tracks", xalign=0.0))
+        scroller = Gtk.ScrolledWindow(min_content_height=280, max_content_height=440)
+        scroller.set_child(preview)
+        summary = f"Proposed order for {len(paths):,} tracks. Review before adding them to Up Next."
+        dialog = Adw.AlertDialog.new("Review music order", summary)
+        dialog.set_extra_child(scroller)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("add", f"Add {len(paths):,} tracks")
+        dialog.set_default_response("add")
+        dialog.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
+        dialog.connect(
+            "response",
+            lambda _dialog, response: self._accept_music_import(paths, result, metadata)
+            if response == "add" else None,
+        )
+        dialog.present(self)
+
+    def _accept_music_import(self, paths, result, metadata) -> None:
+        for path, media in metadata.items():
+            try:
+                info = Path(path).stat()
+            except OSError:
+                continue
+            self._media_cache[path] = ((info.st_size, info.st_mtime_ns), media)
+            self.queue_durations[path] = media.duration
+        if paths:
+            self._enqueue(list(paths))
         if result.cancelled:
             self.toast(f"Import cancelled after {result.visited:,} entries")
         elif result.truncated:

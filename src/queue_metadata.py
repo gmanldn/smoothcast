@@ -33,6 +33,18 @@ def cached_media(cache: Mapping[str, tuple], path: str | Path) -> object | None:
     return entry[1]
 
 
+def display_title(path: str | Path, cache: Mapping[str, tuple]) -> str:
+    """Format verified embedded music tags, with the filename as fallback."""
+    media = cached_media(cache, path)
+    if media is None:
+        return Path(path).name
+    title = str(getattr(media, "title", "") or "").strip() or Path(path).name
+    artist = str(getattr(media, "artist", "") or "").strip()
+    album = str(getattr(media, "album", "") or "").strip()
+    value = f"{artist} — {title}" if artist else title
+    return f"{value} · {album}" if album else value
+
+
 def media_for_cast(
     entry: tuple | None, path: str | Path, probe: Callable[[Path], object],
 ) -> tuple[object, tuple[int, int] | None]:

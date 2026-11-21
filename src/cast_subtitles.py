@@ -14,6 +14,8 @@ from cast_widgets import save_config
 
 class SubtitleMixin:
     def _on_burn(self, switch, _param) -> None:
+        if self._syncing:
+            return
         self.cfg["burn_subs"] = switch.get_active()
         save_config(self.cfg)
         if switch.get_active():

@@ -25,9 +25,11 @@ import audio_downmix
 import cache_policy
 import cache_privacy
 import ffmpeg_compat
+import font_attachments
 import castctl
 import frozen_runtime
 import hw_encoder_state
+import hdr_tonemap
 import lan_interfaces
 import language_prefs
 import loudness
@@ -530,6 +532,11 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
 class MediaInfo:
     path: pathlib.Path
     duration: float = 0.0
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    track_number: int = 0
+    disc_number: int = 0
     # FFprobe's absolute input stream index (not ordinal among video tracks).
     # Cover artwork can occupy stream 0, before the actual motion picture.
     video_stream_index: int = 0
@@ -549,6 +556,9 @@ class MediaInfo:
     bitrate: int = 0
     direct_ok: bool = False
     direct_reason: str = ""
+    color_transfer: str = ""
+    color_primaries: str = ""
+    color_space: str = ""
 
     @property
     def has_video(self) -> bool:
@@ -734,9 +744,9 @@ class PidHandle:
         _terminate_pid(self.pid, self.role, self.created_at)
 
     def wait(self, timeout: float | None = None) -> int:
-        deadline = None if timeout is None else time.time() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
         while self.poll() is None:
-            if deadline is not None and time.time() > deadline:
+            if deadline is not None and time.monotonic() > deadline:
                 raise TimeoutError("process did not exit")
             time.sleep(0.1)
         return 0
@@ -904,6 +914,24 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
     """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
+    tags = {str(key).casefold(): value for key, value in (fmt.get("tags") or {}).items()}
+    media.title = str(tags.get("title") or "").strip()
+    media.artist = str(tags.get("artist") or tags.get("album_artist") or "").strip()
+    media.album = str(tags.get("album") or "").strip()
+
+    def positive_tag(*names: str) -> int:
+        for name in names:
+            value = str(tags.get(name) or "").split("/", 1)[0].strip()
+            try:
+                number = int(value)
+            except ValueError:
+                continue
+            if number > 0:
+                return number
+        return 0
+
+    media.track_number = positive_tag("track", "tracknumber", "track_number")
+    media.disc_number = positive_tag("disc", "discnumber", "disc_number") or 1
     try:
         media.bitrate = int(fmt.get("bit_rate") or 0)
     except (TypeError, ValueError):
@@ -918,6 +946,9 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             media.vcodec = str(stream.get("codec_name") or "")
             media.vprofile = str(stream.get("profile") or "")
             media.pix_fmt = str(stream.get("pix_fmt") or "")
+            media.color_transfer = str(stream.get("color_transfer") or "").lower()
+            media.color_primaries = str(stream.get("color_primaries") or "").lower()
+            media.color_space = str(stream.get("color_space") or "").lower()
             media.width = int(stream.get("width") or 0)
             media.height = int(stream.get("height") or 0)
             try:
@@ -1168,6 +1199,9 @@ class Session:
         self._segments_snapshot = 0
         self._sampler_stop = threading.Event()
         self._sampler: threading.Thread | None = None
+        # Private directory holding fonts extracted from the current source's
+        # MKV attachments. Removed when the session stops or restarts.
+        self._fonts_dir: pathlib.Path | None = None
 
     @property
     def mode(self) -> str:
@@ -1341,6 +1375,8 @@ class Session:
         for suffix in SUBTITLE_EXTS:
             (ROOT / f"burned_subs{suffix}").unlink(missing_ok=True)
         (ROOT / "receiver_subs.srt").unlink(missing_ok=True)
+        font_attachments.cleanup_fonts(self._fonts_dir)
+        self._fonts_dir = None
         self.state = None
         self.ffmpeg = None
         self.server = None
@@ -1495,11 +1531,14 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None) -> list[str]:
         chain: list[str] = []
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
         plan_filters = video_plan.filters() if video_plan is not None else []
+        if hdr_filter:
+            # Tone-map the source before drawing any SDR caption overlays.
+            plan_filters.append(hdr_filter)
         if plan_filters and video_size and video_plan is not None:
             video_size = video_plan.output_size(*video_size)
         chain.extend(plan_filters)
@@ -1534,8 +1573,9 @@ class Session:
             return ["-filter_complex", graph]
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
+            fonts = f":fontsdir='{self._filter_path(fonts_dir)}'" if fonts_dir else ""
             sub_filter = (f"subtitles=filename={self._filter_path(embedded_source)}"
-                          f":si={embedded_subtitle_index}{subtitle_force_style}")
+                          f":si={embedded_subtitle_index}{fonts}{subtitle_force_style}")
         elif burn_subs and staged is not None:
             sub_filter = f"subtitles=filename={staged.name}{subtitle_force_style}"
         if sub_filter is not None:
@@ -1596,6 +1636,10 @@ class Session:
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Fail before touching existing streaming resources or launching FFmpeg.
         require_compatible_ffmpeg()
+        try:
+            hdr_tonemap.require_available(media)
+        except hdr_tonemap.TonemapUnavailable as exc:
+            raise StreamError(str(exc)) from exc
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         audio_delay_ms = audio_delay.normalize(audio_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
@@ -1661,7 +1705,7 @@ class Session:
                 str(media.path), media.duration, media.width, media.height,
                 video_stream=media.video_stream_index)
             out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
-            if (out_w > 1920 or out_h > 1080
+            if (out_w > 1920 or out_h > 1080 or hdr_tonemap.filter_for(media)
                     or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
                 self.used_software_fallback = True
         if bitmap_track is not None:
@@ -1687,6 +1731,15 @@ class Session:
         args += ["-map", audio_map]
         if not audio_only:
             args += self._codec_args(quality, software)
+        # Extract Matroska font attachments so embedded ASS/SSA styles keep
+        # their intended typeface. Bitmap tracks are burned from their own
+        # images and plain-text tracks carry no font references, so neither
+        # needs the extraction. Replacing the previous session's directory
+        # first keeps a failed restart from leaking its fonts.
+        font_attachments.cleanup_fonts(self._fonts_dir)
+        self._fonts_dir = None
+        if bitmap_track is None and embedded_codec.lower() in {"ass", "ssa"}:
+            self._fonts_dir = font_attachments.prepare_fonts(media.path, ROOT, generation)
         filter_args = [] if audio_only else self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
@@ -1697,8 +1750,10 @@ class Session:
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
+            hdr_filter=hdr_tonemap.filter_for(media),
             subtitle_force_style=subtitle_style.force_style(
                 subtitle_preset, codec=embedded_codec, path=staged) or "",
+            fonts_dir=self._fonts_dir,
         )
         args += filter_args
         if filter_args[:1] == ["-filter_complex"]:
@@ -1840,8 +1895,8 @@ class Session:
         _save_session(self.state)
 
     def _wait_for_segments(self, timeout: float) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
             pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
             if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:

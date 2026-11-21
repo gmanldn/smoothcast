@@ -37,7 +37,7 @@ class AvMixin:
         self._apply_volume_icon()
         if self._syncing:
             return
-        self._volume_user_ts = time.time()
+        self._volume_user_ts = time.monotonic()
         self._volume_target = self._device()
         if self._volume_job is not None:
             GLib.source_remove(self._volume_job)
@@ -74,18 +74,33 @@ class AvMixin:
         if not self._volume_control_available():
             self._reject_volume("This DLNA receiver does not provide volume control")
             return False
+
+        def current() -> bool:
+            return not self._closing and device == self._device()
+
+        def confirmed(_result=None) -> None:
+            if current() and int(self.volume_scale.get_value()) == value:
+                self.toast(f"Volume {value}%")
+
         if renderer is not None:
             Async.run(lambda: dlna.volume(renderer, value),
-                      failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"), domain="transport")
+                      done=confirmed,
+                      failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"),
+                      valid=current, domain="transport")
         else:
             def done(result):
+                if not current():
+                    return
                 ok, message = result
                 if not ok:
                     self._reject_volume(message or "Volume change rejected")
+                else:
+                    confirmed()
 
             Async.run(lambda: castctl.volume(device, value),
                       done=done,
-                      failed=lambda msg: self._reject_volume(f"Volume: {msg}"), domain="transport")
+                      failed=lambda msg: self._reject_volume(f"Volume: {msg}"),
+                      valid=current, domain="transport")
         return False
 
 

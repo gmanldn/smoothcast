@@ -30,6 +30,9 @@ source files; a failed source copy, bootstrap or shortcut registration restores
 their prior versions. User files and existing .venv are preserved. A failed
 *new* installation is cleaned up. The copy rollback cannot reverse native OS
 packages or in-place Python package changes already made to an existing .venv.
+On macOS, the app bundle is assembled beside its registered path and replaced
+only after its icon, launcher and metadata are complete; setup refuses to
+replace a different or unrecognized `SmoothCast.app` bundle.
 
 ## Dependency inventory
 
@@ -38,7 +41,7 @@ packages or in-place Python package changes already made to an existing .venv.
 | Interpreter | Python 3.10+; venv/ensurepip |
 | GUI | GTK4, libadwaita, PyGObject/GObject Introspection and Cairo |
 | Media | FFmpeg 5+ with ffmpeg, ffprobe, ffplay; GStreamer base/good/libav and GTK media support |
-| Python runtime in .venv | `catt>=0.12,<0.14`, `PyChromecast>=13.1.0,<15`, `psutil>=5.9,<8`, `zeroconf>=0.132,<1` and editable SmoothCast |
+| Python runtime in .venv | `catt>=0.12,<0.14`, `PyChromecast>=13.1.0,<15`, `psutil>=5.9,<8`, `zeroconf>=0.132,<1`, `segno>=1.6,<2` and editable SmoothCast |
 | Native installation | Linux apt/dnf/pacman; macOS Homebrew; Windows MSYS2 UCRT64 native Python, PyGObject, GTK4, libadwaita and FFmpeg |
 | Optional developers | pytest, ruff, mypy, PyInstaller and Pillow are not needed to launch |
 

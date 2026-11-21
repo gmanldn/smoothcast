@@ -148,11 +148,14 @@ def matches_query(path: str, query: str) -> bool:
 
 
 def selection_after_move(selected: int | None, source: int, target: int) -> int | None:
-    """Track the selected media identity when two queue entries swap."""
+    """Track the selected media identity when one entry moves to a new index."""
     if selected == source:
         return target
-    if selected == target:
-        return source
+    if selected is not None:
+        if source < selected <= target:
+            return selected - 1
+        if target <= selected < source:
+            return selected + 1
     return selected
 
 

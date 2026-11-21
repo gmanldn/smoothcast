@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import sys
 from tempfile import TemporaryDirectory
+import textwrap
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -138,6 +140,41 @@ class PlaylistTests(unittest.TestCase):
         self.assertEqual(playlist_control.selection_after_move(2, 1, 2), 1)
         self.assertEqual(playlist_control.selection_after_move(0, 1, 2), 0)
         self.assertIsNone(playlist_control.selection_after_move(None, 1, 2))
+
+    def test_queue_drop_reorders_full_queue_and_keeps_selected_preview(self):
+        methods = main_window_methods()
+        namespace = {"playlist_control": playlist_control}
+        for name in ("_move_queue", "_drop_queue_row"):
+            exec(textwrap.dedent(methods[name]), namespace)
+        queue_list = object()
+
+        def row(index, parent=queue_list):
+            return SimpleNamespace(get_index=lambda: index, get_parent=lambda: parent,
+                                   get_height=lambda: 40)
+
+        host = SimpleNamespace(queue=["a", "hidden", "c", "d"], selected_index=1,
+                               _preview_path="hidden", now_playing="c",
+                               busy=False, _closing=False, queue_list=queue_list,
+                               _rebuild_queue=mock.Mock(), _prewarm_queue_media=mock.Mock())
+        host._move_queue = lambda index, delta: namespace["_move_queue"](host, index, delta)
+        drop = namespace["_drop_queue_row"]
+        self.assertTrue(drop(host, None, row(0), 0, 30, row(2)))
+        self.assertEqual(host.queue, ["hidden", "c", "a", "d"])
+        self.assertEqual(host.selected_index, 0)
+        self.assertEqual((host._preview_path, host.now_playing), ("hidden", "c"))
+        self.assertTrue(drop(host, None, row(3), 0, 10, row(0)))
+        self.assertEqual(host.queue, ["d", "hidden", "c", "a"])
+        self.assertEqual(host.selected_index, 1)
+
+        self.assertFalse(drop(host, None, row(0, object()), 0, 30, row(2)))
+        self.assertFalse(drop(host, None, row(0), 0, 30, row(0)))
+        host.busy = True
+        self.assertFalse(drop(host, None, row(0), 0, 30, row(2)))
+        host.busy, host._closing = False, True
+        self.assertFalse(drop(host, None, row(0), 0, 30, row(2)))
+        self.assertEqual(host.queue, ["d", "hidden", "c", "a"])
+        self.assertEqual(host._rebuild_queue.call_count, 2)
+        self.assertEqual(host._prewarm_queue_media.call_count, 2)
 
     def test_removal_keeps_selection_or_chooses_neighbour(self):
         self.assertEqual(playlist_control.selection_after_remove(3, 1, 4), 2)

@@ -122,3 +122,38 @@ def discover(
         paths=tuple(playlist_control.natural_order(found) if natural_sort else found), visited=visited,
         skipped=skipped, truncated=truncated, cancelled=cancelled,
     )
+
+
+def order_tracks(paths: list[str], metadata: dict[str, object]) -> list[str]:
+    """Order selected albums by embedded disc/track tags when complete.
+
+    Album groups retain the order in which their first file appeared. A group
+    without a common album tag or complete track numbers falls back to natural
+    filename order, so partial tags cannot scramble a user's files.
+    """
+    groups: dict[tuple[str, str], list[str]] = {}
+    for path in paths:
+        media = metadata.get(path)
+        album = str(getattr(media, "album", "") or "").strip().casefold()
+        artist = str(getattr(media, "artist", "") or "").strip().casefold()
+        key = (artist, album) if album else ("", str(Path(path).parent).casefold())
+        groups.setdefault(key, []).append(path)
+
+    ordered: list[str] = []
+    for key, group in groups.items():
+        tagged = bool(key[1]) and all(
+            (media := metadata.get(path)) is not None
+            and int(getattr(media, "track_number", 0) or 0) > 0
+            and str(getattr(media, "album", "") or "").strip().casefold() == key[1]
+            for path in group
+        )
+        if tagged:
+            group.sort(key=lambda path: (
+                int(getattr(metadata[path], "disc_number", 0) or 1),
+                int(getattr(metadata[path], "track_number", 0) or 0),
+                playlist_control.natural_order([path])[0],
+            ))
+            ordered.extend(group)
+        else:
+            ordered.extend(playlist_control.natural_order(group))
+    return ordered

@@ -15,6 +15,8 @@ import threading
 
 import castctl
 import config_control
+import config_persistence
+import idle_chrome
 
 import audio_monitor
 
@@ -36,15 +38,16 @@ CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 
 
 CONFIG_FILE = CONFIG_DIR / "config.json"
+ROOM_CHECKPOINT_FILE = CONFIG_DIR / "room-checkpoint.json"
 
 
 ICON_NAME = APP_ID
 
 
 DEFAULTS: dict = {
-    "schema_version": 1,  # Must equal config_control.SCHEMA_VERSION (tested).
+    "schema_version": 1,  # == config_control.SCHEMA_VERSION (tested).
     "device": castctl.DEFAULT_DEVICE,
-    "device_uuid": "",  # Stable discovered Cast identity; manual IP/DLNA stays name-based.
+    "device_uuid": "",  # Stable Cast identity; manual/DLNA: name-based.
     "cast_targets": [],
     "device_favourites": [],
     "device_last_used": {},
@@ -64,11 +67,15 @@ DEFAULTS: dict = {
     "direct": True,
     "autonext": False,
     "auto_shutdown": False,
-    "notifications": True,  # Desktop notifications when the window is unfocused (#267)
+    "notifications": True,  # Notify when the window is unfocused (#267)
+    "portal_screens": True,
+    "house_pin_enabled": False,
+    "library_indexer": True,
+    "library_folders": [],
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
-    "accent": "default",  # Accent colour preset; "default" adds no override (#135).
-    "density": "comfortable",  # compact | comfortable | spacious; comfortable adds no override (#136).
+    "accent": "default",  # Accent preset; "default" = no override (#135).
+    "density": "comfortable",  # compact | comfortable | spacious (#136).
     "auto_theme": False,
     "recents": [],
     "favourites": [],
@@ -90,6 +97,7 @@ DEFAULTS: dict = {
     "auto_update": True,  # Startup git pull of a release checkout (#230).
     "verify_updates": False,  # Require a GPG-verified commit or tag to update.
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
+    "portal_port": 0,  # Choose one random high room port and persist it (#456).
     "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
     "preferred_audio_languages": [],  # e.g. ["ja", "en"]; empty = file default (#38)
     "preferred_subtitle_languages": [],  # e.g. ["en"]; empty = previous behaviour (#38)
@@ -104,14 +112,13 @@ CSS = ui_theme.CSS
 
 
 def load_config() -> dict:
-    # Migrate, then validate every field before GTK consumes it; malformed
-    # neighbours must not lose valid preferences or share DEFAULTS identities.
     return config_control.load_file(CONFIG_FILE, DEFAULTS)
 
 
-def save_config(cfg: dict) -> None:
-    # Atomic; skipped when the on-disk file uses a newer/unmigratable schema.
-    config_control.save_file(CONFIG_FILE, cfg)
+config_persistence.configure(CONFIG_FILE, DEFAULTS, error_log.log)
+save_config = config_persistence.save_config
+refresh_config = config_persistence.refresh_config
+flush_config = config_persistence.flush_config
 
 
 def fmt_time(seconds: float | None) -> str:
@@ -431,6 +438,11 @@ class LevelMeter(Gtk.DrawingArea):
         self.set_size_request(-1, 144)
         self.set_draw_func(self._draw)
         self.connect("unrealize", self._on_unrealize)
+        self._gtk_settings = Gtk.Settings.get_default()
+        if self._gtk_settings is not None:
+            # Weakly bound to the widget, not a global settings leak.
+            self._gtk_settings.connect_object(
+                "notify::gtk-enable-animations", self._on_motion_changed, self)
         self._lock = threading.Lock()
         self._target = None       # newest sample from the analysis thread
         self._disp = None         # eased values actually drawn
@@ -444,6 +456,24 @@ class LevelMeter(Gtk.DrawingArea):
         if self._timer != 0:
             GLib.source_remove(self._timer)
             self._timer = 0
+
+    def _on_motion_changed(self, *_args) -> None:
+        if not idle_chrome.animations_enabled(self._gtk_settings):
+            self._start_or_snap()
+
+    def _start_or_snap(self) -> None:
+        """No animation timer while reduced motion is preferred."""
+        if not idle_chrome.animations_enabled(self._gtk_settings):
+            if self._timer:
+                GLib.source_remove(self._timer)
+                self._timer = 0
+            with self._lock:
+                self._disp = self._target
+                self._gain = self._gain_target
+                self._master = self._master_target
+            self.queue_draw()
+        elif self._timer == 0:
+            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
 
     def set_sample(self, sample) -> None:
         """Store the newest analysis window as the animation target.
@@ -460,8 +490,7 @@ class LevelMeter(Gtk.DrawingArea):
             else:
                 self._gain_target = 0.0
                 self._master_target = self.FLOOR_DB
-        if self._timer == 0:
-            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
+        self._start_or_snap()
 
     def reset(self) -> None:
         """Ease back to silence (no signal)."""
@@ -469,8 +498,7 @@ class LevelMeter(Gtk.DrawingArea):
             self._target = None
             self._gain_target = 0.0
             self._master_target = self.FLOOR_DB
-        if self._timer == 0:
-            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
+        self._start_or_snap()
 
     def _animate(self) -> bool:
         """One animation step: ease displayed values toward target."""

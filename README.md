@@ -2,7 +2,21 @@
 
 A modern GTK4/libadwaita Chromecast companion with live compressor metering, dialogue auto-fix, and zero flicker.
 
+## Why SmoothCast
+
+**The tool that plays your media on every screen in the house, and lets everyone in the room join in.**
+
+- **Everyone's hands on the queue, nobody installs anything.** Guests scan a QR code, enter a PIN and add songs and films from their own phone, vote, reorder and control playback. No app, no account, no cloud.
+- **Every device is a screen.** Open the room's `/screen` page on a TV, tablet, laptop or spare phone and it becomes a display or speaker for the shared queue. Chromecast, DLNA TVs and browsers all appear as targets; formats a browser cannot play are converted on the host automatically.
+- **Host or client, your choice.** A computer with the media runs SmoothCast as the host; every other device only needs a browser. Several hosts can coexist on one network.
+- **Bullet-proof by design.** Fenced, idempotent commands; stale or double taps cannot skip a film; a failing guest, screen or receiver never interrupts what is playing; recoveries are automatic and every failure is explained in plain words.
+- **Built for the home network.** Everything stays on your LAN and is never reachable from the internet. Anyone you've given the Wi-Fi password is trusted to join; today the room asks for a PIN, which is becoming optional. Sessions expire and the host can sign guests out at any time.
+
+See [what makes SmoothCast different](docs/PRODUCT.md) for the roles and guarantees, and the [vision](docs/VISION.md) for where it is going: one smart mesh of media nodes, web clients and casting targets, controlled as one, with a shared queue.
+
 ## Features
+
+- **Screens: any browser is a display or speaker** — a paired phone, tablet, laptop or smart-TV browser opens `/screen` and plays the shared queue on itself, with direct play when the browser supports the format and a bounded, nice'd FFmpeg conversion when it does not; the host can disable guest screens in Preferences > Playback > Shared room (see [Screens](docs/LAN_PORTAL.md#screens-browsers-as-playback-targets))
 
 - **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker); bounded metadata memory for long films and asynchronous FFmpeg shutdown
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
@@ -20,7 +34,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; known site pages (YouTube, Vimeo and similar) are rejected with an actionable "paste a direct media URL" message instead of being claimed as supported, and invalid URLs or device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
 - **Loudness normalisation (optional)** — EBU R128 programme (-16 LUFS) or album (-18 LUFS) targets with true-peak limiting (-1.5 dBFS) for transcoded audio; off by default, configurable in the Playback settings card, and never changes system volume
-- **Searchable queue** — Ctrl+F filters filenames and folder paths; selecting or activating a filtered row uses the correct file identity, and reordering/removal preserves selection where possible
+- **Searchable queue** — Ctrl+F filters filenames and folder paths. Drag a row by its handle or use the arrow buttons to change playback order. Save the queue as an M3U playlist to keep that order for later.
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)

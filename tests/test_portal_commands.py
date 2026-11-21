@@ -216,7 +216,7 @@ def test_concurrent_distinct_commands_are_serialized():
             active -= 1
         return commands.CommandReceipt(item.command_id, SESSION, 0, "accepted")
 
-    dispatcher = commands.CommandDispatcher(dispatch, fence=fence)
+    dispatcher = commands.CommandDispatcher(dispatch, fence=fence, per_client_cap=8)
     try:
         threads = [threading.Thread(target=dispatcher.execute,
                                     args=(envelope(command_id=f"c{i}"),))
@@ -387,3 +387,78 @@ def test_precheck_rejects_before_dispatch():
     with pytest.raises(commands.CommandError) as error:
         commands.precheck(foreign, fence, item)
     assert error.value.status == 409
+
+
+def test_participant_buckets_limit_a_flood_without_starving_other_guests():
+    clock = Clock()
+    limiter = commands.ParticipantRateLimiter(clock=clock)
+    allowed = sum(limiter.retry_after("noisy", "mutation") == 0 for _ in range(500))
+    assert allowed == 12  # whole flood arrived in a single simulated second
+    assert limiter.retry_after("noisy", "mutation") > 0
+    assert limiter.retry_after("quiet", "mutation") == 0
+    assert limiter.retry_after("noisy", "read") == 0
+    clock.now += 1
+    assert sum(limiter.retry_after("noisy", "mutation") == 0 for _ in range(7)) == 6
+
+
+def test_rate_limiter_bounds_memory_and_does_not_trust_clock_going_backwards():
+    clock = Clock()
+    limiter = commands.ParticipantRateLimiter(
+        clock=clock, limits={"read": (1.0, 2.0)}, max_buckets=3,
+    )
+    for i in range(100):
+        assert limiter.retry_after(str(i), "read") == 0
+    assert len(limiter._buckets) == 3
+    assert limiter.retry_after("99", "read") > 0
+    clock.now = -10
+    assert limiter.retry_after("99", "read") > 0
+    clock.now = 1
+    assert limiter.retry_after("99", "read") == 0
+
+
+def test_per_participant_command_cap_preserves_a_second_guests_admission():
+    fence = commands.CommandFence()
+    running = threading.Event()
+    release = threading.Event()
+    completed = []
+    failures = []
+
+    def dispatch(item):
+        if item.client_id == "flood0":
+            running.set()
+            assert release.wait(2)
+        completed.append(item.client_id)
+        return commands.CommandReceipt(item.command_id, SESSION, 0, "ok")
+
+    dispatcher = commands.CommandDispatcher(
+        dispatch, fence=fence, queue_capacity=2, per_client_cap=1,
+    )
+    try:
+        def first():
+            try:
+                dispatcher.execute(envelope(client_id="flood0", command_id="a"),
+                                   participant_key="same-guest")
+            except Exception as exc:
+                failures.append(exc)
+
+        thread = threading.Thread(target=first)
+        thread.start()
+        assert running.wait(2)
+        for i in range(500):
+            # A guest cannot evade the cap by supplying fresh envelope client_ids.
+            with pytest.raises(commands.CommandError) as exc:
+                dispatcher.execute(envelope(client_id=f"flood{i+1}", command_id=f"c{i}"),
+                                   participant_key="same-guest")
+            assert exc.value.status == 429
+        other = threading.Thread(target=lambda: dispatcher.execute(
+            envelope(client_id="quiet", command_id="b"), participant_key="quiet-guest"))
+        other.start()
+        release.set()
+        thread.join(2)
+        other.join(2)
+        assert not thread.is_alive() and not other.is_alive()
+        assert not failures
+        assert completed == ["flood0", "quiet"]
+    finally:
+        release.set()
+        dispatcher.close()

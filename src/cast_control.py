@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cast Control — modern Chromecast companion."""
+"""SmoothCast desktop UI."""
 from __future__ import annotations
 
 import gi
@@ -37,7 +37,8 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
-from cast_portal import PortalMixin, PortalQueueMixin
+from cast_portal import PortalMixin
+from cast_portal_queue import PortalQueueMixin
 
 import version
 
@@ -58,13 +59,15 @@ from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
+from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
         self.cfg = load_config()
+        self.connect("notify::is-active", self._refresh_config_on_focus)
         self.session: streamer.Session | None = None
         self.media: streamer.MediaInfo | None = None
         self.device_info: dict | None = None
@@ -116,6 +119,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._preview_position = 0.0
         self._preview_generation = 0
         self._preview_pending: tuple[str, float, int] | None = None
+
         self._preview_busy = False
         self._preview_timer_id = 0
         self._local_video_path: str | None = None
@@ -141,6 +145,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._build_ui()
         self._refresh_responsive_layout()
         self._flush_stale_state()
+        self._offer_room_recovery()
         self._refresh_direct_note()
         self.connect("close-request", self._on_close)
         self._install_shortcuts()
@@ -189,10 +194,8 @@ class CastControlApp(Adw.Application):
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
-        # This is executed only in the primary GApplication process, once,
-        # before MainWindow and its monitor/session timers can be created.
-        # Reactivating via a second dock click must NEVER stop an active cast.
-        # Standalone --self-test instances must NEVER affect the user's app.
+        # Primary-only and before MainWindow; reactivation and --self-test must
+        # never stop the active user's cast.
         if not self.selftest:
             try:
                 self._startup_report = startup_cleanup.cleanup_before_window(
@@ -202,7 +205,7 @@ class CastControlApp(Adw.Application):
                 if report.stopped or report.files_removed or report.temp_dirs_removed:
                     print(
                         "SmoothCast startup recovery: "
-                        f"signalled {len(report.stopped)} old helper(s); "
+                        f"stopped {len(report.stopped)} old helper(s); "
                         f"removed {report.files_removed} stale stream file(s), "
                         f"{report.temp_dirs_removed} old meter directory/directories"
                     )
@@ -397,7 +400,7 @@ class CastControlApp(Adw.Application):
                     window.toast(f"Recovered {len(report.stopped)} old SmoothCast helper(s)")
                 if report.stopped or report.files_removed or report.temp_dirs_removed:
                     window._console(
-                        f"Startup recovery: {len(report.stopped)} old helper(s) signalled, "
+                        f"Startup recovery: {len(report.stopped)} old helper(s) stopped, "
                         f"{report.files_removed} stream file(s) and "
                         f"{report.temp_dirs_removed} meter directory/directories removed"
                     )

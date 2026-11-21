@@ -60,6 +60,21 @@ def test_up_physical_wins_over_virtual_or_down_interface():
     assert choose(records, states=states) == "192.168.5.26"
 
 
+def test_portal_client_address_ignores_receiver_route():
+    records = {
+        "wg0": [rec("10.6.0.10", "255.255.255.0")],
+        "Wi-Fi": [rec("192.168.5.26", "255.255.255.0")],
+    }
+    assert lan_interfaces.select_private_lan_ip(
+        "10.6.0.20", interface_addrs=interfaces(**records),
+        interface_stats=lambda: {}, hostname_lookup=no_dns,
+    ) == "10.6.0.10"
+    assert lan_interfaces.select_private_lan_ip(
+        interface_addrs=interfaces(**records), interface_stats=lambda: {},
+        hostname_lookup=no_dns,
+    ) == "192.168.5.26"
+
+
 def test_rejects_loopback_link_local_public_reserved_and_ipv6():
     records = {
         "Loopback": [rec("127.0.0.1"), rec("169.254.12.6"),

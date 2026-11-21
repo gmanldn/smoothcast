@@ -111,8 +111,26 @@ class ConfigRecoveryTests(unittest.TestCase):
     def test_new_config_validator_is_installed_as_a_python_module(self):
         package = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"config_control"', package)
+        self.assertIn('"config_persistence"', package)
         self.assertIn("import config_control", GUI_SOURCE)
         self.assertIn("config_control.load_file(CONFIG_FILE, DEFAULTS)", GUI_SOURCE)
+
+    def test_gui_config_writes_are_debounced_and_focus_refresh_is_wired(self):
+        control = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+        self.assertIn('self.connect("notify::is-active", self._refresh_config_on_focus)', control)
+        ui = (ROOT / "src" / "cast_ui.py").read_text(encoding="utf-8")
+        self.assertIn("refresh_config(self.cfg)", ui)
+        self.assertIn("self._sync_settings_card_from_config()", ui)
+        for module, handler in (("cast_session.py", "_on_direct"),
+                                ("cast_session.py", "_on_keep"),
+                                ("cast_subtitles.py", "_on_burn")):
+            source = (ROOT / "src" / module).read_text(encoding="utf-8")
+            method = source.split(f"def {handler}(", 1)[1].split("\n\n", 1)[0]
+            self.assertIn("if self._syncing", method)
+        persistence = (ROOT / "src" / "config_persistence.py").read_text(encoding="utf-8")
+        self.assertIn("_config_writer().submit(cfg)", persistence)
+        lifecycle = (ROOT / "src" / "cast_lifecycle.py").read_text(encoding="utf-8")
+        self.assertIn("flush_config()", lifecycle)
 
 
     def test_favourites_are_bounded_strings(self):
