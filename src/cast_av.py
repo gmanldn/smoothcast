@@ -212,7 +212,7 @@ class AvMixin:
     def _on_embedded_track(self, dropdown, _param) -> None:
         if self._syncing or self.media is None or self._preview_path is None:
             return
-        text_tracks = [track for track in self.media.subtitle_tracks if track.is_text]
+        text_tracks = [track for track in self.media.subtitle_tracks if track.is_supported]
         index = dropdown.get_selected()
         chosen = text_tracks[index - 1].index if 1 <= index <= len(text_tracks) else -1
         self.cfg.setdefault("subtitle_track_by_file", {})[self._preview_path] = chosen
@@ -225,7 +225,7 @@ class AvMixin:
 
 
     def _update_embedded_choices(self, media: streamer.MediaInfo) -> None:
-        text_tracks = [track for track in media.subtitle_tracks if track.is_text]
+        text_tracks = [track for track in media.subtitle_tracks if track.is_supported]
         self._syncing = True
         try:
             labels = ["Preferred embedded track"] + [track.label for track in text_tracks]

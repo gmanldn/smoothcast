@@ -177,15 +177,15 @@ class PreferencesWindow(Adw.PreferencesWindow):
                 self._audio_labels = audio_labels
             self.audio_track.set_sensitive(bool(audio_tracks))
             self.audio_track.set_selected(self.owner.audio_track_dropdown.get_selected())
-            text_tracks = (
-                [track for track in media.subtitle_tracks if track.is_text]
+            embedded_tracks = (
+                [track for track in media.subtitle_tracks if track.is_supported]
                 if media is not None else []
             )
-            embedded_labels = ["Preferred embedded track"] + [track.label for track in text_tracks]
+            embedded_labels = ["Preferred embedded track"] + [track.label for track in embedded_tracks]
             if embedded_labels != self._embedded_labels:
                 self.embedded_track.set_model(Gtk.StringList.new(embedded_labels))
                 self._embedded_labels = embedded_labels
-            self.embedded_track.set_sensitive(bool(text_tracks) and cfg.get("subs") == "embedded")
+            self.embedded_track.set_sensitive(bool(embedded_tracks) and cfg.get("subs") == "embedded")
             self.embedded_track.set_selected(self.owner.embedded_dropdown.get_selected())
             self.subtitle_file.set_subtitle(self.owner._subs_status_text())
         finally:

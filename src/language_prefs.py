@@ -202,7 +202,7 @@ UNDECIDED = Decision()
 
 def choose_subtitle(tracks: Sequence[S], prefs: LanguagePrefs,
                     audio: _Track | None) -> Decision:
-    """Pick among *tracks* (text tracks only) using the forced/full policy above."""
+    """Pick among supported text or bitmap tracks using the forced/full policy."""
     if not prefs.subtitles:
         return UNDECIDED
     audio_language = normalize(audio.language) if audio is not None else ""

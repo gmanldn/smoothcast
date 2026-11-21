@@ -110,11 +110,18 @@ def test_explicit_embedded_track_is_preserved_even_if_not_preferred(tmp_path):
 @pytest.mark.parametrize("available", [
     [],
     [track(index=1)],
-    [track(index=7, codec="hdmv_pgs_subtitle")],
+    [track(index=7, codec="unsupported_image_format")],
 ])
-def test_missing_or_bitmap_embedded_selection_never_changes_track(available):
+def test_missing_or_unsupported_embedded_selection_never_changes_track(available):
     with pytest.raises(streamer.StreamError, match="no longer available"):
         subtitle_restart.validate_restart(state(embedded=7), media(*available))
+
+
+def test_selected_bitmap_embedded_track_survives_restart():
+    selected = track(index=7, codec="hdmv_pgs_subtitle")
+    result = subtitle_restart.validate_restart(state(embedded=7), media(selected))
+    assert result.embedded_index == 7
+    assert result.burn is True
 
 
 def test_conflicting_or_corrupt_selection_is_rejected(tmp_path):

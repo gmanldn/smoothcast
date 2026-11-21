@@ -650,8 +650,8 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         raise DlnaError("Selected subtitle file is missing")
     if embedded_subtitle_index is not None:
         track = next((t for t in media.subtitle_tracks if t.index == embedded_subtitle_index), None)
-        if track is None or not track.is_text:
-            raise DlnaError("DLNA subtitles: selected embedded track cannot be burned")
+        if track is None or not track.is_supported:
+            raise DlnaError("DLNA subtitles: selected embedded track is unavailable or unsupported")
     output.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(output.parent).free
     if free < max(512 * 1024 * 1024, source.stat().st_size * 2):
@@ -692,8 +692,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         and subtitle_file is None and embedded_subtitle_index is None
     )
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
-            "-y", "-i", str(source),
-            "-map", f"0:{media.video_stream_index}", "-map", f"0:a:{audio_track}?"]
+            "-y", "-i", str(source)]
+    bitmap_track = next((t for t in media.subtitle_tracks
+                         if embedded_subtitle_index is not None
+                         and t.index == embedded_subtitle_index and t.is_bitmap), None)
+    if bitmap_track is None:
+        args += ["-map", f"0:{media.video_stream_index}"]
+    args += ["-map", f"0:a:{audio_track}?"]
     if copy_video:
         args += ["-c:v", "copy"]
     else:
@@ -703,6 +708,8 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             subtitle_file is not None, subtitle_file, True, 1.0,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
+            embedded_bitmap=bitmap_track is not None,
+            video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_policy.make_plan(
@@ -710,6 +717,8 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 video_stream=media.video_stream_index),
         )
         args += vf
+        if vf[:1] == ["-filter_complex"]:
+            args += ["-map", "[v]"]
         if media.fps > 30.01:
             args += ["-r", "30"]
     if copy_audio:

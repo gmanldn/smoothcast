@@ -216,10 +216,10 @@ def test_streamer_series_override_applies_per_series(monkeypatch, tmp_path):
     assert streamer.preferred_audio_track(media(tmp_path, "Some Show (2019).mkv", tracks)).index == 0
 
 
-def test_image_subtitle_tracks_are_still_never_selected(monkeypatch, tmp_path):
+def test_preferred_bitmap_subtitle_track_is_selected(monkeypatch, tmp_path):
     write_config(monkeypatch, tmp_path, {"preferred_subtitle_languages": ["en"]})
     m = media(tmp_path, audios=[audio(0, "jpn")], subs=[sub(0, "eng", codec="hdmv_pgs_subtitle")])
-    assert streamer.preferred_embedded_subtitle(m) is None
+    assert streamer.preferred_embedded_subtitle(m) == m.subtitle_tracks[0]
 
 
 def test_module_is_installed_and_mypy_gated():

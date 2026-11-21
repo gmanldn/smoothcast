@@ -67,10 +67,13 @@ def check_media(
         audio_map = f"0:a:{preferred.index}" if preferred else (
             f"0:a:{tracks[0].index}" if tracks else "0:a:0?"
         )
-    if embedded_subtitle_index is not None and not any(
-        t.index == embedded_subtitle_index and t.is_text for t in media.subtitle_tracks
+    embedded_track = next((t for t in media.subtitle_tracks
+                           if embedded_subtitle_index is not None
+                           and t.index == embedded_subtitle_index), None)
+    if embedded_subtitle_index is not None and (
+        embedded_track is None or not embedded_track.is_supported
     ):
-        raise PreflightError("The selected embedded subtitle is missing or bitmap-only")
+        raise PreflightError("The selected embedded subtitle is missing or unsupported")
     with tempfile.TemporaryDirectory(prefix="smoothcast-preflight-") as folder:
         scratch = pathlib.Path(folder)
         video_filters: list[str] = []
@@ -85,7 +88,8 @@ def check_media(
                     )
                 except subtitle_encoding.SubtitleEncodingError as exc:
                     raise PreflightError(f"Subtitle decoder: {exc}") from exc
-        if embedded_subtitle_index is not None:
+        bitmap_subtitle = bool(embedded_track and embedded_track.is_bitmap)
+        if embedded_subtitle_index is not None and not bitmap_subtitle:
             video_filters.append(
                 f"subtitles=filename={_filter_path(path)}:si={embedded_subtitle_index}"
             )
@@ -99,12 +103,23 @@ def check_media(
         args = [
             "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
             "-i", str(path),
-            "-map", f"0:{media.video_stream_index}", "-map", audio_map,
-            "-t", "0.8", "-vf", ",".join(video_filters),
+        ]
+        if bitmap_subtitle:
+            graph = (
+                f"[0:{media.video_stream_index}][0:s:{embedded_subtitle_index}]"
+                "overlay=eof_action=pass:repeatlast=0,"
+                + ",".join(video_filters) + "[v]"
+            )
+            args.extend(["-filter_complex", graph, "-map", "[v]"])
+        else:
+            graph = ",".join(video_filters)
+            args.extend(["-map", f"0:{media.video_stream_index}", "-vf", graph])
+        args.extend([
+            "-map", audio_map, "-t", "0.8",
             "-r", "15", "-c:v", "libx264", "-preset", "ultrafast",
             "-crf", "28", "-c:a", "aac", "-ac", "2",
             "-f", "matroska", "-y", str(output),
-        ]
+        ])
         try:
             result = subprocess.run(
                 args, capture_output=True, text=True, timeout=max(2, min(timeout, 60)),

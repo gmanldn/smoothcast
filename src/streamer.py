@@ -89,6 +89,7 @@ CAST_SUBTITLE_EXTS = {".srt", ".vtt", ".ttml"}
 # tracks (PGS/VobSub/DVB) need a separate overlay path and must not be
 # silently presented as supported text subtitles.
 TEXT_SUBTITLE_CODECS = frozenset({"subrip", "ass", "ssa", "webvtt", "mov_text", "text", "sami"})
+BITMAP_SUBTITLE_CODECS = frozenset({"dvd_subtitle", "hdmv_pgs_subtitle", "dvb_subtitle"})
 
 QUALITY_QP = {"high": 20, "balanced": 24, "saver": 28}
 QUALITY_LABELS = {
@@ -360,30 +361,40 @@ class SubtitleTrack:
         return self.codec in TEXT_SUBTITLE_CODECS
 
     @property
+    def is_bitmap(self) -> bool:
+        return self.codec in BITMAP_SUBTITLE_CODECS
+
+    @property
+    def is_supported(self) -> bool:
+        return self.is_text or self.is_bitmap
+
+    @property
     def label(self) -> str:
         parts = [self.language.upper() if self.language else "Undetermined", self.title or self.codec]
         if self.forced:
             parts.append("forced")
         elif self.default:
             parts.append("default")
-        if not self.is_text:
-            parts.append("image track — unsupported burn-in")
+        if self.is_bitmap:
+            parts.append("image track")
+        elif not self.is_text:
+            parts.append("unsupported subtitle format")
         return " · ".join(parts)
 
 
 def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> SubtitleTrack | None:
-    """Select a text track; never silently substitute an unsupported PGS track."""
+    """Select a supported text or bitmap track without guessing unknown formats."""
     if selected >= 0:
-        return next((t for t in media.subtitle_tracks if t.index == selected and t.is_text), None)
-    text_tracks = [t for t in media.subtitle_tracks if t.is_text]
-    if not text_tracks:
+        return next((t for t in media.subtitle_tracks if t.index == selected and t.is_supported), None)
+    supported = [t for t in media.subtitle_tracks if t.is_supported]
+    if not supported:
         return None
     prefs = language_prefs.load(media.path)
     if prefs.subtitles:
-        decision = language_prefs.choose_subtitle(text_tracks, prefs, preferred_audio_track(media))
+        decision = language_prefs.choose_subtitle(supported, prefs, preferred_audio_track(media))
         if decision.decided:
             return decision.track
-    return min(text_tracks, key=lambda t: (
+    return min(supported, key=lambda t: (
         not t.forced, not t.default, t.language.lower() not in {"en", "eng", "english"}, t.index
     ))
 
@@ -1285,7 +1296,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
         chain: list[str] = []
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
@@ -1293,6 +1304,35 @@ class Session:
         if plan_filters and video_size and video_plan is not None:
             video_size = video_plan.output_size(*video_size)
         chain.extend(plan_filters)
+        if embedded_bitmap and embedded_subtitle_index is not None:
+            # FFmpeg exposes bitmap subtitle rectangles as a temporary video
+            # input to filter_complex. Keep this path on software frames; the
+            # subtitle stream already carries its palette, geometry and timing.
+            post_overlay = list(chain[len(plan_filters):])
+            if speed != 1.0:
+                post_overlay.append(f"setpts=PTS/{speed:g}")
+            post_overlay.extend(rotation_filters(rotation))
+            if video_size:
+                out_w, out_h = _rotated_dimensions(*video_size, rotation)
+                if out_w > 1920 or out_h > 1080:
+                    post_overlay.append(
+                        "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
+                        "force_divisible_by=2"
+                    )
+                elif out_w % 2 or out_h % 2:
+                    post_overlay.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
+            video = f"[0:{video_stream_index}]"
+            graph = ""
+            if plan_filters:
+                graph += f"{video}{','.join(plan_filters)}[picture];"
+                video = "[picture]"
+            delay = subtitle_delay.normalize(subtitle_delay_ms) / 1000
+            graph += (f"[0:s:{embedded_subtitle_index}]setpts=PTS{delay:+g}/TB[bitmap];"
+                      f"{video}[bitmap]overlay=eof_action=pass:repeatlast=0")
+            if post_overlay:
+                graph += f",{','.join(post_overlay)}"
+            graph += "[v]"
+            return ["-filter_complex", graph]
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
             sub_filter = (f"subtitles=filename={self._filter_path(embedded_source)}"
@@ -1378,12 +1418,14 @@ class Session:
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
         embedded_codec = ""
+        bitmap_track = None
         if embedded_subtitle_index is not None:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
-            if track is None or not track.is_text:
-                raise StreamError("Selected MKV subtitle track cannot be burned into video")
-            embedded_codec = track.codec
+            if track is None or not track.is_supported:
+                raise StreamError("Selected embedded subtitle track is unavailable or unsupported")
+            bitmap_track = track if track.is_bitmap else None
+            embedded_codec = track.codec if track.is_text else ""
             burn_subs = True
         # Explicit selections must fail before starting a new encoder. Keep
         # the optional audio map for silent videos with no audio streams.
@@ -1406,6 +1448,8 @@ class Session:
         if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
             self.used_software_fallback = True
+        if bitmap_track is not None:
+            self.used_software_fallback = True
         if not self.used_software_fallback and self._vaapi_known_bad():
             # Skip a hardware start that already stalled on this exact setup.
             self.used_software_fallback = True
@@ -1418,12 +1462,17 @@ class Session:
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
-        args += ["-i", str(media.path), "-map", f"0:{media.video_stream_index}", "-map", audio_map]
+        args += ["-i", str(media.path)]
+        if bitmap_track is None:
+            args += ["-map", f"0:{media.video_stream_index}"]
+        args += ["-map", audio_map]
         args += self._codec_args(quality, software)
-        args += self._filter_args(
+        filter_args = self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
+            embedded_bitmap=bitmap_track is not None,
+            video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
@@ -1431,6 +1480,9 @@ class Session:
             subtitle_force_style=subtitle_style.force_style(
                 subtitle_preset, codec=embedded_codec, path=staged) or "",
         )
+        args += filter_args
+        if filter_args[:1] == ["-filter_complex"]:
+            args += ["-map", "[v]"]
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)
         filters = audio_filters(audio_profile, audio_gain_db)

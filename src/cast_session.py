@@ -137,7 +137,7 @@ class SessionMixin:
                 embedded = streamer.preferred_embedded_subtitle(media, requested)
                 if subs_mode == "embedded" and embedded is None:
                     raise streamer.StreamError(
-                        "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
+                        "Selected embedded subtitle track is unavailable or unsupported"
                     )
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.

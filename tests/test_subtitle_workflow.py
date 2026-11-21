@@ -73,7 +73,7 @@ class SubtitleWorkflowTests(unittest.TestCase):
         self.assertIn('"Embedded (MKV track)"', build)
         self.assertIn("self.embedded_dropdown", build)
         tracks = METHODS["_update_embedded_choices"]
-        self.assertIn("track.is_text", tracks)
+        self.assertIn("track.is_supported", tracks)
         self.assertIn("track.label", tracks)
         cast = METHODS["_cast_path"]
         self.assertIn('subs_mode == "auto" and subs_path is None', cast)

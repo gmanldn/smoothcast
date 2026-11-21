@@ -74,10 +74,11 @@ decoder/subtitle negotiation remains P0 issue #18.
 file, its burn-in mode, or the selected embedded *stream index*. It first
 probes the current source and calls `subtitle_restart.validate_restart`
 **inside the existing background worker and before stopping the old stream**.
-A vanished/unsupported sidecar or a missing/bitmap replacement for an
-explicit embedded text track is a visible error; do not silently choose the
-new preferred/forced track or restart without captions. ASS/SSA files must
+A vanished/unsupported sidecar or a missing/unsupported replacement for an
+explicit embedded track is a visible error; do not silently choose the
+preferred/forced track or restart without captions. ASS/SSA files must
 always burn in, even if an old persisted state mistakenly says otherwise.
+Bitmap overlay is software-only.
 `tests/test_subtitle_restart.py` executes the real handler with fakes and
 checks no Cast command is sent when selection validation fails.
 

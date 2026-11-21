@@ -161,9 +161,12 @@ as external receiver tracks. **Auto** chooses a same-name sidecar
 (`Film.srt` or `Film.en.srt`) first; otherwise it uses a compatible
 embedded MKV text track. **Embedded (MKV track)** lets you choose a
 particular track and language; an embedded track is burned into the
-transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
-**not yet rendered**. Missing or incompatible subtitle files return a
-visible error instead of silently proceeding with another track.
+transcoded picture. PGS, VobSub and DVB bitmap tracks are decoded by FFmpeg
+and overlaid with their authored palette and cue timing; they use software
+encoding. Forced-only and multilingual tracks follow the same per-film and
+language-preference rules as text tracks. Unknown subtitle formats fail with
+a visible error instead of silently proceeding with another track. Bitmap
+placement has not been qualified on physical receivers.
 
 **Audio delay (lip-sync):** if the sound is ahead of or behind the picture, use
 **Audio delay (lip-sync)** in the main menu, or press **Shift+G** (sound 50 ms
@@ -185,7 +188,9 @@ so it needs the slower transcode path and is not applied to direct play; the
 saved value is used on your next cast instead. Burn-in timing is checked with
 real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
 verified on physical receivers yet. Streams resumed or seeked to a later
-position also now draw burned-in captions at the correct film time.
+position also now draw burned-in captions at the correct film time. Bitmap
+subtitle rendering uses FFmpeg's bitmap-subtitle video input to the overlay
+filter; check that the installed FFmpeg build includes the needed decoder.
 
 **Subtitle style:** set `"subtitle_style"` in the config file to `large`,
 `high-contrast` (bold, on a translucent box) or `raised` (higher margin, clear
@@ -193,8 +198,9 @@ of overscan); `default` changes nothing. A preset burns captions into the
 picture, so, like a delay, it needs the transcode path and applies from your
 next cast or restart. It is applied only to plain-text subtitles (SRT, WebVTT,
 embedded SubRip/mov_text); ASS/SSA keep their own authored styling. Presets are
-checked with real libass renders in `tests/test_subtitle_style.py`. There is no
-Preferences control yet, and it has not been checked on physical receivers.
+checked with real libass renders in `tests/test_subtitle_style.py`. Styling
+presets apply to text subtitles; bitmap captions retain their encoded palette
+and placement. Physical receivers have not been qualified.
 
 ### Language preferences
 
@@ -208,7 +214,7 @@ Set preferred audio and subtitle languages once in `~/.config/cast-control/confi
 }
 ```
 
-Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR`). The first preference with a matching audio track wins; commentary and audio-description tracks are used only if nothing else matches. **Forced** captions (foreign-language dialogue only) and **full** subtitles are handled separately: when the chosen audio is already in a preferred subtitle language you get that language's forced track, or no subtitles if it has none; when the audio is in another language you get the full track in your first matching language. If no preference matches, or none is set, the previous behaviour applies unchanged (the file's default audio; forced, then default, then English subtitles). An override applies to files named like `Some.Show.S01E02.mkv` and replaces only the lists it sets; files without an episode marker are films and never match one. A track you pick by hand always wins, image-based subtitles (PGS) are never selected, and there is no Preferences control yet: edit the file.
+Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR`). The first preference with a matching audio track wins; commentary and audio-description tracks are used only if nothing else matches. **Forced** captions (foreign-language dialogue only) and **full** subtitles are handled separately: when the chosen audio is already in a preferred subtitle language you get that language's forced track, or no subtitles if it has none; when the audio is in another language you get the full track in your first matching language. If no preference matches, or none is set, the previous behaviour applies unchanged (the file's default audio; forced, then default, then English subtitles). An override applies to files named like `Some.Show.S01E02.mkv` and replaces only the lists it sets; files without an episode marker are films and never match one. A track you pick by hand always wins; supported bitmap tracks (PGS, VobSub and DVB) participate in the same preference rules. There is no Preferences control yet: edit the file.
 
 ### Automatic crop and deinterlace (opt-in)
 
