@@ -17,6 +17,7 @@ import watch_history
 
 import responsive_layout
 
+import buffer_health
 import playback_state
 import progress_model
 import text_fit
@@ -26,7 +27,10 @@ import ui_theme
 
 import version
 
-from cast_widgets import APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async
+from cast_widgets import (
+    APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
+    BufferHealthGraph,
+)
 import network_route_ui
 class UiMixin:
 
@@ -642,6 +646,10 @@ class UiMixin:
             self.detail_labels[key] = value_label
             row_index += 1
         body.append(grid)
+        self._buffer_health = buffer_health.BufferHealth()
+        self._last_stall_count = 0
+        self.buffer_graph = BufferHealthGraph()
+        body.append(self.buffer_graph)
         return card
 
 
@@ -924,6 +932,7 @@ class UiMixin:
             position_text += " (estimated)"
         # Buffer health — how far ahead the encoder is from playback position.
         buffer_text = "—"
+        ahead = None
         if session and session.mode == "transcode" and session.state:
             encoded = playback_state.absolute_encoded_position(
                 session.state.offset, snapshot.out_time,
@@ -938,9 +947,20 @@ class UiMixin:
                     buffer_text = f"{fmt_time(-ahead)} behind"
         # Segment count for HLS streams.
         segments_text = "—"
+        seg_count = 0
         if session and session.mode == "transcode":
             seg_count = session.segment_count()
             segments_text = f"{seg_count} segment{'s' if seg_count != 1 else ''}"
+        if session and session.mode == "transcode" and session.state:
+            restarts = getattr(self._stream_watchdog, "restarts", 0)
+            if restarts < self._last_stall_count:
+                self._last_stall_count = restarts
+            stalled = restarts > self._last_stall_count
+            self._last_stall_count = restarts
+            self._buffer_health.sample(ahead, seg_count, stalled=stalled)
+        else:
+            self._buffer_health.clear()
+        self.buffer_graph.set_health(self._buffer_health)
         subtitle_text = "—"
         if session and session.state:
             if session.state.embedded_subtitle_index >= 0:
