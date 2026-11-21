@@ -152,7 +152,13 @@ renderQueue([initial[1],initial[0]]);
 const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
 assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
 assert.equal(reorderedBetaNext,betaNext,"reordering must not replace a pressed control");
+queue.listeners.pointerdown({target:reorderedBetaNext});
 renderQueue([initial[0]]);
+assert.equal(queue.children[0].dataset.queueId,"b","a pressed row stays until click");
+queue.listeners.click({target:reorderedBetaNext});
+assert.deepEqual(calls.at(-1),["queue_next",undefined,{id:"b"}],"pressed button acts on original item");
+releaseQueuePointer();
+assert.equal(queue.children[0].dataset.queueId,"a");
 assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
 """
     subprocess.run(["node", "-"], input=harness + script + scenario,
@@ -1309,3 +1315,92 @@ def test_authenticated_read_rate_limit_does_not_block_room_recovery(rig):
     _, other, other_cookie = login(rig, name="Other")
     assert rig.request("GET", "/api/status", cookie=other_cookie)[0] == 200
     assert other["csrf"]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_phone_volume_changes_coalesce_and_preserve_pending_edit():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index('for(const id of ["seek","volume"])'):
+                    source.index('$("nameForm").addEventListener', source.index('for(const id of ["seek","volume"])'))]
+    harness = r"""
+const assert = require("node:assert/strict");
+const elements=new Map();
+function $(id){
+  if(!elements.has(id))elements.set(id,{value:0,textContent:"",listeners:{},
+    addEventListener(name,fn){this.listeners[name]=fn}});
+  return elements.get(id);
+}
+const editingControls=new Set(),calls=[],timers=[];
+const act=(...args)=>calls.push(args);
+let now=1000;
+Date.now=()=>now;
+const setTimeout=(fn,delay)=>{timers.push({fn,delay});return timers.length};
+"""
+    scenario = r"""
+$("volume").value=33;
+$("volume").listeners.pointerdown();
+$("volume").listeners.input();
+assert.equal(editingControls.has("volume"),true);
+$("volume").value=48;
+$("volume").listeners.input();
+assert.equal(timers.length,1,"rapid drag is one scheduled request");
+timers.shift().fn();
+assert.deepEqual(calls,[["volume",48]]);
+assert.equal($("volumeText").textContent,"48%");
+now+=60;
+$("volume").value=62;
+$("volume").listeners.input();
+$("volume").value=64;
+$("volume").listeners.change();
+assert.equal(editingControls.has("volume"),false);
+assert.equal(timers.length,1);
+assert.equal(timers[0].delay,90,"last write is sent no sooner than 150 ms");
+timers.shift().fn();
+assert.deepEqual(calls,[["volume",48],["volume",64]]);
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_phone_inflight_controls_keep_latest_intent_visible():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index("async function act(action,value,extra={})"):
+                    source.index('$("clearQueue").addEventListener', source.index("async function act(action,value,extra={})"))]
+    harness = r"""
+const assert=require("node:assert/strict");
+const pendingControls=new Map(),messages=[],requests=[];
+const showError=(id,value)=>messages.push(value);
+let busy=false,csrf="session",stalePage=false,rateDelayUntil=0,queueRevision=0,queueCommandSeq=0;
+let statusRequest=null;
+let release=null,refreshes=0;
+const refresh=()=>refreshes++;
+const post=async (url,body)=>{requests.push(body);return await new Promise(resolve=>{release=resolve})};
+"""
+    scenario = r"""
+(async()=>{
+  const first=act("stop");
+  await act("seek",10);
+  await act("seek",20);
+  assert.equal(requests.length,1);
+  assert.equal(pendingControls.size,1,"latest seek replaces earlier unsent seek");
+  assert.match(messages.at(-1),/waiting/i);
+  release({message:"Stopped"});
+  await first;
+  assert.equal(requests.length,2);
+  assert.deepEqual(requests[1],{action:"seek",value:20});
+  release({message:"Seeked"});
+  for(let i=0;i<5;i++)await Promise.resolve();
+  assert.equal(pendingControls.size,0);
+  assert.equal(refreshes,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+def test_status_refresh_does_not_overwrite_an_active_slider():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    assert 'if(!editingControls.has("seek")){' in source
+    assert 'if(!editingControls.has("volume")){' in source
+    assert 'queueElement.addEventListener("click",event=>' in source
