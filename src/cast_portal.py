@@ -143,7 +143,8 @@ class PortalMixin(NetworkActivityMixin):
         return "Music autogain enabled." if value else "Music autogain disabled."
 
     def _portal_apply_command(self, envelope: portal_commands.MutationEnvelope):
-        """Run one fenced mutation on the GTK main thread."""
+        """Reject stale commands before GTK dispatch, then run one mutation."""
+        portal_commands.precheck(self, getattr(self, "_portal_fence", None), envelope)
         try:
             return self._portal_dispatch("command", {"envelope": envelope})
         except portal.PortalRequestError as exc:

@@ -367,3 +367,23 @@ def test_dispatcher_rejects_when_queue_is_full():
         first.join(2)
     finally:
         dispatcher.close()
+
+
+def test_precheck_rejects_before_dispatch():
+    fence = commands.CommandFence(owner=lambda: "TV")
+    session_id, revision, _owner = fence.snapshot()
+    item = envelope(session_id=session_id, revision=revision)
+    commands.precheck(FakeWindow(fence), fence, item)
+    closed = FakeWindow(fence)
+    closed._closing = True
+    with pytest.raises(commands.CommandError) as error:
+        commands.precheck(closed, fence, item)
+    assert error.value.status == 503
+    with pytest.raises(commands.CommandError) as error:
+        commands.precheck(FakeWindow(fence), None, item)
+    assert error.value.status == 503
+    foreign = FakeWindow(fence)
+    foreign._device = lambda: "Other TV"
+    with pytest.raises(commands.CommandError) as error:
+        commands.precheck(foreign, fence, item)
+    assert error.value.status == 409

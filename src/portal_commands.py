@@ -372,6 +372,17 @@ class CommandDispatcher:
                 break
 
 
+def precheck(controller: object, fence: CommandFence | None,
+             envelope: MutationEnvelope) -> None:
+    """Reject stale or foreign commands before marshalling to the GUI thread."""
+    if getattr(controller, "_closing", False):
+        raise CommandError(503, "SmoothCast is shutting down")
+    if fence is None:
+        raise CommandError(503, "The LAN portal is not ready")
+    fence.check(envelope.expected_session_id, envelope.expected_revision,
+                owner=controller._device())
+
+
 def run_mutation(controller: object, fence: CommandFence,
                  envelope: MutationEnvelope) -> CommandReceipt:
     """Check the fence and apply one action on the controller's own thread."""
