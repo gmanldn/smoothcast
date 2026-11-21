@@ -206,6 +206,29 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertFalse((root / "segment-00001.ts").exists())
             self.assertEqual(report.files_removed, 2)
 
+    def test_surviving_encoder_retains_stream_files_until_next_clean_launch(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            playlist = root / streamer.HLS_NAME
+            playlist.write_text("still in use")
+            with mock.patch.object(cleanup, "discover") as discover, \
+                 mock.patch.object(cleanup, "_same_process", return_value=True), \
+                 mock.patch.object(cleanup.platform, "system", return_value="Linux"), \
+                 mock.patch.object(cleanup.os, "kill"), \
+                 mock.patch.object(streamer, "load_session", return_value=None), \
+                 mock.patch.object(streamer, "ROOT", root), \
+                 mock.patch.object(streamer, "SESSION_FILE", root / "session.json"), \
+                 mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"):
+                discover.return_value = [process(100, "encoder")]
+                report = cleanup.cleanup_before_window(keep_streaming=False, temp_root=root, grace=0)
+                self.assertEqual(report.unresolved, [100])
+                self.assertEqual(report.stopped, [])
+                self.assertTrue(report.errors)
+                self.assertTrue(playlist.exists())
+                discover.return_value = []
+                cleanup.cleanup_before_window(keep_streaming=False, temp_root=root, grace=0)
+                self.assertFalse(playlist.exists())
+
     def test_pid_reuse_never_receives_a_signal(self):
         p = process(100, "server")
         newer = cleanup.Process(100, p.kind, p.start_ticks + 1, p.argv)
@@ -221,7 +244,7 @@ class StartupCleanupTests(unittest.TestCase):
         proc = process(100, "encoder")
         report = cleanup.CleanupReport()
         with mock.patch.object(cleanup.platform, "system", return_value="Darwin"), \
-             mock.patch.object(cleanup, "_same_process", return_value=True), \
+             mock.patch.object(cleanup, "_same_process", side_effect=[True, True, True, False]), \
              mock.patch.object(cleanup.process_identity, "signal_verified", return_value=True) as signal:
             cleanup._stop_orphans([proc], Path("/proc"), report, 0.0)
         self.assertEqual(report.stopped, [100])

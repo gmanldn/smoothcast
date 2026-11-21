@@ -203,7 +203,7 @@ class CastControlApp(Adw.Application):
                 if report.stopped or report.files_removed or report.temp_dirs_removed:
                     print(
                         "SmoothCast startup recovery: "
-                        f"signalled {len(report.stopped)} old helper(s); "
+                        f"stopped {len(report.stopped)} old helper(s); "
                         f"removed {report.files_removed} stale stream file(s), "
                         f"{report.temp_dirs_removed} old meter directory/directories"
                     )
@@ -398,7 +398,7 @@ class CastControlApp(Adw.Application):
                     window.toast(f"Recovered {len(report.stopped)} old SmoothCast helper(s)")
                 if report.stopped or report.files_removed or report.temp_dirs_removed:
                     window._console(
-                        f"Startup recovery: {len(report.stopped)} old helper(s) signalled, "
+                        f"Startup recovery: {len(report.stopped)} old helper(s) stopped, "
                         f"{report.files_removed} stream file(s) and "
                         f"{report.temp_dirs_removed} meter directory/directories removed"
                     )

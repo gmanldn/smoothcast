@@ -33,6 +33,7 @@ class Process:
 @dataclass
 class CleanupReport:
     stopped: list[int] = field(default_factory=list)
+    unresolved: list[int] = field(default_factory=list)
     preserved: list[int] = field(default_factory=list)
     files_removed: int = 0
     temp_dirs_removed: int = 0
@@ -141,20 +142,33 @@ def _stop_orphans(processes: list[Process], proc_root: Path,
             report.errors.append(f"signal {process.pid}: {exc}")
             return False
 
+    def wait_for_exit(pending: list[Process], timeout: float) -> list[Process]:
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            remaining = []
+            for process in pending:
+                if _same_process(process, proc_root):
+                    remaining.append(process)
+                else:
+                    report.stopped.append(process.pid)
+            delay = deadline - time.monotonic()
+            if not remaining or delay <= 0:
+                return remaining
+            pending = remaining
+            time.sleep(min(0.05, delay))
+
     pending = []
     for process in processes:
-        if _same_process(process, proc_root) and send(process, False):
+        if _same_process(process, proc_root):
+            send(process, False)
             pending.append(process)
-            report.stopped.append(process.pid)
-    deadline = time.monotonic() + max(0.0, grace)
-    while pending and time.monotonic() < deadline:
-        pending = [p for p in pending if _same_process(p, proc_root)]
-        if pending:
-            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+    pending = wait_for_exit(pending, grace)
     for process in pending:
-        # Recheck birth time and command before escalation; PID may be reused.
         if _same_process(process, proc_root):
             send(process, True)
+    for process in wait_for_exit(pending, min(grace, 0.25)):
+        report.unresolved.append(process.pid)
+        report.errors.append(f"{process.kind} helper {process.pid} still running after cleanup")
 
 
 def cleanup_before_window(
@@ -197,7 +211,8 @@ def cleanup_before_window(
     _stop_orphans([p for p in processes if p.pid not in protected],
                   proc_root, report, grace)
 
-    if not report.retained_stream or (state is not None and state.mode == "direct"):
+    hls_busy = any(by_pid[pid].kind in {"server", "encoder"} for pid in report.unresolved)
+    if not hls_busy and (not report.retained_stream or (state and state.mode == "direct")):
         # A retained direct cast needs session.json, but none of the obsolete
         # HLS artefacts. Leave diagnostic logs and all user media untouched.
         root = streamer.ROOT
