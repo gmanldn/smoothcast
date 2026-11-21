@@ -7,8 +7,8 @@ the same local network, enter your name and the PIN, and you join a shared
 queue with everyone else in the room. The app remains the single owner of the
 queue and the receiver; web actions are marshalled onto the GTK thread.
 
-Each person can add videos from their device, add uploads to the queue instead
-of playing them immediately, vote on titles, reorder or remove queue entries,
+Each person can add audio or videos from their device, add uploads to the queue
+instead of playing them immediately, vote on titles, reorder or remove entries,
 clear Up Next, start a title, skip forward/back, and use play/pause, stop, seek
 and volume. Clearing Up Next never stops or replaces the active cast.
 Queue moves, removals and clears carry the latest queue revision; if another
@@ -72,16 +72,21 @@ served locally with no external assets.
   There is no separate cloud account or room server.
 - Uploads use sequential 2 MiB HTTP chunks with bounded 64 KiB server reads.
   **Add to the shared queue** is selected by default for every authenticated
-  participant. It disables early casting, so a partial file is never offered to
-  the receiver; the completed file is queued instead. Clearing the selection is
-  an explicit play-now request and may start an early cast.
+  participant. It disables early casting, so a partial video is never offered
+  to the receiver; the completed file is queued instead. Audio is always
+  validated and queued, never cast directly. For videos, clearing the selection
+  is an explicit play-now request and may start an early cast.
   Each acknowledged chunk is synced to disk; an interrupted chunk rolls back to
   its starting offset, and the browser resumes from the server's confirmed byte
   count. The browser never reads the entire video into memory.
 - Uploads are staged in a mode-0700 cache directory with mode-0600 partial
-  files. Only supported video suffixes are accepted, with at most three active
-  uploads and a 512 MiB free-space reserve. Incomplete transfers are discarded
-  when the portal stops and stale partials older than 24 hours are removed.
+  files. At most three transfers can be active and a 512 MiB free-space reserve
+  is kept. Videos use the supported video suffixes. Audio accepts MP3, AAC,
+  M4A, FLAC, Ogg, Opus, WAV and AIFF up to 512 MiB and 24 hours; SmoothCast
+  probes the completed file and requires a readable audio-only stream before it
+  enters Up Next. Audio is always queued and never early-cast. Incomplete
+  transfers are discarded when the portal stops and stale partials older than
+  24 hours are removed.
   Completed media files are retained because active/recoverable cast sessions
   may still read them.
 - The dashboard reports transfer progress and supports cancellation. Keep the

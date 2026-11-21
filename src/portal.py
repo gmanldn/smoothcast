@@ -485,7 +485,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self._cookie_token() or "", upload_id)
                 except portal_uploads.UploadError:
                     default_queue = True
-                queue_only = bool(body.get("queue", default_queue))
+                queue_only = default_queue or bool(body.get("queue", default_queue))
                 media_path, name, dispatch = self.server.uploads.finalize(
                     self._cookie_token() or "", upload_id)
                 if dispatch:
@@ -865,8 +865,8 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
 <section><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
-<section id="uploadCard" hidden><h2>Add a video from this device</h2><p>Files transfer in resumable chunks. Add one to the shared queue, or start it now. Supported formats start streaming to your receiver while the rest arrives.</p>
-<label for="videoFile">Video file</label><input id="videoFile" type="file" accept="video/*,.mkv,.ts,.wmv">
+<section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
+<label for="videoFile">Audio or video file</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv">
 <label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
@@ -919,8 +919,10 @@ async function sendChunk(path,file,offset,end){
   }
 }
 function updateUploadControls(){
+  const file=$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
+  if(audio)$("uploadQueue").checked=true;
   $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":($("uploadQueue").checked?"Upload and add":"Upload and cast");
-  $("videoFile").disabled=uploading||!!pendingUpload;$("uploadQueue").disabled=uploading;$("cancelUpload").hidden=!uploading&&!pendingUpload;$("cancelUpload").disabled=cancelUpload;
+  $("videoFile").disabled=uploading||!!pendingUpload;$("uploadQueue").disabled=uploading||!!audio;$("cancelUpload").hidden=!uploading&&!pendingUpload;$("cancelUpload").disabled=cancelUpload;
 }
 async function discardUpload(){
   if(pendingUpload){try{await uploadRequest("DELETE",pendingUpload.path)}catch(error){if(error.status!==404)throw error}pendingUpload=null}
@@ -928,7 +930,7 @@ async function discardUpload(){
 }
 $("uploadButton").addEventListener("click",async()=>{
   const file=$("videoFile").files[0];if(!file||uploading)return;
-  const queueOnly=$("uploadQueue").checked;uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
+  const audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name),queueOnly=audio||$("uploadQueue").checked;uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
   try{
     let state;
     if(pendingUpload){showError("uploadStatus","Checking saved progress…");state=await uploadRequest("GET",pendingUpload.path)}
@@ -940,6 +942,7 @@ $("uploadButton").addEventListener("click",async()=>{
   finally{uploading=false;cancelUpload=false;updateUploadControls()}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
+$("videoFile").addEventListener("change",updateUploadControls);
 $("cancelUpload").addEventListener("click",async()=>{
   cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}

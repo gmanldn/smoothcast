@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from http.client import HTTPConnection
 from pathlib import Path
+import shutil
+import subprocess
 from types import SimpleNamespace
 import sys
 import threading
@@ -118,7 +120,8 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "setTimeout(()=>controller.abort(),60000)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume upload to retry" in page
-    assert "start streaming to your receiver while the rest arrives" in page
+    assert "Audio is validated and added to the shared queue" in page
+    assert "video can be queued or streamed" in page
     assert "six-digit PIN" in page
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
@@ -126,7 +129,6 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'title.textContent=item.title' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
-    assert "Add one to the shared queue, or start it now" in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
     assert ".slice(0,6)" in page
@@ -576,6 +578,51 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
         assert status == 202
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
+    finally:
+        rig.close()
+        uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg required")
+def test_phone_audio_upload_is_validated_and_forced_into_shared_queue(tmp_path):
+    import portal_uploads
+
+    audio = tmp_path / "guest-track.mp3"
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+         "-i", "sine=frequency=440:duration=0.5", "-c:a", "libmp3lame", "-y", str(audio)],
+        check=True, capture_output=True, timeout=20,
+    )
+    data = audio.read_bytes()
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads",
+            {"name": audio.name, "size": len(data), "queue": False},
+            cookie=cookie, csrf=csrf, origin=origin,
+        )
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", data, cookie=cookie,
+            csrf=csrf, origin=origin,
+            extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+            content_type="application/octet-stream",
+        )
+        assert status == 200 and decode(raw)["ready_to_cast"] is False
+        status, _raw, _ = rig.request(
+            "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+            cookie=cookie, csrf=csrf, origin=origin,
+        )
+        assert status == 202
+        action, payload = rig.calls[-1]
+        assert action == "queue_add"
+        assert Path(payload["path"]).read_bytes() == data
     finally:
         rig.close()
         uploads.close()
