@@ -413,7 +413,7 @@ class UiMixin(BookmarkUiMixin):
         card.set_vexpand(False)
         self.console_empty = Gtk.Label(
             label="No activity yet — events appear here when you start a cast.",
-            xalign=0.0, wrap=True,
+            xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
         )
         self.console_empty.add_css_class("console-idle")
         body.append(self.console_empty)
@@ -568,11 +568,17 @@ class UiMixin(BookmarkUiMixin):
             "clicked", lambda _button: network_route_ui.start(self, Async.run)
         )
         body.append(self.network_check_button)
-        self.network_detail = Gtk.Label(label="", xalign=0.0, wrap=True)
+        self.network_detail = Gtk.Label(
+            label="", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.network_detail.set_selectable(True)  # Copy second-host test URL.
         self.network_detail.add_css_class("section-caption")
         body.append(self.network_detail)
-        self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
+        self.device_detail = Gtk.Label(
+            label="Searching for Google Cast receivers…", xalign=0.0,
+            wrap=False, ellipsize=Pango.EllipsizeMode.END,
+        )
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
         return card
@@ -582,14 +588,23 @@ class UiMixin(BookmarkUiMixin):
         card, body = self._card(
             "LAN dashboard", "Open this address on another device on your local network."
         )
-        self.portal_status_label = Gtk.Label(label="Starting local portal…", xalign=0.0, wrap=True)
+        self.portal_status_label = Gtk.Label(
+            label="Starting local portal…", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_status_label.add_css_class("section-caption")
         body.append(self.portal_status_label)
-        self.portal_activity_label = Gtk.Label(label="No client activity", xalign=0.0, wrap=True)
+        self.portal_activity_label = Gtk.Label(
+            label="No client activity", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_activity_label.add_css_class("section-caption")
         body.append(self.portal_activity_label)
         body.append(Gtk.Label(label="Address", xalign=0.0))
-        self.portal_url_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
+        self.portal_url_label = Gtk.Label(
+            label="—", xalign=0.0, wrap=False, selectable=True,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_url_label.add_css_class("mono")
         body.append(self.portal_url_label)
         body.append(Gtk.Label(label="Access PIN", xalign=0.0))
@@ -600,7 +615,7 @@ class UiMixin(BookmarkUiMixin):
         note = Gtk.Label(
             label="Anyone on your local network with this PIN can control playback. "
                   "The PIN changes when the portal restarts.",
-            xalign=0.0, wrap=True,
+            xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
         )
         note.add_css_class("dim-label")
         body.append(note)
@@ -639,8 +654,10 @@ class UiMixin(BookmarkUiMixin):
                 row_index += 1
             key_label = Gtk.Label(label=label, xalign=0.0)
             key_label.add_css_class("detail-key")
-            value_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
-            value_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            value_label = Gtk.Label(
+                label="—", xalign=0.0, wrap=False, selectable=True,
+                ellipsize=Pango.EllipsizeMode.END,
+            )
             value_label.set_max_width_chars(32)
             value_label.set_width_chars(1)
             value_label.add_css_class("detail-value")
@@ -671,7 +688,10 @@ class UiMixin(BookmarkUiMixin):
         heading.add_css_class("heading")
         card.append(heading)
         if subtitle:
-            sub = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
+            sub = Gtk.Label(
+                label=subtitle, xalign=0.0, wrap=False,
+                ellipsize=Pango.EllipsizeMode.END,
+            )
             sub.add_css_class("dim-label")
             sub.add_css_class("caption")
             card.append(sub)
