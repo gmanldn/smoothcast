@@ -56,6 +56,9 @@ rejecting unknown/broken/older builds without sending Cast commands.
 (it gates, incl. release promotion). A test that cannot pass is listed by exact id, with a reason, in
 `tests/platform_gaps.py` and skipped on that OS only; fix the cause and delete
 the entry. "PRODUCT BUG" marks a SmoothCast defect, not a test quirk.
+The portable regression jobs install the pinned PyChromecast dependency because
+`tests/test_fakecast_protocol.py` drives the loopback CASTV2 fake through the
+real sender client.
 
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and

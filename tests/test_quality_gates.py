@@ -53,6 +53,13 @@ class DependencyGateTests(unittest.TestCase):
         pychromecast = "PyChromecast>=14.1.1,<15"
         self.assertIn(pychromecast, read("pyproject.toml"))
         self.assertIn(pychromecast, read("setup/bootstrap.py"))
+        workflow = read(".github/workflows/verify.yml")
+        for job_name, next_job in (
+            ("  portable-tests:", "  portable-tests-native:"),
+            ("  portable-tests-native:", "  media-integration:"),
+        ):
+            job = workflow.split(job_name, 1)[1].split(next_job, 1)[0]
+            self.assertIn(pychromecast, job)
 
     def test_codeql_and_pip_audit_run_in_ci(self):
         codeql = read(".github/workflows/codeql.yml")
