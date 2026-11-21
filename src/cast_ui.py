@@ -19,6 +19,7 @@ import responsive_layout
 import buffer_health
 import idle_chrome
 import notifications
+import state_labels
 import playback_state
 import progress_model
 import text_fit
@@ -997,14 +998,14 @@ class UiMixin(BookmarkUiMixin):
         if not notifications.should_notify(self.cfg, event, window_active=active):
             return
         if event == notifications.FINISHED:
-            title = "Playback finished"
+            title = notifications.event_title(event)
             name = pathlib.Path(detail).name if detail else ""
             body = f"{name} finished playing." if name else "The cast finished."
         elif event == notifications.ERROR:
-            title = "Cast failed"
+            title = notifications.event_title(event)
             body = detail or "The cast failed."
         else:
-            title = "Receiver lost"
+            title = notifications.event_title(event)
             body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
         try:
             notification = Gio.Notification.new(title)
@@ -1342,17 +1343,17 @@ class UiMixin(BookmarkUiMixin):
         elif local_ready:
             self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
         elif self.device_state == "OFFLINE":
-            self._set_chip("Offline", "offline")
+            self._set_chip(state_labels.present("OFFLINE").short, "offline")
         elif self.busy:
-            self._set_chip("Preparing…", "buffering")
+            self._set_chip(state_labels.present("PREPARING").label, "buffering")
         elif self.external:
-            self._set_chip("External", "paused")
+            self._set_chip(state_labels.present("EXTERNAL").short, "paused")
         elif self.device_state == "BUFFERING":
-            self._set_chip("Buffering…", "buffering")
+            self._set_chip(state_labels.present("BUFFERING").label, "buffering")
         elif playing:
             self._set_chip("Live" if (self.session and self.session.mode == "transcode") else "Playing", "playing")
         elif paused:
-            self._set_chip("Paused", "paused")
+            self._set_chip(state_labels.present("PAUSED").label, "paused")
         else:
             if stream is not None and stream.get_playing():
                 self._set_chip("Playing locally", "playing")
