@@ -7,8 +7,6 @@ import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import socket
-import subprocess
-import sys
 import tempfile
 import threading
 import unittest
@@ -20,6 +18,7 @@ import dlna
 import playback_state
 import playlist_control
 import streamer
+import fake_receivers
 from fake_receivers import FakeCast, FakeDlnaRenderer, allow_loopback
 
 MEDIA = "http://192.168.1.2:9000/media/token"
@@ -86,12 +85,13 @@ class FakeDlnaTests(unittest.TestCase):
         self.assertIn(self.tv.location, alive)
 
     def test_fake_renderer_has_a_bounded_standalone_loopback_cli(self):
-        command = [sys.executable, str(Path(__file__).with_name("fake_receivers.py")),
-                   "--profile", "strict-mime", "--duration", "0"]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("DLNA description: http://127.0.0.1:", result.stdout)
-        self.assertIn("SSDP test socket: 127.0.0.1:", result.stdout)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(fake_receivers.main([
+                "--profile", "strict-mime", "--duration", "0",
+            ]), 0)
+        self.assertIn("DLNA description: http://127.0.0.1:", output.getvalue())
+        self.assertIn("SSDP test socket: 127.0.0.1:", output.getvalue())
 
     def test_connection_manager_query_is_read_only_and_tolerates_fault(self):
         renderer = dlna.parse_renderer(self.tv.description_xml(), self.tv.location, "127.0.0.1")
