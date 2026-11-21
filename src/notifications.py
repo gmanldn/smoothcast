@@ -6,6 +6,8 @@ without GTK, a display or a receiver.
 """
 from __future__ import annotations
 
+import state_labels
+
 FINISHED = "finished"
 ERROR = "error"
 DEVICE_LOST = "device_lost"
@@ -24,3 +26,12 @@ def should_notify(cfg: dict, event: str, *, window_active: bool) -> bool:
     if not enabled(cfg):
         return False
     return not window_active
+
+
+def event_title(event: str) -> str:
+    """Use the central playback state vocabulary for status notifications."""
+    if event == DEVICE_LOST:
+        return state_labels.present("OFFLINE").label
+    if event == ERROR:
+        return state_labels.present("ERROR").label
+    return "Playback finished"

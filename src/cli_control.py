@@ -30,6 +30,7 @@ import re
 import sys
 
 import castctl
+import state_labels
 import streamer
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_UNREACHABLE, EXIT_MEDIA = 0, 1, 2, 3, 4
@@ -271,7 +272,7 @@ def _human(command: str, result: dict) -> str:
         position = castctl.fmt_time(result["position"]) if result["position"] is not None else "-"
         duration = castctl.fmt_time(result["duration"]) if result["duration"] else "-"
         volume = "-" if result["volume"] is None else f"{result['volume']}%"
-        return (f"{result['device']}: {result['state']}  {position} / {duration}  "
+        return (f"{result['device']}: {state_labels.present(result['state']).label}  {position} / {duration}  "
                 f"volume {volume}{' (muted)' if result['muted'] else ''}"
                 + (f"  \"{result['title']}\"" if result["title"] else ""))
     if command == "cast":

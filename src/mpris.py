@@ -13,6 +13,7 @@ converts those values to ``GLib.Variant`` on the wire. ``WindowAdapter`` maps a
 from __future__ import annotations
 
 import hashlib
+import state_labels
 import pathlib
 import platform
 from dataclasses import dataclass
@@ -368,10 +369,8 @@ class WindowAdapter:
 
     def _status(self) -> str:
         state = getattr(self._window, "device_state", "IDLE")
-        if state in ("PLAYING", "BUFFERING"):
-            return "Playing"
-        if state == "PAUSED":
-            return "Paused"
+        if state in ("PLAYING", "BUFFERING", "PAUSED"):
+            return state_labels.present(state).mpris
         tracker = self._window.tracker
         if getattr(tracker, "known", False):
             return "Playing" if getattr(tracker, "playing", False) else "Paused"
