@@ -172,19 +172,19 @@ own; the house is tidy in the morning.
 
 ## Feature pillars
 
-Existing tickets are linked. Items marked **new** come from this vision and need
-tickets. Each new item is scoped so it can be built and tested headlessly.
+Existing tickets are linked. Items with a bold issue number came from this vision and are tracked under
+epic #436 (trust-model changes: #416, #417, #418). Each new item is scoped so it can be built and tested headlessly.
 
 ### 1. Zero-friction access
 
-- **new — Open join.** Default room access needs no PIN: display name only,
+- **#416 — Open join.** Default room access needs no PIN: display name only,
   remembered per browser. Optional house PIN for people who want it.
-- **new — `smoothcast.local` that always works.** The primary node advertises
+- **#419 — `smoothcast.local` that always works.** The primary node advertises
   `smoothcast.local` and an `_smoothcast._tcp` mDNS service; on primary loss the
   next node claims the name within 3 s. Every node also answers on its own
   address and redirects to the same UI. Fallback page lists live nodes when mDNS
   is blocked (some Android/iOS setups).
-- **new — TV-side QR everywhere.** Every screen (Cast idle slate, `/screen`
+- **#420 — TV-side QR everywhere.** Every screen (Cast idle slate, `/screen`
   page, desktop) shows a join QR and the short address.
 - Residents vs guests as recognition and courtesy (#363), kids (#364).
 
@@ -197,7 +197,7 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 - Rooms instead of device names (#370), group presets (#371), private rooms
   (#376), quiet hours (#375).
 - House health at a glance (#386).
-- **new — Partition healing.** The shared queue and room state become
+- **#421 — Partition healing.** The shared queue and room state become
   op-based, mergeable records (sequence CRDT for Up Next, last-writer-wins
   registers for settings) so a split house merges without lost edits. Today's
   revision fencing stays for live transport commands.
@@ -206,17 +206,17 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 
 - Route playback to the best node and copy (#355, #356); transcode offload to
   the strongest node (#388).
-- **new — Mesh range proxy.** Any node can serve any house file by streaming
+- **#422 — Mesh range proxy.** Any node can serve any house file by streaming
   HTTP Range bytes from its home node, so a target only ever talks to one
   nearby node. Bounded buffers, backpressure, resumable on node hiccups.
-- **new — Predictive warm-up.** When an item becomes "next", the playing node
+- **#423 — Predictive warm-up.** When an item becomes "next", the playing node
   pre-probes it, pre-reads the first segments from its home node and, if a
   transcode is needed, encodes the first 10 s in advance. Goal: next item starts
   in under 1 s. Builds on the existing queue pre-warm.
-- **new — Smart cache.** Each node keeps an LRU cache (configurable disk budget)
+- **#424 — Smart cache.** Each node keeps an LRU cache (configurable disk budget)
   of recently and soon-to-be played items from other nodes, so a sleepy laptop's
   film survives the laptop closing.
-- **new — Stream-from-device.** A guest's phone can play a local video on the TV
+- **#425 — Stream-from-device.** A guest's phone can play a local video on the TV
   without a full upload: the browser streams the file progressively to the node
   (chunked upload consumed as it arrives, or WebRTC data channel where
   available) and playback starts after the first few seconds. Falls back to the
@@ -224,22 +224,22 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 
 ### 4. Ebb and flow (nodes come and go)
 
-- **new — Graceful drain.** On sleep, shutdown or update, a node announces
+- **#426 — Graceful drain.** On sleep, shutdown or update, a node announces
   "leaving in N s", hands its active streams to another node that has (or can
   proxy) the same file at the same source time, then exits. Uses OS sleep
   inhibitors (logind, macOS power assertions, Windows `SetThreadExecutionState`)
   only for the seconds it needs.
-- **new — Wake on demand.** Asking for a film that only exists on a sleeping
+- **#427 — Wake on demand.** Asking for a film that only exists on a sleeping
   node sends Wake-on-LAN (if the node registered its MAC and opted in) and shows
   "Waking the Bedroom PC…" with a live countdown.
-- **new — Energy-aware choices.** Prefer nodes that are already awake and idle;
+- **#428 — Energy-aware choices.** Prefer nodes that are already awake and idle;
   don't wake the gaming PC to transcode something the Study PC can handle.
 - Safe updates without interrupting playback (#138).
 
 ### 5. The shared queue, done properly
 
 - Everyone edits Up Next, atomically and idempotently (done: #314, #323).
-- **new — Room follows the house, or goes solo.** One house queue by default;
+- **#429 — Room follows the house, or goes solo.** One house queue by default;
   any room can "go solo" with its own queue and later rejoin.
 - Votes, fair turns, undo (#326, #327, #328), activity timeline (#332).
 - Movie-night vote (#392), house radio when the queue runs dry (#379).
@@ -247,9 +247,9 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 ### 6. Phones and tablets feel native, without an app
 
 - Installable PWA (#341) and share target (#382).
-- **new — Media Session integration.** Lock-screen and headphone controls,
+- **#430 — Media Session integration.** Lock-screen and headphone controls,
   hardware volume keys and artwork on phones driving the house.
-- **new — Screen Wake Lock** for iPads and phones used as screens or remotes on a
+- **#431 — Screen Wake Lock** for iPads and phones used as screens or remotes on a
   stand; **Picture-in-Picture** for watch-along on a phone.
 - Watch together across personal screens (#373), private listening on a phone
   as a speaker (existing screens).
@@ -259,19 +259,19 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 
 - Per-person Continue Watching (#365), series and next episode (#368), intro
   skip (#377), accessibility that follows the person (#389), night mode (#390).
-- **new — Who's home.** Opt-in presence from residents' phones that have the
+- **#432 — Who's home.** Opt-in presence from residents' phones that have the
   web remote open recently (no tracking beyond the LAN); powers "suggest for
   who's here", alarms and follow-me defaults.
-- **new — House memory.** "What did we watch last Friday?" — a shared,
+- **#433 — House memory.** "What did we watch last Friday?" — a shared,
   privacy-mode-aware history (#329) separate from personal history.
 
 ### 8. Open and integrable
 
-- **new — Published API.** OpenAPI description of the HTTP/SSE API, a stable
+- **#434 — Published API.** OpenAPI description of the HTTP/SSE API, a stable
   versioned mesh protocol doc, and a CLI (`smoothcast mesh status`, `queue add`)
   over the same API. Third parties can build remotes.
 - Home Assistant via MQTT discovery (#383); HDMI-CEC TV wake (#384).
-- **new — Importers and exporters.** Import watched state and playlists from
+- **#435 — Importers and exporters.** Import watched state and playlists from
   Jellyfin/Plex/Kodi exports; export everything (queue, history, rooms) as plain
   JSON and M3U/XSPF.
 - Radio and podcasts (#380), request board (#391).

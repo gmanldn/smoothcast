@@ -250,18 +250,18 @@ folders. What we still enforce, as correctness rather than distrust:
 - Benchmarks on generated 100k-entry libraries, gated in CI (#206).
 - No GTK, no real network: loopback HTTP and in-memory SQLite only.
 
-## Delivery slices (proposed tickets)
+## Delivery slices (tickets, epic #436)
 
 | Slice | Scope | Depends on |
 | --- | --- | --- |
-| S1 | Preferences → Library folders (label, share switch, kind, status) | — |
-| S2 | Indexer v2: audio + tags + watcher + periodic rescan + changelog | #366, #349 |
-| S3 | FTS5 + trigram local search, query parser, ranking, `/api/search` | S2 |
-| S4 | Replication protocol: generation in heartbeat, changes/snapshot, compaction | S2, #387, #352 |
-| S5 | Replica store, TTL/state machine, corruption recovery | S4 |
-| S6 | Federated query: replica merge + live fan-out + SSE streaming | S3, S5 |
-| S7 | "Find" UI on web remote and desktop; libraries browser | S3, S6 |
-| S8 | Play-from-result revalidation and copy failover | S6, #355 |
-| S9 | Benchmarks and simulator gates in CI | S3–S6, #206 |
+| S1 (#407) | Preferences → Library folders (label, share switch, kind, status) | — |
+| S2 (#408) | Indexer v2: audio + tags + watcher + periodic rescan + changelog | #366, #349 |
+| S3 (#409) | FTS5 + trigram local search, query parser, ranking, `/api/search` | S2 |
+| S4 (#410) | Replication protocol: generation in heartbeat, changes/snapshot, compaction | S2, #387, #352 |
+| S5 (#411) | Replica store, TTL/state machine, corruption recovery | S4 |
+| S6 (#412) | Federated query: replica merge + live fan-out + SSE streaming | S3, S5 |
+| S7 (#413) | "Find" UI on web remote and desktop; libraries browser | S3, S6 |
+| S8 (#414) | Play-from-result revalidation and copy failover | S6, #355 |
+| S9 (#415) | Benchmarks and simulator gates in CI | S3–S6, #206 |
 
 #349 becomes the music-facing part of S2/S3/S7; #367 becomes S4–S6.
