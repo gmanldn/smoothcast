@@ -293,6 +293,8 @@ class SetupContractTests(unittest.TestCase):
                 if code == bootstrap.CAST_DEPENDENCIES_CHECK:
                     dependency_checks += 1
                     return dependency_checks > 1
+                if code == bootstrap.PROJECT_DEPENDENCIES_CHECK:
+                    return dependency_checks > 1
                 return False
 
             with mock.patch.object(bootstrap, "venv_python", return_value=executable), \
