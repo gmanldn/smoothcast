@@ -29,6 +29,8 @@ import subtitle_restart
 
 import playback_state
 
+import watch_history
+
 import progress_model
 
 import direct_probe
@@ -67,8 +69,7 @@ class SessionMixin:
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
         # None resumes saved position; 0 always rewinds.
         offset = playback_state.start_offset(
-            offset, (self.cfg.get("positions") or {}).get(str(path)),
-        )
+            offset, watch_history.saved_position(self.cfg, path))
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return

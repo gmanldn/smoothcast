@@ -13,7 +13,6 @@ import time
 
 from utils import pretty_title
 import cast_targets
-import watch_history
 
 import responsive_layout
 
@@ -1316,27 +1315,3 @@ class UiMixin(BookmarkUiMixin):
         self.toast(f"{'Pinned' if pinned else 'Unpinned'} receiver: {device}")
 
 
-    def _record_watch(self, event: str) -> None:
-        """Append a bounded watch-history entry for the current film."""
-        previewing = self.session is None and self._preview_path is not None
-        path = self._preview_path if previewing else self.now_playing
-        if not path:
-            return
-        source = "preview" if previewing else "cast"
-        position = self._preview_position if previewing else (self.tracker.value() or 0.0)
-        history = watch_history.record(
-            self.cfg.get("watch_history"), path, event, position, time.time(),
-            source=source,
-        )
-        if event == "start" and position:
-            history = watch_history.record(
-                history, path, "resumed", position, time.time(), source=source,
-            )
-        self.cfg["watch_history"] = history
-        save_config(self.cfg)
-
-
-    def _clear_watch_history(self) -> None:
-        self.cfg["watch_history"] = watch_history.clear()
-        save_config(self.cfg)
-        self.toast("Watch history cleared")

@@ -16,6 +16,7 @@ import dlna
 import playback_state
 import streamer
 import subtitle_style
+import watch_history
 
 
 def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=None):
@@ -25,7 +26,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
         textwrap.indent(textwrap.dedent(methods[name]), "    ")
         for name in names
     )
-    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib}
+    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib, "watch_history": watch_history}
     ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(

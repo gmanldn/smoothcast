@@ -19,6 +19,7 @@ import playback_state
 import streamer
 import subtitle_delay
 import subtitle_style
+import watch_history
 
 
 def test_direct_status_classifier_is_conservative():
@@ -119,6 +120,7 @@ def cast_worker(status="rejected"):
     probe = mock.Mock(return_value=status)
     namespace = {
         "playback_state": playback_state,
+        "watch_history": watch_history,
         "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,
