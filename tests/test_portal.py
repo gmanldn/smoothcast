@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from http.client import HTTPConnection
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import threading
 import json
@@ -127,6 +128,8 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'id="musicAutogain"' in page
     assert "Add one to the shared queue, or start it now" in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
+    assert 'id="peers"' in page and "renderPeers(s.peers" in page
+    assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert "Add to the shared queue" in page
 
@@ -157,6 +160,22 @@ def test_pin_login_sets_http_only_session_and_dashboard_reads_main_state(rig):
     assert status == 200 and decode(body)["state"]["title"] == "sample.mp4"
     assert headers["Cache-Control"] == "no-store"
     assert rig.calls == [("status", {})]
+
+
+def test_authenticated_status_exposes_only_the_peer_directory_snapshot(rig):
+    _, _result, cookie = login(rig)
+    rig.server.peer_directory = SimpleNamespace(snapshot=lambda: [{
+        "id": "a" * 32, "name": "smoothcast-lounge", "version": 1,
+        "compatible": True, "capabilities": ["room"],
+        "url": "http://192.168.1.25:8765/",
+    }])
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    state = decode(body)["state"]
+    assert state["peer_discovery_available"] is True
+    assert state["peers"][0]["name"] == "smoothcast-lounge"
+    assert state["peers"][0]["url"] == "http://192.168.1.25:8765/"
+    assert state["peers"][0]["compatible"] is True
 
 
 def test_named_sessions_share_presence_and_votes(rig):
@@ -424,6 +443,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     card = methods["_build_portal_card"]
     assert "portal_status_label" in card and "portal_url_label" in card
     assert "portal_pin_label" in card and "portal_activity_label" in card
+    assert "portal_peers_label" in card
     assert "local network" in card
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
@@ -431,6 +451,8 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "_refresh_portal_activity" in methods["_refresh_portal"]
     assert "room.snapshot()" in methods["_refresh_portal_activity"]
     assert "In room:" in methods["_refresh_portal_activity"]
+    assert "peer_discovery_available" in methods["_refresh_portal_activity"]
+    assert "peer['id'][:6]" in methods["_refresh_portal_activity"]
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",

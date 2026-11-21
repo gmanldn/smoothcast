@@ -21,6 +21,14 @@ receiver, media title and available progress, and never sends commands to those
 other receivers. Unreachable devices are omitted; titles in the dashboard are
 visible only after PIN pairing.
 
+The **Nearby SmoothCast hosts** list uses a separate, versioned DNS-SD record
+to show other SmoothCast instances on the LAN. It contains only a random
+instance identifier, friendly host name, protocol version and capability names;
+it does not contain a PIN, session, user nickname or media path. Opening another
+host takes the browser to that host's own PIN prompt. Discovery alone cannot
+transfer a file or issue Cast commands. If multicast discovery is unavailable,
+the UI reports that state rather than implying that no peers exist.
+
 The address is a friendly mDNS name such as
 `http://smoothcast-lounge.local:PORT/`. SmoothCast derives the name from the
 machine hostname, prefixes it with `smoothcast`, and advertises it with

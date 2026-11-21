@@ -23,6 +23,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 import portal_commands
+import peer_discovery
 import portal_room
 import portal_uploads
 
@@ -107,12 +108,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                  hostname: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
+                 peer_directory: peer_discovery.PeerDirectory | None = None,
                  room: portal_room.PortalRoom | None = None) -> None:
         super().__init__(address, _Handler)
         self.pin = pin
         self.dispatch = dispatch
         self.uploads = uploads
         self.room = room or portal_room.PortalRoom()
+        self.peer_directory = peer_directory
         self.clock = clock
         self.fence = fence or portal_commands.CommandFence(clock=clock)
         self.commands = commands or portal_commands.CommandDispatcher(
@@ -380,6 +383,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.room.prune(live_ids)
             state["queue"] = merged
             state["room"] = self.server.room.snapshot(participant_id)
+            directory = self.server.peer_directory
+            state["peers"] = directory.snapshot() if directory is not None else []
+            state["peer_discovery_available"] = directory is not None
             return self._send(200, {"ok": True, "state": state})
         upload_id = self._upload_route(path)
         if upload_id and self._authenticated():
@@ -691,6 +697,15 @@ class Portal:
         self._zeroconf = None
         self._service_info = None
         self._advertise()
+        self.peer_discovery_available = False
+        try:
+            self.peers = peer_discovery.PeerDirectory(
+                self.bind_ip, self.name, self.port, zeroconf=self._zeroconf,
+            )
+            self.peer_discovery_available = True
+        except Exception:
+            self.peers = None
+        self.server.peer_directory = self.peers
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.1},
                                        name="smoothcast-portal", daemon=True)
@@ -740,6 +755,9 @@ class Portal:
             pass
 
     def stop(self) -> None:
+        peers, self.peers = self.peers, None
+        if peers is not None:
+            peers.close()
         self._unadvertise()
         if self.thread.is_alive():
             self.server.shutdown()
@@ -779,6 +797,7 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
+<section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
 <section><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><ul id="queue"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
 <section id="uploadCard" hidden><h2>Add a video from this device</h2><p>Files transfer in resumable chunks. Add one to the shared queue, or start it now. Supported formats start streaming to your receiver while the rest arrives.</p>
@@ -796,11 +815,12 @@ const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress"
 $("musicAutogain").checked=!!s.music_autogain;
 const queue=$("queue");queue.replaceChildren();if(!s.queue||!s.queue.length){const li=document.createElement("li");li.className="empty";li.textContent="No videos queued";queue.append(li)}else for(const item of s.queue){const li=document.createElement("li");li.className="queue-item";const text=document.createElement("div");const title=document.createElement("strong");title.textContent=item.title||"Video";const meta=document.createElement("div");meta.className="muted";meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")+(item.duration?` · ${clock(item.duration)}`:"");text.append(title,meta);const actions=document.createElement("div");actions.className="queue-actions";const vote=document.createElement("button");vote.className="tiny vote"+(item.voted?" on":"");vote.textContent=item.voted?"Voted":"Vote";vote.addEventListener("click",()=>act("queue_vote",!item.voted,{id:item.id}));actions.append(vote);const play=document.createElement("button");play.className="tiny";play.textContent="Play now";play.addEventListener("click",()=>act("queue_play",undefined,{id:item.id}));actions.append(play);const up=document.createElement("button");up.className="tiny secondary";up.textContent="↑";up.title="Move up";up.addEventListener("click",()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,s.queue.indexOf(item)-1)}));actions.append(up);const remove=document.createElement("button");remove.className="tiny secondary";remove.textContent="×";remove.title="Remove";remove.addEventListener("click",()=>act("queue_remove",undefined,{id:item.id}));actions.append(remove);li.append(text,actions);queue.append(li)}
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";
-renderRoom(s.room);
+renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const time=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${time(item.position)}${item.duration==null?"":` / ${time(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);showError("errorDash","");}catch(err){showError("errorDash",err.message)}}
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");activity.replaceChildren();if(room&&room.activity)for(const event of [...room.activity].slice(-12).reverse()){const line=document.createElement("div");line.className="ev";const time=document.createElement("time");time.textContent=new Date(event.at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});const text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activity.append(line)}}
+function renderPeers(peers,available){const list=$("peers");list.replaceChildren();if(!available||!Array.isArray(peers)||!peers.length){const empty=document.createElement("li");empty.className="empty";empty.textContent=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";list.append(empty);return}const counts=new Map();for(const peer of peers){const key=String(peer.name||"").toLocaleLowerCase();counts.set(key,(counts.get(key)||0)+1)}for(const peer of peers){const item=document.createElement("li"),name=peer.name||"SmoothCast host",label=name+(counts.get(String(name).toLocaleLowerCase())>1?" · "+String(peer.id||"").slice(0,6):"");if(!peer.compatible){item.textContent=label+" · incompatible version"}else{const link=document.createElement("a");link.textContent=label;link.href=peer.url;link.target="_blank";link.rel="noopener noreferrer";item.append(link,document.createTextNode(" · enter the host's PIN to connect"))}list.append(item)}}
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
 async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));

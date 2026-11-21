@@ -76,6 +76,8 @@ class PortalMixin(NetworkActivityMixin):
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
             self.portal_activity_label.set_text("No client activity")
+        if hasattr(self, "portal_peers_label"):
+            self.portal_peers_label.set_text("Peer discovery stopped")
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
@@ -98,6 +100,30 @@ class PortalMixin(NetworkActivityMixin):
         summary = portal_uploads.format_portal_activity(activity)
         presence = f"In room: {roster}" if roster else "No guests connected"
         label.set_text(f"{presence} · {summary}")
+        peers = getattr(getattr(self, "_portal", None), "peers", None)
+        peer_list = peers.snapshot() if peers is not None else []
+        name_counts: dict[str, int] = {}
+        for peer in peer_list:
+            if isinstance(peer, dict) and isinstance(peer.get("name"), str):
+                folded = peer["name"].casefold()
+                name_counts[folded] = name_counts.get(folded, 0) + 1
+        peer_names = [
+            (f"{peer['name']} · {peer['id'][:6]}" if name_counts[peer["name"].casefold()] > 1
+             else peer["name"])
+            + ("" if peer.get("compatible") else " (incompatible)")
+            for peer in peer_list[:4] if isinstance(peer.get("name"), str)
+            and isinstance(peer.get("id"), str)
+        ]
+        peer_label = getattr(self, "portal_peers_label", None)
+        if peer_label is not None:
+            extra = len(peer_list) - len(peer_names)
+            if extra > 0:
+                peer_names.append(f"+{extra} more")
+            available = getattr(getattr(self, "_portal", None),
+                                "peer_discovery_available", False)
+            peer_label.set_text(", ".join(peer_names) if peer_names else
+                                ("No other SmoothCast hosts found" if available else
+                                 "Peer discovery is unavailable on this network"))
         self._reconcile_portal_casts()
         return True
 
