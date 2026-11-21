@@ -94,6 +94,16 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "Paired phones and TVs can act as screens or speakers.")
         self._switch(queue, "house_pin_enabled", "Require a house PIN to join",
                      "Only needed if people you don't trust use your Wi-Fi. Applies the next time the room restarts.")
+        room_port_row = Adw.ActionRow(
+            title="Room remote port",
+            subtitle="High-range port used by phone links and QR codes. Change takes effect on the next launch.",
+        )
+        self.portal_port_spin = Gtk.SpinButton.new_with_range(49152, 65535, 1)
+        self.portal_port_spin.set_numeric(True)
+        room_port_row.add_suffix(self.portal_port_spin)
+        room_port_row.set_activatable_widget(self.portal_port_spin)
+        self.portal_port_spin.connect("value-changed", self._change_portal_port)
+        queue.add(room_port_row)
 
         alerts = self._group(
             playback, "Notifications",
@@ -183,6 +193,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             for key, row in self._switches.items():
                 row.set_active(bool(cfg.get(key, False)))
             self.gain.set_value(float(cfg.get("audio_gain", 6.0)))
+            self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             media = self.owner.media
             audio_tracks = media.audio_streams if media is not None else []
             audio_labels = ["Auto (file default)"] + [track.label for track in audio_tracks]
@@ -263,6 +274,15 @@ class PreferencesWindow(Adw.PreferencesWindow):
         elif bool(owner.cfg.get(key, False)) != active:
             getattr(owner, toggles[key])()
         self.sync_from_owner()
+
+    def _change_portal_port(self, spin) -> None:
+        if self._syncing:
+            return
+        value = int(spin.get_value())
+        if not 49152 <= value <= 65535:
+            return
+        self.owner.cfg["portal_port"] = value
+        save_config(self.owner.cfg)
 
     def _change_gain(self, spin) -> None:
         if not self._syncing:
