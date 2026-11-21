@@ -112,7 +112,7 @@ def test_portal_rejects_non_rfc1918_addresses():
 @pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
 def test_up_next_render_preserves_focus_and_labels_queue_actions():
     source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
-    script = source[source.index("let queueRenderKey=null;"):source.index("let statusRequest=null")]
+    script = source[source.index("let queueRenderKey=null,queuePressed="):source.index("let statusRequest=null")]
     harness = r"""
 const assert = require("node:assert/strict");
 class Element {
@@ -270,18 +270,18 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
-    assert 'title.textContent=itemTitle' in page
+    assert 'li.children[0].children[0].textContent=itemTitle' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
     assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
     assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
-    assert 'setAttribute("aria-label",label)' in page
+    assert 'button.setAttribute("aria-label",labels[i])' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
-    assert "queue_revision=queueRevision" in page and "body.queue_command_id=`q" in page
+    assert "queue_revision=queueRevision" in page and "body.queue_command_id=" in page
     assert "Add to the shared queue" in page
 
 
