@@ -12,5 +12,8 @@ from __future__ import annotations
 # platform -> {test id relative to tests/: reason}
 GAPS: dict[str, dict[str, str]] = {
     "darwin": {},
-    "win32": {},
+    "win32": {
+        "test_reliability_metrics.py::test_store_uses_private_posix_mode":
+            "Windows does not expose POSIX 0600 file mode bits; privacy and redaction checks still run.",
+    },
 }

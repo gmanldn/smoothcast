@@ -60,13 +60,21 @@ def test_store_is_allowlisted_bounded_by_age_and_redacts_private_fields(tmp_path
     assert "/home/alice" not in blob
     assert "192.168.1.77" not in blob
     assert all("path" not in row and "receiver_ip" not in row for row in rows)
-    assert path.stat().st_mode & 0o777 == 0o600
     dashboard = metrics.dashboard_summary(
         path, now=wall + metrics.MAX_SUMMARIES + 5,
     )
     assert dashboard["sample_count"] == metrics.MAX_SUMMARIES
     assert dashboard["protocols"]["dlna"] == metrics.MAX_SUMMARIES
     assert "private-film" not in json.dumps(dashboard)
+
+
+def test_store_uses_private_posix_mode(tmp_path):
+    path = tmp_path / "reliability.json"
+    summary = metrics.SessionMetrics(
+        "cast", started=10.0, wall_time=1_700_000_000,
+    ).finish("completed", now=11.0)
+    metrics.append(summary, path)
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_store_prunes_expired_summaries_and_rejects_invalid_values(tmp_path):
