@@ -117,11 +117,11 @@ private media paths; preserve existing session data if write/fsync/replace fails
 `tests/test_cache_privacy.py` uses temporary directories and simulated
 failures only; the symlink and foreign-user guards never touch real user files.
 
-**Optional GTK smoke** is a *separate explicit* action:
-`python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
-private runtime/configuration, one-use token and isolated credentials.
-It quits promptly and forcibly terminates its process group on timeout. `scripts/gui_checks.py` runs real-widget behaviour checks the same way.
-Do not call the smoke runner inside pytest or point it at the active desktop.
+**Optional isolated GTK checks:** `python3 scripts/test_gui_isolated.py`
+checks startup; `python3 scripts/gui_checks.py local-video-runtime` exercises
+generated, muted media in `Gtk.Video` (play, seek, pause/resume, EOS, replay).
+They need Xvfb/xauth and private XDG state. Never run inside pytest or on the
+active desktop. Audible output and receiver handoff need device testing.
 
 **Real-device tests:** require an intentionally available receiver and clear
 scope. Never report Chromecast/DLNA, macOS or Windows native playback as

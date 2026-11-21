@@ -124,6 +124,87 @@ def saved_device(app, window) -> None:
           str(window.device_dropdown.get_selected()))
 
 
+def local_video_runtime(app, window) -> None:
+    """Exercise Gtk.Video decode, pause, seek, EOS and replay on generated media."""
+    if shutil.which("ffmpeg") is None:
+        check("runtime media generator is available", False, "ffmpeg not installed")
+        return
+    folder = Path(tempfile.mkdtemp(prefix="smoothcast-runtime-"))
+    clip = folder / "runtime.mp4"
+    try:
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+            "-i", "testsrc2=size=320x180:rate=15:duration=3", "-f", "lavfi",
+            "-i", "sine=frequency=440:sample_rate=44100:duration=3",
+            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-y", str(clip),
+        ], check=True, capture_output=True, timeout=30)
+        # Keep the generated audio stream silent; this private display must not
+        # make sound on a developer's machine.
+        prepared = window._on_local_prepared
+
+        def muted_prepared(stream, param, path):
+            stream.set_volume(0.0)
+            prepared(stream, param, path)
+
+        window._on_local_prepared = muted_prepared
+        window._preview_path = str(clip)
+        window._preview_position = 0.0
+        window._play_locally()
+        for _ in range(100):
+            pump(0.05)
+            stream = window._local_stream()
+            if stream is not None and (stream.is_prepared() or stream.get_error()):
+                break
+        stream = window._local_stream()
+        error = stream.get_error() if stream is not None else None
+        check("Gtk.Video prepared generated video/audio", bool(stream and stream.is_prepared()),
+              error.message if error else "no prepared media stream")
+        check("media stream reports a duration and seek support",
+              bool(stream and stream.get_duration() >= 2_000_000 and stream.is_seekable()))
+        if stream is None or not stream.is_prepared() or error is not None:
+            return
+        for _ in range(40):
+            pump(0.05)
+            if stream.get_timestamp() >= 250_000:
+                break
+        check("first playback advances decoded media time",
+              stream.get_playing() and stream.get_timestamp() >= 250_000,
+              str(stream.get_timestamp()))
+        window.seek_to(1.5)
+        for _ in range(30):
+            pump(0.05)
+            if stream.get_timestamp() >= 1_300_000:
+                break
+        check("in-window seek reaches the requested position",
+              1_300_000 <= stream.get_timestamp() <= 1_900_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        paused_at = stream.get_timestamp()
+        pump(0.3)
+        check("pause holds the local playback clock",
+              not stream.get_playing() and abs(stream.get_timestamp() - paused_at) < 100_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        check("resume restarts the prepared stream", stream.get_playing())
+        for _ in range(45):
+            pump(0.05)
+            if not stream.get_playing():
+                break
+        check("end of stream stops playback", not stream.get_playing(), str(stream.get_timestamp()))
+        window.seek_to(0.0)
+        window._toggle_local_preview()
+        pump(0.2)
+        check("replay restarts from the beginning",
+              stream.get_playing() and stream.get_timestamp() < 500_000,
+              str(stream.get_timestamp()))
+        window._unload_local_video()
+        check("cleanup releases the local media stream", window._local_stream() is None)
+    finally:
+        window._unload_local_video()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def report_problem(app, window) -> None:
     """Help > Report a problem opens a prefilled bug form and sends nothing itself (#274)."""
     items = menu_items(window.menu_button.get_menu_model())
@@ -551,6 +632,7 @@ def bookmarks_menu(app, window) -> None:
 
 
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+             "local-video-runtime": local_video_runtime,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
