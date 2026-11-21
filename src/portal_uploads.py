@@ -158,7 +158,7 @@ def _safe_name(value: object) -> tuple[str, str, bool]:
     name = unicodedata.normalize("NFC", value.strip()).replace("\\", "/").rsplit("/", 1)[-1]
     if (not name or len(name.encode("utf-8")) > 240
             or any(ord(char) < 32 or ord(char) == 127 for char in name)):
-        raise UploadError(400, "The selected file name is invalid")
+        raise UploadError(400, "Rename this file and try uploading it again.")
     suffix = Path(name).suffix.lower()
     if suffix not in VIDEO_SUFFIXES | AUDIO_SUFFIXES:
         raise UploadError(422, "Choose a supported audio or video file")
@@ -278,12 +278,12 @@ class UploadManager:
 
     def _get(self, owner: str, upload_id: str) -> _Upload:
         if not isinstance(upload_id, str) or not _UPLOAD_ID.fullmatch(upload_id):
-            raise UploadError(404, "Upload not found")
+            raise UploadError(404, "Upload not found. Choose the file again.")
         with self._lock:
             upload = self._uploads.get(upload_id)
         owner_key = hashlib.sha256(owner.encode("utf-8")).hexdigest()
         if upload is None or not hmac.compare_digest(upload.owner, owner_key):
-            raise UploadError(404, "Upload not found")
+            raise UploadError(404, "Upload not found. Choose the file again.")
         return upload
 
     def is_queue_only(self, owner: str, upload_id: str) -> bool:
@@ -298,7 +298,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found")
+                raise UploadError(404, "Upload not found. Choose the file again.")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received, "complete": upload.complete_path is not None,
                     "ready_to_cast": upload.early_cast in {"requested", "active"}}
@@ -368,7 +368,7 @@ class UploadManager:
             raise UploadError(400, "Upload chunk range or size is invalid")
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found")
+                raise UploadError(404, "Upload not found. Choose the file again.")
             if upload.complete_path is not None:
                 raise UploadError(409, "This upload is already complete")
             if start != upload.received:
@@ -437,7 +437,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found")
+                raise UploadError(404, "Upload not found. Choose the file again.")
             if upload.complete_path is None:
                 if upload.received != upload.size:
                     raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
@@ -507,7 +507,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found")
+                raise UploadError(404, "Upload not found. Choose the file again.")
             if not accepted:
                 upload.cast_submitted = False
 
@@ -515,7 +515,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found")
+                raise UploadError(404, "Upload not found. Choose the file again.")
             if upload.cast_submitted:
                 raise UploadError(409, "Casting has already been requested for this upload")
             try:
