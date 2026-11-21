@@ -53,8 +53,10 @@ served locally with no external assets.
   desktop screen and PIN private, and close SmoothCast to stop the listener.
   There is no separate cloud account or room server.
 - Uploads use sequential 2 MiB HTTP chunks with bounded 64 KiB server reads.
-  Selecting **Add to the shared queue** disables early casting, so a partial
-  file is never offered to the receiver; the completed file is queued instead.
+  **Add to the shared queue** is selected by default for every authenticated
+  participant. It disables early casting, so a partial file is never offered to
+  the receiver; the completed file is queued instead. Clearing the selection is
+  an explicit play-now request and may start an early cast.
   Each acknowledged chunk is synced to disk; an interrupted chunk rolls back to
   its starting offset, and the browser resumes from the server's confirmed byte
   count. The browser never reads the entire video into memory.

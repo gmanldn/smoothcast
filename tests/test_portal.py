@@ -437,7 +437,7 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         status, raw, _ = rig.request("POST", "/api/uploads",
-                                     {"name": "../clip.mp4", "size": 6},
+                                     {"name": "../clip.mp4", "size": 6, "queue": False},
                                      cookie=cookie, csrf=login_result["csrf"], origin=origin)
         assert status == 201
         created = decode(raw)
@@ -504,6 +504,43 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
         uploads.close()
 
 
+def test_upload_defaults_to_queue_when_intent_is_omitted(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads", early_cast_min_bytes=1)
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 6},
+                                     cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie, csrf=csrf,
+            origin=origin, extra_headers={"Content-Range": "bytes 0-2/6"},
+            content_type="application/octet-stream")
+        body = decode(raw)
+        assert status == 200 and body["ready_to_cast"] is False
+        assert rig.calls == []
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie, csrf=csrf,
+            origin=origin, extra_headers={"Content-Range": "bytes 3-5/6"},
+            content_type="application/octet-stream")
+        assert status == 200
+        status, _, _ = rig.request(
+            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+            csrf=csrf, origin=origin)
+        assert status == 202
+        assert rig.calls[-1][0] == "queue_add"
+        assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
+    finally:
+        rig.close()
+        uploads.close()
+
+
 def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
     import portal_uploads
 
@@ -513,7 +550,8 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         csrf = login_result["csrf"]
-        status, raw, _ = rig.request("POST", "/api/uploads", {"name": "clip.mkv", "size": 6},
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 6, "queue": False},
                                      cookie=cookie, csrf=csrf, origin=origin)
         assert status == 201
         upload_id = decode(raw)["id"]

@@ -397,7 +397,7 @@ class _Handler(BaseHTTPRequestHandler):
                 body = self._body()
                 created = self.server.uploads.create(
                     self._cookie_token() or "", body.get("name"), body.get("size"),
-                    self.client_address[0], queue_only=bool(body.get("queue")))
+                    self.client_address[0], queue_only=bool(body.get("queue", True)))
             except PortalRequestError as exc:
                 return self._error(exc.status, exc.message)
             except portal_uploads.UploadError as exc:
@@ -415,7 +415,7 @@ class _Handler(BaseHTTPRequestHandler):
                     default_queue = self.server.uploads.is_queue_only(
                         self._cookie_token() or "", upload_id)
                 except portal_uploads.UploadError:
-                    default_queue = False
+                    default_queue = True
                 queue_only = bool(body.get("queue", default_queue))
                 media_path, name, dispatch = self.server.uploads.finalize(
                     self._cookie_token() or "", upload_id)
