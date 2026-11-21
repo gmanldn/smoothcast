@@ -167,6 +167,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.fence = fence or portal_commands.CommandFence(clock=clock)
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
+        self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
         self.library_search: Callable | None = None
         self.library_replication = None
@@ -523,6 +524,8 @@ class _Handler(BaseHTTPRequestHandler):
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
         if not self._authenticated():
             return self._error(401, "Session expired")
+        if self._throttle("read"):
+            return
         engine = getattr(self.server, "library_search", None)
         query = parse_qs(urlsplit(self.path).query)
         text = (query.get("q") or [""])[0]
@@ -586,6 +589,21 @@ class _Handler(BaseHTTPRequestHandler):
             return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
         return True
 
+    def _throttle(self, route_class: str) -> bool:
+        """Bound authenticated traffic; internal desktop callbacks bypass HTTP."""
+        participant = self.server.session_participant(self._cookie_token())
+        if participant is None:
+            self._error(401, "Session expired")
+            return True
+        delay = self.server.request_limiter.retry_after(participant, route_class)
+        if delay <= 0:
+            return False
+        self._send(
+            429, {"ok": False, "error": "Too many room requests. Try again shortly."},
+            extra_headers={"Retry-After": str(max(1, math.ceil(delay)))},
+        )
+        return True
+
     def _client_compatible(self) -> bool:
         """Reject stale browser writes before mutation or GTK dispatch."""
         schema = self.headers.get("X-SmoothCast-Client-Schema")
@@ -625,6 +643,8 @@ class _Handler(BaseHTTPRequestHandler):
             resumed = self.server.resume_session(self._cookie_token())
             if resumed is None:
                 return self._error(401, "Session expired")
+            if self._throttle("read"):
+                return
             csrf, participant = resumed
             return self._send(200, {
                 "ok": True, "csrf": csrf,
@@ -634,6 +654,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
+            if self._throttle("read"):
+                return
             participant_id = self.server.session_participant(self._cookie_token())
             if participant_id is None:
                 return self._error(401, "Session expired")
@@ -668,6 +690,8 @@ class _Handler(BaseHTTPRequestHandler):
                                     "build": page_build(), "client_schema": CLIENT_SCHEMA})
         upload_id = self._upload_route(path)
         if upload_id and self._authenticated():
+            if self._throttle("upload"):
+                return
             if self.server.uploads is None:
                 return self._error(503, "Upload storage is unavailable")
             try:
@@ -686,6 +710,10 @@ class _Handler(BaseHTTPRequestHandler):
         if (path in {"/api/login", "/api/action", "/api/profile"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
+        if (path in {"/api/action", "/api/profile"} or path.startswith("/api/uploads")):
+            if self._authenticated(csrf=True) and self._throttle(
+                    "upload" if path.startswith("/api/uploads") else "mutation"):
+                return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
@@ -806,6 +834,9 @@ class _Handler(BaseHTTPRequestHandler):
             action = body.get("action")
             try:
                 envelope = portal_commands.parse_envelope(body)
+                participant_id = self.server.session_participant(self._cookie_token())
+                if participant_id is None:
+                    return self._error(401, "Session expired")
                 if envelope is None:
                     if not isinstance(action, str) or action not in {
                             "play_pause", "stop", "seek", "volume", "music_autogain",
@@ -876,7 +907,7 @@ class _Handler(BaseHTTPRequestHandler):
                     envelope = portal_commands.legacy_envelope(
                         body, self.server.fence,
                         client_id="legacy-" + self.server._session_key(token)[:40])
-                receipt = self.server.commands.execute(envelope)
+                receipt = self.server.commands.execute(envelope, participant_key=participant_id)
             except portal_commands.CommandError as exc:
                 extra = {}
                 if exc.status == 409:
@@ -933,6 +964,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
+        if self._throttle("upload"):
+            return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
@@ -968,6 +1001,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
+        if self._throttle("upload"):
+            return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
@@ -1173,8 +1208,9 @@ function matchingBuild(data){
   showUpdateNotice();return false;
 }
 const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-SmoothCast-Client-Build":PAGE_BUILD};
+let rateDelayUntil=0;
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
-async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
@@ -1308,7 +1344,7 @@ function scheduleRefresh(){
   clearTimeout(statusTimer);
   if(!csrf||stalePage||document.hidden)return;
   const delay=statusFailures?Math.min(30000,2000*2**statusFailures+Math.random()*500):2000;
-  statusTimer=setTimeout(refresh,delay);
+  statusTimer=setTimeout(refresh,Math.max(delay,rateDelayUntil-Date.now()));
 }
 async function refresh(){
   clearTimeout(statusTimer);
@@ -1321,6 +1357,7 @@ async function refresh(){
     const d=await r.json();
     if(controller.signal.aborted||busy)return;
     if(r.status===401){expireSession();return}
+    if(r.status===429){const seconds=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+seconds*1000;throw Error("Room updates are busy. Retrying shortly…")}
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
     const s=d.state||{};$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
@@ -1395,7 +1432,7 @@ function renderPeers(peers,available){
   }
 }
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
-async function act(action,value,extra={}){if(busy)return;busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+async function act(action,value,extra={}){if(busy)return;if(Date.now()<rateDelayUntil){showError("errorDash","Too many controls at once. Try again shortly.");return}busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
@@ -1410,7 +1447,7 @@ async function uploadRequest(method,path,body,headers={}){
     const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
     const data=await response.json();
     if(data.code==="client_reload_required")showUpdateNotice();
-    if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
+    if(!response.ok)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data.error||"Upload request failed"),{status:response.status,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
     return data;
   }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
 }
@@ -1419,10 +1456,10 @@ async function sendChunk(path,file,offset,end){
   for(let attempt=0;;attempt++){
     if(cancelUpload)throw Error("Upload cancelled");
     try{return await uploadRequest("PUT",path,body,headers)}catch(error){
-      if(error.status&&error.status<500&&error.status!==409)throw error;
+      if(error.status&&error.status<500&&error.status!==409&&error.status!==429)throw error;
       if(attempt===4||cancelUpload||!csrf)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
-      await new Promise(resolve=>setTimeout(resolve,250*2**attempt));
+      await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
       try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
       catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
