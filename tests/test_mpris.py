@@ -290,11 +290,21 @@ print("LIVE OK")
 """
 
 
+def _gi_available() -> bool:
+    """PyGObject is present on desktops but absent from the portable CI image."""
+    result = subprocess.run([sys.executable, "-I", "-c", "import gi"],
+                            capture_output=True, text=True, timeout=60,
+                            env={"PATH": os.environ.get("PATH", "")})
+    return result.returncode == 0
+
+
 @unittest.skipUnless(sys.platform.startswith("linux"), "MPRIS2 is Linux-only")
 class LiveBusTests(unittest.TestCase):
     def test_real_dbus_round_trip(self):
         if shutil.which("dbus-daemon") is None:
             self.skipTest("dbus-daemon is not installed")
+        if not _gi_available():
+            self.skipTest("PyGObject (gi) is not installed")
         code = _LIVE_SCRIPT.replace("SRC", repr(str(ROOT / "src")))
         env = {"PATH": os.environ.get("PATH", "")}
         result = subprocess.run([sys.executable, "-I", "-c", code],
