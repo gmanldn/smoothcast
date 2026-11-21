@@ -24,6 +24,7 @@ import playback_state
 import cast_targets
 import playlist_control
 import queue_metadata
+import reliability_metrics
 from queue_prewarm_ui import QueuePrewarmMixin
 
 from cast_widgets import save_config, fmt_time, Async
@@ -678,6 +679,7 @@ class QueueMixin(QueuePrewarmMixin):
             self._set_device_badge("STREAMING", "online")
         else:
             self._set_device_badge("AVAILABLE", "online")
+        reliability_metrics.observe(self, self.device_state)
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
             # Chromecast reports the *new HLS playlist's* current_time from

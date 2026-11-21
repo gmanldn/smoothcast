@@ -14,6 +14,7 @@ from unittest import mock
 from gui_source import main_window_methods
 import castctl
 import playback_state
+import reliability_metrics
 import streamer
 
 URL = "http://192.168.1.10:8767/movie.m3u8"
@@ -31,6 +32,7 @@ def extracted(*names, async_runs):
         "streamer": streamer,
         "playback_state": playback_state,
         "castctl": castctl,
+        "reliability_metrics": reliability_metrics,
         "pathlib": pathlib,
         "time": time,
         "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:

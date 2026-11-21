@@ -151,9 +151,10 @@ def _clean_receiver(receiver: object, home: str) -> dict:
 
 
 def collect(*, error_log=None, activity=None, config=None, home=None, server_log=None,
-            receiver=None) -> dict:
+            receiver=None, reliability=None) -> dict:
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
+    from reliability_metrics import recent as recent_reliability
 
     home_value = str(home) if home is not None else str(Path.home())
     payload: dict = {
@@ -172,6 +173,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
                        for line in _tail(server_log, MAX_SERVER_LINES)],
         "config": redact_config(config or {}, home=home_value),
         "receiver": _clean_receiver(receiver, home_value),
+        "reliability": recent_reliability(reliability),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),
@@ -224,14 +226,14 @@ def default_path(*, directory=None, now: float | None = None) -> Path:
 
 
 def export(*, destination=None, error_log=None, activity=None, config=None,
-           home=None, server_log=None, receiver=None) -> Path:
+           home=None, server_log=None, receiver=None, reliability=None) -> Path:
     """Collect and write a bounded, redacted bundle; return the written path."""
     if error_log is None:
         error_log = default_error_log_path()
     if server_log is None:
         server_log = default_server_log_path()
     payload = collect(error_log=error_log, activity=activity, config=config, home=home,
-                      server_log=server_log, receiver=receiver)
+                      server_log=server_log, receiver=receiver, reliability=reliability)
     return write_bundle(destination or default_path(), payload)
 
 

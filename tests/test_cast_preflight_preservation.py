@@ -15,6 +15,7 @@ from gui_source import main_window_methods
 import dlna
 import playback_state
 import queue_metadata
+import reliability_metrics
 import streamer
 import subtitle_style
 import watch_history
@@ -28,7 +29,9 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
         for name in names
     )
     ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib,
-          "watch_history": watch_history, "queue_metadata": queue_metadata}
+          "watch_history": watch_history, "queue_metadata": queue_metadata,
+          "reliability_metrics": reliability_metrics,
+          "Async": SimpleNamespace(run=lambda _work, **_kwargs: None)}
     ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(
@@ -122,13 +125,17 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     import audio_delay
     import subtitle_delay
 
-    def run(work, *, done, failed, domain):
+    def run(work, *, done=None, failed=None, domain):
         try:
-            work()
+            result = work()
         except dlna.DlnaError as exc:
-            failed(str(exc))
+            if failed is not None:
+                failed(str(exc))
         else:
-            raise AssertionError("incompatible cast reached playback")
+            if done is not None:
+                done(result)
+            else:
+                raise AssertionError("incompatible cast reached playback")
 
     w, previous = window(device="DLNA · Living Room · 192.168.1.41", subs="off",
                          dependencies={

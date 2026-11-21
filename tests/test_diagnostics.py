@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import diagnostics
+import reliability_metrics
 import version
 
 
@@ -76,6 +77,23 @@ class CollectTests(unittest.TestCase):
         payload = diagnostics.collect()
         self.assertEqual(payload["smoothcast"]["label"], version.label())
         self.assertIn("ffmpeg", payload["tools"])
+
+    def test_includes_only_recent_allowlisted_reliability_summaries(self):
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reliability.json"
+            session = reliability_metrics.SessionMetrics(
+                "cast", wall_time=time.time(),
+            )
+            summary = session.finish("completed")
+            summary["title"] = "Private Film Name"
+            reliability_metrics.append(summary, path)
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                payload = diagnostics.collect(reliability=path)
+        self.assertEqual(len(payload["reliability"]), 1)
+        self.assertNotIn("title", payload["reliability"][0])
+        self.assertNotIn("Private Film Name", json.dumps(payload))
 
 
 class WriteBundleTests(unittest.TestCase):

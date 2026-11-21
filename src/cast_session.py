@@ -41,6 +41,7 @@ import hls_pause_recovery
 
 import preflight
 import queue_metadata
+import reliability_metrics
 
 import url_control
 
@@ -88,6 +89,7 @@ class SessionMixin:
         self._finished_handled = False
         device = self._device()
         renderer = self._dlna_renderer(device)
+        reliability_metrics.start_attempt(self, "dlna" if renderer is not None else "cast")
         cancel = threading.Event()
         self._dlna_cancel = cancel
         if renderer is not None:
@@ -254,9 +256,12 @@ class SessionMixin:
             self._dlna_cancel = None
             if self._closing:
                 self.session = session
+                reliability_metrics.accept_attempt(self, session, Async.run)
+                reliability_metrics.finish_active(self, "interrupted", Async.run)
                 self.busy = False
                 self._finish_delayed_close()
                 return
+            reliability_metrics.accept_attempt(self, session, Async.run)
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -301,6 +306,7 @@ class SessionMixin:
         def failed(message):
             self._cast_starting = False
             self._dlna_cancel = None
+            reliability_metrics.fail_attempt(self, Async.run)
             if self._closing:
                 self.busy = False
                 self._finish_delayed_close()
@@ -368,6 +374,9 @@ class SessionMixin:
             return bool(ok)
 
         def done(sent_remote_stop):
+            reliability_metrics.finish_active(
+                self, "stopped" if sent_remote_stop else "interrupted", Async.run,
+            )
             self.busy = False
             self.tracker.clear()
             self.now_playing = None
@@ -447,8 +456,7 @@ class SessionMixin:
 
 
     def seek_to(self, target: float) -> None:
-        # Check the command lock before moving the seekbar. GTK drag signals,
-        # keyboard shortcuts and programmatic actions can race a cast startup.
+        # Guard before optimistic seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -533,7 +541,6 @@ class SessionMixin:
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
-        # Keep the seekbar at the requested source time during restart.
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
@@ -541,7 +548,7 @@ class SessionMixin:
                     audio_track_override: int | None = None,
                     resume_after_pause: bool = False) -> None:
         if session.mode == "dlna":
-            # DLNA restarts use progressive AVTransport.
+            # DLNA restart.
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
             return
@@ -667,8 +674,7 @@ class SessionMixin:
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index > 0:
-                # Don't change now_playing until _cast_path actually succeeds;
-                # an in-flight command can reject a new cast as busy.
+                # Keep now_playing unchanged until cast acceptance.
                 self._cast_path(pathlib.Path(self.queue[index - 1]), 0.0)
                 return
         if self.now_playing:
@@ -687,8 +693,7 @@ class SessionMixin:
         session = self.session
         if session is not None and session.state is not None:
             if self.busy:
-                # Reject the live change without silently saving it as the
-                # next-cast preference.
+                # Reject live changes without saving them.
                 self.toast("Hold on — finishing the last command")
                 return
             self.cfg["playback_speed"] = speed
@@ -698,8 +703,7 @@ class SessionMixin:
             position = self.tracker.value() or 0.0
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
-            # The seekbar uses source-film time; preserve that position when
-            # changing pace and restart FFmpeg at the *new* requested speed.
+            # Preserve source time when changing playback speed.
             self._restart_at(session, position, speed_override=speed)
             self.toast(f"Speed {speed}x — stream restarted")
         else:
@@ -709,6 +713,7 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        reliability_metrics.finish_active(self, "completed", Async.run)
         self._record_watch("completed")
         self._stop_monitor()
         self._set_levels_hint("")
@@ -731,8 +736,7 @@ class SessionMixin:
             )
 
             def advance(_result=None):
-                # Release the guard only after the old HLS files and server
-                # are gone. The fresh _cast_path acquires it again.
+                # Release the guard only after old stream cleanup.
                 self.busy = False
                 self._cast_path(next_path, 0.0)
 
@@ -761,8 +765,7 @@ class SessionMixin:
                 self.toast(f"Cleanup failed: {message}", error=True)
                 self._refresh_controls()
 
-            # The receiver already reported IDLE. Never send an extra STOP
-            # that could interrupt another app's newly started playback.
+            # Don't stop after confirmed IDLE; another app may have started.
             Async.run(
                 lambda: session.stop(device, send_stop=False),
                 done=cleaned, failed=failed,
@@ -802,8 +805,7 @@ class SessionMixin:
         buffered = None
         snapshot = progress_model.EMPTY
         if self.session and self.session.mode == "transcode" and self.session.state:
-            # One background snapshot feeds both the seekbar buffer and the
-            # details panel, so the two never disagree within a tick.
+            # Reuse one snapshot for the seekbar and details.
             snapshot = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
                 self.session.state.offset, snapshot.out_time, duration,
@@ -849,11 +851,10 @@ class SessionMixin:
             return False
         session = streamer.Session()
         session.restore(state)
-        # Never issue status/control requests for a saved session on another TV.
+        # Verify saved-session ownership before receiver commands.
         if state.device != self._device():
             return False
-        # Completed encoders may still have served HLS segments playing; verify
-        # playlist/server and receiver ownership off the GTK thread.
+        # Verify HLS/server and receiver ownership off the GTK thread.
         if not session.active() and session.mode != "transcode":
             streamer.clear_session()
             return False
@@ -1135,6 +1136,8 @@ class SessionMixin:
 
     def _cast_failed(self, message: str) -> None:
         self._dlna_cancel = None
+        reliability_metrics.fail_attempt(self, Async.run)
+        reliability_metrics.finish_active(self, "failed", Async.run)
         self.busy = False
         self._stop_monitor()
         self._set_levels_hint("")

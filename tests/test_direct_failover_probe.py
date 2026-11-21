@@ -17,6 +17,7 @@ import audio_delay
 import direct_probe
 import playback_state
 import queue_metadata
+import reliability_metrics
 import streamer
 import subtitle_delay
 import subtitle_style
@@ -124,6 +125,7 @@ def cast_worker(status="rejected"):
         "playback_state": playback_state,
         "watch_history": watch_history,
         "queue_metadata": queue_metadata,
+        "reliability_metrics": reliability_metrics,
         "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,

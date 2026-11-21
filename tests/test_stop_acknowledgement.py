@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import dlna
+import reliability_metrics
 import streamer
 from gui_source import main_window_methods
 
@@ -75,6 +76,7 @@ def make_window(stop_result):
         "castctl": SimpleNamespace(info=mock.Mock(), stop=mock.Mock(return_value=(True, ""))),
         "dlna": SimpleNamespace(stop=mock.Mock()),
         "save_config": mock.Mock(),
+        "reliability_metrics": reliability_metrics,
     }
     exec(compile("class Window:\n" + source, "<stop-stream>", "exec"), namespace)
     window = namespace["Window"]()
