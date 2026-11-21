@@ -62,6 +62,7 @@ def test_opt_in_check_uses_selected_host_and_never_probes_until_worker_runs():
 
 
 def test_selection_changed_while_worker_runs_never_shows_previous_tv_result():
+    """INV-010: Network probe must discard results from an obsolete target."""
     w, selected, jobs, enqueue = window()
     network_route_ui.start(w, enqueue)
     selected[0] = "Bedroom"
