@@ -189,3 +189,100 @@ def test_stop_cancels_cast_during_probe_before_stopping_previous_session(monkeyp
     assert w.session is previous and not w.busy and w._dlna_cancel is None
     assert any("Cancelling cast setup" in call.args[0]
                for call in w.toast.call_args_list)
+
+
+def test_stop_during_old_session_stop_aborts_new_receiver_handoff(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    def run(work, *, done, failed, domain):
+        try:
+            done(work())
+        except Exception as exc:
+            failed(str(exc))
+
+    w, previous = window(
+        device="DLNA · Living Room · 192.168.1.41", subs="off",
+        dependencies={
+            "Async": SimpleNamespace(run=run), "dlna": dlna,
+            "streamer": streamer, "audio_delay": audio_delay,
+            "subtitle_delay": subtitle_delay, "subtitle_style": subtitle_style,
+        },
+    )
+    renderer = dlna.Renderer("Living Room", "192.168.1.41", "", "", "")
+    w._dlna_renderer = mock.Mock(return_value=renderer)
+    w.np_meta = mock.Mock()
+    w._closing = False
+    w.cfg.update(direct=True, audio="original")
+    w.tracker = mock.Mock()
+    w.tracker.value.return_value = None
+    w.media = None
+    stopped = {"value": False}
+
+    def stop_previous(*_args, **_kwargs):
+        stopped["value"] = True
+        w.stop_stream()
+
+    previous.stop = mock.Mock(side_effect=stop_previous)
+    previous.mode = "dlna"
+    previous.active = lambda: not stopped["value"]
+    monkeypatch.setattr(streamer, "ffprobe", lambda _path: object())
+    monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
+    monkeypatch.setattr(dlna, "negotiate_media_type", lambda _renderer: "video/mp4")
+    with mock.patch.object(dlna, "Session") as session:
+        w._cast_path(pathlib.Path("/new-film.mp4"), 0.0)
+        session.assert_not_called()
+    previous.stop.assert_called_once_with(
+        "DLNA · Living Room · 192.168.1.41", send_stop=True,
+    )
+    assert w.session is previous
+    w._cast_failed.assert_called_once_with("Cast cancelled before receiver handoff")
+
+
+def test_stop_during_new_session_start_stops_owned_receiver(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    def run(work, *, done, failed, domain):
+        try:
+            done(work())
+        except Exception as exc:
+            failed(str(exc))
+
+    w, previous = window(
+        device="TV", subs="off",
+        dependencies={
+            "Async": SimpleNamespace(run=run), "dlna": dlna,
+            "streamer": streamer, "audio_delay": audio_delay,
+            "subtitle_delay": subtitle_delay, "subtitle_style": subtitle_style,
+            "pretty_title": lambda _path: "New Film", "DEFAULTS": {"audio_gain": 0.0},
+        },
+    )
+    w._closing = False
+    w.cfg.update(direct=False, audio="original", quality="high")
+    w.tracker = mock.Mock()
+    w.tracker.value.return_value = None
+    w.media = None
+    stopped = {"value": False}
+    previous.stop = mock.Mock(side_effect=lambda *_a, **_k: stopped.update(value=True))
+    previous.mode = "transcode"
+    previous.active = lambda: not stopped["value"]
+    monkeypatch.setattr(streamer, "ffprobe", lambda _path: SimpleNamespace(direct_ok=False))
+    monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
+    stop_calls = []
+
+    class NewSession:
+        mode = "transcode"
+        state = None
+
+        def start_transcode(self, *_args, **_kwargs):
+            w.stop_stream()
+
+        def stop(self, _device, *, send_stop=True):
+            stop_calls.append(send_stop)
+
+    monkeypatch.setattr(streamer, "Session", NewSession)
+    w._cast_path(pathlib.Path("/new-film.mp4"), 0.0)
+
+    assert stop_calls == [True, False]
+    assert w._cast_failed.call_args.args == ("Cast cancelled during receiver handoff",)
