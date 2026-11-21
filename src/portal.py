@@ -1269,9 +1269,45 @@ function expireSession(){
   $("pin").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
-let queueRenderKey=null;
+let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
+const queueElement=$("queue");
+function queueAction(button){
+  const row=button.closest("[data-queue-id]");
+  if(!row)return;
+  const id=row.dataset.queueId;
+  const index=queueState.findIndex(item=>String(item.id)===id);
+  if(index<0){showError("errorDash","That queue item is no longer here");return}
+  const item=queueState[index];
+  switch(button.dataset.queueAction){
+    case "vote":return act("queue_vote",!item.voted,{id});
+    case "play":return act("queue_play",undefined,{id});
+    case "move-earlier":return act("queue_move",undefined,{id,position:Math.max(0,index-1)});
+    case "move-later":return act("queue_move",undefined,{id,position:Math.min(queueState.length-1,index+1)});
+    case "next":return act("queue_next",undefined,{id});
+    case "remove":return act("queue_remove",undefined,{id});
+  }
+}
+queueElement.addEventListener("click",event=>{
+  const button=event.target?.closest?.("[data-queue-action]");
+  if(button&&queueElement.contains(button))queueAction(button);
+});
+queueElement.addEventListener("pointerdown",event=>{
+  if(event.target?.closest?.("[data-queue-action]"))queuePressed=true;
+});
+function releaseQueuePointer(){
+  if(!queuePressed)return;
+  queuePressed=false;
+  const pending=deferredQueue;
+  deferredQueue=null;
+  if(pending)renderQueue(pending);
+}
+// Click follows pointerup, so retain the pressed button until its click runs.
+document.addEventListener("pointerup",()=>setTimeout(releaseQueuePointer,0));
+document.addEventListener("pointercancel",releaseQueuePointer);
 function renderQueue(items){
-  const queue=$("queue"),rows=Array.isArray(items)?items:[];
+  const queue=queueElement,rows=Array.isArray(items)?items:[];
+  if(queuePressed){deferredQueue=rows;return}
+  queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,
   ]));
@@ -1281,62 +1317,64 @@ function renderQueue(items){
   const focusTarget=focusedRow&&focused.dataset?.queueAction
     ?{id:focusedRow.dataset.queueId,action:focused.dataset.queueAction}:null;
   queueRenderKey=key;
-  queue.replaceChildren();
+  const oldRows=new Map(Array.from(queue.children)
+    .filter(row=>row.dataset?.queueId).map(row=>[row.dataset.queueId,row]));
+  const nodes=[];
   if(!rows.length){
     const empty=document.createElement("li");
     empty.className="empty";
     empty.textContent="No videos queued";
-    queue.append(empty);
+    nodes.push(empty);
   }else rows.forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
-    const li=document.createElement("li");
-    li.className="queue-item";
-    li.dataset.queueId=String(item.id||"");
+    const id=String(item.id||"");
+    let li=oldRows.get(id);
+    if(!li){
+      li=document.createElement("li");
+      li.className="queue-item";
+      li.dataset.queueId=id;
+      const text=document.createElement("div");
+      text.append(document.createElement("strong"),document.createElement("div"));
+      text.children[1].className="muted";
+      const actions=document.createElement("div");
+      actions.className="queue-actions";
+      for(const action of ["vote","play","move-earlier","move-later","next","remove"]){
+        const button=document.createElement("button");
+        button.dataset.queueAction=action;
+        actions.append(button);
+      }
+      li.append(text,actions);
+    }
     li.setAttribute("aria-posinset",String(index+1));
     li.setAttribute("aria-setsize",String(rows.length));
-    const text=document.createElement("div"),title=document.createElement("strong");
-    title.textContent=itemTitle;
-    const meta=document.createElement("div");
-    meta.className="muted";
-    meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")
-      +(item.duration?` · ${clock(item.duration)}`:"");
-    text.append(title,meta);
-    const actions=document.createElement("div");
-    actions.className="queue-actions";
-    const action=(name,label,caption,kind,handler)=>{
-      const button=document.createElement("button");
-      button.className=`tiny ${kind}`.trim();
-      button.textContent=caption;
-      button.dataset.queueAction=name;
-      button.setAttribute("aria-label",label);
-      button.addEventListener("click",handler);
-      actions.append(button);
-      return button;
-    };
-    const vote=action("vote",`${item.voted?"Remove vote for":"Vote for"} ${itemTitle}`,
-      item.voted?"Voted":"Vote","vote" ,
-      ()=>act("queue_vote",!item.voted,{id:item.id}));
-    if(item.voted)vote.classList.add("on");
-    action("play",`Play ${itemTitle} now`,"Play now","",
-      ()=>act("queue_play",undefined,{id:item.id}));
-    const moveEarlier=action("move-earlier",`Move ${itemTitle} earlier in Up Next`,"↑","secondary",
-      ()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,index-1)}));
-    moveEarlier.disabled=index===0;
-    const moveLater=action("move-later",`Move ${itemTitle} later in Up Next`,"↓","secondary",
-      ()=>act("queue_move",undefined,{id:item.id,position:Math.min(rows.length-1,index+1)}));
-    moveLater.disabled=index===rows.length-1;
-    action("next",`Play ${itemTitle} next`,"Next","secondary",
-      ()=>act("queue_next",undefined,{id:item.id}));
-    action("remove",`Remove ${itemTitle} from Up Next`,"×","secondary",
-      ()=>act("queue_remove",undefined,{id:item.id}));
-    li.append(text,actions);
-    queue.append(li);
+    li.children[0].children[0].textContent=itemTitle;
+    li.children[0].children[1].textContent=(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
+      +(item.duration?" · "+clock(item.duration):"");
+    const buttons=li.children[1].children;
+    const labels=[
+      (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
+      "Play "+itemTitle+" now",
+      "Move "+itemTitle+" earlier in Up Next",
+      "Move "+itemTitle+" later in Up Next",
+      "Play "+itemTitle+" next",
+      "Remove "+itemTitle+" from Up Next",
+    ];
+    const captions=[item.voted?"Voted":"Vote","Play now","↑","↓","Next","×"];
+    Array.from(buttons).forEach((button,i)=>{
+      button.textContent=captions[i];
+      button.setAttribute("aria-label",labels[i]);
+      button.className="tiny"+(i===0?" vote"+(item.voted?" on":""):"")
+        +([2,3,4,5].includes(i)?" secondary":"");
+      button.disabled=(i===2&&index===0)||(i===3&&index===rows.length-1);
+    });
+    nodes.push(li);
   });
+  queue.replaceChildren(...nodes);
   if(focusTarget){
-    const row=Array.from(queue.children).find(item=>item.dataset.queueId===focusTarget.id);
-    const target=row&&Array.from(row.children).flatMap(item=>Array.from(item.children||[]))
+    const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
+    const target=row&&Array.from(row.children[1].children)
       .find(item=>item.dataset.queueAction===focusTarget.action);
-    (target||queue).focus({preventScroll:true});
+    if(target!==focused)(target||queue).focus({preventScroll:true});
   }
 }
 let statusRequest=null,statusTimer=null,statusFailures=0;
