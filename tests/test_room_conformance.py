@@ -305,7 +305,14 @@ def test_queue_replay_and_stale_order_fuzz_has_reproducible_seed(room):
     first, second = room.login("Phone 1"), room.login("Phone 2")
     stale_client = RoomClient(room, second.cookie, second.csrf, second.participant_id)
 
+    # Each seed models a separate user interaction burst. Exercise the real
+    # limiter with synthetic elapsed time instead of disabling a security
+    # guard or sleeping for 100 seconds in CI. Requests inside a seed still
+    # share one instant and therefore remain subject to the burst ceiling.
+    now = [room.server.clock()]
+    room.server.request_limiter._clock = lambda: now[0]
     for seed in range(100):
+        now[0] += 1.0
         status, initial, _headers = first.status()
         assert status == 200, f"seed={seed}"
         initial_state = initial["state"]
