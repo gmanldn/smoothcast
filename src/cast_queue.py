@@ -26,11 +26,12 @@ import playlist_control
 import queue_metadata
 import reliability_metrics
 from queue_prewarm_ui import QueuePrewarmMixin
+from music_import_ui import MusicImportMixin
 
 from cast_widgets import save_config, fmt_time, Async
 
 
-class QueueMixin(QueuePrewarmMixin):
+class QueueMixin(MusicImportMixin, QueuePrewarmMixin):
     def add_files(self) -> None:
         dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
@@ -239,7 +240,7 @@ class QueueMixin(QueuePrewarmMixin):
         if not added:
             return
         self._rebuild_queue()
-        self.toast(f"Added {added} video{'s' if added != 1 else ''} to the queue")
+        self.toast(f"Added {added} media item{'s' if added != 1 else ''} to the queue")
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
@@ -318,7 +319,7 @@ class QueueMixin(QueuePrewarmMixin):
             total = sum(self.queue_durations.get(p, 0.0) or 0.0 for p in visible)
             known = all(self.queue_durations.get(p) for p in visible)
             count = len(visible)
-            label = f"{count} video{'s' if count != 1 else ''}"
+            label = f"{count} item{'s' if count != 1 else ''}"
             if query.strip():
                 label += f" of {len(self.queue)} in queue"
             if total > 0:

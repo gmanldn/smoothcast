@@ -452,6 +452,7 @@ class UiMixin(BookmarkUiMixin):
             "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
         )
         toolbar.append(add_button)
+        toolbar.append(self._build_music_actions())
         toolbar.append(clear_button)
         toolbar.append(Gtk.Box(hexpand=True))
         auto_label = Gtk.Label(label="Auto-play")
@@ -462,6 +463,7 @@ class UiMixin(BookmarkUiMixin):
         toolbar.append(auto_label)
         toolbar.append(self.autonext_switch)
         body.append(toolbar)
+        body.append(self._build_music_import_status())
 
         self.queue_search = Gtk.SearchEntry()
         self.queue_search.set_placeholder_text("Search filenames or folders…")
@@ -493,6 +495,7 @@ class UiMixin(BookmarkUiMixin):
         self.queue_list.connect("row-activated", self._on_queue_activated)
         self.queue_list.connect("row-selected", self._on_queue_selected)
         self.queue_list.set_filter_func(self._queue_row_matches)
+        self._install_queue_drop_target(self.queue_list)
         scroller.set_child(self.queue_list)
         body.append(scroller)
 
@@ -509,7 +512,7 @@ class UiMixin(BookmarkUiMixin):
         title.add_css_class("empty-title")
         empty.append(title)
         subtitle = Gtk.Label(
-            label="Choose Add videos to build your queue.",
+            label="Choose Add media or Add Music to build your queue.",
             wrap=True,
         )
         subtitle.set_justify(Gtk.Justification.CENTER)
