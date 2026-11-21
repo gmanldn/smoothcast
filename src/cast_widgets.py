@@ -68,6 +68,7 @@ DEFAULTS: dict = {
     "notifications": True,  # Notify when the window is unfocused (#267)
     "portal_screens": True,
     "house_pin_enabled": False,
+    "library_indexer": True,
     "library_folders": [],
     "keep_streaming": True,
     "color_scheme": "prefer-dark",

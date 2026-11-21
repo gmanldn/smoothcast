@@ -56,6 +56,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(
             self._portal.pin if self._portal.server.pin_required else "Not required")
+        self._ensure_library_indexer()
         self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:
