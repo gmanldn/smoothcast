@@ -77,3 +77,37 @@ Fault injection is available through `answer_heartbeats`, `delay_command()`,
 The CASTV2 fake remains an active slice of [#203](https://github.com/gmanldn/smoothcast/issues/203).
 It does not yet cover the complete CastBackend contract; keep that acceptance
 item open until both adapters pass the shared contract suite against it.
+
+## Mesh simulator (`tests/mesh_sim.py`, ticket #395)
+
+Mesh layers are written against the narrow `Clock` and `Transport` ports in
+`src/mesh_ports.py` and tested in a deterministic discrete-event simulator: a
+virtual clock in integer milliseconds, a seeded RNG, no sockets, threads or
+sleeps. Minutes of network time run in milliseconds and a seed always produces
+the identical event log.
+
+```python
+world = SimWorld(seed=7)               # default node: the naive ToyGossipNode
+nodes = world.join(5)
+world.assert_converged(within_ms=3000)
+world.partition(nodes[:2], nodes[2:]); world.run(10); world.heal()
+world.assert_converged(3000)
+world.assert_budget("leave_clean_s", world.measure_leave(nodes[0], clean=True))
+print(world.report())                  # p50/p99/max per metric, egress per node
+```
+
+- **Faults:** `stop(clean)`, `crash`, `restart`, `sleep`/`wake` (monotonic time
+  pauses, wall time jumps, overdue timers run on wake), `change_ip`,
+  `partition`/`heal`, `set_multicast`, `set_loss`, per-link latency/jitter/loss/bandwidth.
+- **Plug in a real node** with `SimWorld(seed, factory=...)`. The factory receives
+  `node_id, boot_id, name, clock, transport, rng, boot_epoch` and returns an object
+  with `start`, `stop(clean)`, `local_key`, `records`, `target_ids`, `add_target`
+  (`NodeUnderTest`). Optional `on_wake` and `on_address_changed` hooks are called.
+- **Budgets** (`BUDGETS`) mirror `docs/MESH_DESIGN.md`; egress means bytes a node
+  *sends* per second (multicast counted once); ingress is reported separately.
+- **Property runs:** `run_seeds(range(100), random_scenario, factory=...)` applies
+  random churn, heals, settles and returns failures: non-convergence, dead nodes
+  still listed, old boots held, caps exceeded.
+- **Model limits:** independent links (no shared-medium contention), RPC loss is
+  modelled as retransmission delay, CPU is not simulated. Real networks are
+  qualified separately under #208.

@@ -203,7 +203,7 @@ beacons are never trusted for anything beyond "go and ask over the right tier".
 | Clean leave → removed | ≤ 500 ms |
 | Silent loss → `dead` | ≤ 6–7 s |
 | Target appears → visible to nodes and open browsers | ≤ 3 s |
-| Steady-state traffic | ≤ 2 KB/s per node at 20 nodes |
+| Steady-state traffic | ≤ 2 KB/s per node at 20 nodes (egress: bytes the node sends, a multicast counted once; ingress is reported separately) |
 | Idle CPU | < 1 % of one core |
 | Memory | ≤ 8 MiB mesh state |
 
