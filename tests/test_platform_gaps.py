@@ -48,12 +48,6 @@ class RegisterTests(unittest.TestCase):
 
 
 class HookTests(unittest.TestCase):
-    PLATFORM, ENTRY = next(
-        (platform, key)
-        for platform, entries in platform_gaps.GAPS.items()
-        for key in entries
-    )
-
     def run_hook(self, platform: str, nodeid: str):
         item = fake_item(nodeid)
         with mock.patch("sys.platform", platform):
@@ -61,13 +55,16 @@ class HookTests(unittest.TestCase):
         return item.markers
 
     def test_a_registered_test_is_skipped_only_on_its_platform_with_the_reason(self):
-        markers = self.run_hook(self.PLATFORM, "tests/" + self.ENTRY)
-        self.assertEqual(len(markers), 1)
-        self.assertEqual(markers[0].name, "skip")
-        self.assertIn(f"known {self.PLATFORM} gap (#258)", markers[0].kwargs["reason"])
-        self.assertEqual(self.run_hook("linux", "tests/" + self.ENTRY), [])   # Linux skips nothing
-        other = "win32" if self.PLATFORM == "darwin" else "darwin"
-        self.assertEqual(self.run_hook(other, "tests/" + self.ENTRY), [])
+        for platform, entries in platform_gaps.GAPS.items():
+            for entry in entries:
+                with self.subTest(platform=platform, entry=entry):
+                    markers = self.run_hook(platform, "tests/" + entry)
+                    self.assertEqual(len(markers), 1)
+                    self.assertEqual(markers[0].name, "skip")
+                    self.assertIn(f"known {platform} gap (#258)", markers[0].kwargs["reason"])
+                    self.assertEqual(self.run_hook("linux", "tests/" + entry), [])
+                    other = "win32" if platform == "darwin" else "darwin"
+                    self.assertEqual(self.run_hook(other, "tests/" + entry), [])
 
     def test_unregistered_tests_are_never_skipped(self):
         for platform in ("linux", "win32", "darwin"):

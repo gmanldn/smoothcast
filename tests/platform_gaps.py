@@ -11,9 +11,6 @@ from __future__ import annotations
 
 # platform -> {test id relative to tests/: reason}
 GAPS: dict[str, dict[str, str]] = {
-    "darwin": {
-        "test_startup_cleanup.py::StartupCleanupTests::test_verified_stale_process_gets_bounded_sigterm_and_sigkill":
-            "fixture fakes a Linux /proc tree; macOS uses the psutil path",
-    },
+    "darwin": {},
     "win32": {},
 }
