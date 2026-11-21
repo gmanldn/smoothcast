@@ -43,7 +43,7 @@ class CallerMediaPathTests(unittest.TestCase):
             (checkout / "film.mkv").write_text("wrong")
             observed = {}
 
-            def execvpe(executable, command, env):
+            def execvpe(_executable, command, _env):
                 observed["args"] = command
                 observed["cwd_at_exec"] = os.getcwd()
 
@@ -85,7 +85,7 @@ class CallerMediaPathTests(unittest.TestCase):
             self.assertEqual(result, [str(caller / "missing.mkv")])
 
     def test_action_option_and_uri_are_preserved(self):
-        cwd = Path(tempfile.gettempdir()) / "another directory"
+        cwd = Path(tempfile.gettempdir()).resolve() / "another directory"
         args = ["--action", "stop", "file:///tmp/test.mkv", "--whatever", "film.mp4"]
         got = launch.media_arguments_from_caller(args, cwd)
         self.assertEqual(got[:4], args[:4])
