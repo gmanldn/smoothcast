@@ -78,7 +78,9 @@ served locally with no external assets.
   is an explicit play-now request and may start an early cast.
   Each acknowledged chunk is synced to disk; an interrupted chunk rolls back to
   its starting offset, and the browser resumes from the server's confirmed byte
-  count. The browser never reads the entire video into memory.
+  count. Multiple selected files upload sequentially with per-file progress; a
+  retry resumes the current file before continuing the batch. The browser never
+  reads the entire media file into memory.
 - Uploads are staged in a mode-0700 cache directory with mode-0600 partial
   files. At most three transfers can be active and a 512 MiB free-space reserve
   is kept. Videos use the supported video suffixes. Audio accepts MP3, AAC,

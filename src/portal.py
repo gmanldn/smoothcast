@@ -548,7 +548,9 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise PortalRequestError(503, "SmoothCast could not start this upload") from exc
-                return self._send(202, {"ok": True, "message": "Upload received; casting started."})
+                message = ("Added to the shared queue." if queue_only else
+                           "Upload received; casting started.")
+                return self._send(202, {"ok": True, "message": message})
             except PortalRequestError as exc:
                 return self._error(exc.status, exc.message)
             except portal_uploads.UploadError as exc:
@@ -918,12 +920,12 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <section><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
-<label for="videoFile">Audio or video file</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv">
+<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
 <label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("displayName").value=d.participant.name;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
@@ -971,26 +973,32 @@ async function sendChunk(path,file,offset,end){
   }
 }
 function updateUploadControls(){
-  const file=$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
+  const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
   if(audio)$("uploadQueue").checked=true;
-  $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":($("uploadQueue").checked?"Upload and add":"Upload and cast");
-  $("videoFile").disabled=uploading||!!pendingUpload;$("uploadQueue").disabled=uploading||!!audio;$("cancelUpload").hidden=!uploading&&!pendingUpload;$("cancelUpload").disabled=cancelUpload;
+  $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
+  $("videoFile").disabled=uploading||!!batchFiles;$("uploadQueue").disabled=uploading||!!batchFiles||!!audio;$("cancelUpload").hidden=!uploading&&!batchFiles;$("cancelUpload").disabled=cancelUpload;
 }
 async function discardUpload(){
   if(pendingUpload){try{await uploadRequest("DELETE",pendingUpload.path)}catch(error){if(error.status!==404)throw error}pendingUpload=null}
+  batchFiles=null;batchIndex=0;
   showError("uploadStatus","Upload cancelled");
 }
 $("uploadButton").addEventListener("click",async()=>{
-  const file=$("videoFile").files[0];if(!file||uploading)return;
-  const audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name),queueOnly=audio||$("uploadQueue").checked;uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
+  if(uploading)return;
+  if(!batchFiles){const selected=Array.from($("videoFile").files);if(!selected.length)return;batchFiles=selected;batchIndex=0;batchAdded=0;batchTotal=selected.length;batchQueueOnly=$("uploadQueue").checked}
+  uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
   try{
-    let state;
-    if(pendingUpload){showError("uploadStatus","Checking saved progress…");state=await uploadRequest("GET",pendingUpload.path)}
-    else{showError("uploadStatus","Preparing upload…");state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);pendingUpload={path:"/api/uploads/"+state.id,chunkSize:state.chunk_size}}
-    const {path,chunkSize}=pendingUpload;$("uploadProgress").max=file.size;$("uploadProgress").value=state.received;
-    while(state.received<file.size&&!cancelUpload){const end=Math.min(state.received+chunkSize,file.size);state=await sendChunk(path,file,state.received,end);$("uploadProgress").value=state.received;if(state.ready_to_cast)casting=true;const percent=Math.floor(state.received*100/file.size);showError("uploadStatus",casting?`Casting now — still sending the rest of ${file.name}: ${percent}%`:`${queueOnly?"Adding":"Uploading"} ${file.name}: ${percent}%`)}
-    if(cancelUpload)await discardUpload();else{$("cancelUpload").disabled=true;const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);pendingUpload=null;showError("uploadStatus",result.message||"Upload complete")}
-  }catch(error){if(error.status===404)pendingUpload=null;if(cancelUpload){try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}}else showError("uploadStatus",pendingUpload?error.message+" Select Resume upload to retry.":error.message)}
+    while(batchIndex<batchFiles.length&&!cancelUpload){
+      const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name),queueOnly=audio||batchQueueOnly;let state;casting=false;
+      if(pendingUpload){showError("uploadStatus",`Checking ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);state=await uploadRequest("GET",pendingUpload.path)}
+      else{showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);pendingUpload={path:"/api/uploads/"+state.id,chunkSize:state.chunk_size}}
+      const {path,chunkSize}=pendingUpload;$("uploadProgress").max=file.size;$("uploadProgress").value=state.received;
+      while(state.received<file.size&&!cancelUpload){const end=Math.min(state.received+chunkSize,file.size);state=await sendChunk(path,file,state.received,end);$("uploadProgress").value=state.received;if(state.ready_to_cast)casting=true;const percent=Math.floor(state.received*100/file.size);showError("uploadStatus",casting?`Casting ${file.name} — ${percent}% received`:`${batchIndex+1}/${batchFiles.length} · ${queueOnly?"Adding":"Uploading"} ${file.name}: ${percent}%`)}
+      if(cancelUpload){await discardUpload();break}
+      $("cancelUpload").disabled=true;const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);pendingUpload=null;batchIndex++;batchAdded++;showError("uploadStatus",result.message||`${file.name} added`);
+    }
+    if(batchFiles&&batchIndex>=batchFiles.length){const count=batchAdded,total=batchTotal;batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;showError("uploadStatus",`${count} of ${total} files added`)}
+  }catch(error){if(error.status===404)pendingUpload=null;if(error.status===413||error.status===422){pendingUpload=null;batchIndex++;if(batchIndex>=batchFiles.length){batchFiles=null;batchIndex=0;showError("uploadStatus",`${error.message} No files remain in this batch.`)}else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`)}else if(cancelUpload){try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}}else showError("uploadStatus",pendingUpload?error.message+" Select Resume upload to retry.":error.message)}
   finally{uploading=false;cancelUpload=false;updateUploadControls()}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);

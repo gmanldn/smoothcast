@@ -122,6 +122,8 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "Select Resume upload to retry" in page
     assert "Audio is validated and added to the shared queue" in page
     assert "video can be queued or streamed" in page
+    assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
+    assert "while(batchIndex<batchFiles.length" in page
     assert "six-digit PIN" in page
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
@@ -649,10 +651,11 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
             extra_headers={"Content-Range": "bytes 0-5/6"},
             content_type="application/octet-stream")
         assert status == 200
-        status, _, _ = rig.request(
+        status, raw, _ = rig.request(
             "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
             csrf=login_result["csrf"], origin=origin)
         assert status == 202
+        assert decode(raw)["message"] == "Added to the shared queue."
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
     finally:
@@ -692,11 +695,11 @@ def test_phone_audio_upload_is_validated_and_forced_into_shared_queue(tmp_path):
             content_type="application/octet-stream",
         )
         assert status == 200 and decode(raw)["ready_to_cast"] is False
-        status, _raw, _ = rig.request(
+        status, raw, _ = rig.request(
             "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
             cookie=cookie, csrf=csrf, origin=origin,
         )
-        assert status == 202
+        assert status == 202 and decode(raw)["message"] == "Added to the shared queue."
         action, payload = rig.calls[-1]
         assert action == "queue_add"
         assert Path(payload["path"]).read_bytes() == data
