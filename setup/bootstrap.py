@@ -159,8 +159,8 @@ def check_tools(env: dict[str, str] | None = None) -> list[str]:
         try:
             result = subprocess.run(
                 [executable, "-version"], stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                env=env, timeout=4, check=False,
+                stdout=subprocess.PIPE if tool == "ffmpeg" else subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, env=env, timeout=4, check=False,
             )
         except subprocess.TimeoutExpired:
             failures.append(tool + " (version probe timed out)")
@@ -169,6 +169,14 @@ def check_tools(env: dict[str, str] | None = None) -> list[str]:
         else:
             if result.returncode != 0:
                 failures.append(f"{tool} (version probe exited {result.returncode})")
+            elif tool == "ffmpeg" and result.stdout:
+                version = result.stdout.decode("utf-8", "replace") if isinstance(
+                    result.stdout, bytes) else str(result.stdout)
+                match = re.search(r"(?m)^ffmpeg version (?:n)?(\\d+)", version)
+                if match and int(match.group(1)) < 5:
+                    failures.append(f"ffmpeg {match.group(1)} (requires >=5.0)")
+                elif not match:
+                    failures.append("ffmpeg (unrecognised version; requires >=5.0)")
     return failures
 
 
@@ -538,19 +546,26 @@ def main(argv: list[str] | None = None) -> int:
             destination = install_location.select_directory(
                 args.target, explicit=args.install_dir, yes=args.yes, check=args.check,
             )
-            install_location.validate_destination(ROOT, destination)
-            child = [sys.executable, str(destination / "setup" / "bootstrap.py"),
-                     "--target", args.target, "--in-place", "--yes"]
-            if args.check:
-                if not (destination / "setup" / "bootstrap.py").is_file():
-                    raise SetupError(f"No SmoothCast installation at {destination}")
-                checked_run([*child, "--check", "--no-shortcuts"])
+            if destination.resolve() == ROOT.resolve():
+                # The platform script may itself be run from an already installed
+                # application. This is a safe repair, not a recursive copy.
+                if not (ROOT / ".venv").exists():
+                    raise SetupError("Use --in-place to install a source checkout in place")
+                say("Repairing existing installation in place")
             else:
-                with install_location.installed_sources(ROOT, destination):
-                    checked_run([*child, *(["--no-shortcuts"] if args.no_shortcuts else [])])
-                    install_location.remember_directory(args.target, destination)
-            say(f"SmoothCast location: {destination}")
-            return 0
+                install_location.validate_destination(ROOT, destination)
+                child = [sys.executable, str(destination / "setup" / "bootstrap.py"),
+                         "--target", args.target, "--in-place", "--yes"]
+                if args.check:
+                    if not (destination / "setup" / "bootstrap.py").is_file():
+                        raise SetupError(f"No SmoothCast installation at {destination}")
+                    checked_run([*child, "--check", "--no-shortcuts"])
+                else:
+                    with install_location.installed_sources(ROOT, destination):
+                        checked_run([*child, *(["--no-shortcuts"] if args.no_shortcuts else [])])
+                        install_location.remember_directory(args.target, destination)
+                say(f"SmoothCast location: {destination}")
+                return 0
         install = {"linux": install_linux, "macos": install_macos,
                    "windows": install_windows}[args.target]
         python, env = install(check=args.check)
