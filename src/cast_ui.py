@@ -93,6 +93,7 @@ class UiMixin(BookmarkUiMixin):
         self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.right_column.set_valign(Gtk.Align.START)
         self.right_column.append(self._build_device_card())
+        self.right_column.append(self._build_network_activity_card())
         self.right_column.append(self._build_portal_card())
         self.right_column.append(self._build_settings_card())
         self.right_column.append(self._build_console_card())
@@ -619,7 +620,6 @@ class UiMixin(BookmarkUiMixin):
         note.add_css_class("dim-label")
         body.append(note)
         return card
-
 
     def _build_details_card(self) -> Gtk.Box:
         card, body = self._card(

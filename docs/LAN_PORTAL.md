@@ -5,6 +5,12 @@ the selected private LAN IPv4 interface. The **LAN dashboard** card on the main
 screen shows the address and a six-digit PIN. Open that address in a
 browser on the same local network and enter the PIN to view playback state and
 use play/pause, stop, seek and volume controls. The queue is shown read-only.
+The **On your network** card in the desktop app and dashboard also lists
+currently playing, buffering or paused media reported by reachable Cast and
+DLNA receivers discovered on the LAN. It refreshes every 15 seconds, shows the
+receiver, media title and available progress, and never sends commands to those
+other receivers. Unreachable devices are omitted; titles in the dashboard are
+visible only after PIN pairing.
 
 The address is a friendly mDNS name such as
 `http://smoothcast-lounge.local:PORT/`. SmoothCast derives the name from the

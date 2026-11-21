@@ -149,6 +149,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         if not app.selftest:
             self._refresh_portal()
             GLib.timeout_add_seconds(15, self._refresh_portal)
+            GLib.timeout_add_seconds(15, self._refresh_network_activity)
             # A GUI smoke test builds widgets only: it must not scan LANs,
             # adopt casts, poll receivers or run media/telemetry timers.
             GLib.timeout_add(500, self._tick)

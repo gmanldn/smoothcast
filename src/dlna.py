@@ -420,7 +420,7 @@ def _clock(position: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def info(renderer: Renderer) -> dict | None:
+def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
     try:
         state = _soap(renderer, "GetTransportInfo", {"InstanceID": "0"})
     except DlnaError:
@@ -437,9 +437,19 @@ def info(renderer: Renderer) -> dict | None:
         pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"})
         result["current_time"] = _seconds(_value(pos, "RelTime"))
         result["duration"] = _seconds(_value(pos, "TrackDuration"))
+        metadata = _value(pos, "TrackMetaData")
+        if metadata:
+            try:
+                track = ET.fromstring(metadata)
+                title = next((str(node.text or "").strip() for node in track.iter()
+                              if _local(node.tag) == "title"), "")
+                if title:
+                    result["title"] = title[:160]
+            except ET.ParseError:
+                pass  # Some renderers return partial or non-XML metadata.
     except DlnaError:
         pass
-    if renderer.rendering_url:
+    if include_volume and renderer.rendering_url:
         try:
             volume = _soap(renderer, "GetVolume", {
                 "InstanceID": "0", "Channel": "Master",

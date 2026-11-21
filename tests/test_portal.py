@@ -118,6 +118,9 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "six-digit PIN" in page
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
+    assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
+    assert 'title.textContent=item.title' in page
+    assert 'detail.textContent=' in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):

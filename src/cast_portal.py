@@ -11,6 +11,8 @@ import castctl
 import lan_interfaces
 import portal
 import portal_uploads
+import network_activity
+from network_activity_ui import NetworkActivityMixin
 from gi.repository import GLib
 
 # An early portal cast that has not started playing within this many seconds is
@@ -18,7 +20,7 @@ from gi.repository import GLib
 PORTAL_CAST_GRACE_SECONDS = 5.0
 
 
-class PortalMixin:
+class PortalMixin(NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
@@ -166,6 +168,10 @@ class PortalMixin:
                 "position": position, "duration": duration, "volume": volume,
                 "queue": queue, "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
+                "network_activity": network_activity.portal_entries(
+                    getattr(self, "_network_activity_entries", []),
+                    self._device_host(self._device()),
+                ),
             }
         if operation == "cast_upload":
             upload_id = payload.get("upload_id")

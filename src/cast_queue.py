@@ -562,14 +562,13 @@ class QueueMixin:
             cast_devices = devices
         self.devices = cast_devices
         self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
-        # Follow a saved UUID only when idle and both identities are unique.
         saved_uuid = self.cfg.get("device_uuid", "")
         unlocked = not (self.session is not None or self.busy
                         or self._cast_starting or self.external)
         if unlocked and saved_uuid:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
-                # Pending volume writes still target the old receiver.
+                # Pending volume write targets the old receiver.
                 if self._volume_job is not None:
                     GLib.source_remove(self._volume_job)
                     self._volume_job = None
@@ -619,11 +618,13 @@ class QueueMixin:
                 if cast_devices or self.dlna_devices else "No Cast or DLNA receivers discovered. Check Wi-Fi/VPN or firewall."
             )
             self._set_device_badge("NOT FOUND", "offline")
+        if hasattr(self, "_refresh_network_activity"):
+            self._refresh_network_activity()
 
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
-        # Keep selection; invalidate stale addresses.
+        # Keep the selected target.
         self.devices = []
         self.dlna_devices = []
         self._dlna_by_key = {}
