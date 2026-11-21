@@ -284,23 +284,27 @@ class SetupContractTests(unittest.TestCase):
             executable = Path(directory) / "bin" / "python"
             executable.parent.mkdir(parents=True)
             executable.touch()
-            dependency_checks = 0
+            dependencies_installed = False
 
             def installed(_python, code, *, env=None):
-                nonlocal dependency_checks
+                nonlocal dependencies_installed
                 if code == bootstrap.GUI_CHECK:
                     return True
-                if code == bootstrap.CAST_DEPENDENCIES_CHECK:
-                    dependency_checks += 1
-                    return dependency_checks > 1
-                if code == bootstrap.PROJECT_DEPENDENCIES_CHECK:
-                    return dependency_checks > 1
+                if code in {
+                    bootstrap.CAST_DEPENDENCIES_CHECK,
+                    bootstrap.PROJECT_DEPENDENCIES_CHECK,
+                }:
+                    return dependencies_installed
                 return False
+
+            def pip_install(_command, **_kwargs):
+                nonlocal dependencies_installed
+                dependencies_installed = True
 
             with mock.patch.object(bootstrap, "venv_python", return_value=executable), \
                  mock.patch.object(bootstrap, "works", side_effect=installed), \
                  mock.patch.object(bootstrap, "check_tools", return_value=[]), \
-                 mock.patch.object(bootstrap, "checked_run") as run:
+                 mock.patch.object(bootstrap, "checked_run", side_effect=pip_install) as run:
                 result = bootstrap.ensure_venv(Path(sys.executable), dict(), check=False)
             self.assertEqual(result, executable)
             run.assert_called_once()
