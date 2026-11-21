@@ -1127,6 +1127,11 @@ section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box
 label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid #718096;padding:8px 12px}
 input{width:100%;color:inherit;background:#121b27}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
+dialog#shortcutsHelp{background:var(--card);color:#f4f7fb;border:1px solid #718096;border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}
+dialog#shortcutsHelp::backdrop{background:#000b}
+#shortcutsList{display:grid;gap:8px}
+#shortcutsList li{display:flex;justify-content:space-between;gap:12px;align-items:center}
+#shortcutsList kbd{border:1px solid #718096;border-radius:6px;padding:4px 7px;white-space:nowrap}
 button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
@@ -1159,10 +1164,12 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
 <label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
+<div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section>
+<dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
-let stalePage=false;
+const SHORTCUTS=__SC_SHORTCUTS__,shortcutMap=new Map(SHORTCUTS.map(entry=>[entry.key,entry]));
+let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
   document.getElementById("updateNotice").hidden=false;
@@ -1223,6 +1230,7 @@ $("loginForm").addEventListener("submit",async e=>{
 })();
 function expireSession(){
   csrf="";
+  shortcutState=null;
   statusFailures=0;
   $("dashboard").hidden=true;
   $("uploadCard").hidden=true;
@@ -1325,7 +1333,9 @@ async function refresh(){
     if(r.status===401){expireSession();return}
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
-    const s=d.state||{};$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};
+    shortcutState=s;
+    $("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
@@ -1397,6 +1407,59 @@ function renderPeers(peers,available){
   }
 }
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
+function showShortcutHelp(){
+  const dialog=$("shortcutsHelp"),list=$("shortcutsList");
+  if(!list.children.length)for(const entry of SHORTCUTS){
+    const item=document.createElement("li"),description=document.createElement("span"),key=document.createElement("kbd");
+    description.textContent=entry.description;
+    key.textContent=entry.label==="space"?"Space":entry.label==="question"?"?":entry.label;
+    item.append(description,key);
+    list.append(item);
+  }
+  if(!dialog.open)dialog.showModal();
+}
+$("shortcutsClose").addEventListener("click",()=>$("shortcutsHelp").close());
+
+function shortcutCommand(action,state,seek,volume){
+  if(!state||state.busy||!state.active)return null;
+  if(action==="seek_back"||action==="seek_forward"){
+    if(!state.can_seek||!Number.isFinite(state.duration)||state.duration<=0)return null;
+    const delta=action==="seek_back"?-10:10;
+    return {action:"seek",value:Math.max(0,Math.min(state.duration,seek+delta))};
+  }
+  if(action==="volume_up"||action==="volume_down"){
+    if(state.volume==null||!Number.isFinite(volume))return null;
+    return {action:"volume",value:Math.max(0,Math.min(100,volume+(action==="volume_up"?5:-5)))};
+  }
+  if(action==="mute"&&state.volume==null)return null;
+  if(["play_pause","next","previous","mute"].includes(action))return {action};
+  return null;
+}
+
+window.addEventListener("keydown",event=>{
+  if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
+  if(event.target instanceof Element&&event.target.closest("input,textarea,select,button,[contenteditable],[role=textbox],[role=slider]"))return;
+  if($("shortcutsHelp").open)return;
+  const key=event.key.length===1?event.key.toLowerCase():event.key;
+  const shortcut=shortcutMap.get(key);
+  if(!shortcut)return;
+  event.preventDefault();
+  if(shortcut.action==="help"){showShortcutHelp();return;}
+  const command=shortcutCommand(shortcut.action,shortcutState,Number($("seek").value),Number($("volume").value));
+  if(!command||stalePage||!csrf||busy){
+    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and receiver are ready.");
+    return;
+  }
+  if(["play_pause","next","previous"].includes(command.action)){
+    const button=document.querySelector('[data-action="'+command.action+'"]');
+    if(!button||button.disabled){
+      showError("errorDash","This control is not available right now.");
+      return;
+    }
+  }
+  act(command.action,command.value);
+});
+
 async function act(action,value,extra={}){if(busy)return;busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
