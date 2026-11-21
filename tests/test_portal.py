@@ -109,20 +109,27 @@ def test_portal_rejects_non_rfc1918_addresses():
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
-def test_browser_status_poll_waits_for_response_and_backs_off_after_timeout():
+def test_browser_status_poll_handles_timeout_visibility_and_expired_session():
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     harness = """
 const assert = require("node:assert/strict");
 const listeners = new Map(), timers = new Map();
-const element = {addEventListener(){}};
+const elements = new Map();
+function element(id) {
+  if(!elements.has(id)){
+    elements.set(id, {files: [], addEventListener(){}, focus(){this.focused=true},
+                      querySelector(){return element("loginButton")}});
+  }
+  return elements.get(id);
+}
 const document = {
   hidden: false,
   addEventListener(name, handler){listeners.set(name, handler)},
-  getElementById(){return element},
+  getElementById: element,
   querySelectorAll(){return []},
 };
 const window = {addEventListener(){}};
-let timerId = 0, requests = 0;
+let timerId = 0, requests = 0, respond;
 const setTimeout = (callback, delay) => {
   timers.set(++timerId, {callback, delay});
   return timerId;
@@ -130,8 +137,10 @@ const setTimeout = (callback, delay) => {
 const clearTimeout = id => timers.delete(id);
 const fetch = (_url, {signal}) => {
   requests++;
-  return new Promise((_resolve, reject) =>
-    signal.addEventListener("abort", () => reject(signal.reason), {once:true}));
+  return new Promise((resolve, reject) => {
+    respond = resolve;
+    signal.addEventListener("abort", () => reject(signal.reason), {once:true});
+  });
 };
 """
     scenario = """
@@ -145,7 +154,7 @@ const fetch = (_url, {signal}) => {
   assert.equal(deadline.delay, 5000);
   deadline.callback();
   await first;
-  assert.match(element.textContent, /timed out/);
+  assert.match(element("errorDash").textContent, /timed out/);
   assert.equal(timers.size, 1);
   const retry = [...timers.values()][0];
   assert.ok(retry.delay >= 4000 && retry.delay <= 4500);
@@ -155,6 +164,27 @@ const fetch = (_url, {signal}) => {
   document.hidden = false;
   listeners.get("visibilitychange")();
   assert.equal(requests, 2);
+  pendingUpload = {path:"/api/uploads/stale"};
+  uploading = true;
+  activeUploadController = new AbortController();
+  document.getElementById("videoFile").value = "stale.wav";
+  respond({status:401, ok:false, json:async()=>({error:"Session expired"})});
+  for(let index=0;index<3;index++)await Promise.resolve();
+  assert.equal(csrf, "");
+  assert.equal(timers.size, 0);
+  assert.equal(element("dashboard").hidden, true);
+  assert.equal(element("uploadCard").hidden, true);
+  assert.equal(element("login").hidden, false);
+  assert.equal(element("pin").focused, true);
+  assert.match(element("error").textContent, /current PIN/);
+  assert.equal(activeUploadController.signal.aborted, true);
+  assert.equal(element("loginButton").disabled, true);
+  await assert.rejects(uploadRequest("GET", pendingUpload.path), {status:401});
+  assert.equal(requests, 2);
+  finishUpload();
+  assert.equal(element("loginButton").disabled, false);
+  assert.equal(pendingUpload, null);
+  assert.equal(element("videoFile").value, "");
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run(["node", "-"], input=harness + script + scenario,

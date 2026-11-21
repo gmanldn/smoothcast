@@ -955,7 +955,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
 <section id="queuePanel"><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue"><li class="empty">No videos queued</li></ul></section>
-<section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
+<section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
 <label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
@@ -964,7 +964,35 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <script>
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
-$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("displayName").value=d.participant.name;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
+const loginButton=$("loginForm").querySelector("button");
+$("loginForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(loginButton.disabled)return;
+  loginButton.disabled=true;
+  showError("error","");
+  try{
+    const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});
+    csrf=d.csrf;
+    $("pin").value="";
+    $("displayName").value=d.participant.name;
+    $("login").hidden=true;
+    refresh();
+  }catch(err){showError("error",err.message)}
+  finally{loginButton.disabled=false}
+});
+function expireSession(){
+  csrf="";
+  statusFailures=0;
+  $("dashboard").hidden=true;
+  $("uploadCard").hidden=true;
+  $("login").hidden=false;
+  loginButton.disabled=uploading;
+  if(activeUploadController)activeUploadController.abort();
+  if(!uploading)resetUploadBatch();
+  showError("errorDash","");
+  showError("error","Room access expired. Enter the current PIN to reconnect.");
+  $("pin").focus();
+}
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
 let statusRequest=null,statusTimer=null,statusFailures=0;
 function scheduleRefresh(){
@@ -983,6 +1011,7 @@ async function refresh(){
     const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
     const d=await r.json();
     if(controller.signal.aborted||busy)return;
+    if(r.status===401){expireSession();return}
     if(!r.ok)throw Error(d.error||"Connection lost");
     const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
@@ -991,7 +1020,7 @@ const queue=$("queue");queue.replaceChildren();if(!s.queue||!s.queue.length){con
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const time=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${time(item.position)}${item.duration==null?"":` / ${time(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showError("errorDash","");
+document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
   }catch(err){
     if(!busy&&!document.hidden&&controller.signal.reason!=="superseded"){
       statusFailures=Math.min(statusFailures+1,4);
@@ -1063,6 +1092,7 @@ $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
+  if(!csrf)throw Object.assign(Error("Room access expired"),{status:401});
   const controller=new AbortController();activeUploadController=controller;
   const deadline=setTimeout(()=>controller.abort(),60000);
   try{
@@ -1078,7 +1108,7 @@ async function sendChunk(path,file,offset,end){
     if(cancelUpload)throw Error("Upload cancelled");
     try{return await uploadRequest("PUT",path,body,headers)}catch(error){
       if(error.status&&error.status<500&&error.status!==409)throw error;
-      if(attempt===4||cancelUpload)throw error;
+      if(attempt===4||cancelUpload||!csrf)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,250*2**attempt));
       if(cancelUpload)throw Error("Upload cancelled");
@@ -1092,6 +1122,24 @@ function updateUploadControls(){
   if(audio)$("uploadQueue").checked=true;
   $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;$("uploadQueue").disabled=uploading||!!batchFiles||!!audio;$("cancelUpload").hidden=!uploading&&!batchFiles;$("cancelUpload").disabled=cancelUpload;
+}
+function resetUploadBatch(){
+  pendingUpload=null;
+  batchFiles=null;
+  batchIndex=0;
+  $("videoFile").value="";
+  $("uploadProgress").value=0;
+  showError("uploadStatus","");
+  updateUploadControls();
+}
+function finishUpload(){
+  uploading=false;
+  cancelUpload=false;
+  if(csrf)updateUploadControls();
+  else{
+    resetUploadBatch();
+    loginButton.disabled=false;
+  }
 }
 async function discardUpload(){
   if(pendingUpload){try{await uploadRequest("DELETE",pendingUpload.path)}catch(error){if(error.status!==404)throw error}pendingUpload=null}
@@ -1114,14 +1162,14 @@ $("uploadButton").addEventListener("click",async()=>{
     }
     if(batchFiles&&batchIndex>=batchFiles.length){const count=batchAdded,total=batchTotal;batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;showError("uploadStatus",`${count} of ${total} files added`)}
   }catch(error){if(error.status===404)pendingUpload=null;if(error.status===413||error.status===422){pendingUpload=null;batchIndex++;if(batchIndex>=batchFiles.length){batchFiles=null;batchIndex=0;showError("uploadStatus",`${error.message} No files remain in this batch.`)}else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`)}else if(cancelUpload){try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}}else showError("uploadStatus",pendingUpload?error.message+" Select Resume upload to retry.":error.message)}
-  finally{uploading=false;cancelUpload=false;updateUploadControls()}
+  finally{finishUpload()}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
 $("videoFile").addEventListener("change",updateUploadControls);
 $("cancelUpload").addEventListener("click",async()=>{
   cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
-  finally{uploading=false;cancelUpload=false;updateUploadControls()}
+  finally{finishUpload()}
 });
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
