@@ -34,13 +34,13 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 - **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
   names a development revision; `./smoothcast --version` is GUI-free.
 
-## Testing — no desktop focus
+## Testing — patch fast lane, no desktop focus
 
-**Never launch the real GUI** or focus the desktop/control the TV in routine tests.
-No `gtk-launch`, `./smoothcast` or `--self-test`. Test changed behavior
-before committing. CI runs all tests in parallel: `python3 -m pytest -q tests
--n auto`. Also run `python3 -m compileall -q src scripts setup tests` and
-`ruff check src scripts setup tests smoothcast setup.py`. Optional GUI smoke:
+**Never launch the real GUI** or focus the desktop/control the TV. No
+`gtk-launch`, `./smoothcast` or `--self-test`. PATCH work uses the fast lane
+(`compileall`, `ruff`, `mypy`; no full suite). Run `python3 -m pytest -q tests
+-n auto` only for MINOR/MAJOR bumps; CI picks the lane with
+`scripts/ci/test_scope.py`. Optional GUI smoke:
 `python3 scripts/test_gui_isolated.py` (private Xvfb only).
 [Test safety](docs/agents/testing.md).
 

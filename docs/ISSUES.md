@@ -152,9 +152,9 @@ additional requirements rather than creating competing tasks.
    error handling, cleanup, tests and docs. Avoid feature claims without a real
    protocol adapter. Refuse shortcuts that lose subtitle, track, seek, session
    or network-safety invariants.
-5. Validate with headless, focus-safe commands:
-   `python3 -m pytest -q tests` and
-   `python3 -m compileall -q src scripts setup tests`. Ordinary CI must never
+5. Validate with headless, focus-safe commands. Patch work uses the fast lane
+   (`compileall`, `ruff`, `mypy`); `python3 -m pytest -q tests` is required
+   only for MINOR/MAJOR bumps. Ordinary CI must never
    launch the user's actual GTK window or send commands to their TV. GTK tests
    require the **explicit** isolated Xvfb runner
    `python3 scripts/test_gui_isolated.py`. Optional device checks use a

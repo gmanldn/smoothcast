@@ -6,15 +6,15 @@ GNOME dock pins, discover/control the user's TV, or touch real media. Never use
 `python3 src/cast_control.py`, or bare `--self-test` in a test loop.
 Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 
-Headless portable verification from repo root:
+Headless lanes (`scripts/ci/test_scope.py`):
 
 ```sh
-python3 -m pytest -q tests -n auto
 python3 -m compileall -q src scripts setup tests
+ruff check src scripts setup tests smoothcast setup.py && mypy
+python3 -m pytest -q tests -n auto  # minor/major only
 ```
 
-Run targeted `python3 -m pytest -q tests/test_affected.py` during iteration,
-then the full suite when appropriate. The test harness strips desktop
+Patch-only changes skip the full suite; use targeted tests. The test harness strips desktop
 display/session handles at collection; CI sets `SMOOTHCAST_TEST_CONTEXT=1`.
 Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions

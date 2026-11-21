@@ -37,7 +37,7 @@ Likely files/modules, callers and tests; related issues or PRs.
 
 ## Verification class
 
-- [ ] Portable CI (`python3 -m pytest -q tests`)
+- [ ] Fast lane (patch) or full portable CI (MINOR/MAJOR)
 - [ ] Isolated GTK/Xvfb smoke (explicit authorisation only)
 - [ ] Physical receiver or OS validation (state device/version)
 - [ ] Not applicable; reason:

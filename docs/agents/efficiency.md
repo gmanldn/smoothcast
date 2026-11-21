@@ -27,8 +27,8 @@ session. [Handbook index](README.md) is the fallback for ambiguous tasks.
    [archived notes](../AGENT_REFERENCE.md) only for historical edge cases.
    Do not add more long global agent instructions.
 3. **Limit noisy command output.** Prefer focused tests for changed behavior
-   while iterating, then `pytest -q -n auto` for the full parallel suite when
-   warranted. CI runs the full suite after each push. Also prefer bounded
+   while iterating. Patches take the fast lane; run `pytest -q -n auto` only
+   for MINOR/MAJOR bumps. CI applies the same lane policy. Also prefer bounded
    `git log`, `git diff --stat`, targeted `rg -n`, and
    `git show --format=short --stat` before full logs or diffs. Keep complete
    errors and test logs accessible; never discard causal context, exact

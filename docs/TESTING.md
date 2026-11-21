@@ -1,18 +1,26 @@
 # Testing SmoothCast
 
-Run the portable suite without opening the application or contacting a real
-receiver:
+## Test lanes
+
+Patch progress takes the fast lane; the full portable suite is required only
+when bumping MINOR or MAJOR. CI chooses the lane with
+`scripts/ci/test_scope.py`; run it locally with
+`--base origin/develop` to see the same decision.
 
 ```sh
-python3 -m pytest -q tests -n auto
+# Fast lane: every patch commit
 python3 -m compileall -q src scripts setup tests
 python -m py_compile smoothcast
 ruff check src scripts setup tests smoothcast setup.py
+mypy
+
+# Full lane: MINOR/MAJOR bumps only
+python3 -m pytest -q tests -n auto
 ```
 
-Routine tests must not launch the real GUI, focus the desktop, or control a
-television. See [agent testing safety](agents/testing.md) for GUI and hardware
-limits.
+Patch work should still run targeted tests for behavior it changes. Routine
+tests must not launch the real GUI, focus the desktop, or control a television.
+See [agent testing safety](agents/testing.md) for GUI and hardware limits.
 
 ## Google Cast protocol fake
 
