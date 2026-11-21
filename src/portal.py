@@ -169,6 +169,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.fence = fence or portal_commands.CommandFence(clock=clock)
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
+        self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
         self.library_search: Callable | None = None
         self.library_replication = None
@@ -497,7 +498,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str, **extra: object) -> None:
         payload = {"ok": False, "error": message}
         payload.update(extra)
-        self._send(status, payload)
+        self._send(status, payload, extra_headers=(
+            {"Retry-After": "1"} if status == 429 else None))
 
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
@@ -525,6 +527,8 @@ class _Handler(BaseHTTPRequestHandler):
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
         if not self._authenticated():
             return self._error(401, "Session expired")
+        if self._throttle("read"):
+            return
         engine = getattr(self.server, "library_search", None)
         query = parse_qs(urlsplit(self.path).query)
         text = (query.get("q") or [""])[0]
@@ -588,6 +592,21 @@ class _Handler(BaseHTTPRequestHandler):
             return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
         return True
 
+    def _throttle(self, route_class: str) -> bool:
+        """Bound authenticated traffic; internal desktop callbacks bypass HTTP."""
+        participant = self.server.session_participant(self._cookie_token())
+        if participant is None:
+            self._error(401, "Session expired")
+            return True
+        delay = self.server.request_limiter.retry_after(participant, route_class)
+        if delay <= 0:
+            return False
+        self._send(
+            429, {"ok": False, "error": "Too many room requests. Try again shortly."},
+            extra_headers={"Retry-After": str(max(1, math.ceil(delay)))},
+        )
+        return True
+
     def _client_compatible(self) -> bool:
         """Reject stale browser writes before mutation or GTK dispatch."""
         schema = self.headers.get("X-SmoothCast-Client-Schema")
@@ -627,6 +646,8 @@ class _Handler(BaseHTTPRequestHandler):
             resumed = self.server.resume_session(self._cookie_token())
             if resumed is None:
                 return self._error(401, "Session expired")
+            if self._throttle("read"):
+                return
             csrf, participant = resumed
             return self._send(200, {
                 "ok": True, "csrf": csrf,
@@ -636,6 +657,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
+            if self._throttle("read"):
+                return
             participant_id = self.server.session_participant(self._cookie_token())
             if participant_id is None:
                 return self._error(401, "Session expired")
@@ -670,6 +693,8 @@ class _Handler(BaseHTTPRequestHandler):
                                     "build": page_build(), "client_schema": CLIENT_SCHEMA})
         upload_id = self._upload_route(path)
         if upload_id and self._authenticated():
+            if self._throttle("upload"):
+                return
             if self.server.uploads is None:
                 return self._error(503, "Upload storage is unavailable")
             try:
@@ -688,6 +713,10 @@ class _Handler(BaseHTTPRequestHandler):
         if (path in {"/api/login", "/api/action", "/api/profile"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
+        if (path in {"/api/action", "/api/profile"} or path.startswith("/api/uploads")):
+            if self._authenticated(csrf=True) and self._throttle(
+                    "upload" if path.startswith("/api/uploads") else "mutation"):
+                return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
@@ -808,6 +837,9 @@ class _Handler(BaseHTTPRequestHandler):
             action = body.get("action")
             try:
                 envelope = portal_commands.parse_envelope(body)
+                participant_id = self.server.session_participant(self._cookie_token())
+                if participant_id is None:
+                    return self._error(401, "Session expired")
                 if envelope is None:
                     if not isinstance(action, str) or action not in {
                             "play_pause", "stop", "seek", "volume", "mute", "music_autogain",
@@ -878,7 +910,7 @@ class _Handler(BaseHTTPRequestHandler):
                     envelope = portal_commands.legacy_envelope(
                         body, self.server.fence,
                         client_id="legacy-" + self.server._session_key(token)[:40])
-                receipt = self.server.commands.execute(envelope)
+                receipt = self.server.commands.execute(envelope, participant_key=participant_id)
             except portal_commands.CommandError as exc:
                 extra = {}
                 if exc.status == 409:
@@ -935,6 +967,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
+        if self._throttle("upload"):
+            return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
@@ -970,6 +1004,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
+        if self._throttle("upload"):
+            return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
@@ -1182,8 +1218,10 @@ function matchingBuild(data){
   showUpdateNotice();return false;
 }
 const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-SmoothCast-Client-Build":PAGE_BUILD};
+let rateDelayUntil=0;
+const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
-async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
@@ -1231,6 +1269,7 @@ $("loginForm").addEventListener("submit",async e=>{
 function expireSession(){
   csrf="";
   shortcutState=null;
+  pendingControls.clear();
   statusFailures=0;
   $("dashboard").hidden=true;
   $("uploadCard").hidden=true;
@@ -1243,9 +1282,45 @@ function expireSession(){
   $("pin").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
-let queueRenderKey=null;
+let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
+const queueElement=$("queue");
+function queueAction(button){
+  const row=button.closest("[data-queue-id]");
+  if(!row)return;
+  const id=row.dataset.queueId;
+  const index=queueState.findIndex(item=>String(item.id)===id);
+  if(index<0){showError("errorDash","That queue item is no longer here");return}
+  const item=queueState[index];
+  switch(button.dataset.queueAction){
+    case "vote":return act("queue_vote",!item.voted,{id});
+    case "play":return act("queue_play",undefined,{id});
+    case "move-earlier":return act("queue_move",undefined,{id,position:Math.max(0,index-1)});
+    case "move-later":return act("queue_move",undefined,{id,position:Math.min(queueState.length-1,index+1)});
+    case "next":return act("queue_next",undefined,{id});
+    case "remove":return act("queue_remove",undefined,{id});
+  }
+}
+queueElement.addEventListener("click",event=>{
+  const button=event.target?.closest?.("[data-queue-action]");
+  if(button&&queueElement.contains(button))queueAction(button);
+});
+queueElement.addEventListener("pointerdown",event=>{
+  if(event.target?.closest?.("[data-queue-action]"))queuePressed=true;
+});
+function releaseQueuePointer(){
+  if(!queuePressed)return;
+  queuePressed=false;
+  const pending=deferredQueue;
+  deferredQueue=null;
+  if(pending)renderQueue(pending);
+}
+// Click follows pointerup, so retain the pressed button until its click runs.
+document.addEventListener("pointerup",()=>setTimeout(releaseQueuePointer,0));
+document.addEventListener("pointercancel",releaseQueuePointer);
 function renderQueue(items){
-  const queue=$("queue"),rows=Array.isArray(items)?items:[];
+  const queue=queueElement,rows=Array.isArray(items)?items:[];
+  if(queuePressed){deferredQueue=rows;return}
+  queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,
   ]));
@@ -1255,60 +1330,62 @@ function renderQueue(items){
   const focusTarget=focusedRow&&focused.dataset?.queueAction
     ?{id:focusedRow.dataset.queueId,action:focused.dataset.queueAction}:null;
   queueRenderKey=key;
-  queue.replaceChildren();
+  const oldRows=new Map(Array.from(queue.children)
+    .filter(row=>row.dataset?.queueId).map(row=>[row.dataset.queueId,row]));
+  const nodes=[];
   if(!rows.length){
     const empty=document.createElement("li");
     empty.className="empty";
     empty.textContent="No videos queued";
-    queue.append(empty);
+    nodes.push(empty);
   }else rows.forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
-    const li=document.createElement("li");
-    li.className="queue-item";
-    li.dataset.queueId=String(item.id||"");
+    const id=String(item.id||"");
+    let li=oldRows.get(id);
+    if(!li){
+      li=document.createElement("li");
+      li.className="queue-item";
+      li.dataset.queueId=id;
+      const text=document.createElement("div");
+      text.append(document.createElement("strong"),document.createElement("div"));
+      text.children[1].className="muted";
+      const actions=document.createElement("div");
+      actions.className="queue-actions";
+      for(const action of ["vote","play","move-earlier","move-later","next","remove"]){
+        const button=document.createElement("button");
+        button.dataset.queueAction=action;
+        actions.append(button);
+      }
+      li.append(text,actions);
+    }
     li.setAttribute("aria-posinset",String(index+1));
     li.setAttribute("aria-setsize",String(rows.length));
-    const text=document.createElement("div"),title=document.createElement("strong");
-    title.textContent=itemTitle;
-    const meta=document.createElement("div");
-    meta.className="muted";
-    meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")
-      +(item.duration?` · ${clock(item.duration)}`:"");
-    text.append(title,meta);
-    const actions=document.createElement("div");
-    actions.className="queue-actions";
-    const action=(name,label,caption,kind,handler)=>{
-      const button=document.createElement("button");
-      button.className=`tiny ${kind}`.trim();
-      button.textContent=caption;
-      button.dataset.queueAction=name;
-      button.setAttribute("aria-label",label);
-      button.addEventListener("click",handler);
-      actions.append(button);
-      return button;
-    };
-    const vote=action("vote",`${item.voted?"Remove vote for":"Vote for"} ${itemTitle}`,
-      item.voted?"Voted":"Vote","vote" ,
-      ()=>act("queue_vote",!item.voted,{id:item.id}));
-    if(item.voted)vote.classList.add("on");
-    action("play",`Play ${itemTitle} now`,"Play now","",
-      ()=>act("queue_play",undefined,{id:item.id}));
-    const moveEarlier=action("move-earlier",`Move ${itemTitle} earlier in Up Next`,"↑","secondary",
-      ()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,index-1)}));
-    moveEarlier.disabled=index===0;
-    const moveLater=action("move-later",`Move ${itemTitle} later in Up Next`,"↓","secondary",
-      ()=>act("queue_move",undefined,{id:item.id,position:Math.min(rows.length-1,index+1)}));
-    moveLater.disabled=index===rows.length-1;
-    action("next",`Play ${itemTitle} next`,"Next","secondary",
-      ()=>act("queue_next",undefined,{id:item.id}));
-    action("remove",`Remove ${itemTitle} from Up Next`,"×","secondary",
-      ()=>act("queue_remove",undefined,{id:item.id}));
-    li.append(text,actions);
-    queue.append(li);
+    li.children[0].children[0].textContent=itemTitle;
+    li.children[0].children[1].textContent=(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
+      +(item.duration?" · "+clock(item.duration):"");
+    const buttons=li.children[1].children;
+    const labels=[
+      (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
+      "Play "+itemTitle+" now",
+      "Move "+itemTitle+" earlier in Up Next",
+      "Move "+itemTitle+" later in Up Next",
+      "Play "+itemTitle+" next",
+      "Remove "+itemTitle+" from Up Next",
+    ];
+    const captions=[item.voted?"Voted":"Vote","Play now","↑","↓","Next","×"];
+    Array.from(buttons).forEach((button,i)=>{
+      button.textContent=captions[i];
+      button.setAttribute("aria-label",labels[i]);
+      button.className="tiny"+(i===0?" vote"+(item.voted?" on":""):"")
+        +([2,3,4,5].includes(i)?" secondary":"");
+      button.disabled=(i===2&&index===0)||(i===3&&index===rows.length-1);
+    });
+    nodes.push(li);
   });
+  queue.replaceChildren(...nodes);
   if(focusTarget){
-    const row=Array.from(queue.children).find(item=>item.dataset.queueId===focusTarget.id);
-    const target=row&&Array.from(row.children).flatMap(item=>Array.from(item.children||[]))
+    const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
+    const target=row&&Array.from(row.children[1].children)
       .find(item=>item.dataset.queueAction===focusTarget.action);
     (target||queue).focus({preventScroll:true});
   }
@@ -1318,7 +1395,7 @@ function scheduleRefresh(){
   clearTimeout(statusTimer);
   if(!csrf||stalePage||document.hidden)return;
   const delay=statusFailures?Math.min(30000,2000*2**statusFailures+Math.random()*500):2000;
-  statusTimer=setTimeout(refresh,delay);
+  statusTimer=setTimeout(refresh,Math.max(delay,rateDelayUntil-Date.now()));
 }
 async function refresh(){
   clearTimeout(statusTimer);
@@ -1331,12 +1408,11 @@ async function refresh(){
     const d=await r.json();
     if(controller.signal.aborted||busy)return;
     if(r.status===401){expireSession();return}
+    if(r.status===429){const seconds=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+seconds*1000;throw Error("Room updates are busy. Retrying shortly…")}
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
-    const s=d.state||{};
-    shortcutState=s;
-    $("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
+    const s=d.state||{};shortcutState=s;$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
@@ -1460,10 +1536,83 @@ window.addEventListener("keydown",event=>{
   act(command.action,command.value);
 });
 
-async function act(action,value,extra={}){if(busy)return;busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+async function act(action,value,extra={}){
+  if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
+  if(busy){
+    const key=action+":"+(extra.id||"");
+    if(!pendingControls.has(key)&&pendingControls.size>=16){
+      showError("errorDash","Too many controls are waiting; try again shortly");
+      return;
+    }
+    pendingControls.delete(key);
+    pendingControls.set(key,{action,value,extra});
+    showError("errorDash","Control waiting; your latest change will be sent");
+    return;
+  }
+  if(Date.now()<rateDelayUntil){
+    showError("errorDash","Too many controls at once. Try again shortly.");
+    return;
+  }
+  busy=true;
+  statusRequest?.abort("superseded");
+  try{
+    const body={action,...extra};
+    if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){
+      body.queue_revision=queueRevision;
+      body.queue_command_id="q"+Date.now().toString(36)+"-"+(++queueCommandSeq).toString(36);
+    }
+    if(value!==undefined)body.value=value;
+    const result=await post("/api/action",body);
+    showError("errorDash",result.message||"Command accepted");
+  }catch(err){showError("errorDash",err.message)}
+  finally{
+    busy=false;
+    if(pendingControls.size&&csrf&&!stalePage){
+      const first=pendingControls.keys().next().value;
+      const next=pendingControls.get(first);
+      pendingControls.delete(first);
+      if(next)void act(next.action,next.value,next.extra);
+    }else refresh();
+  }
+}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
-$("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+for(const id of ["seek","volume"]){
+  const control=$(id);
+  control.addEventListener("pointerdown",()=>editingControls.add(id));
+  control.addEventListener("input",()=>editingControls.add(id));
+  control.addEventListener("pointercancel",()=>editingControls.delete(id));
+  control.addEventListener("blur",()=>editingControls.delete(id));
+}
+$("seek").addEventListener("change",()=>{
+  const value=Number($("seek").value);
+  editingControls.delete("seek");
+  act("seek",value);
+});
+let volumeTimer=null,lastVolumeSent=0,volumePending=null;
+function flushVolume(){
+  volumeTimer=null;
+  if(volumePending===null)return;
+  const value=volumePending;
+  volumePending=null;
+  lastVolumeSent=Date.now();
+  void act("volume",value);
+}
+function queueVolume(value){
+  volumePending=value;
+  if(volumeTimer===null){
+    volumeTimer=setTimeout(flushVolume,Math.max(0,150-(Date.now()-lastVolumeSent)));
+  }
+}
+$("volume").addEventListener("input",()=>{
+  const value=Number($("volume").value);
+  $("volumeText").textContent=value+"%";
+  queueVolume(value);
+});
+$("volume").addEventListener("change",()=>{
+  editingControls.delete("volume");
+  queueVolume(Number($("volume").value));
+});
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
@@ -1475,7 +1624,7 @@ async function uploadRequest(method,path,body,headers={}){
     const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
     const data=await response.json();
     if(data.code==="client_reload_required")showUpdateNotice();
-    if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
+    if(!response.ok)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data.error||"Upload request failed"),{status:response.status,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
     return data;
   }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
 }
@@ -1484,10 +1633,10 @@ async function sendChunk(path,file,offset,end){
   for(let attempt=0;;attempt++){
     if(cancelUpload)throw Error("Upload cancelled");
     try{return await uploadRequest("PUT",path,body,headers)}catch(error){
-      if(error.status&&error.status<500&&error.status!==409)throw error;
+      if(error.status&&error.status<500&&error.status!==409&&error.status!==429)throw error;
       if(attempt===4||cancelUpload||!csrf)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
-      await new Promise(resolve=>setTimeout(resolve,250*2**attempt));
+      await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
       try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
       catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
