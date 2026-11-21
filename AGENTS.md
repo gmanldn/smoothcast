@@ -36,7 +36,7 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 
 ## Testing — no desktop focus
 
-**Routine tests never launch the GUI, focus the desktop or control the TV.**
+**Never launch the real GUI** or focus the desktop/control the TV in routine tests.
 No `gtk-launch`, `./smoothcast` or bare `--self-test`. Test changed behavior
 before committing. CI runs all tests in parallel: `python3 -m pytest -q tests
 -n auto`. Also run `python3 -m compileall -q src scripts setup tests` and
