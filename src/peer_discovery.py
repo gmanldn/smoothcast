@@ -14,7 +14,7 @@ from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
 
 SERVICE_TYPE = "_smoothcast._tcp.local."
 PROTOCOL_VERSION = 1
-PEER_TTL_SECONDS = 45.0
+PEER_TTL_SECONDS = 45
 MAX_PEERS = 64
 _PRIVATE_NETWORKS = tuple(ipaddress.ip_network(network) for network in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
@@ -58,7 +58,8 @@ def parse_peer(instance_id: object, name: object, version: object,
         return None
     if not isinstance(name, str) or not _DNS_NAME.fullmatch(name):
         return None
-    if not isinstance(version, str) or not version.isascii() or not version.isdecimal():
+    if (not isinstance(version, str) or not 1 <= len(version) <= 5
+            or not version.isascii() or not version.isdecimal()):
         return None
     parsed_version = int(version)
     if parsed_version < 1 or parsed_version > 65535:
@@ -106,7 +107,6 @@ class PeerDirectory(ServiceListener):
         self._clock = clock
         self._lock = threading.RLock()
         self._peers: dict[str, Peer] = {}
-        self._service_ids: dict[str, str] = {}
         self._closed = False
         self._owns_zeroconf = zeroconf is None
         self._zc: Zeroconf | None = zeroconf
@@ -120,6 +120,8 @@ class PeerDirectory(ServiceListener):
                 f"{self.name}-{self.instance_id[:8]}.{SERVICE_TYPE}",
                 addresses=[socket.inet_aton(bind_ip)],
                 port=port,
+                host_ttl=PEER_TTL_SECONDS,
+                other_ttl=PEER_TTL_SECONDS,
                 properties={
                     "id": self.instance_id,
                     "name": self.name,
@@ -149,9 +151,7 @@ class PeerDirectory(ServiceListener):
 
     def remove_service(self, _zeroconf: Zeroconf, _service_type: str, name: str) -> None:
         with self._lock:
-            instance_id = self._service_ids.pop(name, None)
-            if instance_id is not None:
-                self._peers.pop(instance_id, None)
+            self._peers.pop(name, None)
 
     def _load_service(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
         try:
@@ -172,25 +172,21 @@ class PeerDirectory(ServiceListener):
         with self._lock:
             if self._closed:
                 return
-            self._service_ids[name] = peer.instance_id
-            self._peers[peer.instance_id] = peer
-            while len(self._peers) > MAX_PEERS:
-                oldest = min(self._peers.values(), key=lambda item: item.last_seen)
-                self._peers.pop(oldest.instance_id, None)
-                for service, peer_id in list(self._service_ids.items()):
-                    if peer_id == oldest.instance_id:
-                        self._service_ids.pop(service, None)
+            self._peers[name] = peer
+            if len(self._peers) > MAX_PEERS:
+                oldest = min(self._peers, key=lambda service: self._peers[service].last_seen)
+                del self._peers[oldest]
 
     def snapshot(self) -> list[dict[str, Any]]:
-        now = self._clock()
+        # Zeroconf refreshes cached records and emits removals on goodbye or
+        # DNS expiry. An unchanged live record need not emit update callbacks.
         with self._lock:
-            for instance_id, peer in list(self._peers.items()):
-                if now - peer.last_seen > PEER_TTL_SECONDS:
-                    self._peers.pop(instance_id, None)
-                    for service, peer_id in list(self._service_ids.items()):
-                        if peer_id == instance_id:
-                            self._service_ids.pop(service, None)
-            peers = sorted(self._peers.values(), key=lambda item: (item.name.casefold(), item.instance_id))
+            unique: dict[str, Peer] = {}
+            for peer in self._peers.values():
+                current = unique.get(peer.instance_id)
+                if current is None or peer.last_seen >= current.last_seen:
+                    unique[peer.instance_id] = peer
+            peers = sorted(unique.values(), key=lambda item: (item.name.casefold(), item.instance_id))
             return [peer.public() for peer in peers]
 
     def close(self) -> None:
@@ -198,6 +194,7 @@ class PeerDirectory(ServiceListener):
             if self._closed:
                 return
             self._closed = True
+            self._peers.clear()
         browser, self._browser = self._browser, None
         if browser is not None:
             try:

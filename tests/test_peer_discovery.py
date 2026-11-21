@@ -111,7 +111,7 @@ class _FakeBrowser:
         self.cancelled = True
 
 
-def test_directory_advertises_versioned_record_and_expires_discovered_peers(monkeypatch):
+def test_directory_keeps_idle_peers_until_dns_removal(monkeypatch):
     clock = [10.0]
     zc = _FakeZeroconf()
     monkeypatch.setattr(peer_discovery, "Zeroconf", lambda **_kwargs: zc)
@@ -124,6 +124,7 @@ def test_directory_advertises_versioned_record_and_expires_discovered_peers(monk
     service = zc.registered[0]
     assert service.args[0] == peer_discovery.SERVICE_TYPE
     assert service.kwargs["port"] == 8765
+    assert service.kwargs["host_ttl"] == service.kwargs["other_ttl"] == 45
     assert service.kwargs["properties"] == {
         "id": "b" * 32, "name": "smoothcast-host", "version": "1",
         "capabilities": ",".join(peer_discovery.LOCAL_CAPABILITIES),
@@ -139,7 +140,16 @@ def test_directory_advertises_versioned_record_and_expires_discovered_peers(monk
     zc.info = info
     directory.add_service(zc, peer_discovery.SERVICE_TYPE, "lounge")
     assert len(directory.snapshot()) == 1
-    clock[0] += peer_discovery.PEER_TTL_SECONDS + 1
+    clock[0] += 300
+    assert len(directory.snapshot()) == 1
+
+    # Another advertisement for the same instance updates the endpoint.
+    info.port = 9001
+    directory.add_service(zc, peer_discovery.SERVICE_TYPE, "lounge-alias")
+    assert [peer["url"] for peer in directory.snapshot()] == ["http://192.168.1.25:9001/"]
+    directory.remove_service(zc, peer_discovery.SERVICE_TYPE, "lounge")
+    assert len(directory.snapshot()) == 1
+    directory.remove_service(zc, peer_discovery.SERVICE_TYPE, "lounge-alias")
     assert directory.snapshot() == []
     directory.close()
     assert directory._browser is None

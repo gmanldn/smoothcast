@@ -22,8 +22,10 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
             return False
-        receiver = self._device_host(self._device())
-        address = lan_interfaces.select_private_lan_ip(receiver)
+        # The portal serves phones and other LAN clients. Its reachable
+        # interface is independent of the selected Cast receiver's route:
+        # on a multi-NIC/VPN host that route can point at a different network.
+        address = lan_interfaces.select_private_lan_ip()
         if address == self._portal_ip and self._portal is not None:
             return True
         self._stop_portal()
