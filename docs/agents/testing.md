@@ -38,11 +38,11 @@ and newly added workflows; update pinned refs only after reviewing their
 upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 
 **Fake receivers (#278):** `tests/fake_receivers.py` provides `FakeDlnaRenderer`
-(loopback HTTP/SOAP; use `allow_loopback()`) and `FakeCast` (POSIX `catt` stand-in).
-Fake clock: `advance(seconds)`; script `fail`/`drop`/`go_offline`/`delay`; inspect
-`calls`. Six DLNA profiles and loopback-only `fetch_media()` test tokenized media.
-SSDP discovery also runs on loopback; CLI: `python3 tests/fake_receivers.py --help`.
-See `tests/test_fake_receivers.py`; device testing remains required.
+(loopback HTTP/SOAP; `allow_loopback()`) and `FakeCast` (POSIX `catt` stand-in).
+Clock: `advance(seconds)`; script `fail`/`drop`/`go_offline`/`delay`; inspect
+`calls`. Six DLNA profiles and loopback-only `fetch_media()` cover token media.
+SSDP discovery uses loopback; CLI: `python3 tests/fake_receivers.py --help`.
+See the [profile guide](fake_receivers.md) and tests; device testing remains required.
 
 **Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
 bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;

@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -87,7 +88,7 @@ class FakeDlnaTests(unittest.TestCase):
     def test_fake_renderer_has_a_bounded_standalone_loopback_cli(self):
         command = [sys.executable, str(Path(__file__).with_name("fake_receivers.py")),
                    "--profile", "strict-mime", "--duration", "0"]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=3)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("DLNA description: http://127.0.0.1:", result.stdout)
         self.assertIn("SSDP test socket: 127.0.0.1:", result.stdout)
@@ -214,6 +215,25 @@ class FakeDlnaTests(unittest.TestCase):
         self.assertFalse(session.active())
         self.assertEqual(self.tv.calls_of("Stop"), [])                    # ownership never began
 
+    def test_conversion_cancel_and_disk_guard_fail_before_receiver_ownership(self):
+        with tempfile.TemporaryDirectory() as work:
+            movie = Path(work) / "movie.mkv"
+            movie.write_bytes(b"source")
+            media = mock.Mock(path=movie, vcodec="hevc", acodec="eac3", pix_fmt="yuv420p",
+                              width=3840, height=2160, fps=60.0, duration=60.0,
+                              audio_streams=[], subtitle_tracks=[])
+            cancel = threading.Event()
+            cancel.set()
+            session = dlna.Session()
+            with self.assertRaisesRegex(dlna.DlnaError, "cancelled"):
+                session.start(media, renderer=self.renderer, local_ip="127.0.0.1",
+                              offset=0, title="Movie", cancel=cancel)
+            with mock.patch.object(dlna.shutil, "disk_usage", return_value=mock.Mock(free=1)):
+                with self.assertRaisesRegex(dlna.DlnaError, "Not enough free space"):
+                    dlna.Session().start(media, renderer=self.renderer, local_ip="127.0.0.1",
+                                         offset=0, title="Movie")
+        self.assertEqual(self.tv.calls, [])   # preparation must not touch a playing receiver
+
     def test_receiver_fetches_the_real_token_url_and_ranges(self):
         with tempfile.TemporaryDirectory() as work:
             movie = Path(work) / "movie.mp4"
@@ -229,6 +249,7 @@ class FakeDlnaTests(unittest.TestCase):
                 status, headers, body = self.tv.fetch_media(self.tv.uri, range_header="bytes=8-15")
                 self.assertEqual((status, body), (206, bytes(range(8, 16))))
                 self.assertEqual(headers["content-range"], "bytes 8-15/128")
+                self.assertEqual(headers["accept-ranges"], "bytes")
                 self.assertIn("contentfeatures.dlna.org", headers)
                 self.assertEqual(self.tv.media_requests, [("HEAD", None), ("GET", "bytes=8-15")])
                 wrong_token = self.tv.uri.rsplit("/", 1)[0] + "/wrong-token"
@@ -253,6 +274,14 @@ class FakeDlnaTests(unittest.TestCase):
                         self.assertEqual((status, headers["content-type"], body),
                                          (200, "video/mp4", b"valid test bytes"))
                         dlna.set_uri(receiver.renderer(), receiver.uri, "Strict MIME")
+                        if profile == "strict-mime":
+                            with self.assertRaisesRegex(dlna.DlnaError, "714"):
+                                dlna._soap(receiver.renderer(), "SetAVTransportURI", {
+                                    "InstanceID": "0", "CurrentURI": MEDIA,
+                                    "CurrentURIMetaData": (
+                                        '<res protocolInfo="http-get:*:video/x-matroska:*">'
+                                        f"{MEDIA}</res>"),
+                                })
                     finally:
                         session.stop(receiver.renderer().key)
 

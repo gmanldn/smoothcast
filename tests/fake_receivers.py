@@ -139,7 +139,12 @@ class FakeDlnaRenderer:
         self._ssdp_socket.settimeout(0.1)
         self._ssdp_stop = threading.Event()
         self._ssdp_thread = threading.Thread(target=self._serve_ssdp, daemon=True)
+        self._http_ready = threading.Event()
         fake = self
+
+        class ReadyThreadingHTTPServer(ThreadingHTTPServer):
+            def service_actions(self) -> None:
+                fake._http_ready.set()
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args) -> None:     # keep test output quiet
@@ -160,7 +165,7 @@ class FakeDlnaRenderer:
                 length = int(self.headers.get("Content-Length") or 0)
                 fake._serve_soap(self, self.rfile.read(length))
 
-        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._httpd = ReadyThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
 
     # -- lifecycle
@@ -170,6 +175,8 @@ class FakeDlnaRenderer:
         self._thread = threading.Thread(
             target=lambda: self._httpd.serve_forever(poll_interval=0.05), daemon=True)
         self._thread.start()
+        if not self._http_ready.wait(2):
+            raise RuntimeError("Fake DLNA HTTP server did not start")
         self._ssdp_thread.start()
         return self
 
