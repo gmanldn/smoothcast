@@ -295,8 +295,10 @@ class PyChromecastBackend:
                 if not url:
                     return False, "A valid HTTP media URL is required."
                 parsed = urlsplit(url)
-                content_type = mimetypes.guess_type(parsed.path)[0]
-                if not content_type and parsed.path.lower().endswith(".m3u8"):
+                content_type = mimetypes.guess_type(parsed.path)[0] or ""
+                if parsed.path.lower().endswith(".m3u8"):
+                    # Keep the HLS playlist MIME stable across OS-specific
+                    # mimetypes databases (notably macOS' x-mpegurl alias).
                     content_type = "application/vnd.apple.mpegurl"
                 if not content_type:
                     return False, "The media URL has no supported content type."
