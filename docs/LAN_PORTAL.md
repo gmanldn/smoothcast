@@ -52,6 +52,36 @@ standard-library `http.server` module; no web framework, portal package or
 additional runtime dependency is installed. The page, styles and scripts are
 served locally with no external assets.
 
+## LAN swarm roadmap
+
+SmoothCast is moving toward a live LAN swarm of full instances, paired browser
+guests and media targets. Each full instance can host a room and discover nearby
+instances, Chromecasts and DLNA renderers. A room has one authoritative shared
+queue for music, films and other media. Trusted participants collaborate on that
+queue, and a full instance can host its own room while serving as a source or
+receiver for another. Browser guests get the same everyday queue and playback
+controls where the chosen route supports them.
+
+The source and target pickers should update as devices join, leave or change
+capabilities. SmoothCast should choose a reachable, compatible and authorised
+route for each play request without disrupting existing playback.
+
+File transfers work in either direction in the planned swarm. A node can offer
+to send a copy or ask another node for file access. If the other node approves
+the request, the requester can browse the approved media, select files and
+transfer copies into its own instance. Transfers should use bounded storage,
+show progress, support cancellation and resume after an interruption. Completed
+copies should be verified before they become available to the receiving room.
+
+Today the nearby host list opens other rooms and the portal accepts uploads
+from the guest's own device. Follow [the swarm roadmap][swarm],
+[peer pairing][pairing], and [node-to-node file transfers][transfers] for the
+remaining work.
+
+[swarm]: https://github.com/gmanldn/smoothcast/issues/352
+[pairing]: https://github.com/gmanldn/smoothcast/issues/358
+[transfers]: https://github.com/gmanldn/smoothcast/issues/357
+
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes
