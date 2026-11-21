@@ -251,13 +251,13 @@ class CommandFence:
 class ParticipantRateLimiter:
     """Bounded, thread-safe token buckets per authenticated room identity.
 
-    Route classes: read (8 burst, 4/s), mutation (12, 6/s) and upload
+    Route classes: read (16 burst, 4/s), mutation (12, 6/s) and upload
     (40, 20/s). Uploads have a higher ceiling so 2 MiB chunks do not
     needlessly stall ordinary phones. Buckets are LRU-bounded to 512.
     """
 
     DEFAULT_LIMITS = {
-        "read": (8.0, 4.0),
+        "read": (16.0, 4.0),
         "mutation": (12.0, 6.0),
         "upload": (40.0, 20.0),
     }
