@@ -112,6 +112,7 @@ def test_rapid_hover_reuses_worker_and_ignores_old_film(tmp_path):
     window._timed_subtitle_preview(None)
     window.subs_detail.set_text.assert_called_with("Using film.srt")
     window._preview_generation += 1
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:03,000\nIntermediate cue\n")
     window._timed_subtitle_preview(1.0)
     # Source change while worker is outstanding must not replace the new cue cache.
     subtitle.write_text("1\n00:00:01,000 --> 00:00:03,000\nNew cue\n")
