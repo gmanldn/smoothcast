@@ -53,11 +53,9 @@ amend commits that are already on `origin`.
    The full suite runs in parallel in CI after each push. Run it locally for
    changes spanning components or test infrastructure. Never open the real GUI.
 5. Commit small, coherent changes with a message that names the issue
-   (`Refs #N`; GitHub closes issues only from the default branch, and an issue
-   closes only when **all** acceptance criteria are supported, so close it by
-   hand with evidence). Push when green.
-6. Never equate CI success with hardware verification. Avoid deleting existing
-   tickets or losing original research.
+   (`Refs #N`). Close by hand when code and automated CI satisfy the criteria;
+   device checks are tracked in #208, not close gates. Push when green.
+6. Avoid deleting existing tickets or losing original research.
 
 ## Repo hygiene — commit checklist
 

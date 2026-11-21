@@ -23,8 +23,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 ## Rules
 
 - **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
-  before work, `Refs #N` in commits, close only when every acceptance criterion
-  (incl. hardware) is verified. [Issues](docs/ISSUES.md).
+  before work, `Refs #N` in commits, close when code and automated CI pass;
+  device checks tracked in #208. [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
 - **Smallest complete fix:** inspect callers, reuse code, keep validation, privacy,
   device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
