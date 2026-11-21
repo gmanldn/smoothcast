@@ -14,6 +14,7 @@ from utils import pretty_title
 import time
 
 import castctl
+import state_labels
 
 import dlna
 
@@ -646,11 +647,10 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         self.device_state = castctl.player_state(info)
         if info is None:
             self.device_state = "OFFLINE"
-            self._set_device_badge("OFFLINE", "offline")
-        elif self.device_state in {"PLAYING", "BUFFERING"}:
-            self._set_device_badge("STREAMING", "online")
-        else:
-            self._set_device_badge("AVAILABLE", "online")
+        self._set_device_badge(
+            state_labels.present(self.device_state).short.upper(),
+            "offline" if self.device_state == "OFFLINE" else "online",
+        )
         reliability_metrics.observe(self, self.device_state)
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
