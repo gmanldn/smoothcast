@@ -17,6 +17,26 @@ the dashboard refreshes before the user retries. Edits also use per-participant
 command IDs: an identical retry returns its original receipt, while reusing an
 ID for a different edit is rejected. Recent receipts are held in a bounded
 two-minute cache.
+Authenticated remote traffic is bounded independently for each room participant, not by
+IP address or a browser-supplied client ID. Defaults are token buckets for
+read requests (16-request burst, replenishing 4/second), transport/queue
+mutations (12-request burst, 6/second), and upload control/chunks (40-request
+burst, 20/second). Exceeding a budget returns HTTP 429 with a `Retry-After`
+header; the browser delays polling and retries upload chunks, while
+transport actions display a visible refusal rather than continuing to flood.
+The control dispatcher also permits at most two concurrent outstanding
+commands per participant, so one guest cannot monopolise the shared queue.
+Limits do not apply to the host's local desktop controls. The limiter stores
+at most 512 recent participant/route buckets and contains no media-path data.
+
+For dependable touch control, the room holds a pressed queue button through
+the click event even if a live update reorders Up Next. Rows and action IDs
+remain stable across refreshes; outstanding taps show a waiting message and
+the latest unsent seek/volume intent supersedes older unsent values. Dragging
+the volume slider coalesces changes into at most one request per 150 ms and
+commits the final value when released; while a slider is being edited, live
+receiver updates do not move its thumb.
+
 The room also shows live presence and a bounded activity feed. An open room
 refreshes about every two seconds while visible, backs off if the host stops
 responding, and refreshes again when you return to the tab. Votes are a

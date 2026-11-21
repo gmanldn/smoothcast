@@ -69,6 +69,14 @@ class AgentContextTests(unittest.TestCase):
             self.assertEqual(stdout.getvalue(), "")
             self.assertIn("refusing lossy truncation", stderr.getvalue())
 
+    def test_path_routes_show_guarding_safety_invariants(self):
+        hint = router.route_hint(["src/stream_watchdog.py", "stalled"])
+        self.assertIn("INV-002", hint)
+        self.assertIn("docs/INVARIANTS.md", hint)
+        other = router.route_hint(["src/direct_probe.py"])
+        self.assertIn("INV-003", other)
+        self.assertNotIn("INV-001", other)
+
     def test_no_network_child_process_or_ui_imports(self):
         source = (ROOT / "scripts" / "agent_context.py").read_text("utf-8")
         for forbidden in ("import gi", "import requests", "import subprocess",

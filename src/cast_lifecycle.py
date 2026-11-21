@@ -42,6 +42,7 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
+        self._stop_ui_timers()
         reliability_metrics.finish_active(self, "interrupted", Async.run)
         getattr(self, "_cancel_music_import", lambda: None)()
         self._cancel_queue_prewarm()
@@ -110,7 +111,11 @@ class LifecycleMixin:
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - value))}")
             if previewing and self._local_stream() is None:
                 self._queue_preview(value)
+            if previewing:
+                self._timed_subtitle_preview(value)
         else:
+            if previewing:
+                self._timed_subtitle_preview(None)
             position = self._preview_position if previewing else self.tracker.value()
             if position is not None:
                 self.elapsed_label.set_text(fmt_time(position))

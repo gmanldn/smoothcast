@@ -41,6 +41,7 @@ class UiMixin(BookmarkUiMixin):
 
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
+        self._sync_ui_timers()
         if not self.is_active() or not refresh_config(self.cfg):
             return
         self.app.apply_accent(self.cfg.get("accent", "default"))
@@ -171,8 +172,8 @@ class UiMixin(BookmarkUiMixin):
 
         try:
             Gio.AppInfo.launch_default_for_uri(issue_report.report_url(version.label()), None)
-        except GLib.Error as exc:
-            self.toast(f"Could not open the browser: {exc.message}", error=True)
+        except GLib.Error:
+            self.toast("Could not open your browser. Copy the report link and open it manually.", error=True)
             return
         self.toast("Opening GitHub. Attach the file from Save diagnostics… to your report.")
 
@@ -1310,7 +1311,7 @@ class UiMixin(BookmarkUiMixin):
         self.cast_ip_entry.set_sensitive(not target_locked)
         self.add_ip_button.set_sensitive(not target_locked)
         self.device_dropdown.set_tooltip_text(
-            "Stop the current cast before changing TVs" if target_locked
+            "Stop this cast before switching receivers." if target_locked
             else "Choose a Cast or DLNA receiver"
         )
         embedded_burned = bool(
@@ -1361,6 +1362,7 @@ class UiMixin(BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        self._sync_ui_timers()
 
 
     def _refresh_direct_note(self) -> None:

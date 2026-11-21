@@ -202,7 +202,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 503, "SmoothCast could not accept that command") from exc
         session_id, revision, _owner = self.fence.rotate()
         return portal_commands.CommandReceipt(
-            envelope.command_id, session_id, revision, result or "Command accepted")
+            envelope.command_id, session_id, revision, result or "Command received; checking receiver state.")
 
     def server_close(self) -> None:
         try:
@@ -496,7 +496,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str, **extra: object) -> None:
         payload = {"ok": False, "error": message}
         payload.update(extra)
-        self._send(status, payload)
+        self._send(status, payload, extra_headers=(
+            {"Retry-After": "1"} if status == 429 else None))
 
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
@@ -548,9 +549,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(raw_length or "0")
         except ValueError as exc:
-            raise PortalRequestError(400, "Invalid request body") from exc
+            raise PortalRequestError(400, "Request could not be read. Retry the action.") from exc
         if length < 0:
-            raise PortalRequestError(400, "Invalid request body")
+            raise PortalRequestError(400, "Request could not be read. Retry the action.")
         if length > MAX_BODY:
             raise PortalRequestError(413, "Request is too large")
         try:
@@ -889,7 +890,7 @@ class _Handler(BaseHTTPRequestHandler):
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
                                                 {"action": action, "id": body.get("id")})
-                        return self._send(202, {"ok": True, "message": result or "Command accepted"})
+                        return self._send(202, {"ok": True, "message": result or "Command received; checking receiver state."})
                     if action == "seek":
                         value = body.get("value")
                         if isinstance(value, bool) or not isinstance(value, (float, int)):
@@ -1209,6 +1210,7 @@ function matchingBuild(data){
 }
 const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-SmoothCast-Client-Build":PAGE_BUILD};
 let rateDelayUntil=0;
+const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
@@ -1257,6 +1259,7 @@ $("loginForm").addEventListener("submit",async e=>{
 })();
 function expireSession(){
   csrf="";
+  pendingControls.clear();
   statusFailures=0;
   $("dashboard").hidden=true;
   $("uploadCard").hidden=true;
@@ -1374,7 +1377,7 @@ function renderQueue(items){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
     const target=row&&Array.from(row.children[1].children)
       .find(item=>item.dataset.queueAction===focusTarget.action);
-    if(target!==focused)(target||queue).focus({preventScroll:true});
+    (target||queue).focus({preventScroll:true});
   }
 }
 let statusRequest=null,statusTimer=null,statusFailures=0;
@@ -1399,7 +1402,7 @@ async function refresh(){
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
     const s=d.state||{};$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
@@ -1470,10 +1473,83 @@ function renderPeers(peers,available){
   }
 }
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
-async function act(action,value,extra={}){if(busy)return;if(Date.now()<rateDelayUntil){showError("errorDash","Too many controls at once. Try again shortly.");return}busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+async function act(action,value,extra={}){
+  if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
+  if(busy){
+    const key=action+":"+(extra.id||"");
+    if(!pendingControls.has(key)&&pendingControls.size>=16){
+      showError("errorDash","Too many controls are waiting; try again shortly");
+      return;
+    }
+    pendingControls.delete(key);
+    pendingControls.set(key,{action,value,extra});
+    showError("errorDash","Control waiting; your latest change will be sent");
+    return;
+  }
+  if(Date.now()<rateDelayUntil){
+    showError("errorDash","Too many controls at once. Try again shortly.");
+    return;
+  }
+  busy=true;
+  statusRequest?.abort("superseded");
+  try{
+    const body={action,...extra};
+    if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){
+      body.queue_revision=queueRevision;
+      body.queue_command_id="q"+Date.now().toString(36)+"-"+(++queueCommandSeq).toString(36);
+    }
+    if(value!==undefined)body.value=value;
+    const result=await post("/api/action",body);
+    showError("errorDash",result.message||"Command accepted");
+  }catch(err){showError("errorDash",err.message)}
+  finally{
+    busy=false;
+    if(pendingControls.size&&csrf&&!stalePage){
+      const first=pendingControls.keys().next().value;
+      const next=pendingControls.get(first);
+      pendingControls.delete(first);
+      if(next)void act(next.action,next.value,next.extra);
+    }else refresh();
+  }
+}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
-$("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+for(const id of ["seek","volume"]){
+  const control=$(id);
+  control.addEventListener("pointerdown",()=>editingControls.add(id));
+  control.addEventListener("input",()=>editingControls.add(id));
+  control.addEventListener("pointercancel",()=>editingControls.delete(id));
+  control.addEventListener("blur",()=>editingControls.delete(id));
+}
+$("seek").addEventListener("change",()=>{
+  const value=Number($("seek").value);
+  editingControls.delete("seek");
+  act("seek",value);
+});
+let volumeTimer=null,lastVolumeSent=0,volumePending=null;
+function flushVolume(){
+  volumeTimer=null;
+  if(volumePending===null)return;
+  const value=volumePending;
+  volumePending=null;
+  lastVolumeSent=Date.now();
+  void act("volume",value);
+}
+function queueVolume(value){
+  volumePending=value;
+  if(volumeTimer===null){
+    volumeTimer=setTimeout(flushVolume,Math.max(0,150-(Date.now()-lastVolumeSent)));
+  }
+}
+$("volume").addEventListener("input",()=>{
+  const value=Number($("volume").value);
+  $("volumeText").textContent=value+"%";
+  queueVolume(value);
+});
+$("volume").addEventListener("change",()=>{
+  editingControls.delete("volume");
+  queueVolume(Number($("volume").value));
+});
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){

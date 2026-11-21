@@ -13,7 +13,7 @@ import subtitle_delay
 import subtitle_encoding
 import subtitle_style
 
-from cast_widgets import save_config
+from cast_widgets import Async, fmt_time, save_config
 
 
 class SubtitleFileMixin:
@@ -67,3 +67,69 @@ class SubtitleFileMixin:
         self.subs_detail.set_text(self._subs_status_text())
         self.toast(f"Subtitles: {subtitle.name}")
         return True
+
+
+    def _timed_subtitle_preview(self, at: float | None) -> None:
+        """Show the sidecar cue at the hovered source time; never block GTK."""
+        self._caption_hover_position = at
+        if at is None:
+            self.subs_detail.set_text(self._subs_status_text())
+            return
+        if self.cfg.get("subs") not in {"pick", "auto"} or not self._preview_path:
+            return
+        source_film = self._preview_path
+        subtitles = self._resolve_subs(pathlib.Path(source_film))
+        if subtitles is None or subtitles.suffix.lower() not in {".srt", ".vtt", ".ass", ".ssa"}:
+            return
+        try:
+            stamp = subtitles.stat()
+        except OSError:
+            return
+        key = (str(subtitles), stamp.st_size, stamp.st_mtime_ns)
+        cached = getattr(self, "_caption_cue_cache", None)
+        if cached is not None and cached[0] == key:
+            caption = subtitle_encoding.cue_at(cached[1], at)
+            base = self._subs_status_text()
+            self.subs_detail.set_text(
+                f"{base}\nAt {fmt_time(at)}: {caption}" if caption else base
+            )
+            return
+        token = (key, getattr(self, "_preview_generation", 0))
+        if getattr(self, "_caption_cue_pending", None) == token:
+            return
+        self._caption_cue_pending = token
+
+        def work():
+            return subtitle_encoding.load_timed_cues(subtitles)
+
+        def done(cues):
+            if getattr(self, "_caption_cue_pending", None) == token:
+                self._caption_cue_pending = None
+            if (self.session is not None or self.external or
+                    self._preview_path != source_film or
+                    getattr(self, "_preview_generation", 0) != token[1]):
+                return
+            try:
+                current = subtitles.stat()
+            except OSError:
+                return
+            if (str(subtitles), current.st_size, current.st_mtime_ns) != key:
+                return
+            self._caption_cue_cache = (key, cues)
+            if self._caption_hover_position is not None:
+                self._timed_subtitle_preview(self._caption_hover_position)
+
+        def failed(message):
+            if getattr(self, "_caption_cue_pending", None) == token:
+                self._caption_cue_pending = None
+            if not getattr(self, "_closing", False):
+                self._console(f"Subtitle cue preview unavailable: {message}")
+
+        Async.run(
+            work, done=done, failed=failed, domain="media",
+            valid=lambda: (
+                self.session is None and not self.external and
+                self._preview_path == source_film and
+                getattr(self, "_preview_generation", 0) == token[1]
+            ),
+        )
