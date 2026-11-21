@@ -154,6 +154,7 @@ def test_reused_name_migrates_only_to_saved_uuid_not_the_impostor():
 
 def test_ambiguous_or_missing_uuid_never_silently_retargets():
     """INV-001: Ambiguous or missing UUID never retargets a selected receiver."""
+    """INV-001: Ambiguous or missing UUID never retargets a selected receiver."""
     for found in (
         [],
         [device("New TV", "")],
