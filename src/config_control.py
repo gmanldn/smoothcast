@@ -6,12 +6,16 @@ One malformed value must not discard other valid settings.
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 from itertools import islice
 import json
 import math
 import os
 from pathlib import Path
 import shutil
+import tempfile
+import threading
+from contextlib import contextmanager
 
 import audio_delay
 import bookmarks
@@ -193,6 +197,13 @@ def _backup(path: Path, label: str) -> None:
 
 def load_file(path: Path, defaults: dict) -> dict:
     """Read, migrate and validate settings; protect the original on failure."""
+    cfg = _load_file(Path(path), defaults)
+    if str(path) not in _PROTECTED:
+        _BASELINES[str(path)] = deepcopy(cfg)
+    return cfg
+
+
+def _load_file(path: Path, defaults: dict) -> dict:
     path = Path(path)
     key = str(path)
     _PROTECTED.discard(key)
@@ -221,16 +232,105 @@ def load_file(path: Path, defaults: dict) -> dict:
     return cfg
 
 
+# What this process last loaded or wrote per file; a save writes only keys that
+# differ from it, so another writer's changes to other keys are never reverted.
+_BASELINES: dict[str, dict] = {}
+_THREAD_LOCK = threading.RLock()
+_MISSING = object()
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Advisory cross-process lock (fcntl/msvcrt); degrades to thread-only."""
+    with _THREAD_LOCK:
+        handle = None
+        try:
+            digest = hashlib.sha1(str(path).encode("utf-8", "replace")).hexdigest()[:16]
+            handle = open(Path(tempfile.gettempdir()) / f"smoothcast-config-{digest}.lock", "a+b")
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except (OSError, ImportError):
+            pass
+        try:
+            yield
+        finally:
+            if handle is not None:
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                except (OSError, ImportError):
+                    pass
+                handle.close()
+
+
+def _fsync_dir(directory: Path) -> None:
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
+def _merged(path: Path, cfg: dict, baseline: dict | None) -> dict:
+    """Apply only this process's changes on top of the current on-disk file."""
+    if baseline is None:
+        return cfg
+    try:
+        disk = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return cfg
+    if not isinstance(disk, dict) or disk.get("schema_version", SCHEMA_VERSION) != cfg.get("schema_version", SCHEMA_VERSION):
+        return cfg
+    for key, value in cfg.items():
+        if baseline.get(key, _MISSING) != value:
+            disk[key] = value
+    for key in baseline:
+        if key not in cfg:
+            disk.pop(key, None)
+    return disk
+
+
 def save_file(path: Path, cfg: dict) -> bool:
-    """Atomically write settings unless the original is protected."""
+    """Atomically write settings unless the original is protected.
+
+    Unique temp file, fsync of file and directory, and a cross-process lock; the
+    write merges this process's changed keys into the current file contents.
+    """
     path = Path(path)
-    if str(path) in _PROTECTED:
+    key = str(path)
+    if key in _PROTECTED:
         return False
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(cfg, indent=1))
-        os.replace(tmp, path)
+        with _file_lock(path):
+            data = _merged(path, cfg, _BASELINES.get(key))
+            fd, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as handle:
+                    handle.write(json.dumps(data, indent=1))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(name, path)
+            except BaseException:
+                try:
+                    os.unlink(name)
+                except OSError:
+                    pass
+                raise
+            _fsync_dir(path.parent)
+            _BASELINES[key] = deepcopy(cfg)
     except OSError:
         return False
     return True
