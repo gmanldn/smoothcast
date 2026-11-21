@@ -37,7 +37,7 @@ class AvMixin:
         self._apply_volume_icon()
         if self._syncing:
             return
-        self._volume_user_ts = time.time()
+        self._volume_user_ts = time.monotonic()
         self._volume_target = self._device()
         if self._volume_job is not None:
             GLib.source_remove(self._volume_job)
