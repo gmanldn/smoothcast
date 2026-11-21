@@ -233,6 +233,40 @@ def test_guest_upload_is_queued_once_and_converges_across_room_clients(tmp_path)
         uploads.close()
 
 
+def test_concurrent_queue_removes_return_one_commit_and_one_stale_conflict(room):
+    first, second = room.login("Phone 1"), room.login("Phone 2")
+    first_state = first.status()[1]["state"]
+    second_state = second.status()[1]["state"]
+    target = first_state["queue"][0]
+    assert first_state["queue_revision"] == second_state["queue_revision"] == 0
+    barrier = threading.Barrier(2)
+    results: list[int] = []
+
+    def remove(client: RoomClient) -> None:
+        barrier.wait()
+        status, _body, _headers = client.action({
+            "action": "queue_remove", "id": target["id"],
+            "queue_revision": 0,
+            "queue_command_id": f"{client.participant_id}-race-remove",
+        })
+        results.append(status)
+
+    threads = [threading.Thread(target=remove, args=(client,))
+               for client in (first, second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(3)
+        assert not thread.is_alive()
+
+    assert sorted(results) == [202, 409]
+    assert len(room.queue) == 19 and room.queue_revision == 1
+    status, final, _headers = first.status()
+    assert status == 200
+    assert final["state"]["queue_revision"] == 1
+    assert target["id"] not in {item["id"] for item in final["state"]["queue"]}
+
+
 def test_simultaneous_seeks_are_serialized_and_one_stale_generation_is_rejected(room):
     first, second = room.login("Phone 1"), room.login("Phone 2")
     first.status()
