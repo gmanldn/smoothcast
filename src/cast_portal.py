@@ -110,7 +110,7 @@ class PortalMixin(NetworkActivityMixin):
         peer_names = [
             (f"{peer['name']} · {peer['id'][:6]}" if name_counts[peer["name"].casefold()] > 1
              else peer["name"])
-            + ("" if peer.get("compatible") else " (incompatible)")
+            + (" · video, Cast" if peer.get("compatible") else " (incompatible)")
             for peer in peer_list[:4] if isinstance(peer.get("name"), str)
             and isinstance(peer.get("id"), str)
         ]

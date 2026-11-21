@@ -20,6 +20,7 @@ _PRIVATE_NETWORKS = tuple(ipaddress.ip_network(network) for network in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _INSTANCE_ID = re.compile(r"^[a-f0-9]{32}$")
 _DNS_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
+LOCAL_CAPABILITIES = ("room", "video-upload", "remote-cast")
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ def parse_peer(instance_id: object, name: object, version: object,
         return None
     if isinstance(capabilities, str):
         caps = tuple(sorted({part for part in capabilities.split(",")
-                             if part in {"room", "file-receive", "remote-cast"}}))
+                             if part in LOCAL_CAPABILITIES}))
     else:
         caps = ()
     if not isinstance(addresses, (list, tuple)):
@@ -123,7 +124,7 @@ class PeerDirectory(ServiceListener):
                     "id": self.instance_id,
                     "name": self.name,
                     "version": str(PROTOCOL_VERSION),
-                    "capabilities": "room",
+                    "capabilities": ",".join(LOCAL_CAPABILITIES),
                 },
                 server=f"{self.name}.local.",
             )

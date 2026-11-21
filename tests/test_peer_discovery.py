@@ -18,7 +18,7 @@ def parse(**overrides):
         "instance_id": INSTANCE,
         "name": "smoothcast-lounge",
         "version": "1",
-        "capabilities": "room,unknown,remote-cast",
+        "capabilities": "room,unknown,remote-cast,video-upload",
         "addresses": ["192.168.1.25"],
         "port": 8765,
         "now": 10.0,
@@ -35,7 +35,7 @@ def test_service_record_exposes_only_validated_local_endpoint_and_known_capabili
         "name": "smoothcast-lounge",
         "version": 1,
         "compatible": True,
-        "capabilities": ["remote-cast", "room"],
+        "capabilities": ["remote-cast", "room", "video-upload"],
         "url": "http://192.168.1.25:8765/",
     }
 
@@ -126,7 +126,7 @@ def test_directory_advertises_versioned_record_and_expires_discovered_peers(monk
     assert service.kwargs["port"] == 8765
     assert service.kwargs["properties"] == {
         "id": "b" * 32, "name": "smoothcast-host", "version": "1",
-        "capabilities": "room",
+        "capabilities": ",".join(peer_discovery.LOCAL_CAPABILITIES),
     }
     assert directory.snapshot() == []
 
@@ -158,7 +158,7 @@ def test_directory_caps_peer_count(monkeypatch):
         info.properties = {
             b"id": (index + 1).to_bytes(16, "big").hex().encode(),
             b"name": f"smoothcast-{index}".encode(),
-            b"version": b"1", b"capabilities": b"room",
+            b"version": b"1", b"capabilities": b"room,video-upload,remote-cast",
         }
         info.port = 9000
         zc.info = info
