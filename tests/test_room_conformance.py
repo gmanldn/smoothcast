@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 import sys
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -192,7 +193,15 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
 
 @pytest.mark.parametrize("client_count", [2, 5, 20])
 def test_guest_upload_is_queued_once_and_converges_across_room_clients(
-        tmp_path, client_count):
+        tmp_path, client_count, monkeypatch):
+    import streamer
+
+    monkeypatch.setattr(
+        streamer, "ffprobe",
+        lambda _path: SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        ),
+    )
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     room = RoomHarness(count=0, uploads=uploads)
     try:
