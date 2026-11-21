@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """SmoothCast desktop UI."""
 from __future__ import annotations
-
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -9,46 +8,29 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 import os
-
 from position_tracker import PositionTracker
 import pathlib
-
 import sys
 import threading
-
 import accent
 import castctl
 import density
-
 import sleep_fade
-
 import dlna
-
 import streamer
-
 import smoothcast_assets
-
 import stream_watchdog
-
 import audio_monitor
-
 import responsive_layout
-
 import gui_test_safety
-
 import update_control
 from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
-
 import version
-
 import error_log
-
 import local_playback
-
 import startup_cleanup
 import mpris
-
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin

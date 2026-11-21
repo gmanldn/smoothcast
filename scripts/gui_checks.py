@@ -45,6 +45,7 @@ SCENARIOS: dict[str, str | None] = {
     "subtitle-style-junk": '{"subtitle_style": "<invalid>"}\n',
     "text-fit": None,
     "audio-delay": None,
+    "side-panel": None,
     "bookmarks": None,
 }
 

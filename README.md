@@ -92,7 +92,7 @@ not DLNA, AirPlay or Miracast. **AirPlay and Miracast remain unimplemented.**
 
 **DLNA / UPnP MediaRenderer (beta):** SmoothCast also scans for
 AVTransport-compatible DLNA renderers on the private LAN using SSDP. Choose an
-entry labelled **DLNA · TV name · IP** in **Output device**, then press **Cast**.
+entry labelled **DLNA · TV name · IP** in the receiver menu next to **Cast to TV**, then press **Cast to TV**.
 The application supplies a temporary HTTP URL with an unguessable token and
 byte-range requests; the TV fetches a progressive MP4 from your machine.
 Playback, pause, stop, seek and optional volume controls use UPnP SOAP, **not**
@@ -247,16 +247,28 @@ Two detectors can clean up the picture before it is encoded for the TV. Both are
 
 ## Interface and visual design
 
+**Window layout.** The player is always the main thing: title and state, preview, one seek bar with elapsed and remaining time, transport (previous, −30/−10, play, +10/+30, next, stop), volume with a captions toggle, the **receiver menu** and the **Open media / Cast to TV / Play locally / Stop TV** actions. The receiver menu sits directly above the Cast button and shows a green or red edge for an online or offline receiver. Everything else lives in one tabbed **side panel** (switch with **Alt+1** – **Alt+5**):
+
+| Tab | Contents |
+| --- | --- |
+| **Queue** | Up next with a count badge: add media or music, search (**Ctrl+F**), drag or arrow-reorder, auto-play next |
+| **Devices** | Receiver status, scan again, add a receiver by IP, connection check, read-only network activity (a `!` badge means no receiver is chosen or it is offline) |
+| **Room** | Shared-room address, QR code, PIN, guests, access reset |
+| **Settings** | Video quality, sound, loudness, subtitles, direct play (and **All preferences…**) |
+| **Info** | Stream diagnostics, buffer-health graph, audio signal meters, activity log |
+
+At **940 px** and wider the side panel sits beside the player and scrolls on its own; below that it stacks under the player (the tab strip then shows icons only under 400 px). Above 1000 px the player stops growing so the seek bar and buttons stay readable. Wrapping decisions use the *measured* width of the transport controls and the player's measured height, so a larger font wraps earlier and the whole player, including **Cast to TV**, stays on screen instead of scrolling: the preview picture shrinks first. The window's minimum width at every size is below the width it is chosen at, so it can always be shrunk until it stacks (`scripts/gui_checks.py side-panel` checks this with real widgets).
+
 **Accent colour.** Preferences > Appearance > Accent colour offers seven presets (Default blue, Teal, Green, Amber, Orange, Rose, Violet) that recolour suggested-action and play buttons, sliders, checked switches and the current queue row, live and without a restart. Every preset is checked for accessibility: button text reaches at least 4.5:1 contrast on the accent and its hover shade (the text colour, dark or white, is calculated from the accent), and the accent itself reaches at least 3:1 against the app surfaces. The choice is stored as `"accent"` in `config.json` (a corrupt value falls back to the default). It is an extra stylesheet layered over SmoothCast's own; the system GTK theme is never edited, and **Default blue** removes the override entirely.
 
 **Interface density.** Preferences > Appearance > Interface density offers Compact, Comfortable (the default, exactly the stylesheet as designed) and Spacious. It scales page margins, column spacing, the preview height, card and chip padding, and the sizes of the play, transport and action controls, live and without a restart; control rows wrap earlier at larger densities instead of being clipped. The choice is stored as `"density"` in `config.json` (a corrupt value falls back to Comfortable). **No clipping at 360 px or under large fonts:** in windows narrower than 1000 px, long labels wrap and captions inside buttons ellipsize instead of raising the window's minimum width. Measured with real widgets (`scripts/gui_checks.py`), the 360 px layout stays within 360 px at every density with 14, 18 and 22 pt interface fonts (without this the minimum was 624 px at 22 pt). Wide windows are left exactly as designed.
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
-or select **Open Preferences…** in the Playback settings card. A searchable,
+or select **All preferences…** in the **Settings** tab. A searchable,
 native libadwaita window groups Picture and delivery, Queue behaviour, Audio,
 Captions and Appearance with per-setting explanations and explicit notes about
-when a new cast or encoder restart is required. The main playback card starts
-compact; expand **Show inline playback controls** to use the familiar controls.
+when a new cast or encoder restart is required. The side panel's **Settings**
+tab shows the everyday quality, sound and caption controls directly.
 Both views edit the same saved preferences through the existing callbacks.
 Film-specific audio/embedded caption tracks are only enabled when available.
 No settings operation contacts a TV merely by opening the window.
@@ -265,7 +277,7 @@ This follows GNOME's guidance on [adaptive layouts](https://developer.gnome.org/
 [application preferences](https://developer.gnome.org/hig/patterns/controls/menus.html)
 and [GTK main-thread ownership](https://docs.gtk.org/gtk4/section-threading.html).
 
-SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections. The diagnostics card also keeps a bounded 60-second buffer-health graph: measured buffer-ahead (area), available HLS segments (line) and watchdog restart marks (red), sampled from the existing half-second tick without extra polling.
+SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue shows a purposeful empty state and becomes scrollable only when there is content. The Devices tab distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections. The Info tab also keeps a bounded 60-second buffer-health graph: measured buffer-ahead (area), available HLS segments (line) and watchdog restart marks (red), sampled from the existing half-second tick without extra polling.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
 
@@ -389,7 +401,7 @@ When one film finishes, the UI holds incoming cast commands until the old server
 
 ## Responsive sizing
 
-The application no longer requires fullscreen or a 1400-pixel-wide minimum window. Saved startup dimensions are bounded by the detected monitor's logical geometry, leaving space for decorations. Layout automatically reflows on resize: **1180+ logical px** shows two columns; narrower widths stack cards. Transport controls and action buttons wrap as needed, preview height and card padding become more compact, and one outer vertical scroller keeps every card accessible even when the window is shorter than the full interface. Resizing wider restores the two-column layout. The app avoids shrinking controls to unreadable sizes.
+The application no longer requires fullscreen or a 1400-pixel-wide minimum window. Saved startup dimensions are bounded by the detected monitor's logical geometry, leaving space for decorations. Layout automatically reflows on resize: **940+ logical px** puts the player beside the tabbed side panel; narrower widths stack the panel under the player. Transport controls wrap into two symmetrical rows, the action buttons flow into two columns, preview height and card padding become more compact, and one outer vertical scroller keeps everything accessible even when the window is shorter than the full interface. Resizing wider restores the side-by-side layout. The app avoids shrinking controls to unreadable sizes.
 
 The geometry and breakpoint decisions are independently testable in `src/responsive_layout.py`. Run `python3 -m unittest discover -s tests -v` for breakpoint and GTK structure regression checks.
 

@@ -132,7 +132,8 @@ class PlaylistTests(unittest.TestCase):
         self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
         self.assertIn("self.queue_list.invalidate_filter()", source)
         self.assertIn("row.set_tooltip_text(path)", source)
-        self.assertIn('add("<Control>f", lambda: self.queue_search.grab_focus())', source)
+        self.assertIn('add("<Control>f", self._focus_queue_search)', source)
+        self.assertIn("self.queue_search.grab_focus()", source)
 
     def test_queue_reorder_keeps_selected_media_identity(self):
         # Moved selected entry, moved non-selected entry, and unrelated swap.

@@ -17,14 +17,11 @@ import cast_targets
 import responsive_layout
 
 import buffer_health
-import idle_chrome
 import notifications
 import state_labels
 import playback_state
 import progress_model
-import text_fit
 
-import smoothcast_assets
 import ui_theme
 
 import version
@@ -35,9 +32,10 @@ from cast_widgets import (
 )
 import network_route_ui
 from bookmark_ui import BookmarkUiMixin
+from panel_ui import PANEL_TABS, PanelMixin
 
 
-class UiMixin(BookmarkUiMixin):
+class UiMixin(PanelMixin, BookmarkUiMixin):
 
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
@@ -96,73 +94,6 @@ class UiMixin(BookmarkUiMixin):
         """
         self.unminimize()
         super().present()
-
-
-    def _build_ui(self) -> None:
-        # Keep the *running* release in the prominent title, not an easily
-        # truncated device/status subtitle or a live on-disk git lookup.
-        self.set_title(f"{APP_NAME} {version.label()}")
-        header = Adw.HeaderBar()
-        self.title_widget = Adw.WindowTitle(
-            title=f"{APP_NAME} {version.label()}",
-            subtitle=self.cfg["device"] or "No receiver selected",
-        )
-        self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.label()}")
-        header.set_title_widget(self.title_widget)
-        _icon_path = smoothcast_assets.icon_path()
-        if _icon_path.exists():
-            icon = Gtk.Image.new_from_file(str(_icon_path))
-        else:
-            icon = Gtk.Image.new_from_icon_name(smoothcast_assets.ICON_NAME)
-        icon.set_pixel_size(22)
-        header.pack_start(icon)
-        menu_button = Gtk.MenuButton()
-        menu_button.set_icon_name("open-menu-symbolic")
-        menu_button.set_tooltip_text("Main menu")
-        menu_button.set_menu_model(self._build_menu())
-        header.pack_end(menu_button)
-        self.menu_button = menu_button
-
-        self.toasts = Adw.ToastOverlay()
-        toolbar = Adw.ToolbarView()
-        toolbar.add_top_bar(header)
-        # One full-height vertical scroller: neither column can disappear below
-        # the screen when its natural height exceeds the available allocation.
-        # Change this box's orientation at a breakpoint rather than forcing a
-        # 1400 px-wide Gtk.Paned that clips on laptop screens.
-        self.page = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        self.page.set_vexpand(False)
-        self.page.set_valign(Gtk.Align.START)
-        self.left_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        self.left_column.set_hexpand(True)
-        self.left_column.set_valign(Gtk.Align.START)
-        self.left_column.append(self._build_now_playing())
-        # Build the device card before the queue: _build_queue() calls
-        # _rebuild_queue() -> _refresh_controls(), which needs device_dropdown.
-        self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        self.right_column.set_valign(Gtk.Align.START)
-        self.right_column.append(self._build_device_card())
-        self.right_column.append(self._build_network_activity_card())
-        self.right_column.append(self._build_portal_card())
-        self.right_column.append(self._build_settings_card())
-        self.right_column.append(self._build_console_card())
-        self.right_column.append(self._build_details_card())
-        self.left_column.append(self._build_queue())
-        self.left_column.append(self._build_live_levels())
-        self.page.append(self.left_column)
-        self.page.append(self.right_column)
-        self.page_scroller = Gtk.ScrolledWindow()
-        self.page_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.page_scroller.set_propagate_natural_width(False)
-        self.page_scroller.set_propagate_natural_height(False)
-        self.page_scroller.set_hexpand(True)
-        self.page_scroller.set_vexpand(True)
-        self.page_scroller.set_child(self.page)
-        toolbar.set_content(self.page_scroller)
-        self.toasts.set_child(toolbar)
-        self.set_content(self.toasts)
-        self.header = header
-        self._idle_chrome = idle_chrome.IdleChrome(self, header)
 
 
     def action_report_problem(self) -> None:
@@ -272,17 +203,22 @@ class UiMixin(BookmarkUiMixin):
 
 
     def _build_now_playing(self) -> Gtk.Box:
-        card, body = self._card("Now Playing")
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        body = card
+        card.add_css_class("card")
         card.add_css_class("hero-card")
-        title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.np_title = Gtk.Label(label="Ready to cast", xalign=0.0, hexpand=True, ellipsize=3)
-        self.np_title.add_css_class("hero-title")
+        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        eyebrow = Gtk.Label(label="NOW PLAYING", xalign=0.0, hexpand=True)
+        eyebrow.add_css_class("eyebrow")
         self.state_chip = Gtk.Label(label="Ready")
         self.state_chip.add_css_class("chip")
         self.state_chip.add_css_class("idle")
-        title_row.append(self.np_title)
-        title_row.append(self.state_chip)
-        body.append(title_row)
+        top_row.append(eyebrow)
+        top_row.append(self.state_chip)
+        body.append(top_row)
+        self.np_title = Gtk.Label(label="Ready to cast", xalign=0.0, hexpand=True, ellipsize=3)
+        self.np_title.add_css_class("hero-title")
+        body.append(self.np_title)
         self.np_meta = Gtk.Label(label="Open a video and send it to your TV", xalign=0.0, wrap=True)
         self.np_meta.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.np_meta.set_max_width_chars(72)
@@ -296,6 +232,8 @@ class UiMixin(BookmarkUiMixin):
         self.preview_picture.set_can_target(False)
         self.preview_picture.set_visible(False)
         self.preview_overlay = Gtk.Overlay()
+        self.preview_overlay.add_css_class("preview-frame")
+        self.preview_overlay.set_overflow(Gtk.Overflow.HIDDEN)
         self.preview_overlay.set_child(self.preview)
         self.preview_overlay.add_overlay(self.preview_picture)
         # Real video/audio playback is embedded into the existing preview panel.
@@ -310,17 +248,18 @@ class UiMixin(BookmarkUiMixin):
         subtitle_drop.connect("drop", self._drop_subtitle)
         self.preview_overlay.add_controller(subtitle_drop)
         body.append(self.preview_overlay)
-        self.seekbar = SeekBar(self.seek_to, self._on_hover)
-        body.append(self.seekbar)
-        clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        self.elapsed_label = Gtk.Label(label="0:00:00", xalign=0.0, hexpand=True)
+        # One row: elapsed, scrubbing bar, time remaining.
+        clock_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.elapsed_label = Gtk.Label(label="0:00:00", xalign=0.0, ellipsize=Pango.EllipsizeMode.END)
         self.elapsed_label.add_css_class("caption")
         self.elapsed_label.add_css_class("mono")
-        self.remaining_label = Gtk.Label(label="--:--", xalign=1.0)
+        self.seekbar = SeekBar(self.seek_to, self._on_hover)
+        self.remaining_label = Gtk.Label(label="--:--", xalign=1.0, ellipsize=Pango.EllipsizeMode.END)
         self.remaining_label.add_css_class("caption")
         self.remaining_label.add_css_class("mono")
         self.remaining_label.add_css_class("dim-label")
         clock_row.append(self.elapsed_label)
+        clock_row.append(self.seekbar)
         clock_row.append(self.remaining_label)
         body.append(clock_row)
 
@@ -329,9 +268,9 @@ class UiMixin(BookmarkUiMixin):
         self.transport_grid = transport
         self.start_button = self._icon_button(
             "media-skip-backward-symbolic", "Back to start (Home)",
-            "transport", self._back_to_start, size=28,
+            "transport flat", self._back_to_start, size=22,
         )
-        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport", self.on_prev, size=28)
+        self.prev_button = self._icon_button("go-previous-symbolic", "Previous in queue (P)", "transport flat", self.on_prev, size=22)
         self.back30_button = self._text_button("−30", "Back 30 seconds (Shift+←)", self._skip_back30)
         self.back30_button.add_css_class("transport-step")
         self.back10_button = self._text_button("−10", "Back 10 seconds (←)", self._skip_back10)
@@ -352,8 +291,8 @@ class UiMixin(BookmarkUiMixin):
         self.fwd10_button.add_css_class("transport-step")
         self.fwd30_button = self._text_button("+30", "Forward 30 seconds (Shift+→)", self._skip_forward30)
         self.fwd30_button.add_css_class("transport-step")
-        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport", self.on_next, size=28)
-        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport stop-control", self.stop_stream, size=28)
+        self.next_button = self._icon_button("go-next-symbolic", "Next in queue (N)", "transport flat", self.on_next, size=22)
+        self.stop_button = self._icon_button("media-playback-stop-symbolic", "Stop (S)", "transport flat stop-control", self.stop_stream, size=22)
         self.transport_controls = (
             self.start_button, self.prev_button, self.back30_button,
             self.back10_button, self.play_button, self.fwd10_button,
@@ -363,11 +302,8 @@ class UiMixin(BookmarkUiMixin):
             transport.attach(widget, index, 0, 1, 1)
         body.append(transport)
 
-        volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         volume_row.add_css_class("volume-row")
-        volume_title = Gtk.Label(label="Volume")
-        volume_title.add_css_class("volume-label")
-        volume_row.append(volume_title)
         self.mute_button = Gtk.ToggleButton()
         self.mute_button.set_icon_name("audio-volume-high-symbolic")
         self.mute_button.set_tooltip_text("Mute (M)")
@@ -381,55 +317,89 @@ class UiMixin(BookmarkUiMixin):
         self.volume_scale.update_property(
             [Gtk.AccessibleProperty.LABEL], ["Volume"]
         )
+        self.volume_scale.set_tooltip_text("Volume on the TV (Up / Down)")
         self.volume_scale.set_hexpand(True)
         self._syncing = True
         self.volume_scale.set_value(50)
         self._syncing = False
         self.volume_scale.connect("value-changed", self._on_volume_changed)
-        self.volume_label = Gtk.Label(label="50%")
+        self.volume_label = Gtk.Label(label="50%", xalign=1.0, ellipsize=Pango.EllipsizeMode.END)
         self.volume_label.add_css_class("caption")
         self.volume_label.add_css_class("mono")
         self.volume_label.set_width_chars(4)
+        self.cc_button = Gtk.ToggleButton(label="CC")
+        self.cc_button.add_css_class("flat")
+        self.cc_button.set_tooltip_text("Toggle captions on the TV")
+        self.cc_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Captions"]
+        )
+        self.cc_button.connect("toggled", self._on_cc_toggled)
         volume_row.append(self.mute_button)
         volume_row.append(self.volume_scale)
         volume_row.append(self.volume_label)
+        volume_row.append(self.cc_button)
         body.append(volume_row)
 
-        action_row = Gtk.Grid(column_spacing=8, row_spacing=8)
+        # Receiver: choose where to cast right next to the Cast button.
+        receiver_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        receiver_row.add_css_class("receiver-row")
+        tv_icon = Gtk.Image.new_from_icon_name("video-display-symbolic")
+        tv_icon.add_css_class("dim-label")
+        receiver_row.append(tv_icon)
+        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"] or cast_targets.CHOOSE_RECEIVER])
+        self.device_dropdown.set_hexpand(True)
+        self.device_dropdown.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Receiver to cast to"]
+        )
+        self.device_dropdown.connect("notify::selected", self._on_device_selected)
+        refresh = self._icon_button(
+            "view-refresh-symbolic", "Scan the network for receivers", "flat", self.scan_devices,
+        )
+        refresh.set_valign(Gtk.Align.CENTER)
+        receiver_row.append(self.device_dropdown)
+        receiver_row.append(refresh)
+        body.append(receiver_row)
+
+        # A FlowBox wraps by itself, so the strip can never widen the window.
+        action_row = Gtk.FlowBox()
+        action_row.add_css_class("actions-strip")
+        action_row.set_selection_mode(Gtk.SelectionMode.NONE)
+        action_row.set_homogeneous(True)
+        action_row.set_column_spacing(8)
+        action_row.set_row_spacing(8)
+        action_row.set_min_children_per_line(2)
+        action_row.set_max_children_per_line(4)
         action_row.set_hexpand(True)
         self.action_grid = action_row
         open_button = Gtk.Button(label="Open media")
         self.open_button = open_button
         open_button.add_css_class("action-control")
         open_button.add_css_class("primary-action")
+        open_button.set_tooltip_text("Choose a video or audio file (Ctrl+O)")
         open_button.connect("clicked", lambda _b: self.open_video())
         self.cast_button = Gtk.Button(label="Cast to TV")
         self.cast_button.add_css_class("action-control")
-        self.cast_button.set_hexpand(False)
+        self.cast_button.set_tooltip_text("Send the selected media to the chosen receiver")
         self.cast_button.connect("clicked", lambda _b: self.cast_selected())
         self.local_button = Gtk.Button(label="Play locally")
         self.local_button.add_css_class("action-control")
-        self.local_button.set_hexpand(False)
         self.local_button.set_tooltip_text("Play the selected file locally before casting")
         self.local_button.connect("clicked", lambda _b: self._play_locally())
         self.stop_tv_button = Gtk.Button(label="Stop TV")
         self.stop_tv_button.add_css_class("destructive-action")
         self.stop_tv_button.add_css_class("action-control")
-        self.stop_tv_button.set_hexpand(False)
+        self.stop_tv_button.set_tooltip_text("Stop the cast on the TV (Ctrl+W)")
         self.stop_tv_button.set_sensitive(False)
         self.stop_tv_button.connect("clicked", lambda _b: self.stop_stream())
-        self.cc_button = Gtk.ToggleButton(label="CC")
-        self.cc_button.add_css_class("action-control")
-        self.cc_button.set_tooltip_text("Toggle captions on the TV")
-        self.cc_button.update_property(
-            [Gtk.AccessibleProperty.LABEL], ["Captions"]
-        )
-        self.cc_button.connect("toggled", self._on_cc_toggled)
         self.action_controls = (
-            open_button, self.cast_button, self.local_button, self.stop_tv_button, self.cc_button,
+            open_button, self.cast_button, self.local_button, self.stop_tv_button,
         )
-        for index, button in enumerate(self.action_controls):
-            action_row.attach(button, index, 0, 1, 1)
+        for button in self.action_controls:
+            action_row.append(button)
+        for index in range(len(self.action_controls)):
+            child = action_row.get_child_at_index(index)
+            if child is not None:
+                child.set_focusable(False)  # the button inside is the focus stop
         body.append(action_row)
         return card
 
@@ -493,24 +463,18 @@ class UiMixin(BookmarkUiMixin):
     def _build_queue(self) -> Gtk.Box:
         card, body = self._card("Up next")
         card.add_css_class("queue-card")
-        card.set_vexpand(False)
+        card.set_vexpand(True)
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         add_button = Gtk.Button(label="Add media")
+        add_button.set_tooltip_text("Add videos or audio files to the queue (Ctrl+A)")
         add_button.connect("clicked", lambda _b: self.add_files())
         clear_button = self._icon_button(
             "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
         )
         toolbar.append(add_button)
         toolbar.append(self._build_music_actions())
-        toolbar.append(clear_button)
         toolbar.append(Gtk.Box(hexpand=True))
-        auto_label = Gtk.Label(label="Auto-play")
-        auto_label.add_css_class("caption")
-        self.autonext_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.autonext_switch.set_active(bool(self.cfg["autonext"]))
-        self.autonext_switch.connect("notify::active", self._on_autonext)
-        toolbar.append(auto_label)
-        toolbar.append(self.autonext_switch)
+        toolbar.append(clear_button)
         body.append(toolbar)
         body.append(self._build_music_import_status())
 
@@ -524,34 +488,54 @@ class UiMixin(BookmarkUiMixin):
         self.queue_no_matches.set_visible(False)
         body.append(self.queue_no_matches)
 
-        self.queue_summary = Gtk.Label(label="", xalign=0.0)
+        # Summary on the left, auto-play on the right: one calm status line.
+        meta_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        meta_row.add_css_class("queue-meta")
+        self.queue_summary = Gtk.Label(label="", xalign=0.0, ellipsize=3)
         self.queue_summary.add_css_class("caption")
+        self.queue_summary.add_css_class("dim-label")
         self.queue_summary.set_visible(False)
-        body.append(self.queue_summary)
+        auto_label = Gtk.Label(label="Auto-play next")
+        auto_label.add_css_class("caption")
+        self.autonext_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.autonext_switch.set_active(bool(self.cfg["autonext"]))
+        self.autonext_switch.set_tooltip_text("Start the next queued item when this one ends")
+        self.autonext_switch.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Auto-play next item"]
+        )
+        self.autonext_switch.connect("notify::active", self._on_autonext)
+        meta_row.append(self.queue_summary)
+        meta_row.append(Gtk.Box(hexpand=True))
+        meta_row.append(auto_label)
+        meta_row.append(self.autonext_switch)
+        body.append(meta_row)
 
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_min_content_height(100)
-        scroller.set_max_content_height(270)
-        # Only the outer page should negotiate natural vertical size.
-        # Inner list contents change asynchronously and can otherwise give
-        # GtkBox contradictory min/natural height requests during relayout.
+        scroller.set_min_content_height(140)
+        scroller.set_max_content_height(360)
+        # The side panel flips these (natural height when stacked, expand
+        # when beside the player) in PanelMixin._refresh_responsive_layout.
         scroller.set_propagate_natural_height(False)
+        scroller.set_vexpand(True)
         self.queue_scroller = scroller
         self.queue_list = Gtk.ListBox()
         self.queue_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.queue_list.add_css_class("boxed-list")
         self.queue_list.connect("row-activated", self._on_queue_activated)
         self.queue_list.connect("row-selected", self._on_queue_selected)
+        self.queue_list.connect("row-selected", self._sync_queue_moves)
         self.queue_list.set_filter_func(self._queue_row_matches)
         self._install_queue_drop_target(self.queue_list)
         scroller.set_child(self.queue_list)
         body.append(scroller)
 
-        # A compact, purposeful empty state instead of a 300px vacant card.
+        # A compact, purposeful empty state instead of a vacant card.
         empty = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         empty.add_css_class("empty-state")
         empty.set_halign(Gtk.Align.FILL)
+        empty.set_valign(Gtk.Align.CENTER)
+        empty.set_vexpand(True)
         emblem = Gtk.Image.new_from_icon_name("view-list-symbolic")
         emblem.set_pixel_size(28)
         emblem.add_css_class("empty-icon")
@@ -561,7 +545,7 @@ class UiMixin(BookmarkUiMixin):
         title.add_css_class("empty-title")
         empty.append(title)
         subtitle = Gtk.Label(
-            label="Choose Add media or Add Music to build your queue.",
+            label="Add videos or music, or drop files here. Double-click an item to cast it.",
             wrap=True,
         )
         subtitle.set_justify(Gtk.Justification.CENTER)
@@ -575,7 +559,8 @@ class UiMixin(BookmarkUiMixin):
 
     def _build_device_card(self) -> Gtk.Box:
         card, body = self._card(
-            "Output device", "Google Cast or DLNA/UPnP renderer on your network."
+            "Receiver", "Google Cast or DLNA/UPnP renderer on your network. "
+            "Choose the receiver in the player, next to Cast to TV."
         )
         card.add_css_class("device-card")
         row_status = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
@@ -586,19 +571,23 @@ class UiMixin(BookmarkUiMixin):
         self.device_status_badge.add_css_class("device-badge")
         row_status.append(self.device_status_badge)
         row_status.append(Gtk.Box(hexpand=True))
+        scan = Gtk.Button(label="Scan again")
+        scan.add_css_class("flat")
+        scan.set_tooltip_text("Scan the network for receivers")
+        scan.connect("clicked", lambda _b: self.scan_devices())
+        row_status.append(scan)
         body.append(row_status)
-
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"] or cast_targets.CHOOSE_RECEIVER])
-        self.device_dropdown.set_hexpand(True)
-        self.device_dropdown.connect("notify::selected", self._on_device_selected)
-        refresh = self._icon_button(
-            "view-refresh-symbolic", "Scan the network", "flat", self.scan_devices,
+        self.device_detail = Gtk.Label(
+            label="Searching for Google Cast receivers…", xalign=0.0,
+            wrap=True,
         )
-        refresh.set_valign(Gtk.Align.CENTER)
-        row.append(self.device_dropdown)
-        row.append(refresh)
-        body.append(row)
+        self.device_detail.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        self.device_detail.add_css_class("section-caption")
+        body.append(self.device_detail)
+
+        manual_title = Gtk.Label(label="Add a receiver by address", xalign=0.0)
+        manual_title.add_css_class("setting-group")
+        body.append(manual_title)
         manual = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.cast_ip_entry = Gtk.Entry()
         self.cast_ip_entry.set_placeholder_text("Cast receiver IPv4 (e.g. 192.168.1.40)")
@@ -608,31 +597,27 @@ class UiMixin(BookmarkUiMixin):
         )
         self.cast_ip_entry.connect("activate", lambda _entry: self._add_cast_target())
         self.add_ip_button = Gtk.Button(label="Add IP")
-        self.add_ip_button.add_css_class("flat")
         self.add_ip_button.connect("clicked", lambda _button: self._add_cast_target())
         manual.append(self.cast_ip_entry)
         manual.append(self.add_ip_button)
         body.append(manual)
         # Explicit opt-in: no connection probes during UI creation or normal tests.
         self.network_check_button = Gtk.Button(label="Check connection")
-        self.network_check_button.add_css_class("flat")
+        self.network_check_button.set_halign(Gtk.Align.START)
+        self.network_check_button.set_tooltip_text(
+            "Test the route to the selected receiver (sends a few local network packets)"
+        )
         self.network_check_button.connect(
             "clicked", lambda _button: network_route_ui.start(self, Async.run)
         )
         body.append(self.network_check_button)
         self.network_detail = Gtk.Label(
-            label="", xalign=0.0, wrap=False,
-            ellipsize=Pango.EllipsizeMode.END,
+            label="", xalign=0.0, wrap=True,
         )
+        self.network_detail.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.network_detail.set_selectable(True)  # Copy second-host test URL.
         self.network_detail.add_css_class("section-caption")
         body.append(self.network_detail)
-        self.device_detail = Gtk.Label(
-            label="Searching for Google Cast receivers…", xalign=0.0,
-            wrap=False, ellipsize=Pango.EllipsizeMode.END,
-        )
-        self.device_detail.add_css_class("section-caption")
-        body.append(self.device_detail)
         return card
 
 
@@ -640,17 +625,25 @@ class UiMixin(BookmarkUiMixin):
         card, body = self._card(
             "Shared room", "Open this address on a phone on your local network to join the queue and control playback."
         )
+
+        def caption(text: str, css: str = "section-caption") -> Gtk.Label:
+            label = Gtk.Label(label=text, xalign=0.0, wrap=True)
+            label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            label.add_css_class(css)
+            return label
+
         self.portal_status_label = Gtk.Label(
-            label="Starting local portal…", xalign=0.0, wrap=False,
-            ellipsize=Pango.EllipsizeMode.END,
+            label="Starting local portal…", xalign=0.0, wrap=True,
         )
+        self.portal_status_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.portal_status_label.add_css_class("section-caption")
         body.append(self.portal_status_label)
         self.portal_activity_label = Gtk.Label(
-            label="No client activity", xalign=0.0, wrap=False,
-            ellipsize=Pango.EllipsizeMode.END,
+            label="No client activity", xalign=0.0, wrap=True,
         )
+        self.portal_activity_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         self.portal_activity_label.add_css_class("section-caption")
+        self.portal_activity_label.add_css_class("dim-label")
         body.append(self.portal_activity_label)
         nearby_hosts = Gtk.Expander(label="Nearby SmoothCast hosts")
         self.portal_peers_box = Gtk.Box(
@@ -660,7 +653,7 @@ class UiMixin(BookmarkUiMixin):
             label="Looking for SmoothCast hosts…", xalign=0.0, wrap=True,
         ))
         nearby_hosts.set_child(self.portal_peers_box)
-        body.append(Gtk.Label(label="Address", xalign=0.0))
+        body.append(caption("ADDRESS", "setting-group"))
         self.portal_url_label = Gtk.Label(
             label="—", xalign=0.0, wrap=False, selectable=True,
             ellipsize=Pango.EllipsizeMode.END,
@@ -693,9 +686,11 @@ class UiMixin(BookmarkUiMixin):
                   "or whether guest Wi-Fi blocks connections between devices.",
             xalign=0.0, wrap=True,
         )
+        connection_hint.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         connection_hint.add_css_class("dim-label")
+        connection_hint.add_css_class("caption")
         body.append(connection_hint)
-        body.append(Gtk.Label(label="6-digit room PIN", xalign=0.0))
+        body.append(caption("6-DIGIT ROOM PIN", "setting-group"))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")
         self.portal_pin_label.add_css_class("mono")
@@ -703,10 +698,13 @@ class UiMixin(BookmarkUiMixin):
         note = Gtk.Label(
             label="Anyone with this PIN can join the queue, vote and control playback. "
                   "The PIN changes when the portal restarts.",
-            xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
+            xalign=0.0, wrap=True,
         )
+        note.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
         note.add_css_class("dim-label")
+        note.add_css_class("caption")
         body.append(note)
+        body.append(caption("GUESTS", "setting-group"))
         guest_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.portal_guest_ids: tuple[str, ...] = ()
         self.portal_guest_dropdown = Gtk.DropDown.new_from_strings(["No guests connected"])
@@ -797,10 +795,8 @@ class UiMixin(BookmarkUiMixin):
         heading.add_css_class("heading")
         card.append(heading)
         if subtitle:
-            sub = Gtk.Label(
-                label=subtitle, xalign=0.0, wrap=False,
-                ellipsize=Pango.EllipsizeMode.END,
-            )
+            sub = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
+            sub.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
             sub.add_css_class("dim-label")
             sub.add_css_class("caption")
             card.append(sub)
@@ -894,10 +890,18 @@ class UiMixin(BookmarkUiMixin):
         add("s", self.stop_stream)
         add("p", self.on_prev)
         add("n", self.on_next)
-        add("<Control>f", lambda: self.queue_search.grab_focus())
+        add("<Control>f", self._focus_queue_search)
+        for position in range(1, len(PANEL_TABS) + 1):
+            add(f"<Alt>{position}", lambda n=position: self._show_panel_tab_number(n))
         for digit in range(1, 10):
             add(str(digit), lambda d=digit: self._seek_percent(d))
         self.add_controller(controller)
+
+
+    def _focus_queue_search(self) -> None:
+        """Ctrl+F: bring the queue forward, then focus its search box."""
+        self._show_panel_tab("queue")
+        self.queue_search.grab_focus()
 
 
     def _remember_normal_geometry(self) -> None:
@@ -905,61 +909,6 @@ class UiMixin(BookmarkUiMixin):
             self.get_width(), self.get_height(), self._last_normal_size,
             fullscreen=self.is_fullscreen(), maximized=self.is_maximized(),
         )
-
-    def _refresh_responsive_layout(self) -> bool:
-        """Reflow once per actual size/mode change; never do I/O during resize."""
-        width = self.get_width() or self._startup_width
-        height = self.get_height() or self._startup_height
-        self._remember_normal_geometry()
-        state = responsive_layout.layout_for_size(width, height, self.cfg.get("density"))
-        if width < text_fit.NARROW_WIDTH:
-            text_fit.fit_labels(self)  # long text wraps/ellipsizes instead of widening the window (#136)
-        if state == self._layout_state:
-            return True
-        self._layout_state = state
-
-        self.page.set_orientation(
-            Gtk.Orientation.VERTICAL if state.stacked else Gtk.Orientation.HORIZONTAL
-        )
-        self.page.set_spacing(state.spacing)
-        for side in (self.page, self.left_column, self.right_column):
-            side.set_margin_start(state.margin if side is self.page else 0)
-            side.set_margin_end(state.margin if side is self.page else 0)
-        self.page.set_margin_top(state.margin)
-        self.page.set_margin_bottom(state.margin)
-        self.left_column.set_spacing(state.spacing)
-        self.right_column.set_spacing(state.spacing)
-        self.right_column.set_hexpand(state.stacked)
-
-        if state.compact:
-            self.add_css_class("compact")
-        else:
-            self.remove_css_class("compact")
-        self.preview.set_size_request(-1, state.preview_height)
-        self.preview.set_vexpand(False)
-        self.meter.set_size_request(-1, 120 if state.compact else 144)
-        self.play_image.set_pixel_size(24 if state.compact else 30)
-
-        # Gtk.Grid.detach/attach preserves the actual buttons, callbacks and
-        # accessibility labels while moving them between one and two rows.
-        for child in self.transport_controls:
-            self.transport_grid.remove(child)
-        if state.transport_wrapped:
-            positions = ((0, 0), (1, 1), (1, 0), (2, 0),
-                         (3, 0), (2, 1), (4, 0), (3, 1))
-        else:
-            positions = tuple((n, 0) for n in range(len(self.transport_controls)))
-        for button, (column, row) in zip(self.transport_controls, positions):
-            self.transport_grid.attach(button, column, row, 1, 1)
-
-        for child in self.action_controls:
-            self.action_grid.remove(child)
-        self.action_grid.set_column_homogeneous(state.actions_wrapped)
-        for n, child in enumerate(self.action_controls):
-            col, row = (n % 2, n // 2) if state.actions_wrapped else (n, 0)
-            self.action_grid.attach(child, col, row, 1, 1)
-        return True
-
 
     def _apply_color_scheme(self) -> None:
         if self.cfg.get("auto_theme"):
@@ -984,6 +933,12 @@ class UiMixin(BookmarkUiMixin):
         if state in ("online", "offline"):
             badge.add_css_class(state)
         badge.set_text(label)
+        picker = getattr(self, "device_dropdown", None)
+        if picker is not None:
+            for previous_class in ("receiver-online", "receiver-offline"):
+                picker.remove_css_class(previous_class)
+            if state in ("online", "offline"):
+                picker.add_css_class(f"receiver-{state}")
         if label == "OFFLINE" and previous_label != "OFFLINE" and (
                 self.session is not None or self.external):
             self._notify(notifications.DEVICE_LOST, self._device())
@@ -1361,6 +1316,7 @@ class UiMixin(BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        self._update_panel_badges()
 
 
     def _refresh_direct_note(self) -> None:

@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk", "4.0")
 
-from gi.repository import Gdk, GObject, Gtk
+from gi.repository import Gdk, GObject, Gtk, Pango
 
 import playlist_control
 import queue_metadata
@@ -49,7 +49,7 @@ class QueueRowMixin:
         box.set_margin_bottom(6)
         box.set_margin_start(8)
         box.set_margin_end(8)
-        index_label = Gtk.Label(label=str(index + 1))
+        index_label = Gtk.Label(label=str(index + 1), ellipsize=Pango.EllipsizeMode.END)
         index_label.add_css_class("dim-label")
         index_label.add_css_class("caption")
         index_label.set_width_chars(2)
@@ -70,7 +70,7 @@ class QueueRowMixin:
         title = Gtk.Label(label=queue_metadata.display_title(path, self._media_cache), xalign=0.0, hexpand=True, ellipsize=3)
         title.add_css_class("queue-title")
         duration = self.queue_durations.get(path)
-        duration_label = Gtk.Label(label=fmt_time(duration) if duration else "")
+        duration_label = Gtk.Label(label=fmt_time(duration) if duration else "", ellipsize=Pango.EllipsizeMode.END)
         duration_label.add_css_class("dim-label")
         duration_label.add_css_class("caption")
         up = self._icon_button("go-up-symbolic", "Move up", "flat", lambda i=index: self._move_queue(i, -1))
@@ -78,10 +78,34 @@ class QueueRowMixin:
         remove = self._icon_button("window-close-symbolic", "Remove", "flat", lambda i=index: self._remove_queue(i))
         up.set_sensitive(index > 0)
         down.set_sensitive(index + 1 < len(self.queue))
+        # Reorder arrows appear for the selected or hovered row only, which
+        # leaves the title the full width (dragging the handle still works).
+        row.move_buttons = (up, down)
+        for button in row.move_buttons:
+            button.set_visible(False)
+        hover = Gtk.EventControllerMotion()
+        hover.connect("enter", lambda *_a: self._show_queue_moves(row, True))
+        hover.connect("leave", lambda *_a: self._show_queue_moves(row, False))
+        row.add_controller(hover)
         for widget in (handle, index_label, title, duration_label, up, down, remove):
             box.append(widget)
         row.set_child(box)
         return row
+
+
+    @staticmethod
+    def _show_queue_moves(row, hovering: bool) -> None:
+        visible = hovering or row.is_selected()
+        for button in getattr(row, "move_buttons", ()):
+            button.set_visible(visible)
+
+
+    def _sync_queue_moves(self, _listbox=None, _selected=None) -> None:
+        """Keep the reorder arrows in step with the selected row."""
+        index = 0
+        while (row := self.queue_list.get_row_at_index(index)) is not None:
+            self._show_queue_moves(row, False)
+            index += 1
 
 
     def _queue_row_matches(self, row) -> bool:

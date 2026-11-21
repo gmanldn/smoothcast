@@ -96,9 +96,9 @@ class VisualDesignTests(unittest.TestCase):
     def test_responsiveness_is_not_sacrificed_for_styling(self):
         for snippet in (
             'self.page_scroller.set_child(self.page)',
-            'responsive_layout.layout_for_size(width, height, self.cfg.get("density"))',
+            'width, height, self.cfg.get("density"),',
             'self.transport_grid.attach(button, column, row, 1, 1)',
-            'self.action_grid.attach(child, col, row, 1, 1)',
+            'self.action_grid.set_max_children_per_line(state.action_columns)',
         ):
             self.assertIn(snippet, self.source)
         self.assertNotIn("Gtk.Paned(", self.source)

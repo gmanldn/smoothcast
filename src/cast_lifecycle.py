@@ -262,13 +262,13 @@ class LifecycleMixin:
             row.append(label)
             row.append(shortcut_label)
             box.append(row)
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        label = Gtk.Label(label="Jump to 10% – 90%", xalign=0.0, hexpand=True)
-        chips = Gtk.Label(label="1 – 9")
-        chips.add_css_class("dim-label")
-        row.append(label)
-        row.append(chips)
-        box.append(row)
+        for text, keys in (("Jump to 10% – 90%", "1 – 9"), ("Side panel tabs", "Alt+1 – 5")):
+            row = Gtk.Box(spacing=12)
+            chips = Gtk.Label(label=keys)
+            chips.add_css_class("dim-label")
+            row.append(Gtk.Label(label=text, xalign=0.0, hexpand=True))
+            row.append(chips)
+            box.append(row)
         note = Gtk.Label(
             label="While previewing locally these act on the preview; while "
                   "casting they act on the TV.",
