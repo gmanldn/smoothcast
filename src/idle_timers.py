@@ -18,7 +18,7 @@ class TimerPlan:
 
 def active_deadline(value: object) -> bool:
     """Reject disabled, invalid and non-finite sleep deadlines."""
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return False
     try:
         deadline = float(value)
