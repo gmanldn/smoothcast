@@ -44,7 +44,7 @@ def test_web_key_handler_protects_inputs_focus_permissions_and_busy_state():
     assert "event.preventDefault()" in html
     assert 'if(shortcut.action==="help")' in html
     assert "shortcutMap.get(key)" in html
-    assert "const SHORTCUTS=__SC_SHORTCUTS__" in html
+    assert "typeof __SC_SHORTCUTS__" in html
     if shutil.which("node"):
         start = html.index("function shortcutCommand(")
         end = html.index('window.addEventListener("keydown"', start)
