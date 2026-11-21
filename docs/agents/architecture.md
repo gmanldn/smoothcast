@@ -132,12 +132,12 @@ delivery. See [worker domains](../ASYNC_WORKERS.md).
 
 `SessionMixin.toggle_play` and `SessionMixin.seek_to` serialize direct
 Google Cast and DLNA transport commands with the window's `busy` guard.
-Every UI action, including keyboard shortcuts and seekbar signals, must obey
-that guard *before* changing optimistic UI state. Callbacks update controls
-only for the same session and device; release the guard on success or failure.
-On failure, poll the receiver; never infer success from an issued command.
+Every UI action, including shortcuts and seekbar signals, must obey that guard
+before changing optimistic state. Callbacks update controls only for the same
+session/device; release the guard on success or failure. On failure, poll the
+receiver; never infer success from an issued command.
 Stop UI trusts receiver acknowledgement; local cleanup alone is not proof that
-TV playback stopped.
+TV playback stopped. DLNA volume/mute need its optional RenderingControl service.
 
 This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
 cancellation, retry policy and full physical receiver acceptance remain

@@ -37,6 +37,14 @@ LOCATION = "http://192.168.12.25:1400/desc.xml"
 
 
 class DlnaCapabilityTests(unittest.TestCase):
+    def test_rendering_control_is_optional_and_requires_a_complete_endpoint(self):
+        from dataclasses import replace
+
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        self.assertTrue(renderer.supports_rendering_control)
+        self.assertFalse(replace(renderer, rendering_url="").supports_rendering_control)
+        self.assertFalse(replace(renderer, rendering_service="").supports_rendering_control)
+
     def test_sink_formats_exclude_source_and_other_transports(self):
         from dataclasses import replace
         from xml.etree import ElementTree

@@ -87,6 +87,11 @@ class Renderer:
     connection_service: str = ""
 
     @property
+    def supports_rendering_control(self) -> bool:
+        """Whether this renderer advertised its optional volume/mute service."""
+        return bool(self.rendering_url and self.rendering_service)
+
+    @property
     def key(self) -> str:
         return f"DLNA · {self.name} · {self.host}"
 
