@@ -20,7 +20,7 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; known site pages (YouTube, Vimeo and similar) are rejected with an actionable "paste a direct media URL" message instead of being claimed as supported, and invalid URLs or device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
 - **Loudness normalisation (optional)** — EBU R128 programme (-16 LUFS) or album (-18 LUFS) targets with true-peak limiting (-1.5 dBFS) for transcoded audio; off by default, configurable in the Playback settings card, and never changes system volume
-- **Searchable queue** — Ctrl+F filters filenames and folder paths; selecting or activating a filtered row uses the correct file identity, and reordering/removal preserves selection where possible
+- **Searchable queue** — Ctrl+F filters filenames and folder paths. Drag a row by its handle or use the arrow buttons to change playback order. Save the queue as an M3U playlist to keep that order for later.
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)

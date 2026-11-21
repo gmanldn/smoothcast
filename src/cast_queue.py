@@ -26,12 +26,13 @@ import playlist_control
 import queue_metadata
 import reliability_metrics
 from queue_prewarm_ui import QueuePrewarmMixin
+from queue_row_ui import QueueRowMixin
 from music_import_ui import MusicImportMixin
 
 from cast_widgets import save_config, fmt_time, Async
 
 
-class QueueMixin(MusicImportMixin, QueuePrewarmMixin):
+class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
     def add_files(self) -> None:
         dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
@@ -274,17 +275,6 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin):
             self._prewarm_queue_media()
 
 
-    def _move_queue(self, index: int, delta: int) -> None:
-        target = index + delta
-        if 0 <= index < len(self.queue) and 0 <= target < len(self.queue):
-            self.selected_index = playlist_control.selection_after_move(
-                self.selected_index, index, target,
-            )
-            self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
-            self._rebuild_queue()
-            self._prewarm_queue_media()
-
-
     def _rebuild_queue(self) -> None:
         # GTK emits row-selected(None) while clearing; preserve the source
         # row index so a rebuild does not change the file selected for casting.
@@ -325,44 +315,6 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin):
             if total > 0:
                 label += f" · {fmt_time(total)}{'' if known else '+'}"
             self.queue_summary.set_text(label)
-
-
-    def _queue_row(self, index: int, path: str) -> Gtk.ListBoxRow:
-        row = Gtk.ListBoxRow()
-        row.set_tooltip_text(path)  # Stable source path for GTK filtering.
-        row.add_css_class("queue-row")
-        if path == self.now_playing:
-            row.add_css_class("current")
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        box.set_margin_top(6)
-        box.set_margin_bottom(6)
-        box.set_margin_start(8)
-        box.set_margin_end(8)
-        index_label = Gtk.Label(label=str(index + 1))
-        index_label.add_css_class("dim-label")
-        index_label.add_css_class("caption")
-        index_label.set_width_chars(2)
-        title = Gtk.Label(label=queue_metadata.display_title(path, self._media_cache), xalign=0.0, hexpand=True, ellipsize=3)
-        title.add_css_class("queue-title")
-        duration = self.queue_durations.get(path)
-        duration_label = Gtk.Label(label=fmt_time(duration) if duration else "")
-        duration_label.add_css_class("dim-label")
-        duration_label.add_css_class("caption")
-        up = self._icon_button("go-up-symbolic", "Move up", "flat", lambda i=index: self._move_queue(i, -1))
-        down = self._icon_button("go-down-symbolic", "Move down", "flat", lambda i=index: self._move_queue(i, 1))
-        remove = self._icon_button("window-close-symbolic", "Remove", "flat", lambda i=index: self._remove_queue(i))
-        up.set_sensitive(index > 0)
-        down.set_sensitive(index + 1 < len(self.queue))
-        for widget in (index_label, title, duration_label, up, down, remove):
-            box.append(widget)
-        row.set_child(box)
-        return row
-
-
-    def _queue_row_matches(self, row) -> bool:
-        return playlist_control.matches_query(
-            row.get_tooltip_text() or "", self.queue_search.get_text()
-        )
 
 
     def _on_queue_search(self, _entry) -> None:
