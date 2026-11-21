@@ -22,6 +22,7 @@ import time
 from typing import Callable
 from urllib.parse import urlsplit
 
+import lan_guard
 import portal_commands
 import peer_discovery
 import portal_room
@@ -143,6 +144,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         }
         if hostname:
             self._allowed_hosts.update({f"{hostname}.local:{port}", f"{hostname}.local"})
+        self._allowed_hosts.update({f"{lan_guard.ENTRY_NAME}:{port}", lan_guard.ENTRY_NAME})
 
     def _apply_default_command(self, envelope: portal_commands.MutationEnvelope):
         """Apply a command when the caller did not supply a GTK dispatcher."""
@@ -384,6 +386,15 @@ class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT
     server_version = "SmoothCastPortal"
     sys_version = ""
+
+    def parse_request(self) -> bool:
+        # The trust boundary is the home LAN: refuse any non-LAN peer outright.
+        if not super().parse_request():
+            return False
+        if not lan_guard.is_lan_address(self.client_address[0]):
+            self.send_error(403)
+            return False
+        return True
 
     def log_message(self, _format: str, *_args: object) -> None:
         # Request paths, cookies, PINs, and remote addresses can contain secrets
