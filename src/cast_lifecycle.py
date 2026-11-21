@@ -12,6 +12,7 @@ import pathlib
 
 import threading
 import reliability_metrics
+import shortcut_map
 
 import diagnostics
 
@@ -228,11 +229,8 @@ class LifecycleMixin:
         box.set_margin_bottom(18)
         box.set_margin_start(18)
         box.set_margin_end(18)
-        shortcuts = [
-            ("Space", "Play or pause"),
+        shortcuts = shortcut_map.desktop_labels() + [
             ("K", "Play or pause"),
-            ("Left", "Skip back 10 seconds"),
-            ("Right", "Skip forward 10 seconds"),
             ("<Shift>Left", "Skip back 30 seconds"),
             ("<Shift>Right", "Skip forward 30 seconds"),
             ("J", "Skip back 10 seconds"),
@@ -240,14 +238,9 @@ class LifecycleMixin:
             ("comma", "Step back one frame"),
             ("period", "Step forward one frame"),
             ("Home", "Back to start"),
-            ("Up", "Volume up 5%"),
-            ("Down", "Volume down 5%"),
-            ("M", "Mute"),
             ("G", "Subtitles 100 ms earlier"),
             ("H", "Subtitles 100 ms later"),
             ("S", "Stop the stream"),
-            ("P", "Previous in queue"),
-            ("N", "Next in queue"),
             ("<Control>o", "Open a video"),
             ("<Control>a", "Add videos to queue"),
             ("<Control>f", "Search queue"),
