@@ -6,6 +6,7 @@ import threading
 import time
 
 import castctl
+import state_labels
 import lan_interfaces
 import portal
 import portal_commands
@@ -241,6 +242,10 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                             and not self.external and self.tracker.known)
             state = {
                 "title": title, "receiver": self._device(), "state": self.device_state,
+                "state_label": state_labels.present(self.device_state).label,
+                "state_short": state_labels.present(self.device_state).short,
+                "state_description": state_labels.present(self.device_state).accessible,
+                "state_icon": state_labels.present(self.device_state).icon,
                 "position": position, "duration": duration, "volume": volume,
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
                 "active": active, "busy": bool(self.busy),
