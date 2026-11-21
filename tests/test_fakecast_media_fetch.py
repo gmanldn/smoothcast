@@ -113,7 +113,7 @@ def test_cast_backend_load_fetches_hls_and_emits_buffering_progress_and_finished
 
         backend = PyChromecastBackend(discover=discover)
         updates: list[dict[str, object]] = []
-        receiver.slow_segments(0.01)
+        receiver.slow_segments(0.1)
         try:
             assert backend.scan(timeout=0)[0].name == "Loopback Receiver"
             cast.wait(timeout=2)
