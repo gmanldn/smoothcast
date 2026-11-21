@@ -49,6 +49,10 @@ def test_receiver_accepts_tls_castv2_and_answers_backend_cast_command():
             assert [device.name for device in devices] == ["Loopback Receiver"]
             cast.wait(timeout=2)
             cast.start_app("CC1AD845")
+            assert wait_for(lambda: any(
+                namespace == NS_RECEIVER and data.get("type") == "LAUNCH"
+                for namespace, data in receiver.calls
+            ))
             unsubscribe = backend.subscribe("Loopback Receiver", updates.append)
             assert backend.command(
                 "Loopback Receiver", "cast", "http://127.0.0.1/movie.mp4",
@@ -82,5 +86,5 @@ def test_receiver_refuses_non_loopback_bind(host: str):
 
 
 def test_receiver_refuses_unknown_profile():
-    with pytest.raises(ValueError, match="generic profile"):
-        FakeCastReceiver(profile="chromecast-gen2")
+    with pytest.raises(ValueError, match="unknown receiver profile"):
+        FakeCastReceiver(profile="made-up-model")

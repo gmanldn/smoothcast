@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import time
 
+from .profiles import PROFILES
 from .receiver import FakeCastReceiver
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a loopback CASTV2 fake receiver")
     parser.add_argument("--port", type=int, default=8009)
-    parser.add_argument("--profile", choices=("generic",), default="generic")
+    parser.add_argument("--profile", choices=tuple(PROFILES), default="generic")
     args = parser.parse_args()
     try:
         with FakeCastReceiver(port=args.port, profile=args.profile) as receiver:

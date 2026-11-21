@@ -6,7 +6,8 @@ receiver:
 ```sh
 python3 -m pytest -q tests -n auto
 python3 -m compileall -q src scripts setup tests
-ruff check src scripts setup tests sc.py setup.py
+python -m py_compile smoothcast
+ruff check src scripts setup tests smoothcast setup.py
 ```
 
 Routine tests must not launch the real GUI, focus the desktop, or control a
@@ -16,14 +17,21 @@ limits.
 ## Google Cast protocol fake
 
 `fakecast.FakeCastReceiver` is a loopback-only TLS/CASTV2 test receiver. It
-supports heartbeat PING/PONG, receiver status and a basic media session. It
-does not advertise itself over mDNS, fetch media, or represent a verified
-device model. The only profile available now is `generic`.
+supports heartbeat PING/PONG, receiver status and a basic media session. Its
+`generic` profile accepts any declared test stream; model profiles apply the
+documented codec, level, resolution and frame-rate limits summarized in
+[Google Cast Supported Media](https://developers.google.com/cast/docs/media).
+They model rejection behavior with the Cast `LOAD_FAILED` error code
+`MEDIA_SRC_NOT_SUPPORTED`; they do not certify a physical receiver or display.
+
+Available profiles: `chromecast-gen2`, `chromecast-gen3`, `chromecast-ultra`,
+`chromecast-with-google-tv`, and `google-tv-streamer`. mDNS advertisement and
+receiver-side playlist/segment fetching are still under development.
 
 Run it as a standalone development process with:
 
 ```sh
-python3 -m fakecast --profile generic --port 8009
+python3 -m fakecast --profile chromecast-gen2 --port 8009
 ```
 
 In tests, use an ephemeral port and always stop it through the context manager:
@@ -31,7 +39,7 @@ In tests, use an ephemeral port and always stop it through the context manager:
 ```python
 from fakecast import FakeCastReceiver
 
-with FakeCastReceiver(profile="generic") as receiver:
+with FakeCastReceiver(profile="chromecast-gen2") as receiver:
     # Connect a protocol client to receiver.host and receiver.port.
     ...
 ```
@@ -39,13 +47,19 @@ with FakeCastReceiver(profile="generic") as receiver:
 The fake binds only to `127.0.0.1`. Its checked-in self-signed certificate and
 private key are test credentials for local traffic only.
 
-Add a model profile only from documented receiver evidence. Keep sanitized
-limits and quirks in the fake, add tests for accepted and rejected media
-capabilities, and record real-device discrepancies through the qualification
-process in [#208](https://github.com/gmanldn/smoothcast/issues/208). Do not
-infer a device capability from a passing fake test.
+Model limits live in `fakecast/profiles.py`. Add `CodecLimit` entries only
+from documented receiver specifications. A fake stream is passed through
+`media.customData.fakeStream` with `codec`, `profile`, `level`, `width`,
+`height`, and `fps`. For each profile, test a stream at its documented limit
+and an out-of-spec stream; the latter receives a `LOAD_FAILED` response.
+Record physical discrepancies through [#208](https://github.com/gmanldn/smoothcast/issues/208).
+Do not infer device qualification from a passing fake test.
 
-The current CASTV2 implementation is an initial protocol slice for [#203](https://github.com/gmanldn/smoothcast/issues/203).
-It does not yet cover mDNS, the complete CastBackend contract, model profiles,
-fault injection or receiver-side media fetching; keep those acceptance items
-open until their tests exist.
+Fault injection is available through `answer_heartbeats`, `delay_command()`,
+`error_command()`, `drop_connection_on()`, `stale_media_session`,
+`unsupported_seek`, `crash_on_commands`, and `reboot()`. Segment-consumption
+faults require the receiver-side HTTP fetch path and remain unimplemented.
+
+The CASTV2 fake remains an active slice of [#203](https://github.com/gmanldn/smoothcast/issues/203).
+It does not yet cover mDNS, the complete CastBackend contract or receiver-side
+media fetching; keep those acceptance items open until their tests exist.

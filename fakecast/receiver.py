@@ -16,6 +16,8 @@ import threading
 import time
 from typing import Any
 
+from .profiles import PROFILES, supports
+
 try:
     # PyChromecast 14 exposes the generated message type from socket_client.
     from pychromecast.socket_client import CastMessage
@@ -29,6 +31,7 @@ NS_RECEIVER = "urn:x-cast:com.google.cast.receiver"
 NS_MEDIA = "urn:x-cast:com.google.cast.media"
 DEFAULT_MEDIA_RECEIVER = "CC1AD845"
 MAX_FRAME_SIZE = 1024 * 1024
+MEDIA_SRC_NOT_SUPPORTED = 104
 
 
 class FakeCastReceiver:
@@ -41,8 +44,8 @@ class FakeCastReceiver:
             raise ValueError("FakeCastReceiver may bind only to loopback")
         if not 0 <= port <= 65535:
             raise ValueError("port must be between 0 and 65535")
-        if profile != "generic":
-            raise ValueError("only the generic profile is currently available")
+        if profile not in PROFILES:
+            raise ValueError(f"unknown receiver profile: {profile}")
         self.host = host
         self.port = port
         self.profile = profile
@@ -60,6 +63,9 @@ class FakeCastReceiver:
         self._current_time = 0.0
         self._volume = 0.5
         self._muted = False
+        self._content_id = "http://127.0.0.1/fake.mp4"
+        self._content_type = "video/mp4"
+        self._duration = 120.0
         self.answer_heartbeats = True
         self.stale_media_session = False
         self.unsupported_seek = False
@@ -319,10 +325,28 @@ class FakeCastReceiver:
         data: dict[str, Any],
     ) -> None:
         message_type = data.get("type")
+        if message_type == "LOAD":
+            media = data.get("media", {})
+            custom_data = media.get("customData", {}) if isinstance(media, dict) else {}
+            fake_stream = (
+                custom_data.get("fakeStream") if isinstance(custom_data, dict) else None
+            )
+            if fake_stream is not None and not supports(self.profile, fake_stream):
+                self._send(client, request, NS_MEDIA, {
+                    "type": "LOAD_FAILED",
+                    "itemId": int(data.get("itemId", 1)),
+                    "detailedErrorCode": MEDIA_SRC_NOT_SUPPORTED,
+                })
+                return
         with self._lock:
             if message_type == "LOAD":
                 self._media_state = "PLAYING"
                 self._current_time = 0.0
+                media = data.get("media", {})
+                if isinstance(media, dict):
+                    self._content_id = str(media.get("contentId", self._content_id))
+                    self._content_type = str(media.get("contentType", self._content_type))
+                    self._duration = float(media.get("duration", self._duration))
             elif message_type == "PLAY":
                 self._media_state = "PLAYING"
             elif message_type == "PAUSE":
@@ -336,9 +360,9 @@ class FakeCastReceiver:
             status = {
                 "currentTime": self._current_time,
                 "media": {
-                    "contentId": "http://127.0.0.1/fake.mp4",
-                    "contentType": "video/mp4",
-                    "duration": 120.0,
+                    "contentId": self._content_id,
+                    "contentType": self._content_type,
+                    "duration": self._duration,
                     "streamType": "BUFFERED",
                 },
                 "mediaSessionId": self._media_session_id - 1 if self.stale_media_session
