@@ -185,6 +185,8 @@ const setTimeout = (callback, delay) => {
 };
 const clearTimeout = id => timers.delete(id);
 const fetch = (_url, {signal}) => {
+  if(_url==="/api/session")return Promise.resolve({status:401,ok:false,
+    json:async()=>({ok:false,error:"Session expired"})});
   requests++;
   return new Promise((resolve, reject) => {
     respond = resolve;
@@ -287,6 +289,66 @@ def login(rig, pin=PIN, name="Guest"):
     status, body, headers = rig.request("POST", "/api/login", {"pin": pin, "name": name},
                                         origin=f"http://{rig.host}")
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
+
+
+def test_session_reload_recovers_same_participant_ten_times_and_login_reuses_it(rig):
+    status, data, cookie = login(rig, name="Sam")
+    assert status == 200
+    participant_id = data["participant"]["id"]
+    csrf = data["csrf"]
+    for _ in range(10):
+        status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+        assert status == 200
+        restored = decode(body)
+        assert restored["csrf"] == csrf
+        assert restored["participant"]["id"] == participant_id
+    status, body, headers = rig.request(
+        "POST", "/api/login", {"pin": "", "name": "Sam"}, cookie=cookie,
+        origin=f"http://{rig.host}")
+    assert status == 200
+    assert headers["Set-Cookie"].split(";", 1)[0] == cookie
+    assert decode(body)["participant"]["id"] == participant_id
+    assert len(rig.server.room.participants) == 1
+
+
+def test_session_recovery_rejects_expired_cookie(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    token = cookie.partition("=")[2]
+    key = rig.server._session_key(token)
+    rig.server._sessions[key].expiry = rig.server.clock() - 1
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 401
+    assert decode(body)["ok"] is False
+
+
+def test_session_recovery_checks_host_and_origin(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       host="evil.example")[0] == 400
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       origin="http://evil.example")[0] == 400
+
+
+def test_join_reclaims_offline_room_slot_before_refusing(rig):
+    now = time.time()
+    stale = rig.server.room.join("Offline", now=now - portal.portal_room.ONLINE_SECONDS - 1)
+    for index in range(portal.portal_room.MAX_PARTICIPANTS - 1):
+        rig.server.room.join(f"Guest {index}", now=now)
+    assert len(rig.server.room.participants) == portal.portal_room.MAX_PARTICIPANTS
+    _token, _csrf, joined = rig.server.create_session("New guest")
+    assert joined.id in rig.server.room.participants
+    assert stale.id in rig.server.room._dormant
+
+
+def test_session_capacity_evicts_least_recently_used(monkeypatch, rig):
+    monkeypatch.setattr(portal, "MAX_SESSIONS", 3)
+    tokens = [rig.server.create_session(f"Guest {index}")[0] for index in range(3)]
+    assert rig.server.session_participant(tokens[0]) is not None
+    newest = rig.server.create_session("Guest 3")[0]
+    assert rig.server.session_participant(tokens[0]) is not None
+    assert rig.server.session_participant(tokens[1]) is None
+    assert rig.server.session_participant(tokens[2]) is not None
+    assert rig.server.session_participant(newest) is not None
 
 
 def test_revocation_cancels_private_guest_upload_without_touching_playback(tmp_path):

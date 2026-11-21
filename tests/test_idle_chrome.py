@@ -125,3 +125,36 @@ def test_wiring_and_packaging():
     assert "notify::fullscreened" in (ROOT / "src" / "idle_chrome.py").read_text("utf-8")
     assert '"idle_chrome"' in package
     assert "Fullscreen idle chrome" in readme
+
+
+def test_gtk_animation_preference_is_optional_and_changes_live():
+    class FakeSettings:
+        def __init__(self):
+            self.value = True
+
+        def get_property(self, key):
+            assert key == "gtk-enable-animations"
+            return self.value
+
+    settings = FakeSettings()
+    assert idle_chrome.animations_enabled(settings)
+    settings.value = False
+    assert not idle_chrome.animations_enabled(settings)
+    assert idle_chrome.animations_enabled(None)
+
+
+def test_reduced_motion_wiring_does_not_schedule_meter_animation():
+    source = (ROOT / "src" / "cast_widgets.py").read_text()
+    assert "self._gtk_settings.connect_object(" in source
+    assert "notify::gtk-enable-animations" in source
+    assert "if not idle_chrome.animations_enabled(self._gtk_settings):" in source
+    assert "GLib.source_remove(self._timer)" in source
+    assert "self._start_or_snap()" in source
+    assert source.count("GLib.timeout_add(self._TICK_MS, self._animate)") == 1
+
+
+def test_web_reduced_motion_uses_live_media_query():
+    source = (ROOT / "src" / "portal.py").read_text()
+    assert "@media(prefers-reduced-motion:reduce)" in source
+    assert "animation:none!important" in source
+    assert "transition:none!important" in source
