@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-import re
 
 ROOT = Path(__file__).resolve().parents[2]
 ERROR_TYPES = frozenset({"PortalRequestError", "CommandError", "UploadError", "RoomError"})
