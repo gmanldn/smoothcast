@@ -43,13 +43,19 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
                                          commands=commands, fence=fence,
-                                         pin_required=bool(self.cfg.get("house_pin_enabled", False)))
+                                         pin_required=bool(self.cfg.get("house_pin_enabled", False)),
+                                         preferred_port=int(self.cfg.get("portal_port", 0)))
         except (OSError, portal.PortalError) as exc:
             self._portal = None
             self._portal_ip = None
             self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
             return True
         self._portal_ip = address
+        # Reuse the same port across launches; never store a failed preferred bind.
+        old_port = self.cfg.get("portal_port", 0)
+        if old_port != self._portal.port:
+            self.cfg["portal_port"] = self._portal.port
+            save_config(self.cfg)
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
         self.portal_url_label.set_text(self._portal.url)
@@ -57,7 +63,12 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self.portal_pin_label.set_text(
             self._portal.pin if self._portal.server.pin_required else "Not required")
         self._ensure_library_indexer()
-        self.portal_status_label.set_text("Listening on your local network")
+        if self._portal.port_fallback:
+            self.portal_status_label.set_text(
+                f"Previous room port {old_port} was in use. New link: {self._portal.url}"
+            )
+        else:
+            self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
