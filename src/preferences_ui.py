@@ -108,6 +108,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self._choice(audio, "audio", "Sound profile",
                      "Original preserves the mix; Dialogue boosts speech; Night tames loud passages.")
+        self._choice(audio, "audio_loudness", "Loudness normalisation",
+                     "EBU R128 programme or album targets with true-peak limiting; applied on the next cast or encoder restart.")
         self.audio_track = Adw.ComboRow(
             title="Film audio track",
             subtitle="Choose language or commentary for the selected film. Changing an active cast restarts it.",
@@ -230,6 +232,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
                 "audio": "audio_dropdown",
                 "rotation": "rotation_dropdown",
                 "subs": "subs_dropdown",
+                "audio_loudness": "loudness_dropdown",
             }
             getattr(self.owner, widgets[key]).set_selected(row.get_selected())
         self.sync_from_owner()

@@ -21,12 +21,14 @@ import accent
 import density
 import subtitle_style
 import language_prefs
+import loudness
 import watch_history
 
 
 _OPTIONS = {
     "quality": frozenset({"high", "balanced", "saver"}),
     "audio": frozenset({"original", "dialogue", "night"}),
+    "audio_loudness": frozenset(loudness.TARGETS),
     "subs": frozenset({"off", "auto", "pick", "embedded"}),
     "color_scheme": frozenset({"default", "force-light", "prefer-dark"}),
     "subtitle_style": frozenset(subtitle_style.PRESETS),

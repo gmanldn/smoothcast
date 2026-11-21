@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import accent
 import density
+import loudness
 import subtitle_style
 
 OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),
     "audio": (("Original", "original"), ("Dialogue auto-fix", "dialogue"), ("Night mode", "night")),
     "rotation": (("No rotation", 0), ("90°", 90), ("180°", 180), ("270°", 270)),
+    "audio_loudness": tuple(loudness.choices()),
     "subs": (("Off", "off"), ("Automatic", "auto"), ("Choose a file…", "pick"), ("Embedded text", "embedded")),
     "color_scheme": (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")),
     "accent": tuple((label, preset_id) for preset_id, label, _hex in accent.PRESETS),

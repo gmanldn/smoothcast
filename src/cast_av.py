@@ -22,6 +22,7 @@ import benchmark
 import dlna
 
 import streamer
+import loudness
 
 import audio_monitor
 
@@ -160,6 +161,18 @@ class AvMixin:
             self.cfg["audio"] = value
             save_config(self.cfg)
             self.toast(f"Sound: {streamer.AUDIO_LABELS[value]} (restart to apply)")
+        self._refresh_direct_note()
+
+
+    def _on_loudness(self, dropdown, _param) -> None:
+        if self._syncing:
+            return
+        mapping = {0: "off", 1: "programme", 2: "album"}
+        value = mapping.get(dropdown.get_selected(), "off")
+        if value != self.cfg.get("audio_loudness", "off"):
+            self.cfg["audio_loudness"] = value
+            save_config(self.cfg)
+            self.toast(f"Loudness: {loudness.label(value)} (restart to apply)")
         self._refresh_direct_note()
 
 
@@ -505,7 +518,11 @@ class AvMixin:
         hint = f"Local preview · {streamer.AUDIO_LABELS.get(profile, profile)}"
         if gain > 0:
             hint += f" · +{gain:g} dB"
-        return streamer.audio_filters(profile, gain), hint
+        mode = str(self.cfg.get("audio_loudness", "off"))
+        if mode != "off":
+            hint += f" · {loudness.label(mode)}"
+        loudness_mode = str(self.cfg.get("audio_loudness", "off"))
+        return streamer.audio_filters(profile, gain, loudness_mode), hint
 
 
     def _start_local_meter(self, position: float) -> None:

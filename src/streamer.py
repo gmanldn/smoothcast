@@ -30,6 +30,7 @@ import frozen_runtime
 import hw_encoder_state
 import lan_interfaces
 import language_prefs
+import loudness
 import playback_state
 import process_identity
 import process_priority
@@ -140,19 +141,22 @@ AUDIO_DETAILS = {
 }
 
 
-def audio_filters(profile: str, gain_db: float = 0.0) -> list:
-    """Return the ffmpeg -af chain for a profile, with optional positive or negative gain.
+def audio_filters(profile: str, gain_db: float = 0.0,
+                  loudness_mode: str = loudness.DEFAULT) -> list:
+    """Return the ffmpeg -af chain for a profile, gain and loudness choice.
 
     ``gain_db`` is *prepended* so it feeds the compressor: positive values lift
     quiet dialogue above the compressor threshold, while negative values
     attenuate an over-loud soundtrack before compression. Both signs must be
     applied; dropping attenuation would leave a trimmed track too loud.
-    ``original`` stays untouched and never gets gain.
+    ``original`` stays untouched and never gets gain. An explicit EBU R128
+    loudness choice is appended last (after the limiter) for all profiles.
     """
     filters = list(AUDIO_FILTERS.get(profile) or [])
-    if not filters or gain_db is None or float(gain_db) == 0:
-        return filters
-    return [f"volume={float(gain_db):g}dB"] + filters
+    if filters and gain_db is not None and float(gain_db) != 0:
+        filters = [f"volume={float(gain_db):g}dB"] + filters
+    filters += loudness.filter_args(loudness_mode)
+    return filters
 
 
 def atempo_filters(speed: float) -> list:
@@ -290,18 +294,19 @@ def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0,
 
 
 def effective_chain(path: str, profile: str, manual_gain_db: float = 0.0,
-                    audio_track_index: int = 0) -> list:
-    """Full ffmpeg ``-af`` chain: auto input trim + manual gain + profile filters.
+                    audio_track_index: int = 0,
+                    loudness_mode: str = loudness.DEFAULT) -> list:
+    """Full ffmpeg ``-af`` chain: auto trim, manual gain, profile and loudness.
 
     The auto-trim drives the signal above the compressor threshold so the
     compressor is always working; the manual gain adds on top for extra
-    loudness (positive) or attenuation (negative).  For ``original`` the chain
-    is empty and no measurement runs.
+    loudness (positive) or attenuation (negative). ``original`` normally has
+    no chain and no measurement, but an explicit loudness choice still applies.
     """
     if profile == "original":
-        return []
+        return audio_filters(profile, loudness_mode=loudness_mode)
     trim = auto_trim_gain(path, profile, audio_track_index=audio_track_index)
-    return audio_filters(profile, trim + manual_gain_db)
+    return audio_filters(profile, trim + manual_gain_db, loudness_mode)
 
 
 class StreamError(RuntimeError):
@@ -882,6 +887,7 @@ class SessionState:
     quality: str = "balanced"
     audio: str = "dialogue"
     audio_gain_db: float = 0.0
+    audio_loudness: str = loudness.DEFAULT
     audio_track_index: int = -1
     subs: str = ""
     burn_subs: bool = False
@@ -988,7 +994,8 @@ class Session:
         self._playlist_name, self._segment_pattern = _hls_names_from_url(
             state.stream_url if state.mode == "transcode" else "",
         )
-        self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
+        self.audio_chain = audio_filters(
+            state.audio, state.audio_gain_db, state.audio_loudness)
         def recovered(pid: int, role: str, created_at: float):
             if (type(created_at) not in (int, float)
                     or not math.isfinite(created_at) or created_at <= 0
@@ -1385,6 +1392,7 @@ class Session:
         burn_subs: bool,
         title: str,
         audio_gain_db: float = 0.0,
+        audio_loudness: str = loudness.DEFAULT,
         device_ip: str | None = None,
         speed: float = 1.0,
         rotation: int = 0,
@@ -1488,8 +1496,8 @@ class Session:
             args += ["-map", "[v]"]
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)
-        filters = audio_filters(audio_profile, audio_gain_db)
-        if filters:
+        profile_filters = AUDIO_FILTERS.get(audio_profile) or []
+        if profile_filters:
             # Auto-trim the selected soundtrack so the compressor always
             # engages, then apply the user's manual gain on top.  Store the
             # total so the monitor and resume paths use the exact same chain.
@@ -1499,11 +1507,11 @@ class Session:
                 downmix=downmix,
             )
             effective_gain = trim + audio_gain_db
-            filters = audio_filters(audio_profile, effective_gain)
-            if downmix:
-                filters = [downmix] + filters  # matrix first, then gain/compressor
         else:
             effective_gain = 0.0
+        filters = audio_filters(audio_profile, effective_gain, audio_loudness)
+        if downmix:
+            filters = [downmix] + filters  # matrix first, then gain/compressor
         if speed != 1.0:
             # Change the playback/transcode rate: video timestamps are scaled
             # and audio is resampled with atempo so A/V stay in sync.
@@ -1556,7 +1564,8 @@ class Session:
                     media, offset, device=device, quality=quality,
                     audio_profile=audio_profile, subs_file=subs_file,
                     burn_subs=burn_subs, title=title,
-                    audio_gain_db=audio_gain_db, device_ip=device_ip,
+                    audio_gain_db=audio_gain_db,
+                    audio_loudness=audio_loudness, device_ip=device_ip,
                     speed=speed, rotation=rotation,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
@@ -1588,6 +1597,7 @@ class Session:
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
+            audio_loudness=loudness.normalize(audio_loudness),
             audio_track_index=audio_track_index,
             subs=str(subs_file or ""), burn_subs=burn_subs,
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),

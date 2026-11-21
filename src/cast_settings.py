@@ -77,6 +77,15 @@ class SettingsCardMixin:
         self.audio_dropdown.set_selected({"original": 0, "dialogue": 1, "night": 2}.get(self.cfg["audio"], 1))
         self.audio_dropdown.connect("notify::selected", self._on_audio)
 
+        self.loudness_dropdown = dropdown_row(
+            "Loudness normalisation",
+            ["Off", "Programme (-16 LUFS)", "Album (-18 LUFS)"],
+            self.cfg.get("audio_loudness", "off"),
+            "EBU R128 loudness with true-peak limiting — applies on the next (re)start",
+        )
+        self.loudness_dropdown.set_selected({"off": 0, "programme": 1, "album": 2}.get(self.cfg.get("audio_loudness", "off"), 0))
+        self.loudness_dropdown.connect("notify::selected", self._on_loudness)
+
         self.audio_track_dropdown = dropdown_row(
             "Film audio track",
             ["Auto (file default)"],
