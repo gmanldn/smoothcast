@@ -627,6 +627,11 @@ class QueueMixin:
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
+        # A failed refresh cannot justify using addresses from an old mDNS
+        # snapshot. Keep the saved selection, but invalidate discovered hosts.
+        self.devices = []
+        self.dlna_devices = []
+        self._dlna_by_key = {}
         self.device_detail.set_text("Scan failed — is the network reachable?")
         self._set_device_badge("SCAN FAILED", "offline")
         self.toast(str(message), error=True)
@@ -864,4 +869,9 @@ class QueueMixin:
             return renderer.host
         if device in self.cfg.get("cast_targets", []):
             return device
-        return next((d.host for d in self.devices if d.name == device and d.host), None)
+        # The dropdown is keyed by friendly name. If mDNS reports two physical
+        # receivers with the same name, choosing the first host can silently
+        # cast to the wrong device. Require an unambiguous current scan result;
+        # incomplete TXT data (including an empty host) must not revive an old IP.
+        matches = [d for d in self.devices if d.name == device and d.host]
+        return matches[0].host if len(matches) == 1 else None

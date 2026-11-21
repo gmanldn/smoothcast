@@ -30,7 +30,11 @@ a renamed receiver **only** if both its UUID and new display name are unique.
 Never migrate selection while a cast, remote URL, startup or transport command
 is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
 not assume a display name alone proves ownership; issue #15 (SC-008)
-still tracks duplicate-name, stale-IP and real-device qualification.
+tracks discovery reconciliation and real-device qualification. Cast host
+lookup uses only the latest successful scan and returns no host when the
+selected friendly name is duplicated or its current mDNS record lacks a host;
+it never guesses between same-name receivers or revives an address from an
+older scan.
 
 ## HLS stall watchdog (P0 SC-010)
 
