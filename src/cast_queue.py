@@ -724,12 +724,12 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         # (for instance, a pending signal). Never retarget an owned TV.
         if (self.session is not None or self.busy
                 or self._cast_starting or self.external):
-            self.toast("Stop the current cast before changing TV", error=True)
+            self.toast("Stop this cast before switching receivers.", error=True)
             return
         try:
             target = castctl.validate_manual_target(self.cast_ip_entry.get_text())
-        except ValueError as exc:
-            self.toast(str(exc), error=True)
+        except ValueError:
+            self.toast("Enter a valid private IPv4 address for a Google Cast receiver.", error=True)
             return
         targets = self.cfg.get("cast_targets")
         if not isinstance(targets, list):
@@ -769,7 +769,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                         break
             finally:
                 self._syncing = False
-            self.toast("Stop the current cast before changing TV", error=True)
+            self.toast("Stop this cast before switching receivers.", error=True)
             return
         if name and name != self.cfg["device"]:
             # Never allow a previously queued volume write for A to affect B.

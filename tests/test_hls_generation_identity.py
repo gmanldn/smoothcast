@@ -99,6 +99,7 @@ def test_allowed_resources_reject_aliases_and_other_private_files():
 
 
 def test_delayed_http_requests_never_receive_new_timeline_bytes():
+    """INV-006: Stale HLS requests cannot read a newer playback generation."""
     old, new = "c" * 32, "d" * 32
     with TemporaryDirectory() as directory:
         root = Path(directory)
@@ -202,6 +203,7 @@ def test_finalized_fmp4_recovery_requires_generation_init_and_fragments(tmp_path
 
 
 def test_each_encoder_start_generates_unreused_url_and_segment_template():
+    """INV-005: Every encoder start must create an independent HLS generation."""
     with TemporaryDirectory() as directory:
         root = Path(directory)
         proc = mock.Mock(pid=12345)

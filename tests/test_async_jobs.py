@@ -71,6 +71,7 @@ def test_queue_capacity_is_bounded_and_rejected_task_gets_failure_callback():
 
 
 def test_callbacks_are_dispatched_not_called_on_workers():
+    """INV-007: Blocking I/O callbacks must be delivered on the main context."""
     pool, callbacks, _ = fixture()
     submitted_from = threading.get_ident()
     seen = []

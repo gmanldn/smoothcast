@@ -51,3 +51,24 @@ and median as `docs/reliability-baseline-ubuntu-24.04.json`; do not substitute
 a developer workstation measurement. Targets for physical playback, recovery,
 resource cost and orphan count remain unset until the real-device and chaos
 fixtures produce dated evidence.
+
+## Idle UI timer budget (#443)
+
+Visual playhead and meter callbacks exist only while playback is active and
+the GTK window is mapped (500 ms and 100 ms respectively). Actual GdkSurface
+width/height notifications coalesce responsive reflow; there is no 200 ms
+resize polling. Device status checks run every 4 seconds during playback or
+while the active window is in focus, reducing to 30 seconds while idle.
+The room activity view refreshes every 15 seconds when hidden, instead of
+once per second. Sleep and fade timers run only while armed or awaiting a
+receiver-volume restore. All visual timer sources are removed on window close.
+
+The GTK-free test in tests/test_idle_timers.py counts the expected GLib timer
+callbacks over a simulated hidden, idle minute (including existing LAN/theme
+checks) and enforces at most one wakeup per second. This is a *scheduler*
+budget, not a physical CPU/battery benchmark; only isolated Xvfb tests may
+exercise GTK, and physical receivers need separate qualification.
+
+Hidden transcoding sessions retain a separate 1-second stall-watchdog tick;
+only the visual seekbar and audio-meter callbacks stop. This preserves HLS
+recovery during minimised/hidden playback without waking an idle window.

@@ -71,8 +71,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         else:
             self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
-        if getattr(self, "_portal_activity_timer", None) is None:
-            self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
+        self._sync_portal_activity_timer()
         return True
 
     def _show_portal_qr(self, url: str | None) -> None:
@@ -103,6 +102,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             except (ValueError, TypeError):
                 pass
             self._portal_activity_timer = None
+        self._portal_activity_period = None
         if current is not None:
             current.stop()
         if hasattr(self, "portal_url_label"):
@@ -115,6 +115,20 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_activity_label.set_text("No client activity")
         peer_discovery_ui.refresh_peer_links(
             self, [], available=False, status="Peer discovery stopped")
+
+    def _sync_portal_activity_timer(self) -> None:
+        """Room UI refreshes once per second only when the window is mapped."""
+        if (self._closing or self._portal is None
+                or not getattr(self, "_timers_enabled", False)):
+            return
+        period = 1000 if self.get_mapped() else 15000
+        current = getattr(self, "_portal_activity_timer", None)
+        if current is not None and period == getattr(self, "_portal_activity_period", None):
+            return
+        if current is not None:
+            GLib.source_remove(current)
+        self._portal_activity_period = period
+        self._portal_activity_timer = GLib.timeout_add(period, self._refresh_portal_activity)
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""

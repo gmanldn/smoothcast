@@ -58,6 +58,10 @@ jobs:
         run: python -m compileall -q src scripts setup tests
       - name: Check canonical launcher syntax
         run: python -m py_compile smoothcast
+      - name: Lint user-facing UX copy
+        run: python scripts/ci/ux_copy_lint.py
+      - name: Enforce safety invariant evidence links
+        run: python scripts/ci/check_invariants.py
 
   reliability-benchmark:
     name: Fake Cast reliability benchmark

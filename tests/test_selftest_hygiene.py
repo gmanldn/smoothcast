@@ -81,8 +81,7 @@ class SelfTestHygieneTests(unittest.TestCase):
         segment = ast.get_source_segment(MAIN_SOURCE, init)
         self.assertIn("if not app.selftest:", segment)
         guarded = segment[segment.index("if not app.selftest:"):]
-        for scheduled in ("self._tick", "_refresh_responsive_layout", "_meter_tick",
-                          "_poll_device", "_initial_scan", "_adopt_session", "_sleep_tick"):
+        for scheduled in ("_sync_ui_timers", "_poll_device", "_initial_scan", "_adopt_session"):
             self.assertIn(scheduled, guarded)
 
     def test_selftest_failure_is_reported_as_nonzero(self):
