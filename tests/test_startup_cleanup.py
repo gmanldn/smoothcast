@@ -215,13 +215,14 @@ class StartupCleanupTests(unittest.TestCase):
     def test_verified_stale_process_gets_bounded_sigterm_and_sigkill(self):
         proc = process(100, "encoder")
         report = cleanup.CleanupReport()
-        with mock.patch.object(cleanup, "_same_process", return_value=True), \
-             mock.patch.object(cleanup.os, "kill") as kill:
+        with mock.patch.object(cleanup.platform, "system", return_value="Darwin"), \
+             mock.patch.object(cleanup, "_same_process", return_value=True), \
+             mock.patch.object(cleanup.process_identity, "signal_verified", return_value=True) as signal:
             cleanup._stop_orphans([proc], Path("/proc"), report, 0.0)
         self.assertEqual(report.stopped, [100])
         self.assertEqual(
-            [call.args[1] for call in kill.call_args_list],
-            [cleanup.signal.SIGTERM, cleanup.signal.SIGKILL],
+            [call.kwargs["force"] for call in signal.call_args_list],
+            [False, True],
         )
 
     @unittest.skipIf(os.name == "nt", "POSIX user-id process ownership")
