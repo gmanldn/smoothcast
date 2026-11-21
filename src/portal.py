@@ -496,7 +496,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str, **extra: object) -> None:
         payload = {"ok": False, "error": message}
         payload.update(extra)
-        self._send(status, payload)
+        self._send(status, payload, extra_headers=(
+            {"Retry-After": "1"} if status == 429 else None))
 
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
