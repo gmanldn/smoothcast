@@ -121,6 +121,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
     assert 'title.textContent=item.title' in page
     assert 'detail.textContent=' in page
+    assert 'id="musicAutogain"' in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
@@ -170,6 +171,23 @@ def test_actions_require_same_origin_session_and_csrf(rig):
                                   cookie=cookie, csrf=result["csrf"], origin=origin)
     assert status == 202 and decode(body)["ok"]
     assert rig.calls == [("stop", {"action": "stop"})]
+
+
+def test_phone_autogain_toggle_is_authenticated_and_requires_a_boolean(rig):
+    _, result, cookie = login(rig)
+    origin = f"http://{rig.host}"
+    status, _, _ = rig.request(
+        "POST", "/api/action", {"action": "music_autogain", "value": "true"},
+        cookie=cookie, csrf=result["csrf"], origin=origin,
+    )
+    assert status == 400
+    assert rig.calls == []
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "music_autogain", "value": True},
+        cookie=cookie, csrf=result["csrf"], origin=origin,
+    )
+    assert status == 202 and decode(body)["ok"]
+    assert rig.calls == [("music_autogain", {"action": "music_autogain", "value": True})]
 
 
 @pytest.mark.parametrize("payload", [

@@ -13,6 +13,7 @@ import portal
 import portal_uploads
 import network_activity
 from network_activity_ui import NetworkActivityMixin
+from cast_widgets import save_config
 from gi.repository import GLib
 
 # An early portal cast that has not started playing within this many seconds is
@@ -152,6 +153,14 @@ class PortalMixin(NetworkActivityMixin):
     def _portal_handle(self, operation: str, payload: dict) -> dict | str:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+        if operation == "music_autogain":
+            value = payload.get("value")
+            if type(value) is not bool:
+                raise portal.PortalRequestError(400, "Music autogain must be on or off")
+            self.cfg["music_autogain"] = value
+            save_config(self.cfg)
+            return ("Music autogain enabled."
+                    if value else "Music autogain disabled.")
         if operation == "status":
             position = self.tracker.value()
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
@@ -168,6 +177,7 @@ class PortalMixin(NetworkActivityMixin):
                 "position": position, "duration": duration, "volume": volume,
                 "queue": queue, "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
+                "music_autogain": bool(self.cfg.get("music_autogain", False)),
                 "network_activity": network_activity.portal_entries(
                     getattr(self, "_network_activity_entries", []),
                     self._device_host(self._device()),

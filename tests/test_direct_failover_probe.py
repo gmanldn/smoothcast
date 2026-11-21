@@ -116,6 +116,8 @@ def cast_worker(status="rejected"):
         CAST_SUBTITLE_EXTS=streamer.CAST_SUBTITLE_EXTS,
         require_compatible_ffmpeg=mock.Mock(return_value=(7, 0)),
         normalize_rotation=streamer.normalize_rotation,
+        schedule_music_analysis=lambda *_args: False,
+        music_hint_not_applied=lambda hint, *_args: hint,
         ffprobe=mock.Mock(
             return_value=SimpleNamespace(path=Path("/film.mp4"), direct_ok=True)
         ),

@@ -195,18 +195,66 @@ def audio_filters(profile: str, gain_db: float = 0.0,
 
 def state_loudness(state) -> str:
     """Loudness mode recorded on a session state, including older states."""
+    if getattr(state, "music_autogain", False):
+        return ("music_autogain_measured" if getattr(
+            state, "music_autogain_measured", False) else "music_autogain")
     return getattr(state, "audio_loudness", loudness.DEFAULT) if state else loudness.DEFAULT
 
 
+def music_hint_not_applied(hint: str, media, cfg: dict) -> str:
+    enabled = (cfg.get("music_autogain", False)
+               and loudness.normalize(cfg.get("audio_loudness", "off")) == loudness.DEFAULT)
+    return hint + " · Music autogain not applied on this route" if (
+        enabled and getattr(media, "is_audio_only", False)) else hint
+
+
+def schedule_music_analysis(path, media, audio_track, owner, cfg) -> bool:
+    """Schedule bounded analysis for this and the next queued audio track."""
+    if not (cfg.get("music_autogain", False) and media.is_audio_only
+            and loudness.normalize(cfg.get("audio_loudness", "off")) == loudness.DEFAULT):
+        return False
+    selected = preferred_audio_track(media, audio_track)
+    track = selected.index if selected is not None else 0
+    profile = cfg["audio"]
+    filters = tuple(AUDIO_FILTERS.get(profile) or ())
+    downmix = (audio_downmix.downmix_filter(selected.channels, selected.layout, profile)
+               if selected is not None else None)
+    loudness.schedule_analysis(path, track, profile, downmix=downmix, pre_filters=filters)
+    choices = cfg.get("audio_track_by_file") or {}
+    queued = tuple(getattr(owner, "queue", ()) or ())
+    try:
+        upcoming = queued[queued.index(str(path)) + 1:]
+    except ValueError:
+        upcoming = ()
+    for candidate in upcoming:
+        if pathlib.Path(candidate).suffix.lower() not in AUDIO_EXTS:
+            continue
+        choice = choices.get(candidate, -1) if isinstance(choices, dict) else -1
+        next_track = choice if type(choice) is int and choice >= 0 else 0
+        loudness.schedule_analysis(candidate, next_track, profile, pre_filters=filters)
+        break
+    return True
+
+
 def monitor_summary(profile: str, gain_db: float,
-                    loudness_mode: str = loudness.DEFAULT) -> tuple[list, str]:
+                    loudness_mode: str = loudness.DEFAULT, *,
+                    music_state=None) -> tuple[list, str]:
     """Metering chain and a concise hint for the current audio settings."""
+    music_mode = loudness_mode in {"music_autogain", "music_autogain_measured"}
+    measured = loudness_mode == "music_autogain_measured"
+    if music_mode:
+        loudness_mode = loudness.DEFAULT
     chain = audio_filters(profile, gain_db, loudness_mode)
     hint = AUDIO_LABELS.get(profile, profile)
     if gain_db > 0:
         hint += f" · +{gain_db:g} dB"
     if loudness.normalize(loudness_mode) != loudness.DEFAULT:
         hint += f" · {loudness.label(loudness_mode)}"
+    if music_mode or getattr(music_state, "music_autogain", False):
+        chain.append(loudness.music_filter(None))
+        hint += " · Music autogain" + (
+            " (measured)" if measured or getattr(music_state, "music_autogain_measured", False)
+            else " (streaming fallback)")
     return chain, hint
 
 
@@ -1022,6 +1070,8 @@ class SessionState:
     audio: str = "dialogue"
     audio_gain_db: float = 0.0
     audio_loudness: str = loudness.DEFAULT
+    music_autogain: bool = False
+    music_autogain_measured: bool = False
     audio_track_index: int = -1
     subs: str = ""
     burn_subs: bool = False
@@ -1540,6 +1590,7 @@ class Session:
         subtitle_delay_ms: int = 0,
         subtitle_preset: str = subtitle_style.DEFAULT,
         audio_delay_ms: int = 0,
+        music_autogain: bool = False,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
@@ -1655,7 +1706,15 @@ class Session:
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)
         profile_filters = AUDIO_FILTERS.get(audio_profile) or []
-        if profile_filters:
+        music_autogain_active = (
+            bool(music_autogain) and media.is_audio_only
+            and loudness.normalize(audio_loudness) == loudness.DEFAULT
+        )
+        music_analysis = (loudness.get_cached(
+            media.path, audio_track.index if audio_track is not None else 0,
+            audio_profile, downmix=downmix, pre_filters=tuple(profile_filters),
+        ) if music_autogain_active else None)
+        if profile_filters and not music_autogain_active:
             # Auto-trim the selected soundtrack so the compressor always
             # engages, then apply the user's manual gain on top.  Store the
             # total so the monitor and resume paths use the exact same chain.
@@ -1667,7 +1726,11 @@ class Session:
             effective_gain = trim + audio_gain_db
         else:
             effective_gain = 0.0
-        filters = audio_filters(audio_profile, effective_gain, audio_loudness)
+        if music_autogain_active:
+            filters = list(profile_filters)
+            filters.append(loudness.music_filter(music_analysis))
+        else:
+            filters = audio_filters(audio_profile, effective_gain, audio_loudness)
         if downmix:
             filters = [downmix] + filters  # matrix first, then gain/compressor
         if speed != 1.0:
@@ -1728,6 +1791,7 @@ class Session:
                     audio_track_index=audio_track_index,
                     subtitle_delay_ms=subtitle_delay_ms,
                     audio_delay_ms=audio_delay_ms,
+                    music_autogain=music_autogain,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -1755,6 +1819,8 @@ class Session:
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
             audio_loudness=loudness.normalize(audio_loudness),
+            music_autogain=music_autogain_active,
+            music_autogain_measured=music_analysis is not None,
             audio_track_index=audio_track_index,
             subs=str(subs_file or ""), burn_subs=burn_subs,
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),

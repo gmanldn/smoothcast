@@ -14,6 +14,7 @@ from gi.repository import Gtk
 
 import loudness
 from cast_widgets import DEFAULTS, save_config
+import music_autogain
 
 
 class SettingsCardMixin:
@@ -86,6 +87,11 @@ class SettingsCardMixin:
         )
         self.loudness_dropdown.set_selected({"off": 0, "programme": 1, "album": 2}.get(self.cfg.get("audio_loudness", "off"), 0))
         self.loudness_dropdown.connect("notify::selected", self._on_loudness)
+
+        self.music_autogain_switch = music_autogain.add_settings_switch(
+            body, Gtk, bool(self.cfg.get("music_autogain", False)),
+            self._on_music_autogain,
+        )
 
         self.audio_track_dropdown = dropdown_row(
             "Film audio track",
@@ -190,6 +196,17 @@ class SettingsCardMixin:
             save_config(self.cfg)
             self.toast(f"Loudness: {loudness.label(value)} (restart to apply)")
         self._refresh_direct_note()
+
+
+    def _on_music_autogain(self, switch, _param) -> None:
+        if self._syncing:
+            return
+        active = bool(switch.get_active())
+        if active != bool(self.cfg.get("music_autogain", False)):
+            self.cfg["music_autogain"] = active
+            save_config(self.cfg)
+            self.toast("Music autogain enabled (applies on the next cast or restart)"
+                       if active else "Music autogain disabled")
 
 
     def _sleep_fade_tick(self) -> bool:

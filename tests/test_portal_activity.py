@@ -49,18 +49,21 @@ def _build_window(tmp_path):
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),
         "portal_uploads": portal_uploads,
+        "save_config": lambda cfg: saved.append(dict(cfg)),
         "pathlib": pathlib, "os": os, "stat": stat, "time": time,
         "PORTAL_CAST_GRACE_SECONDS": 5.0,
         "GLib": SimpleNamespace(idle_add=lambda fn, *args: idle.append((fn, args))),
     }
     exec(compile("class Window:\n" + code, "<portal-handle-test>", "exec"), namespace)
     window = namespace["Window"]()
+    saved = []
     window.busy = False
     window.now_playing = None
     window._closing = False
     window._portal_cast_uploads = {}
     window._portal_cast_retried = set()
     window._portal_accepted_uploads = set()
+    window.cfg = {"music_autogain": False}
     window.casts = []
     window.early_flags = []
     window.set_selection = lambda path: None
@@ -73,7 +76,22 @@ def _build_window(tmp_path):
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     window._portal = SimpleNamespace(uploads=uploads,
                                      server=SimpleNamespace(uploads=uploads))
+    window.saved_configs = saved
     return window, uploads, idle
+
+
+def test_phone_autogain_toggle_persists_and_reports_shared_setting(tmp_path):
+    window, _uploads, _idle = _build_window(tmp_path)
+    assert window._portal_handle("music_autogain", {"value": True}).startswith(
+        "Music autogain enabled")
+    assert window.cfg["music_autogain"] is True
+    assert window.saved_configs == [{"music_autogain": True}]
+    try:
+        window._portal_handle("music_autogain", {"value": 1})
+    except _PortalRequestError as exc:
+        assert exc.status == 400
+    else:
+        raise AssertionError("non-boolean setting was accepted")
 
 
 def test_early_dispatch_tracks_the_cast_and_dedupes_finalize(tmp_path):

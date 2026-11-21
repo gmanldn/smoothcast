@@ -373,7 +373,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(403, "Session expired or request token invalid")
             action = body.get("action")
             if not isinstance(action, str) or action not in {
-                    "play_pause", "stop", "seek", "volume"}:
+                    "play_pause", "stop", "seek", "volume", "music_autogain"}:
                 return self._error(400, "Unsupported action")
             if action == "seek":
                 value = body.get("value")
@@ -386,6 +386,8 @@ class _Handler(BaseHTTPRequestHandler):
                 value = body.get("value")
                 if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
                     return self._error(400, "Volume must be from 0 to 100")
+            if action == "music_autogain" and type(body.get("value")) is not bool:
+                return self._error(400, "Music autogain must be on or off")
             try:
                 result = self.server.dispatch(action, body)
             except PortalRequestError as exc:
@@ -580,6 +582,7 @@ h1{font-size:1.4rem;margin:.2rem 0}h2{font-size:1.05rem;margin:0 0 12px}p{color:
 section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 8px 26px #0002}
 label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid #718096;padding:8px 12px}
 input{width:100%;color:inherit;background:#121b27}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
+#musicAutogain{width:auto;min-height:0;margin-right:8px}
 button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
@@ -594,6 +597,7 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
+<section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section><h2>Queue</h2><ul id="queue"><li>No videos queued</li></ul></section><section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
 <section id="uploadCard" hidden><h2>Cast a video from this device</h2><p>Files transfer in resumable chunks. Supported formats start streaming to your receiver while the rest arrives.</p>
 <label for="videoFile">Video file</label><input id="videoFile" type="file" accept="video/*,.mkv,.ts,.wmv">
@@ -606,12 +610,14 @@ $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError(
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
 async function refresh(){if(!csrf||busy)return;try{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"Connection lost");const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
+$("musicAutogain").checked=!!s.music_autogain;
 const queue=$("queue");queue.replaceChildren();if(!s.queue||!s.queue.length){const li=document.createElement("li");li.textContent="No videos queued";queue.append(li)}else for(const title of s.queue){const li=document.createElement("li");li.textContent=title;queue.append(li)}
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const clock=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);showError("errorDash","");}catch(err){showError("errorDash",err.message)}}
 async function act(action,value){if(busy)return;busy=true;try{const body={action};if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+$("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
   const controller=new AbortController();activeUploadController=controller;
   const deadline=setTimeout(()=>controller.abort(),60000);

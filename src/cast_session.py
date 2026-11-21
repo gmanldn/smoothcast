@@ -128,7 +128,6 @@ class SessionMixin:
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
             and not getattr(self, "_portal_early", False)
         )
-
         def work():
             media, prewarm_fingerprint = queue_metadata.media_for_cast(
                 prewarmed_entry, path, streamer.ffprobe,
@@ -142,6 +141,8 @@ class SessionMixin:
                 raise streamer.StreamError(
                     "The selected audio track is no longer in this film; choose Auto or another track"
                 )
+            music_enabled = streamer.schedule_music_analysis(
+                path, media, audio_track, self, cfg)
             embedded = None
             if subs_mode == "embedded" or (subs_mode == "auto" and subs_path is None):
                 saved = cfg.get("subtitle_track_by_file") or {}
@@ -210,7 +211,8 @@ class SessionMixin:
                     )
                     stop_if_cancelled_after_start()
                     return session, media
-                if use_direct and media.direct_ok and not burn and embedded is None:
+                if (use_direct and media.direct_ok and not burn and embedded is None
+                        and not music_enabled):
                     try:
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
@@ -239,11 +241,12 @@ class SessionMixin:
                     audio_track_index=audio_track,
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
+                    music_autogain=music_enabled,
                 )
                 stop_if_cancelled_after_start()
                 return session, media
             except Exception:
-                # No orphan ffmpeg, catt or HTTP server after failed startup.
+                # Clean up failed startup processes.
                 try:
                     session.stop(device, send_stop=False)
                 except Exception:
@@ -281,6 +284,7 @@ class SessionMixin:
                 chain = []
                 hint = ("DLNA progressive MP4"
                         if session.mode == "dlna" else "Original audio (direct play)")
+                hint = streamer.music_hint_not_applied(hint, media, cfg)
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
             self.tracker.start(
@@ -598,6 +602,7 @@ class SessionMixin:
                     subtitle_delay_ms=captions.delay_ms,
                     subtitle_preset=subtitle_style.from_config(self.cfg),
                     audio_delay_ms=audio_delay.get(self.cfg, file_path),
+                    music_autogain=bool(self.cfg.get("music_autogain", False)),
                 )
             except Exception:
                 try:
@@ -851,15 +856,14 @@ class SessionMixin:
             return False
         session = streamer.Session()
         session.restore(state)
-        # Verify saved-session ownership before receiver commands.
+        # Match the saved receiver.
         if state.device != self._device():
             return False
-        # Verify HLS/server and receiver ownership off the GTK thread.
+        # Check HLS/server ownership off-thread.
         if not session.active() and session.mode != "transcode":
             streamer.clear_session()
             return False
-        # Verify exact receiver URL/title and HLS availability before exposing
-        # controls; a stale saved session could belong to another sender.
+        # Verify stream identity before exposing controls.
         if self.session is not None or getattr(self, "_adopting_session", None) is not None:
             return False
         self._adopting_session = session
@@ -903,15 +907,14 @@ class SessionMixin:
                     info, state.stream_url, state.title,
                 )
             ):
-                # Unreachable receivers are inconclusive: retain saved state
-                # for a later attempt. A definite mismatch is not ours.
+                # Retain state on an unreachable receiver; clear only known mismatches.
                 if info is not None:
                     streamer.clear_session()
                 self.toast("Previous cast could not be verified")
                 self._refresh_controls()
                 self._poll_device()
                 return
-            # Expose remote controls only after the receiver confirms media identity.
+            # Expose controls only after receiver identity is confirmed.
             self.session = session
             self.external = False
             self.now_playing = state.file
@@ -962,7 +965,7 @@ class SessionMixin:
 
 
     def _cast_remote_url(self, value: str) -> None:
-        # External URL casting is a Cast capability; avoid catt for DLNA IDs.
+        # External URLs use Cast, not DLNA.
         if self._dlna_renderer() is not None:
             self.toast("Open URL currently requires a Google Cast target; choose Cast or open a local film", error=True)
             return
@@ -984,8 +987,7 @@ class SessionMixin:
         def work():
             if previous is not None:
                 previous.stop(device, send_stop=False)
-            # catt casts HTTP(S) URLs directly, resolving supported video
-            # sites. Do not send remote URLs through local-file ffprobe.
+            # Don't send remote URLs through local-file ffprobe.
             return castctl.command(device, "cast", "--no-subs", url, timeout=60)
 
         def done(result):

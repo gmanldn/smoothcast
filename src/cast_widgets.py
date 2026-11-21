@@ -51,7 +51,8 @@ DEFAULTS: dict = {
     "quality": "balanced",
     "audio": "dialogue",
     "audio_gain": 6.0,
-    "audio_loudness": "off",  # EBU R128 programme/album target; off keeps the mix (#139)
+    "audio_loudness": "off",  # EBU R128 programme/album (#139)
+    "music_autogain": False,
     "subs": "auto",
     "subs_path": "",
     "subtitle_track_by_file": {},
