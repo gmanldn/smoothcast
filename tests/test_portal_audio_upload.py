@@ -56,6 +56,11 @@ class PortalAudioUploadTests(unittest.TestCase):
             self.assertTrue(dispatch)
             self.assertTrue(media.is_audio_only)
             self.assertEqual(media.title, "Guest track")
+            replayed_path, replayed_name, replay_dispatch = uploads.finalize(
+                "guest", created["id"],
+            )
+            self.assertEqual((replayed_path, replayed_name, replay_dispatch),
+                             (path, name, False))
             uploads.close()
 
     def test_corrupt_audio_is_removed_and_never_dispatched(self):

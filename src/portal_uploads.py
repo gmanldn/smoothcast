@@ -184,6 +184,7 @@ class _Upload:
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
+    audio_validated: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -465,7 +466,7 @@ class UploadManager:
                         if os.name != "nt":
                             raise
                     upload.complete_path = destination
-            if upload.audio_only:
+            if upload.audio_only and not upload.audio_validated:
                 try:
                     import streamer
                     media = streamer.ffprobe(upload.complete_path)
@@ -486,6 +487,7 @@ class UploadManager:
                     raise UploadError(
                         422, "Choose a readable audio file up to 24 hours long",
                     )
+                upload.audio_validated = True
             should_dispatch = not upload.cast_submitted
             upload.cast_submitted = True
             return upload.complete_path, upload.name, should_dispatch
