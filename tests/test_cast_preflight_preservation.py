@@ -19,7 +19,7 @@ import subtitle_style
 
 
 def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=None):
-    names = ("_cast_path", "_cast_preflight_failed")
+    names = ("_cast_path", "_cast_preflight_failed", "stop_stream")
     methods = main_window_methods()
     source = "class Handlers:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(methods[name]), "    ")
@@ -148,3 +148,44 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     assert w.session is previous
     assert not w.busy and w._dlna_cancel is None
     assert "no supported MP4 or MPEG-TS" in w.toast.call_args.args[0]
+
+
+def test_stop_cancels_cast_during_probe_before_stopping_previous_session(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    def run(work, *, done, failed, domain):
+        try:
+            done(work())
+        except Exception as exc:
+            failed(str(exc))
+
+    w, previous = window(device="DLNA · Living Room · 192.168.1.41", subs="off",
+                         dependencies={
+                             "Async": SimpleNamespace(run=run), "dlna": dlna,
+                             "streamer": streamer, "subtitle_style": subtitle_style,
+                             "audio_delay": audio_delay, "subtitle_delay": subtitle_delay,
+                         })
+    renderer = dlna.Renderer("Living Room", "192.168.1.41", "", "", "")
+    w._dlna_renderer = mock.Mock(return_value=renderer)
+    w.np_meta = mock.Mock()
+    w._closing = False
+    w.cfg.update(direct=True, audio="original")
+    w.tracker = mock.Mock()
+    w.media = None
+    previous.stop = mock.Mock()
+
+    def probe(_path):
+        w.stop_stream()
+        return object()
+
+    monkeypatch.setattr(streamer, "ffprobe", probe)
+    monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
+
+    w._cast_path(pathlib.Path("/new-film.mp4"), 0.0)
+
+    previous.stop.assert_not_called()
+    w._cast_failed.assert_not_called()
+    assert w.session is previous and not w.busy and w._dlna_cancel is None
+    assert any("Cancelling cast setup" in call.args[0]
+               for call in w.toast.call_args_list)

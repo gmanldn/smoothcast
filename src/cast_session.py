@@ -65,8 +65,7 @@ class SessionMixin:
 
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
-        # None resumes saved position; explicit 0 always rewinds.
-        # This prevents seek-to-start from jumping to the previous stop.
+        # None resumes saved position; 0 always rewinds.
         offset = playback_state.start_offset(
             offset, (self.cfg.get("positions") or {}).get(str(path)),
         )
@@ -87,7 +86,8 @@ class SessionMixin:
         self._finished_handled = False
         device = self._device()
         renderer = self._dlna_renderer(device)
-        self._dlna_cancel = threading.Event() if renderer is not None else None
+        cancel = threading.Event()
+        self._dlna_cancel = cancel
         if renderer is not None:
             self.np_meta.set_text(
                 "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
@@ -126,6 +126,8 @@ class SessionMixin:
 
         def work():
             media = streamer.ffprobe(path)
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before receiver handoff")
             streamer.require_compatible_ffmpeg()
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
@@ -162,10 +164,12 @@ class SessionMixin:
                         "DLNA currently supports normal speed and unrotated video; reset these settings"
                     )
                 media_type = dlna.negotiate_media_type(renderer)
-                if self._dlna_cancel is not None and self._dlna_cancel.is_set():
+                if cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before replacing current playback")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
             if self._closing:
@@ -182,7 +186,7 @@ class SessionMixin:
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
                         subtitle_delay_ms=delay, audio_delay_ms=adelay,
-                        cancel=self._dlna_cancel, audio_profile=cfg["audio"], media_type=media_type,
+                        cancel=cancel, audio_profile=cfg["audio"], media_type=media_type,
                     )
                     return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
@@ -304,7 +308,7 @@ class SessionMixin:
         if self.busy:
             if self._dlna_cancel is not None:
                 self._dlna_cancel.set()
-                self.toast("Cancelling DLNA media preparation…")
+                self.toast("Cancelling cast setup before receiver handoff…")
             return
         if self.session is None and not self.external and self._preview_path is not None:
             self._unload_local_video()
