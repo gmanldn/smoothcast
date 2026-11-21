@@ -23,9 +23,9 @@ function Find-Python {
         }
     }
     $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($cmd) { $paths += $cmd.Source }
+    if ($cmd -and $cmd.Source -notmatch '\\Microsoft\\WindowsApps\\') { $paths += $cmd.Source }
     $cmd = Get-Command python3.exe -ErrorAction SilentlyContinue
-    if ($cmd) { $paths += $cmd.Source }
+    if ($cmd -and $cmd.Source -notmatch '\\Microsoft\\WindowsApps\\') { $paths += $cmd.Source }
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
         # py -0p lists installed interpreter paths without asking the modern
