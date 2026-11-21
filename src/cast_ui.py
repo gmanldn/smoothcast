@@ -722,10 +722,10 @@ class UiMixin(BookmarkUiMixin):
         guest_row.append(self.portal_guest_dropdown)
         guest_row.append(self.portal_revoke_button)
         body.append(guest_row)
-        self.portal_end_access_button = Gtk.Button(label="End guest access / New PIN")
+        self.portal_end_access_button = Gtk.Button(label="Sign everyone out")
         self.portal_end_access_button.add_css_class("destructive-action")
         self.portal_end_access_button.set_tooltip_text(
-            "Sign out all guests and generate a new PIN; playback continues")
+            "Sign out every connected browser and rotate the room PIN; playback continues")
         self.portal_end_access_button.connect(
             "clicked", self._portal_confirm_end_access)
         body.append(self.portal_end_access_button)

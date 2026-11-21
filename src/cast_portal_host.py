@@ -57,11 +57,11 @@ class PortalHostMixin:
             self.toast("The shared room is not running", error=True)
             return
         dialog = Adw.MessageDialog.new(
-            self, "End guest access?",
-            "All paired phones will be signed out and the six-digit PIN "
+            self, "Sign everyone out?",
+            "Every connected browser will be signed out and the room PIN "
             "will change. The current film, queue and receiver keep playing.")
         dialog.add_response("cancel", "Cancel")
-        dialog.add_response("end", "End access")
+        dialog.add_response("end", "Sign out")
         dialog.set_response_appearance("end", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
@@ -77,4 +77,4 @@ class PortalHostMixin:
         self.portal_pin_label.set_text(current.end_guest_access())
         self.portal_guest_ids = ()
         self._refresh_portal_activity()
-        self.toast("All guests signed out. New room PIN ready; playback continues.")
+        self.toast("Everyone signed out. New room PIN ready; playback continues.")

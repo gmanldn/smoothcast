@@ -26,7 +26,8 @@ PIN = "234567"
 
 class RoomHarness:
     def __init__(self, count: int = 20,
-                 uploads: portal_uploads.UploadManager | None = None) -> None:
+                 uploads: portal_uploads.UploadManager | None = None,
+                 pin_required: bool = True) -> None:
         media = ("mp3", "flac", "mp4")
         self.queue = [
             {"id": f"item-{index}", "title": f"track-{index}.{media[index % len(media)]}",
@@ -39,7 +40,9 @@ class RoomHarness:
         self.queue_revision = 0
         self.server = portal._PortalHTTPServer(
             ("127.0.0.1", 0), PIN, self.dispatch, uploads=uploads,
+            pin_required=pin_required,
         )
+        self.pin_required = pin_required
         self.host = f"127.0.0.1:{self.server.server_address[1]}"
         self.origin = f"http://{self.host}"
         self.thread = threading.Thread(
@@ -113,7 +116,10 @@ class RoomHarness:
             conn.close()
 
     def login(self, name: str) -> "RoomClient":
-        status, result, headers = self.request("POST", "/api/login", {"pin": PIN, "name": name})
+        body = {"name": name}
+        if self.pin_required:
+            body["pin"] = PIN
+        status, result, headers = self.request("POST", "/api/login", body)
         assert status == 200
         cookie = headers["Set-Cookie"].split(";", 1)[0]
         return RoomClient(self, cookie, result["csrf"], result["participant"]["id"])
@@ -140,9 +146,9 @@ class RoomClient:
         )
 
 
-@pytest.fixture
-def room():
-    harness = RoomHarness()
+@pytest.fixture(params=[True, False], ids=["house-pin", "open-join"])
+def room(request):
+    harness = RoomHarness(pin_required=request.param)
     yield harness
     harness.close()
 
@@ -424,5 +430,43 @@ def test_pin_still_required_by_default():
         assert status == 401
         status, reply, _ = harness.request("GET", "/api/config")
         assert reply["pin_required"] is True
+    finally:
+        harness.close()
+
+
+@pytest.mark.parametrize("pin_required", [True, False])
+def test_join_and_permissions_hold_in_both_pin_modes(pin_required):
+    harness = RoomHarness(count=1, pin_required=pin_required)
+    try:
+        status, config, _ = harness.request("GET", "/api/config")
+        assert status == 200
+        assert config["pin_required"] is pin_required
+
+        body = {"name": "Sam"}
+        if pin_required:
+            body["pin"] = "000000"
+            status, _, _ = harness.request("POST", "/api/login", body)
+            assert status == 401  # Wrong PIN is refused.
+            body["pin"] = PIN
+        status, result, headers = harness.request("POST", "/api/login", body)
+        assert status == 200
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        csrf = result["csrf"]
+
+        status, _, _ = harness.request(
+            "POST", "/api/login", body,
+            extra_headers={"Origin": "http://evil.example"},
+        )
+        assert status == 403  # Cross-origin login is refused in both modes.
+
+        status, reply, _ = harness.request("GET", "/api/status", cookie=cookie)
+        assert status == 200
+        assert reply["state"]["title"] == "Current film"
+        status, _, _ = harness.request(
+            "POST", "/api/action", {"action": "queue_clear", "payload": {}},
+            cookie=cookie, csrf=csrf,
+            extra_headers={"Origin": "http://evil.example"},
+        )
+        assert status == 403  # Cross-origin control is refused in both modes.
     finally:
         harness.close()

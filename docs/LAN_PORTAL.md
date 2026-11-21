@@ -2,10 +2,12 @@
 
 When the SmoothCast desktop app is running, it starts a small web room on the
 selected private LAN IPv4 interface. The **Shared room** card on the main
-screen shows the address and a six-digit PIN. Open that address in a browser on
-the same local network, enter your name and the PIN, and you join a shared
-queue with everyone else in the room. The app remains the single owner of the
-queue and the receiver; web actions are marshalled onto the GTK thread.
+screen shows the address. Open that address in a browser on the same local
+network, enter your name, and you join a shared queue with everyone else in the
+room. Joining is open by default on the trusted home LAN; an optional **House
+PIN** can be enabled in Preferences when people you do not trust use the Wi-Fi.
+The app remains the single owner of the queue and the receiver; web actions are
+marshalled onto the GTK thread.
 
 Each person can add audio or videos from their device, add uploads to the queue
 instead of playing them immediately, vote on titles, reorder or remove entries,
@@ -48,13 +50,13 @@ playing, buffering or paused media reported by reachable Cast and DLNA
 receivers discovered on the LAN. It refreshes every 15 seconds, shows the
 receiver, media title and available progress, and never sends commands to those
 other receivers. Unreachable devices are omitted; titles in the dashboard are
-visible only after PIN pairing.
+visible only after joining the room.
 
 The **Nearby SmoothCast hosts** list uses a separate, versioned DNS-SD record
 to show other SmoothCast instances on the LAN. It contains only a random
 instance identifier, friendly host name, protocol version and capability names;
 it does not contain a PIN, session, user nickname or media path. Opening another
-host takes the browser to that host's own PIN prompt. Discovery alone cannot
+host takes the browser to that host's own join prompt. Discovery alone cannot
 transfer a file or issue Cast commands. If multicast discovery is unavailable,
 the UI reports that state rather than implying that no peers exist.
 
@@ -65,8 +67,8 @@ mDNS/Bonjour when the `zeroconf` dependency is available. The card also shows
 the numeric IP address as a fallback for networks that block multicast DNS.
 
 Scan the room QR with your phone camera to open the numeric room link,
-then enter the PIN shown on the host. The QR is generated locally and contains
-only the address. You can also use **Copy link**.
+then enter your name (and the House PIN if enabled). The QR is generated locally
+and contains only the address. You can also use **Copy link**.
 
 The portal chooses a port by binding directly to an operating-system-assigned
 ephemeral port. It does not check a port and bind later. It uses Python's
@@ -109,9 +111,10 @@ remaining work.
 Any phone, tablet, laptop or smart-TV browser on the LAN can become a **screen**
 (video) or **speaker** (audio) for the room, with nothing to install. Open
 `/screen` on the host's address (for example `http://smoothcast-lounge.local:PORT/screen`),
-name the device, enter the room PIN, and press **Start screen** once so the
-browser allows sound. The device then waits for the room to send it something
-and keeps itself awake where the browser supports a screen wake lock.
+name the device, enter your name (and the House PIN if enabled), and press
+**Start screen** once so the browser allows sound. The device then waits for the
+room to send it something and keeps itself awake where the browser supports a
+screen wake lock.
 
 From the **Screens** card on any paired guest's dashboard, pick an item from the
 shared queue and press **Play**. Screens are independent targets: controlling
@@ -141,7 +144,7 @@ the same position. Seeking a converted stream restarts it at the new position.
 - Media is addressed only by the room's opaque queue IDs and only items
   currently in the shared queue can be streamed. Host paths never reach a
   browser; symlinks, directories and files that vanished are refused at open time.
-- Revoking a guest or ending guest access removes their screens immediately and
+- Removing a guest or signing everyone out removes their screens immediately and
   blocks further media reads. A screen that stops contacting the host is shown as
   not responding after 12 seconds and removed after 30.
 - At most 8 screens, 8 concurrent media streams and 2 conversions per room.
@@ -153,25 +156,33 @@ the same position. Seeking a converted stream restarts it at the new position.
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes
-  interfaces. The PIN uses six digits so it is easy to read aloud.
-- After pairing, the browser receives a temporary, HTTP-only, same-site session
+  interfaces, but it is only required when **Require a house PIN to join** is
+  enabled. The PIN uses six digits so it is easy to read aloud. With the switch
+  off (the default), the login page shows only a name field and joins
+  immediately; a name already remembered by the browser joins on load.
+- After joining, the browser receives a temporary, HTTP-only, same-site session
   cookie tied to one named participant. Sessions expire after eight hours or
-  when the room stops. Reloading the page after expiry asks for the current PIN
-  again. Up to 32 named participants are shown; duplicate names receive a
-  stable numeric suffix. Guests can update only their own display name. The
-  active roster drops clients after 45 seconds without authenticated activity;
-  reconnecting with the still-valid session restores the same identity and
-  nickname. Dormant identity retention is bounded and ends with session expiry.
-- Five incorrect PIN attempts from one client are rate-limited. The PIN,
-  session cookie and PIN-entry request are not written to SmoothCast logs.
+  when the room stops. Reloading the page after expiry resumes the same
+  session when the cookie is still valid, otherwise it asks for the current
+  PIN if the House PIN is enabled. Up to 32 named participants are shown;
+  duplicate names receive a stable numeric suffix. Guests can update only their
+  own display name. The active roster drops clients after 45 seconds without
+  authenticated activity; reconnecting with the still-valid session restores
+  the same identity and nickname. Dormant identity retention is bounded and
+  ends with session expiry.
+- When the House PIN is enabled, five incorrect PIN attempts from one client
+  are rate-limited. The PIN, session cookie and PIN-entry request are not
+  written to SmoothCast logs.
 - Every state-changing request checks the allowed Host and Origin and requires
   a per-session CSRF token. Queue entries are addressed by opaque short hashes,
   never by host filesystem paths. The room has no file browser, arbitrary
   filesystem path or arbitrary URL cast; uploads are the only way to introduce
   new media.
-- The PIN is the room authority. Use the room only on a trusted LAN, keep the
-  desktop screen and PIN private, and close SmoothCast to stop the listener.
-  There is no separate cloud account or room server.
+- On the trusted home LAN, being on the Wi-Fi is the invitation. When the
+  optional House PIN is enabled it becomes the room authority. Use the room
+  only on a trusted LAN, keep the desktop screen and any House PIN private, and
+  close SmoothCast to stop the listener. There is no separate cloud account or
+  room server.
 - Uploads use sequential 2 MiB HTTP chunks with bounded 64 KiB server reads.
   **Add to the shared queue** is selected by default for every authenticated
   participant. It disables early casting, so a partial video is never offered
@@ -223,17 +234,18 @@ the same position. Seeking a converted stream restarts it at the new position.
   LAN portal is unavailable and does not show a PIN.
 - SmoothCast checks for interface changes every 15 seconds. If its chosen
   address changes, the old listener and sessions are stopped, then a new URL
-  and PIN are shown.
+  and PIN are generated.
 
 The portal uses plain HTTP for compatibility with ordinary local browsers.
-Anyone who can reach the selected LAN interface can see the login page; anyone
-who also knows the displayed PIN can control playback. Use it on a trusted
-local network and keep the SmoothCast screen and PIN private. Closing SmoothCast
-stops the listener.
+Anyone who can reach the selected LAN interface can see the login page; with
+joining open by default, anyone on that LAN can control playback unless the
+House PIN is enabled. Use it on a trusted local network and keep the SmoothCast
+screen and any House PIN private. Closing SmoothCast stops the listener.
 
 ## Verification
 
-Portable tests exercise PIN creation, rate limits, authentication, Host/Origin
+Portable tests exercise PIN creation, rate limits, authentication, open join
+with and without the House PIN, Host/Origin
 and CSRF checks, named presence, self-service rename, inactive roster expiry,
 session reconnect/expiry, queue votes, queue actions,
 resumable staged uploads, queue-only uploads, early-cast selection and fallback,
