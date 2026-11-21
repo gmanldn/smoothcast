@@ -175,7 +175,7 @@ def check_tools(env: dict[str, str] | None = None) -> list[str]:
             elif tool == "ffmpeg" and result.stdout:
                 version = result.stdout.decode("utf-8", "replace") if isinstance(
                     result.stdout, bytes) else str(result.stdout)
-                match = re.search(r"(?m)^ffmpeg version (?:n)?(\\d+)", version)
+                match = re.search(r"(?m)^ffmpeg version (?:n)?(\d+)", version)
                 if match and int(match.group(1)) < 5:
                     failures.append(f"ffmpeg {match.group(1)} (requires >=5.0)")
                 elif not match:
