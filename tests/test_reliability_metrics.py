@@ -111,6 +111,20 @@ def test_fakecast_benchmark_uses_a_profile_matched_wide_tolerance():
     assert reliability_benchmark.compare(result, mismatch)["status"] == "profile-mismatch"
 
 
+def test_committed_benchmark_baseline_matches_runner_and_gate():
+    baseline = json.loads(
+        (Path(__file__).resolve().parents[1]
+         / "docs/reliability-baseline-ubuntu-24.04.json").read_text(encoding="utf-8")
+    )
+    assert baseline["profile"] == {
+        "runner": "ubuntu-24.04-py3.13", "machine": "x86_64", "python": "3.13",
+    }
+    result = reliability_benchmark.measure(
+        3, runner=lambda: 91.0, runner_profile=baseline["profile"],
+    )
+    assert reliability_benchmark.compare(result, baseline)["status"] == "pass"
+
+
 def test_session_helpers_keep_ui_state_in_memory_and_submit_storage_to_worker(monkeypatch):
     owner = SimpleNamespace()
     stored = []
