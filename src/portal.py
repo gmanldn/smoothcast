@@ -1044,8 +1044,12 @@ function renderQueue(items){
     if(item.voted)vote.classList.add("on");
     action("play",`Play ${itemTitle} now`,"Play now","",
       ()=>act("queue_play",undefined,{id:item.id}));
-    action("move",`Move ${itemTitle} earlier in Up Next`,"↑","secondary",
+    const moveEarlier=action("move-earlier",`Move ${itemTitle} earlier in Up Next`,"↑","secondary",
       ()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,index-1)}));
+    moveEarlier.disabled=index===0;
+    const moveLater=action("move-later",`Move ${itemTitle} later in Up Next`,"↓","secondary",
+      ()=>act("queue_move",undefined,{id:item.id,position:Math.min(rows.length-1,index+1)}));
+    moveLater.disabled=index===rows.length-1;
     action("next",`Play ${itemTitle} next`,"Next","secondary",
       ()=>act("queue_next",undefined,{id:item.id}));
     action("remove",`Remove ${itemTitle} from Up Next`,"×","secondary",

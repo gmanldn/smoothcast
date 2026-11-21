@@ -127,7 +127,7 @@ class Element {
 const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
 const document={activeElement:null,createElement:tag=>new Element(tag)};
 const elements={queue};function $(id){return elements[id]}
-function act(){}
+const calls=[];function act(...args){calls.push(args)}
 """
     scenario = r"""
 const initial=[{id:"a",title:"Alpha",votes:2},{id:"b",title:"Beta",voted:true}];
@@ -137,8 +137,12 @@ assert.equal(queue.children[0].getAttribute("aria-posinset"),"1");
 assert.equal(queue.children[1].getAttribute("aria-setsize"),"2");
 const buttons=queue.children[0].children[1].children;
 assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
-  "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
-const betaRow=queue.children[1], betaNext=betaRow.children[1].children[3];
+  "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Move Alpha later in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
+assert.equal(buttons[2].disabled,true,"the first item cannot move earlier");
+assert.equal(buttons[3].disabled,false,"the first item can move later");
+buttons[3].listeners.click();
+assert.deepEqual(calls[0], ["queue_move",undefined,{id:"a",position:1}]);
+const betaRow=queue.children[1], betaNext=betaRow.children[1].children[4];
 betaNext.focus();
 renderQueue(initial.map(item=>({...item})));
 assert.equal(queue.children[0],originalRow,"unchanged polling must retain the existing DOM row");
