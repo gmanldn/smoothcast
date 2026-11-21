@@ -220,7 +220,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             self._timer_ids[name] = GLib.timeout_add(interval, callback)
 
     def _sync_ui_timers(self) -> None:
-        if not self._timers_enabled or self._closing:
+        if not getattr(self, "_timers_enabled", False) or self._closing:
             return
         sleep_armed = idle_timers.active_deadline(self.cfg.get("sleep_timer_deadline"))
         schedule = idle_timers.timer_plan(
