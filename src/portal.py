@@ -511,7 +511,7 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and cast</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
@@ -522,8 +522,51 @@ document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.ac
 async function act(action,value){if(busy)return;busy=true;try{const body={action};if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
-async function uploadRequest(method,path,body,headers={}){const r=await fetch(path,{method,credentials:"same-origin",headers:{"X-CSRF-Token":csrf,...headers},body});const d=await r.json();if(!r.ok)throw Error(d.error||"Upload request failed");return d}
-$("uploadButton").addEventListener("click",async()=>{const file=$("videoFile").files[0];if(!file||uploading)return;uploading=true;cancelUpload=false;casting=false;$("uploadButton").disabled=true;$("cancelUpload").hidden=false;showError("uploadStatus","Preparing upload…");$("uploadProgress").value=0;let id="";try{let state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size}),{"Content-Type":"application/json"});id=state.id;const chunk=state.chunk_size;let offset=state.received;while(offset<file.size){if(cancelUpload)throw Error("Upload cancelled");const end=Math.min(offset+chunk,file.size),part=file.slice(offset,end);let accepted=false,lastError;for(let attempt=0;attempt<5&&!accepted;attempt++){try{state=await uploadRequest("PUT","/api/uploads/"+id,part,{"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`});accepted=true}catch(err){lastError=err;if(attempt<4){await new Promise(resolve=>setTimeout(resolve,250*Math.pow(2,attempt)));try{state=await fetch("/api/uploads/"+id,{credentials:"same-origin",cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||"Could not resume upload");return d});accepted=state.received>=end}catch(_){}}} }if(!accepted)throw lastError||Error("Upload could not be resumed");offset=state.received;$("uploadProgress").max=file.size;$("uploadProgress").value=offset;if(state.ready_to_cast)casting=true;const percent=Math.floor(offset*100/file.size);showError("uploadStatus",casting?`Casting now — still sending the rest of ${file.name}: ${percent}%`:`Uploading ${file.name}: ${percent}%`)}if(cancelUpload)throw Error("Upload cancelled");const result=await uploadRequest("POST","/api/uploads/"+id+"/complete","{}",{"Content-Type":"application/json"});showError("uploadStatus",result.message||"Upload complete") }catch(err){showError("uploadStatus",err.message);if(id&&cancelUpload){try{await uploadRequest("DELETE","/api/uploads/"+id)}catch(_){}}}finally{uploading=false;$("uploadButton").disabled=false;$("cancelUpload").hidden=true;$("videoFile").disabled=false}});
-$("cancelUpload").addEventListener("click",()=>{cancelUpload=true;showError("uploadStatus","Cancelling upload…")});
+async function uploadRequest(method,path,body,headers={}){
+  const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...headers},body});
+  const data=await response.json();
+  if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
+  return data;
+}
+async function sendChunk(path,file,offset,end){
+  const body=file.slice(offset,end),headers={"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`};
+  for(let attempt=0;;attempt++){
+    if(cancelUpload)throw Error("Upload cancelled");
+    try{return await uploadRequest("PUT",path,body,headers)}catch(error){
+      if(error.status&&error.status<500&&error.status!==409)throw error;
+      if(attempt===4||cancelUpload)throw error;
+      showError("uploadStatus","Connection interrupted. Retrying…");
+      await new Promise(resolve=>setTimeout(resolve,250*2**attempt));
+      try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
+      catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
+    }
+  }
+}
+function updateUploadControls(){
+  $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":"Upload and cast";
+  $("videoFile").disabled=uploading||!!pendingUpload;$("cancelUpload").hidden=!uploading&&!pendingUpload;$("cancelUpload").disabled=cancelUpload;
+}
+async function discardUpload(){
+  if(pendingUpload){try{await uploadRequest("DELETE",pendingUpload.path)}catch(error){if(error.status!==404)throw error}pendingUpload=null}
+  showError("uploadStatus","Upload cancelled");
+}
+$("uploadButton").addEventListener("click",async()=>{
+  const file=$("videoFile").files[0];if(!file||uploading)return;
+  uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
+  try{
+    let state;
+    if(pendingUpload){showError("uploadStatus","Checking saved progress…");state=await uploadRequest("GET",pendingUpload.path)}
+    else{showError("uploadStatus","Preparing upload…");state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size}),json);pendingUpload={path:"/api/uploads/"+state.id,chunkSize:state.chunk_size}}
+    const {path,chunkSize}=pendingUpload;$("uploadProgress").max=file.size;$("uploadProgress").value=state.received;
+    while(state.received<file.size&&!cancelUpload){const end=Math.min(state.received+chunkSize,file.size);state=await sendChunk(path,file,state.received,end);$("uploadProgress").value=state.received;if(state.ready_to_cast)casting=true;const percent=Math.floor(state.received*100/file.size);showError("uploadStatus",casting?`Casting now — still sending the rest of ${file.name}: ${percent}%`:`Uploading ${file.name}: ${percent}%`)}
+    if(cancelUpload)await discardUpload();else{$("cancelUpload").disabled=true;const result=await uploadRequest("POST",path+"/complete","{}",json);pendingUpload=null;showError("uploadStatus",result.message||"Upload complete")}
+  }catch(error){if(error.status===404)pendingUpload=null;if(cancelUpload){try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}}else showError("uploadStatus",pendingUpload?error.message+" Select Resume upload to retry.":error.message)}
+  finally{uploading=false;cancelUpload=false;updateUploadControls()}
+});
+$("cancelUpload").addEventListener("click",async()=>{
+  cancelUpload=true;$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
+  uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
+  finally{uploading=false;cancelUpload=false;updateUploadControls()}
+});
 setInterval(refresh,2000);
 </script></body></html>"""

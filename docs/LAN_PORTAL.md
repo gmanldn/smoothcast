@@ -36,7 +36,9 @@ served locally with no external assets.
   when the portal stops and stale partials older than 24 hours are removed.
   Completed media files are retained because active/recoverable cast sessions
   may still read them.
-- The dashboard reports transfer progress and supports cancellation. A fully
+- The dashboard reports transfer progress and supports cancellation. Keep the
+  dashboard open to resume from the server-confirmed byte count if automatic
+  retries are exhausted. A fully
   received and size-checked staged file is passed to SmoothCast's normal cast
   path, which performs server-side media probing, transcoding and device
   streaming.

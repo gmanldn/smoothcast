@@ -33,7 +33,7 @@ EARLY_CAST_MIN_BYTES = 16 * 1024 * 1024
 _EARLY_CAST_SUFFIXES = frozenset({".mkv", ".ts", ".webm", ".mpeg", ".mpg"})
 _INDEXED_SUFFIXES = frozenset({".mp4", ".m4v", ".mov"})
 _MP4_SCAN_LIMIT = 64 * 1024 * 1024
-_CONTENT_RANGE = re.compile(r"bytes ([0-9]+)-([0-9]+)/([0-9]+)\Z")
+_CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,13})-([0-9]{1,13})/([0-9]{1,13})\Z")
 _UPLOAD_ID = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 
 
@@ -170,6 +170,7 @@ class _Upload:
     client: str = ""
     created_at: float = 0.0
     last_at: float = 0.0
+    cancelled: bool = False
     received: int = 0
     complete_path: Path | None = None
     cast_submitted: bool = False
@@ -208,6 +209,23 @@ class UploadManager:
             except OSError:
                 continue
 
+    def _expire_uploads(self) -> None:
+        # Called under the manager lock. An active chunk owns its upload lock.
+        cutoff = self._clock() - PARTIAL_TTL_SECONDS
+        for upload_id, upload in list(self._uploads.items()):
+            if not upload.lock.acquire(blocking=False):
+                continue
+            try:
+                if upload.complete_path is None and upload.last_at <= cutoff:
+                    try:
+                        upload.partial_path.unlink(missing_ok=True)
+                    except OSError:
+                        continue
+                    upload.cancelled = True
+                    self._uploads.pop(upload_id)
+            finally:
+                upload.lock.release()
+
     def create(self, owner: str, name_value: object, size_value: object,
                client: str = "") -> dict:
         name, suffix = _safe_name(name_value)
@@ -216,11 +234,12 @@ class UploadManager:
         if not isinstance(owner, str) or not owner:
             raise UploadError(401, "Sign in to upload a file")
         with self._lock:
+            self._expire_uploads()
             pending = [upload for upload in self._uploads.values()
                        if upload.complete_path is None]
             if len(pending) >= MAX_ACTIVE_UPLOADS:
                 raise UploadError(429, "Too many uploads are already in progress")
-            reserved = sum(upload.size for upload in pending)
+            reserved = sum(upload.size - upload.received for upload in pending)
             free = self._disk_usage(self.root).free
             if free - reserved - size_value < MIN_FREE_BYTES:
                 raise UploadError(507, "Not enough free space to receive this file")
@@ -257,6 +276,8 @@ class UploadManager:
     def status(self, owner: str, upload_id: str) -> dict:
         upload = self._get(owner, upload_id)
         with upload.lock:
+            if upload.cancelled:
+                raise UploadError(404, "Upload not found")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received, "complete": upload.complete_path is not None}
 
@@ -320,10 +341,12 @@ class UploadManager:
             raise UploadError(400, "Use a valid byte range for this upload chunk")
         start, end, total = (int(part) for part in match.groups())
         chunk_length = end - start + 1
-        if (total != upload.size or start < 0 or end < start
+        if (total != upload.size or start < 0 or end >= total or end < start
                 or chunk_length != content_length or chunk_length > CHUNK_SIZE):
             raise UploadError(400, "Upload chunk range or size is invalid")
         with upload.lock:
+            if upload.cancelled:
+                raise UploadError(404, "Upload not found")
             if upload.complete_path is not None:
                 raise UploadError(409, "This upload is already complete")
             if start != upload.received:
@@ -388,6 +411,8 @@ class UploadManager:
     def finalize(self, owner: str, upload_id: str) -> tuple[Path, str, bool]:
         upload = self._get(owner, upload_id)
         with upload.lock:
+            if upload.cancelled:
+                raise UploadError(404, "Upload not found")
             if upload.complete_path is None:
                 if upload.received != upload.size:
                     raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
@@ -424,18 +449,23 @@ class UploadManager:
     def finish_dispatch(self, owner: str, upload_id: str, *, accepted: bool) -> None:
         upload = self._get(owner, upload_id)
         with upload.lock:
+            if upload.cancelled:
+                raise UploadError(404, "Upload not found")
             if not accepted:
                 upload.cast_submitted = False
 
     def cancel(self, owner: str, upload_id: str) -> None:
         upload = self._get(owner, upload_id)
         with upload.lock:
-            if upload.complete_path is not None:
-                raise UploadError(409, "A completed upload cannot be cancelled")
+            if upload.cancelled:
+                raise UploadError(404, "Upload not found")
+            if upload.cast_submitted:
+                raise UploadError(409, "Casting has already been requested for this upload")
             try:
-                upload.partial_path.unlink()
+                (upload.complete_path or upload.partial_path).unlink()
             except FileNotFoundError:
                 pass
+            upload.cancelled = True
             with self._lock:
                 self._uploads.pop(upload_id, None)
 
@@ -446,6 +476,7 @@ class UploadManager:
             self._uploads.clear()
         for upload in uploads:
             with upload.lock:
+                upload.cancelled = True
                 if upload.complete_path is None:
                     try:
                         upload.partial_path.unlink()
