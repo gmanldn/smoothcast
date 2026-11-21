@@ -62,6 +62,8 @@ class _CastStatusListener:
 class PyChromecastBackend:
     """Manage long-lived PyChromecast connections and map SmoothCast commands."""
 
+    supports_push_status = True
+
     def __init__(
         self,
         *,
@@ -305,10 +307,12 @@ class PyChromecastBackend:
             return False, str(exc) or "The Google Cast receiver rejected the command."
         return True, ""
 
-    def subscribe(self, device: str, listener: StatusListener) -> Callable[[], None]:
+    def subscribe(
+        self, device: str, listener: StatusListener,
+    ) -> Callable[[], None] | None:
         identifier, _error = self._resolve(device)
         if identifier is None:
-            return lambda: None
+            return None
         with self._lock:
             subscribers = self._subscribers.setdefault(identifier, set())
             subscribers.add(listener)

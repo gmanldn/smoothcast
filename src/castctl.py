@@ -190,11 +190,12 @@ def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, s
 class CastBackend(Protocol):
     """GTK-free receiver boundary used by the existing Cast control helpers.
 
-    This transitional contract captures the operations SmoothCast currently
-    exposes through ``castctl``. It deliberately does not yet claim push
-    status, connection ownership, or media loading; those belong to the
-    complete in-process backend contract tracked by issue #202.
+    This boundary captures operations SmoothCast exposes through ``castctl``.
+    Push status is opt-in; connection ownership and media loading remain outside
+    this transitional contract.
     """
+
+    supports_push_status: bool
 
     def scan(self, timeout: float = 30) -> list[Device]: ...
 
@@ -204,13 +205,15 @@ class CastBackend(Protocol):
 
     def subscribe(
         self, device: str, listener: Callable[[ReceiverInfo], None]
-    ) -> Callable[[], None]: ...
+    ) -> Callable[[], None] | None: ...
 
     def close(self) -> None: ...
 
 
 class CattBackend:
     """Compatibility adapter for the current catt command implementation."""
+
+    supports_push_status = False
 
     def scan(self, timeout: float = 30) -> list[Device]:
         return _catt_scan(timeout)
@@ -267,6 +270,56 @@ def configure_backend(name: str | None = None) -> None:
         use_pychromecast_backend()
     else:
         raise ValueError("SMOOTHCAST_CAST_BACKEND must be 'catt' or 'pychromecast'")
+
+
+def supports_push_status() -> bool:
+    """Whether the selected backend delivers receiver status changes."""
+    return bool(getattr(_backend, "supports_push_status", False))
+
+
+def subscribe(
+    device: str, listener: Callable[[ReceiverInfo], None],
+) -> Callable[[], None] | None:
+    """Subscribe to status changes without exposing backend implementation details."""
+    return _backend.subscribe(device, listener)
+
+
+class CastStatusWatch:
+    """Keep one status subscription aligned with the currently selected Cast target."""
+
+    def __init__(self, listener: Callable[[ReceiverInfo], None]) -> None:
+        self._listener = listener
+        self._target: str | None = None
+        self._unsubscribe: Callable[[], None] | None = None
+
+    def select(self, target: str, enabled: bool) -> bool:
+        if self._target == target and (self._unsubscribe is not None) == enabled:
+            return enabled
+        self.close()
+        if enabled:
+            unsubscribe = subscribe(target, self._listener)
+            if unsubscribe is None:
+                return False
+            self._target = target
+            self._unsubscribe = unsubscribe
+        return enabled
+
+    def close(self) -> None:
+        unsubscribe, self._unsubscribe = self._unsubscribe, None
+        self._target = None
+        if unsubscribe is not None:
+            unsubscribe()
+
+
+def watch_status(owner, target: str, eligible: bool, dispatch, listener) -> bool:
+    """Keep an owner's selected receiver subscription current and dispatch updates."""
+    enabled = eligible and supports_push_status()
+    watch = getattr(owner, "_cast_status_watch", None)
+    if watch is None and enabled:
+        watch = owner._cast_status_watch = CastStatusWatch(
+            lambda info: dispatch(listener, info),
+        )
+    return bool(watch and watch.select(target, enabled))
 
 
 if os.environ.get("SMOOTHCAST_CAST_BACKEND"):

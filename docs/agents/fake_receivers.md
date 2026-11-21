@@ -23,10 +23,12 @@ capturing television.
 `castctl.CastBackend` currently abstracts discovery, status and commands;
 `CattBackend` preserves the existing CLI adapter. `tests/test_cast_backend.py`
 checks that boundary headlessly. Set `SMOOTHCAST_CAST_BACKEND=pychromecast` to
-exercise the persistent PyChromecast adapter in isolated checks; `catt` remains
-the default until the CASTV2 fake and full parity checks pass.
-The adapter is not yet complete for long-drop reconnects or every receiver
-quirk, so issue #202 remains open.
+exercise the persistent PyChromecast adapter in isolated checks; its single
+mDNS browser and receiver connections use PyChromecast's five-second reconnect
+retry. Status callbacks reach the UI through the GTK main loop, and receiver
+changes or window close release the active subscription. `catt` remains the
+default and polling fallback until protocol-level fake receiver coverage and
+device-specific parity are established by issues #202 and #203.
 
 The initial loopback TLS/CASTV2 fake lives in the top-level `fakecast` package.
 It covers a persistent PyChromecast sender connection, heartbeat, receiver

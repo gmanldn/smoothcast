@@ -212,6 +212,13 @@ def test_status_push_reaches_subscriber_and_unsubscribe_stops_delivery():
     backend.close()
 
 
+def test_pychromecast_backend_advertises_push_status():
+    backend, _browser = discovered_backend([])
+    assert backend.supports_push_status
+    assert backend.subscribe("not discovered", lambda _status: None) is None
+    backend.close()
+
+
 def test_duplicate_friendly_names_are_rejected_and_manual_targets_are_private():
     first = FakeCast(host="192.168.1.25")
     second = FakeCast(host="192.168.1.26")

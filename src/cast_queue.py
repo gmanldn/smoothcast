@@ -633,14 +633,17 @@ class QueueMixin:
 
 
     def _poll_device(self) -> bool:
+        device = self._device()
+        renderer = self._dlna_renderer(device)
+        if castctl.watch_status(self, device, renderer is None,
+                                GLib.idle_add, self._poll_done):
+            return True
         if self.poll_busy:
             return True
         self.poll_busy = True
-        device = self._device()
 
         def completed(info):
-            # Ignore an old TV's response if the target changed while the
-            # background catt query was running; immediately query the new TV.
+            # A late response belongs only to the receiver it queried.
             if device != self._device():
                 self.poll_busy = False
                 self._poll_device()
@@ -654,7 +657,6 @@ class QueueMixin:
                 return
             self._poll_failed(message)
 
-        renderer = self._dlna_renderer(device)
         Async.run(
             (lambda: dlna.info(renderer)) if renderer else (lambda: castctl.info(device)),
             done=completed, failed=failed, domain="status",
@@ -821,8 +823,7 @@ class QueueMixin:
         if idle:
             if self.external:
                 self.external = False
-            # The receiver is no longer playing anything we started, so a
-            # remembered URL cast must not be shown as owned or stopped later.
+            # An idle receiver must not leave an old URL cast marked as owned.
             self._url_cast_url = None
             self._url_cast_seen = False
             if not self.session:
