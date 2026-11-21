@@ -10,8 +10,11 @@ import os
 from pathlib import Path
 import plistlib
 import shlex
+import shutil
+import struct
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +40,28 @@ def install_macos(*, home: Path | None = None) -> Path:
     app = base / "Applications" / "SmoothCast.app"
     executable = app / "Contents" / "MacOS" / "SmoothCast"
     plist = app / "Contents" / "Info.plist"
+    resources = app / "Contents" / "Resources"
+    resources.mkdir(parents=True, exist_ok=True)
+    source = ROOT / "data" / "cast-control.png"
+    if not source.is_file():
+        raise FileNotFoundError(f"SmoothCast icon is missing: {source}")
+    shutil.copy2(source, resources / "SmoothCast.png")
+    if sys.platform == "darwin":
+        # Finder and the macOS Dock expect a real multi-resolution .icns file.
+        with tempfile.TemporaryDirectory(prefix="smoothcast-icon-") as temp:
+            iconset = Path(temp) / "SmoothCast.iconset"
+            iconset.mkdir()
+            for pixels, name in ((16, "icon_16x16.png"), (32, "icon_16x16@2x.png"),
+                                 (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"),
+                                 (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"),
+                                 (256, "icon_256x256.png"), (512, "icon_256x256@2x.png"),
+                                 (512, "icon_512x512.png"), (1024, "icon_512x512@2x.png")):
+                subprocess.run(["sips", "-s", "format", "png", "-z", str(pixels),
+                                str(pixels), str(source), "--out", str(iconset / name)],
+                               stdout=subprocess.DEVNULL, check=True, timeout=30)
+            subprocess.run(["iconutil", "-c", "icns", "-o",
+                            str(resources / "SmoothCast.icns"), str(iconset)],
+                           check=True, timeout=30)
     executable.parent.mkdir(parents=True, exist_ok=True)
     executable.write_text(
         app_launcher(Path(sys.executable), ROOT / "setup" / "launch.py"),
@@ -49,6 +74,7 @@ def install_macos(*, home: Path | None = None) -> Path:
         "CFBundleName": "SmoothCast",
         "CFBundleDisplayName": "SmoothCast",
         "CFBundlePackageType": "APPL",
+        "CFBundleIconFile": "SmoothCast.icns" if sys.platform == "darwin" else "SmoothCast.png",
         "CFBundleShortVersionString": _version(),
         "NSHighResolutionCapable": True,
     }
@@ -82,17 +108,39 @@ def ps_literal(value: str | Path) -> str:
 
 def windows_shortcut_command(
     *, executable: Path, launcher: Path, destination: Path,
-    working_dir: Path,
+    working_dir: Path, icon: Path | None = None,
 ) -> str:
     args = f'"{launcher}"'
+    icon_command = (f"$s.IconLocation={ps_literal(icon)}; " if icon else "")
     return (
         "$w=New-Object -ComObject WScript.Shell; "
         f"$s=$w.CreateShortcut({ps_literal(destination)}); "
         f"$s.TargetPath={ps_literal(executable)}; "
         f"$s.Arguments={ps_literal(args)}; "
         f"$s.WorkingDirectory={ps_literal(working_dir)}; "
+        f"{icon_command}"
         "$s.Save()"
     )
+
+
+def write_windows_icon(source: Path, destination: Path) -> None:
+    """Build a Windows Vista+ PNG-compressed ICO without Pillow or extra tools."""
+    png = source.read_bytes()
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or png[12:16] != b"IHDR":
+        raise ValueError("SmoothCast icon must be a PNG image")
+    width, height = struct.unpack(">II", png[16:24])
+    if not (1 <= width <= 256 and 1 <= height <= 256):
+        raise ValueError("SmoothCast icon must be 1–256 pixels for ICO conversion")
+    header = struct.pack("<HHH", 0, 1, 1)
+    header += struct.pack("<BBBBHHII", width % 256, height % 256,
+                          0, 0, 1, 32, len(png), 22)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + f".{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(header + png)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def install_windows(*, appdata: Path | None = None) -> Path:
@@ -100,11 +148,15 @@ def install_windows(*, appdata: Path | None = None) -> Path:
     menu = roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs"
     menu.mkdir(parents=True, exist_ok=True)
     shortcut = menu / "SmoothCast.lnk"
+    local = Path(os.environ.get("LOCALAPPDATA") or roaming.parent.parent / "Local")
+    icon = local / "SmoothCast" / "SmoothCast.ico"
+    write_windows_icon(ROOT / "data" / "cast-control.png", icon)
     script = windows_shortcut_command(
         executable=Path(sys.executable),
         launcher=ROOT / "setup" / "launch.py",
         destination=shortcut,
         working_dir=ROOT,
+        icon=icon,
     )
     subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
