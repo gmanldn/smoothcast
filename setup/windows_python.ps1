@@ -28,13 +28,19 @@ function Find-Python {
     if ($cmd -and $cmd.Source -notmatch '\\Microsoft\\WindowsApps\\') { $paths += $cmd.Source }
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
-        # py -0p lists installed interpreter paths without asking the modern
-        # Python install manager to download missing versions. --check is safe.
+        # 'py -0p' enumerates installed interpreters without installing any.
         try {
             $installed = @(& $launcher.Source '-0p' 2>$null)
             if ($LASTEXITCODE -eq 0) {
                 foreach ($line in $installed) {
-                    if ($line -match '(?i)([A-Z]:\\.*?python(?:\.exe)?)\s*
+                    # Paths are read-only and checked for a working Python below.
+                    if ($line -match '(?i)([A-Z]:\\[^\r\n]+python(?:\.exe)?)\s*$') {
+                        $paths += $Matches[1]
+                    }
+                }
+            }
+        } catch { }
+    }
     foreach ($path in $paths) {
         if (Test-Python $path) { return $path }
     }
