@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import portal_commands
+import peer_discovery_ui
 import portal_uploads
 from gui_source import main_window_methods
 
@@ -183,9 +184,6 @@ def test_command_branch_runs_fenced_mutation(tmp_path):
 
 
 def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():
-    methods = main_window_methods()
-    namespace = {}
-
     class Widget:
         def __init__(self, label="", uri=""):
             self.label, self.uri = label, uri
@@ -227,25 +225,27 @@ def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():
         def new_with_label(uri, label):
             return Widget(label=label, uri=uri)
 
-    namespace["Gtk"] = SimpleNamespace(
+    gtk = SimpleNamespace(
         Label=lambda **kwargs: Widget(label=kwargs.get("label", "")),
         LinkButton=LinkButton,
         Align=SimpleNamespace(START="start"),
     )
-    source = "    " + "\n    ".join(methods["_refresh_peer_links"].splitlines())
-    exec(compile("class Window:\n" + source, "<peer-links>", "exec"), namespace)
-    window = namespace["Window"]()
+    window = SimpleNamespace()
     window.portal_peers_box = Box()
     rows = [
         ("a" * 32, "http://192.168.1.20:8765/", "smoothcast-lounge", True),
         ("b" * 32, "http://192.168.1.21:8765/", "smoothcast-old", False),
     ]
-    window._refresh_peer_links(rows, available=True, status="")
+    peer_discovery_ui.refresh_peer_links(window, [
+        {"id": peer_id, "url": url, "name": name, "compatible": compatible}
+        for peer_id, url, name, compatible in rows
+    ], available=True, gtk=gtk)
     first, second = window.portal_peers_box.children
     assert first.uri == rows[0][1]
     assert "PIN is required" in first.tooltip
     assert second.label == "smoothcast-old (incompatible)"
     assert second.uri == ""
-    window._refresh_peer_links([], available=False, status="Peer discovery is unavailable")
+    peer_discovery_ui.refresh_peer_links(
+        window, [], available=False, status="Peer discovery is unavailable", gtk=gtk)
     assert [child.label for child in window.portal_peers_box.children] == [
         "Peer discovery is unavailable"]

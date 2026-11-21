@@ -9,18 +9,15 @@ import castctl
 import lan_interfaces
 import portal
 import portal_commands
+import peer_discovery_ui
 import portal_uploads
 import network_activity
+from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
-from gi.repository import GLib, Gtk
+from gi.repository import GLib
 
-# An early portal cast that has not started playing within this many seconds is
-# treated as failed, so the completed file is cast instead of being skipped.
-PORTAL_CAST_GRACE_SECONDS = 5.0
-
-
-class PortalMixin(NetworkActivityMixin):
+class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
@@ -76,7 +73,8 @@ class PortalMixin(NetworkActivityMixin):
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
             self.portal_activity_label.set_text("No client activity")
-        self._refresh_peer_links([], available=False, status="Peer discovery stopped")
+        peer_discovery_ui.refresh_peer_links(
+            self, [], available=False, status="Peer discovery stopped")
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
@@ -101,108 +99,11 @@ class PortalMixin(NetworkActivityMixin):
         label.set_text(f"{presence} · {summary}")
         peers = getattr(getattr(self, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
-        name_counts: dict[str, int] = {}
-        for peer in peer_list:
-            if isinstance(peer, dict) and isinstance(peer.get("name"), str):
-                folded = peer["name"].casefold()
-                name_counts[folded] = name_counts.get(folded, 0) + 1
-        rows = []
-        for peer in peer_list[:4]:
-            if not isinstance(peer, dict) or not isinstance(peer.get("name"), str) \
-                    or not isinstance(peer.get("id"), str) \
-                    or not isinstance(peer.get("url"), str):
-                continue
-            name = peer["name"]
-            if name_counts[name.casefold()] > 1:
-                name += f" · {peer['id'][:6]}"
-            rows.append((peer["id"], peer["url"], name,
-                         bool(peer.get("compatible"))))
         available = getattr(getattr(self, "_portal", None),
                             "peer_discovery_available", False)
-        extra = max(0, len(peer_list) - len(rows))
-        self._refresh_peer_links(
-            rows, available=available,
-            status=("+%s more" % extra if extra else
-                    "No other SmoothCast hosts found" if available else
-                    "Peer discovery is unavailable on this network"),
-        )
+        peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
         self._reconcile_portal_casts()
         return True
-
-    def _refresh_peer_links(self, rows, *, available: bool, status: str) -> None:
-        """Show bounded, clickable host links; the destination still requires its PIN."""
-        box = getattr(self, "portal_peers_box", None)
-        if box is None:
-            return
-        state = (tuple(rows), available, status)
-        if state == getattr(self, "_portal_peer_rows", None):
-            return
-        self._portal_peer_rows = state
-        child = box.get_first_child()
-        while child is not None:
-            following = child.get_next_sibling()
-            box.remove(child)
-            child = following
-        if not rows:
-            label = Gtk.Label(label=status, xalign=0.0, wrap=True)
-            label.add_css_class("section-caption")
-            box.append(label)
-            return
-        for _instance_id, url, name, compatible in rows:
-            if not compatible:
-                row = Gtk.Label(label=f"{name} (incompatible)", xalign=0.0, wrap=True)
-            else:
-                row = Gtk.LinkButton.new_with_label(url, name)
-                row.set_halign(Gtk.Align.START)
-                row.set_tooltip_text("Open this host; its own PIN is required for video upload and Cast control.")
-            box.append(row)
-        if status.startswith("+"):
-            extra = Gtk.Label(label=status, xalign=0.0)
-            extra.add_css_class("dim-label")
-            box.append(extra)
-
-    def _reconcile_portal_casts(self) -> None:
-        """Drop early casts that never started so the finished file still casts."""
-        casting = getattr(self, "_portal_cast_uploads", None)
-        if not casting:
-            return
-        for upload_id, (path, _started) in list(casting.items()):
-            if self.now_playing == path:
-                casting.pop(upload_id, None)  # confirmed playing; no longer tracked
-        now = time.monotonic()
-        stale = portal_uploads.stale_early_casts(
-            casting, now=now, busy=bool(self.busy),
-            now_playing=self.now_playing, grace=PORTAL_CAST_GRACE_SECONDS)
-        if not stale:
-            return
-        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
-        accepted = getattr(self, "_portal_accepted_uploads", None)
-        for upload_id in stale:
-            path = casting.pop(upload_id, (None, 0.0))[0]
-            if accepted is not None:
-                accepted.discard(upload_id)
-            if uploads is None or path is None:
-                continue
-            uploads.mark_early_cast(upload_id, accepted=False)
-            status = uploads.by_id(upload_id)
-            if status and status.get("complete"):
-                retried = getattr(self, "_portal_cast_retried", None)
-                if retried is not None and upload_id not in retried:
-                    retried.add(upload_id)
-                    GLib.idle_add(self._retry_portal_cast, upload_id, path)
-
-    def _retry_portal_cast(self, upload_id: str, path: str) -> bool:
-        if self.busy or getattr(self, "_closing", False):
-            return False
-        casting = getattr(self, "_portal_cast_uploads", None)
-        if casting is None:
-            return False
-        casting[upload_id] = (path, time.monotonic())
-        accepted = getattr(self, "_portal_accepted_uploads", None)
-        if accepted is not None:
-            accepted.add(upload_id)
-        self._cast_path(pathlib.Path(path), 0)
-        return False
 
     def _portal_apply_music_autogain(self, value: bool) -> str:
         self.cfg["music_autogain"] = value

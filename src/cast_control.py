@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cast Control — modern Chromecast companion."""
+"""SmoothCast desktop UI."""
 from __future__ import annotations
 
 import gi

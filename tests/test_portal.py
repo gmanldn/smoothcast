@@ -452,8 +452,9 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "room.snapshot()" in methods["_refresh_portal_activity"]
     assert "In room:" in methods["_refresh_portal_activity"]
     assert "peer_discovery_available" in methods["_refresh_portal_activity"]
-    assert "peer['id'][:6]" in methods["_refresh_portal_activity"]
-    assert "Gtk.LinkButton.new_with_label" in methods["_refresh_peer_links"]
+    assert "peer_discovery_ui.refresh_peer_links" in methods["_refresh_portal_activity"]
+    peer_ui = Path(__file__).resolve().parents[1] / "src" / "peer_discovery_ui.py"
+    assert "peer['id'][:6]" in peer_ui.read_text(encoding="utf-8")
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
