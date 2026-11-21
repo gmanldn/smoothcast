@@ -182,8 +182,13 @@ class FakeDlnaRenderer:
 
     def stop(self) -> None:
         self._ssdp_stop.set()
-        self._ssdp_socket.close()
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as wake:
+                wake.sendto(b"stop", ("127.0.0.1", self.ssdp_port))
+        except OSError:
+            pass
         self._ssdp_thread.join(1)
+        self._ssdp_socket.close()
         self._httpd.shutdown()
         self._httpd.server_close()
         self._thread.join(5)
@@ -346,6 +351,26 @@ class FakeDlnaRenderer:
         full_response = method == "HEAD" or "Range" not in headers
         if status not in ({200} if full_response else {206}):
             raise dlna.DlnaError(f"Fake renderer rejected media response with HTTP {status}")
+        if method == "GET":
+            if response_headers.get("accept-ranges", "").lower() != "bytes":
+                raise dlna.DlnaError("Fake renderer requires Accept-Ranges: bytes")
+            try:
+                expected_length = int(response_headers.get("content-length", ""))
+            except ValueError as exc:
+                raise dlna.DlnaError("Fake renderer requires a valid Content-Length") from exc
+            if expected_length != len(body):
+                raise dlna.DlnaError("Fake renderer rejected a mismatched Content-Length")
+        if "Range" in headers:
+            content_range = response_headers.get("content-range", "")
+            if not content_range.startswith("bytes "):
+                raise dlna.DlnaError("Fake renderer requires Content-Range for byte-range responses")
+            try:
+                bounds, _size = content_range[6:].split("/", 1)
+                start, end = (int(value) for value in bounds.split("-", 1))
+            except (ValueError, TypeError) as exc:
+                raise dlna.DlnaError("Fake renderer received an invalid Content-Range") from exc
+            if end < start or end - start + 1 != len(body):
+                raise dlna.DlnaError("Fake renderer received a mismatched range body")
         if "strict-mime" in self.quirks and response_headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
             raise dlna.DlnaError("Fake renderer requires video/mp4 media (UPnP 714)")
         if "requires-dlna-headers" in self.quirks and not {

@@ -258,6 +258,19 @@ class FakeDlnaTests(unittest.TestCase):
             finally:
                 session.stop(self.renderer.key)
 
+    def test_receiver_rejects_mismatched_content_length(self):
+        response = mock.MagicMock()
+        response.status = 200
+        response.__enter__.return_value = response
+        response.headers.items.return_value = [
+            ("Content-Type", "video/mp4"), ("Accept-Ranges", "bytes"),
+            ("Content-Length", "9"),
+        ]
+        response.read.return_value = b"short"
+        with mock.patch("fake_receivers.urlopen", return_value=response):
+            with self.assertRaisesRegex(dlna.DlnaError, "mismatched Content-Length"):
+                self.tv.fetch_media("http://127.0.0.1:12345/media/token")
+
     def test_mime_and_dlna_header_quirks_accept_smoothcast_mp4_response(self):
         with tempfile.TemporaryDirectory() as work:
             movie = Path(work) / "movie.mp4"
