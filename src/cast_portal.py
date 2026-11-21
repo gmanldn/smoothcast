@@ -69,7 +69,7 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
             except (ImportError, ValueError, GLib.Error):
                 self.portal_status_label.set_text("QR unavailable. Use Copy link to join.")
         picture.set_paintable(texture)
-        self.portal_qr_row.set_visible(texture is not None)
+        self.portal_qr_button.set_sensitive(texture is not None)
 
     def _copy_portal_link(self, _button: Gtk.Button) -> None:
         current = self._portal

@@ -624,16 +624,21 @@ class UiMixin(BookmarkUiMixin):
         self.portal_copy_button.connect("clicked", self._copy_portal_link)
         address_row.append(self.portal_copy_button)
         body.append(address_row)
-        self.portal_qr_row = Gtk.Box(spacing=8, visible=False)
+        self.portal_qr_button = Gtk.MenuButton(label="Show QR code", sensitive=False)
+        address_row.append(self.portal_qr_button)
+        popover = Gtk.Popover()
+        self.portal_qr_button.set_popover(popover)
+        qr_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        popover.set_child(qr_content)
         self.portal_qr_picture = Gtk.Picture(
             alternative_text="QR code for the room link", can_shrink=False,
         )
-        self.portal_qr_row.append(self.portal_qr_picture)
-        self.portal_qr_row.append(Gtk.Label(
+        qr_content.append(self.portal_qr_picture)
+        qr_content.append(Gtk.Label(
             label="Scan with your phone camera, then enter the room PIN.",
             xalign=0.0, wrap=True,
         ))
-        body.append(self.portal_qr_row)
+
         connection_hint = Gtk.Label(
             label="Use the same Wi-Fi. If the link does not open, check your VPN "
                   "or whether guest Wi-Fi blocks connections between devices.",
