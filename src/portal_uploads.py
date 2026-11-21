@@ -212,7 +212,6 @@ class UploadManager:
                     info = os.fstat(fd)
                     if not stat.S_ISREG(info.st_mode) or info.st_size != upload.size:
                         raise UploadError(409, "The completed upload size did not match")
-                    os.fsync(fd)
                 finally:
                     os.close(fd)
                 destination = self.root / f"{upload.upload_id}{upload.suffix}"

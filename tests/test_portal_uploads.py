@@ -24,7 +24,8 @@ def test_chunks_are_bounded_resumable_and_owner_private(tmp_path):
     created = uploads.create("session-one", "../holiday.mp4", 6)
     assert created["name"] == "holiday.mp4"
     path = uploads.root / f"{created['id']}.partial"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert uploads.append("session-one", created["id"], "bytes 0-2/6", 3,
                           BytesIO(b"abc"))["received"] == 3
     with pytest.raises(portal_uploads.UploadError, match="Upload not found"):
