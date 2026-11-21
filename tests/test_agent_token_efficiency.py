@@ -97,6 +97,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         self.assertIn("provider-billed", doc.lower())
 
     def test_gui_modules_stay_small_enough_to_read_narrowly(self):
+        """INV-011: GUI modules stay within bounded split-mixin budgets."""
         # A single 200 KB window module forced agents to grep and read a whole
         # file per task. Keep each concern in a file small enough to read.
         limits = {
