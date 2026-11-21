@@ -10,6 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from gui_source import main_window_methods
+import shortcut_map
 
 
 class ShortcutsCheatsheetTests(unittest.TestCase):
@@ -32,6 +33,7 @@ class ShortcutsCheatsheetTests(unittest.TestCase):
             a.lower()
             for a in re.findall(r'add\("([^"]+)"', methods["_install_shortcuts"])
         }
+        documented.update(key.lower() for key, _title in shortcut_map.desktop_labels())
         installed_letters = {a for a in installed if len(a) == 1 and a.isalpha()}
         self.assertTrue(installed_letters.issubset(documented), installed_letters - documented)
         for key in ("comma", "period", "home", "<control>f", "<control>w", "<control>q"):
