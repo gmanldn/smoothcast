@@ -24,17 +24,12 @@ single GUI file or import GTK during ordinary tests.
 
 ## Discovered receiver identity
 
-The selected Cast receiver has a human-friendly `device` and (when mDNS
-provides one) a persisted `device_uuid`. An idle discovery scan may recover
-a renamed receiver **only** if both its UUID and new display name are unique.
-Never migrate selection while a cast, remote URL, startup or transport command
-is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
-not assume a display name alone proves ownership; issue #15 (SC-008)
-tracks discovery reconciliation and real-device qualification. Cast host
-lookup uses only the latest successful scan and returns no host when the
-selected friendly name is duplicated or its current mDNS record lacks a host;
-it never guesses between same-name receivers or revives an address from an
-older scan.
+The selected Cast receiver has a friendly `device` and optional persisted
+`device_uuid`. An idle scan may recover a renamed receiver only when its UUID
+and new name are unique. Manual IP/DLNA selections clear that UUID. Display
+names alone do not prove ownership; #15 tracks mDNS reconciliation and device
+qualification. Host lookup rejects duplicate/missing current records and
+failed scans, so it cannot reuse an old address.
 
 ## HLS stall watchdog (P0 SC-010)
 

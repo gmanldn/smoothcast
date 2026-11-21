@@ -144,6 +144,12 @@ def uniquely_named_device(uuid: str, devices: list[Device]) -> Device | None:
     return match if sum(d.name == match.name for d in devices) == 1 else None
 
 
+def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
+    """Resolve a current mDNS host only when the friendly name is unique."""
+    matches = [device for device in devices if device.name == name and device.host]
+    return matches[0].host if len(matches) == 1 else None
+
+
 def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():

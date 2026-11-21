@@ -562,18 +562,14 @@ class QueueMixin:
             cast_devices = devices
         self.devices = cast_devices
         self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
-        # A receiver's friendly name may change without changing the physical
-        # device. Only follow a stored UUID on an idle window, and only if
-        # both UUID and resulting display name identify exactly one device.
-        # Never retarget a live cast or a pending receiver command.
+        # Follow a saved UUID only when idle and both identities are unique.
         saved_uuid = self.cfg.get("device_uuid", "")
         unlocked = not (self.session is not None or self.busy
                         or self._cast_starting or self.external)
         if unlocked and saved_uuid:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
-                # A scheduled volume write and cached status still belong to
-                # the old selection; do not carry either into a renamed target.
+                # Pending volume writes still target the old receiver.
                 if self._volume_job is not None:
                     GLib.source_remove(self._volume_job)
                     self._volume_job = None
@@ -627,8 +623,7 @@ class QueueMixin:
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
-        # A failed refresh cannot justify using addresses from an old mDNS
-        # snapshot. Keep the saved selection, but invalidate discovered hosts.
+        # Keep the selection, but never use addresses from a failed scan.
         self.devices = []
         self.dlna_devices = []
         self._dlna_by_key = {}
@@ -869,9 +864,4 @@ class QueueMixin:
             return renderer.host
         if device in self.cfg.get("cast_targets", []):
             return device
-        # The dropdown is keyed by friendly name. If mDNS reports two physical
-        # receivers with the same name, choosing the first host can silently
-        # cast to the wrong device. Require an unambiguous current scan result;
-        # incomplete TXT data (including an empty host) must not revive an old IP.
-        matches = [d for d in self.devices if d.name == device and d.host]
-        return matches[0].host if len(matches) == 1 else None
+        return castctl.unique_discovered_host(device, self.devices)
