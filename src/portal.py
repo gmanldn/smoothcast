@@ -506,12 +506,12 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
 <section><h2>Queue</h2><ul id="queue"><li>No videos queued</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
-<section id="uploadCard" hidden><h2>Cast a video from this device</h2><p>The selected video is securely copied to SmoothCast before it is cast.</p>
+<section id="uploadCard" hidden><h2>Cast a video from this device</h2><p>Files transfer in resumable chunks. Supported formats start streaming to your receiver while the rest arrives.</p>
 <label for="videoFile">Video file</label><input id="videoFile" type="file" accept="video/*,.mkv,.ts,.wmv">
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and cast</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
@@ -523,10 +523,14 @@ async function act(action,value){if(busy)return;busy=true;try{const body={action
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
 async function uploadRequest(method,path,body,headers={}){
-  const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...headers},body});
-  const data=await response.json();
-  if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
-  return data;
+  const controller=new AbortController();activeUploadController=controller;
+  const deadline=setTimeout(()=>controller.abort(),60000);
+  try{
+    const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...headers},body,signal:controller.signal});
+    const data=await response.json();
+    if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
+    return data;
+  }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
 }
 async function sendChunk(path,file,offset,end){
   const body=file.slice(offset,end),headers={"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`};
@@ -537,6 +541,7 @@ async function sendChunk(path,file,offset,end){
       if(attempt===4||cancelUpload)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,250*2**attempt));
+      if(cancelUpload)throw Error("Upload cancelled");
       try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
       catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
     }
@@ -564,7 +569,7 @@ $("uploadButton").addEventListener("click",async()=>{
   finally{uploading=false;cancelUpload=false;updateUploadControls()}
 });
 $("cancelUpload").addEventListener("click",async()=>{
-  cancelUpload=true;$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
+  cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
   finally{uploading=false;cancelUpload=false;updateUploadControls()}
 });

@@ -119,6 +119,7 @@ def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tm
     assert first["ready_to_cast"] is True
     assert first["cast_path"] == str(uploads.root / f"{created['id']}.partial")
     assert first["client"] == "192.168.1.5"
+    assert uploads.status("owner", created["id"])["ready_to_cast"] is True
     # The threshold is crossed only once.
     second = uploads.append("owner", created["id"], "bytes 3-5/6", 3, BytesIO(b"def"))
     assert second["ready_to_cast"] is False

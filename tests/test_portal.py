@@ -100,6 +100,10 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert PIN not in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+    assert "setTimeout(()=>controller.abort(),60000)" in page
+    assert 'if(activeUploadController)activeUploadController.abort()' in page
+    assert "Select Resume upload to retry" in page
+    assert "start streaming to your receiver while the rest arrives" in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):

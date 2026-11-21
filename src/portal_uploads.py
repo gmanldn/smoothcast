@@ -279,7 +279,8 @@ class UploadManager:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
-                    "received": upload.received, "complete": upload.complete_path is not None}
+                    "received": upload.received, "complete": upload.complete_path is not None,
+                    "ready_to_cast": upload.early_cast in {"requested", "active"}}
 
     def _summary(self, upload: _Upload, now: float) -> dict:
         """A display-only snapshot of one upload; caller holds ``upload.lock``."""
