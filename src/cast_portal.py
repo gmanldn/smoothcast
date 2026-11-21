@@ -13,7 +13,7 @@ import portal_uploads
 import network_activity
 from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
-from gi.repository import GLib
+from gi.repository import GLib, Gtk
 
 # An early portal cast that has not started playing within this many seconds is
 # treated as failed, so the completed file is cast instead of being skipped.
@@ -76,8 +76,7 @@ class PortalMixin(NetworkActivityMixin):
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
             self.portal_activity_label.set_text("No client activity")
-        if hasattr(self, "portal_peers_label"):
-            self.portal_peers_label.set_text("Peer discovery stopped")
+        self._refresh_peer_links([], available=False, status="Peer discovery stopped")
 
     def _refresh_portal_activity(self) -> bool:
         """Show what LAN clients are sending or casting, refreshed every second."""
@@ -107,25 +106,60 @@ class PortalMixin(NetworkActivityMixin):
             if isinstance(peer, dict) and isinstance(peer.get("name"), str):
                 folded = peer["name"].casefold()
                 name_counts[folded] = name_counts.get(folded, 0) + 1
-        peer_names = [
-            (f"{peer['name']} · {peer['id'][:6]}" if name_counts[peer["name"].casefold()] > 1
-             else peer["name"])
-            + (" · video, Cast" if peer.get("compatible") else " (incompatible)")
-            for peer in peer_list[:4] if isinstance(peer.get("name"), str)
-            and isinstance(peer.get("id"), str)
-        ]
-        peer_label = getattr(self, "portal_peers_label", None)
-        if peer_label is not None:
-            extra = len(peer_list) - len(peer_names)
-            if extra > 0:
-                peer_names.append(f"+{extra} more")
-            available = getattr(getattr(self, "_portal", None),
-                                "peer_discovery_available", False)
-            peer_label.set_text(", ".join(peer_names) if peer_names else
-                                ("No other SmoothCast hosts found" if available else
-                                 "Peer discovery is unavailable on this network"))
+        rows = []
+        for peer in peer_list[:4]:
+            if not isinstance(peer, dict) or not isinstance(peer.get("name"), str) \
+                    or not isinstance(peer.get("id"), str) \
+                    or not isinstance(peer.get("url"), str):
+                continue
+            name = peer["name"]
+            if name_counts[name.casefold()] > 1:
+                name += f" · {peer['id'][:6]}"
+            rows.append((peer["id"], peer["url"], name,
+                         bool(peer.get("compatible"))))
+        available = getattr(getattr(self, "_portal", None),
+                            "peer_discovery_available", False)
+        extra = max(0, len(peer_list) - len(rows))
+        self._refresh_peer_links(
+            rows, available=available,
+            status=("+%s more" % extra if extra else
+                    "No other SmoothCast hosts found" if available else
+                    "Peer discovery is unavailable on this network"),
+        )
         self._reconcile_portal_casts()
         return True
+
+    def _refresh_peer_links(self, rows, *, available: bool, status: str) -> None:
+        """Show bounded, clickable host links; the destination still requires its PIN."""
+        box = getattr(self, "portal_peers_box", None)
+        if box is None:
+            return
+        state = (tuple(rows), available, status)
+        if state == getattr(self, "_portal_peer_rows", None):
+            return
+        self._portal_peer_rows = state
+        child = box.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            box.remove(child)
+            child = following
+        if not rows:
+            label = Gtk.Label(label=status, xalign=0.0, wrap=True)
+            label.add_css_class("section-caption")
+            box.append(label)
+            return
+        for _instance_id, url, name, compatible in rows:
+            if not compatible:
+                row = Gtk.Label(label=f"{name} (incompatible)", xalign=0.0, wrap=True)
+            else:
+                row = Gtk.LinkButton.new_with_label(url, name)
+                row.set_halign(Gtk.Align.START)
+                row.set_tooltip_text("Open this host; its own PIN is required for video upload and Cast control.")
+            box.append(row)
+        if status.startswith("+"):
+            extra = Gtk.Label(label=status, xalign=0.0)
+            extra.add_css_class("dim-label")
+            box.append(extra)
 
     def _reconcile_portal_casts(self) -> None:
         """Drop early casts that never started so the finished file still casts."""

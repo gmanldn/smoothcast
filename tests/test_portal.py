@@ -443,7 +443,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     card = methods["_build_portal_card"]
     assert "portal_status_label" in card and "portal_url_label" in card
     assert "portal_pin_label" in card and "portal_activity_label" in card
-    assert "portal_peers_label" in card
+    assert "portal_peers_box" in card
     assert "local network" in card
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
@@ -453,6 +453,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "In room:" in methods["_refresh_portal_activity"]
     assert "peer_discovery_available" in methods["_refresh_portal_activity"]
     assert "peer['id'][:6]" in methods["_refresh_portal_activity"]
+    assert "Gtk.LinkButton.new_with_label" in methods["_refresh_peer_links"]
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",

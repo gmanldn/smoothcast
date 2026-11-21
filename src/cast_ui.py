@@ -604,11 +604,13 @@ class UiMixin(BookmarkUiMixin):
         self.portal_activity_label.add_css_class("section-caption")
         body.append(self.portal_activity_label)
         body.append(Gtk.Label(label="Nearby SmoothCast hosts", xalign=0.0))
-        self.portal_peers_label = Gtk.Label(
-            label="Looking for SmoothCast hosts…", xalign=0.0, wrap=True,
+        self.portal_peers_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=4,
         )
-        self.portal_peers_label.add_css_class("section-caption")
-        body.append(self.portal_peers_label)
+        self.portal_peers_box.append(Gtk.Label(
+            label="Looking for SmoothCast hosts…", xalign=0.0, wrap=True,
+        ))
+        body.append(self.portal_peers_box)
         body.append(Gtk.Label(label="Address", xalign=0.0))
         self.portal_url_label = Gtk.Label(
             label="—", xalign=0.0, wrap=False, selectable=True,
