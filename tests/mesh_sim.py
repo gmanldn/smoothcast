@@ -121,10 +121,12 @@ class NodeClock:
         self._paused_total = 0.0
         self._held: list[tuple[_Timer, Callable[[], None]]] = []
         self.suspended = False
+        self.monotonic_pauses = True     # Linux pauses CLOCK_MONOTONIC in suspend; macOS/Windows do not
 
     def monotonic(self) -> float:
-        now = self._frozen_at if self._frozen_at is not None else self._base.monotonic()
-        return now - self._paused_total
+        if self.suspended and self.monotonic_pauses and self._frozen_at is not None:
+            return self._frozen_at - self._paused_total
+        return self._base.monotonic() - self._paused_total
 
     def wall(self) -> float:
         return self._base.wall() + self.skew_s
@@ -151,7 +153,8 @@ class NodeClock:
     def resume(self) -> None:
         if self.suspended:
             assert self._frozen_at is not None
-            self._paused_total += self._base.monotonic() - self._frozen_at
+            if self.monotonic_pauses:
+                self._paused_total += self._base.monotonic() - self._frozen_at
             self._frozen_at = None
             self.suspended = False
             held, self._held = self._held, []
@@ -373,6 +376,8 @@ class SimNetwork:
         size = len(payload) + RPC_OVERHEAD
         self._account_send(src, size)
         self._note("rpc", src, dst, size)
+        if profile.loss >= 1.0:
+            return                                      # a dead link: silence until timeout
         delay = self._delay_ms(profile, size) + self._retransmits(profile) * round(
             RETRANSMIT_S * 1000)
 
@@ -674,10 +679,12 @@ class SimWorld:
         self.stop(handle, clean=clean)
         self.start(handle)
 
-    def sleep(self, handle: NodeHandle) -> None:
-        """Suspend the machine: no packets, timers frozen, monotonic clock paused."""
+    def sleep(self, handle: NodeHandle, *, monotonic_pauses: bool = True) -> None:
+        """Suspend the machine: no packets, timers frozen. Linux pauses the monotonic
+        clock; pass ``monotonic_pauses=False`` for macOS/Windows behaviour."""
         if handle.running:
             handle.state = "asleep"
+            handle.clock.monotonic_pauses = monotonic_pauses
             handle.clock.suspend()
             self.net.set_online(handle.address, False)
 

@@ -187,6 +187,8 @@ class PeerBeat:
     incarnation: int
     rev: int
     multicast: bool
+    port: int = 0
+    boot_epoch: int = 0
 
 
 @dataclass(frozen=True)
@@ -218,6 +220,7 @@ class DuplicateIdentity:
     boot_id: str
     address: str
     own: bool                  # True when the clash is with this very node
+    boot_epoch: int = 0        # the other process's announced start time
 
 
 BeaconEvent = PeerSeen | PeerBeat | PeerGone | RevAhead | DuplicateIdentity
@@ -361,6 +364,10 @@ class Beacon:
             return
         self._contacted[address] = now
         self._send_unicast(address, "hello")
+
+    def forget(self, node_id: str) -> None:
+        """Drop a peer (membership declared it dead) so a return is seen as new."""
+        self._peers.pop(node_id, None)
 
     # -- inspection ---------------------------------------------------------
     def peers(self) -> list[_Peer]:
@@ -509,7 +516,7 @@ class Beacon:
             if now - self._dup_reported.get(message.boot_id, -1e9) > 30.0:
                 self._dup_reported[message.boot_id] = now
                 self._emit_safe(DuplicateIdentity(message.node_id, message.boot_id,
-                                                  datagram.src, own=True))
+                                                  datagram.src, True, message.boot_epoch))
             return
         if message.kind == "goodbye":
             self._handle_goodbye(message, datagram)
@@ -560,7 +567,8 @@ class Beacon:
                                      message.incarnation, message.rev,
                                      message.boot_epoch, "new"))
             self._emit_safe(PeerBeat(message.node_id, message.boot_id, src,
-                                     message.incarnation, message.rev, datagram.multicast))
+                                     message.incarnation, message.rev, datagram.multicast,
+                                     message.port, message.boot_epoch))
             return
         if peer.boot_id != message.boot_id:
             if message.boot_epoch < peer.boot_epoch:
@@ -572,7 +580,7 @@ class Beacon:
                         and now - self._dup_reported.get(message.node_id, -1e9) > 30.0):
                     self._dup_reported[message.node_id] = now
                     self._emit_safe(DuplicateIdentity(message.node_id, message.boot_id,
-                                                      src, own=False))
+                                                      src, False, message.boot_epoch))
                 return
             peer.boot_id, peer.boot_epoch = message.boot_id, message.boot_epoch
             peer.incarnation, peer.rev = message.incarnation, message.rev
@@ -584,7 +592,8 @@ class Beacon:
                                      message.incarnation, message.rev,
                                      message.boot_epoch, "restart"))
             self._emit_safe(PeerBeat(message.node_id, message.boot_id, src,
-                                     message.incarnation, message.rev, datagram.multicast))
+                                     message.incarnation, message.rev, datagram.multicast,
+                                     message.port, message.boot_epoch))
             return
         moved = peer.address != src or peer.port != message.port
         peer.last_heard = now
@@ -600,7 +609,8 @@ class Beacon:
         if ahead:
             peer.rev = message.rev
         self._emit_safe(PeerBeat(message.node_id, message.boot_id, src, message.incarnation,
-                                 message.rev, datagram.multicast))
+                                 message.rev, datagram.multicast, message.port,
+                                 message.boot_epoch))
         if ahead:
             self._emit_safe(RevAhead(message.node_id, message.boot_id, src,
                                      message.port, message.rev))
