@@ -68,16 +68,21 @@ class DlnaCapabilityTests(unittest.TestCase):
         with mock.patch.object(dlna, "_soap", side_effect=dlna.DlnaError("timeout")):
             self.assertEqual(dlna.advertised_http_formats(renderer), set())
 
-    def test_mp4_preflight_accepts_wildcards_and_unknown_but_rejects_other_formats(self):
+    def test_sink_negotiation_prefers_mp4_then_supported_mpeg_ts(self):
         renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
         for formats in (set(), {"video/mp4"}, {"video/*"}, {"*"}):
             with self.subTest(formats=formats), mock.patch.object(
                 dlna, "advertised_http_formats", return_value=formats
             ):
-                dlna.require_mp4_output(renderer)
-        with mock.patch.object(dlna, "advertised_http_formats", return_value={"video/mpeg"}):
-            with self.assertRaisesRegex(dlna.DlnaError, "does not advertise MP4"):
-                dlna.require_mp4_output(renderer)
+                self.assertEqual(dlna.negotiate_media_type(renderer), "video/mp4")
+        for mime in ("video/mpeg", "video/mp2t", "video/vnd.dlna.mpeg-tts"):
+            with self.subTest(mime=mime), mock.patch.object(
+                dlna, "advertised_http_formats", return_value={mime}
+            ):
+                self.assertEqual(dlna.negotiate_media_type(renderer), mime)
+        with mock.patch.object(dlna, "advertised_http_formats", return_value={"video/webm"}):
+            with self.assertRaisesRegex(dlna.DlnaError, "no supported MP4 or MPEG-TS"):
+                dlna.negotiate_media_type(renderer)
 
     def test_absent_service_does_not_make_a_request(self):
         renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
@@ -197,6 +202,15 @@ class DlnaSOAPTests(unittest.TestCase):
         self.assertIn(b"A &amp;amp; &amp;lt;B&amp;gt;", args.kwargs["body"])
         self.assertIn("AVTransport:1#SetAVTransportURI", args.kwargs["headers"]["SOAPACTION"])
 
+    def test_set_uri_advertises_the_selected_mpeg_ts_mime(self):
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = self._reply(b"<root />")
+        with mock.patch.object(dlna, "HTTPConnection", return_value=conn):
+            dlna.set_uri(self.renderer, "http://192.168.12.2/media/token", "Film",
+                         media_type="video/vnd.dlna.mpeg-tts")
+        self.assertIn(b"http-get:*:video/vnd.dlna.mpeg-tts:*",
+                      conn.request.call_args.kwargs["body"])
+
     def test_play_pause_stop_seek_and_rendering_volume(self):
         envelope = b"<root></root>"
         conn = mock.MagicMock()
@@ -307,6 +321,25 @@ class DlnaRangeServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, b"")
 
+    def test_mpeg_ts_response_advertises_negotiated_content_type(self):
+        server = dlna.ProgressiveFileServer(
+            self.path, receiver_ip="192.168.12.25", media_type=dlna.MPEG_TS_MEDIA_TYPE,
+        )
+        try:
+            conn = HTTPConnection("127.0.0.1", server.port, timeout=2)
+            try:
+                conn.request("HEAD", "/media/" + server.token)
+                response = conn.getresponse()
+                status = response.status
+                headers = dict(response.getheaders())
+                self.assertEqual(response.read(), b"")
+            finally:
+                conn.close()
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["Content-Type"], dlna.MPEG_TS_MEDIA_TYPE)
+        finally:
+            server.close()
+
     def test_invalid_ranges_and_unguessable_paths_do_not_leak(self):
         path = "/media/" + self.server.token
         for range_value in ("bytes=1200-1300", "bytes=2-1", "bytes=0-2,5-7"):
@@ -392,6 +425,29 @@ class DlnaPrepareTests(unittest.TestCase):
             args = run.call_args.args[0]
             self.assertEqual(args[args.index("-c:v") + 1], "copy")
             self.assertIn("+faststart", args)
+
+    def test_mpeg_ts_fallback_remuxes_without_mp4_flags(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            source = Path(dirname) / "film.mkv"
+            source.write_bytes(b"fake video")
+            target = Path(dirname) / "prepared" / "out.ts"
+            media = streamer.MediaInfo(
+                path=source, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                width=1280, height=720, fps=24, duration=85,
+            )
+
+            def make_file(args, **kwargs):
+                Path(args[-1]).write_bytes(b"simulated MPEG-TS")
+                process = mock.MagicMock()
+                process.poll.return_value = 0
+                process.returncode = 0
+                return process
+
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as run:
+                self.assertEqual(dlna.prepare_mp4(media, target, muxer="mpegts"), target)
+            args = run.call_args.args[0]
+            self.assertEqual(args[args.index("-f") + 1], "mpegts")
+            self.assertNotIn("-movflags", args)
 
     def test_selected_dts_is_encoded_without_needlessly_reencoding_h264(self):
         with tempfile.TemporaryDirectory() as dirname:

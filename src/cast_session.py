@@ -161,7 +161,7 @@ class SessionMixin:
                     raise dlna.DlnaError(
                         "DLNA currently supports normal speed and unrotated video; reset these settings"
                     )
-                dlna.require_mp4_output(renderer)
+                media_type = dlna.negotiate_media_type(renderer)
                 if self._dlna_cancel is not None and self._dlna_cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
@@ -182,7 +182,7 @@ class SessionMixin:
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
                         subtitle_delay_ms=delay, audio_delay_ms=adelay,
-                        cancel=self._dlna_cancel, audio_profile=cfg["audio"],
+                        cancel=self._dlna_cancel, audio_profile=cfg["audio"], media_type=media_type,
                     )
                     return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
@@ -953,9 +953,7 @@ class SessionMixin:
 
 
     def _cast_remote_url(self, value: str) -> None:
-        # The external URL workflow is a catt/Google Cast capability, not a
-        # DLNA AVTransport resource negotiation path. Do not issue catt
-        # commands to a DLNA identifier or discard the current DLNA session.
+        # External URL casting is a Cast capability; avoid catt for DLNA IDs.
         if self._dlna_renderer() is not None:
             self.toast("Open URL currently requires a Google Cast target; choose Cast or open a local film", error=True)
             return

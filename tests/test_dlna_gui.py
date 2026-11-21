@@ -53,6 +53,8 @@ class DlnaGuiContracts(unittest.TestCase):
     def test_dlna_session_is_distinct_from_hls_cast(self):
         cast = METHODS["_cast_path"]
         self.assertIn("dlna.Session() if renderer is not None else streamer.Session()", cast)
+        self.assertIn("media_type = dlna.negotiate_media_type(renderer)", cast)
+        self.assertIn("media_type=media_type", cast)
         self.assertIn("session.start(", cast)
         self.assertIn("local_ip=streamer.host_ip(renderer.host)", cast)
         self.assertIn("session.start_transcode(", cast)
