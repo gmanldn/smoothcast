@@ -89,9 +89,15 @@ class PortalMixin(NetworkActivityMixin):
         except Exception:
             activity = []
         room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
-        count = len(getattr(room, "participants", {}))
+        participants = room.snapshot().get("participants", []) if room is not None else []
+        names = [person["name"] for person in participants if isinstance(person, dict)
+                 and isinstance(person.get("name"), str)]
+        roster = ", ".join(names[:4])
+        if len(names) > 4:
+            roster += f", +{len(names) - 4} more"
         summary = portal_uploads.format_portal_activity(activity)
-        label.set_text(f"{count} in room · {summary}" if count else summary)
+        presence = f"In room: {roster}" if roster else "No guests connected"
+        label.set_text(f"{presence} · {summary}")
         self._reconcile_portal_casts()
         return True
 

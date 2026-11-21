@@ -14,6 +14,8 @@ import time
 
 ONLINE_SECONDS = 45.0
 MAX_PARTICIPANTS = 32
+MAX_DORMANT_PARTICIPANTS = 128
+PRESENCE_RETENTION_SECONDS = 8 * 60 * 60
 MAX_NAME = 40
 MAX_EVENTS = 200
 COLORS = ("#6aa9ff", "#f2a65a", "#7ed6a5", "#d99cff", "#ff8d8d",
@@ -50,6 +52,9 @@ class PortalRoom:
         self.created_at = time.time() if now is None else now
         self._lock = threading.RLock()
         self.participants: dict[str, Participant] = {}
+        # A sleeping client disappears from the live roster, but its session
+        # identity remains briefly so a reconnecting browser keeps its name.
+        self._dormant: dict[str, Participant] = {}
         self.votes: dict[str, set[str]] = {}
         self.events: deque[dict] = deque(maxlen=MAX_EVENTS)
         self.seq = 0
@@ -60,7 +65,7 @@ class PortalRoom:
             if len(self.participants) >= MAX_PARTICIPANTS:
                 raise RoomError(403, "This room is full")
             participant = Participant(
-                id=secrets.token_hex(4), name=self._unique_name(name),
+                id=secrets.token_hex(16), name=self._unique_name(name),
                 color=COLORS[len(self.participants) % len(COLORS)],
                 joined_at=now, last_seen=now,
             )
@@ -71,7 +76,8 @@ class PortalRoom:
     def leave(self, participant_id: str, now: float | None = None) -> None:
         now = time.time() if now is None else now
         with self._lock:
-            participant = self.participants.pop(participant_id, None)
+            participant = (self.participants.pop(participant_id, None)
+                           or self._dormant.pop(participant_id, None))
             if participant is None:
                 return
             for voters in self.votes.values():
@@ -83,9 +89,48 @@ class PortalRoom:
         with self._lock:
             participant = self.participants.get(participant_id)
             if participant is None:
+                participant = self._dormant.pop(participant_id, None)
+                if participant is not None:
+                    if len(self.participants) >= MAX_PARTICIPANTS:
+                        self._dormant[participant_id] = participant
+                        raise RoomError(403, "This room is full")
+                    self.participants[participant_id] = participant
+                    self._event("joined", participant.id,
+                                {"name": participant.name, "reconnected": True}, now)
+            if participant is None:
                 raise RoomError(401, "Join the room again")
             participant.last_seen = now
             return participant
+
+    def rename(self, participant_id: str, name: object,
+               now: float | None = None) -> Participant:
+        now = time.time() if now is None else now
+        with self._lock:
+            participant = self.touch(participant_id, now)
+            participant.name = self._unique_name(name, exclude_id=participant.id)
+            participant.last_seen = now
+            self._event("renamed", participant.id, {"name": participant.name}, now)
+            return participant
+
+    def expire_inactive(self, now: float | None = None) -> None:
+        """Remove sleeping clients from the live roster, retaining brief rejoin identity."""
+        now = time.time() if now is None else now
+        with self._lock:
+            for participant_id, participant in list(self.participants.items()):
+                if now - participant.last_seen <= ONLINE_SECONDS:
+                    continue
+                self.participants.pop(participant_id, None)
+                self._dormant[participant_id] = participant
+                self._event("left", participant_id,
+                            {"name": participant.name, "expired": True}, now)
+                for voters in self.votes.values():
+                    voters.discard(participant_id)
+            for participant_id, participant in list(self._dormant.items()):
+                if now - participant.last_seen > PRESENCE_RETENTION_SECONDS:
+                    self._dormant.pop(participant_id, None)
+            while len(self._dormant) > MAX_DORMANT_PARTICIPANTS:
+                oldest = min(self._dormant.values(), key=lambda item: item.last_seen)
+                self._dormant.pop(oldest.id, None)
 
     def vote(self, participant_id: str, item_id: str, value: bool,
              now: float | None = None) -> dict:
@@ -131,10 +176,12 @@ class PortalRoom:
                 "activity": list(self.events)[-20:],
             }
 
-    def _unique_name(self, name: object) -> str:
+    def _unique_name(self, name: object, *, exclude_id: str = "") -> str:
         base = " ".join(str(name or "").split())
         base = "".join(char for char in base if char.isprintable())[:MAX_NAME] or "Guest"
-        used = {participant.name.casefold() for participant in self.participants.values()}
+        used = {participant.name.casefold() for participant in
+                (*self.participants.values(), *self._dormant.values())
+                if participant.id != exclude_id}
         if base.casefold() not in used:
             return base
         for index in range(2, 100):

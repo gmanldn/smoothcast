@@ -151,6 +151,12 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         finally:
             super().server_close()
 
+    def service_actions(self) -> None:
+        """Expire sessions and stale presence on the server's regular poll."""
+        with self._lock:
+            self._expire_sessions(self.clock())
+        self.room.expire_inactive(time.time())
+
     def host_allowed(self, host: str) -> bool:
         return bool(host) and host.lower() in self._allowed_hosts
 
@@ -183,7 +189,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             while len(self._sessions) >= 128:
                 key, session = self._sessions.popitem()
                 self.room.leave(session.participant_id)
-            participant = self.room.join(name)
+            participant = self.room.join(name, now=time.time())
             self._sessions[self._session_key(token)] = _Session(
                 csrf, now + SESSION_SECONDS, participant.id,
             )
@@ -210,7 +216,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             if session is None:
                 return None
             try:
-                self.room.touch(session.participant_id)
+                self.room.touch(session.participant_id, now=time.time())
             except portal_room.RoomError:
                 self._sessions.pop(key, None)
                 return None
@@ -329,6 +335,10 @@ class _Handler(BaseHTTPRequestHandler):
             return False
         expected = self.server.session_csrf(self._cookie_token())
         if expected is None:
+            return False
+        # Any valid authenticated request is activity, including upload chunks
+        # and media status reads from a client whose regular roster poll paused.
+        if self.server.session_participant(self._cookie_token()) is None:
             return False
         if csrf:
             supplied = self.headers.get("X-CSRF-Token", "")
@@ -466,6 +476,21 @@ class _Handler(BaseHTTPRequestHandler):
                 "participant": participant.public(time.time()),
                 "room": self.server.room.snapshot(participant.id),
             }, cookie=cookie)
+        if path == "/api/profile":
+            if not self._authenticated(csrf=True):
+                return self._error(403, "Session expired or request token invalid")
+            name = body.get("name")
+            if not isinstance(name, str):
+                return self._error(400, "Your name must be text")
+            participant_id = self.server.session_participant(self._cookie_token())
+            if participant_id is None:
+                return self._error(401, "Session expired")
+            try:
+                participant = self.server.room.rename(participant_id, name)
+            except portal_room.RoomError as exc:
+                return self._error(exc.status, exc.message)
+            return self._send(200, {"ok": True,
+                                    "participant": participant.public(time.time())})
         if path == "/api/action":
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
@@ -736,7 +761,7 @@ label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;
 input{width:100%;color:inherit;background:#121b27}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
 button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
-.actions button{flex:1 1 120px}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
+.actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
 .participants{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 0}.person{display:flex;align-items:center;gap:6px;background:#121b27;border:1px solid #ffffff12;border-radius:999px;padding:4px 9px 4px 4px;font-size:.82rem}.person.offline{opacity:.45}.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:750;color:#08101a}
 .queue-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border-top:1px solid #ffffff10;padding:8px 0}.queue-item:first-child{border-top:0}.queue-item strong{display:block;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.queue-item .muted{font-size:.74rem}.queue-actions{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.tiny{min-height:32px;padding:4px 8px;font-size:.76rem;border-radius:8px}.vote{background:#1c3555;border:1px solid #4d9de066;color:#cfe6ff}.vote.on{background:#2e6fae;color:white}.activity{display:grid;gap:4px;font-size:.78rem;color:var(--muted);max-height:160px;overflow:auto}.activity .ev{display:flex;gap:7px}.activity time{color:#8394aa;white-space:nowrap}.empty{color:var(--muted);border:1px dashed #718096;border-radius:10px;padding:12px;text-align:center}
@@ -753,7 +778,7 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button><button class="secondary" data-action="previous">Previous</button><button class="secondary" data-action="next">Next</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
-<section><h2>In the room</h2><div id="people" class="participants"></div><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
+<section><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><ul id="queue"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section><p id="errorDash" role="status" aria-live="polite"></p></div>
 <section id="uploadCard" hidden><h2>Add a video from this device</h2><p>Files transfer in resumable chunks. Add one to the shared queue, or start it now. Supported formats start streaming to your receiver while the rest arrives.</p>
@@ -764,7 +789,7 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <script>
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
-$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
+$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("displayName").value=d.participant.name;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
 async function refresh(){if(!csrf||busy)return;try{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"Connection lost");const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
@@ -776,10 +801,11 @@ const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRo
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);showError("errorDash","");}catch(err){showError("errorDash",err.message)}}
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");activity.replaceChildren();if(room&&room.activity)for(const event of [...room.activity].slice(-12).reverse()){const line=document.createElement("div");line.className="ev";const time=document.createElement("time");time.textContent=new Date(event.at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});const text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activity.append(line)}}
-function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+" joined";case "left":return name+" left";case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
+function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
 async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+$("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
   const controller=new AbortController();activeUploadController=controller;

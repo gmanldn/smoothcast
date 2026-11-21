@@ -172,6 +172,27 @@ def test_named_sessions_share_presence_and_votes(rig):
     assert room["me"]["name"] == "Sam"
 
 
+def test_profile_edit_only_changes_the_authenticated_participant(rig):
+    _, first, cookie = login(rig, PIN, "Sam")
+    _, second, other_cookie = login(rig, PIN, "Alex")
+    origin = f"http://{rig.host}"
+    hostile = '<img src=x onerror="alert(1)">'
+    status, body, _ = rig.request(
+        "POST", "/api/profile",
+        {"name": hostile, "participant_id": second["participant"]["id"], "role": "host"},
+        cookie=cookie, csrf=first["csrf"], origin=origin,
+    )
+    assert status == 200 and decode(body)["participant"]["name"] == hostile
+    status, body, _ = rig.request("GET", "/api/status", cookie=other_cookie)
+    assert status == 200
+    people = {person["id"]: person["name"]
+              for person in decode(body)["state"]["room"]["participants"]}
+    assert people == {first["participant"]["id"]: hostile,
+                      second["participant"]["id"]: "Alex"}
+    assert "textContent=person.name" in portal._HTML
+    assert "innerHTML" not in portal._HTML
+
+
 def test_queue_votes_are_per_person_and_require_a_live_item():
     queue = [{"id": "abc123", "title": "film.mkv", "duration": 90}]
     rig = PortalRig(queue=queue)
@@ -408,6 +429,8 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
     assert "_refresh_portal_activity" in methods["_refresh_portal"]
+    assert "room.snapshot()" in methods["_refresh_portal_activity"]
+    assert "In room:" in methods["_refresh_portal_activity"]
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",

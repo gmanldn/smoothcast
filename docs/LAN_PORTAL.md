@@ -41,7 +41,10 @@ served locally with no external assets.
   cookie tied to one named participant. Sessions expire after eight hours or
   when the room stops. Reloading the page after expiry asks for the current PIN
   again. Up to 32 named participants are shown; duplicate names receive a
-  stable numeric suffix.
+  stable numeric suffix. Guests can update only their own display name. The
+  active roster drops clients after 45 seconds without authenticated activity;
+  reconnecting with the still-valid session restores the same identity and
+  nickname. Dormant identity retention is bounded and ends with session expiry.
 - Five incorrect PIN attempts from one client are rate-limited. The PIN,
   session cookie and PIN-entry request are not written to SmoothCast logs.
 - Every state-changing request checks the allowed Host and Origin and requires
@@ -85,7 +88,8 @@ served locally with no external assets.
   MP4) cannot be probed or cast until they are complete, so they are cast from
   the finished file. If an early cast cannot start, the completed file is cast
   instead; no upload is lost.
-- The Shared room card shows what connected clients are doing: each upload's
+- The Shared room card shows up to four active participant names and what
+  connected clients are doing: each upload's
   name, progress, transfer rate, phase (receiving, casting while receiving, or
   received) and the client address. The browser shows the same state, including
   "Casting now" once an early cast has started.
@@ -106,7 +110,8 @@ stops the listener.
 ## Verification
 
 Portable tests exercise PIN creation, rate limits, authentication, Host/Origin
-and CSRF checks, named presence, session expiry, queue votes, queue actions,
+and CSRF checks, named presence, self-service rename, inactive roster expiry,
+session reconnect/expiry, queue votes, queue actions,
 resumable staged uploads, queue-only uploads, early-cast selection and fallback,
 activity summaries, HTTP responses, and clean listener shutdown on loopback.
 They do not verify reachability from a phone or another LAN host, nor real
