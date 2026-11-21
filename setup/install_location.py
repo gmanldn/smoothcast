@@ -73,10 +73,13 @@ def select_directory(target: str, *, explicit: str | None = None,
             answer = ""
         if answer:
             default = Path(answer).expanduser()
-    return default.resolve()
+    # absolute() preserves the terminal symlink, unlike resolve(); validate first.
+    return default.absolute()
 
 
 def validate_destination(source: Path, destination: Path) -> None:
+    if destination.is_symlink():
+        raise ValueError("Refusing to install through a symbolic link")
     source = source.resolve()
     destination = destination.resolve()
     if (destination == Path(destination.anchor) or
@@ -84,8 +87,6 @@ def validate_destination(source: Path, destination: Path) -> None:
             destination == source or
             source in destination.parents or destination in source.parents):
         raise ValueError("Install directory must be separate from the source checkout and home root")
-    if destination.is_symlink():
-        raise ValueError("Refusing to install through a symbolic link")
     if destination.exists():
         if not destination.is_dir():
             raise ValueError("Install destination is not a directory")
