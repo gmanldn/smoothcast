@@ -72,3 +72,29 @@ def test_desktop_queue_changes_advance_revision_on_status_read():
     host._portal_queue_status()
 
     assert host._portal_queue_revision == revision + 1
+
+
+def test_queue_next_moves_item_to_front_without_touching_playback():
+    host = QueueHost()
+    host.queue.append("/private/three.mkv")
+    host._portal_queue_status()
+    item_id = portal_queue_id("/private/three.mkv")
+    session, playing = host.session, host.now_playing
+
+    result = host._portal_queue_action("queue_next", {
+        "id": item_id, "queue_revision": host._portal_queue_revision})
+
+    assert result == "Will play next."
+    assert host.queue[0] == "/private/three.mkv"
+    assert host.session is session and host.now_playing == playing
+
+
+def test_queue_next_rejects_stale_revision():
+    host = QueueHost()
+    host._portal_queue_status()
+    before = list(host.queue)
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_queue_action("queue_next", {
+            "id": portal_queue_id(before[1]),
+            "queue_revision": host._portal_queue_revision - 1})
+    assert error.value.status == 409 and host.queue == before

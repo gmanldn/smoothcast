@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from test_room_conformance import RoomHarness, pytest
 
-QUEUE_ACTIONS = ("queue_remove", "queue_move", "queue_clear")
+QUEUE_ACTIONS = ("queue_remove", "queue_move", "queue_next", "queue_clear")
 TRANSPORT_ACTIONS = ("play_pause", "stop", "next", "previous")
 
 
@@ -69,7 +69,7 @@ def test_queue_edits_never_dispatch_transport_commands(room):
     for index, action in enumerate(QUEUE_ACTIONS):
         guest.action(_edit(room, action, index))
     dispatched = {name for name, _ in room.calls}
-    assert dispatched <= {"status", "queue_remove", "queue_move", "queue_clear"}
+    assert dispatched <= {"status", "queue_remove", "queue_move", "queue_next", "queue_clear"}
 
 
 def test_revoked_guest_loses_read_and_edit_but_others_keep_both(room):

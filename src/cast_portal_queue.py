@@ -90,6 +90,10 @@ class PortalQueueMixin:
             self._remove_queue(self._portal_queue_index(payload.get("id")))
             self._portal_observe_queue()
             return "Removed from the queue."
+        if operation == "queue_next":
+            # Insert-next is a fenced move to the front; it never touches playback.
+            self._portal_queue_action("queue_move", {**payload, "position": 0})
+            return "Will play next."
         if operation == "queue_move":
             self._portal_check_queue_revision(payload)
             item_id, position = payload.get("id"), payload.get("position")

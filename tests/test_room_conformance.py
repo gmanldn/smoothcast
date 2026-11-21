@@ -49,7 +49,7 @@ class RoomHarness:
                 return {"state": "PLAYING", "title": "Current film",
                         "queue_revision": self.queue_revision,
                         "queue": [dict(item) for item in self.queue]}
-            if action in {"queue_remove", "queue_move", "queue_clear"}:
+            if action in {"queue_remove", "queue_move", "queue_next", "queue_clear"}:
                 if payload.get("queue_revision") != self.queue_revision:
                     raise portal.PortalRequestError(409, "Up Next changed; refresh before editing")
             if action == "queue_remove":
@@ -62,6 +62,12 @@ class RoomHarness:
                 self.queue.insert(payload["position"], item)
                 self.queue_revision += 1
                 return "Queue order updated."
+            if action == "queue_next":
+                item = next(item for item in self.queue if item["id"] == payload["id"])
+                self.queue.remove(item)
+                self.queue.insert(0, item)
+                self.queue_revision += 1
+                return "Will play next."
             if action == "queue_clear":
                 self.queue.clear()
                 self.queue_revision += 1
