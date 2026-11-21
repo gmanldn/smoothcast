@@ -5,6 +5,7 @@ import sys
 import uuid
 import os
 import subprocess
+import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -237,8 +238,12 @@ def test_manual_private_ip_connection_uses_one_persistent_connection():
 
 
 def test_backend_selection_is_explicit_and_catt_remains_the_fallback():
-    castctl.configure_backend("pychromecast")
-    assert isinstance(castctl._backend, PyChromecastBackend)
+    fake_library = types.ModuleType("pychromecast")
+    fake_library.get_chromecasts = mock.Mock()
+    fake_library.get_chromecast_from_host = mock.Mock()
+    with mock.patch.dict(sys.modules, {"pychromecast": fake_library}):
+        castctl.configure_backend("pychromecast")
+        assert isinstance(castctl._backend, PyChromecastBackend)
     castctl.configure_backend("catt")
     assert isinstance(castctl._backend, castctl.CattBackend)
     with mock.patch.dict("os.environ", {"SMOOTHCAST_CAST_BACKEND": "unknown"}):
