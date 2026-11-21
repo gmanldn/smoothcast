@@ -192,7 +192,8 @@ tickets. Each new item is scoped so it can be built and tested headlessly.
 
 - Live membership, failure detection and primary succession (#352, MESH_DESIGN).
 - Mixed-version compatibility via protocol versions and capabilities (#387).
-- One house library across all nodes (#367) with content fingerprints (#366).
+- One house library across all nodes (#367) with content fingerprints (#366);
+  shared-nothing replicated search is designed in [MESH_SEARCH.md](MESH_SEARCH.md).
 - Rooms instead of device names (#370), group presets (#371), private rooms
   (#376), quiet hours (#375).
 - House health at a glance (#386).
