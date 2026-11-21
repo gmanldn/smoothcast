@@ -166,6 +166,12 @@ class PyChromecastBackend:
             cast.media_controller.register_status_listener(media_listener)
             cast.register_status_listener(cast_status_listener)
             cast.register_connection_listener(connection_listener)
+            try:
+                # Request one initial snapshot; subsequent reads use the cache
+                # refreshed by PyChromecast's media and receiver listeners.
+                cast.media_controller.update_status()
+            except Exception:
+                pass
             self._changed.notify_all()
         return identifier
 
@@ -215,12 +221,14 @@ class PyChromecastBackend:
         identifier, error = self._resolve(device)
         if identifier is None:
             return None
+        cached = self._cached_status(identifier)
+        if cached is not None:
+            return cached
         with self._lock:
             cast = self._casts.get(identifier)
         if cast is None:
             return None
         try:
-            cast.media_controller.update_status()
             media_status = cast.media_controller.status
             cast_status = cast.status
             snapshot = self._status_dict(media_status, cast_status)

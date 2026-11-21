@@ -138,7 +138,8 @@ def test_status_commands_and_direct_media_use_the_persistent_cast():
     backend, _browser = discovered_backend([cast])
     backend.scan(timeout=0)
 
-    assert backend.info("Living Room") == {
+    status = backend.info("Living Room")
+    assert status == {
         "player_state": "PLAYING",
         "current_time": 12.5,
         "duration": 120.0,
@@ -148,6 +149,8 @@ def test_status_commands_and_direct_media_use_the_persistent_cast():
         "volume_level": 0.6,
         "volume_muted": False,
     }
+    assert backend.info("Living Room") == status
+    assert cast.media_controller.calls.count(("update_status",)) == 1
     assert backend.command("Living Room", "pause") == (True, "")
     assert backend.command("Living Room", "seek", "60.5") == (True, "")
     assert backend.command("Living Room", "volume", "75") == (True, "")
