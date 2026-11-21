@@ -4,6 +4,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 import sys
 import tempfile
+import os
 import threading
 import unittest
 from unittest import mock
@@ -109,6 +110,68 @@ class StreamServerTests(unittest.TestCase):
                     self.assertEqual(int(headers_ci["content-length"]), len(payload))
                     self.assertEqual(headers_ci["cache-control"], "no-store")
                     self.assertEqual(body, payload if method == "GET" else b"")
+
+    def test_byte_ranges_are_conformant_for_gets_and_heads(self):
+        size = len((self.root / "segment-00000.ts").read_bytes())
+        payload = (self.root / "segment-00000.ts").read_bytes()
+        cases = {
+            "bytes=0-3": (0, 3),
+            "bytes=3-": (3, size - 1),
+            "bytes=-3": (size - 3, size - 1),
+            f"bytes=0-{size * 10}": (0, size - 1),
+        }
+        for header, (start, end) in cases.items():
+            for method in ("GET", "HEAD"):
+                with self.subTest(header=header, method=method):
+                    status, body, headers = self.request(
+                        "/segment-00000.ts", method, {"Range": header})
+                    lowered = {k.lower(): v for k, v in headers.items()}
+                    self.assertEqual(status, 206)
+                    self.assertEqual(lowered["content-range"], f"bytes {start}-{end}/{size}")
+                    self.assertEqual(int(lowered["content-length"]), end - start + 1)
+                    self.assertEqual(lowered["accept-ranges"], "bytes")
+                    self.assertEqual(body, payload[start:end + 1] if method == "GET" else b"")
+
+    def test_unsatisfiable_or_multiple_ranges_are_416_with_the_file_size(self):
+        size = len((self.root / "segment-00000.ts").read_bytes())
+        for header in ("bytes=99-", "bytes=5-4", "bytes=-0", "bytes=0-1,4-5",
+                       "bytes=x-y", "garbage"):
+            for method in ("GET", "HEAD"):
+                with self.subTest(header=header, method=method):
+                    status, body, headers = self.request(
+                        "/segment-00000.ts", method, {"Range": header})
+                    lowered = {k.lower(): v for k, v in headers.items()}
+                    self.assertEqual(status, 416)
+                    self.assertEqual(lowered["content-range"], f"bytes */{size}")
+                    self.assertEqual(body, b"")
+
+    def test_if_range_ignores_a_stale_validator_and_honours_the_current_one(self):
+        _, _, headers = self.request("/segment-00000.ts")
+        etag = {k.lower(): v for k, v in headers.items()}["etag"]
+        status, body, _ = self.request(
+            "/segment-00000.ts", headers={"Range": "bytes=0-1", "If-Range": etag})
+        self.assertEqual((status, body), (206, b"mp"))
+        status, body, _ = self.request(
+            "/segment-00000.ts", headers={"Range": "bytes=0-1", "If-Range": '"old"'})
+        self.assertEqual(status, 200)
+        self.assertEqual(body, (self.root / "segment-00000.ts").read_bytes())
+
+    def test_missing_or_symlinked_media_is_never_followed(self):
+        target = self.root / "segment-00000.ts"
+        outside = self.root.parent / "outside.ts"
+        outside.write_bytes(b"secret")
+        original = target.read_bytes()
+        target.unlink()
+        try:
+            os.symlink(outside, target)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable on this platform")
+        try:
+            self.assertEqual(self.request("/segment-00000.ts")[0], 404)
+        finally:
+            target.unlink()
+            target.write_bytes(original)
+            outside.unlink(missing_ok=True)
 
     def test_private_files_and_directory_traversal_are_rejected(self):
         for path in (
