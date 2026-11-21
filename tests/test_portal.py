@@ -117,16 +117,17 @@ def test_up_next_render_preserves_focus_and_labels_queue_actions():
 const assert = require("node:assert/strict");
 class Element {
   constructor(tag){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.listeners={};this.parentElement=null;this.className="";this.textContent="";this.classList={add:name=>{this.className+=(this.className?" ":"")+name}}}
-  append(...items){for(const item of items){item.parentElement=this;this.children.push(item)}}
+  append(...items){for(const item of items){if(item.parentElement){const siblings=item.parentElement.children;const i=siblings.indexOf(item);if(i>=0)siblings.splice(i,1)}item.parentElement=this;this.children.push(item)}}
   replaceChildren(...items){this.children=[];this.append(...items)}
   addEventListener(name,handler){this.listeners[name]=handler}
   setAttribute(name,value){this.attributes[name]=String(value)}
   getAttribute(name){return this.attributes[name]??null}
-  closest(selector){if(selector!=="[data-queue-id]")return null;for(let node=this;node;node=node.parentElement)if(node.dataset.queueId)return node;return null}
+  closest(selector){const field=selector==="[data-queue-id]"?"queueId":selector==="[data-queue-action]"?"queueAction":null;if(!field)return null;for(let node=this;node;node=node.parentElement)if(node.dataset[field])return node;return null}
+  contains(node){for(let current=node;current;current=current.parentElement)if(current===this)return true;return false}
   focus(){document.activeElement=this}
 }
 const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
-const document={activeElement:null,createElement:tag=>new Element(tag)};
+const document={activeElement:null,createElement:tag=>new Element(tag),addEventListener(){}};
 const elements={queue};function $(id){return elements[id]}
 const calls=[];function act(...args){calls.push(args)}
 """
@@ -141,7 +142,7 @@ assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
   "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Move Alpha later in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
 assert.equal(buttons[2].disabled,true,"the first item cannot move earlier");
 assert.equal(buttons[3].disabled,false,"the first item can move later");
-buttons[3].listeners.click();
+queue.listeners.click({target:buttons[3]});
 assert.deepEqual(calls[0], ["queue_move",undefined,{id:"a",position:1}]);
 const betaRow=queue.children[1], betaNext=betaRow.children[1].children[4];
 betaNext.focus();
@@ -150,6 +151,7 @@ assert.equal(queue.children[0],originalRow,"unchanged polling must retain the ex
 renderQueue([initial[1],initial[0]]);
 const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
 assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
+assert.equal(reorderedBetaNext,betaNext,"reordering must not replace a pressed control");
 renderQueue([initial[0]]);
 assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
 """
