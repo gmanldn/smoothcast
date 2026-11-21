@@ -109,6 +109,50 @@ def test_portal_rejects_non_rfc1918_addresses():
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_up_next_render_preserves_focus_and_labels_queue_actions():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index("let queueRenderKey=null;"):source.index("let statusRequest=null")]
+    harness = r"""
+const assert = require("node:assert/strict");
+class Element {
+  constructor(tag){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.listeners={};this.parentElement=null;this.className="";this.textContent="";this.classList={add:name=>{this.className+=(this.className?" ":"")+name}}}
+  append(...items){for(const item of items){item.parentElement=this;this.children.push(item)}}
+  replaceChildren(...items){this.children=[];this.append(...items)}
+  addEventListener(name,handler){this.listeners[name]=handler}
+  setAttribute(name,value){this.attributes[name]=String(value)}
+  getAttribute(name){return this.attributes[name]??null}
+  closest(selector){if(selector!=="[data-queue-id]")return null;for(let node=this;node;node=node.parentElement)if(node.dataset.queueId)return node;return null}
+  focus(){document.activeElement=this}
+}
+const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
+const document={activeElement:null,createElement:tag=>new Element(tag)};
+const elements={queue};function $(id){return elements[id]}
+function act(){}
+"""
+    scenario = r"""
+const initial=[{id:"a",title:"Alpha",votes:2},{id:"b",title:"Beta",voted:true}];
+renderQueue(initial);
+const originalRow=queue.children[0];
+assert.equal(queue.children[0].getAttribute("aria-posinset"),"1");
+assert.equal(queue.children[1].getAttribute("aria-setsize"),"2");
+const buttons=queue.children[0].children[1].children;
+assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
+  "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
+const betaRow=queue.children[1], betaNext=betaRow.children[1].children[3];
+betaNext.focus();
+renderQueue(initial.map(item=>({...item})));
+assert.equal(queue.children[0],originalRow,"unchanged polling must retain the existing DOM row");
+renderQueue([initial[1],initial[0]]);
+const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
+assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
+renderQueue([initial[0]]);
+assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
 def test_browser_status_poll_handles_timeout_visibility_and_expired_session():
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     harness = """
@@ -211,11 +255,14 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
-    assert 'title.textContent=item.title' in page
+    assert 'title.textContent=itemTitle' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
+    assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
+    assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
+    assert 'setAttribute("aria-label",label)' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page

@@ -954,7 +954,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
-<section id="queuePanel"><div class="row"><h2>Queue</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue"><li class="empty">No videos queued</li></ul></section>
+<section id="queuePanel"><div class="row"><h2>Up Next</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue" aria-label="Up Next" tabindex="-1"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
@@ -994,6 +994,72 @@ function expireSession(){
   $("pin").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
+let queueRenderKey=null;
+function renderQueue(items){
+  const queue=$("queue"),rows=Array.isArray(items)?items:[];
+  const key=JSON.stringify(rows.map(item=>[
+    item.id,item.title,item.duration,item.votes,item.voted,
+  ]));
+  if(key===queueRenderKey)return;
+  const focused=document.activeElement;
+  const focusedRow=focused?.closest?.("[data-queue-id]");
+  const focusTarget=focusedRow&&focused.dataset?.queueAction
+    ?{id:focusedRow.dataset.queueId,action:focused.dataset.queueAction}:null;
+  queueRenderKey=key;
+  queue.replaceChildren();
+  if(!rows.length){
+    const empty=document.createElement("li");
+    empty.className="empty";
+    empty.textContent="No videos queued";
+    queue.append(empty);
+  }else rows.forEach((item,index)=>{
+    const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
+    const li=document.createElement("li");
+    li.className="queue-item";
+    li.dataset.queueId=String(item.id||"");
+    li.setAttribute("aria-posinset",String(index+1));
+    li.setAttribute("aria-setsize",String(rows.length));
+    const text=document.createElement("div"),title=document.createElement("strong");
+    title.textContent=itemTitle;
+    const meta=document.createElement("div");
+    meta.className="muted";
+    meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")
+      +(item.duration?` · ${clock(item.duration)}`:"");
+    text.append(title,meta);
+    const actions=document.createElement("div");
+    actions.className="queue-actions";
+    const action=(name,label,caption,kind,handler)=>{
+      const button=document.createElement("button");
+      button.className=`tiny ${kind}`.trim();
+      button.textContent=caption;
+      button.dataset.queueAction=name;
+      button.setAttribute("aria-label",label);
+      button.addEventListener("click",handler);
+      actions.append(button);
+      return button;
+    };
+    const vote=action("vote",`${item.voted?"Remove vote for":"Vote for"} ${itemTitle}`,
+      item.voted?"Voted":"Vote","vote" ,
+      ()=>act("queue_vote",!item.voted,{id:item.id}));
+    if(item.voted)vote.classList.add("on");
+    action("play",`Play ${itemTitle} now`,"Play now","",
+      ()=>act("queue_play",undefined,{id:item.id}));
+    action("move",`Move ${itemTitle} earlier in Up Next`,"↑","secondary",
+      ()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,index-1)}));
+    action("next",`Play ${itemTitle} next`,"Next","secondary",
+      ()=>act("queue_next",undefined,{id:item.id}));
+    action("remove",`Remove ${itemTitle} from Up Next`,"×","secondary",
+      ()=>act("queue_remove",undefined,{id:item.id}));
+    li.append(text,actions);
+    queue.append(li);
+  });
+  if(focusTarget){
+    const row=Array.from(queue.children).find(item=>item.dataset.queueId===focusTarget.id);
+    const target=row&&Array.from(row.children).flatMap(item=>Array.from(item.children||[]))
+      .find(item=>item.dataset.queueAction===focusTarget.action);
+    (target||queue).focus({preventScroll:true});
+  }
+}
 let statusRequest=null,statusTimer=null,statusFailures=0;
 function scheduleRefresh(){
   clearTimeout(statusTimer);
@@ -1016,7 +1082,7 @@ async function refresh(){
     const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
 $("musicAutogain").checked=!!s.music_autogain;
-const queue=$("queue");queue.replaceChildren();if(!s.queue||!s.queue.length){const li=document.createElement("li");li.className="empty";li.textContent="No videos queued";queue.append(li)}else for(const item of s.queue){const li=document.createElement("li");li.className="queue-item";const text=document.createElement("div");const title=document.createElement("strong");title.textContent=item.title||"Video";const meta=document.createElement("div");meta.className="muted";meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")+(item.duration?` · ${clock(item.duration)}`:"");text.append(title,meta);const actions=document.createElement("div");actions.className="queue-actions";const vote=document.createElement("button");vote.className="tiny vote"+(item.voted?" on":"");vote.textContent=item.voted?"Voted":"Vote";vote.addEventListener("click",()=>act("queue_vote",!item.voted,{id:item.id}));actions.append(vote);const play=document.createElement("button");play.className="tiny";play.textContent="Play now";play.addEventListener("click",()=>act("queue_play",undefined,{id:item.id}));actions.append(play);const up=document.createElement("button");up.className="tiny secondary";up.textContent="↑";up.title="Move up";up.addEventListener("click",()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,s.queue.indexOf(item)-1)}));actions.append(up);const nxt=document.createElement("button");nxt.className="tiny secondary";nxt.textContent="Next";nxt.title="Play this next";nxt.addEventListener("click",()=>act("queue_next",undefined,{id:item.id}));actions.append(nxt);const remove=document.createElement("button");remove.className="tiny secondary";remove.textContent="×";remove.title="Remove";remove.addEventListener("click",()=>act("queue_remove",undefined,{id:item.id}));actions.append(remove);li.append(text,actions);queue.append(li)}
+renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const time=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${time(item.position)}${item.duration==null?"":` / ${time(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
