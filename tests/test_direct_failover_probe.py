@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 import sys
 import textwrap
 from types import SimpleNamespace
@@ -127,7 +128,7 @@ def cast_worker(status="rejected"):
             ForeignPlayback=direct_probe.ForeignPlayback,
         ),
         "dlna": SimpleNamespace(),
-        "threading": SimpleNamespace(Event=lambda: None),
+        "threading": threading,
         "pathlib": __import__("pathlib"),
         "pretty_title": lambda path: path.stem,
         "DEFAULTS": {"audio_gain": 0.0},
