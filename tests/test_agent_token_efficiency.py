@@ -102,6 +102,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         limits = {
             "cast_control.py": 25_000,
             "cast_widgets.py": 32_000,
+            "bookmark_ui.py": 9_000,
             "cast_ui.py": 62_000,
             "cast_settings.py": 10_000,
             "preferences_ui.py": 14_000,

@@ -75,10 +75,10 @@ class FakeDialog:
 
 
 def methods(*names):
-    source = (ROOT / "src" / "cast_ui.py").read_text("utf-8")
+    source = (ROOT / "src" / "bookmark_ui.py").read_text("utf-8")
     tree = ast.parse(source)
     owner = next(node for node in tree.body
-                 if isinstance(node, ast.ClassDef) and node.name == "UiMixin")
+                 if isinstance(node, ast.ClassDef) and node.name == "BookmarkUiMixin")
     found = {node.name: ast.get_source_segment(source, node) for node in owner.body
              if isinstance(node, ast.FunctionDef)}
     body = "\n\n".join(textwrap.indent(textwrap.dedent(found[name]), "    ") for name in names)
