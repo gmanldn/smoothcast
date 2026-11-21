@@ -23,6 +23,7 @@ import time
 import urllib.request
 
 import native_runtime
+import install_location
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
@@ -46,7 +47,14 @@ CAST_DEPENDENCIES_CHECK = (
 # pip dependencies installed into the isolated runtime. Keep in sync with the
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
-PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=13.1.0,<15")
+PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=13.1.0,<15",
+                "psutil>=5.9,<8", "zeroconf>=0.132,<1")
+# The project itself must be installed: a venv may have catt from an unrelated app
+# but still lack SmoothCast, psutil or zeroconf. pip enforces version ranges.
+PROJECT_DEPENDENCIES_CHECK = (
+    "import importlib.metadata as m; import psutil, zeroconf; "
+    "m.version('smoothcast'); m.version('psutil'); m.version('zeroconf')"
+)
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 # Reviewed immutable Homebrew installer (2026-11-18); update commit and digest
@@ -432,11 +440,10 @@ def ensure_venv(python: Path, env: dict[str, str], *,
     if check:
         if not installed.is_file() or not works(installed, GUI_CHECK, env=env):
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
-        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
-            raise SetupError(
-                "catt >= 0.12, < 0.14 and PyChromecast >= 13.1.0, < 15 "
-                "are not installed in SmoothCast's environment."
-            )
+        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
+                installed, PROJECT_DEPENDENCIES_CHECK, env=env):
+            raise SetupError("SmoothCast runtime packages are missing or invalid "
+                             "(catt, PyChromecast, psutil, zeroconf, smoothcast).")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))
@@ -467,19 +474,19 @@ def ensure_venv(python: Path, env: dict[str, str], *,
                 f"{installed} cannot import GTK4/libadwaita after rebuild. "
                 "Review the native Python/PyGObject installation."
             )
-        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
+        if (not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or
+                not works(installed, PROJECT_DEPENDENCIES_CHECK, env=env)):
             # The project declares its dependencies in pyproject.toml. Install
-            # Install Cast dependencies and the project in editable mode into
+            # missing runtime packages and the project in editable mode into
             # the *selected venv* so every launcher resolves the same runtime;
             # do not download or replace native GTK bindings.
             checked_run([str(installed), "-m", "pip", "install",
                          "--disable-pip-version-check", *PIP_PACKAGES,
                          "-e", str(ROOT)], env=env)
-        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
-            raise SetupError(
-                "catt >= 0.12, < 0.14 and PyChromecast >= 13.1.0, < 15 "
-                "are not installed in SmoothCast's environment."
-            )
+        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env) or not works(
+                installed, PROJECT_DEPENDENCIES_CHECK, env=env):
+            raise SetupError("SmoothCast runtime packages could not be installed "
+                             "(catt, PyChromecast, psutil, zeroconf, smoothcast).")
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))
@@ -512,6 +519,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="Verify only; never install or modify anything")
     parser.add_argument("--no-shortcuts", action="store_true")
+    parser.add_argument("--install-dir", help="Install application at this location")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="Accept the default install directory without prompting")
+    parser.add_argument("--in-place", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     actual = {"Linux": "linux", "Darwin": "macos",
               "Windows": "windows"}.get(platform.system())
@@ -521,6 +532,25 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Python 3.10+ is the initial prerequisite.")
     try:
         say(f"Operating system: {args.target}; bootstrap Python: {sys.version.split()[0]}")
+        if args.in_place and args.install_dir:
+            raise SetupError("--in-place and --install-dir are mutually exclusive")
+        if not args.in_place:
+            destination = install_location.select_directory(
+                args.target, explicit=args.install_dir, yes=args.yes, check=args.check,
+            )
+            install_location.validate_destination(ROOT, destination)
+            child = [sys.executable, str(destination / "setup" / "bootstrap.py"),
+                     "--target", args.target, "--in-place", "--yes"]
+            if args.check:
+                if not (destination / "setup" / "bootstrap.py").is_file():
+                    raise SetupError(f"No SmoothCast installation at {destination}")
+                checked_run([*child, "--check", "--no-shortcuts"])
+            else:
+                with install_location.installed_sources(ROOT, destination):
+                    checked_run([*child, *(["--no-shortcuts"] if args.no_shortcuts else [])])
+                    install_location.remember_directory(args.target, destination)
+            say(f"SmoothCast location: {destination}")
+            return 0
         install = {"linux": install_linux, "macos": install_macos,
                    "windows": install_windows}[args.target]
         python, env = install(check=args.check)
@@ -534,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.check:
             say(f"Installed. Launch with: {isolated} {ROOT / 'setup' / 'launch.py'}")
         return 0
-    except SetupError as exc:
+    except (SetupError, ValueError, OSError) as exc:
         print(f"[SmoothCast setup] FAILED: {exc}", file=sys.stderr, flush=True)
         return 1
 
