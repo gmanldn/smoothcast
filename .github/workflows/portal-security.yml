@@ -51,3 +51,23 @@ jobs:
           tests/test_portal_uploads.py
           tests/test_portal_queue.py
           tests/test_room_conformance.py
+
+  gtk-portal-smoke:
+    name: Isolated GTK host-control smoke (Xvfb)
+    needs: [portal-security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK and private virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth python3-gi python3-venv gir1.2-gtk-4.0 gir1.2-adw-1
+      - name: Install SmoothCast in a native-PyGI environment
+        run: |
+          /usr/bin/python3 -m venv --system-site-packages .portal-gtk-venv
+          .portal-gtk-venv/bin/python -m pip install -e .
+      - name: Smoke GTK widget construction on a private Xvfb display
+        env:
+          SMOOTHCAST_TEST_CONTEXT: '0'
+        run: .portal-gtk-venv/bin/python scripts/test_gui_isolated.py
