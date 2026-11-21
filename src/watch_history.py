@@ -26,7 +26,7 @@ TRACK_KEYS = ("audio", "subtitle")
 
 
 def _finite(value: object) -> float | None:
-    if type(value) not in (int, float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:
         number = float(value)
