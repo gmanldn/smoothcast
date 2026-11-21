@@ -248,6 +248,52 @@ class CommandFence:
                     revision=self._revision, session_id=self._session_id)
 
 
+class ParticipantRateLimiter:
+    """Bounded, thread-safe token buckets per authenticated room identity.
+
+    Route classes: read (8 burst, 4/s), mutation (12, 6/s) and upload
+    (40, 20/s). Uploads have a higher ceiling so 2 MiB chunks do not
+    needlessly stall ordinary phones. Buckets are LRU-bounded to 512.
+    """
+
+    DEFAULT_LIMITS = {
+        "read": (8.0, 4.0),
+        "mutation": (12.0, 6.0),
+        "upload": (40.0, 20.0),
+    }
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic,
+                 limits: dict[str, tuple[float, float]] | None = None,
+                 max_buckets: int = 512) -> None:
+        self._clock = clock
+        self._limits = dict(limits or self.DEFAULT_LIMITS)
+        if max_buckets < 1 or any(cap < 1 or rate <= 0
+                                   for cap, rate in self._limits.values()):
+            raise ValueError("rate limit parameters must be positive")
+        self._max_buckets = max_buckets
+        self._lock = threading.Lock()
+        self._buckets: OrderedDict[tuple[str, str], tuple[float, float]] = OrderedDict()
+
+    def retry_after(self, participant_id: str, route_class: str) -> float:
+        """Consume one token, or return required delay in seconds (0 = allowed)."""
+        capacity, rate = self._limits[route_class]
+        now = self._clock()
+        key = (participant_id, route_class)
+        with self._lock:
+            tokens, last = self._buckets.get(key, (capacity, now))
+            tokens = min(capacity, tokens + max(0.0, now - last) * rate)
+            if tokens >= 1:
+                tokens -= 1
+                retry = 0.0
+            else:
+                retry = (1 - tokens) / rate
+            self._buckets[key] = (tokens, now)
+            self._buckets.move_to_end(key)
+            while len(self._buckets) > self._max_buckets:
+                self._buckets.popitem(last=False)
+            return retry
+
+
 class CommandDispatcher:
     """One bounded serial dispatcher with per-client request-id replay."""
 
@@ -256,7 +302,8 @@ class CommandDispatcher:
                  ttl: float = COMMAND_TTL_SECONDS,
                  capacity: int = COMMAND_CACHE_CAPACITY,
                  queue_capacity: int = COMMAND_QUEUE_CAPACITY,
-                 wait_seconds: float = COMMAND_WAIT_SECONDS) -> None:
+                 wait_seconds: float = COMMAND_WAIT_SECONDS,
+                 per_client_cap: int = 2) -> None:
         self._apply = apply
         self.fence = fence
         self._clock = clock
@@ -265,13 +312,19 @@ class CommandDispatcher:
         self._wait_seconds = wait_seconds
         self._lock = threading.Lock()
         self._execute_lock = threading.Lock()
+        if per_client_cap < 1:
+            raise ValueError("per-client command cap must be positive")
+        self._per_client_cap = per_client_cap
+        self._client_pending: dict[str, int] = {}
         self._slots = threading.BoundedSemaphore(queue_capacity)
         self._cache: OrderedDict[tuple[str, str], _Entry] = OrderedDict()
         self._closed = False
 
-    def execute(self, envelope: MutationEnvelope) -> CommandReceipt:
-        """Apply once or replay the original receipt for a duplicate id."""
+    def execute(self, envelope: MutationEnvelope, *,
+                participant_key: str | None = None) -> CommandReceipt:
+        """Apply once; bound competing requests per authenticated participant."""
         key = (envelope.client_id, envelope.command_id)
+        owner = participant_key or envelope.client_id
         fingerprint = envelope.fingerprint()
         with self._lock:
             if self._closed:
@@ -288,8 +341,11 @@ class CommandDispatcher:
                     return self._replay(entry)
                 waiter = entry
             else:
+                if self._client_pending.get(owner, 0) >= self._per_client_cap:
+                    raise CommandError(429, "Too many commands; try again shortly")
                 waiter = None
                 entry = _Entry(fingerprint=fingerprint, created=self._clock())
+                self._client_pending[owner] = self._client_pending.get(owner, 0) + 1
                 self._cache[key] = entry
                 self._cache.move_to_end(key)
                 self._evict_locked()
@@ -303,6 +359,9 @@ class CommandDispatcher:
                                  revision=self.fence.snapshot()[1])
             with self._lock:
                 self._cache.pop(key, None)
+                self._client_pending[owner] -= 1
+                if not self._client_pending[owner]:
+                    self._client_pending.pop(owner, None)
                 entry.error = error
                 entry.completed = True
                 entry.event.set()
@@ -334,6 +393,10 @@ class CommandDispatcher:
             return receipt
         finally:
             self._slots.release()
+            with self._lock:
+                self._client_pending[owner] -= 1
+                if not self._client_pending[owner]:
+                    self._client_pending.pop(owner, None)
 
     def close(self) -> None:
         """Stop accepting work and release any waiting duplicate."""
