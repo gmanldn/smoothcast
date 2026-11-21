@@ -73,6 +73,7 @@ decoder/subtitle negotiation remains P0 issue #18.
 file, its burn-in mode, or the selected embedded *stream index*. It first
 probes the current source and calls `subtitle_restart.validate_restart`
 **inside the existing background worker and before stopping the old stream**.
+A forced disposition remains attached to that exact source stream on reprobe.
 A vanished/unsupported sidecar or a missing/unsupported replacement for an
 explicit embedded track is a visible error; do not silently choose the
 preferred/forced track or restart without captions. ASS/SSA files must
