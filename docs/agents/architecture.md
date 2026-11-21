@@ -70,7 +70,7 @@ decoder/subtitle negotiation remains P0 issue #18.
 
 ## Subtitle selection on encoder restarts (P0 SC-015)
 
-`SessionMixin._restart_at` preserves the exact saved external subtitle
+`SessionMixin._restart_at` preserves the saved external subtitle
 file, its burn-in mode, or the selected embedded *stream index*. It first
 probes the current source and calls `subtitle_restart.validate_restart`
 **inside the existing background worker and before stopping the old stream**.
