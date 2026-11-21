@@ -24,6 +24,7 @@ import playback_state
 import cast_targets
 import playlist_control
 import queue_metadata
+import room_checkpoint
 import reliability_metrics
 from queue_prewarm_ui import QueuePrewarmMixin
 from queue_row_ui import QueueRowMixin
@@ -294,6 +295,27 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self.queue_list.select_row(row)
         self._refresh_queue_visibility()
         self._refresh_controls()
+        self._save_room_checkpoint()
+
+
+    def _save_room_checkpoint(self) -> None:
+        if getattr(getattr(self, "app", None), "selftest", False):
+            return
+        checkpoint = getattr(self, "_room_checkpoint_file", None)
+        if checkpoint is None:
+            return
+        items = tuple(self.queue)
+        if items == getattr(self, "_room_checkpoint_last", None):
+            return
+        try:
+            room_checkpoint.write_checkpoint(checkpoint, items)
+        except (OSError, ValueError) as exc:
+            if not getattr(self, "_room_checkpoint_error_shown", False):
+                self._room_checkpoint_error_shown = True
+                self.toast("Shared room recovery could not be saved", error=True)
+                self._console(f"Room queue checkpoint failed: {exc}")
+            return
+        self._room_checkpoint_last = items
 
 
     def _refresh_queue_visibility(self) -> None:

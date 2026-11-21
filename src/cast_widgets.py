@@ -36,6 +36,7 @@ CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 
 
 CONFIG_FILE = CONFIG_DIR / "config.json"
+ROOM_CHECKPOINT_FILE = CONFIG_DIR / "room-checkpoint.json"
 
 
 ICON_NAME = APP_ID

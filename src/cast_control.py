@@ -49,7 +49,7 @@ import local_playback
 import startup_cleanup
 import mpris
 
-from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
+from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, ROOM_CHECKPOINT_FILE, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
@@ -86,6 +86,9 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._scan_again = False
         self.queue: list[str] = []
         self.queue_durations: dict[str, float] = {}
+        self._room_checkpoint_file = ROOM_CHECKPOINT_FILE
+        self._room_checkpoint_last: tuple[str, ...] | None = None
+        self._room_checkpoint_error_shown = False
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
@@ -142,6 +145,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._build_ui()
         self._refresh_responsive_layout()
         self._flush_stale_state()
+        self._offer_room_recovery()
         self._refresh_direct_note()
         self.connect("close-request", self._on_close)
         self._install_shortcuts()
