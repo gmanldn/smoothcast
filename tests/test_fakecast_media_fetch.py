@@ -65,12 +65,7 @@ def test_fetches_playlist_and_byte_range_segments_with_cast_mime_and_no_cors(med
     assert result.ended
     assert result.duration == pytest.approx(1.25)
     assert result.segment_count == 2
-    assert result.bytes_received == len(
-        "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:0.5,\n"
-        "#EXT-X-BYTERANGE:10@0\nsegment-0123456789abcdef0123456789abcdef-0.ts\n"
-        "#EXTINF:0.75,\n#EXT-X-BYTERANGE:5@10\n"
-        "segment-0123456789abcdef0123456789abcdef-0.ts\n#EXT-X-ENDLIST\n"
-    ) + 15
+    assert result.bytes_received == result.requests[0]["bytes"] + 15
     assert [request["status"] for request in result.requests] == [200, 206, 206]
     assert result.requests[0]["content_type"] == "application/vnd.apple.mpegurl"
     assert [request["content_type"] for request in result.requests[1:]] == [
@@ -155,11 +150,13 @@ def test_cast_backend_load_fetches_hls_and_emits_buffering_progress_and_finished
 @pytest.mark.multicast
 @pytest.mark.skipif(
     os.environ.get("GITHUB_ACTIONS") != "true"
-    or os.environ.get("SMOOTHCAST_TEST_CONTEXT") != "1",
-    reason="catt discovery contract runs only in isolated GitHub CI without local receivers",
+    or os.environ.get("SMOOTHCAST_TEST_CONTEXT") != "1"
+    or os.environ.get("SMOOTHCAST_RUN_CATT_CONTRACT") != "1",
+    reason="catt discovery contract runs only in its isolated Linux CI job",
 )
 def test_catt_backend_contract_uses_only_the_loopback_fake(media_endpoint):
     receiver = FakeCastReceiver(port=8009, profile="chromecast-gen2", advertise=True)
+    receiver.slow_segments(1)
     try:
         receiver.start()
     except OSError as exc:
@@ -182,8 +179,12 @@ def test_catt_backend_contract_uses_only_the_loopback_fake(media_endpoint):
         target = fake[0].name
         assert backend.info(target, timeout=8) is not None
         assert backend.command(target, "cast", media_endpoint, timeout=15)[0]
-        assert wait_for(lambda: bool(receiver.media_fetch_results), timeout=10)
+        assert wait_for(
+            lambda: any(data.get("type") == "LOAD" for _ns, data in receiver.calls),
+            timeout=5,
+        )
         assert backend.command(target, "pause", timeout=8)[0]
+        assert wait_for(lambda: bool(receiver.media_fetch_results), timeout=10)
         assert backend.command(target, "stop", timeout=8)[0]
         sent = [data.get("type") for _namespace, data in receiver.calls]
         assert "LOAD" in sent

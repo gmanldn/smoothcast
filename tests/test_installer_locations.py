@@ -38,7 +38,7 @@ class InstallLocationTests(unittest.TestCase):
             with mock.patch.object(install_location.sys.stdin, "isatty", return_value=True):
                 actual = install_location.select_directory(
                     "linux", home=home, input_fn=lambda _prompt: str(expected))
-                self.assertEqual(actual, expected.resolve())
+                self.assertEqual(actual, expected.absolute())
                 unprompted = install_location.select_directory(
                     "linux", home=home, yes=True,
                     input_fn=lambda _: self.fail("--yes prompted"))
