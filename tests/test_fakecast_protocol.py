@@ -5,14 +5,10 @@ import time
 import uuid
 from types import SimpleNamespace
 
-import pychromecast
 import pytest
 
 from fakecast import FakeCastReceiver
 from fakecast.receiver import NS_HEARTBEAT, NS_MEDIA, NS_RECEIVER
-from pychromecast_backend import PyChromecastBackend
-
-
 def wait_for(predicate, timeout: float = 3.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -23,6 +19,13 @@ def wait_for(predicate, timeout: float = 3.0) -> bool:
 
 
 def test_receiver_accepts_tls_castv2_and_answers_backend_commands():
+    pychromecast = pytest.importorskip(
+        "pychromecast",
+        minversion="14.1.1",
+        reason="PyChromecast 14 requires Python 3.11 or newer",
+    )
+    from pychromecast_backend import PyChromecastBackend
+
     with FakeCastReceiver() as receiver:
         cast = pychromecast.get_chromecast_from_host(
             (

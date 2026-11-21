@@ -107,7 +107,7 @@ jobs:
         run: python -m compileall -q src scripts setup tests
 
       - name: Install portable test dependencies
-        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'PyChromecast>=14.1.1,<15'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'PyChromecast>=14.1.1,<15; python_version >= "3.11"'
 
       - name: Run all portable regression tests
         if: matrix.python-version != '3.13'
@@ -155,7 +155,7 @@ jobs:
       - name: Install portable test dependencies
         # PyChromecast drives CASTV2 loopback integration; psutil is used for
         # native process-identity checks.
-        run: python -m pip install 'pytest>=8,<10' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'psutil>=5.9,<8' 'PyChromecast>=14.1.1,<15'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'psutil>=5.9,<8' 'PyChromecast>=14.1.1,<15; python_version >= "3.11"'
 
       - name: Run all portable regression tests
         run: python -m pytest -q tests -p no:cacheprovider --tb=short -n auto
