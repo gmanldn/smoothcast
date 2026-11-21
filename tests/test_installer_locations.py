@@ -246,16 +246,19 @@ class VirginEntrypointTests(unittest.TestCase):
             self.assertEqual(struct.unpack("<II", data[14:22]), (len(png), 22))
             self.assertEqual(data[22:], png)
 
-    def test_ffmpeg_4_is_detected_before_starting_a_film(self):
-        def probe(argv, **kwargs):
-            return subprocess.CompletedProcess(
-                argv, 0, stdout=(b"ffmpeg version 4.4.2\n"
-                                  if Path(argv[0]).name == "ffmpeg" else None))
-        with mock.patch.object(bootstrap.shutil, "which",
-                               side_effect=lambda tool, path=None: "/fake/" + tool), \
-             mock.patch.object(bootstrap.subprocess, "run", side_effect=probe):
-            failures = bootstrap.check_tools()
-        self.assertEqual(failures, ["ffmpeg 4 (requires >=5.0)"])
+    def test_ffmpeg_minimum_version_and_valid_newer_build(self):
+        for release, expected in (("4.4.2", ["ffmpeg 4 (requires >=5.0)"]),
+                                  ("5.1.7", []), ("n7.1", [])):
+            with self.subTest(release=release):
+                def probe(argv, **kwargs):
+                    return subprocess.CompletedProcess(
+                        argv, 0, stdout=(("ffmpeg version " + release + "\n").encode()
+                                          if Path(argv[0]).name == "ffmpeg" else None))
+                with mock.patch.object(bootstrap.shutil, "which",
+                                       side_effect=lambda tool, path=None: "/fake/" + tool), \
+                     mock.patch.object(bootstrap.subprocess, "run", side_effect=probe):
+                    failures = bootstrap.check_tools()
+                self.assertEqual(failures, expected)
 
     def test_macos_pinned_homebrew_constants_match_python_bootstrap(self):
         import re
