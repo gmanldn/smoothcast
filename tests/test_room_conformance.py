@@ -8,6 +8,7 @@ from __future__ import annotations
 from http.client import HTTPConnection
 import json
 from pathlib import Path
+import random
 import sys
 import threading
 
@@ -180,28 +181,31 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     assert sum(action == "queue_remove" for action, _payload in room.calls) == client_count
 
 
-def test_guest_upload_is_queued_once_and_converges_across_room_clients(tmp_path):
+@pytest.mark.parametrize("client_count", [2, 5, 20])
+def test_guest_upload_is_queued_once_and_converges_across_room_clients(
+        tmp_path, client_count):
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     room = RoomHarness(count=0, uploads=uploads)
     try:
-        first, second = room.login("Phone 1"), room.login("Phone 2")
+        clients = [room.login(f"Phone {index + 1}") for index in range(client_count)]
+        uploader, remover = clients[0], clients[-1]
         status, created, _headers = room.request(
             "POST", "/api/uploads",
             {"name": "lan-movie.mkv", "size": 6, "queue": True},
-            cookie=first.cookie, csrf=first.csrf,
+            cookie=uploader.cookie, csrf=uploader.csrf,
         )
         assert status == 201
         upload_id = created["id"]
         status, progress, _headers = room.request(
             "PUT", f"/api/uploads/{upload_id}", b"abcdef",
-            cookie=first.cookie, csrf=first.csrf,
+            cookie=uploader.cookie, csrf=uploader.csrf,
             content_type="application/octet-stream",
             extra_headers={"Content-Range": "bytes 0-5/6"},
         )
         assert status == 200 and progress["ready_to_cast"] is False
         status, completed, _headers = room.request(
             "POST", f"/api/uploads/{upload_id}/complete", {"queue": True},
-            cookie=first.cookie, csrf=first.csrf,
+            cookie=uploader.cookie, csrf=uploader.csrf,
         )
         assert status == 202 and completed["message"] == "Added to the shared queue."
         uploaded_path = room.calls[-1][1]["path"]
@@ -209,29 +213,35 @@ def test_guest_upload_is_queued_once_and_converges_across_room_clients(tmp_path)
         # Repeated finalization returns success without dispatching another queue add.
         status, _, _headers = room.request(
             "POST", f"/api/uploads/{upload_id}/complete", {"queue": True},
-            cookie=first.cookie, csrf=first.csrf,
+            cookie=uploader.cookie, csrf=uploader.csrf,
         )
         assert status == 202
         assert sum(action == "queue_add" for action, _payload in room.calls) == 1
 
-        first_status, first_state, _headers = first.status()
-        second_status, second_state, _headers = second.status()
-        assert first_status == second_status == 200
-        queue = first_state["state"]["queue"]
-        assert queue == second_state["state"]["queue"]
+        snapshots = [client.status() for client in clients]
+        assert all(status == 200 for status, _state, _headers in snapshots)
+        queue = snapshots[0][1]["state"]["queue"]
+        assert all(state["state"]["queue"] == queue
+                   for _status, state, _headers in snapshots)
         assert len(queue) == 1 and queue[0]["title"] == "lan-movie.mkv"
-        assert first_state["state"]["title"] == "Current film"
-        assert first_state["state"]["queue_revision"] == 1
+        assert snapshots[0][1]["state"]["title"] == "Current film"
+        assert snapshots[0][1]["state"]["queue_revision"] == 1
 
-        status, _result, _headers = second.action({
+        status, _result, _headers = remover.action({
             "action": "queue_remove", "id": queue[0]["id"],
-            "queue_revision": second_state["state"]["queue_revision"],
-            "queue_command_id": f"{second.participant_id}-remove-upload",
+            "queue_revision": snapshots[-1][1]["state"]["queue_revision"],
+            "queue_command_id": f"{remover.participant_id}-remove-upload",
         })
         assert status == 202
-        status, cleared_state, _headers = first.status()
-        assert status == 200 and cleared_state["state"]["queue"] == []
-        assert cleared_state["state"]["title"] == "Current film"
+        reconnected = RoomClient(
+            room, uploader.cookie, uploader.csrf, uploader.participant_id,
+        )
+        cleared = [client.status() for client in (*clients, reconnected)]
+        assert all(status == 200 and state["state"]["queue"] == []
+                   for status, state, _headers in cleared)
+        assert all(state["state"]["title"] == "Current film"
+                   and state["state"]["queue_revision"] == 2
+                   for _status, state, _headers in cleared)
         assert Path(uploaded_path).read_bytes() == b"abcdef"
         assert not any(action in {"cast_upload", "stop"} for action, _payload in room.calls)
     finally:
@@ -271,6 +281,51 @@ def test_concurrent_queue_removes_return_one_commit_and_one_stale_conflict(room)
     assert status == 200
     assert final["state"]["queue_revision"] == 1
     assert target["id"] not in {item["id"] for item in final["state"]["queue"]}
+
+
+def test_queue_replay_and_stale_order_fuzz_has_reproducible_seed(room):
+    first, second = room.login("Phone 1"), room.login("Phone 2")
+    stale_client = RoomClient(room, second.cookie, second.csrf, second.participant_id)
+
+    for seed in range(100):
+        status, initial, _headers = first.status()
+        assert status == 200, f"seed={seed}"
+        initial_state = initial["state"]
+        initial_queue = initial_state["queue"]
+        starting_revision = initial_state["queue_revision"]
+        rng = random.Random(seed)
+        item = rng.choice(initial_queue)
+        position = rng.randrange(len(initial_queue))
+        command = {
+            "action": "queue_move", "id": item["id"], "position": position,
+            "queue_revision": starting_revision,
+            "queue_command_id": f"fuzz-{seed}-move",
+        }
+
+        status, accepted, _headers = first.action(command)
+        assert status == 202, f"seed={seed}: {accepted}"
+        status, replayed, _headers = first.action(command)
+        assert status == 202 and replayed["message"] == accepted["message"], f"seed={seed}"
+
+        altered = {**command, "position": (position + 1) % len(initial_queue)}
+        status, _body, _headers = first.action(altered)
+        assert status == 409, f"seed={seed}: altered command replay was accepted"
+
+        stale = {**command, "queue_command_id": f"fuzz-{seed}-stale"}
+        status, _body, _headers = stale_client.action(stale)
+        assert status == 409, f"seed={seed}: stale queue revision was accepted"
+
+        status, final, _headers = RoomClient(
+            room, first.cookie, first.csrf, first.participant_id,
+        ).status()
+        assert status == 200, f"seed={seed}"
+        final_state = final["state"]
+        final_queue = final_state["queue"]
+        ids = [entry["id"] for entry in final_queue]
+        assert len(ids) == len(initial_queue), f"seed={seed}: queue length changed"
+        assert len(set(ids)) == len(ids), f"seed={seed}: duplicate queue identity"
+        assert set(ids) == {entry["id"] for entry in initial_queue}, f"seed={seed}: media lost"
+        assert final_state["queue_revision"] == starting_revision + 1, f"seed={seed}: revision drift"
 
 
 def test_simultaneous_seeks_are_serialized_and_one_stale_generation_is_rejected(room):
