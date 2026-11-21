@@ -342,13 +342,12 @@ class SessionMixin:
                     send_stop = playback_state.hls_session_matches(
                         observed, state.stream_url, state.title,
                     )
-                session.stop(device, send_stop=send_stop)
-                return send_stop
+                return bool(session.stop(device, send_stop=send_stop))
             if renderer is not None:
                 dlna.stop(renderer)
-            else:
-                castctl.stop(device)
-            return True
+                return True
+            ok, _message = castctl.stop(device)
+            return bool(ok)
 
         def done(sent_remote_stop):
             self.busy = False
@@ -358,9 +357,9 @@ class SessionMixin:
             self._stop_monitor()
             self._set_levels_hint("")
             self.toast("Stopped" if sent_remote_stop
-                       else "Local stream stopped; TV content was not verified")
+                       else "Local stream stopped; receiver did not confirm Stop")
             self._console("Stopped casting to TV" if sent_remote_stop
-                          else "Retired local stream without stopping unrelated TV content")
+                          else "Retired local stream without receiver Stop confirmation")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()

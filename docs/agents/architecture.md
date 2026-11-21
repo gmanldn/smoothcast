@@ -137,7 +137,9 @@ that guard *before* changing optimistic UI state. Worker callbacks only
 update controls for the unchanged session and selected device and must
 release the guard on both success and failure. On failure, poll the receiver
 to resynchronise the displayed state; never infer success from an issued
-command alone. Stop and cast transitions are separate ownership paths.
+command alone. Stop acknowledgements must likewise come from the receiver
+command result; local process cleanup alone is not proof that TV playback
+stopped. Stop and cast transitions are separate ownership paths.
 
 This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
 cancellation, retry policy and full physical receiver acceptance remain

@@ -868,12 +868,14 @@ class Session:
             self.stop(renderer.key, send_stop=self._owns_renderer)
             raise
 
-    def stop(self, _device: str, *, send_stop: bool = True) -> None:
+    def stop(self, _device: str, *, send_stop: bool = True) -> bool:
+        remote_stopped = False
         if send_stop and self._owns_renderer and self.renderer is not None:
             try:
                 stop(self.renderer)
+                remote_stopped = True
             except DlnaError:
-                pass
+                remote_stopped = False
         if self.http is not None:
             self.http.close()
             self.http = None
@@ -886,3 +888,4 @@ class Session:
         self.state = None
         self._owns_renderer = False
         self.renderer = None
+        return remote_stopped

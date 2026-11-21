@@ -1112,7 +1112,8 @@ class Session:
             return ""
         return " ".join(line.strip() for line in content[-lines:] if line.strip())
 
-    def stop(self, device: str, *, send_stop: bool = True) -> None:
+    def stop(self, device: str, *, send_stop: bool = True) -> bool:
+        remote_stopped = False
         self._stop_sampler()
         _terminate(self.caster)
         _terminate(self.ffmpeg)
@@ -1126,7 +1127,8 @@ class Session:
                 if type(created) in (int, float) and math.isfinite(created) and created > 0:
                     _terminate_pid(pid, role, created)
         if send_stop:
-            castctl.stop(device)
+            remote_stopped, _message = castctl.stop(device)
+            remote_stopped = bool(remote_stopped)
         clear_session()
         # Revoke this session's generation so a kept-alive server stops
         # answering for a cast that has ended (#228) -- but only if the policy
@@ -1147,6 +1149,7 @@ class Session:
         self.ffmpeg = None
         self.server = None
         self.caster = None
+        return remote_stopped
 
     def _start_server(self, bind_ip: str | None = None,
                       receiver_ip: str | None = None, token: str = "") -> None:
