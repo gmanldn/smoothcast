@@ -252,6 +252,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             )
         return token, csrf, participant
 
+    def session_key_active(self, key: object) -> bool:
+        """Verify an internal opaque hashed cookie at the execution boundary."""
+        if not isinstance(key, str) or len(key) != 64:
+            return False
+        with self._lock:
+            self._expire_sessions(self.clock())
+            return key in self._sessions
+
     def session_csrf(self, token: str | None) -> str | None:
         if not token:
             return None
@@ -279,7 +287,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 return None
             return session.participant_id
 
-    def execute_queue_command(self, participant_id: str, body: dict) -> tuple[int, str]:
+    def execute_queue_command(self, participant_id: str, body: dict,
+                              *, session_key: str | None = None) -> tuple[int, str]:
         """Serialize queue edits and replay the receipt for an identical request."""
         command_id = body.get("queue_command_id")
         revision = body.get("queue_revision")
@@ -311,7 +320,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 return cached[2], cached[3]
             action = body.get("action")
             try:
-                message = self.dispatch(action, body)
+                payload = ({**body, "_portal_auth_key": session_key}
+                           if session_key is not None else body)
+                message = self.dispatch(action, payload)
                 self.room.record(participant_id, "action", {
                     "action": action, "id": body.get("id"),
                 })
@@ -514,9 +525,14 @@ class _Handler(BaseHTTPRequestHandler):
                 if self.server.uploads is None:
                     return self._error(503, "Upload storage is unavailable")
                 body = self._body()
+                token = self._cookie_token() or ""
                 created = self.server.uploads.create(
-                    self._cookie_token() or "", body.get("name"), body.get("size"),
+                    token, body.get("name"), body.get("size"),
                     self.client_address[0], queue_only=bool(body.get("queue", True)))
+                key = self.server._session_key(token)
+                if not self.server.session_key_active(key):
+                    self.server.uploads.revoke_owner_keys({key})
+                    return self._error(403, "Room access was revoked")
             except PortalRequestError as exc:
                 return self._error(exc.status, exc.message)
             except portal_uploads.UploadError as exc:
@@ -536,14 +552,21 @@ class _Handler(BaseHTTPRequestHandler):
                 except portal_uploads.UploadError:
                     default_queue = True
                 queue_only = default_queue or bool(body.get("queue", default_queue))
+                token = self._cookie_token() or ""
+                key = self.server._session_key(token)
                 media_path, name, dispatch = self.server.uploads.finalize(
-                    self._cookie_token() or "", upload_id)
+                    token, upload_id)
+                if not self.server.session_key_active(key):
+                    self.server.uploads.finish_dispatch(token, upload_id, accepted=False)
+                    self.server.uploads.revoke_owner_keys({key})
+                    return self._error(403, "Room access was revoked")
                 if dispatch:
                     try:
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
                             "path": str(media_path), "name": name,
                             "upload_id": upload_id, "early": False,
                             "client": self.client_address[0],
+                            "_portal_auth_key": key,
                         })
                     except PortalRequestError:
                         self.server.uploads.finish_dispatch(
@@ -636,6 +659,7 @@ class _Handler(BaseHTTPRequestHandler):
                     if action in {"queue_remove", "queue_move", "queue_clear"}:
                         status, message = self.server.execute_queue_command(
                             participant_id, body,
+                            session_key=self.server._session_key(self._cookie_token() or ""),
                         )
                         if status >= 400:
                             return self._error(status, message, **(
@@ -647,7 +671,10 @@ class _Handler(BaseHTTPRequestHandler):
                         })
                     if action in {"next", "previous", "queue_play"}:
                         try:
-                            result = self.server.dispatch(action, body)
+                            result = self.server.dispatch(action, {
+                                **body, "_portal_auth_key": self.server._session_key(
+                                    self._cookie_token() or ""),
+                            })
                         except PortalRequestError as exc:
                             return self._error(exc.status, exc.message)
                         except Exception:
@@ -717,6 +744,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "path": result["cast_path"], "name": result["name"],
                 "upload_id": upload_id, "early": True,
                 "client": result.get("client", ""),
+                "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
             accepted = True
         except Exception:

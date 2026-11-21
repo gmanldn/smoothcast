@@ -226,6 +226,22 @@ def test_host_rotates_pin_and_signs_out_all_without_touching_receiver(rig):
     assert alice["participant"]["id"] != bob["participant"]["id"]
 
 
+def test_authorised_guest_payloads_are_fenced_at_gtk_dispatch_boundary(rig):
+    _, guest, cookie = login(rig, PIN)
+    key = rig.server._session_key(cookie.partition("=")[2])
+    assert rig.server.session_key_active(key)
+    rig.server.revoke_all()
+    assert not rig.server.session_key_active(key)
+    status, _body, _headers = rig.request(
+        "POST", "/api/action", {"action": "next"},
+        cookie=cookie, csrf=guest["csrf"], origin=f"http://{rig.host}")
+    assert status == 403
+    from gui_source import main_window_methods
+    source = main_window_methods()["_portal_handle"]
+    assert "session_key_active(session_key)" in source
+    assert '"_portal_auth_key"' in source
+
+
 def test_public_http_has_no_guest_revocation_or_pin_rotation_api(rig):
     _status, guest, cookie = login(rig, PIN)
     for path in ("/api/revoke", "/api/rotate-pin", "/api/revoke-all"):

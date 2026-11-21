@@ -212,6 +212,11 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+        session_key = payload.get("_portal_auth_key")
+        if session_key is not None:
+            current = getattr(self, "_portal", None)
+            if current is None or not current.server.session_key_active(session_key):
+                raise portal.PortalRequestError(401, "Room access was revoked")
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:
