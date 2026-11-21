@@ -128,18 +128,15 @@ def test_cast_backend_load_fetches_hls_and_emits_buffering_progress_and_finished
             assert receiver.media_fetch_results[0].ended
             assert receiver.media_fetch_results[0].segment_count == 2
             assert wait_for(lambda: any(
-                status.get("player_state") == "IDLE" for status in updates
+                status.get("player_state") == "IDLE"
+                and status.get("idle_reason") == "FINISHED"
+                for status in updates
             ))
             assert any(
                 status.get("player_state") == "BUFFERING" for status in updates
             )
             assert any(
                 status.get("player_state") == "PLAYING" for status in updates
-            )
-            assert any(
-                status.get("player_state") == "IDLE"
-                and status.get("idle_reason") == "FINISHED"
-                for status in updates
             )
             assert max(float(status.get("current_time", 0)) for status in updates) >= 1.25
             unsubscribe()
