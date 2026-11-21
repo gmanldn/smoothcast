@@ -16,8 +16,6 @@ GAPS: dict[str, dict[str, str]] = {
             "fixture fakes a Linux /proc tree; macOS uses the psutil path",
     },
     "win32": {
-        "test_agent_token_efficiency.py::AgentTokenEfficiencyTests::test_gui_modules_stay_small_enough_to_read_narrowly":
-            "source-size budgets are measured on a CRLF checkout (Windows adds a byte per line)",
         "test_desktop_integration.py::DesktopIntegrationTests::test_actual_cli_install_twice_then_check_from_spaced_checkout":
             "desktop-entry (Linux freedesktop) Exec= quoting assumed",
         "test_error_log.py::test_large_multiline_traceback_keeps_beginning_and_final_cause":
