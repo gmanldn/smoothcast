@@ -585,6 +585,7 @@ class AvMixin:
 
 
     def _unload_local_video(self) -> None:
+        self._cancel_queue_prewarm()
         self._stop_local_meter()
         self._record_watch("stop")
         stream = self._local_stream()
@@ -601,6 +602,7 @@ class AvMixin:
         self._stop_monitor()
         if media_path is None:
             return
+        self._prewarm_queue_media()
         try:
             self._mon_path = pathlib.Path(media_path)
             self._mon_chain = list(chain)

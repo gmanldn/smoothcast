@@ -52,6 +52,18 @@ newer media metadata. `tests/test_queue_metadata.py` executes that
 handler with a thread-bound dictionary and checks cancellation, duplicate
 paths and stale results. No worker reads `queue_durations` or widgets.
 
+When auto-advance is enabled, `QueuePrewarmMixin` also probes the next queued
+file while Cast or local preview is playing. This work is limited to local
+FFprobe metadata: it does not contact or transfer ownership of a receiver.
+Queue changes, local-preview replacement and application close cancel the
+worker; its FFprobe child is terminated and its callback is discarded when
+stale. A Cast reuses that metadata only while the file's size and modification
+time still match, avoiding the duplicate probe before normal compatibility
+checks. The measurable win is one FFprobe invocation removed from a
+prewarmed transition; receiver startup and decoder buffering are unchanged.
+`tests/test_queue_prewarm.py` and the cancellation cases in
+`tests/test_ffprobe_errors.py` cover these boundaries.
+
 Next inspect `cast_av.py` for high-frequency volume/mute coalescing,
 then add protocol-aware cancellation under issues #16 and #194.
 

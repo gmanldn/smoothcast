@@ -780,18 +780,58 @@ def _rotated_dimensions(width: int, height: int, rotation: int) -> tuple[int, in
     return (height, width) if rotation in (90, 270) else (width, height)
 
 
-def ffprobe(path: pathlib.Path) -> MediaInfo:
+def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: float = 30):
+    """Run FFprobe as a killable child for speculative queue metadata reads."""
+    if cancel.is_set():
+        raise StreamError("Next-item prewarm cancelled")
+    try:
+        proc = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+    except OSError as exc:
+        raise StreamError(f"ffprobe could not be started: {exc}") from exc
+    deadline = time.monotonic() + timeout
+    while True:
+        if cancel.is_set():
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+            try:
+                proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+                proc.communicate()
+            raise StreamError("Next-item prewarm cancelled")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            proc.communicate()
+            raise StreamError("ffprobe timed out while reading this file")
+        try:
+            stdout, stderr = proc.communicate(timeout=min(0.1, remaining))
+            return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> MediaInfo:
     media = MediaInfo(path=path)
     try:
         media.size = path.stat().st_size
     except OSError:
         pass
     try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-print_format", "json",
-             "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, timeout=30,
-        )
+        args = ["ffprobe", "-v", "error", "-print_format", "json",
+                "-show_format", "-show_streams", str(path)]
+        result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
+                  subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
         raise StreamError("ffprobe is not installed or not on PATH") from exc
     except subprocess.TimeoutExpired as exc:

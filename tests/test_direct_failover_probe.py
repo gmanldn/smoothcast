@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import audio_delay
 import direct_probe
 import playback_state
+import queue_metadata
 import streamer
 import subtitle_delay
 import subtitle_style
@@ -122,6 +123,7 @@ def cast_worker(status="rejected"):
     namespace = {
         "playback_state": playback_state,
         "watch_history": watch_history,
+        "queue_metadata": queue_metadata,
         "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,
@@ -160,6 +162,8 @@ def cast_worker(status="rejected"):
             self._preview_pending = None
             self._preview_position = 0.0
             self._preflight_ok = set()
+            self._media_cache = {}
+            self._cancel_queue_prewarm = mock.Mock()
             self._finished_handled = False
             self.local_playback = SimpleNamespace(stop=lambda: None)
             self._unload_local_video = lambda: None

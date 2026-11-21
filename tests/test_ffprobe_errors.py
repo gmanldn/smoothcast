@@ -11,6 +11,9 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import sys
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -82,6 +85,31 @@ class FfprobeErrorTests(unittest.TestCase):
         self.assertEqual(media.duration, 12.5)
         self.assertEqual(media.bitrate, 1500000)
         self.assertEqual(media.vcodec, "h264")
+
+    def test_cancellable_probe_stops_its_child_promptly(self):
+        cancel = threading.Event()
+        timer = threading.Timer(0.15, cancel.set)
+        timer.start()
+        started = time.monotonic()
+        try:
+            with self.assertRaises(streamer.StreamError) as caught:
+                streamer._ffprobe_cancellable(
+                    [sys.executable, "-c", "import time; time.sleep(10)"], cancel,
+                )
+        finally:
+            timer.cancel()
+        self.assertIn("prewarm cancelled", str(caught.exception))
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_cancellable_probe_enforces_its_timeout(self):
+        started = time.monotonic()
+        with self.assertRaises(streamer.StreamError) as caught:
+            streamer._ffprobe_cancellable(
+                [sys.executable, "-c", "import time; time.sleep(10)"],
+                threading.Event(), timeout=0.1,
+            )
+        self.assertIn("timed out", str(caught.exception))
+        self.assertLess(time.monotonic() - started, 3)
 
     def test_cover_art_only_file_still_reports_its_own_error(self):
         payload = json.dumps({

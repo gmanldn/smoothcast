@@ -39,6 +39,7 @@ def window(*, keep=False, mode="transcode"):
         def __init__(self):
             self.app = FakeApp()
             self._closing = False
+            self._cancel_queue_prewarm = mock.Mock()
             self._portal = None
             self._closing_hold = False
             self._cast_starting = True

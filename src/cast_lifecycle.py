@@ -40,6 +40,7 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
+        self._cancel_queue_prewarm()
         self._stop_portal()
         watch = getattr(self, "_cast_status_watch", None)
         if watch is not None:

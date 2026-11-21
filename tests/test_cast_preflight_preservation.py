@@ -14,6 +14,7 @@ from unittest import mock
 from gui_source import main_window_methods
 import dlna
 import playback_state
+import queue_metadata
 import streamer
 import subtitle_style
 import watch_history
@@ -26,7 +27,8 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
         textwrap.indent(textwrap.dedent(methods[name]), "    ")
         for name in names
     )
-    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib, "watch_history": watch_history}
+    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib,
+          "watch_history": watch_history, "queue_metadata": queue_metadata}
     ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(
@@ -40,6 +42,8 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
             self.session = previous
             self.busy = False
             self._dlna_cancel = None
+            self._media_cache = {}
+            self._cancel_queue_prewarm = mock.Mock()
             self._local_video_path = None
             self._preview_generation = 0
             self._preview_pending = None

@@ -24,11 +24,12 @@ import playback_state
 import cast_targets
 import playlist_control
 import queue_metadata
+from queue_prewarm_ui import QueuePrewarmMixin
 
 from cast_widgets import save_config, fmt_time, Async
 
 
-class QueueMixin:
+class QueueMixin(QueuePrewarmMixin):
     def add_files(self) -> None:
         dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
@@ -157,8 +158,6 @@ class QueueMixin:
             fingerprint = None
         cached = self._media_cache.get(path)
         if cached is not None and cached[0] == fingerprint:
-            # Duration and codec details do not need to be re-probed when a
-            # film is reselected; the stat fingerprint invalidates changed files.
             self.queue_durations[path] = cached[1].duration
             self.media = cached[1]
             self._update_embedded_choices(self.media)
@@ -222,6 +221,7 @@ class QueueMixin:
 
 
     def clear_queue(self) -> None:
+        self._cancel_queue_prewarm()
         self.queue.clear()
         self.selected_index = None
         self._retire_unqueued_preview()
@@ -242,18 +242,19 @@ class QueueMixin:
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
-        missing = tuple(dict.fromkeys(p for p in paths if p not in self.queue_durations))
+        duration_paths = self._queue_duration_paths(paths)
 
         def probe():
             return queue_metadata.inspect(
-                missing, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
+                duration_paths, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
             )
 
         def done(durations):
             queue_metadata.publish(self.queue_durations, self.queue, durations)
             self._rebuild_queue()
 
-        Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
+        if duration_paths:
+            Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:
@@ -268,6 +269,7 @@ class QueueMixin:
                 self.now_playing = None
             self._retire_unqueued_preview()
             self._rebuild_queue()
+            self._prewarm_queue_media()
 
 
     def _move_queue(self, index: int, delta: int) -> None:
@@ -278,6 +280,7 @@ class QueueMixin:
             )
             self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
             self._rebuild_queue()
+            self._prewarm_queue_media()
 
 
     def _rebuild_queue(self) -> None:
@@ -362,7 +365,6 @@ class QueueMixin:
 
 
     def _on_queue_search(self, _entry) -> None:
-        # Filtering never changes queue order or the current cast selection.
         self.queue_list.invalidate_filter()
         self._refresh_queue_visibility()
 

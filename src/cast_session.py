@@ -40,6 +40,7 @@ import stream_watchdog
 import hls_pause_recovery
 
 import preflight
+import queue_metadata
 
 import url_control
 
@@ -67,7 +68,7 @@ class SessionMixin:
 
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
-        # None resumes saved position; 0 always rewinds.
+        # None resumes; zero rewinds.
         offset = playback_state.start_offset(
             offset, watch_history.saved_position(self.cfg, path))
         if self.busy:
@@ -101,6 +102,7 @@ class SessionMixin:
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
+        prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
         if subs_mode == "pick" and subs_path is None:
@@ -126,7 +128,9 @@ class SessionMixin:
         )
 
         def work():
-            media = streamer.ffprobe(path)
+            media, prewarm_fingerprint = queue_metadata.media_for_cast(
+                prewarmed_entry, path, streamer.ffprobe,
+            )
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before receiver handoff")
             streamer.require_compatible_ffmpeg()
@@ -173,6 +177,9 @@ class SessionMixin:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before replacing current playback")
+            if (prewarm_fingerprint is not None and
+                    queue_metadata.file_fingerprint(path) != prewarm_fingerprint):
+                raise streamer.StreamError("The queued film changed after prewarming; retry the cast")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
             if cancel.is_set():
@@ -246,7 +253,6 @@ class SessionMixin:
             self._cast_starting = False
             self._dlna_cancel = None
             if self._closing:
-                # Closing after cast completion must respect keep-streaming policy.
                 self.session = session
                 self.busy = False
                 self._finish_delayed_close()
@@ -330,9 +336,6 @@ class SessionMixin:
             return
         if (self.session is None and not self.external
                 and self.device_state in {"IDLE", "OFFLINE", "UNKNOWN"}):
-            # Nothing owned and no observed TV playback: an idle Stop (e.g. the
-            # shortcut or action before the first poll) must send no receiver
-            # command, so another app's cast is never disturbed.
             self._refresh_controls()
             return
         self._record_watch("stop")
@@ -775,9 +778,7 @@ class SessionMixin:
 
 
     def _maybe_finished(self) -> None:
-        # The caster CLI/FFmpeg can finish long before the TV has drained its
-        # buffer; only a confirmed PLAYING/PAUSED -> IDLE device transition ends
-        # a session (direct or HLS).
+        # Device IDLE confirms end; FFmpeg exit does not.
         if self._finished_handled or self.busy or self.session is None:
             return
         self._finished_handled = True
