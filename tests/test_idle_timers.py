@@ -62,3 +62,117 @@ def test_no_unconditional_visual_timers_and_close_cleans_sources():
     assert "GLib.timeout_add(500, self._tick)" not in control
     lifecycle = (Path(__file__).parents[1] / "src/cast_lifecycle.py").read_text()
     assert "self._stop_ui_timers()" in lifecycle
+
+
+def test_real_window_timer_callbacks_under_fake_glib_clock():
+    """Execute the actual GUI timer methods, with no GTK, LAN or threads."""
+    from types import SimpleNamespace
+    import textwrap
+    import idle_timers
+    import sleep_fade
+    from gui_source import main_window_methods
+
+    class Clock:
+        def __init__(self):
+            self.ms = 0
+            self.next_id = 0
+            self.jobs = {}
+
+        def timeout_add(self, interval, callback):
+            self.next_id += 1
+            self.jobs[self.next_id] = (interval, self.ms + interval, callback)
+            return self.next_id
+
+        def source_remove(self, source):
+            self.jobs.pop(source, None)
+            return True
+
+        def idle_add(self, callback):
+            callback()
+            return 0
+
+        def run(self, milliseconds):
+            end = self.ms + milliseconds
+            count = 0
+            while True:
+                upcoming = [
+                    (next_time, token) for token, (_delay, next_time, _fn)
+                    in self.jobs.items() if next_time <= end
+                ]
+                if not upcoming:
+                    break
+                next_time, token = min(upcoming)
+                self.ms = next_time
+                delay, _next, callback = self.jobs[token]
+                keep = callback()
+                count += 1
+                if token in self.jobs:
+                    if keep:
+                        self.jobs[token] = (delay, self.ms + delay, callback)
+                    else:
+                        self.jobs.pop(token)
+            self.ms = end
+            return count
+
+    names = ("_set_ui_timer", "_sync_ui_timers", "_ui_playing",
+             "_scheduled_sleep_tick", "_scheduled_fade_tick", "_stop_ui_timers")
+    sources = main_window_methods()
+    code = "class Window:\\n" + "\\n".join(
+        textwrap.indent(textwrap.dedent(sources[name]), "    ") + "\\n"
+        for name in names
+    )
+    clock = Clock()
+    namespace = {"GLib": clock, "idle_timers": idle_timers, "sleep_fade": sleep_fade}
+    exec(compile(code, "<headless-timers>", "exec"), namespace)  # noqa: S102
+    window = namespace["Window"]()
+    window._timers_enabled = True
+    window._closing = False
+    window._timer_ids = {}
+    window._timer_periods = {}
+    window._reflow_source = None
+    window.cfg = {"sleep_timer_deadline": 0, "sleep_fade_seconds": 30}
+    window._sleep_fader = SimpleNamespace(phase=None)
+    window.monitor = None
+    window.session = None
+    window.external = False
+    window._url_cast_url = None
+    window._cast_starting = False
+    window.device_state = "IDLE"
+    window._local_stream = lambda: None
+    mapped = [False]
+    focused = [False]
+    window.get_mapped = lambda: mapped[0]
+    window.is_active = lambda: focused[0]
+    counts = {"seek": 0, "meter": 0, "poll": 0}
+
+    def count(name):
+        def callback():
+            counts[name] += 1
+            return True
+        return callback
+
+    window._tick = count("seek")
+    window._meter_tick = count("meter")
+    window._poll_device = count("poll")
+    window._sleep_tick = lambda: True
+    window._sleep_fade_tick = lambda: True
+    window._sync_ui_timers()
+    assert clock.run(60_000) == 2
+    assert counts == {"seek": 0, "meter": 0, "poll": 2}
+
+    mapped[0] = True
+    focused[0] = True
+    window.session = object()
+    window.device_state = "PLAYING"
+    window.monitor = object()
+    window._sync_ui_timers()
+    clock.run(2_000)
+    assert counts["seek"] >= 4 and counts["meter"] >= 20
+    old = counts.copy()
+
+    mapped[0] = False
+    window._sync_ui_timers()
+    clock.run(2_000)
+    assert counts["seek"] == old["seek"] and counts["meter"] == old["meter"]
+    window._stop_ui_timers()
+    assert clock.jobs == {}
