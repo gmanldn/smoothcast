@@ -25,14 +25,15 @@ class DlnaGuiContracts(unittest.TestCase):
 
     def test_volume_and_mute_follow_optional_renderer_capability(self):
         refresh = METHODS["_refresh_controls"]
-        self.assertIn("renderer.supports_rendering_control", refresh)
-        self.assertIn('self._device().startswith("DLNA · ")', refresh)
-        self.assertIn("self.volume_scale.set_sensitive(has_volume)", refresh)
-        self.assertIn("self.mute_button.set_sensitive(has_volume)", refresh)
+        self.assertIn("self._volume_control_available()", refresh)
+        self.assertIn('"supports_rendering_control"', METHODS["_volume_control_available"])
+        self.assertIn('self._device().startswith("DLNA · ")', METHODS["_volume_control_available"])
+        self.assertIn("control.set_sensitive(has_volume)", refresh)
         volume = METHODS["_commit_volume"]
         mute = METHODS["_on_mute"]
-        self.assertIn('device.startswith("DLNA · ")', volume)
-        self.assertIn('device.startswith("DLNA · ")', mute)
+        self.assertIn("self._volume_control_available()", volume)
+        self.assertIn("self._volume_control_available()", mute)
+        self.assertIn("self._volume_control_available()", METHODS["_nudge_volume"])
         self.assertIn("This DLNA receiver does not provide volume control", volume)
         self.assertIn("This DLNA receiver does not provide mute control", mute)
 

@@ -1153,9 +1153,7 @@ class UiMixin(BookmarkUiMixin):
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
         busy = self.busy
-        # FFmpeg may finish producing the HLS playlist while the Chromecast
-        # still plays buffered segments. Keep Stop/Pause/CC enabled until the
-        # *device* reports completion, not merely while the encoder PID lives.
+        # Keep transport enabled until the receiver finishes its buffered HLS.
         active = bool(self.session is not None and self.session.state is not None) or self.external
         ready_to_cast = self.now_playing is not None or (
             self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
@@ -1186,19 +1184,9 @@ class UiMixin(BookmarkUiMixin):
         index = self.queue.index(self.now_playing) if self.now_playing in self.queue else None
         self.prev_button.set_sensitive(not busy and (has_queue and (index is None or index > 0) or active))
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
-        renderer = self._dlna_renderer()
-        dlna_target = self._device().startswith("DLNA · ")
-        has_volume = online and (
-            not dlna_target
-            or renderer is not None and renderer.supports_rendering_control
-        )
-        self.volume_scale.set_sensitive(has_volume)
-        self.mute_button.set_sensitive(has_volume)
-        self.volume_scale.set_tooltip_text(
-            "This DLNA receiver does not provide volume control"
-            if dlna_target and not has_volume
-            else "Receiver volume"
-        )
+        has_volume = online and self._volume_control_available()
+        for control in (self.volume_scale, self.mute_button):
+            control.set_sensitive(has_volume)
         # Sensitivity is user feedback, not the security/ownership guard:
         # callbacks must independently reject changes during a cast.
         target_locked = bool(self.session is not None or self.busy

@@ -623,7 +623,7 @@ class QueueMixin:
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
-        # Keep the selection, but never use addresses from a failed scan.
+        # Keep selection; invalidate stale addresses.
         self.devices = []
         self.dlna_devices = []
         self._dlna_by_key = {}
@@ -856,6 +856,12 @@ class QueueMixin:
 
     def _dlna_renderer(self, device: str | None = None) -> dlna.Renderer | None:
         return self._dlna_by_key.get(device or self._device())
+
+
+    def _volume_control_available(self) -> bool:
+        return not self._device().startswith("DLNA · ") or getattr(
+            self._dlna_renderer(), "supports_rendering_control", False
+        )
 
 
     def _device_host(self, device: str) -> str | None:

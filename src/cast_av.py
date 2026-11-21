@@ -71,9 +71,7 @@ class AvMixin:
         value = int(self.volume_scale.get_value())
         device = target
         renderer = self._dlna_renderer(device)
-        if device.startswith("DLNA · ") and (
-            renderer is None or not renderer.supports_rendering_control
-        ):
+        if not self._volume_control_available():
             self._reject_volume("This DLNA receiver does not provide volume control")
             return False
         if renderer is not None:
@@ -108,11 +106,7 @@ class AvMixin:
 
 
     def _nudge_volume(self, delta: int) -> None:
-        device = self._device()
-        renderer = self._dlna_renderer(device)
-        if device.startswith("DLNA · ") and (
-            renderer is None or not renderer.supports_rendering_control
-        ):
+        if not self._volume_control_available():
             self.toast("This DLNA receiver does not provide volume control", error=True)
             return
         self.volume_scale.set_value(max(0, min(100, self.volume_scale.get_value() + delta)))
@@ -125,16 +119,14 @@ class AvMixin:
         self._apply_volume_icon()
         if self.device_state == "OFFLINE":
             return
-        device = self._device()
-        renderer = self._dlna_renderer(device)
-        if device.startswith("DLNA · ") and (
-            renderer is None or not renderer.supports_rendering_control
-        ):
+        if not self._volume_control_available():
             self._syncing = True
             button.set_active(castctl.volume_muted(self.device_info))
             self._syncing = False
             self.toast("This DLNA receiver does not provide mute control", error=True)
             return
+        device = self._device()
+        renderer = self._dlna_renderer(device)
         if renderer is not None:
             Async.run(lambda: dlna.set_muted(renderer, muted),
                       failed=lambda msg: self.toast(f"DLNA mute: {msg}", error=True), domain="transport")
