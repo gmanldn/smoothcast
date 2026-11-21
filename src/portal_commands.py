@@ -25,7 +25,7 @@ import threading
 import time
 from typing import Callable
 
-ACTIONS = frozenset({"play_pause", "stop", "seek", "volume", "music_autogain"})
+ACTIONS = frozenset({"play_pause", "stop", "seek", "volume", "mute", "music_autogain"})
 CLIENT_ID_MAX = 64
 COMMAND_ID_MAX = 128
 SESSION_HEX_LENGTH = 32
@@ -415,6 +415,12 @@ def run_mutation(controller: object, fence: CommandFence,
             raise CommandError(409, "Receiver volume is unavailable", revision=revision)
         controller.volume_scale.set_value(envelope.payload["value"])
         message = "Volume change requested; the dashboard will refresh with receiver state."
+    elif action == "mute":
+        if (controller.device_state == "OFFLINE"
+                or not controller.mute_button.get_sensitive()):
+            raise CommandError(409, "Receiver mute is unavailable", revision=revision)
+        controller.toggle_mute()
+        message = "Mute change requested; the dashboard will refresh with receiver state."
     elif action == "music_autogain":
         message = controller._portal_apply_music_autogain(envelope.payload["value"])
     else:
