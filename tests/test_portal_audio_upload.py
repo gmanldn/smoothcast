@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import shutil
 import subprocess
@@ -86,4 +87,42 @@ class PortalAudioUploadTests(unittest.TestCase):
                 uploads.create("guest", "large.wav",
                                portal_uploads.MAX_AUDIO_UPLOAD_BYTES + 1)
             self.assertEqual(error.exception.status, 413)
+            uploads.close()
+
+    def test_two_guests_upload_in_parallel_without_cross_session_file_access(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            first_source, second_source = root / "first.mp3", root / "second.mp3"
+            self.make_audio(first_source)
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", "sine=frequency=880:duration=0.5", "-c:a", "libmp3lame",
+                 "-y", str(second_source)],
+                check=True, capture_output=True, timeout=20,
+            )
+            uploads = self.manager(root / "uploads")
+            created = [
+                uploads.create(owner, source.name, source.stat().st_size)
+                for owner, source in (("guest-one", first_source),
+                                      ("guest-two", second_source))
+            ]
+            pairs = (("guest-one", created[0], first_source),
+                     ("guest-two", created[1], second_source))
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(
+                    lambda pair: self.append_file(uploads, pair[0], pair[1]["id"], pair[2]),
+                    pairs,
+                ))
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                completed = list(workers.map(
+                    lambda pair: uploads.finalize(pair[0], pair[1]["id"]),
+                    ((pair[0], pair[1]) for pair in pairs),
+                ))
+
+            with self.assertRaises(portal_uploads.UploadError) as denied:
+                uploads.status("guest-one", created[1]["id"])
+            self.assertEqual(denied.exception.status, 404)
+            self.assertNotEqual(completed[0][0], completed[1][0])
+            self.assertTrue(all(result[2] for result in completed))
+            self.assertFalse(uploads.finalize("guest-one", created[0]["id"])[2])
             uploads.close()
