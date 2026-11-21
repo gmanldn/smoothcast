@@ -86,7 +86,7 @@ class PlaylistTests(unittest.TestCase):
                 encoding="utf-8",
             )
             tracks, skipped = playlist_control.load_playlist(playlist)
-            self.assertEqual(tracks, [str(video)])
+            self.assertEqual(tracks, [str(video.resolve())])
             self.assertEqual(skipped, 2)
 
     def test_missing_or_invalid_playlist_has_clear_error(self):

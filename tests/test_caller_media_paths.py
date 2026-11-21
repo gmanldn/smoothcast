@@ -76,7 +76,7 @@ class CallerMediaPathTests(unittest.TestCase):
         args = ["--action", "stop", "file:///tmp/test.mkv", "--whatever", "film.mp4"]
         got = launch.media_arguments_from_caller(args, cwd)
         self.assertEqual(got[:4], args[:4])
-        self.assertEqual(got[-1], str(cwd / "film.mp4"))
+        self.assertEqual(got[-1], str((cwd / "film.mp4").resolve()))
 
     def test_forwarded_command_line_uses_callers_cwd_not_running_process(self):
         cls = command_line_method()

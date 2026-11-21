@@ -279,6 +279,7 @@ class StreamerReliabilityTests(unittest.TestCase):
             ("caster", b"/usr/bin/python3\0/usr/local/bin/catt\0-d\0TV\0cast\0"),
         )
         with mock.patch.object(streamer.process_identity, "psutil", None), \
+             mock.patch.object(streamer.platform, "system", return_value="Linux"), \
              mock.patch.object(streamer, "pid_alive", return_value=True):
             for role, command in cases:
                 with self.subTest(role=role), mock.patch.object(Path, "read_bytes", return_value=command):
