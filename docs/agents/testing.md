@@ -37,12 +37,11 @@ GitHub Actions updates. `tests/test_actions_sha_pinning.py` scans all present
 and newly added workflows; update pinned refs only after reviewing their
 upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 
-**Fake receivers (#278):** `tests/fake_receivers.py` tests playback without a
-TV and mocks nothing in `dlna`/`castctl`: `FakeDlnaRenderer` (real HTTP/SOAP on
-loopback, inside `allow_loopback()`) and `FakeCast` (a stand-in `catt`, POSIX).
-Time moves only on `advance(seconds)`; script `fail`, `drop`/`go_offline`,
-`delay`; read `calls`. Examples: `tests/test_fake_receivers.py`. They do not
-replace device tests.
+**Fake receivers (#278):** `tests/fake_receivers.py` provides `FakeDlnaRenderer`
+(loopback HTTP/SOAP; use `allow_loopback()`) and `FakeCast` (POSIX `catt` stand-in).
+Fake clock: `advance(seconds)`; script `fail`/`drop`/`go_offline`/`delay`; inspect
+`calls`. Six DLNA profiles and loopback-only `fetch_media()` test tokenized media.
+See `tests/test_fake_receivers.py`; device testing remains required.
 
 **Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
 bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;

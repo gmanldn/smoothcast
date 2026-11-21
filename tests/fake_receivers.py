@@ -42,6 +42,9 @@ import stat
 import sys
 import threading
 import time
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
@@ -85,12 +88,31 @@ class _Fault:
 
 
 class FakeDlnaRenderer:
-    """A UPnP MediaRenderer on 127.0.0.1 with a controllable transport state."""
+    """A UPnP MediaRenderer on 127.0.0.1 with a controllable transport state.
+
+    Profiles are intentionally small receiver quirks, not new SmoothCast
+    settings. ``fetch_media`` lets tests exercise the real DLNA media server
+    from the receiver side without making requests to a real LAN device.
+    """
+
+    PROFILES = {
+        "default": frozenset(),
+        "strict-mime": frozenset({"strict-mime"}),
+        "refuses-head": frozenset({"refuses-head"}),
+        "no-range": frozenset({"no-range"}),
+        "requires-dlna-headers": frozenset({"requires-dlna-headers"}),
+        "closes-after-first-range": frozenset({"closes-after-first-range"}),
+        "nonstandard-position": frozenset({"nonstandard-position"}),
+    }
 
     def __init__(self, *, name: str = "Fake TV", model: str = "FakeDMR",
                  rendering_control: bool = True, duration: float = 3600.0,
-                 buffer_on_play: bool = False) -> None:
+                 buffer_on_play: bool = False, profile: str = "default") -> None:
+        if profile not in self.PROFILES:
+            raise ValueError(f"Unknown fake DLNA profile: {profile}")
         self.name, self.model = name, model
+        self.profile = profile
+        self.quirks = self.PROFILES[profile]
         self.rendering_control = rendering_control
         self.duration = float(duration)
         self.buffer_on_play = buffer_on_play    # Play -> TRANSITIONING until settle()
@@ -101,6 +123,8 @@ class FakeDlnaRenderer:
         self.volume = 30
         self.muted = False
         self.calls: list[tuple[str, dict[str, str]]] = []
+        self.media_requests: list[tuple[str, str | None]] = []
+        self._range_requests = 0
         self._faults: dict[str, list[_Fault]] = {}
         self._delays: dict[str, float] = {}
         self._lock = threading.RLock()
@@ -130,6 +154,10 @@ class FakeDlnaRenderer:
 
     # -- lifecycle
     def start(self) -> "FakeDlnaRenderer":
+        # This is a test-only server; shorten BaseServer's default 500 ms
+        # shutdown polling delay so suites with many profiles finish faster.
+        self._thread = threading.Thread(
+            target=lambda: self._httpd.serve_forever(poll_interval=0.05), daemon=True)
         self._thread.start()
         return self
 
@@ -210,6 +238,57 @@ class FakeDlnaRenderer:
     def calls_of(self, action: str) -> list[dict[str, str]]:
         return [params for name, params in self.calls if name == action]
 
+    def fetch_media(self, url: str, *, method: str = "GET",
+                    range_header: str | None = None) -> tuple[int, dict[str, str], bytes]:
+        """Fetch one loopback media response as this receiver would.
+
+        The URL must point to a loopback server so an issue test cannot turn
+        this test helper into an arbitrary network client. Profiles either
+        tolerate SmoothCast's real response or return a bounded, useful error.
+        """
+        parsed = urlsplit(url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            raise ValueError("Fake DLNA media fetch is limited to loopback HTTP")
+        method = method.upper()
+        if method not in {"GET", "HEAD"}:
+            raise ValueError("Fake DLNA media fetch supports only GET and HEAD")
+        if method == "HEAD" and "refuses-head" in self.quirks:
+            raise dlna.DlnaError("Fake receiver skips HEAD probes; retry the media URL with GET")
+        headers: dict[str, str] = {}
+        if method == "GET" and range_header and "no-range" not in self.quirks:
+            headers["Range"] = range_header
+        if method == "GET" and "Range" in headers and "closes-after-first-range" in self.quirks:
+            if self._range_requests:
+                raise dlna.DlnaError("Fake renderer closed the connection after its first range request")
+            self._range_requests += 1
+        self.media_requests.append((method, headers.get("Range")))
+        request = Request(url, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=3) as response:
+                status = response.status
+                response_headers = {key.lower(): value for key, value in response.headers.items()}
+                body = response.read(2 * 1024 * 1024 + 1)
+        except HTTPError as exc:
+            status = exc.code
+            response_headers = {key.lower(): value for key, value in exc.headers.items()}
+            body = exc.read(4096)
+        except (OSError, URLError) as exc:
+            raise dlna.DlnaError(f"Fake renderer could not fetch SmoothCast media: {exc}") from exc
+        if len(body) > 2 * 1024 * 1024:
+            raise dlna.DlnaError("Fake renderer media probe exceeded its 2 MiB limit")
+        full_response = method == "HEAD" or "Range" not in headers
+        if status not in ({200} if full_response else {206}):
+            raise dlna.DlnaError(f"Fake renderer rejected media response with HTTP {status}")
+        if "strict-mime" in self.quirks and response_headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
+            raise dlna.DlnaError("Fake renderer requires video/mp4 media (UPnP 714)")
+        if "requires-dlna-headers" in self.quirks and not {
+            "contentfeatures.dlna.org", "transfermode.dlna.org",
+        }.issubset(response_headers):
+            raise dlna.DlnaError("Fake renderer requires contentFeatures.dlna.org and transferMode.dlna.org")
+        if "closes-after-first-range" in self.quirks and range_header and status != 206:
+            raise dlna.DlnaError("Fake renderer requires byte-range media responses")
+        return status, response_headers, body
+
     # -- SOAP
     def _take_fault(self, action: str) -> _Fault | None:
         queue = self._faults.get(action) or []
@@ -289,6 +368,8 @@ class FakeDlnaRenderer:
         if action == "GetProtocolInfo":
             return {"Source": "", "Sink": "http-get:*:video/mp4:*"}
         if action == "SetAVTransportURI":
+            if "strict-mime" in self.quirks and 'protocolInfo="http-get:*:video/mp4:*"' not in params.get("CurrentURIMetaData", ""):
+                return ("fault", 714, "Illegal MIME type; requires video/mp4")
             self.uri, self.metadata = params.get("CurrentURI", ""), params.get("CurrentURIMetaData", "")
             self.state, self.position = "STOPPED", 0.0
             return {}
@@ -323,8 +404,11 @@ class FakeDlnaRenderer:
             return {"CurrentTransportState": self.state, "CurrentTransportStatus": "OK",
                     "CurrentSpeed": "1"}
         if action == "GetPositionInfo":
+            rel_time = _clock(self.position)
+            if "nonstandard-position" in self.quirks:
+                rel_time += ".500"
             return {"Track": 1, "TrackDuration": _clock(self.duration) if self.uri else "00:00:00",
-                    "TrackURI": self.uri, "RelTime": _clock(self.position),
+                    "TrackURI": self.uri, "RelTime": rel_time,
                     "AbsTime": _clock(self.position)}
         if action == "GetVolume":
             return {"CurrentVolume": self.volume}

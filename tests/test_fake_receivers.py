@@ -183,6 +183,93 @@ class FakeDlnaTests(unittest.TestCase):
         self.assertFalse(session.active())
         self.assertEqual(self.tv.calls_of("Stop"), [])                    # ownership never began
 
+    def test_receiver_fetches_the_real_token_url_and_ranges(self):
+        with tempfile.TemporaryDirectory() as work:
+            movie = Path(work) / "movie.mp4"
+            movie.write_bytes(bytes(range(128)))
+            media = mock.Mock(path=movie, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                              width=1280, height=720, fps=25.0, duration=60.0)
+            session = dlna.Session()
+            session.start(media, renderer=self.renderer, local_ip="127.0.0.1", offset=0,
+                          title="Movie")
+            try:
+                head_status, _, head_body = self.tv.fetch_media(self.tv.uri, method="HEAD")
+                self.assertEqual((head_status, head_body), (200, b""))
+                status, headers, body = self.tv.fetch_media(self.tv.uri, range_header="bytes=8-15")
+                self.assertEqual((status, body), (206, bytes(range(8, 16))))
+                self.assertEqual(headers["content-range"], "bytes 8-15/128")
+                self.assertIn("contentfeatures.dlna.org", headers)
+                self.assertEqual(self.tv.media_requests, [("HEAD", None), ("GET", "bytes=8-15")])
+                wrong_token = self.tv.uri.rsplit("/", 1)[0] + "/wrong-token"
+                with self.assertRaisesRegex(dlna.DlnaError, "HTTP 404"):
+                    self.tv.fetch_media(wrong_token)
+            finally:
+                session.stop(self.renderer.key)
+
+    def test_mime_and_dlna_header_quirks_accept_smoothcast_mp4_response(self):
+        with tempfile.TemporaryDirectory() as work:
+            movie = Path(work) / "movie.mp4"
+            movie.write_bytes(b"valid test bytes")
+            media = mock.Mock(path=movie, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                              width=1280, height=720, fps=25.0, duration=60.0)
+            for profile in ("strict-mime", "requires-dlna-headers"):
+                with self.subTest(profile=profile), FakeDlnaRenderer(profile=profile) as receiver:
+                    session = dlna.Session()
+                    session.start(media, renderer=receiver.renderer(), local_ip="127.0.0.1",
+                                  offset=0, title="Movie")
+                    try:
+                        status, headers, body = receiver.fetch_media(receiver.uri)
+                        self.assertEqual((status, headers["content-type"], body),
+                                         (200, "video/mp4", b"valid test bytes"))
+                        dlna.set_uri(receiver.renderer(), receiver.uri, "Strict MIME")
+                    finally:
+                        session.stop(receiver.renderer().key)
+
+    def test_head_refusal_and_no_range_profiles_fall_back_to_full_get(self):
+        with tempfile.TemporaryDirectory() as work:
+            movie = Path(work) / "movie.mp4"
+            movie.write_bytes(b"playable bytes")
+            media = mock.Mock(path=movie, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                              width=1280, height=720, fps=25.0, duration=60.0)
+            for profile in ("refuses-head", "no-range"):
+                with self.subTest(profile=profile), FakeDlnaRenderer(profile=profile) as receiver:
+                    session = dlna.Session()
+                    session.start(media, renderer=receiver.renderer(), local_ip="127.0.0.1",
+                                  offset=0, title="Movie")
+                    try:
+                        if profile == "refuses-head":
+                            with self.assertRaisesRegex(dlna.DlnaError, "skips HEAD probes"):
+                                receiver.fetch_media(receiver.uri, method="HEAD")
+                        range_header = "bytes=0-1" if profile == "no-range" else None
+                        status, _, body = receiver.fetch_media(receiver.uri, range_header=range_header)
+                        self.assertEqual((status, body), (200, b"playable bytes"))
+                        self.assertEqual(receiver.media_requests, [("GET", None)])
+                    finally:
+                        session.stop(receiver.renderer().key)
+
+    def test_range_disconnect_is_reported_and_nonstandard_position_is_parsed(self):
+        with tempfile.TemporaryDirectory() as work:
+            movie = Path(work) / "movie.mp4"
+            movie.write_bytes(bytes(range(32)))
+            media = mock.Mock(path=movie, vcodec="h264", acodec="aac", pix_fmt="yuv420p",
+                              width=1280, height=720, fps=25.0, duration=60.0)
+            with FakeDlnaRenderer(profile="closes-after-first-range") as receiver:
+                session = dlna.Session()
+                session.start(media, renderer=receiver.renderer(), local_ip="127.0.0.1",
+                              offset=0, title="Movie")
+                try:
+                    self.assertEqual(receiver.fetch_media(receiver.uri, range_header="bytes=0-3")[0], 206)
+                    with self.assertRaisesRegex(dlna.DlnaError, "closed the connection"):
+                        receiver.fetch_media(receiver.uri, range_header="bytes=4-7")
+                finally:
+                    session.stop(receiver.renderer().key)
+            with FakeDlnaRenderer(profile="nonstandard-position") as receiver:
+                renderer = receiver.renderer()
+                dlna.set_uri(renderer, MEDIA, "Film")
+                dlna.play(renderer)
+                receiver.advance(5)
+                self.assertEqual(dlna.info(renderer)["current_time"], 5.5)
+
 
 @unittest.skipUnless(os.name == "posix", "FakeCast is a POSIX shebang script")
 class FakeCastTests(unittest.TestCase):
