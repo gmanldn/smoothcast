@@ -1066,6 +1066,7 @@ header{padding:16px 0;border-bottom:1px solid #425264}header h1{font-size:clamp(
 nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;background:#26364a;color:#e2edff;text-decoration:none}nav a:hover{background:#364b65}
 #login{max-width:30rem;margin:24px auto}#login button{width:100%}#pin{letter-spacing:.25em}button:not(.secondary):not(.vote){color:#081522}
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :focus-visible{outline:3px solid #ffd166;outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
 </style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
 <section id="login"><h2>Connect to SmoothCast</h2><p id="loginHint">Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>

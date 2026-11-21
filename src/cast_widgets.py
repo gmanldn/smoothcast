@@ -16,6 +16,7 @@ import threading
 import castctl
 import config_control
 import config_persistence
+import idle_chrome
 
 import audio_monitor
 
@@ -436,6 +437,11 @@ class LevelMeter(Gtk.DrawingArea):
         self.set_size_request(-1, 144)
         self.set_draw_func(self._draw)
         self.connect("unrealize", self._on_unrealize)
+        self._gtk_settings = Gtk.Settings.get_default()
+        if self._gtk_settings is not None:
+            # Weakly bound to the widget, not a global settings leak.
+            self._gtk_settings.connect_object(
+                "notify::gtk-enable-animations", self._on_motion_changed, self)
         self._lock = threading.Lock()
         self._target = None       # newest sample from the analysis thread
         self._disp = None         # eased values actually drawn
@@ -449,6 +455,24 @@ class LevelMeter(Gtk.DrawingArea):
         if self._timer != 0:
             GLib.source_remove(self._timer)
             self._timer = 0
+
+    def _on_motion_changed(self, *_args) -> None:
+        if not idle_chrome.animations_enabled(self._gtk_settings):
+            self._start_or_snap()
+
+    def _start_or_snap(self) -> None:
+        """No animation timer while reduced motion is preferred."""
+        if not idle_chrome.animations_enabled(self._gtk_settings):
+            if self._timer:
+                GLib.source_remove(self._timer)
+                self._timer = 0
+            with self._lock:
+                self._disp = self._target
+                self._gain = self._gain_target
+                self._master = self._master_target
+            self.queue_draw()
+        elif self._timer == 0:
+            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
 
     def set_sample(self, sample) -> None:
         """Store the newest analysis window as the animation target.
@@ -465,8 +489,7 @@ class LevelMeter(Gtk.DrawingArea):
             else:
                 self._gain_target = 0.0
                 self._master_target = self.FLOOR_DB
-        if self._timer == 0:
-            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
+        self._start_or_snap()
 
     def reset(self) -> None:
         """Ease back to silence (no signal)."""
@@ -474,8 +497,7 @@ class LevelMeter(Gtk.DrawingArea):
             self._target = None
             self._gain_target = 0.0
             self._master_target = self.FLOOR_DB
-        if self._timer == 0:
-            self._timer = GLib.timeout_add(self._TICK_MS, self._animate)
+        self._start_or_snap()
 
     def _animate(self) -> bool:
         """One animation step: ease displayed values toward target."""
