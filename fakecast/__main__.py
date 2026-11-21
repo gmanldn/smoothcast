@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 
 from .profiles import PROFILES
@@ -15,8 +16,12 @@ def main() -> int:
     parser.add_argument("--profile", choices=tuple(PROFILES), default="generic")
     args = parser.parse_args()
     try:
-        with FakeCastReceiver(port=args.port, profile=args.profile) as receiver:
+        with FakeCastReceiver(port=args.port, profile=args.profile, advertise=True) as receiver:
             print(f"Fake Cast receiver listening on {receiver.host}:{receiver.port}", flush=True)
+            if receiver.advertisement_active:
+                print(f"Advertised as {receiver.service_name}", flush=True)
+            elif receiver.advertising_error:
+                print(f"mDNS unavailable: {receiver.advertising_error}", file=sys.stderr, flush=True)
             while True:
                 time.sleep(1)
     except KeyboardInterrupt:

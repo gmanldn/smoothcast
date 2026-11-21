@@ -34,8 +34,9 @@ The loopback TLS/CASTV2 fake lives in the top-level `fakecast` package. It
 covers a persistent PyChromecast sender connection, heartbeat, receiver status
 and basic media commands. Its five model profiles summarize Google's published
 codec and resolution limits; they are fixtures, not real-device qualifications.
-The fake does not advertise over mDNS or fetch media yet. See
-[Testing SmoothCast](../TESTING.md) and issue #203 for the current scope.
+The fake advertises `_googlecast._tcp.local.` on loopback only with the Cast
+TXT fields. It does not fetch media yet. See [Testing SmoothCast](../TESTING.md)
+and issue #203 for the current scope.
 
 Protocol fault tests can set `answer_heartbeats = False`, use
 `delay_command()`, `error_command()` or `drop_connection_on()` for a named

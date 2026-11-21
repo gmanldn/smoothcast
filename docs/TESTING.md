@@ -25,8 +25,11 @@ They model rejection behavior with the Cast `LOAD_FAILED` error code
 `MEDIA_SRC_NOT_SUPPORTED`; they do not certify a physical receiver or display.
 
 Available profiles: `chromecast-gen2`, `chromecast-gen3`, `chromecast-ultra`,
-`chromecast-with-google-tv`, and `google-tv-streamer`. mDNS advertisement and
-receiver-side playlist/segment fetching are still under development.
+`chromecast-with-google-tv`, and `google-tv-streamer`. mDNS is opt-in for an
+in-process receiver (`advertise=True`) and enabled by the standalone CLI. It
+advertises `_googlecast._tcp.local.` on loopback only with Cast TXT fields. The
+discovery test is marked `multicast` and skips cleanly when local multicast is
+unavailable. Receiver-side playlist/segment fetching is still under development.
 
 Run it as a standalone development process with:
 
@@ -44,8 +47,9 @@ with FakeCastReceiver(profile="chromecast-gen2") as receiver:
     ...
 ```
 
-The fake binds only to `127.0.0.1`. Its checked-in self-signed certificate and
-private key are test credentials for local traffic only.
+The fake binds only to `127.0.0.1` and advertises only on that interface. Its
+checked-in self-signed certificate and private key are test credentials for
+local traffic only.
 
 Model limits live in `fakecast/profiles.py`. Add `CodecLimit` entries only
 from documented receiver specifications. A fake stream is passed through
@@ -61,5 +65,5 @@ Fault injection is available through `answer_heartbeats`, `delay_command()`,
 faults require the receiver-side HTTP fetch path and remain unimplemented.
 
 The CASTV2 fake remains an active slice of [#203](https://github.com/gmanldn/smoothcast/issues/203).
-It does not yet cover mDNS, the complete CastBackend contract or receiver-side
-media fetching; keep those acceptance items open until their tests exist.
+It does not yet cover the complete CastBackend contract or receiver-side media
+fetching; keep those acceptance items open until their tests exist.

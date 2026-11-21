@@ -15,7 +15,9 @@ import struct
 import threading
 import time
 from typing import Any
+import uuid
 
+from .discovery import CastAdvertiser
 from .profiles import PROFILES, supports
 
 try:
@@ -39,6 +41,7 @@ class FakeCastReceiver:
 
     def __init__(
         self, host: str = "127.0.0.1", port: int = 0, *, profile: str = "generic",
+        advertise: bool = False,
     ) -> None:
         if host != "127.0.0.1":
             raise ValueError("FakeCastReceiver may bind only to loopback")
@@ -49,6 +52,7 @@ class FakeCastReceiver:
         self.host = host
         self.port = port
         self.profile = profile
+        self.advertise = advertise
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self._lock = threading.RLock()
         self._stopped = threading.Event()
@@ -57,6 +61,8 @@ class FakeCastReceiver:
         self._client_threads: set[threading.Thread] = set()
         self._clients: set[ssl.SSLSocket] = set()
         self._tls_context: ssl.SSLContext | None = None
+        self._advertiser: CastAdvertiser | None = None
+        self._advertisement_id = uuid.uuid4().hex
         self._app_id: str | None = None
         self._media_session_id = 1
         self._media_state = "IDLE"
@@ -129,10 +135,18 @@ class FakeCastReceiver:
             target=self._accept, name="fakecast-accept", daemon=True,
         )
         self._accept_thread.start()
+        if self.advertise:
+            self._advertiser = CastAdvertiser(
+                self.host, self.port, self.profile, identifier=self._advertisement_id,
+            )
+            self._advertiser.start()
         return self
 
     def stop(self) -> None:
         self._stopped.set()
+        advertiser, self._advertiser = self._advertiser, None
+        if advertiser is not None:
+            advertiser.stop()
         listener, self._listener = self._listener, None
         if listener is not None:
             listener.close()
@@ -154,6 +168,23 @@ class FakeCastReceiver:
         with self._lock:
             self._client_threads.clear()
             self._clients.clear()
+
+    @property
+    def advertising_error(self) -> str | None:
+        """Explain why mDNS is unavailable; direct loopback access still works."""
+        if self._advertiser is None:
+            return None
+        return self._advertiser.error
+
+    @property
+    def advertisement_active(self) -> bool:
+        """Whether this receiver currently has an active mDNS record."""
+        return bool(self._advertiser and self._advertiser.active)
+
+    @property
+    def service_name(self) -> str | None:
+        """The unique Cast mDNS service name, when advertising is enabled."""
+        return self._advertiser.service_name if self._advertiser else None
 
     def __enter__(self) -> FakeCastReceiver:
         return self.start()
