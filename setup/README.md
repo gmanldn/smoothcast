@@ -30,6 +30,9 @@ source files; a failed source copy, bootstrap or shortcut registration restores
 their prior versions. User files and existing .venv are preserved. A failed
 *new* installation is cleaned up. The copy rollback cannot reverse native OS
 packages or in-place Python package changes already made to an existing .venv.
+On macOS, the app bundle is assembled beside its registered path and replaced
+only after its icon, launcher and metadata are complete; setup refuses to
+replace a different or unrecognized `SmoothCast.app` bundle.
 
 ## Dependency inventory
 

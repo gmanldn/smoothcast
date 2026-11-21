@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import plistlib
 import shutil
 from pathlib import Path
 import subprocess
@@ -361,14 +362,81 @@ class SetupContractTests(unittest.TestCase):
 
     def test_macos_application_bundle_has_valid_plist_and_executable(self):
         with tempfile.TemporaryDirectory() as directory:
-            app = shortcuts.install_macos(home=Path(directory))
+            prior_contents = (Path(directory) / "Applications" / "SmoothCast.app" /
+                              "Contents")
+            (prior_contents / "MacOS").mkdir(parents=True)
+            (prior_contents / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "local.smoothcast.player",
+            }))
+            (prior_contents / "MacOS" / "old-launcher").write_text("old")
+
+            def fake_macos_tool(command, **_kwargs):
+                if command[0] == "sips":
+                    Path(command[-1]).write_bytes(b"png")
+                elif command[0] == "iconutil":
+                    Path(command[command.index("-o") + 1]).write_bytes(b"icns")
+
+            with mock.patch.object(shortcuts, "sys",
+                                   mock.Mock(platform="darwin", executable=sys.executable)), \
+                 mock.patch.object(shortcuts.subprocess, "run", side_effect=fake_macos_tool):
+                app = shortcuts.install_macos(home=Path(directory))
             self.assertTrue((app / "Contents" / "Info.plist").is_file())
+            with (app / "Contents" / "Info.plist").open("rb") as stream:
+                metadata = plistlib.load(stream)
+            self.assertEqual(metadata["CFBundleIdentifier"], "local.smoothcast.player")
+            self.assertEqual(metadata["CFBundlePackageType"], "APPL")
+            self.assertEqual(metadata["CFBundleIconFile"], "SmoothCast.icns")
+            self.assertTrue((app / "Contents" / "Resources" / "SmoothCast.icns").is_file())
+            self.assertFalse((app / "Contents" / "MacOS" / "old-launcher").exists())
+            self.assertEqual(list(app.parent.glob(".smoothcast-app-backup-*")), [])
             script = app / "Contents" / "MacOS" / "SmoothCast"
             self.assertTrue(script.is_file())
             self.assertIn(str(ROOT / "setup" / "launch.py"), script.read_text())
             # Windows does not expose POSIX executable mode bits for files.
             if os.name != "nt":
                 self.assertTrue(script.stat().st_mode & 0o111)
+
+    def test_macos_icon_failure_preserves_previous_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "Applications" / "SmoothCast.app"
+            contents = app / "Contents"
+            (contents / "MacOS").mkdir(parents=True)
+            (contents / "MacOS" / "SmoothCast").write_text("old launcher")
+            (contents / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "local.smoothcast.player",
+            }))
+
+            def fail_iconutil(command, **_kwargs):
+                if command[0] == "sips":
+                    Path(command[-1]).write_bytes(b"png")
+                elif command[0] == "iconutil":
+                    raise subprocess.CalledProcessError(1, command)
+
+            with mock.patch.object(shortcuts, "sys",
+                                   mock.Mock(platform="darwin", executable=sys.executable)), \
+                 mock.patch.object(shortcuts.subprocess, "run", side_effect=fail_iconutil):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    shortcuts.install_macos(home=Path(directory))
+
+            self.assertEqual((contents / "MacOS" / "SmoothCast").read_text(), "old launcher")
+            with (contents / "Info.plist").open("rb") as stream:
+                self.assertEqual(plistlib.load(stream)["CFBundleIdentifier"],
+                                 "local.smoothcast.player")
+            self.assertEqual(list(app.parent.glob(".smoothcast-app-stage-*")), [])
+
+    def test_macos_registration_refuses_to_replace_another_application(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "Applications" / "SmoothCast.app"
+            contents = app / "Contents"
+            contents.mkdir(parents=True)
+            (contents / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "com.example.other-app",
+            }))
+            with self.assertRaisesRegex(ValueError, "another application"):
+                shortcuts.install_macos(home=Path(directory))
+            with (contents / "Info.plist").open("rb") as stream:
+                self.assertEqual(plistlib.load(stream)["CFBundleIdentifier"],
+                                 "com.example.other-app")
 
     def test_windows_shortcut_paths_are_quoted_not_evaluated(self):
         source = shortcuts.windows_shortcut_command(

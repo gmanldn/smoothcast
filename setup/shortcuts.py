@@ -37,52 +37,95 @@ def app_launcher(python: Path, launch_script: Path) -> str:
 
 def install_macos(*, home: Path | None = None) -> Path:
     base = home if home is not None else Path.home()
-    app = base / "Applications" / "SmoothCast.app"
-    executable = app / "Contents" / "MacOS" / "SmoothCast"
-    plist = app / "Contents" / "Info.plist"
-    resources = app / "Contents" / "Resources"
-    resources.mkdir(parents=True, exist_ok=True)
-    source = ROOT / "data" / "cast-control.png"
-    if not source.is_file():
-        raise FileNotFoundError(f"SmoothCast icon is missing: {source}")
-    shutil.copy2(source, resources / "SmoothCast.png")
-    if sys.platform == "darwin":
-        # Finder and the macOS Dock expect a real multi-resolution .icns file.
-        with tempfile.TemporaryDirectory(prefix="smoothcast-icon-") as temp:
-            iconset = Path(temp) / "SmoothCast.iconset"
-            iconset.mkdir()
-            for pixels, name in ((16, "icon_16x16.png"), (32, "icon_16x16@2x.png"),
-                                 (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"),
-                                 (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"),
-                                 (256, "icon_256x256.png"), (512, "icon_256x256@2x.png"),
-                                 (512, "icon_512x512.png"), (1024, "icon_512x512@2x.png")):
-                subprocess.run(["sips", "-s", "format", "png", "-z", str(pixels),
-                                str(pixels), str(source), "--out", str(iconset / name)],
-                               stdout=subprocess.DEVNULL, check=True, timeout=30)
-            subprocess.run(["iconutil", "-c", "icns", "-o",
-                            str(resources / "SmoothCast.icns"), str(iconset)],
-                           check=True, timeout=30)
-    executable.parent.mkdir(parents=True, exist_ok=True)
-    executable.write_text(
-        app_launcher(Path(sys.executable), ROOT / "setup" / "launch.py"),
-        encoding="utf-8",
-    )
-    executable.chmod(0o755)
-    metadata = {
-        "CFBundleIdentifier": "local.smoothcast.player",
-        "CFBundleExecutable": "SmoothCast",
-        "CFBundleName": "SmoothCast",
-        "CFBundleDisplayName": "SmoothCast",
-        "CFBundlePackageType": "APPL",
-        "CFBundleIconFile": "SmoothCast.icns" if sys.platform == "darwin" else "SmoothCast.png",
-        "CFBundleShortVersionString": _version(),
-        "NSHighResolutionCapable": True,
-    }
-    plist.parent.mkdir(parents=True, exist_ok=True)
-    with plist.open("wb") as fh:
-        plistlib.dump(metadata, fh)
-    return app
+    applications = base / "Applications"
+    destination = applications / "SmoothCast.app"
+    icon = ROOT / "data" / "cast-control.png"
+    if not icon.is_file():
+        raise FileNotFoundError(f"SmoothCast icon is missing: {icon}")
+    applications.mkdir(parents=True, exist_ok=True)
+    if destination.is_symlink():
+        raise ValueError(f"Refusing to replace symbolic-link application bundle: {destination}")
+    if destination.exists():
+        if not destination.is_dir():
+            raise ValueError(f"Refusing to replace non-directory application bundle: {destination}")
+        try:
+            with (destination / "Contents" / "Info.plist").open("rb") as fh:
+                existing = plistlib.load(fh)
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            raise ValueError(
+                f"Refusing to replace unrecognized application bundle: {destination}"
+            ) from None
+        if (not isinstance(existing, dict) or
+                existing.get("CFBundleIdentifier") != "local.smoothcast.player"):
+            raise ValueError(f"Refusing to replace another application: {destination}")
 
+    # Build beside the final path so an icon or plist failure leaves an
+    # existing registered app untouched. The completed tree is renamed into
+    # place only after every required file has been written.
+    with tempfile.TemporaryDirectory(prefix=".smoothcast-app-stage-",
+                                     dir=applications) as temporary:
+        staging = Path(temporary) / "SmoothCast.app"
+        resources = staging / "Contents" / "Resources"
+        resources.mkdir(parents=True)
+        shutil.copy2(icon, resources / "SmoothCast.png")
+        if sys.platform == "darwin":
+            # Finder and the macOS Dock expect a real multi-resolution .icns file.
+            with tempfile.TemporaryDirectory(prefix="smoothcast-icon-") as temp:
+                iconset = Path(temp) / "SmoothCast.iconset"
+                iconset.mkdir()
+                for pixels, name in ((16, "icon_16x16.png"), (32, "icon_16x16@2x.png"),
+                                     (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"),
+                                     (128, "icon_128x128.png"), (256, "icon_128x128@2x.png"),
+                                     (256, "icon_256x256@2x.png"), (512, "icon_512x512.png"),
+                                     (512, "icon_512x512@2x.png"), (1024, "icon_512x512@2x.png")):
+                    subprocess.run(["sips", "-s", "format", "png", "-z", str(pixels),
+                                    str(pixels), str(icon), "--out", str(iconset / name)],
+                                   stdout=subprocess.DEVNULL, check=True, timeout=30)
+                subprocess.run(["iconutil", "-c", "icns", "-o",
+                                str(resources / "SmoothCast.icns"), str(iconset)],
+                               check=True, timeout=30)
+        executable = staging / "Contents" / "MacOS" / "SmoothCast"
+        executable.parent.mkdir(parents=True)
+        executable.write_text(
+            app_launcher(Path(sys.executable), ROOT / "setup" / "launch.py"),
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+        metadata = {
+            "CFBundleIdentifier": "local.smoothcast.player",
+            "CFBundleExecutable": "SmoothCast",
+            "CFBundleName": "SmoothCast",
+            "CFBundleDisplayName": "SmoothCast",
+            "CFBundlePackageType": "APPL",
+            "CFBundleIconFile": "SmoothCast.icns" if sys.platform == "darwin" else "SmoothCast.png",
+            "CFBundleShortVersionString": _version(),
+            "NSHighResolutionCapable": True,
+        }
+        with (staging / "Contents" / "Info.plist").open("wb") as fh:
+            plistlib.dump(metadata, fh)
+
+        backup: Path | None = None
+        if destination.exists():
+            backup = Path(tempfile.mkdtemp(prefix=".smoothcast-app-backup-",
+                                           dir=applications))
+            backup.rmdir()
+            destination.replace(backup)
+        try:
+            staging.replace(destination)
+        except OSError as error:
+            if backup is not None and backup.exists():
+                try:
+                    backup.replace(destination)
+                    backup = None
+                except OSError as restore_error:
+                    raise OSError(
+                        f"New app could not be installed; prior bundle remains at {backup}: "
+                        f"{restore_error}"
+                    ) from error
+            raise
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)
+    return destination
 
 def _version() -> str:
     path = ROOT / "src" / "version.py"
