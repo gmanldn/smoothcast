@@ -66,7 +66,32 @@ class PortalQueueMixin:
                 return index
         raise portal.PortalRequestError(404, "That queue item is no longer here")
 
-    def _portal_queue_action(self, operation: str, payload: dict) -> str | None:
+    def _portal_media_info(self, payload: dict) -> dict:
+        """Resolve one opaque queue ID to a readable regular file for a room screen.
+
+        Runs on the GTK thread so it sees the live queue. Only queued items can be
+        streamed; the path is returned to the portal process internally and never
+        reaches a client. The host can turn guest screens off entirely.
+        """
+        if not self.cfg.get("portal_screens", True):
+            raise portal.PortalRequestError(
+                403, "The host has turned off screens for this room")
+        index = self._portal_queue_index(payload.get("id"))
+        path = pathlib.Path(self.queue[index])
+        try:
+            info = path.stat()
+        except OSError:
+            raise portal.PortalRequestError(404, "That media is no longer available") from None
+        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
+            raise portal.PortalRequestError(404, "That media is no longer available")
+        display_names = getattr(self, "_portal_queue_display_names", {})
+        return {"path": str(path),
+                "title": display_names.get(str(path), path.name),
+                "duration": self.queue_durations.get(str(path), 0.0)}
+
+    def _portal_queue_action(self, operation: str, payload: dict) -> str | dict | None:
+        if operation == "media_path":
+            return self._portal_media_info(payload)
         if operation == "queue_clear":
             self._portal_check_queue_revision(payload)
             self.clear_queue()

@@ -20,7 +20,7 @@ _PRIVATE_NETWORKS = tuple(ipaddress.ip_network(network) for network in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _INSTANCE_ID = re.compile(r"^[a-f0-9]{32}$")
 _DNS_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
-LOCAL_CAPABILITIES = ("room", "video-upload", "remote-cast")
+LOCAL_CAPABILITIES = ("room", "video-upload", "remote-cast", "screens")
 
 
 @dataclass(frozen=True)

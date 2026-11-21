@@ -84,6 +84,52 @@ remaining work.
 [pairing]: https://github.com/gmanldn/smoothcast/issues/358
 [transfers]: https://github.com/gmanldn/smoothcast/issues/357
 
+## Screens: browsers as playback targets
+
+Any phone, tablet, laptop or smart-TV browser on the LAN can become a **screen**
+(video) or **speaker** (audio) for the room, with nothing to install. Open
+`/screen` on the host's address (for example `http://smoothcast-lounge.local:PORT/screen`),
+name the device, enter the room PIN, and press **Start screen** once so the
+browser allows sound. The device then waits for the room to send it something
+and keeps itself awake where the browser supports a screen wake lock.
+
+From the **Screens** card on any paired guest's dashboard, pick an item from the
+shared queue and press **Play**. Screens are independent targets: controlling
+one never stops, replaces or takes over the host's own Cast or DLNA playback.
+Play, pause, resume, seek, stop and volume are sequenced per screen; an
+identical retried command returns its original receipt, and a late report about
+an earlier item cannot overwrite a newer one. Starting an item from the card
+also makes the screen *follow the queue*: when an item finishes, the next
+playable one starts. Unplayable entries are skipped rather than stalling.
+
+**Delivery.** The browser tells the host which container types it can decode.
+If it can decode the file's container, SmoothCast serves the original file with
+byte-range support (**direct**). If a direct stream fails because of an
+unsupported codec, the screen asks for the converted stream automatically.
+For other formats (for example AVI or AIFF) the host runs FFmpeg to produce a
+progressive fragmented MP4 (**converted by host**): at most two conversions run
+at once, they run at below-normal priority, they are killed the moment the
+screen disconnects, and a converted stream that drops while paused resumes at
+the same position. Seeking a converted stream restarts it at the new position.
+
+**Security and limits.**
+
+- Screens, polling, commands and media require a paired session cookie. Every
+  state-changing request also needs the CSRF token and a matching Host/Origin.
+  Only the session that registered a screen may poll or report for it; any paired
+  participant may send commands, like the shared queue.
+- Media is addressed only by the room's opaque queue IDs and only items
+  currently in the shared queue can be streamed. Host paths never reach a
+  browser; symlinks, directories and files that vanished are refused at open time.
+- Revoking a guest or ending guest access removes their screens immediately and
+  blocks further media reads. A screen that stops contacting the host is shown as
+  not responding after 12 seconds and removed after 30.
+- At most 8 screens, 8 concurrent media streams and 2 conversions per room.
+- The host can turn guest screens off in **Preferences > Playback > Shared room**;
+  media requests are then refused with a clear message.
+- The room still uses plain HTTP on a trusted LAN (see below). Media sent to a
+  screen is visible to that LAN segment in the same way as the dashboard.
+
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes

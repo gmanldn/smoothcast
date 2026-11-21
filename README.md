@@ -2,7 +2,21 @@
 
 A modern GTK4/libadwaita Chromecast companion with live compressor metering, dialogue auto-fix, and zero flicker.
 
+## Why SmoothCast
+
+**The tool that plays your media on every screen in the house, and lets everyone in the room join in.**
+
+- **Everyone's hands on the queue, nobody installs anything.** Guests scan a QR code, enter a PIN and add songs and films from their own phone, vote, reorder and control playback. No app, no account, no cloud.
+- **Every device is a screen.** Open the room's `/screen` page on a TV, tablet, laptop or spare phone and it becomes a display or speaker for the shared queue. Chromecast, DLNA TVs and browsers all appear as targets; formats a browser cannot play are converted on the host automatically.
+- **Host or client, your choice.** A computer with the media runs SmoothCast as the host; every other device only needs a browser. Several hosts can coexist on one network.
+- **Bullet-proof by design.** Fenced, idempotent commands; stale or double taps cannot skip a film; a failing guest, screen or receiver never interrupts what is playing; recoveries are automatic and every failure is explained in plain words.
+- **Private by default.** Everything stays on your network. The room is PIN-protected, sessions expire, any guest can be ejected instantly, and the host decides whether guest devices may receive media at all.
+
+See [what makes SmoothCast different](docs/PRODUCT.md) for the roles, guarantees and roadmap.
+
 ## Features
+
+- **Screens: any browser is a display or speaker** — a paired phone, tablet, laptop or smart-TV browser opens `/screen` and plays the shared queue on itself, with direct play when the browser supports the format and a bounded, nice'd FFmpeg conversion when it does not; the host can disable guest screens in Preferences > Playback > Shared room (see [Screens](docs/LAN_PORTAL.md#screens-browsers-as-playback-targets))
 
 - **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker); bounded metadata memory for long films and asynchronous FFmpeg shutdown
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes

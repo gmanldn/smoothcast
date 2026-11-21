@@ -25,6 +25,8 @@ from urllib.parse import urlsplit
 import portal_commands
 import peer_discovery
 import portal_room
+import portal_screen_page
+import portal_screens_http
 import portal_uploads
 
 
@@ -97,7 +99,10 @@ def valid_friendly_name(value: str) -> bool:
 
 
 def _page() -> bytes:
-    return _HTML.encode("utf-8")
+    # The Screens panel is self-contained; it hides itself until the dashboard
+    # has loaded and is inert on rooms where no screen ever connects.
+    return _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1
+                         ).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -127,6 +132,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._queue_command_cache: OrderedDict[tuple[str, str], tuple] = OrderedDict()
         self._sessions: dict[str, _Session] = {}
         self.queue_ids: set[str] = set()
+        portal_screens_http.attach(self)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
         port = self.server_address[1]
@@ -154,6 +160,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
 
     def server_close(self) -> None:
         try:
+            self.screens.close()
             self.commands.close()
         finally:
             super().server_close()
@@ -162,6 +169,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         """Expire sessions and stale presence on the server's regular poll."""
         with self._lock:
             self._expire_sessions(self.clock())
+            live = frozenset(self._sessions)
+        self.screens.retain_owner_keys(live.__contains__)
         self.room.expire_inactive(time.time())
 
     def host_allowed(self, host: str) -> bool:
@@ -212,6 +221,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                         self._queue_command_cache.pop(key, None)
                 # Invalidate queued/late transport envelopes, never stop media.
                 self.fence.rotate()
+        if keys:
+            self.screens.drop_owner_keys(set(keys))
         if keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(set(keys))
         return len(keys)
@@ -233,6 +244,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._attempts.clear()
             self._lockouts.clear()
             self.fence.rotate()
+        self.screens.drop_owner_keys(owner_keys)
         if owner_keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(owner_keys)
         return new_pin_value
@@ -468,6 +480,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(400, "Invalid host")
         if path in {"/", "/index.html"}:
             return self._send(200, _page(), content_type="text/html; charset=utf-8")
+        if portal_screens_http.route(self, "GET", path):
+            return
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
@@ -498,6 +512,7 @@ class _Handler(BaseHTTPRequestHandler):
             state["queue"] = merged
             state["room"] = self.server.room.snapshot(participant_id)
             directory = self.server.peer_directory
+            state["screens"] = self.server.screens.snapshot()
             state["peers"] = directory.snapshot() if directory is not None else []
             state["peer_discovery_available"] = directory is not None
             return self._send(200, {"ok": True, "state": state})
@@ -518,6 +533,8 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         path = self._path()
+        if portal_screens_http.route(self, "POST", path):
+            return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
@@ -783,6 +800,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(507, "Could not store this upload chunk")
 
     def do_DELETE(self) -> None:  # noqa: N802
+        if portal_screens_http.route(self, "DELETE", self._path()):
+            return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
         upload_id = self._upload_route(self._path())
@@ -799,7 +818,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _not_allowed(self) -> None:
         self._error(405, "Method not allowed")
 
-    do_PATCH = do_OPTIONS = do_HEAD = _not_allowed  # noqa: N815
+    def do_HEAD(self) -> None:  # noqa: N802
+        # Only authenticated media may answer HEAD; every other path stays 405.
+        if not self._safe_origin(required=False):
+            return self._error(400, "Invalid host")
+        if not portal_screens_http.route(self, "HEAD", self._path()):
+            self._not_allowed()
+
+    do_PATCH = do_OPTIONS = _not_allowed  # noqa: N815
 
 
 class Portal:
@@ -1088,7 +1114,7 @@ queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const du
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
-renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
+renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const time=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${time(item.position)}${item.duration==null?"":` / ${time(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
   }catch(err){

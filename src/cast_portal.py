@@ -136,7 +136,15 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_revoke_button.set_sensitive(bool(ids))
         summary = portal_uploads.format_portal_activity(activity)
         presence = f"In room: {roster}" if roster else "No guests connected"
-        label.set_text(f"{presence} · {summary}")
+        screens = getattr(getattr(self._portal, "server", None), "screens", None)
+        try:
+            screen_rows = screens.snapshot() if screens is not None else []
+        except Exception:
+            screen_rows = []
+        ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
+                 if isinstance(row, dict) and row.get("ready")]
+        shown = f" · Screens: {', '.join(ready)}" if ready else ""
+        label.set_text(f"{presence} · {summary}{shown}")
         peers = getattr(getattr(self, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
         available = getattr(getattr(self, "_portal", None),
