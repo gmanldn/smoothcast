@@ -102,7 +102,7 @@ def test_unicast_latency_and_payload_are_delivered_intact():
     assert when == 40 and datagram == Datagram("10.0.0.1", b"hello", False)
 
 
-def test_multicast_reaches_everyone_but_the_sender_and_counts_egress_once():
+def test_multicast_reaches_everyone_and_counts_egress_once():
     world = ms.SimWorld(2)
     transports = [world.net.attach(f"10.0.0.{i}") for i in range(1, 6)]
     counts = [0] * 5
@@ -110,9 +110,13 @@ def test_multicast_reaches_everyone_but_the_sender_and_counts_egress_once():
         transport.set_datagram_handler(lambda d, i=index: counts.__setitem__(i, counts[i] + 1))
     transports[0].send_multicast(b"x" * 100)
     world.run(1)
-    assert counts == [0, 1, 1, 1, 1]
-    assert world.net.stats["10.0.0.1"].sent_bytes == 100 + ms.UDP_OVERHEAD
-    assert world.net.stats["10.0.0.2"].recv_bytes == 100 + ms.UDP_OVERHEAD
+    assert counts == [1, 1, 1, 1, 1]               # loopback on, like IP_MULTICAST_LOOP
+    world.net.multicast_loopback = False
+    transports[0].send_multicast(b"x" * 100)
+    world.run(1)
+    assert counts == [1, 2, 2, 2, 2]
+    assert world.net.stats["10.0.0.1"].sent_bytes == 2 * (100 + ms.UDP_OVERHEAD)
+    assert world.net.stats["10.0.0.2"].recv_bytes == 2 * (100 + ms.UDP_OVERHEAD)
 
 
 def test_multicast_can_be_blocked_while_unicast_still_works():

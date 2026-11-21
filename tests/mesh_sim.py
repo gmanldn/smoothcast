@@ -234,6 +234,7 @@ class SimNetwork:
         self.rng = rng
         self.default_link = LinkProfile()
         self.multicast_enabled = True
+        self.multicast_loopback = True      # like IP_MULTICAST_LOOP: senders hear themselves
         self._links: dict[tuple[str, str], LinkProfile] = {}
         self._transports: dict[str, SimTransport] = {}
         self._offline: set[str] = set()
@@ -320,7 +321,8 @@ class SimNetwork:
             if not self.multicast_enabled:
                 self._note("mcast-blocked", src, "*", size)
                 return
-            targets = [addr for addr in sorted(self._transports) if addr != src]
+            targets = [addr for addr in sorted(self._transports)
+                       if addr != src or self.multicast_loopback]
         else:
             targets = [dst]
         for target in targets:
