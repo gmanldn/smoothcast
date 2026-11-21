@@ -54,6 +54,7 @@ CATT = _find_catt()
 # be commanded. The empty string means "nothing chosen yet" (issue #239).
 DEFAULT_DEVICE = ""
 NO_DEVICE_MESSAGE = "No receiver selected. Scan the network and choose one."
+COMMAND_TIMEOUT_MESSAGE = "The device did not respond in time."
 
 
 class CastError(RuntimeError):
@@ -175,7 +176,7 @@ def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, s
     try:
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
-        return False, "The device did not respond in time."
+        return False, COMMAND_TIMEOUT_MESSAGE
     except OSError as exc:
         return False, str(exc)
     message = (result.stdout or result.stderr or "").strip()
@@ -232,12 +233,36 @@ def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     return _backend.command(device, *args, timeout=timeout)
 
 
+def _is_idempotent(args: tuple[str, ...]) -> bool:
+    if args in {("play",), ("pause",), ("stop",)}:
+        return True
+    if len(args) != 2:
+        return False
+    operation, value = args
+    if operation == "seek":
+        return value.isdigit()
+    if operation == "volume":
+        return value.isdigit() and 0 <= int(value) <= 100
+    return operation == "volumemute" and value in {"true", "false"}
+
+
+def idempotent_command(device: str, *args: str) -> tuple[bool, str]:
+    """Retry one timed-out absolute transport/volume command exactly once."""
+    if not device.strip():
+        return False, NO_DEVICE_MESSAGE
+    retryable = _is_idempotent(args)
+    result = command(device, *args)
+    if retryable and result == (False, COMMAND_TIMEOUT_MESSAGE):
+        return command(device, *args)
+    return result
+
+
 def play(device: str) -> tuple[bool, str]:
-    return command(device, "play")
+    return idempotent_command(device, "play")
 
 
 def pause(device: str) -> tuple[bool, str]:
-    return command(device, "pause")
+    return idempotent_command(device, "pause")
 
 
 def play_toggle(device: str) -> tuple[bool, str]:
@@ -245,7 +270,7 @@ def play_toggle(device: str) -> tuple[bool, str]:
 
 
 def stop(device: str) -> tuple[bool, str]:
-    return command(device, "stop")
+    return idempotent_command(device, "stop")
 
 
 def seek_seconds(seconds: float) -> int:
@@ -263,16 +288,16 @@ def seek_seconds(seconds: float) -> int:
 
 
 def seek(device: str, seconds: float) -> tuple[bool, str]:
-    return command(device, "seek", str(seek_seconds(seconds)))
+    return idempotent_command(device, "seek", str(seek_seconds(seconds)))
 
 
 def volume(device: str, percent: float) -> tuple[bool, str]:
     level = max(0, min(100, int(round(percent))))
-    return command(device, "volume", str(level))
+    return idempotent_command(device, "volume", str(level))
 
 
 def set_muted(device: str, muted: bool) -> tuple[bool, str]:
-    return command(device, "volumemute", "true" if muted else "false")
+    return idempotent_command(device, "volumemute", "true" if muted else "false")
 
 
 def subs_on(device: str) -> tuple[bool, str]:

@@ -25,6 +25,36 @@ class SeekRoundingTests(unittest.TestCase):
             castctl.seek("TV", 59.9)
         cmd.assert_called_once_with("TV", "seek", "60")
 
+    def test_idempotent_seek_retries_one_timeout_with_same_absolute_target(self):
+        with mock.patch.object(
+            castctl, "command",
+            side_effect=[(False, castctl.COMMAND_TIMEOUT_MESSAGE), (True, "done")],
+        ) as cmd:
+            self.assertEqual(castctl.seek("TV", 59.9), (True, "done"))
+        self.assertEqual(cmd.call_args_list, [
+            mock.call("TV", "seek", "60"), mock.call("TV", "seek", "60"),
+        ])
+
+    def test_idempotent_commands_do_not_retry_receiver_errors_or_toggles(self):
+        for operation, args in (("pause", ()), ("play_toggle", ())):
+            with self.subTest(operation=operation), mock.patch.object(
+                castctl, "command", return_value=(False, "device busy"),
+            ) as cmd:
+                self.assertEqual(
+                    castctl.idempotent_command("TV", operation, *args),
+                    (False, "device busy"),
+                )
+                cmd.assert_called_once_with("TV", operation)
+
+    def test_idempotent_command_retries_no_more_than_once(self):
+        with mock.patch.object(
+            castctl, "command", return_value=(False, castctl.COMMAND_TIMEOUT_MESSAGE),
+        ) as cmd:
+            self.assertEqual(
+                castctl.stop("TV"), (False, castctl.COMMAND_TIMEOUT_MESSAGE),
+            )
+        self.assertEqual(cmd.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
