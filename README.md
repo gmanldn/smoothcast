@@ -35,7 +35,7 @@ qualification.
 
 ## Install — Python-first, all three desktops
 
-**The only manual prerequisite is Python 3.10+**. Setup will check and, where necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and `catt`. The installer uses the host package manager and may request administrator permission. Internet access is required for missing packages.
+**No preinstalled Python is required.** Each platform script probes for Python 3.10+ and acquires it automatically when missing (Linux distro package manager, macOS Homebrew, or Windows WinGet/verified python.org installer). Setup then installs GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and all declared Python dependencies. Native package provisioning needs Internet access and may require OS administrator or Apple Command Line Tools approval.
 
 | OS | Setup command | Application shortcut |
 |---|---|---|
@@ -43,7 +43,7 @@ qualification.
 | macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
 | Windows 10/11 x64 | Double-click `setup/winsetup.bat` | Windows Start Menu |
 
-The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which verifies an isolated `.venv` before registering the desktop shortcut. Rerunning setup checks for missing dependencies; `--check` performs read-only health checks. `--no-shortcuts` skips desktop integration. See [setup/README.md](setup/README.md) for platform-specific details and limitations.
+The three scripts delegate to the same stdlib-only `setup/bootstrap.py`. They **ask where to install** the application, defaulting to a per-user program folder (or the last successful choice), copy only application files and provision an isolated `.venv` there. Use `--install-dir "<path>"` for a specific location, `--yes` to skip the prompt, `--check` for read-only diagnostics or `--no-shortcuts` to skip desktop integration. Linux adds an XDG icon/menu entry; macOS registers `~/Applications/SmoothCast.app` with a real ICNS icon; Windows creates a branded Start Menu shortcut. See [setup/README.md](setup/README.md) for dependencies, recovery and limitations.
 
 The single `./smoothcast` launcher is a Python script that runs on Linux, macOS and Windows (use `python smoothcast` on Windows). It bootstraps a project-local `.venv` when needed, then hands off to the GTK runtime. Version lookup remains side-effect free: `./smoothcast --version` (Unix), `python smoothcast --version` (Windows), or `python src/version.py` (any OS).
 
