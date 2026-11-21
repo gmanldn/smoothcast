@@ -52,8 +52,11 @@ PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=13.1.0,<15",
 # The project itself must be installed: a venv may have catt from an unrelated app
 # but still lack SmoothCast, psutil or zeroconf. pip enforces version ranges.
 PROJECT_DEPENDENCIES_CHECK = (
-    "import importlib.metadata as m; import psutil, zeroconf; "
-    "m.version('smoothcast'); m.version('psutil'); m.version('zeroconf')"
+    "import importlib.metadata as m,sys; import psutil,zeroconf; "
+    "p=m.version('psutil').split('.'); z=m.version('zeroconf').split('.'); "
+    "v=m.version('smoothcast'); "
+    "sys.exit(0 if (5,9) <= tuple(map(int,p[:2])) < (8,0) "
+    "and (0,132) <= tuple(map(int,z[:2])) < (1,0) and v else 1)"
 )
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
