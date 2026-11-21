@@ -37,7 +37,8 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
-from cast_portal import PortalMixin, PortalQueueMixin
+from cast_portal import PortalMixin
+from cast_portal_queue import PortalQueueMixin
 
 import version
 
