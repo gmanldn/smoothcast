@@ -35,3 +35,10 @@ It covers a persistent PyChromecast sender connection, heartbeat, receiver
 status and basic media commands. Its `generic` profile is not a real-device
 capability claim, and the fake does not advertise over mDNS or fetch media yet.
 See [Testing SmoothCast](../TESTING.md) and issue #203 for the current scope.
+
+Protocol fault tests can set `answer_heartbeats = False`, use
+`delay_command()`, `error_command()` or `drop_connection_on()` for a named
+CASTV2 command, set `stale_media_session` or `unsupported_seek`, add a command
+to `crash_on_commands`, and call `reboot()` to disappear and return on the same
+loopback port. These are deterministic transport/session faults; segment
+consumption faults wait for receiver-side HTTP media fetching.

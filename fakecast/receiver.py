@@ -13,6 +13,7 @@ import socket
 import ssl
 import struct
 import threading
+import time
 from typing import Any
 
 try:
@@ -59,6 +60,49 @@ class FakeCastReceiver:
         self._current_time = 0.0
         self._volume = 0.5
         self._muted = False
+        self.answer_heartbeats = True
+        self.stale_media_session = False
+        self.unsupported_seek = False
+        self.crash_on_commands: set[str] = set()
+        self.command_delays: dict[str, float] = {}
+        self.command_errors: dict[str, str] = {}
+        self.drop_commands: set[str] = set()
+
+    def delay_command(self, command: str, seconds: float) -> None:
+        """Delay a named CASTV2 command for deterministic timeout tests."""
+        if not command.strip() or not 0 <= seconds <= 30:
+            raise ValueError("command and a delay from 0 to 30 seconds are required")
+        with self._lock:
+            self.command_delays[command.strip().upper()] = seconds
+
+    def error_command(self, command: str, message: str) -> None:
+        """Return a deterministic protocol error for a named command."""
+        if not command.strip() or not message.strip():
+            raise ValueError("command and error message are required")
+        with self._lock:
+            self.command_errors[command.strip().upper()] = message
+
+    def drop_connection_on(self, command: str) -> None:
+        """Drop the sender's TCP connection when it sends this command."""
+        if not command.strip():
+            raise ValueError("command is required")
+        with self._lock:
+            self.drop_commands.add(command.strip().upper())
+
+    def reboot(self, *, delay: float = 0.05) -> None:
+        """Disappear and restart on the same loopback port, clearing app state."""
+        if not 0 <= delay <= 30:
+            raise ValueError("reboot delay must be between 0 and 30 seconds")
+        was_running = self._listener is not None
+        self.stop()
+        with self._lock:
+            self._app_id = None
+            self._media_state = "IDLE"
+            self._current_time = 0.0
+            self._media_session_id += 1
+        if was_running:
+            time.sleep(delay)
+            self.start()
 
     def start(self) -> FakeCastReceiver:
         if self._listener is not None:
@@ -183,8 +227,31 @@ class FakeCastReceiver:
         message_type = str(data.get("type", ""))
         with self._lock:
             self.calls.append((namespace, dict(data)))
+            delay = self.command_delays.get(message_type, 0.0)
+            error = self.command_errors.get(message_type)
+            drop = message_type in self.drop_commands
+            crash = message_type in self.crash_on_commands
+        if delay:
+            time.sleep(delay)
+        if drop:
+            try:
+                client.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            client.close()
+            return
+        if error:
+            self._send(client, message, namespace, {"type": "ERROR", "reason": error})
+            return
+        if crash:
+            with self._lock:
+                self._app_id = None
+                self._media_state = "IDLE"
+                self._current_time = 0.0
+            self._send_receiver_status(client, message)
+            return
         if namespace == NS_HEARTBEAT:
-            if message_type == "PING":
+            if message_type == "PING" and self.answer_heartbeats:
                 self._send(client, message, namespace, {"type": "PONG"})
             return
         if namespace == NS_CONNECTION:
@@ -264,7 +331,8 @@ class FakeCastReceiver:
                 self._media_state = "IDLE"
                 self._current_time = 0.0
             elif message_type == "SEEK":
-                self._current_time = float(data.get("currentTime", self._current_time))
+                if not self.unsupported_seek:
+                    self._current_time = float(data.get("currentTime", self._current_time))
             status = {
                 "currentTime": self._current_time,
                 "media": {
@@ -273,11 +341,15 @@ class FakeCastReceiver:
                     "duration": 120.0,
                     "streamType": "BUFFERED",
                 },
-                "mediaSessionId": self._media_session_id,
-                "playerState": self._media_state,
-                "supportedMediaCommands": 15,
+                "mediaSessionId": self._media_session_id - 1 if self.stale_media_session
+                else self._media_session_id,
+                "playerState": "IDLE" if message_type == "SEEK" and self.unsupported_seek
+                else self._media_state,
+                "supportedMediaCommands": 11 if self.unsupported_seek else 15,
                 "volume": {"level": self._volume, "muted": self._muted},
             }
+            if message_type == "SEEK" and self.unsupported_seek:
+                status["idleReason"] = "ERROR"
         self._send(client, request, NS_MEDIA, {
             "type": "MEDIA_STATUS",
             "status": [status],
