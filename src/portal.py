@@ -944,7 +944,56 @@ const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRo
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);showError("errorDash","");}catch(err){showError("errorDash",err.message)}}
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");activity.replaceChildren();if(room&&room.activity)for(const event of [...room.activity].slice(-12).reverse()){const line=document.createElement("div");line.className="ev";const time=document.createElement("time");time.textContent=new Date(event.at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});const text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activity.append(line)}}
-function renderPeers(peers,available){const list=$("peers");list.replaceChildren();if(!available||!Array.isArray(peers)||!peers.length){const empty=document.createElement("li");empty.className="empty";empty.textContent=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";list.append(empty);return}const counts=new Map();for(const peer of peers){const key=String(peer.name||"").toLowerCase();counts.set(key,(counts.get(key)||0)+1)}for(const peer of peers){const item=document.createElement("li"),name=peer.name||"SmoothCast host",label=name+(counts.get(String(name).toLowerCase())>1?" · "+String(peer.id||"").slice(0,6):"");if(!peer.compatible){item.textContent=label+" · incompatible version"}else{const link=document.createElement("a");link.textContent=label;link.href=peer.url;link.target="_blank";link.rel="noopener noreferrer";item.append(link,document.createTextNode(" · video upload and Cast control after PIN"))}list.append(item)}}
+function renderPeers(peers,available){
+  const list=$("peers");
+  const entries=available&&Array.isArray(peers)?peers:[];
+  const focused=document.activeElement;
+  if(!entries.length){
+    const message=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";
+    if(list.firstElementChild?.className==="empty"&&list.firstElementChild.textContent===message)return;
+    const empty=document.createElement("li");
+    empty.className="empty";
+    empty.textContent=message;
+    list.replaceChildren(empty);
+    return;
+  }
+  const counts=new Map();
+  for(const peer of entries){
+    const key=peer.name.toLowerCase();
+    counts.set(key,(counts.get(key)||0)+1);
+  }
+  const rows=new Map(Array.from(list.children,row=>[row.dataset.peerId,row]));
+  const ordered=[];
+  for(const peer of entries){
+    const row=rows.get(peer.id)||document.createElement("li");
+    rows.delete(peer.id);
+    row.dataset.peerId=peer.id;
+    const label=peer.name+(counts.get(peer.name.toLowerCase())>1?" · "+peer.id.slice(0,6):"");
+    if(peer.compatible){
+      let link=row.firstElementChild;
+      if(!link){
+        link=document.createElement("a");
+        link.target="_blank";
+        link.rel="noopener noreferrer";
+        row.replaceChildren(link,document.createTextNode(" · video upload and Cast control after PIN"));
+      }
+      if(link.textContent!==label)link.textContent=label;
+      if(link.getAttribute("href")!==peer.url)link.href=peer.url;
+    }else{
+      const message=label+" · incompatible version";
+      if(row.textContent!==message)row.textContent=message;
+    }
+    ordered.push(row);
+  }
+  for(const row of rows.values())row.remove();
+  ordered.forEach((row,index)=>{
+    const current=list.children[index]||null;
+    if(row!==current)list.insertBefore(row,current);
+  });
+  if(focused&&list.contains(focused)&&document.activeElement!==focused){
+    focused.focus({preventScroll:true});
+  }
+}
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
 async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(["queue_remove","queue_move","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
