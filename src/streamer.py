@@ -25,6 +25,7 @@ import audio_downmix
 import cache_policy
 import cache_privacy
 import ffmpeg_compat
+import font_attachments
 import castctl
 import frozen_runtime
 import hw_encoder_state
@@ -1168,6 +1169,9 @@ class Session:
         self._segments_snapshot = 0
         self._sampler_stop = threading.Event()
         self._sampler: threading.Thread | None = None
+        # Private directory holding fonts extracted from the current source's
+        # MKV attachments. Removed when the session stops or restarts.
+        self._fonts_dir: pathlib.Path | None = None
 
     @property
     def mode(self) -> str:
@@ -1341,6 +1345,8 @@ class Session:
         for suffix in SUBTITLE_EXTS:
             (ROOT / f"burned_subs{suffix}").unlink(missing_ok=True)
         (ROOT / "receiver_subs.srt").unlink(missing_ok=True)
+        font_attachments.cleanup_fonts(self._fonts_dir)
+        self._fonts_dir = None
         self.state = None
         self.ffmpeg = None
         self.server = None
@@ -1495,7 +1501,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None) -> list[str]:
         chain: list[str] = []
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
@@ -1534,8 +1540,9 @@ class Session:
             return ["-filter_complex", graph]
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
+            fonts = f":fontsdir='{self._filter_path(fonts_dir)}'" if fonts_dir else ""
             sub_filter = (f"subtitles=filename={self._filter_path(embedded_source)}"
-                          f":si={embedded_subtitle_index}{subtitle_force_style}")
+                          f":si={embedded_subtitle_index}{fonts}{subtitle_force_style}")
         elif burn_subs and staged is not None:
             sub_filter = f"subtitles=filename={staged.name}{subtitle_force_style}"
         if sub_filter is not None:
@@ -1687,6 +1694,15 @@ class Session:
         args += ["-map", audio_map]
         if not audio_only:
             args += self._codec_args(quality, software)
+        # Extract Matroska font attachments so embedded ASS/SSA styles keep
+        # their intended typeface. Bitmap tracks are burned from their own
+        # images and plain-text tracks carry no font references, so neither
+        # needs the extraction. Replacing the previous session's directory
+        # first keeps a failed restart from leaking its fonts.
+        font_attachments.cleanup_fonts(self._fonts_dir)
+        self._fonts_dir = None
+        if bitmap_track is None and embedded_codec.lower() in {"ass", "ssa"}:
+            self._fonts_dir = font_attachments.prepare_fonts(media.path, ROOT, generation)
         filter_args = [] if audio_only else self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
@@ -1699,6 +1715,7 @@ class Session:
             video_plan=video_plan,
             subtitle_force_style=subtitle_style.force_style(
                 subtitle_preset, codec=embedded_codec, path=staged) or "",
+            fonts_dir=self._fonts_dir,
         )
         args += filter_args
         if filter_args[:1] == ["-filter_complex"]:
