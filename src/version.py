@@ -12,7 +12,7 @@ from pathlib import Path
 
 MAJOR = 1
 MINOR = 0
-PATCH = 63
+PATCH = 64
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
