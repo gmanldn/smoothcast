@@ -1,4 +1,4 @@
-"""Chromecast control via the catt CLI."""
+"""Google Cast control boundary with catt and PyChromecast adapters."""
 from __future__ import annotations
 
 import ipaddress
@@ -6,12 +6,13 @@ import json
 import pathlib
 import shutil
 import math
+import os
 import subprocess
 import sys
 
 import frozen_runtime
 from dataclasses import dataclass
-from typing import Protocol, cast, runtime_checkable
+from typing import Callable, Protocol, cast, runtime_checkable
 
 from progress_model import ReceiverInfo
 
@@ -201,6 +202,12 @@ class CastBackend(Protocol):
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]: ...
 
+    def subscribe(
+        self, device: str, listener: Callable[[ReceiverInfo], None]
+    ) -> Callable[[], None]: ...
+
+    def close(self) -> None: ...
+
 
 class CattBackend:
     """Compatibility adapter for the current catt command implementation."""
@@ -214,8 +221,56 @@ class CattBackend:
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         return _catt_command(device, *args, timeout=timeout)
 
+    def subscribe(
+        self, _device: str, _listener: Callable[[ReceiverInfo], None]
+    ) -> Callable[[], None]:
+        """catt has no push status stream; return a safe no-op cancellation."""
+        return lambda: None
+
+    def close(self) -> None:
+        return None
+
 
 _backend: CastBackend = CattBackend()
+_catt_backend = _backend
+
+
+def set_backend(backend: CastBackend) -> None:
+    """Select a backend instance. Intended for startup configuration and tests."""
+    global _backend
+    if not isinstance(backend, CastBackend):
+        raise TypeError("Cast backend does not implement the required contract")
+    previous = _backend
+    if previous is not backend:
+        previous.close()
+    _backend = backend
+
+
+def use_catt_backend() -> None:
+    """Select the compatibility backend for one-release fallback/testing."""
+    set_backend(_catt_backend)
+
+
+def use_pychromecast_backend() -> None:
+    """Opt in to the persistent PyChromecast backend while parity is verified."""
+    from pychromecast_backend import PyChromecastBackend
+
+    set_backend(PyChromecastBackend())
+
+
+def configure_backend(name: str | None = None) -> None:
+    """Select the backend with SMOOTHCAST_CAST_BACKEND or an explicit name."""
+    selected = (name or os.environ.get("SMOOTHCAST_CAST_BACKEND", "catt")).strip().lower()
+    if selected == "catt":
+        use_catt_backend()
+    elif selected == "pychromecast":
+        use_pychromecast_backend()
+    else:
+        raise ValueError("SMOOTHCAST_CAST_BACKEND must be 'catt' or 'pychromecast'")
+
+
+if os.environ.get("SMOOTHCAST_CAST_BACKEND"):
+    configure_backend()
 
 
 def scan(timeout: float = 30) -> list[Device]:

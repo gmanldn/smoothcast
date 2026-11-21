@@ -22,5 +22,8 @@ capturing television.
 
 `castctl.CastBackend` currently abstracts discovery, status and commands;
 `CattBackend` preserves the existing CLI adapter. `tests/test_cast_backend.py`
-checks that boundary headlessly. It is not the planned persistent, push-driven
-backend or protocol-level fake receiver, so issue #202 remains open.
+checks that boundary headlessly. Set `SMOOTHCAST_CAST_BACKEND=pychromecast` to
+exercise the persistent PyChromecast adapter in isolated checks; `catt` remains
+the default until the protocol-level fake receiver and full parity checks pass.
+The adapter is not yet complete for long-drop reconnects or every receiver
+quirk, so issue #202 remains open.

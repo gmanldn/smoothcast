@@ -108,24 +108,28 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("sys.exit(0 if sys.version_info", launcher)
         self.assertNotIn("assert sys.version_info", launcher)
 
-    def test_catt_prerelease_rejected_even_under_optimized_python(self):
+    def test_cast_dependency_bounds_rejected_under_optimized_python(self):
         cases = (
-            ("0.11.99", False), ("0.12rc1", False),
-            ("0.12.0rc1", False), ("0.13.dev0", False),
-            ("0.12", True), ("0.12.0", True),
-            ("0.12.post1", True), ("1.0", True),
+            ("0.11.99", "14.1.1", False),
+            ("0.12rc1", "14.1.1", False),
+            ("0.12.0rc1", "14.1.1", False),
+            ("0.13.dev0", "14.1.1", False),
+            ("0.12", "14.1.1", True), ("0.12.0", "14.1.1", True),
+            ("0.12.post1", "14.1.1", True), ("1.0", "14.1.1", True),
+            ("0.12", "14.1.0", False), ("0.12", "15.0.0", False),
+            ("0.12", "14.1.1rc1", False),
         )
         # One fresh interpreter per optimization mode exercises the shipped check
         # for every version, instead of one interpreter per version (16 spawns).
         script = (
             "import importlib.metadata as m, json\n"
-            f"cases = {[version for version, _ in cases]!r}\n"
-            f"check = {bootstrap.CATT_CHECK!r}\n"
+            f"cases = {[(catt, pycast) for catt, pycast, _accepted in cases]!r}\n"
+            f"check = {bootstrap.CAST_DEPENDENCIES_CHECK!r}\n"
             "codes = []\n"
-            "for version in cases:\n"
-            "    m.version = lambda name, version=version: version\n"
+            "for catt_version, pycast_version in cases:\n"
+            "    m.version = lambda name, c=catt_version, p=pycast_version: c if name == 'catt' else p\n"
             "    try:\n"
-            "        exec(compile(check, '<catt-check>', 'exec'), {'__name__': '__main__'})\n"
+            "        exec(compile(check, '<cast-check>', 'exec'), {'__name__': '__main__'})\n"
             "    except SystemExit as exc:\n"
             "        codes.append(exc.code)\n"
             "    else:\n"
@@ -140,10 +144,11 @@ class SetupContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             codes = json.loads(result.stdout)
             self.assertEqual(len(codes), len(cases))
-            for (version, accepted), code in zip(cases, codes):
-                with self.subTest(version=version, optimize=optimize):
+            for (catt_version, pycast_version, accepted), code in zip(cases, codes):
+                with self.subTest(catt=catt_version, pychromecast=pycast_version,
+                                  optimize=optimize):
                     self.assertEqual(code == 0, accepted,
-                                     (version, optimize, result.stderr))
+                                     (catt_version, pycast_version, optimize, result.stderr))
         launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
         self.assertNotIn("assert tuple(v)", launcher)
         self.assertIn("re.fullmatch", launcher)
@@ -274,20 +279,20 @@ class SetupContractTests(unittest.TestCase):
                 self.assertTrue(path.parent.name.startswith("smoothcast-msys2-"))
                 shutil.rmtree(path.parent)
 
-    def test_missing_catt_recovers_from_project_metadata_not_removed_requirements(self):
+    def test_missing_cast_dependencies_recover_from_project_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "bin" / "python"
             executable.parent.mkdir(parents=True)
             executable.touch()
-            catt_checks = 0
+            dependency_checks = 0
 
             def installed(_python, code, *, env=None):
-                nonlocal catt_checks
+                nonlocal dependency_checks
                 if code == bootstrap.GUI_CHECK:
                     return True
-                if code == bootstrap.CATT_CHECK:
-                    catt_checks += 1
-                    return catt_checks > 1
+                if code == bootstrap.CAST_DEPENDENCIES_CHECK:
+                    dependency_checks += 1
+                    return dependency_checks > 1
                 return False
 
             with mock.patch.object(bootstrap, "venv_python", return_value=executable), \
@@ -321,20 +326,20 @@ class SetupContractTests(unittest.TestCase):
                 run.assert_not_called()
 
     def test_no_installer_references_a_missing_requirements_file(self):
-        # `catt` is the only pip dependency and there is deliberately no
+        # `catt` and PyChromecast are the pip dependencies; there is deliberately no
         # requirements.txt; `pip install -r` on a missing file aborts setup.
         source = (ROOT / "setup" / "bootstrap.py").read_text(encoding="utf-8")
         self.assertNotIn("requirements.txt", source)
 
-    def test_venv_installs_catt_without_a_requirements_file(self):
-        state = {"catt": False}
+    def test_venv_installs_cast_dependencies_without_a_requirements_file(self):
+        state = {"dependencies": False}
 
         def fake_works(python, code, *, env=None):
-            return state["catt"] if "m.version" in code else True
+            return state["dependencies"] if "m.version" in code else True
 
         def fake_run(command, **kwargs):
-            if "pip" in command and any("catt" in str(arg) for arg in command):
-                state["catt"] = True
+            if "pip" in command and any("PyChromecast" in str(arg) for arg in command):
+                state["dependencies"] = True
 
         with mock.patch.object(bootstrap, "venv_python",
                                return_value=Path(sys.executable)), \
@@ -345,6 +350,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertEqual(installed, Path(sys.executable))
         command = run.call_args.args[0]
         self.assertIn("catt>=0.12,<0.14", command)
+        self.assertIn("PyChromecast>=14.1.1,<15", command)
         self.assertNotIn("requirements.txt", command)
 
     def test_macos_application_bundle_has_valid_plist_and_executable(self):

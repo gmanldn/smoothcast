@@ -31,17 +31,22 @@ GUI_CHECK = (
     "gi.require_version('Adw','1'); "
     "from gi.repository import Gtk, Adw"
 )
-CATT_CHECK = (
+CAST_DEPENDENCIES_CHECK = (
     "import importlib.metadata as m,re,sys; "
     "v=m.version('catt'); "
-    "match=re.fullmatch(r'(\\d+)\\.(\\d+)(?:\\.\\d+)?'"
+    "c=re.fullmatch(r'(\\d+)\\.(\\d+)(?:\\.\\d+)?'"
     "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',v); "
-    "sys.exit(0 if match and (int(match[1]),int(match[2])) >= (0,12) else 1)"
+    "p=m.version('PyChromecast'); "
+    "pc=re.fullmatch(r'(\\d+)\\.(\\d+)\\.(\\d+)'"
+    "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',p); "
+    "pv=tuple(map(int,pc.groups())) if pc else (); "
+    "sys.exit(0 if c and (int(c[1]),int(c[2])) >= (0,12) "
+    "and pc and (14,1,1) <= pv < (15,0,0) else 1)"
 )
 # pip dependencies installed into the isolated runtime. Keep in sync with the
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
-PIP_PACKAGES = ("catt>=0.12,<0.14",)
+PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=14.1.1,<15")
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 # Reviewed immutable Homebrew installer (2026-11-18); update commit and digest
@@ -427,8 +432,11 @@ def ensure_venv(python: Path, env: dict[str, str], *,
     if check:
         if not installed.is_file() or not works(installed, GUI_CHECK, env=env):
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
-        if not works(installed, CATT_CHECK, env=env):
-            raise SetupError("catt >= 0.12, < 0.14 is not installed in SmoothCast's environment.")
+        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
+            raise SetupError(
+                "catt >= 0.12, < 0.14 and PyChromecast >= 14.1.1, < 15 "
+                "are not installed in SmoothCast's environment."
+            )
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))
@@ -459,16 +467,19 @@ def ensure_venv(python: Path, env: dict[str, str], *,
                 f"{installed} cannot import GTK4/libadwaita after rebuild. "
                 "Review the native Python/PyGObject installation."
             )
-        if not works(installed, CATT_CHECK, env=env):
+        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
             # The project declares its dependencies in pyproject.toml. Install
-            # catt explicitly and the project itself in editable mode into the
-            # *selected venv* so every launcher resolves the same catt
-            # dependency; do not download or replace native GTK bindings.
+            # Install Cast dependencies and the project in editable mode into
+            # the *selected venv* so every launcher resolves the same runtime;
+            # do not download or replace native GTK bindings.
             checked_run([str(installed), "-m", "pip", "install",
                          "--disable-pip-version-check", *PIP_PACKAGES,
                          "-e", str(ROOT)], env=env)
-        if not works(installed, CATT_CHECK, env=env):
-            raise SetupError("catt >= 0.12, < 0.14 is not installed in SmoothCast's environment.")
+        if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
+            raise SetupError(
+                "catt >= 0.12, < 0.14 and PyChromecast >= 14.1.1, < 15 "
+                "are not installed in SmoothCast's environment."
+            )
         missing = check_tools(env)
         if missing:
             raise SetupError("Media dependencies are missing: " + ", ".join(missing))

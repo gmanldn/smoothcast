@@ -50,6 +50,9 @@ class DependencyGateTests(unittest.TestCase):
         bound = "catt>=0.12,<0.14"
         self.assertIn(bound, read("pyproject.toml"))
         self.assertIn(bound, read("setup/bootstrap.py"))
+        pychromecast = "PyChromecast>=14.1.1,<15"
+        self.assertIn(pychromecast, read("pyproject.toml"))
+        self.assertIn(pychromecast, read("setup/bootstrap.py"))
 
     def test_codeql_and_pip_audit_run_in_ci(self):
         codeql = read(".github/workflows/codeql.yml")

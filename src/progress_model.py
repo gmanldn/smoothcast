@@ -14,7 +14,7 @@ from typing import Mapping, TypedDict
 
 
 class ReceiverInfo(TypedDict, total=False):
-    """Keys of catt's ``info -j`` payload that SmoothCast reads (all optional)."""
+    """Normalized receiver status shared by Catt and PyChromecast backends."""
 
     title: str
     player_state: str
@@ -23,6 +23,9 @@ class ReceiverInfo(TypedDict, total=False):
     volume_level: float
     volume_muted: bool
     content_id: str
+    idle_reason: str
+    media_session_id: int
+    error_code: int
 
 
 def _number(raw: object) -> float | None:

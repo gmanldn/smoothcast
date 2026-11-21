@@ -46,7 +46,7 @@ def check_works(root, python, code, *, env=None):
     # The original interpreter is not GTK-compatible; replacement is.
     if code == bootstrap.GUI_CHECK:
         return (root / "new.txt").exists()
-    if code == bootstrap.CATT_CHECK:
+    if code == bootstrap.CAST_DEPENDENCIES_CHECK:
         return False
     return False
 

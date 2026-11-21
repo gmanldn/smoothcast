@@ -12,16 +12,18 @@ not a preinstalled pip environment.
 | Windows 10/11 x64 | Double-click `setup/winsetup.bat` | MSYS2 UCRT64: Python, PyGObject, GTK4, libadwaita, FFmpeg |
 
 The installer checks the native packages and creates a project-local `.venv`
-with access to the system GTK bindings. It installs `catt` using pip in that
-environment. If a prior `.venv` is unusable, setup moves it to an
+with access to the system GTK bindings. It installs `catt` and PyChromecast
+using pip in that environment. If a prior `.venv` is unusable, setup moves it to an
 inspectable `.venv-incompatible-*` backup before rebuilding. A failure during
 native venv creation, pip installation or media verification removes only the
 new partial replacement and **restores the prior directory**. Brand-new
 partial installs are cleaned up on failure. Compatible venvs repaired in place,
 native OS packages, shortcuts and uninstall are not yet fully transactional;
 see P0 issue SC-018 (#25). It then verifies that the actual environment can import GTK4 and
-libadwaita, that stable `catt >= 0.12, < 0.14` is installed (prerelease builds
-below that floor are rejected even with `python -O`), and that `ffmpeg`,
+libadwaita, that stable `catt >= 0.12, < 0.14` and
+[`PyChromecast >= 14.1.1, < 15`](https://pypi.org/project/PyChromecast/)
+are installed. PyChromecast is MIT licensed; prerelease builds below these
+floors are rejected even with `python -O`. It also verifies that `ffmpeg`,
 `ffprobe`, and `ffplay` **actually start and return success** from bounded
 `-version` probes; PATH presence alone is not sufficient. It registers a per-user application shortcut:
 Linux desktop entry, macOS `~/Applications/SmoothCast.app`, or the Windows
@@ -122,7 +124,7 @@ desktop shortcut installer.
 
 CI builds only use development packaging tools; these are not extra
 initial prerequisites for the normal setup scripts. They deliberately skip
-installing the external `catt` dependency during wheel inspection, so the
+installing the external Cast dependencies during wheel inspection, so the
 headless artifact contract cannot establish real TV playback or native GTK
 availability. Those require the platform setup process and device smoke tests.
 
@@ -135,7 +137,7 @@ No graphical application is opened.
 The dependency bootstrap, smoke checks and OS shortcut creation are automated,
 but **Windows and macOS playback are not verified on real systems**. MSYS2
 Python has different binary-wheel compatibility from CPython for some
-dependencies, and a `catt` pip install may require additional packaging work.
+dependencies, and Cast dependency installation may require additional packaging work.
 Chromecast discovery/firewall permissions and native GTK window behaviour
 also need testing. On Windows/macOS the encoder starts with software libx264;
 the Linux VAAPI acceleration path is deliberately not attempted.

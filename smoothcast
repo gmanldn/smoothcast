@@ -42,7 +42,7 @@ esac
 
 RUNTIME="$DIR/.venv/bin/python"
 NEEDS_SETUP=0
-if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m,re,sys;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;v=m.version("catt");match=re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?(?:\.post\d+)?(?:\+[A-Za-z0-9.]+)?",v);sys.exit(0 if match and (int(match[1]),int(match[2]))>=(0,12) else 1)' >/dev/null 2>&1; then
+if [[ ! -f "$RUNTIME" ]] || ! "$RUNTIME" -c 'import gi,importlib.metadata as m,re,sys;gi.require_version("Gtk","4.0");gi.require_version("Adw","1");from gi.repository import Gtk,Adw;v=m.version("catt");match=re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?(?:\.post\d+)?(?:\+[A-Za-z0-9.]+)?",v);p=m.version("PyChromecast");pm=re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\.post\d+)?(?:\+[A-Za-z0-9.]+)?",p);pv=tuple(map(int,pm.groups())) if pm else ();sys.exit(0 if match and (int(match[1]),int(match[2]))>=(0,12) and pm and (14,1,1)<=pv<(15,0,0) else 1)' >/dev/null 2>&1; then
     NEEDS_SETUP=1
 fi
 for tool in ffmpeg ffprobe ffplay; do
