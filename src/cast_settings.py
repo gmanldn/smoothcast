@@ -12,7 +12,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 
-from cast_widgets import DEFAULTS
+import loudness
+from cast_widgets import DEFAULTS, save_config
 
 
 class SettingsCardMixin:
@@ -178,6 +179,17 @@ class SettingsCardMixin:
         )
         self._syncing = False
         return card
+
+
+    def _on_loudness(self, dropdown, _param) -> None:
+        if self._syncing:
+            return
+        value = {0: "off", 1: "programme", 2: "album"}.get(dropdown.get_selected(), "off")
+        if value != self.cfg.get("audio_loudness", "off"):
+            self.cfg["audio_loudness"] = value
+            save_config(self.cfg)
+            self.toast(f"Loudness: {loudness.label(value)} (restart to apply)")
+        self._refresh_direct_note()
 
 
     def _sleep_fade_tick(self) -> bool:

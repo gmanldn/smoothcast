@@ -21,8 +21,6 @@ import dlna
 
 import streamer
 
-import loudness
-
 import audio_delay
 import subtitle_delay
 import subtitle_style
@@ -221,7 +219,7 @@ class SessionMixin:
                     audio_profile=cfg["audio"], subs_file=subs_path,
                     burn_subs=burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(cfg.get("audio_loudness", DEFAULTS["audio_loudness"])),
+                    audio_loudness=str(cfg.get("audio_loudness", "off")),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -263,12 +261,8 @@ class SessionMixin:
             if session.mode == "transcode":
                 profile = cfg["audio"]
                 gain = session.state.audio_gain_db if session.state else 0.0
-                loudness_mode = (session.state.audio_loudness
-                                 if session.state else loudness.DEFAULT)
-                chain = streamer.audio_filters(profile, gain, loudness_mode)
-                hint = streamer.AUDIO_LABELS.get(profile, profile)
-                if gain > 0:
-                    hint += f" · +{gain:g} dB"
+                mode = getattr(session.state, "audio_loudness", "off") if session.state else "off"
+                chain, hint = streamer.monitor_summary(profile, gain, mode)
             else:
                 chain = []
                 hint = ("DLNA progressive MP4"
@@ -584,7 +578,7 @@ class SessionMixin:
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
-                    audio_loudness=str(self.cfg.get("audio_loudness", DEFAULTS["audio_loudness"])),
+                    audio_loudness=str(self.cfg.get("audio_loudness", "off")),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -614,13 +608,9 @@ class SessionMixin:
             self._update_audio_choices(media_result)
             self.busy = False
             gain = _session.state.audio_gain_db if _session.state else 0.0
-            loudness_mode = (_session.state.audio_loudness
-                             if _session.state else loudness.DEFAULT)
-            chain = streamer.audio_filters(audio, gain, loudness_mode)
+            mode = getattr(_session.state, "audio_loudness", "off") if _session.state else "off"
+            chain, hint = streamer.monitor_summary(audio, gain, mode)
             self._start_monitor(media_result.path, target, chain)
-            hint = streamer.AUDIO_LABELS.get(audio, audio)
-            if gain > 0:
-                hint += f" · +{gain:g} dB"
             self._set_levels_hint(hint)
             self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
             self._refresh_controls()
@@ -946,10 +936,8 @@ class SessionMixin:
                     )
             gain = state.audio_gain_db
             if session.mode == "transcode":
-                chain = streamer.audio_filters(state.audio, gain, state.audio_loudness)
-                hint = streamer.AUDIO_LABELS.get(state.audio, state.audio)
-                if gain > 0:
-                    hint += f" · +{gain:g} dB"
+                chain, hint = streamer.monitor_summary(
+                    state.audio, gain, getattr(state, "audio_loudness", "off"))
             else:
                 chain = []
                 hint = "Original audio (direct play)"

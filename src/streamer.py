@@ -159,6 +159,18 @@ def audio_filters(profile: str, gain_db: float = 0.0,
     return filters
 
 
+def monitor_summary(profile: str, gain_db: float,
+                    loudness_mode: str = loudness.DEFAULT) -> tuple[list, str]:
+    """Metering chain and a concise hint for the current audio settings."""
+    chain = audio_filters(profile, gain_db, loudness_mode)
+    hint = AUDIO_LABELS.get(profile, profile)
+    if gain_db > 0:
+        hint += f" · +{gain_db:g} dB"
+    if loudness.normalize(loudness_mode) != loudness.DEFAULT:
+        hint += f" · {loudness.label(loudness_mode)}"
+    return chain, hint
+
+
 def atempo_filters(speed: float) -> list:
     """Build one or more ffmpeg ``atempo`` filters for a playback speed.
 
