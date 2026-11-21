@@ -42,6 +42,10 @@ machine hostname, prefixes it with `smoothcast`, and advertises it with
 mDNS/Bonjour when the `zeroconf` dependency is available. The card also shows
 the numeric IP address as a fallback for networks that block multicast DNS.
 
+Scan the room QR with your phone camera to open the numeric room link,
+then enter the PIN shown on the host. The QR is generated locally and contains
+only the address. You can also use **Copy link**.
+
 The portal chooses a port by binding directly to an operating-system-assigned
 ephemeral port. It does not check a port and bind later. It uses Python's
 standard-library `http.server` module; no web framework, portal package or

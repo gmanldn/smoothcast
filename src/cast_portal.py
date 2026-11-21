@@ -9,13 +9,14 @@ import castctl
 import lan_interfaces
 import portal
 import portal_commands
+import portal_join
 import peer_discovery_ui
 import portal_uploads
 import network_activity
 from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
 from cast_widgets import save_config
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gdk, GLib, Gtk
 
 class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
@@ -53,9 +54,22 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
         self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(self._portal.pin)
         self.portal_status_label.set_text("Listening on your local network")
+        self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True
+
+    def _show_portal_qr(self, url: str | None) -> None:
+        picture = self.portal_qr_picture
+        texture = None
+        if url is not None:
+            try:
+                png = portal_join.qr_png(url)
+                texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(png))
+            except (ImportError, ValueError, GLib.Error):
+                self.portal_status_label.set_text("QR unavailable. Use Copy link to join.")
+        picture.set_paintable(texture)
+        self.portal_qr_row.set_visible(texture is not None)
 
     def _copy_portal_link(self, _button: Gtk.Button) -> None:
         current = self._portal
@@ -78,6 +92,7 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
             self.portal_copy_button.set_sensitive(False)
+            self._show_portal_qr(None)
             self.portal_url_label.set_text("—")
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
