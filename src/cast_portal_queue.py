@@ -20,12 +20,22 @@ def portal_queue_id(path: str) -> str:
 
 
 class PortalQueueMixin:
+    def _portal_observe_queue(self) -> int:
+        """Return the main-thread queue revision, advancing on any ordered change."""
+        item_ids = tuple(portal_queue_id(path) for path in self.queue)
+        if item_ids != getattr(self, "_portal_queue_snapshot", None):
+            self._portal_queue_snapshot = item_ids
+            self._portal_queue_revision = getattr(self, "_portal_queue_revision", 0) + 1
+        return self._portal_queue_revision
+
     def _portal_queue_status(self) -> list[dict]:
-        return [{
+        rows = [{
             "id": portal_queue_id(path),
             "title": pathlib.Path(path).name,
             "duration": self.queue_durations.get(path, 0.0),
         } for path in self.queue[:100]]
+        self._portal_observe_queue()
+        return rows
 
     def _portal_upload_path(self, payload: dict) -> pathlib.Path:
         portal_instance = getattr(self, "_portal", None)
@@ -53,7 +63,9 @@ class PortalQueueMixin:
 
     def _portal_queue_action(self, operation: str, payload: dict) -> str | None:
         if operation == "queue_clear":
+            self._portal_check_queue_revision(payload)
             self.clear_queue()
+            self._portal_observe_queue()
             return "Up Next cleared. Current playback is unchanged."
         if operation == "queue_add":
             path = self._portal_upload_path(payload)
@@ -62,9 +74,12 @@ class PortalQueueMixin:
             self._enqueue([str(path)])
             return "Added to the queue."
         if operation == "queue_remove":
+            self._portal_check_queue_revision(payload)
             self._remove_queue(self._portal_queue_index(payload.get("id")))
+            self._portal_observe_queue()
             return "Removed from the queue."
         if operation == "queue_move":
+            self._portal_check_queue_revision(payload)
             item_id, position = payload.get("id"), payload.get("position")
             index = self._portal_queue_index(item_id)
             if type(position) is not int or not 0 <= position < len(self.queue):
@@ -78,6 +93,7 @@ class PortalQueueMixin:
             self.selected_index = (self.queue.index(selected_path)
                                    if selected_path in self.queue else None)
             self._rebuild_queue()
+            self._portal_observe_queue()
             return "Queue order updated."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))
@@ -96,3 +112,9 @@ class PortalQueueMixin:
                 self.on_prev()
             return "Playback command sent; the dashboard will refresh with receiver state."
         return None
+
+    def _portal_check_queue_revision(self, payload: dict) -> None:
+        current = self._portal_observe_queue()
+        expected = payload.get("queue_revision")
+        if type(expected) is not int or expected != current:
+            raise portal.PortalRequestError(409, "Up Next changed; refresh before editing")

@@ -132,6 +132,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
+    assert "queue_revision=queueRevision" in page
     assert "Add to the shared queue" in page
 
 
@@ -463,6 +464,8 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
                       "queue_clear", "next", "previous"):
         assert operation in queue_actions
     assert "self.clear_queue()" in queue_actions
+    assert "queue_revision" in queue_actions
+    assert "_portal_observe_queue()" in methods["_portal_handle"]
     assert "portal_queue_id" in methods["_portal_queue_status"]
     assert "queue_durations" in methods["_portal_queue_status"]
 

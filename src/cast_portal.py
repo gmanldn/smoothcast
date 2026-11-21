@@ -175,7 +175,8 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
             state = {
                 "title": title, "receiver": self._device(), "state": self.device_state,
                 "position": position, "duration": duration, "volume": volume,
-                "queue": queue, "active": active, "busy": bool(self.busy),
+                "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
                 "network_activity": network_activity.portal_entries(
