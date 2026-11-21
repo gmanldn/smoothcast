@@ -49,13 +49,19 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
         self._portal_ip = address
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.friendly_url)
+        self.portal_url_label.set_text(self._portal.url)
+        self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(self._portal.pin)
-        self.portal_status_label.set_text(
-            f"Available on your local network · IP {self._portal.url}")
+        self.portal_status_label.set_text("Listening on your local network")
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True
+
+    def _copy_portal_link(self, _button: Gtk.Button) -> None:
+        current = self._portal
+        if current is not None:
+            self.get_clipboard().set(current.url)
+            self.toast("Room link copied")
 
     def _stop_portal(self) -> None:
         current, self._portal = getattr(self, "_portal", None), None
@@ -71,6 +77,7 @@ class PortalMixin(PortalUploadRecoveryMixin, NetworkActivityMixin):
             current.stop()
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
+            self.portal_copy_button.set_sensitive(False)
             self.portal_url_label.set_text("—")
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):

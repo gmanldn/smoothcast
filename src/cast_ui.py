@@ -617,7 +617,20 @@ class UiMixin(BookmarkUiMixin):
             ellipsize=Pango.EllipsizeMode.END,
         )
         self.portal_url_label.add_css_class("mono")
-        body.append(self.portal_url_label)
+        self.portal_url_label.set_hexpand(True)
+        address_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        address_row.append(self.portal_url_label)
+        self.portal_copy_button = Gtk.Button(label="Copy link", sensitive=False)
+        self.portal_copy_button.connect("clicked", self._copy_portal_link)
+        address_row.append(self.portal_copy_button)
+        body.append(address_row)
+        connection_hint = Gtk.Label(
+            label="Use the same Wi-Fi. If the link does not open, check your VPN "
+                  "or whether guest Wi-Fi blocks connections between devices.",
+            xalign=0.0, wrap=True,
+        )
+        connection_hint.add_css_class("dim-label")
+        body.append(connection_hint)
         body.append(Gtk.Label(label="6-digit room PIN", xalign=0.0))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")

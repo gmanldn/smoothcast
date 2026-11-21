@@ -594,6 +594,29 @@ def test_friendly_hostname_is_allowed_when_configured():
         server.server_close()
 
 
+def test_copy_room_link_uses_only_the_current_listener_url():
+    from textwrap import dedent
+
+    from gui_source import main_window_methods
+
+    namespace = {}
+    exec("from __future__ import annotations\n"
+         + dedent(main_window_methods()["_copy_portal_link"]), namespace)
+    copy = namespace["_copy_portal_link"]
+    clipboard = []
+    window = SimpleNamespace(
+        _portal=None, get_clipboard=lambda: SimpleNamespace(set=clipboard.append),
+        toast=lambda _message: None,
+    )
+    copy(window, None)
+    for url in ("http://192.168.1.20:8765/", "http://192.168.1.21:8766/"):
+        window._portal = SimpleNamespace(url=url, pin=PIN)
+        copy(window, None)
+    window._portal = None
+    copy(window, None)
+    assert clipboard == ["http://192.168.1.20:8765/", "http://192.168.1.21:8766/"]
+
+
 def test_application_wires_portal_into_home_screen_and_closes_it():
     from gui_source import main_window_methods
     methods = main_window_methods()
