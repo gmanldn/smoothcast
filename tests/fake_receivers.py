@@ -35,9 +35,11 @@ chosen error, delay an action, go offline, inspect every call made.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
+import socket
 import stat
 import sys
 import threading
@@ -50,6 +52,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
+
+if __name__ == "__main__":
+    # Allow the documented standalone command to work outside an installed app.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import castctl
 import dlna
@@ -128,6 +134,11 @@ class FakeDlnaRenderer:
         self._faults: dict[str, list[_Fault]] = {}
         self._delays: dict[str, float] = {}
         self._lock = threading.RLock()
+        self._ssdp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._ssdp_socket.bind(("127.0.0.1", 0))
+        self._ssdp_socket.settimeout(0.1)
+        self._ssdp_stop = threading.Event()
+        self._ssdp_thread = threading.Thread(target=self._serve_ssdp, daemon=True)
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -159,9 +170,13 @@ class FakeDlnaRenderer:
         self._thread = threading.Thread(
             target=lambda: self._httpd.serve_forever(poll_interval=0.05), daemon=True)
         self._thread.start()
+        self._ssdp_thread.start()
         return self
 
     def stop(self) -> None:
+        self._ssdp_stop.set()
+        self._ssdp_socket.close()
+        self._ssdp_thread.join(1)
         self._httpd.shutdown()
         self._httpd.server_close()
         self._thread.join(5)
@@ -179,6 +194,51 @@ class FakeDlnaRenderer:
     @property
     def location(self) -> str:
         return f"http://127.0.0.1:{self.port}/desc.xml"
+
+    @property
+    def ssdp_port(self) -> int:
+        return self._ssdp_socket.getsockname()[1]
+
+    def _serve_ssdp(self) -> None:
+        while not self._ssdp_stop.is_set():
+            try:
+                payload, address = self._ssdp_socket.recvfrom(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            request = payload.decode("iso-8859-1", "replace").upper()
+            if not request.startswith("M-SEARCH * HTTP/1.1"):
+                continue
+            if f"ST: {dlna.DEVICE_TYPE.upper()}" not in request and "ST: SSDP:ALL" not in request:
+                continue
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "CACHE-CONTROL: max-age=120\r\n"
+                "EXT:\r\n"
+                f"LOCATION: {self.location}\r\n"
+                "SERVER: SmoothCast-Test/1.0 UPnP/1.1 FakeDMR/1.0\r\n"
+                f"ST: {dlna.DEVICE_TYPE}\r\n"
+                f"USN: uuid:fake-{self.model}::{dlna.DEVICE_TYPE}\r\n\r\n"
+            ).encode("ascii")
+            try:
+                self._ssdp_socket.sendto(response, address)
+            except OSError:
+                return
+
+    def notify(self, destination: tuple[str, int], *, alive: bool = True) -> None:
+        """Send one SSDP alive/byebye notification to an explicit test listener."""
+        nts = "ssdp:alive" if alive else "ssdp:byebye"
+        payload = (
+            "NOTIFY * HTTP/1.1\r\n"
+            "HOST: 239.255.255.250:1900\r\n"
+            f"NT: {dlna.DEVICE_TYPE}\r\n"
+            f"NTS: {nts}\r\n"
+            f"LOCATION: {self.location}\r\n"
+            f"USN: uuid:fake-{self.model}::{dlna.DEVICE_TYPE}\r\n\r\n"
+        ).encode("ascii")
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+            sender.sendto(payload, destination)
 
     def renderer(self) -> dlna.Renderer:
         """The client-side Renderer for this fake (use inside ``allow_loopback``)."""
@@ -575,3 +635,27 @@ class FakeCast:
         """argv of every catt invocation (after ``-d NAME``), optionally one subcommand."""
         argvs = [entry["argv"] for entry in self._read()["log"]]
         return [a for a in argvs if subcommand is None or a[:1] == [subcommand]]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the DLNA fake on loopback for a manual protocol session."""
+    parser = argparse.ArgumentParser(description="Run the loopback-only fake DLNA renderer")
+    parser.add_argument("--name", default="Fake TV")
+    parser.add_argument("--profile", choices=FakeDlnaRenderer.PROFILES, default="default")
+    parser.add_argument("--duration", type=float, default=None,
+                        help="stop after this many seconds (default: run until interrupted)")
+    args = parser.parse_args(argv)
+    if args.duration is not None and args.duration < 0:
+        parser.error("--duration must be non-negative")
+    with FakeDlnaRenderer(name=args.name, profile=args.profile) as receiver:
+        print(f"DLNA description: {receiver.location}", flush=True)
+        print(f"SSDP test socket: 127.0.0.1:{receiver.ssdp_port}", flush=True)
+        try:
+            threading.Event().wait(args.duration)
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

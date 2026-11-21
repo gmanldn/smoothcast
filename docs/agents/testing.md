@@ -41,6 +41,7 @@ upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 (loopback HTTP/SOAP; use `allow_loopback()`) and `FakeCast` (POSIX `catt` stand-in).
 Fake clock: `advance(seconds)`; script `fail`/`drop`/`go_offline`/`delay`; inspect
 `calls`. Six DLNA profiles and loopback-only `fetch_media()` test tokenized media.
+SSDP discovery also runs on loopback; CLI: `python3 tests/fake_receivers.py --help`.
 See `tests/test_fake_receivers.py`; device testing remains required.
 
 **Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a

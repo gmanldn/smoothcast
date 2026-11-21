@@ -6,6 +6,9 @@ import json
 import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+import socket
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -60,6 +63,34 @@ class FakeDlnaTests(unittest.TestCase):
         self.assertEqual((parsed.name, parsed.model), ("Fake TV", "FakeDMR"))
         self.assertEqual(parsed.transport_url, self.renderer.transport_url)
         self.assertEqual(parsed.rendering_url, self.renderer.rendering_url)
+
+    def test_real_ssdp_msearch_discovery_uses_loopback_fallback(self):
+        with mock.patch.object(dlna, "SSDP_ADDRESS", ("127.0.0.1", self.tv.ssdp_port)):
+            found = dlna.discover(timeout=0.6)
+        self.assertEqual([(item.name, item.host, item.transport_url) for item in found], [
+            ("Fake TV", "127.0.0.1", self.renderer.transport_url),
+        ])
+
+    def test_ssdp_alive_and_byebye_notifications_are_emitted(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.settimeout(1)
+            target = listener.getsockname()
+            self.tv.notify(target, alive=True)
+            alive = listener.recvfrom(2048)[0].decode()
+            self.tv.notify(target, alive=False)
+            byebye = listener.recvfrom(2048)[0].decode()
+        self.assertIn("NTS: ssdp:alive", alive)
+        self.assertIn("NTS: ssdp:byebye", byebye)
+        self.assertIn(self.tv.location, alive)
+
+    def test_fake_renderer_has_a_bounded_standalone_loopback_cli(self):
+        command = [sys.executable, str(Path(__file__).with_name("fake_receivers.py")),
+                   "--profile", "strict-mime", "--duration", "0"]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("DLNA description: http://127.0.0.1:", result.stdout)
+        self.assertIn("SSDP test socket: 127.0.0.1:", result.stdout)
 
     def test_connection_manager_query_is_read_only_and_tolerates_fault(self):
         renderer = dlna.parse_renderer(self.tv.description_xml(), self.tv.location, "127.0.0.1")
