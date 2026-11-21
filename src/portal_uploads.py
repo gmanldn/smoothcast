@@ -402,6 +402,8 @@ class UploadManager:
                 raise
             finally:
                 os.close(fd)
+            if upload.cancelled:
+                raise UploadError(401, "Room access was revoked during this upload")
             upload.received += written
             upload.last_at = self._clock()
             ready = self._maybe_start_early_cast(upload)
@@ -510,6 +512,35 @@ class UploadManager:
             upload.cancelled = True
             with self._lock:
                 self._uploads.pop(upload_id, None)
+
+    def revoke_owner_keys(self, owner_keys: set[str]) -> int:
+        """Cancel a revoked guest's uploads without touching media in playback.
+
+        Owner keys are SHA-256 cookie digests already held by the portal, never
+        raw session secrets. In-flight writes may hold their per-upload lock;
+        mark them cancelled immediately and leave that partial for the normal
+        crash/expiry sweep rather than deleting a file still being written.
+        """
+        with self._lock:
+            targets = []
+            for upload_id, upload in list(self._uploads.items()):
+                if upload.owner in owner_keys:
+                    upload.cancelled = True
+                    targets.append(upload)
+                    self._uploads.pop(upload_id, None)
+        for upload in targets:
+            if upload.cast_submitted or upload.keep_partial:
+                continue  # May be in use by a locally owned receiver session.
+            if not upload.lock.acquire(blocking=False):
+                continue
+            try:
+                try:
+                    (upload.complete_path or upload.partial_path).unlink(missing_ok=True)
+                except OSError:
+                    pass  # Do not break room revocation over disk cleanup.
+            finally:
+                upload.lock.release()
+        return len(targets)
 
     def close(self) -> None:
         """Discard unfinished transfers; keep completed files used by sessions."""

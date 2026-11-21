@@ -212,11 +212,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                         self._queue_command_cache.pop(key, None)
                 # Invalidate queued/late transport envelopes, never stop media.
                 self.fence.rotate()
-            return len(keys)
+        if keys and self.uploads is not None:
+            self.uploads.revoke_owner_keys(set(keys))
+        return len(keys)
 
     def revoke_all(self) -> str:
         """Host-only: sign out everyone and rotate the room PIN atomically."""
         with self._queue_command_lock, self._lock:
+            owner_keys = set(self._sessions)
             participants = {session.participant_id for session in self._sessions.values()}
             self._sessions.clear()
             for participant_id in participants:
@@ -230,7 +233,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._attempts.clear()
             self._lockouts.clear()
             self.fence.rotate()
-            return new_pin_value
+        if owner_keys and self.uploads is not None:
+            self.uploads.revoke_owner_keys(owner_keys)
+        return new_pin_value
 
     def create_session(self, name: object = "Guest") -> tuple[str, str, portal_room.Participant]:
         token = secrets.token_urlsafe(32)

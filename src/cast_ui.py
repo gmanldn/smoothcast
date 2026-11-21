@@ -630,6 +630,27 @@ class UiMixin(BookmarkUiMixin):
         )
         note.add_css_class("dim-label")
         body.append(note)
+        guest_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.portal_guest_ids: tuple[str, ...] = ()
+        self.portal_guest_dropdown = Gtk.DropDown.new_from_strings(["No guests connected"])
+        self.portal_guest_dropdown.set_hexpand(True)
+        self.portal_guest_dropdown.set_sensitive(False)
+        self.portal_guest_dropdown.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Select a room guest to revoke"]
+        )
+        self.portal_revoke_button = Gtk.Button(label="Remove guest")
+        self.portal_revoke_button.set_sensitive(False)
+        self.portal_revoke_button.connect("clicked", self._portal_revoke_selected)
+        guest_row.append(self.portal_guest_dropdown)
+        guest_row.append(self.portal_revoke_button)
+        body.append(guest_row)
+        self.portal_end_access_button = Gtk.Button(label="End guest access / New PIN")
+        self.portal_end_access_button.add_css_class("destructive-action")
+        self.portal_end_access_button.set_tooltip_text(
+            "Sign out all guests and generate a new PIN; playback continues")
+        self.portal_end_access_button.connect(
+            "clicked", self._portal_confirm_end_access)
+        body.append(self.portal_end_access_button)
         return card
 
     def _build_details_card(self) -> Gtk.Box:

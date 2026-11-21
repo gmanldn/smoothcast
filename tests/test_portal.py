@@ -154,6 +154,40 @@ def login(rig, pin=PIN, name="Guest"):
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
 
 
+def test_revocation_cancels_private_guest_upload_without_touching_playback(tmp_path):
+    import portal_uploads
+    manager = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads=manager)
+    try:
+        _, participant, cookie = login(rig, PIN, "Uploader")
+        token = cookie.partition("=")[2]
+        created = manager.create(token, "example.mp4", 1024)
+        upload_id = created["id"]
+        path = manager.root / f"{upload_id}.partial"
+        assert path.exists()
+        assert rig.server.revoke_participant(participant["participant"]["id"]) == 1
+        assert not path.exists()
+        assert manager.snapshot() == []
+        status, _body, _headers = rig.request(
+            "POST", "/api/uploads", {"name": "next.mp4", "size": 1024},
+            cookie=cookie, csrf=participant["csrf"], origin=f"http://{rig.host}")
+        assert status == 403
+        assert all(name not in {"stop", "seek", "queue_remove"} for name, _ in rig.calls)
+    finally:
+        rig.close()
+        manager.close()
+
+
+def test_desktop_wires_host_only_revoke_and_confirmed_end_access():
+    from gui_source import main_window_methods
+    methods = main_window_methods()
+    assert "portal_guest_dropdown" in methods["_build_portal_card"]
+    assert "portal_end_access_button" in methods["_build_portal_card"]
+    assert "revoke_guest" in methods["_portal_revoke_selected"]
+    assert "Adw.MessageDialog" in methods["_portal_confirm_end_access"]
+    assert "current.end_guest_access()" in methods["_portal_end_guest_access"]
+
+
 def test_host_can_revoke_one_guest_without_stopping_playback_or_others(rig):
     status, first, cookie_a = login(rig, PIN, "Alice")
     assert status == 200
