@@ -110,6 +110,10 @@ VIDEO_EXTS = {
     ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts",
     ".mpeg", ".mpg", ".wmv", ".flv", ".ogv",
 }
+AUDIO_EXTS = {
+    ".mp3", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aiff", ".aif",
+}
+MEDIA_EXTS = VIDEO_EXTS | AUDIO_EXTS
 DIRECT_EXTS = {".mp4", ".m4v", ".mov"}
 DIRECT_VCODECS = {"h264"}
 DIRECT_ACODECS = {"aac", "mp3"}
@@ -398,6 +402,29 @@ def preferred_audio_track(media: "MediaInfo", requested: int = -1) -> AudioTrack
     )
 
 
+def media_summary(media: "MediaInfo") -> str:
+    """Describe audio-only media without inventing a video resolution."""
+    if media.is_audio_only:
+        return " · ".join(bit for bit in (
+            f"Audio · {media.acodec or 'unknown codec'}",
+            f"{media.channels}ch" if media.channels else "",
+        ) if bit)
+    return " · ".join(bit for bit in (media.resolution, media.vcodec) if bit)
+
+
+def audio_cast_options(media: "MediaInfo", subs_mode: str,
+                       subs_path: pathlib.Path | None, burn: bool,
+                       *, dlna: bool = False) -> tuple[pathlib.Path | None, bool]:
+    """Resolve subtitle settings for audio-only media before receiver changes."""
+    if getattr(media, "is_audio_only", False) is not True:
+        return subs_path, burn
+    if subs_mode in {"pick", "embedded"}:
+        raise StreamError("Audio-only media does not support subtitles; choose Auto or Off")
+    if dlna:
+        raise StreamError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
+    return None, False
+
+
 @dataclass(frozen=True)
 class SubtitleTrack:
     """An embedded subtitle stream with a stream-relative FFmpeg si index."""
@@ -469,10 +496,21 @@ class MediaInfo:
     audio_tracks: int = 0
     audio_streams: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
+    audio_only: bool = False
     size: int = 0
     bitrate: int = 0
     direct_ok: bool = False
     direct_reason: str = ""
+
+    @property
+    def has_video(self) -> bool:
+        """Whether probe found a real motion-video stream (cover art is excluded)."""
+        return bool(self.vcodec)
+
+    @property
+    def is_audio_only(self) -> bool:
+        """Whether the file has audio but no motion-video stream."""
+        return self.audio_only
 
     @property
     def resolution(self) -> str:
@@ -688,6 +726,20 @@ def _duration_seconds(raw: object) -> float:
         return 0.0
 
 
+def _stream_duration(stream: dict) -> float:
+    """Use ffprobe's seconds, Matroska duration tag, or exact time base."""
+    duration = (_duration_seconds(stream.get("duration"))
+                or _duration_seconds((stream.get("tags") or {}).get("DURATION")))
+    if duration:
+        return duration
+    try:
+        duration_ts = int(stream.get("duration_ts") or 0)
+        time_base = Fraction(str(stream.get("time_base") or "0"))
+        return _duration_seconds(float(duration_ts * time_base))
+    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return 0.0
+
+
 def _motion_video_stream(streams: list[dict]) -> dict | None:
     """Choose real motion video, never an attached/still cover image.
 
@@ -770,8 +822,6 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
         pass
     streams = data.get("streams") or []
     selected_video = _motion_video_stream(streams)
-    if selected_video is None:
-        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     subtitle_index = 0
     for stream_position, stream in enumerate(streams):
         kind = stream.get("codec_type")
@@ -788,17 +838,7 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             except (ValueError, ZeroDivisionError, OverflowError):
                 media.fps = 0.0
             if not media.duration:
-                media.duration = (
-                    _duration_seconds(stream.get("duration"))
-                    or _duration_seconds((stream.get("tags") or {}).get("DURATION"))
-                )
-                if not media.duration:
-                    try:
-                        duration_ts = int(stream.get("duration_ts") or 0)
-                        time_base = Fraction(str(stream.get("time_base") or "0"))
-                        media.duration = _duration_seconds(float(duration_ts * time_base))
-                    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
-                        pass
+                media.duration = _stream_duration(stream)
         elif kind == "audio":
             tags = stream.get("tags") or {}
             disposition = stream.get("disposition") or {}
@@ -815,6 +855,8 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             if not media.acodec:
                 media.acodec = str(stream.get("codec_name") or "")
                 media.channels = int(stream.get("channels") or 0)
+            if not media.duration:
+                media.duration = _stream_duration(stream)
         elif kind == "subtitle":
             tags = stream.get("tags") or {}
             disposition = stream.get("disposition") or {}
@@ -827,12 +869,17 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
                 forced=bool(disposition.get("forced")),
             ))
             subtitle_index += 1
-    if not media.vcodec:
+    media.audio_only = selected_video is None and bool(media.audio_streams)
+    if not media.vcodec and not media.audio_streams:
         raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
 
 
 def _direct_capable(media: MediaInfo) -> tuple[bool, str]:
+    if media.is_audio_only:
+        return False, "Audio-only media uses the compatible AAC transcode path"
+    if not media.has_video:
+        return False, "No motion-video stream is available"
     if media.path.suffix.lower() not in DIRECT_EXTS:
         return False, f"{media.path.suffix or 'This format'} plays best through the transcoder"
     if media.vcodec not in DIRECT_VCODECS:
@@ -1484,6 +1531,9 @@ class Session:
             if _GENERATION_PLAYLIST.fullmatch(playlist.name):
                 playlist.unlink(missing_ok=True)
         (ROOT / HLS_NAME).unlink(missing_ok=True)
+        audio_only = media.is_audio_only
+        if audio_only and (subs_file is not None or embedded_subtitle_index is not None):
+            raise StreamError("Audio-only media does not support subtitles")
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
         embedded_codec = ""
@@ -1510,19 +1560,25 @@ class Session:
         )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
-        video_plan = video_policy.make_plan(
-            str(media.path), media.duration, media.width, media.height,
-            video_stream=media.video_stream_index)
-        out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
-        if (out_w > 1920 or out_h > 1080
-                or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
-            self.used_software_fallback = True
+        video_plan = None
+        if audio_only:
+            # Audio-only HLS has no synthetic video stream and never invokes
+            # VAAPI or the video policy planner.
+            software = True
+        else:
+            video_plan = video_policy.make_plan(
+                str(media.path), media.duration, media.width, media.height,
+                video_stream=media.video_stream_index)
+            out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
+            if (out_w > 1920 or out_h > 1080
+                    or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
+                self.used_software_fallback = True
         if bitmap_track is not None:
             self.used_software_fallback = True
-        if not self.used_software_fallback and self._vaapi_known_bad():
+        if not audio_only and not self.used_software_fallback and self._vaapi_known_bad():
             # Skip a hardware start that already stalled on this exact setup.
             self.used_software_fallback = True
-        software = self.used_software_fallback
+        software = True if audio_only else self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-progress", str(PROGRESS_FILE), "-nostats",
@@ -1530,13 +1586,17 @@ class Session:
             # setpts/atempo stream needs 2× input, otherwise the TV starves.
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
-        args += self._hwaccel_args(software)
+        if not audio_only:
+            args += self._hwaccel_args(software)
         args += ["-i", str(media.path)]
-        if bitmap_track is None:
+        if audio_only:
+            args += ["-vn"]
+        elif bitmap_track is None:
             args += ["-map", f"0:{media.video_stream_index}"]
         args += ["-map", audio_map]
-        args += self._codec_args(quality, software)
-        filter_args = self._filter_args(
+        if not audio_only:
+            args += self._codec_args(quality, software)
+        filter_args = [] if audio_only else self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
@@ -1579,7 +1639,7 @@ class Session:
         filters = filters + audio_delay.filters(audio_delay_ms)
         if filters:
             args += ["-af", ",".join(filters)]
-        if media.fps > 30.01:
+        if not audio_only and media.fps > 30.01:
             args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",

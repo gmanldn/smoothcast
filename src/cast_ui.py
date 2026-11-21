@@ -349,7 +349,7 @@ class UiMixin(BookmarkUiMixin):
         action_row = Gtk.Grid(column_spacing=8, row_spacing=8)
         action_row.set_hexpand(True)
         self.action_grid = action_row
-        open_button = Gtk.Button(label="Open video")
+        open_button = Gtk.Button(label="Open media")
         self.open_button = open_button
         open_button.add_css_class("action-control")
         open_button.add_css_class("primary-action")
@@ -446,7 +446,7 @@ class UiMixin(BookmarkUiMixin):
         card.add_css_class("queue-card")
         card.set_vexpand(False)
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        add_button = Gtk.Button(label="Add videos")
+        add_button = Gtk.Button(label="Add media")
         add_button.connect("clicked", lambda _b: self.add_files())
         clear_button = self._icon_button(
             "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
@@ -1038,10 +1038,13 @@ class UiMixin(BookmarkUiMixin):
         url_text = session.state.stream_url if session and session.state and session.state.stream_url else "—"
         media_text = "—"
         if media:
-            bits = [media.resolution, media.vcodec, media.pix_fmt]
-            if media.size_label:
-                bits.append(media.size_label)
-            media_text = " · ".join(bit for bit in bits if bit)
+            if media.is_audio_only:
+                media_text = "Audio only"
+            else:
+                bits = [media.resolution, media.vcodec, media.pix_fmt]
+                if media.size_label:
+                    bits.append(media.size_label)
+                media_text = " · ".join(bit for bit in bits if bit)
         audio_text = "—"
         if media:
             parts = [media.acodec or "unknown audio"]
@@ -1082,9 +1085,12 @@ class UiMixin(BookmarkUiMixin):
 
     def _set_now_playing_labels(self, media, session) -> None:
         title = pretty_title(media.path)
-        meta = [media.resolution]
+        meta = ([f"Audio · {media.acodec or 'unknown codec'}"]
+                if media.is_audio_only else [media.resolution])
         if media.duration:
             meta.append(fmt_time(media.duration))
+        if media.is_audio_only and media.channels:
+            meta.append(f"{media.channels}ch")
         if media.vcodec:
             meta.append(media.vcodec)
         if media.size_label:

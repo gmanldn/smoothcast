@@ -30,12 +30,12 @@ from cast_widgets import save_config, fmt_time, Async
 
 class QueueMixin:
     def add_files(self) -> None:
-        dialog = Gtk.FileDialog(title="Add videos to the queue")
+        dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
         video_filter = Gtk.FileFilter()
-        video_filter.set_name("Video files")
-        for pattern in ("*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts", "*.mpeg", "*.mpg", "*.wmv"):
-            video_filter.add_pattern(pattern)
+        video_filter.set_name("Video and audio files")
+        for suffix in sorted(streamer.MEDIA_EXTS):
+            video_filter.add_pattern(f"*{suffix}")
         store.append(video_filter)
         all_filter = Gtk.FileFilter()
         all_filter.set_name("All files")
@@ -78,12 +78,12 @@ class QueueMixin:
 
 
     def open_video(self) -> None:
-        dialog = Gtk.FileDialog(title="Choose a video")
+        dialog = Gtk.FileDialog(title="Choose media")
         store = Gio.ListStore.new(Gtk.FileFilter)
         video_filter = Gtk.FileFilter()
-        video_filter.set_name("Video files")
-        for pattern in ("*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts", "*.mpeg", "*.mpg", "*.wmv"):
-            video_filter.add_pattern(pattern)
+        video_filter.set_name("Video and audio files")
+        for suffix in sorted(streamer.MEDIA_EXTS):
+            video_filter.add_pattern(f"*{suffix}")
         store.append(video_filter)
         dialog.set_filters(store)
         dialog.set_default_filter(video_filter)
@@ -145,8 +145,8 @@ class QueueMixin:
                 None, (self.cfg.get("positions") or {}).get(path),
             )
             self.preview_picture.set_visible(False)
-            self.preview.set_video(pretty_title(path), "Reading film duration…")
-            self.np_meta.set_text("Inspect the film and scrub to a starting point, then press Cast.")
+            self.preview.set_video(pretty_title(path), "Reading media duration…")
+            self.np_meta.set_text("Inspect the media and scrub to a starting point, then press Cast.")
             self.seekbar.set_state(0.0, 0.0, 0.0)
 
         generation = self._preview_generation
@@ -198,7 +198,7 @@ class QueueMixin:
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
                 self.elapsed_label.set_text(fmt_time(self._preview_position))
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - self._preview_position))}" if duration else "--:--")
-                info = " · ".join(x for x in (media.resolution, media.vcodec, fmt_time(duration)) if x)
+                info = " · ".join(bit for bit in (streamer.media_summary(media), fmt_time(duration)) if bit)
                 self.preview.set_video(pretty_title(path_result), info)
                 self._queue_preview(self._preview_position)
             self._rebuild_queue()
@@ -206,7 +206,7 @@ class QueueMixin:
         def failed(message):
             if (generation == self._preview_generation
                     and self.session is None and self._preview_path == path):
-                self.np_meta.set_text(f"Cannot inspect film: {message}")
+                self.np_meta.set_text(f"Cannot inspect media: {message}")
                 self.preview.set_video(pretty_title(path), "Media inspection failed")
                 self.toast(f"Cannot inspect {pathlib.Path(path).name}: {message}", error=True)
             self._console(f"FFprobe failed for {pathlib.Path(path).name}: {message}")
@@ -214,9 +214,8 @@ class QueueMixin:
         if cached is None or cached[0] != fingerprint:
             Async.run(work, done=done, failed=failed, domain="media")
         else:
-            self.preview.set_video(pretty_title(path), " · ".join(
-                x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
-            ))
+            info = " · ".join(bit for bit in (streamer.media_summary(self.media), fmt_time(self.media.duration)) if bit)
+            self.preview.set_video(pretty_title(path), info)
             self.elapsed_label.set_text(fmt_time(self._preview_position))
             self.remaining_label.set_text(f"-{fmt_time(max(0.0, self.media.duration - self._preview_position))}" if self.media.duration else "--:--")
         self._refresh_controls()

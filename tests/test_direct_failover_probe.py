@@ -109,6 +109,7 @@ def cast_worker(status="rejected"):
     second.state = None
     fake_streamer = SimpleNamespace(
         StreamError=streamer.StreamError,
+        audio_cast_options=lambda _media, _mode, path, burn, **_kwargs: (path, burn),
         Session=mock.Mock(side_effect=[first, second]),
         CAST_SUBTITLE_EXTS=streamer.CAST_SUBTITLE_EXTS,
         require_compatible_ffmpeg=mock.Mock(return_value=(7, 0)),

@@ -130,6 +130,8 @@ class SessionMixin:
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before receiver handoff")
             streamer.require_compatible_ffmpeg()
+            effective_subs_path, effective_burn = streamer.audio_cast_options(
+                media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
                     "The selected audio track is no longer in this film; choose Auto or another track"
@@ -146,14 +148,14 @@ class SessionMixin:
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.
                 fingerprint = preflight.fingerprint(
-                    path, audio_track_index=audio_track, subs_file=subs_path,
-                    burn_subs=burn,
+                    path, audio_track_index=audio_track, subs_file=effective_subs_path,
+                    burn_subs=effective_burn,
                     embedded_subtitle_index=embedded.index if embedded else None,
                 )
                 if fingerprint not in self._preflight_ok:
                     preflight.check_media(
                         media, audio_track_index=audio_track,
-                        subs_file=subs_path, burn_subs=burn,
+                        subs_file=effective_subs_path, burn_subs=effective_burn,
                         embedded_subtitle_index=embedded.index if embedded else None,
                     )
                     if len(self._preflight_ok) >= 256:
@@ -217,8 +219,8 @@ class SessionMixin:
                         return session, media
                 session.start_transcode(
                     media, offset, device=device, quality=cfg["quality"],
-                    audio_profile=cfg["audio"], subs_file=subs_path,
-                    burn_subs=burn, title=title,
+                    audio_profile=cfg["audio"], subs_file=effective_subs_path,
+                    burn_subs=effective_burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
                     audio_loudness=str(cfg.get("audio_loudness", "off")),
                     device_ip=device_ip,
@@ -278,12 +280,11 @@ class SessionMixin:
             self._note_device_used()
             self._record_watch("start")
             self._set_now_playing_labels(media, session)
-            # Update preview screen with video info.
+            # Refresh preview metadata.
             if self.preview is not None and media:
-                bits = [media.resolution, media.vcodec]
+                info = streamer.media_summary(media)
                 if media.size_label:
-                    bits.append(media.size_label)
-                info = " · ".join(bit for bit in bits if bit)
+                    info += f" · {media.size_label}"
                 self.preview.set_video(pretty_title(path), info)
             self.toast(f"Casting {pretty_title(path)} to {device}")
             self._console(f"Casting {pretty_title(path)} to {device} ({session.mode})")
@@ -298,8 +299,7 @@ class SessionMixin:
                 self.busy = False
                 self._finish_delayed_close()
                 return
-            # A failed preflight never stopped the previous receiver. Do not
-            # discard its live meter or ownership just because a new MKV fails.
+            # Preserve the prior session on preflight failure.
             if previous is not None and previous is self.session and previous.active():
                 self.busy = False
                 self.toast(f"Cast not started: {message}", error=True)

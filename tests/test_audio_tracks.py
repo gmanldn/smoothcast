@@ -22,7 +22,7 @@ class AudioTrackTests(unittest.TestCase):
     def media(self, root: Path) -> streamer.MediaInfo:
         return streamer.MediaInfo(
             path=root / "multilingual.mkv", duration=180.0,
-            pix_fmt="yuv420p", width=1280, height=720,
+            vcodec="h264", pix_fmt="yuv420p", width=1280, height=720,
             audio_tracks=2,
             audio_streams=[
                 streamer.AudioTrack(0, "aac", 2, "eng", "English stereo", "stereo"),
