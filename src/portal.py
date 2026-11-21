@@ -966,14 +966,43 @@ let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingU
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("displayName").value=d.participant.name;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
-async function refresh(){if(!csrf||busy)return;try{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"Connection lost");const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+let statusRequest=null,statusTimer=null,statusFailures=0;
+function scheduleRefresh(){
+  clearTimeout(statusTimer);
+  if(!csrf||document.hidden)return;
+  const delay=statusFailures?Math.min(30000,2000*2**statusFailures+Math.random()*500):2000;
+  statusTimer=setTimeout(refresh,delay);
+}
+async function refresh(){
+  clearTimeout(statusTimer);
+  if(!csrf||document.hidden||busy||statusRequest)return;
+  const controller=new AbortController();
+  statusRequest=controller;
+  const deadline=setTimeout(()=>controller.abort(),5000);
+  try{
+    const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store",signal:controller.signal});
+    const d=await r.json();
+    if(controller.signal.aborted||busy)return;
+    if(!r.ok)throw Error(d.error||"Connection lost");
+    const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
 $("musicAutogain").checked=!!s.music_autogain;
 const queue=$("queue");queue.replaceChildren();if(!s.queue||!s.queue.length){const li=document.createElement("li");li.className="empty";li.textContent="No videos queued";queue.append(li)}else for(const item of s.queue){const li=document.createElement("li");li.className="queue-item";const text=document.createElement("div");const title=document.createElement("strong");title.textContent=item.title||"Video";const meta=document.createElement("div");meta.className="muted";meta.textContent=(item.votes?`▲ ${item.votes} vote${item.votes===1?"":"s"}`:"No votes")+(item.duration?` · ${clock(item.duration)}`:"");text.append(title,meta);const actions=document.createElement("div");actions.className="queue-actions";const vote=document.createElement("button");vote.className="tiny vote"+(item.voted?" on":"");vote.textContent=item.voted?"Voted":"Vote";vote.addEventListener("click",()=>act("queue_vote",!item.voted,{id:item.id}));actions.append(vote);const play=document.createElement("button");play.className="tiny";play.textContent="Play now";play.addEventListener("click",()=>act("queue_play",undefined,{id:item.id}));actions.append(play);const up=document.createElement("button");up.className="tiny secondary";up.textContent="↑";up.title="Move up";up.addEventListener("click",()=>act("queue_move",undefined,{id:item.id,position:Math.max(0,s.queue.indexOf(item)-1)}));actions.append(up);const remove=document.createElement("button");remove.className="tiny secondary";remove.textContent="×";remove.title="Remove";remove.addEventListener("click",()=>act("queue_remove",undefined,{id:item.id}));actions.append(remove);li.append(text,actions);queue.append(li)}
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const time=n=>Number.isFinite(Number(n))?`${Math.floor(Math.max(0,Number(n))/60)}:${String(Math.floor(Math.max(0,Number(n))%60)).padStart(2,"0")}`:"";const timing=item.position==null?"":` · ${time(item.position)}${item.duration==null?"":` / ${time(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);showError("errorDash","");}catch(err){showError("errorDash",err.message)}}
+document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showError("errorDash","");
+  }catch(err){
+    if(!busy&&!document.hidden&&controller.signal.reason!=="superseded"){
+      statusFailures=Math.min(statusFailures+1,4);
+      showError("errorDash",err.name==="AbortError"?"Room update timed out. Retrying…":err.message);
+    }
+  }finally{
+    clearTimeout(deadline);
+    statusRequest=null;
+    scheduleRefresh();
+  }
+}
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");activity.replaceChildren();if(room&&room.activity)for(const event of [...room.activity].slice(-12).reverse()){const line=document.createElement("div");line.className="ev";const time=document.createElement("time");time.textContent=new Date(event.at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});const text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activity.append(line)}}
 function renderPeers(peers,available){
@@ -1027,7 +1056,7 @@ function renderPeers(peers,available){
   }
 }
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
-async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(["queue_remove","queue_move","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+async function act(action,value,extra={}){if(busy)return;busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
@@ -1094,5 +1123,10 @@ $("cancelUpload").addEventListener("click",async()=>{
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
   finally{uploading=false;cancelUpload=false;updateUploadControls()}
 });
-setInterval(refresh,2000);
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
+  statusFailures=0;
+  refresh();
+});
+window.addEventListener("online",()=>{statusFailures=0;refresh()});
 </script></body></html>"""

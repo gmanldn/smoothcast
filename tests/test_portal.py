@@ -108,6 +108,59 @@ def test_portal_rejects_non_rfc1918_addresses():
             portal.Portal(address, lambda *_args: {})
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_browser_status_poll_waits_for_response_and_backs_off_after_timeout():
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    harness = """
+const assert = require("node:assert/strict");
+const listeners = new Map(), timers = new Map();
+const element = {addEventListener(){}};
+const document = {
+  hidden: false,
+  addEventListener(name, handler){listeners.set(name, handler)},
+  getElementById(){return element},
+  querySelectorAll(){return []},
+};
+const window = {addEventListener(){}};
+let timerId = 0, requests = 0;
+const setTimeout = (callback, delay) => {
+  timers.set(++timerId, {callback, delay});
+  return timerId;
+};
+const clearTimeout = id => timers.delete(id);
+const fetch = (_url, {signal}) => {
+  requests++;
+  return new Promise((_resolve, reject) =>
+    signal.addEventListener("abort", () => reject(signal.reason), {once:true}));
+};
+"""
+    scenario = """
+(async()=>{
+  csrf = "paired";
+  const first = refresh();
+  await refresh();
+  assert.equal(requests, 1);
+  assert.equal(timers.size, 1);
+  const deadline = [...timers.values()][0];
+  assert.equal(deadline.delay, 5000);
+  deadline.callback();
+  await first;
+  assert.match(element.textContent, /timed out/);
+  assert.equal(timers.size, 1);
+  const retry = [...timers.values()][0];
+  assert.ok(retry.delay >= 4000 && retry.delay <= 4500);
+  document.hidden = true;
+  listeners.get("visibilitychange")();
+  assert.equal(timers.size, 0);
+  document.hidden = false;
+  listeners.get("visibilitychange")();
+  assert.equal(requests, 2);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
 def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     status, body, headers = rig.request("GET", "/")
     assert status == 200

@@ -17,7 +17,9 @@ the dashboard refreshes before the user retries. Edits also use per-participant
 command IDs: an identical retry returns its original receipt, while reusing an
 ID for a different edit is rejected. Recent receipts are held in a bounded
 two-minute cache.
-The room also shows live presence and a bounded activity feed. Votes are a
+The room also shows live presence and a bounded activity feed. An open room
+refreshes about every two seconds while visible, backs off if the host stops
+responding, and refreshes again when you return to the tab. Votes are a
 visible signal and are preserved across refreshes; queue order remains under
 the room's control so nobody's film can be silently displaced.
 
