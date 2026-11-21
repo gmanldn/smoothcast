@@ -1477,9 +1477,12 @@ async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
   if(busy){
     const key=action+":"+(extra.id||"");
+    if(!pendingControls.has(key)&&pendingControls.size>=16){
+      showError("errorDash","Too many controls are waiting; try again shortly");
+      return;
+    }
     pendingControls.delete(key);
     pendingControls.set(key,{action,value,extra});
-    while(pendingControls.size>16)pendingControls.delete(pendingControls.keys().next().value);
     showError("errorDash","Control waiting; your latest change will be sent");
     return;
   }
@@ -1523,14 +1526,12 @@ $("seek").addEventListener("change",()=>{
   editingControls.delete("seek");
   act("seek",value);
 });
-let volumeTimer=null,lastVolumeSent=0,volumePending=null,lastVolumeValue=null;
+let volumeTimer=null,lastVolumeSent=0,volumePending=null;
 function flushVolume(){
   volumeTimer=null;
   if(volumePending===null)return;
   const value=volumePending;
   volumePending=null;
-  if(value===lastVolumeValue)return;
-  lastVolumeValue=value;
   lastVolumeSent=Date.now();
   void act("volume",value);
 }
