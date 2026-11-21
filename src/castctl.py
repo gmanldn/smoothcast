@@ -8,6 +8,8 @@ import shutil
 import math
 import subprocess
 import sys
+
+import frozen_runtime
 from dataclasses import dataclass
 from typing import cast
 
@@ -87,8 +89,12 @@ class Device:
 
 def _run(args: list[str], timeout: float = 10) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(CATT), *args], capture_output=True, text=True, timeout=timeout
+        catt_command(args), capture_output=True, text=True, timeout=timeout
     )
+
+
+def catt_command(args: list[str]) -> list[str]:
+    return frozen_runtime.catt_command(str(CATT), args)
 
 
 def scan(timeout: float = 30) -> list[Device]:

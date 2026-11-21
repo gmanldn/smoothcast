@@ -12,10 +12,13 @@ from types import SimpleNamespace
 from unittest import mock
 
 from gui_source import main_window_methods
+import dlna
 import playback_state
+import streamer
+import subtitle_style
 
 
-def window(*, device="TV", subs="auto", active=True, owner=None):
+def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=None):
     names = ("_cast_path", "_cast_preflight_failed")
     methods = main_window_methods()
     source = "class Handlers:\n" + "\n\n".join(
@@ -23,6 +26,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None):
         for name in names
     )
     ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib}
+    ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(
         state=SimpleNamespace(device=device if owner is None else owner),
@@ -108,3 +112,39 @@ def test_no_previous_session_uses_normal_failure_cleanup():
     w.session = None
     w._cast_path(pathlib.Path("/another.mkv"), 0.0)
     w._cast_failed.assert_called_once()
+
+def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    def run(work, *, done, failed, domain):
+        try:
+            work()
+        except dlna.DlnaError as exc:
+            failed(str(exc))
+        else:
+            raise AssertionError("incompatible cast reached playback")
+
+    w, previous = window(device="DLNA · Living Room · 192.168.1.41", subs="off",
+                         dependencies={
+                             "Async": SimpleNamespace(run=run), "dlna": dlna,
+                             "streamer": streamer, "subtitle_style": subtitle_style,
+                             "audio_delay": audio_delay, "subtitle_delay": subtitle_delay,
+                         })
+    renderer = dlna.Renderer("Living Room", "192.168.1.41", "", "", "")
+    w._dlna_renderer = mock.Mock(return_value=renderer)
+    w.np_meta = mock.Mock()
+    w._closing = False
+    w.cfg.update(direct=True, audio="original")
+    previous.stop = mock.Mock()
+    monkeypatch.setattr(streamer, "ffprobe", lambda path: object())
+    monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
+    monkeypatch.setattr(dlna, "advertised_http_formats", lambda target: {"video/mpeg"})
+
+    w._cast_path(pathlib.Path("/new-film.mp4"), 0.0)
+
+    previous.stop.assert_not_called()
+    w._cast_failed.assert_not_called()
+    assert w.session is previous
+    assert not w.busy and w._dlna_cancel is None
+    assert "does not advertise MP4" in w.toast.call_args.args[0]

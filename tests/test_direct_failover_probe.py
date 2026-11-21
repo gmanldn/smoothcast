@@ -12,10 +12,12 @@ from gui_source import main_window_methods
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+import audio_delay
 import direct_probe
 import playback_state
 import streamer
 import subtitle_delay
+import subtitle_style
 
 
 def test_direct_status_classifier_is_conservative():
@@ -116,7 +118,9 @@ def cast_worker(status="rejected"):
     probe = mock.Mock(return_value=status)
     namespace = {
         "playback_state": playback_state,
+        "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
+        "subtitle_style": subtitle_style,
         "streamer": fake_streamer,
         "direct_probe": SimpleNamespace(
             verify_direct_start=probe,

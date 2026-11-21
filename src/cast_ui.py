@@ -7,7 +7,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 import pathlib
 import time
 
@@ -17,14 +17,22 @@ import watch_history
 
 import responsive_layout
 
+import buffer_health
+import idle_chrome
+import notifications
 import playback_state
 import progress_model
+import text_fit
 
+import smoothcast_assets
 import ui_theme
 
 import version
 
-from cast_widgets import APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async
+from cast_widgets import (
+    APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
+    BufferHealthGraph,
+)
 import network_route_ui
 class UiMixin:
 
@@ -46,15 +54,15 @@ class UiMixin:
         header = Adw.HeaderBar()
         self.title_widget = Adw.WindowTitle(
             title=f"{APP_NAME} {version.label()}",
-            subtitle=f"{self.cfg['device']} · idle",
+            subtitle=self.cfg["device"] or "No receiver selected",
         )
         self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.label()}")
         header.set_title_widget(self.title_widget)
-        _icon_path = pathlib.Path(__file__).resolve().parent.parent / "data" / "cast-control.png"
+        _icon_path = smoothcast_assets.icon_path()
         if _icon_path.exists():
             icon = Gtk.Image.new_from_file(str(_icon_path))
         else:
-            icon = Gtk.Image.new_from_icon_name("cast-control")
+            icon = Gtk.Image.new_from_icon_name(smoothcast_assets.ICON_NAME)
         icon.set_pixel_size(22)
         header.pack_start(icon)
         menu_button = Gtk.MenuButton()
@@ -78,16 +86,17 @@ class UiMixin:
         self.left_column.set_hexpand(True)
         self.left_column.set_valign(Gtk.Align.START)
         self.left_column.append(self._build_now_playing())
-        self.left_column.append(self._build_live_levels())
         # Build the device card before the queue: _build_queue() calls
         # _rebuild_queue() -> _refresh_controls(), which needs device_dropdown.
         self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.right_column.set_valign(Gtk.Align.START)
         self.right_column.append(self._build_device_card())
+        self.right_column.append(self._build_portal_card())
         self.right_column.append(self._build_settings_card())
         self.right_column.append(self._build_console_card())
         self.right_column.append(self._build_details_card())
         self.left_column.append(self._build_queue())
+        self.left_column.append(self._build_live_levels())
         self.page.append(self.left_column)
         self.page.append(self.right_column)
         self.page_scroller = Gtk.ScrolledWindow()
@@ -100,6 +109,8 @@ class UiMixin:
         toolbar.set_content(self.page_scroller)
         self.toasts.set_child(toolbar)
         self.set_content(self.toasts)
+        self.header = header
+        self._idle_chrome = idle_chrome.IdleChrome(self, header)
 
 
     def action_report_problem(self) -> None:
@@ -137,65 +148,73 @@ class UiMixin:
         section.append("Open video…", "app.open")
         section.append("Play locally", "app.play-locally")
         section.append("Add videos to queue…", "app.add-files")
-        menu.append_section(None, section)
+        section.append("Open URL…", "app.open-url")
         recents = Gio.Menu()
         for index, path in enumerate(self.cfg["recents"][:8]):
             recents.append(pathlib.Path(path).name, f"app.recent-{index}")
         if self.cfg["recents"]:
             recents.append("Clear recent files", "app.clear-recents")
-        menu.append("Open URL…", "app.open-url")
-        menu.append("Screenshot", "app.screenshot")
-        menu.append("Benchmark playback quality…", "app.benchmark")
-        menu.append_submenu("Open recent", recents)
+            section.append_submenu("Open recent", recents)
         favourites = Gio.Menu()
         for index, path in enumerate(self.cfg["favourites"][:16]):
             favourites.append(pathlib.Path(path).name, f"app.favourite-{index}")
         favourites.append("Pin or unpin current file", "app.favourite")
         if self.cfg["favourites"]:
             favourites.append("Clear favourites", "app.clear-favourites")
-        menu.append_submenu("Favourites", favourites)
+        section.append_submenu("Favourites", favourites)
+        menu.append_section(None, section)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
         playback.append("Toggle fullscreen", "app.fullscreen")
         playback.append("Loop", "app.loop")
         playback.append("Pin or unpin receiver", "app.pin-receiver")
         playback.append("Clear watch history", "app.clear-history")
-        playback.append("Loop all", "app.loop-all")
-        playback.append("Shuffle queue", "app.shuffle-queue")
-        playback.append("Save playlist", "app.save-playlist")
-        playback.append("Load playlist", "app.load-playlist")
+        playlist = Gio.Menu()
+        playlist.append("Loop all", "app.loop-all")
+        playlist.append("Shuffle queue", "app.shuffle-queue")
+        playlist.append("Save playlist", "app.save-playlist")
+        playlist.append("Load playlist", "app.load-playlist")
         playback.append("Theater mode", "app.theater")
-        playback.append("Auto-shutdown after playlist", "app.auto-shutdown")
-        playback.append("Auto theme by time", "app.auto-theme")
+        playlist.append("Auto-shutdown after playlist", "app.auto-shutdown")
         speed = Gio.Menu()
         for s in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
             speed.append(f"{s}x", f"app.speed-{str(s).replace('.','_')}")
         speed.append("Custom…", "app.custom-speed")
-        menu.append_submenu("Speed", speed)
+        playback.append_submenu("Speed", speed)
         captions = Gio.Menu()
         captions.append("Earlier by 100 ms (G)", "app.subtitle-earlier")
         captions.append("Later by 100 ms (H)", "app.subtitle-later")
         captions.append("Reset delay", "app.subtitle-reset")
-        menu.append_submenu("Subtitle delay", captions)
+        playback.append_submenu("Subtitle delay", captions)
+        lipsync = Gio.Menu()
+        lipsync.append("Sound earlier by 50 ms (Shift+G)", "app.audio-earlier")
+        lipsync.append("Sound later by 50 ms (Shift+H)", "app.audio-later")
+        lipsync.append("Reset delay", "app.audio-reset")
+        playback.append_submenu("Audio delay (lip-sync)", lipsync)
         sleep = Gio.Menu()
         for m in (0, 15, 30, 45, 60):
             sleep.append(f"{m} min" if m else "Off", f"app.sleep-{m}")
-        menu.append_submenu("Sleep timer", sleep)
-        menu.append_section(None, playback)
+        playback.append_submenu("Sleep timer", sleep)
+        playback.append("Screenshot", "app.screenshot")
+        menu.append_submenu("Playback", playback)
+        menu.append_submenu("Playlist", playlist)
         scheme = Gio.Menu()
         for label, value in (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")):
             item = Gio.MenuItem.new(label, None)
             item.set_action_and_target_value("app.color-scheme", GLib.Variant("s", value))
             scheme.append_item(item)
+        scheme.append("Auto theme by time", "app.auto-theme")
         menu.append_submenu("Appearance", scheme)
         menu.append("Preferences…", "app.preferences")
         help_menu = Gio.Menu()
+        help_menu.append("Benchmark playback quality…", "app.benchmark")
         help_menu.append("Keyboard shortcuts", "app.shortcuts")
         help_menu.append("Save diagnostics…", "app.save-diagnostics")
         help_menu.append("Report a problem…", "app.report-problem")
-        help_menu.append("About Cast Control", "app.about")
-        help_menu.append("Quit", "app.quit")
-        menu.append_section(None, help_menu)
+        help_menu.append("About SmoothCast", "app.about")
+
+        menu.append_submenu("Help", help_menu)
+        menu.append("Quit", "app.quit")
         return menu
 
 
@@ -234,6 +253,9 @@ class UiMixin:
         self.local_video.set_hexpand(True)
         self.local_video.set_vexpand(True)
         self.preview_overlay.add_overlay(self.local_video)
+        subtitle_drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        subtitle_drop.connect("drop", self._drop_subtitle)
+        self.preview_overlay.add_controller(subtitle_drop)
         body.append(self.preview_overlay)
         self.seekbar = SeekBar(self.seek_to, self._on_hover)
         body.append(self.seekbar)
@@ -269,6 +291,9 @@ class UiMixin:
         self.play_image.set_pixel_size(50)
         self.play_button.set_child(self.play_image)
         self.play_button.set_tooltip_text("Play / Pause (Space)")
+        self.play_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Play or pause"]
+        )
         self.play_button.connect("clicked", lambda _b: self.toggle_play())
         self.fwd10_button = self._text_button("+10", "Forward 10 seconds (→)", self._skip_forward10)
         self.fwd10_button.add_css_class("transport-step")
@@ -287,16 +312,22 @@ class UiMixin:
 
         volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         volume_row.add_css_class("volume-row")
-        volume_title = Gtk.Label(label="VOLUME")
+        volume_title = Gtk.Label(label="Volume")
         volume_title.add_css_class("volume-label")
         volume_row.append(volume_title)
         self.mute_button = Gtk.ToggleButton()
         self.mute_button.set_icon_name("audio-volume-high-symbolic")
         self.mute_button.set_tooltip_text("Mute (M)")
+        self.mute_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Mute"]
+        )
         self.mute_button.add_css_class("flat")
         self.mute_button.connect("toggled", self._on_mute)
         self.volume_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
         self.volume_scale.set_draw_value(False)
+        self.volume_scale.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Volume"]
+        )
         self.volume_scale.set_hexpand(True)
         self._syncing = True
         self.volume_scale.set_value(50)
@@ -318,21 +349,17 @@ class UiMixin:
         self.open_button = open_button
         open_button.add_css_class("action-control")
         open_button.add_css_class("primary-action")
-        open_button.set_icon_name("folder-open-symbolic")
         open_button.connect("clicked", lambda _b: self.open_video())
         self.cast_button = Gtk.Button(label="Cast to TV")
-        self.cast_button.set_icon_name("send-to-symbolic")
         self.cast_button.add_css_class("action-control")
         self.cast_button.set_hexpand(False)
         self.cast_button.connect("clicked", lambda _b: self.cast_selected())
         self.local_button = Gtk.Button(label="Play locally")
-        self.local_button.set_icon_name("media-playback-start-symbolic")
         self.local_button.add_css_class("action-control")
         self.local_button.set_hexpand(False)
         self.local_button.set_tooltip_text("Play the selected file locally before casting")
         self.local_button.connect("clicked", lambda _b: self._play_locally())
         self.stop_tv_button = Gtk.Button(label="Stop TV")
-        self.stop_tv_button.set_icon_name("media-playback-stop-symbolic")
         self.stop_tv_button.add_css_class("destructive-action")
         self.stop_tv_button.add_css_class("action-control")
         self.stop_tv_button.set_hexpand(False)
@@ -341,6 +368,9 @@ class UiMixin:
         self.cc_button = Gtk.ToggleButton(label="CC")
         self.cc_button.add_css_class("action-control")
         self.cc_button.set_tooltip_text("Toggle captions on the TV")
+        self.cc_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Captions"]
+        )
         self.cc_button.connect("toggled", self._on_cc_toggled)
         self.action_controls = (
             open_button, self.cast_button, self.local_button, self.stop_tv_button, self.cc_button,
@@ -408,14 +438,11 @@ class UiMixin:
 
 
     def _build_queue(self) -> Gtk.Box:
-        card, body = self._card(
-            "Up Next", "A simple queue for whatever you want to watch next."
-        )
+        card, body = self._card("Up next")
         card.add_css_class("queue-card")
         card.set_vexpand(False)
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         add_button = Gtk.Button(label="Add videos")
-        add_button.set_icon_name("list-add-symbolic")
         add_button.connect("clicked", lambda _b: self.add_files())
         clear_button = self._icon_button(
             "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
@@ -474,11 +501,11 @@ class UiMixin:
         emblem.add_css_class("empty-icon")
         emblem.set_halign(Gtk.Align.CENTER)
         empty.append(emblem)
-        title = Gtk.Label(label="Your queue is ready")
+        title = Gtk.Label(label="Queue is empty")
         title.add_css_class("empty-title")
         empty.append(title)
         subtitle = Gtk.Label(
-            label="Add a few videos; SmoothCast will line them up here.",
+            label="Choose Add videos to build your queue.",
             wrap=True,
         )
         subtitle.set_justify(Gtk.Justification.CENTER)
@@ -506,7 +533,7 @@ class UiMixin:
         body.append(row_status)
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"]] if self.cfg["device"] else [])
+        self.device_dropdown = Gtk.DropDown.new_from_strings([self.cfg["device"] or cast_targets.CHOOSE_RECEIVER])
         self.device_dropdown.set_hexpand(True)
         self.device_dropdown.connect("notify::selected", self._on_device_selected)
         refresh = self._icon_button(
@@ -544,6 +571,35 @@ class UiMixin:
         self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
+        return card
+
+
+    def _build_portal_card(self) -> Gtk.Box:
+        card, body = self._card(
+            "LAN dashboard", "Open this address on another device on your local network."
+        )
+        self.portal_status_label = Gtk.Label(label="Starting local portal…", xalign=0.0, wrap=True)
+        self.portal_status_label.add_css_class("section-caption")
+        body.append(self.portal_status_label)
+        self.portal_activity_label = Gtk.Label(label="No client activity", xalign=0.0, wrap=True)
+        self.portal_activity_label.add_css_class("section-caption")
+        body.append(self.portal_activity_label)
+        body.append(Gtk.Label(label="Address", xalign=0.0))
+        self.portal_url_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
+        self.portal_url_label.add_css_class("mono")
+        body.append(self.portal_url_label)
+        body.append(Gtk.Label(label="Access PIN", xalign=0.0))
+        self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
+        self.portal_pin_label.add_css_class("hero-title")
+        self.portal_pin_label.add_css_class("mono")
+        body.append(self.portal_pin_label)
+        note = Gtk.Label(
+            label="Anyone on your local network with this PIN can control playback. "
+                  "The PIN changes when the portal restarts.",
+            xalign=0.0, wrap=True,
+        )
+        note.add_css_class("dim-label")
+        body.append(note)
         return card
 
 
@@ -597,6 +653,10 @@ class UiMixin:
             self.detail_labels[key] = value_label
             row_index += 1
         body.append(grid)
+        self._buffer_health = buffer_health.BufferHealth()
+        self._last_stall_count = 0
+        self.buffer_graph = BufferHealthGraph()
+        body.append(self.buffer_graph)
         return card
 
 
@@ -642,6 +702,7 @@ class UiMixin:
         image.set_pixel_size(size)
         button.set_child(image)
         button.set_tooltip_text(tooltip)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [tooltip])
         for cls in style_class.split():
             button.add_css_class(cls)
         button.connect("clicked", lambda _b: callback())
@@ -651,6 +712,7 @@ class UiMixin:
     def _text_button(self, label, tooltip, callback) -> Gtk.Button:
         button = Gtk.Button(label=label)
         button.set_tooltip_text(tooltip)
+        button.update_property([Gtk.AccessibleProperty.LABEL], [tooltip])
         button.add_css_class("pill")
         button.connect("clicked", lambda _b: callback())
         return button
@@ -694,6 +756,8 @@ class UiMixin:
         add("Down", lambda: self._nudge_volume(-5))
         add("g", lambda: self._adjust_subtitle_delay(-1))
         add("h", lambda: self._adjust_subtitle_delay(1))
+        add("<Shift>g", lambda: self._adjust_audio_delay(-1))
+        add("<Shift>h", lambda: self._adjust_audio_delay(1))
         add("s", self.stop_stream)
         add("p", self.on_prev)
         add("n", self.on_next)
@@ -714,7 +778,9 @@ class UiMixin:
         width = self.get_width() or self._startup_width
         height = self.get_height() or self._startup_height
         self._remember_normal_geometry()
-        state = responsive_layout.layout_for_size(width, height)
+        state = responsive_layout.layout_for_size(width, height, self.cfg.get("density"))
+        if width < text_fit.NARROW_WIDTH:
+            text_fit.fit_labels(self)  # long text wraps/ellipsizes instead of widening the window (#136)
         if state == self._layout_state:
             return True
         self._layout_state = state
@@ -779,11 +845,41 @@ class UiMixin:
 
     def _set_device_badge(self, label: str, state: str = "") -> None:
         badge = self.device_status_badge
-        for previous in ("online", "offline"):
-            badge.remove_css_class(previous)
+        previous_label = badge.get_text()
+        for previous_class in ("online", "offline"):
+            badge.remove_css_class(previous_class)
         if state in ("online", "offline"):
             badge.add_css_class(state)
         badge.set_text(label)
+        if label == "OFFLINE" and previous_label != "OFFLINE" and (
+                self.session is not None or self.external):
+            self._notify(notifications.DEVICE_LOST, self._device())
+
+
+    def _notify(self, event: str, detail: str = "") -> None:
+        """Post a desktop notification without presenting or focusing the window."""
+        try:
+            active = bool(self.is_active())
+        except Exception:
+            active = False
+        if not notifications.should_notify(self.cfg, event, window_active=active):
+            return
+        if event == notifications.FINISHED:
+            title = "Playback finished"
+            name = pathlib.Path(detail).name if detail else ""
+            body = f"{name} finished playing." if name else "The cast finished."
+        elif event == notifications.ERROR:
+            title = "Cast failed"
+            body = detail or "The cast failed."
+        else:
+            title = "Receiver lost"
+            body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
+        try:
+            notification = Gio.Notification.new(title)
+            notification.set_body(body)
+            self.app.send_notification(None, notification)
+        except Exception as exc:
+            self._console(f"Notification unavailable: {exc}")
 
 
     def _set_chip(self, label: str, kind: str) -> None:
@@ -873,6 +969,7 @@ class UiMixin:
             position_text += " (estimated)"
         # Buffer health — how far ahead the encoder is from playback position.
         buffer_text = "—"
+        ahead = None
         if session and session.mode == "transcode" and session.state:
             encoded = playback_state.absolute_encoded_position(
                 session.state.offset, snapshot.out_time,
@@ -887,9 +984,20 @@ class UiMixin:
                     buffer_text = f"{fmt_time(-ahead)} behind"
         # Segment count for HLS streams.
         segments_text = "—"
+        seg_count = 0
         if session and session.mode == "transcode":
             seg_count = session.segment_count()
             segments_text = f"{seg_count} segment{'s' if seg_count != 1 else ''}"
+        if session and session.mode == "transcode" and session.state:
+            restarts = getattr(self._stream_watchdog, "restarts", 0)
+            if restarts < self._last_stall_count:
+                self._last_stall_count = restarts
+            stalled = restarts > self._last_stall_count
+            self._last_stall_count = restarts
+            self._buffer_health.sample(ahead, seg_count, stalled=stalled)
+        else:
+            self._buffer_health.clear()
+        self.buffer_graph.set_health(self._buffer_health)
         subtitle_text = "—"
         if session and session.state:
             if session.state.embedded_subtitle_index >= 0:
@@ -980,7 +1088,8 @@ class UiMixin:
         state = labels.get(self.device_state, "idle")
         if self.external and state not in {"offline", "idle"}:
             state = "playing on TV"
-        subtitle = f"{self._device()} · {state}"
+        device = self._device()
+        subtitle = f"{device} · {state}" if device else "No receiver selected"
         tooltip = f"Running {APP_NAME} {version.label()}"
         if self.update_notice:
             subtitle += " · restart to update"
@@ -1064,7 +1173,7 @@ class UiMixin:
         self.add_ip_button.set_sensitive(not target_locked)
         self.device_dropdown.set_tooltip_text(
             "Stop the current cast before changing TVs" if target_locked
-            else "Choose the Chromecast to control"
+            else "Choose a Cast or DLNA receiver"
         )
         embedded_burned = bool(
             self.session and self.session.state
@@ -1089,10 +1198,8 @@ class UiMixin:
         stream = self._local_stream()
         if stream is not None and stream.get_playing():
             self.local_button.set_label("Pause preview")
-            self.local_button.set_icon_name("media-playback-pause-symbolic")
         else:
             self.local_button.set_label("Play preview")
-            self.local_button.set_icon_name("media-playback-start-symbolic")
         if self.session is None and not self.external and stream is not None and stream.get_playing():
             self._set_chip("Playing locally", "playing")
         elif local_ready:

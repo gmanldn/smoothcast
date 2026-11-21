@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 
@@ -60,6 +61,43 @@ def decode_srt(data: bytes) -> tuple[bytes, str]:
     return result, codec
 
 
+def _read_regular(source: Path, limit: int) -> bytes:
+    # O_NONBLOCK prevents a substituted FIFO from waiting for a writer.
+    if source.is_symlink():
+        raise SubtitleEncodingError("Subtitle source must be a regular file, not a symlink")
+    flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0)
+             | getattr(os, "O_CLOEXEC", 0)
+             | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_NONBLOCK", 0))
+    with os.fdopen(os.open(source, flags), "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise SubtitleEncodingError("Subtitle source must be a regular file")
+        if info.st_size == 0 or info.st_size > MAX_SUBTITLE_BYTES:
+            raise SubtitleEncodingError("Subtitle file must be between 1 byte and 16 MiB")
+        return handle.read(limit)
+
+
+def cue_preview(source: Path) -> str:
+    """Return a short plain-text sample from the first supported cue."""
+    try:
+        raw = _read_regular(source, 64 * 1024)
+        if source.suffix.lower() == ".srt":
+            raw, _ = decode_srt(raw)
+        text = raw.decode("utf-8-sig")
+    except (OSError, UnicodeError, SubtitleEncodingError):
+        return ""
+
+    if source.suffix.lower() in {".ass", ".ssa"}:
+        match = re.search(r"(?im)^Dialogue:[^\n]*", text)
+        cue = match[0].split(",", 9)[-1] if match and match[0].count(",") >= 9 else ""
+        cue = re.sub(r"\{[^}]*\}", "", cue).replace(r"\N", " ").replace(r"\n", " ")
+    else:
+        match = re.search(r"(?m)^\s*\d[\d:.,]+[ \t]+-->[^\n]*\n([^\n]+)", text)
+        cue = match[1] if match else ""
+    return " ".join(re.sub(r"<[^>]*>", "", cue).split())[:120]
+
+
 def stage_srt(source: Path, destination: Path) -> tuple[Path, str]:
     """Atomically stage a private, UTF-8 encoded copy; never edit the source.
 
@@ -71,23 +109,7 @@ def stage_srt(source: Path, destination: Path) -> tuple[Path, str]:
     destination = Path(destination)
     temporary: Path | None = None
     try:
-        # Reject user-folder symlinks and do not follow them if an untrusted
-        # file is replaced between the check and open. O_NONBLOCK prevents a
-        # substituted FIFO from waiting indefinitely for a writer.
-        if source.is_symlink():
-            raise SubtitleEncodingError("Subtitle source must be a regular file, not a symlink")
-        flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0)
-                 | getattr(os, "O_CLOEXEC", 0)
-                 | getattr(os, "O_NOFOLLOW", 0)
-                 | getattr(os, "O_NONBLOCK", 0))
-        descriptor = os.open(source, flags)
-        with os.fdopen(descriptor, "rb") as handle:
-            info = os.fstat(handle.fileno())
-            if not stat.S_ISREG(info.st_mode):
-                raise SubtitleEncodingError("Subtitle source must be a regular file")
-            if info.st_size == 0 or info.st_size > MAX_SUBTITLE_BYTES:
-                raise SubtitleEncodingError("Subtitle file must be between 1 byte and 16 MiB")
-            raw = handle.read(MAX_SUBTITLE_BYTES + 1)
+        raw = _read_regular(source, MAX_SUBTITLE_BYTES + 1)
         normalised, codec = decode_srt(raw)
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(

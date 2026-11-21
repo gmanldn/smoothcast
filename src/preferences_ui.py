@@ -14,7 +14,9 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+import picture_check
 import preference_choices
+from cast_widgets import save_config
 
 
 class PreferencesWindow(Adw.PreferencesWindow):
@@ -72,6 +74,12 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "Send a compatible file unchanged; sound filters and rotation may require conversion.")
         self._switch(output, "keep_streaming", "Keep casting after closing",
                      "Chromecast may continue playing; DLNA's local server always stops on exit.")
+        self._switch(output, "auto_crop", "Crop black bars automatically",
+                     "Detects letterboxing before a transcode and crops it; adds a few seconds to a cast start.")
+        self._switch(output, "auto_deinterlace", "Deinterlace automatically",
+                     "Only when the film is clearly interlaced; progressive video is never touched.")
+        self.picture = picture_check.PictureCheck(self.owner)
+        output.add(self.picture.row)
 
         queue = self._group(
             playback, "Queue behaviour",
@@ -85,6 +93,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "After the final item, return to the first.")
         self._switch(queue, "auto_shutdown", "Close app after the final film",
                      "Close SmoothCast when playback finishes; receiver behaviour follows the keep-casting setting.")
+
+        alerts = self._group(
+            playback, "Notifications",
+            "Desktop notifications are suppressed while SmoothCast is focused.",
+        )
+        self._switch(alerts, "notifications", "Show desktop notifications",
+                     "Notify when a cast finishes, fails or the receiver disappears.")
 
         sound = self._page("Sound & subtitles", "audio-speakers-symbolic")
         audio = self._group(
@@ -146,6 +161,10 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "A manual choice turns off automatic day/night switching.")
         self._switch(visual, "auto_theme", "Switch theme by time of day",
                      "Use a light theme during the day and a dark theme at night.")
+        self._choice(visual, "accent", "Accent colour",
+                     "Highlights buttons, sliders and switches. Every option keeps text readable; Default restores the original blue.")
+        self._choice(visual, "density", "Interface density",
+                     "Scales spacing and control sizes. Long text wraps in narrow windows and under large fonts instead of being clipped.")
 
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""
@@ -165,15 +184,15 @@ class PreferencesWindow(Adw.PreferencesWindow):
                 self._audio_labels = audio_labels
             self.audio_track.set_sensitive(bool(audio_tracks))
             self.audio_track.set_selected(self.owner.audio_track_dropdown.get_selected())
-            text_tracks = (
-                [track for track in media.subtitle_tracks if track.is_text]
+            embedded_tracks = (
+                [track for track in media.subtitle_tracks if track.is_supported]
                 if media is not None else []
             )
-            embedded_labels = ["Preferred embedded track"] + [track.label for track in text_tracks]
+            embedded_labels = ["Preferred embedded track"] + [track.label for track in embedded_tracks]
             if embedded_labels != self._embedded_labels:
                 self.embedded_track.set_model(Gtk.StringList.new(embedded_labels))
                 self._embedded_labels = embedded_labels
-            self.embedded_track.set_sensitive(bool(text_tracks) and cfg.get("subs") == "embedded")
+            self.embedded_track.set_sensitive(bool(embedded_tracks) and cfg.get("subs") == "embedded")
             self.embedded_track.set_selected(self.owner.embedded_dropdown.get_selected())
             self.subtitle_file.set_subtitle(self.owner._subs_status_text())
         finally:
@@ -188,6 +207,15 @@ class PreferencesWindow(Adw.PreferencesWindow):
             return
         if key == "color_scheme":
             self.owner.app.scheme_action.activate(GLib.Variant("s", value))
+        elif key == "accent":
+            self.owner.cfg["accent"] = str(value)
+            save_config(self.owner.cfg)
+            self.owner.app.apply_accent(value)
+        elif key == "density":
+            self.owner.cfg["density"] = str(value)
+            save_config(self.owner.cfg)
+            self.owner.app.apply_density(value)
+            self.owner._refresh_responsive_layout()
         else:
             widgets = {
                 "quality": "quality_dropdown",
@@ -217,6 +245,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
+        elif key in ("auto_crop", "auto_deinterlace", "notifications"):
+            owner.cfg[key] = active  # read from config.json at the next transcode (#54)
+            save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
             getattr(owner, toggles[key])()
         self.sync_from_owner()

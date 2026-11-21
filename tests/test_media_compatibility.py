@@ -50,15 +50,44 @@ class MediaCompatibilityTests(unittest.TestCase):
         self.assertEqual(selected.index, 1)
         self.assertTrue(selected.is_text)
         self.assertEqual(streamer.preferred_embedded_subtitle(media, 2).codec, "ass")
-        self.assertIsNone(streamer.preferred_embedded_subtitle(media, 0))
+        self.assertEqual(streamer.preferred_embedded_subtitle(media, 0).codec,
+                         "hdmv_pgs_subtitle")
 
     def test_bitmap_only_mkv_cannot_be_misrepresented_as_text(self):
         media = streamer.MediaInfo(
             path=Path("film.mkv"),
             subtitle_tracks=[streamer.SubtitleTrack(0, "hdmv_pgs_subtitle", "eng")],
         )
-        self.assertIsNone(streamer.preferred_embedded_subtitle(media))
-        self.assertIn("unsupported", media.subtitle_tracks[0].label)
+        self.assertEqual(streamer.preferred_embedded_subtitle(media), media.subtitle_tracks[0])
+        self.assertTrue(media.subtitle_tracks[0].is_bitmap)
+        self.assertIn("image track", media.subtitle_tracks[0].label)
+
+    def test_pgs_vobsub_and_dvb_tracks_are_supported_but_unknown_images_are_not(self):
+        for codec in ("hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"):
+            track = streamer.SubtitleTrack(0, codec, "eng", forced=True)
+            self.assertTrue(track.is_bitmap, codec)
+            self.assertTrue(track.is_supported, codec)
+            self.assertEqual(streamer.preferred_embedded_subtitle(
+                streamer.MediaInfo(path=Path("movie.mkv"), subtitle_tracks=[track])), track)
+        unsupported = streamer.SubtitleTrack(0, "unknown_bitmap_codec")
+        self.assertFalse(unsupported.is_supported)
+
+    def test_bitmap_forced_full_and_multilingual_preference_selection(self):
+        audio = streamer.AudioTrack(0, "aac", 2, "eng", default=True)
+        forced = streamer.SubtitleTrack(0, "hdmv_pgs_subtitle", "eng", forced=True)
+        full_fr = streamer.SubtitleTrack(1, "dvd_subtitle", "fra")
+        full_en = streamer.SubtitleTrack(2, "dvb_subtitle", "eng")
+        media = streamer.MediaInfo(
+            path=Path("film.mkv"), audio_streams=[audio],
+            subtitle_tracks=[forced, full_fr, full_en],
+        )
+        with mock.patch.object(streamer.language_prefs, "load", return_value=
+                               streamer.language_prefs.LanguagePrefs(subtitles=("eng", "fra"))):
+            # English audio uses only forced English captions when present.
+            self.assertEqual(streamer.preferred_embedded_subtitle(media), forced)
+            media.audio_streams = [streamer.AudioTrack(0, "aac", 2, "ita", default=True)]
+            # With other-language audio, first preferred full English wins.
+            self.assertEqual(streamer.preferred_embedded_subtitle(media), full_en)
 
     def test_subtitle_filter_uses_embedded_stream_index(self):
         session = streamer.Session()
@@ -74,6 +103,19 @@ class MediaCompatibilityTests(unittest.TestCase):
         )
         self.assertIn("hwdownload,format=nv12", hw[1])
         self.assertIn("hwupload", hw[1])
+
+    def test_bitmap_subtitles_use_palette_aware_overlay_filtergraph(self):
+        session = streamer.Session()
+        args = session._filter_args(
+            False, None, True, 1.0, embedded_subtitle_index=2,
+            embedded_bitmap=True, video_stream_index=4,
+            video_size=(1920, 1080), subtitle_delay_ms=300,
+        )
+        self.assertEqual(args[0], "-filter_complex")
+        self.assertIn("[0:4]", args[1])
+        self.assertIn("[0:s:2]setpts=PTS+0.3/TB[bitmap]", args[1])
+        self.assertIn("overlay=eof_action=pass:repeatlast=0", args[1])
+        self.assertTrue(args[1].endswith("[v]"))
 
     def test_filter_filename_escapes_critical_metacharacters(self):
         path = Path("/tmp/film's:demo,[01].mkv")

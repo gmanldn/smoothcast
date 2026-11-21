@@ -16,7 +16,9 @@ import pathlib
 import sys
 import threading
 
+import accent
 import castctl
+import density
 
 import sleep_fade
 
@@ -35,6 +37,7 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
+from cast_portal import PortalMixin
 
 import version
 
@@ -50,11 +53,13 @@ from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
+from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_subtitles import SubtitleMixin
+from cast_audio_sync import AudioSyncMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, SubtitleMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -91,6 +96,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._hover_time: float | None = None
         self._finished_handled = False
         self._closing = False
+        self._portal = None
+        self._portal_ip: str | None = None
         self._cast_starting = False
         self._closing_hold = False
         self._last_state = "IDLE"
@@ -139,6 +146,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._apply_color_scheme()
         self._refresh_controls()
         if not app.selftest:
+            self._refresh_portal()
+            GLib.timeout_add_seconds(15, self._refresh_portal)
             # A GUI smoke test builds widgets only: it must not scan LANs,
             # adopt casts, poll receivers or run media/telemetry timers.
             GLib.timeout_add(500, self._tick)
@@ -151,16 +160,6 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             GLib.timeout_add_seconds(5, self._sleep_tick)
             GLib.timeout_add_seconds(3, self._sleep_fade_tick)
             GLib.timeout_add_seconds(600, self._theme_tick)
-
-
-"""Cast Control — modern Chromecast companion."""
-
-
-gi.require_version("Gtk", "4.0")
-
-
-gi.require_version("Adw", "1")
-
 
 class CastControlApp(Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
@@ -228,6 +227,10 @@ class CastControlApp(Adw.Application):
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
+        self._accent_provider: Gtk.CssProvider | None = None
+        self.apply_accent(load_config().get("accent"))
+        self._density_provider: Gtk.CssProvider | None = None
+        self.apply_density(load_config().get("density"))
         self._register_actions()
         self.set_accels_for_action("app.open", ["<Control>o"])
         self.set_accels_for_action("app.add-files", ["<Control>a"])
@@ -235,6 +238,36 @@ class CastControlApp(Adw.Application):
         self.set_accels_for_action("app.preferences", ["<Control>comma"])
         self.set_accels_for_action("app.stop-stream", ["<Control>w"])
         self.set_accels_for_action("app.quit", ["<Control>q"])
+
+    def apply_accent(self, preset) -> None:
+        """Layer the accent override over the base stylesheet; the default removes it (#135)."""
+        display = Gdk.Display.get_default()
+        if self._accent_provider is not None:
+            Gtk.StyleContext.remove_provider_for_display(display, self._accent_provider)
+            self._accent_provider = None
+        css = accent.css_for(preset)
+        if css:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css)
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+            )
+            self._accent_provider = provider
+
+    def apply_density(self, value) -> None:
+        """Layer the density override over the stylesheet; comfortable removes it (#136)."""
+        display = Gdk.Display.get_default()
+        if self._density_provider is not None:
+            Gtk.StyleContext.remove_provider_for_display(display, self._density_provider)
+            self._density_provider = None
+        css = density.css_for(value)
+        if css:
+            provider = Gtk.CssProvider()
+            provider.load_from_data(css)
+            Gtk.StyleContext.add_provider_for_display(
+                display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2
+            )
+            self._density_provider = provider
 
     def _register_actions(self) -> None:
         def simple(name, callback):
@@ -253,6 +286,9 @@ class CastControlApp(Adw.Application):
         simple("subtitle-earlier", lambda *a: self._window()._adjust_subtitle_delay(-1))
         simple("subtitle-later", lambda *a: self._window()._adjust_subtitle_delay(1))
         simple("subtitle-reset", lambda *a: self._window()._adjust_subtitle_delay(0))
+        simple("audio-earlier", lambda *a: self._window()._adjust_audio_delay(-1))
+        simple("audio-later", lambda *a: self._window()._adjust_audio_delay(1))
+        simple("audio-reset", lambda *a: self._window()._adjust_audio_delay(0))
         simple("shuffle-queue", lambda *a: self._window()._shuffle_queue())
         simple("save-playlist", lambda *a: self._window()._save_playlist())
         simple("load-playlist", lambda *a: self._window()._load_playlist())
@@ -351,7 +387,7 @@ class CastControlApp(Adw.Application):
             # The only permitted self-test display is the disposable Xvfb
             # session. Exit promptly and avoid persistent user state.
             GLib.timeout_add(1500, self._selftest_quit)
-        elif not self._update_started:
+        elif not self._update_started and not getattr(sys, "frozen", False):
             self._update_started = True
             # Never delay the first window while DNS/network/git is unresponsive.
             threading.Thread(

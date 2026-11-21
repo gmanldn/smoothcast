@@ -19,6 +19,7 @@ Pure text/AST only: never imports GTK or starts a window.
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,13 +33,16 @@ GUI_MODULES = (
     "cast_queue.py",
     "cast_session.py",
     "cast_av.py",
+    "cast_subtitle_files.py",
     "cast_lifecycle.py",
+    "cast_portal.py",
     "cast_subtitles.py",
+    "cast_audio_sync.py",
     "cast_control.py",
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "LifecycleMixin", "SubtitleMixin")
+MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "PortalMixin", "SubtitleMixin", "AudioSyncMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
@@ -46,7 +50,13 @@ def gui_paths() -> tuple[Path, ...]:
 
 
 def module_sources() -> list[str]:
-    return [path.read_text(encoding="utf-8") for path in gui_paths()]
+    return list(_module_sources())
+
+
+@lru_cache(maxsize=1)
+def _module_sources() -> tuple[str, ...]:
+    """Read the fixed GUI source snapshot once per pytest process."""
+    return tuple(path.read_text(encoding="utf-8") for path in gui_paths())
 
 
 def combined_source() -> str:
@@ -55,12 +65,18 @@ def combined_source() -> str:
 
 
 def _main_window_method_nodes():
+    yield from _cached_main_window_method_nodes()
+
+
+@lru_cache(maxsize=1)
+def _cached_main_window_method_nodes():
     """Yield (source, node, segment) for MainWindow and every mixin method.
 
     ``segment`` keeps the original indentation, unlike ``ast.get_source_segment``
     which strips the first line's leading whitespace.
     """
-    for path, source in zip(gui_paths(), module_sources()):
+    methods = []
+    for path, source in zip(gui_paths(), _module_sources()):
         tree = ast.parse(source, filename=str(path))
         lines = source.splitlines(keepends=True)
         for node in tree.body:
@@ -71,11 +87,17 @@ def _main_window_method_nodes():
             for method in node.body:
                 if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     segment = "".join(lines[method.lineno - 1:method.end_lineno])
-                    yield source, method, segment
+                    methods.append((source, method, segment))
+    return tuple(methods)
 
 
 def main_window_source() -> str:
     """Synthetic ``class MainWindow`` holding every GUI method body."""
+    return _cached_main_window_source()
+
+
+@lru_cache(maxsize=1)
+def _cached_main_window_source() -> str:
     parts = ["class MainWindow:"]
     for _source, _node, segment in _main_window_method_nodes():
         parts.append(segment.rstrip("\n"))
@@ -88,6 +110,11 @@ def main_window_tree() -> ast.Module:
 
 def main_window_methods() -> dict[str, str]:
     """``{method name: exact source segment}`` for the reassembled MainWindow."""
+    return dict(_cached_main_window_methods())
+
+
+@lru_cache(maxsize=1)
+def _cached_main_window_methods() -> dict[str, str]:
     source = main_window_source()
     tree = ast.parse(source)
     for node in tree.body:

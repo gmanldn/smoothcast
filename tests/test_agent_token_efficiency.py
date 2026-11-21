@@ -42,10 +42,10 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             ROOT / "AGENTS.md",
             *(ROOT / "docs" / "agents").glob("*.md"),
         ]
-        self.assertEqual(len(files), 7, "Expected root plus six focused handbook pages")
+        self.assertEqual(len(files), 8, "Expected root plus seven focused handbook pages")
         index = (ROOT / "docs/agents/README.md").read_text("utf-8")
         for page in ("workflow.md", "testing.md", "architecture.md",
-                     "efficiency.md", "preferences.md"):
+                     "efficiency.md", "preferences.md", "fake_receivers.md"):
             self.assertIn(page, index)
         for file in files:
             with self.subTest(file=str(file.relative_to(ROOT))):
@@ -69,7 +69,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             self.assertIn(word, testing)
         for name in ("cast_control.py", "cast_ui.py", "cast_queue.py",
                      "cast_session.py", "cast_av.py", "cast_lifecycle.py",
-                     "cast_widgets.py", "tests/gui_source.py"):
+                     "cast_portal.py", "cast_widgets.py", "tests/gui_source.py"):
             self.assertIn(name, architecture)
         for word in ("Caveman", "Ponytail", "provider tokens"):
             self.assertIn(word, efficiency)
@@ -110,6 +110,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             "cast_session.py": 48_000,
             "cast_av.py": 28_000,
             "cast_lifecycle.py": 16_000,
+            "cast_portal.py": 12_000,
         }
         for name, limit in limits.items():
             with self.subTest(module=name):

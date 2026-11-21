@@ -14,6 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from gui_source import main_window_methods, combined_source
+import cast_targets
 import castctl
 
 
@@ -26,6 +27,7 @@ def handlers():
     changes = []
     namespace = {
         "castctl": castctl,
+        "cast_targets": cast_targets,
         "save_config": lambda cfg: changes.append(dict(cfg)),
         "Gtk": SimpleNamespace(INVALID_LIST_POSITION=2 ** 32 - 1),
         "GLib": SimpleNamespace(source_remove=lambda _: None),

@@ -35,23 +35,33 @@ chosen error, delay an action, go offline, inspect every call made.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
+import socket
 import stat
 import sys
 import threading
 import time
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+if __name__ == "__main__":
+    # Allow the documented standalone command to work outside an installed app.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 import castctl
 import dlna
 
 SOAP_ENV = "http://schemas.xmlsoap.org/soap/envelope/"
+CM = "urn:schemas-upnp-org:service:ConnectionManager:1"
 AV = "urn:schemas-upnp-org:service:AVTransport:1"
 RC = "urn:schemas-upnp-org:service:RenderingControl:1"
 
@@ -84,12 +94,31 @@ class _Fault:
 
 
 class FakeDlnaRenderer:
-    """A UPnP MediaRenderer on 127.0.0.1 with a controllable transport state."""
+    """A UPnP MediaRenderer on 127.0.0.1 with a controllable transport state.
+
+    Profiles are intentionally small receiver quirks, not new SmoothCast
+    settings. ``fetch_media`` lets tests exercise the real DLNA media server
+    from the receiver side without making requests to a real LAN device.
+    """
+
+    PROFILES = {
+        "default": frozenset(),
+        "strict-mime": frozenset({"strict-mime"}),
+        "refuses-head": frozenset({"refuses-head"}),
+        "no-range": frozenset({"no-range"}),
+        "requires-dlna-headers": frozenset({"requires-dlna-headers"}),
+        "closes-after-first-range": frozenset({"closes-after-first-range"}),
+        "nonstandard-position": frozenset({"nonstandard-position"}),
+    }
 
     def __init__(self, *, name: str = "Fake TV", model: str = "FakeDMR",
                  rendering_control: bool = True, duration: float = 3600.0,
-                 buffer_on_play: bool = False) -> None:
+                 buffer_on_play: bool = False, profile: str = "default") -> None:
+        if profile not in self.PROFILES:
+            raise ValueError(f"Unknown fake DLNA profile: {profile}")
         self.name, self.model = name, model
+        self.profile = profile
+        self.quirks = self.PROFILES[profile]
         self.rendering_control = rendering_control
         self.duration = float(duration)
         self.buffer_on_play = buffer_on_play    # Play -> TRANSITIONING until settle()
@@ -100,10 +129,22 @@ class FakeDlnaRenderer:
         self.volume = 30
         self.muted = False
         self.calls: list[tuple[str, dict[str, str]]] = []
+        self.media_requests: list[tuple[str, str | None]] = []
+        self._range_requests = 0
         self._faults: dict[str, list[_Fault]] = {}
         self._delays: dict[str, float] = {}
         self._lock = threading.RLock()
+        self._ssdp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._ssdp_socket.bind(("127.0.0.1", 0))
+        self._ssdp_socket.settimeout(0.1)
+        self._ssdp_stop = threading.Event()
+        self._ssdp_thread = threading.Thread(target=self._serve_ssdp, daemon=True)
+        self._http_ready = threading.Event()
         fake = self
+
+        class ReadyThreadingHTTPServer(ThreadingHTTPServer):
+            def service_actions(self) -> None:
+                fake._http_ready.set()
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args) -> None:     # keep test output quiet
@@ -124,15 +165,30 @@ class FakeDlnaRenderer:
                 length = int(self.headers.get("Content-Length") or 0)
                 fake._serve_soap(self, self.rfile.read(length))
 
-        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._httpd = ReadyThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
 
     # -- lifecycle
     def start(self) -> "FakeDlnaRenderer":
+        # This is a test-only server; shorten BaseServer's default 500 ms
+        # shutdown polling delay so suites with many profiles finish faster.
+        self._thread = threading.Thread(
+            target=lambda: self._httpd.serve_forever(poll_interval=0.05), daemon=True)
         self._thread.start()
+        if not self._http_ready.wait(2):
+            raise RuntimeError("Fake DLNA HTTP server did not start")
+        self._ssdp_thread.start()
         return self
 
     def stop(self) -> None:
+        self._ssdp_stop.set()
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as wake:
+                wake.sendto(b"stop", ("127.0.0.1", self.ssdp_port))
+        except OSError:
+            pass
+        self._ssdp_thread.join(1)
+        self._ssdp_socket.close()
         self._httpd.shutdown()
         self._httpd.server_close()
         self._thread.join(5)
@@ -151,6 +207,51 @@ class FakeDlnaRenderer:
     def location(self) -> str:
         return f"http://127.0.0.1:{self.port}/desc.xml"
 
+    @property
+    def ssdp_port(self) -> int:
+        return self._ssdp_socket.getsockname()[1]
+
+    def _serve_ssdp(self) -> None:
+        while not self._ssdp_stop.is_set():
+            try:
+                payload, address = self._ssdp_socket.recvfrom(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            request = payload.decode("iso-8859-1", "replace").upper()
+            if not request.startswith("M-SEARCH * HTTP/1.1"):
+                continue
+            if f"ST: {dlna.DEVICE_TYPE.upper()}" not in request and "ST: SSDP:ALL" not in request:
+                continue
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "CACHE-CONTROL: max-age=120\r\n"
+                "EXT:\r\n"
+                f"LOCATION: {self.location}\r\n"
+                "SERVER: SmoothCast-Test/1.0 UPnP/1.1 FakeDMR/1.0\r\n"
+                f"ST: {dlna.DEVICE_TYPE}\r\n"
+                f"USN: uuid:fake-{self.model}::{dlna.DEVICE_TYPE}\r\n\r\n"
+            ).encode("ascii")
+            try:
+                self._ssdp_socket.sendto(response, address)
+            except OSError:
+                return
+
+    def notify(self, destination: tuple[str, int], *, alive: bool = True) -> None:
+        """Send one SSDP alive/byebye notification to an explicit test listener."""
+        nts = "ssdp:alive" if alive else "ssdp:byebye"
+        payload = (
+            "NOTIFY * HTTP/1.1\r\n"
+            "HOST: 239.255.255.250:1900\r\n"
+            f"NT: {dlna.DEVICE_TYPE}\r\n"
+            f"NTS: {nts}\r\n"
+            f"LOCATION: {self.location}\r\n"
+            f"USN: uuid:fake-{self.model}::{dlna.DEVICE_TYPE}\r\n\r\n"
+        ).encode("ascii")
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+            sender.sendto(payload, destination)
+
     def renderer(self) -> dlna.Renderer:
         """The client-side Renderer for this fake (use inside ``allow_loopback``)."""
         base = f"http://127.0.0.1:{self.port}"
@@ -158,7 +259,8 @@ class FakeDlnaRenderer:
             name=self.name, host="127.0.0.1", location=self.location,
             transport_url=f"{base}/upnp/control/av", transport_service=AV,
             rendering_url=f"{base}/upnp/control/render" if self.rendering_control else "",
-            rendering_service=RC if self.rendering_control else "", model=self.model)
+            rendering_service=RC if self.rendering_control else "", model=self.model,
+            connection_url=f"{base}/upnp/control/connection", connection_service=CM)
 
     def description_xml(self) -> bytes:
         rendering = (
@@ -170,7 +272,9 @@ class FakeDlnaRenderer:
             "<deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>"
             f"<friendlyName>{escape(self.name)}</friendlyName><modelName>{escape(self.model)}</modelName>"
             f"<serviceList><service><serviceType>{AV}</serviceType>"
-            f"<controlURL>/upnp/control/av</controlURL></service>{rendering}</serviceList>"
+            f"<controlURL>/upnp/control/av</controlURL></service>{rendering}"
+            f"<service><serviceType>{CM}</serviceType>"
+            "<controlURL>/upnp/control/connection</controlURL></service></serviceList>"
             "</device></root>").encode()
 
     # -- scripting
@@ -206,6 +310,77 @@ class FakeDlnaRenderer:
     def calls_of(self, action: str) -> list[dict[str, str]]:
         return [params for name, params in self.calls if name == action]
 
+    def fetch_media(self, url: str, *, method: str = "GET",
+                    range_header: str | None = None) -> tuple[int, dict[str, str], bytes]:
+        """Fetch one loopback media response as this receiver would.
+
+        The URL must point to a loopback server so an issue test cannot turn
+        this test helper into an arbitrary network client. Profiles either
+        tolerate SmoothCast's real response or return a bounded, useful error.
+        """
+        parsed = urlsplit(url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            raise ValueError("Fake DLNA media fetch is limited to loopback HTTP")
+        method = method.upper()
+        if method not in {"GET", "HEAD"}:
+            raise ValueError("Fake DLNA media fetch supports only GET and HEAD")
+        if method == "HEAD" and "refuses-head" in self.quirks:
+            raise dlna.DlnaError("Fake receiver skips HEAD probes; retry the media URL with GET")
+        headers: dict[str, str] = {}
+        if method == "GET" and range_header and "no-range" not in self.quirks:
+            headers["Range"] = range_header
+        if method == "GET" and "Range" in headers and "closes-after-first-range" in self.quirks:
+            if self._range_requests:
+                raise dlna.DlnaError("Fake renderer closed the connection after its first range request")
+            self._range_requests += 1
+        self.media_requests.append((method, headers.get("Range")))
+        request = Request(url, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=3) as response:
+                status = response.status
+                response_headers = {key.lower(): value for key, value in response.headers.items()}
+                body = response.read(2 * 1024 * 1024 + 1)
+        except HTTPError as exc:
+            status = exc.code
+            response_headers = {key.lower(): value for key, value in exc.headers.items()}
+            body = exc.read(4096)
+        except (OSError, URLError) as exc:
+            raise dlna.DlnaError(f"Fake renderer could not fetch SmoothCast media: {exc}") from exc
+        if len(body) > 2 * 1024 * 1024:
+            raise dlna.DlnaError("Fake renderer media probe exceeded its 2 MiB limit")
+        full_response = method == "HEAD" or "Range" not in headers
+        if status not in ({200} if full_response else {206}):
+            raise dlna.DlnaError(f"Fake renderer rejected media response with HTTP {status}")
+        if method == "GET":
+            if response_headers.get("accept-ranges", "").lower() != "bytes":
+                raise dlna.DlnaError("Fake renderer requires Accept-Ranges: bytes")
+            try:
+                expected_length = int(response_headers.get("content-length", ""))
+            except ValueError as exc:
+                raise dlna.DlnaError("Fake renderer requires a valid Content-Length") from exc
+            if expected_length != len(body):
+                raise dlna.DlnaError("Fake renderer rejected a mismatched Content-Length")
+        if "Range" in headers:
+            content_range = response_headers.get("content-range", "")
+            if not content_range.startswith("bytes "):
+                raise dlna.DlnaError("Fake renderer requires Content-Range for byte-range responses")
+            try:
+                bounds, _size = content_range[6:].split("/", 1)
+                start, end = (int(value) for value in bounds.split("-", 1))
+            except (ValueError, TypeError) as exc:
+                raise dlna.DlnaError("Fake renderer received an invalid Content-Range") from exc
+            if end < start or end - start + 1 != len(body):
+                raise dlna.DlnaError("Fake renderer received a mismatched range body")
+        if "strict-mime" in self.quirks and response_headers.get("content-type", "").split(";", 1)[0] != "video/mp4":
+            raise dlna.DlnaError("Fake renderer requires video/mp4 media (UPnP 714)")
+        if "requires-dlna-headers" in self.quirks and not {
+            "contentfeatures.dlna.org", "transfermode.dlna.org",
+        }.issubset(response_headers):
+            raise dlna.DlnaError("Fake renderer requires contentFeatures.dlna.org and transferMode.dlna.org")
+        if "closes-after-first-range" in self.quirks and range_header and status != 206:
+            raise dlna.DlnaError("Fake renderer requires byte-range media responses")
+        return status, response_headers, body
+
     # -- SOAP
     def _take_fault(self, action: str) -> _Fault | None:
         queue = self._faults.get(action) or []
@@ -218,6 +393,11 @@ class FakeDlnaRenderer:
         return fault
 
     def _serve_soap(self, handler: BaseHTTPRequestHandler, body: bytes) -> None:
+        # The SOAP body comes from the app under test, but still refuse DTDs and
+        # entity declarations (billion-laughs) and oversized bodies outright.
+        if len(body) > 256 * 1024 or b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
+            handler.send_error(400)
+            return
         try:
             root = ET.fromstring(body)
             call = next(n for n in root.iter() if _local(n.tag) not in ("Envelope", "Body"))
@@ -227,6 +407,12 @@ class FakeDlnaRenderer:
         action = _local(call.tag)
         params = {_local(c.tag): (c.text or "") for c in call}
         service = call.tag.split("}")[0].lstrip("{") if "}" in call.tag else AV
+        if action == "GetProtocolInfo" and (
+            service != CM or handler.path != "/upnp/control/connection" or params
+            or handler.headers.get("SOAPAction") != f'"{CM}#GetProtocolInfo"'
+        ):
+            handler.send_error(400)
+            return
         with self._lock:
             self.calls.append((action, params))
             delay = self._delays.get(action, 0.0)
@@ -271,7 +457,11 @@ class FakeDlnaRenderer:
 
     def _perform(self, action: str, params: dict[str, str]):
         """Transport semantics; returns response fields or ('fault', code, text)."""
+        if action == "GetProtocolInfo":
+            return {"Source": "", "Sink": "http-get:*:video/mp4:*"}
         if action == "SetAVTransportURI":
+            if "strict-mime" in self.quirks and 'protocolInfo="http-get:*:video/mp4:*"' not in params.get("CurrentURIMetaData", ""):
+                return ("fault", 714, "Illegal MIME type; requires video/mp4")
             self.uri, self.metadata = params.get("CurrentURI", ""), params.get("CurrentURIMetaData", "")
             self.state, self.position = "STOPPED", 0.0
             return {}
@@ -306,8 +496,11 @@ class FakeDlnaRenderer:
             return {"CurrentTransportState": self.state, "CurrentTransportStatus": "OK",
                     "CurrentSpeed": "1"}
         if action == "GetPositionInfo":
+            rel_time = _clock(self.position)
+            if "nonstandard-position" in self.quirks:
+                rel_time += ".500"
             return {"Track": 1, "TrackDuration": _clock(self.duration) if self.uri else "00:00:00",
-                    "TrackURI": self.uri, "RelTime": _clock(self.position),
+                    "TrackURI": self.uri, "RelTime": rel_time,
                     "AbsTime": _clock(self.position)}
         if action == "GetVolume":
             return {"CurrentVolume": self.volume}
@@ -474,3 +667,27 @@ class FakeCast:
         """argv of every catt invocation (after ``-d NAME``), optionally one subcommand."""
         argvs = [entry["argv"] for entry in self._read()["log"]]
         return [a for a in argvs if subcommand is None or a[:1] == [subcommand]]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the DLNA fake on loopback for a manual protocol session."""
+    parser = argparse.ArgumentParser(description="Run the loopback-only fake DLNA renderer")
+    parser.add_argument("--name", default="Fake TV")
+    parser.add_argument("--profile", choices=FakeDlnaRenderer.PROFILES, default="default")
+    parser.add_argument("--duration", type=float, default=None,
+                        help="stop after this many seconds (default: run until interrupted)")
+    args = parser.parse_args(argv)
+    if args.duration is not None and args.duration < 0:
+        parser.error("--duration must be non-negative")
+    with FakeDlnaRenderer(name=args.name, profile=args.profile) as receiver:
+        print(f"DLNA description: {receiver.location}", flush=True)
+        print(f"SSDP test socket: 127.0.0.1:{receiver.ssdp_port}", flush=True)
+        try:
+            threading.Event().wait(args.duration)
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -47,12 +47,12 @@ def test_platform_label_is_coarse_and_single_line():
 
 
 def test_template_exists_with_the_prefilled_field_ids():
-    text = (ROOT / ".github" / "ISSUE_TEMPLATE" / ir.TEMPLATE).read_text()
+    text = (ROOT / ".github" / "ISSUE_TEMPLATE" / ir.TEMPLATE).read_text(encoding="utf-8")
     ids = re.findall(r"^\s+id: (\w+)$", text, flags=re.M)
     assert {"version", "platform", "what", "diagnostics"} <= set(ids)
     assert "title: \"[Bug] \"" in text
     # Blank issues are disabled, which is why a template is mandatory.
-    assert "blank_issues_enabled: false" in (ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml").read_text()
+    assert "blank_issues_enabled: false" in (ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml").read_text(encoding="utf-8")
 
 
 def test_menu_action_and_handler_are_wired_without_sending_anything():
@@ -66,4 +66,4 @@ def test_menu_action_and_handler_are_wired_without_sending_anything():
 
 
 def test_module_is_registered_for_installs():
-    assert '"issue_report"' in (ROOT / "pyproject.toml").read_text()
+    assert '"issue_report"' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")

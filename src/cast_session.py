@@ -21,7 +21,9 @@ import dlna
 
 import streamer
 
+import audio_delay
 import subtitle_delay
+import subtitle_style
 
 import subtitle_restart
 
@@ -63,15 +65,14 @@ class SessionMixin:
 
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
-        # None means "resume saved position"; explicit 0 is always rewind.
-        # This avoids a seek-to-start silently jumping to a previous stop.
+        # None resumes saved position; explicit 0 always rewinds.
+        # This prevents seek-to-start from jumping to the previous stop.
         offset = playback_state.start_offset(
             offset, (self.cfg.get("positions") or {}).get(str(path)),
         )
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
-        # Pause and release the local decoder before starting Chromecast.
         if str(path) == self._local_video_path and self.session is None:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -104,25 +105,23 @@ class SessionMixin:
         if subs_mode == "pick" and subs_path is None:
             self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
             return
-        # Catt accepts SRT/VTT/TTML sidecars; ASS/SSA must be rendered by
-        # FFmpeg rather than advertised as unsupported receiver-side tracks.
         delay = subtitle_delay.get(cfg, path)
+        adelay = audio_delay.get(cfg, path)
+        preset = subtitle_style.from_config(cfg)
         burn = subs_path is not None and (
             bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
-            or delay != 0
+            or delay != 0 or preset != subtitle_style.DEFAULT
         )
-        # Direct playback bypasses audio filters; processing requires HLS.
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
-        # A device-native stream cannot apply ffmpeg speed/rotation filters.
-        # Always transcode when either transform is enabled, even for H.264/AAC.
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
-            and speed == 1.0 and rotation == 0 and audio_track < 0
+            and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
+            and not getattr(self, "_portal_early", False)
         )
 
         def work():
@@ -139,11 +138,10 @@ class SessionMixin:
                 embedded = streamer.preferred_embedded_subtitle(media, requested)
                 if subs_mode == "embedded" and embedded is None:
                     raise streamer.StreamError(
-                        "Selected embedded subtitle track is unavailable or bitmap-only; load an .srt"
+                        "Selected embedded subtitle track is unavailable or unsupported"
                     )
             if path.suffix.lower() == ".mkv":
-                # Report caption/decoder failures before interrupting the
-                # receiver; one private CPU render per selection, no Cast calls.
+                # Report caption/decoder failures before touching the receiver.
                 fingerprint = preflight.fingerprint(
                     path, audio_track_index=audio_track, subs_file=subs_path,
                     burn_subs=burn,
@@ -158,6 +156,14 @@ class SessionMixin:
                     if len(self._preflight_ok) >= 256:
                         self._preflight_ok.clear()
                     self._preflight_ok.add(fingerprint)
+            if renderer is not None:
+                if speed != 1.0 or rotation != 0:
+                    raise dlna.DlnaError(
+                        "DLNA currently supports normal speed and unrotated video; reset these settings"
+                    )
+                dlna.require_mp4_output(renderer)
+                if self._dlna_cancel is not None and self._dlna_cancel.is_set():
+                    raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             if previous is not None:
@@ -168,10 +174,6 @@ class SessionMixin:
             title = pretty_title(path)
             try:
                 if renderer is not None:
-                    if speed != 1.0 or rotation != 0:
-                        raise dlna.DlnaError(
-                            "DLNA currently supports normal speed and unrotated video; reset these settings"
-                        )
                     audio_choice = streamer.preferred_audio_track(media, audio_track)
                     session.start(
                         media, renderer=renderer,
@@ -179,8 +181,8 @@ class SessionMixin:
                         offset=offset, title=title, subtitle_file=subs_path,
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
-                        subtitle_delay_ms=delay,
-                        cancel=self._dlna_cancel,
+                        subtitle_delay_ms=delay, audio_delay_ms=adelay,
+                        cancel=self._dlna_cancel, audio_profile=cfg["audio"],
                     )
                     return session, media
                 if use_direct and media.direct_ok and not burn and embedded is None:
@@ -207,7 +209,8 @@ class SessionMixin:
                     rotation=rotation,
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
-                    subtitle_delay_ms=delay,
+                    subtitle_delay_ms=delay, subtitle_preset=preset,
+                    audio_delay_ms=adelay,
                 )
                 return session, media
             except Exception:
@@ -247,7 +250,7 @@ class SessionMixin:
                     hint += f" · +{gain:g} dB"
             else:
                 chain = []
-                hint = ("DLNA progressive MP4 · original audio"
+                hint = ("DLNA progressive MP4"
                         if session.mode == "dlna" else "Original audio (direct play)")
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
@@ -274,6 +277,7 @@ class SessionMixin:
 
         def failed(message):
             self._cast_starting = False
+            self._dlna_cancel = None
             if self._closing:
                 self.busy = False
                 self._finish_delayed_close()
@@ -329,9 +333,8 @@ class SessionMixin:
                 send_stop = True
                 state = session.state
                 if state is not None and state.mode == "transcode":
-                    # Do not stop unrelated TV content merely because our
-                    # local encoder/server still has a saved session. Check
-                    # receiver identity *at command time*, off the GTK thread.
+                    # Do not stop unrelated TV content for our own stale
+                    # session; check receiver identity off the GTK thread.
                     try:
                         observed = castctl.info(device)
                     except (OSError, ValueError, TypeError):
@@ -569,6 +572,8 @@ class SessionMixin:
                     embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=captions.delay_ms,
+                    subtitle_preset=subtitle_style.from_config(self.cfg),
+                    audio_delay_ms=audio_delay.get(self.cfg, file_path),
                 )
             except Exception:
                 try:
@@ -752,6 +757,7 @@ class SessionMixin:
         self.tracker.clear()
         self.now_playing = None
         self.toast("Finished")
+        self._notify("finished", item or "")
         self._rebuild_queue()
         self._refresh_controls()
 
@@ -1135,6 +1141,7 @@ class SessionMixin:
             self._finished_handled = False
         self.toast(f"Cast failed: {message}", error=True)
         self._console(f"Cast failed: {message}")
+        self._notify("error", message)
         self._refresh_controls()
 
 

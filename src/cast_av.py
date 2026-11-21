@@ -212,7 +212,7 @@ class AvMixin:
     def _on_embedded_track(self, dropdown, _param) -> None:
         if self._syncing or self.media is None or self._preview_path is None:
             return
-        text_tracks = [track for track in self.media.subtitle_tracks if track.is_text]
+        text_tracks = [track for track in self.media.subtitle_tracks if track.is_supported]
         index = dropdown.get_selected()
         chosen = text_tracks[index - 1].index if 1 <= index <= len(text_tracks) else -1
         self.cfg.setdefault("subtitle_track_by_file", {})[self._preview_path] = chosen
@@ -225,7 +225,7 @@ class AvMixin:
 
 
     def _update_embedded_choices(self, media: streamer.MediaInfo) -> None:
-        text_tracks = [track for track in media.subtitle_tracks if track.is_text]
+        text_tracks = [track for track in media.subtitle_tracks if track.is_supported]
         self._syncing = True
         try:
             labels = ["Preferred embedded track"] + [track.label for track in text_tracks]
@@ -263,25 +263,8 @@ class AvMixin:
         self.subs_detail.set_text(self._subs_status_text())
 
 
-    def _subs_file_chosen(self, dialog, result) -> None:
-        try:
-            gfile = dialog.open_finish(result)
-        except GLib.Error:
-            self._syncing = True
-            self.subs_dropdown.set_selected(
-                {"off": 0, "auto": 1, "pick": 2, "embedded": 3}.get(self.cfg["subs"], 1)
-            )
-            self._syncing = False
-            return
-        path = gfile.get_path()
-        if path and pathlib.Path(path).is_file() and pathlib.Path(path).suffix.lower() in streamer.SUBTITLE_EXTS:
-            self.cfg["subs"] = "pick"
-            self.cfg["subs_path"] = path
-            save_config(self.cfg)
-            self.subs_detail.set_text(self._subs_status_text())
-            self.toast(f"Subtitles: {pathlib.Path(path).name}")
-        else:
-            self.toast("Choose an existing .srt, .vtt, .ttml, .ass or .ssa file", error=True)
+
+
 
 
     def _resolve_subs(self, video: pathlib.Path) -> pathlib.Path | None:

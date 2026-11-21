@@ -220,6 +220,10 @@ def cleanup_before_window(
     # Only remove our own directories, never those referenced by a still-live
     # monitor; never follow symlinks.
     scratch_root = temp_root if temp_root is not None else Path(tempfile.gettempdir())
+    safe_windows_temp = (
+        platform.system() != "Windows"
+        or cache_policy.current_user_temp_root(scratch_root)
+    )
     surviving = [p for p in processes if p.kind == "monitor"
                  and p.pid not in report.stopped]
     try:
@@ -233,9 +237,12 @@ def cleanup_before_window(
     for folder, min_age in candidates:
         try:
             stat = folder.lstat()
-            if (not folder.is_dir() or folder.is_symlink()
-                    or platform.system() == "Windows"
-                    or stat.st_uid != os.getuid()):
+            if not folder.is_dir() or folder.is_symlink():
+                continue
+            if platform.system() == "Windows":
+                if not safe_windows_temp:
+                    continue
+            elif stat.st_uid != os.getuid():
                 continue
             if min_age and time.time() - stat.st_mtime < min_age:
                 continue
@@ -249,7 +256,16 @@ def cleanup_before_window(
             if min_age and lease is None:
                 continue
             try:
-                shutil.rmtree(folder)
+                if lease is not None and cache_policy.msvcrt is not None:
+                    # The Windows CRT handle disallows delete sharing. Release
+                    # it only after claiming the age-qualified unique directory,
+                    # then atomically rename before recursive removal.
+                    lease.close()
+                    tombstone = folder.with_name(folder.name + ".smoothcast-reap")
+                    folder.rename(tombstone)
+                    shutil.rmtree(tombstone)
+                else:
+                    shutil.rmtree(folder)
                 report.temp_dirs_removed += 1
             finally:
                 if lease is not None:

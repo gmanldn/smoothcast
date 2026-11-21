@@ -36,9 +36,21 @@ _SEGMENT = re.compile(r"/segment-[0-9]+\.ts\Z")
 _GENERATION = re.compile(r"/(?:movie-[0-9a-f]{32}\.m3u8|segment-[0-9a-f]{32}-[0-9]+\.ts)\Z")
 
 
+def _url_path(url: str) -> str:
+    """Path of a request target, or "" when it cannot be parsed.
+
+    ``urlsplit`` raises ValueError for targets such as ``//a]b`` ("Invalid IPv6
+    URL"); a hostile or broken client must get a 404, not a dropped connection.
+    """
+    try:
+        return urlsplit(url).path
+    except ValueError:
+        return ""
+
+
 def public_resource(url: str, token: str = "") -> bool:
     """Is *url* a servable HLS resource? With *token*, only that generation."""
-    path = urlsplit(url).path
+    path = _url_path(url)
     # Exact basenames only: traversal, encoded slashes, paths and accidental
     # new files under ROOT never become LAN-visible. Query strings don't
     # change the identity of the underlying generation-specific resource.
@@ -171,6 +183,25 @@ class H(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def setup(self) -> None:
+        super().setup()
+        # Slow clients must not occupy a handler thread indefinitely.
+        self.connection.settimeout(15.0)
+
+    def _host_allowed(self) -> bool:
+        hosts = self.headers.get_all("Host", [])
+        if not hosts:
+            return self.request_version == "HTTP/1.0"
+        if len(hosts) != 1:
+            return False
+        if not isinstance(self.server, ThreadingHTTPServer):
+            return False
+        address = self.server.server_address[0]
+        if not isinstance(address, str):
+            return False
+        host = hosts[0].strip()
+        return host in {address, f"{address}:{self.server.server_port}"}
+
     def log_message(self, format: str, *args) -> None:  # noqa: A002 (stdlib signature)
         # Only errors reach this: successful requests are not logged below.
         log_event(f"{self.address_string()} {format % args}")
@@ -203,7 +234,11 @@ class H(SimpleHTTPRequestHandler):
         policy = load_policy(ROOT)
         if not client_allowed(self.client_address[0], policy):
             self.send_error(403, "Forbidden")
-        elif urlsplit(self.path).path == HEALTH_PATH:
+        elif not self._host_allowed():
+            # The HLS URL uses an interface IP, not an arbitrary hostname.
+            # Reject DNS-rebinding and duplicate Host headers.
+            self.send_error(400, "Invalid HLS Host header")
+        elif _url_path(self.path) == HEALTH_PATH:
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(HEALTH_BODY)))
@@ -252,9 +287,15 @@ def main(argv: list[str] | None = None) -> None:
     addresses = _listen_addresses(bind)
     BIND = addresses[-1]
     ROOT.mkdir(parents=True, exist_ok=True)
+    servers: list[ThreadingHTTPServer] = []
     try:
-        servers = [ThreadingHTTPServer((address, port), H) for address in addresses]
+        for address in addresses:
+            servers.append(ThreadingHTTPServer((address, port), H))
     except OSError:
+        # Partial listen failures must not leak a loopback socket. Otherwise
+        # each retry can consume the port and prevent healthy restarts.
+        for httpd in servers:
+            httpd.server_close()
         log_event(f"cannot listen on {addresses} port {port}", exc_info=True)
         raise
     log_event(f"listening on {', '.join(addresses)} port {port}")

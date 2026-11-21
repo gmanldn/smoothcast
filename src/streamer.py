@@ -1,6 +1,7 @@
 """Casting session management: ffmpeg HLS transcode, direct play, device cast."""
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import json
 import math
@@ -11,7 +12,6 @@ import re
 import secrets
 import socket
 import subprocess
-import sys
 import threading
 import time
 from collections import OrderedDict
@@ -21,19 +21,25 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+import audio_downmix
 import cache_policy
 import cache_privacy
 import ffmpeg_compat
 import castctl
+import frozen_runtime
 import hw_encoder_state
 import lan_interfaces
+import language_prefs
 import playback_state
 import process_identity
 import process_priority
 import progress_model
 import server as hls_server
+import audio_delay
 import subtitle_delay
 import subtitle_encoding
+import subtitle_style
+import video_policy
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
@@ -83,6 +89,7 @@ CAST_SUBTITLE_EXTS = {".srt", ".vtt", ".ttml"}
 # tracks (PGS/VobSub/DVB) need a separate overlay path and must not be
 # silently presented as supported text subtitles.
 TEXT_SUBTITLE_CODECS = frozenset({"subrip", "ass", "ssa", "webvtt", "mov_text", "text", "sami"})
+BITMAP_SUBTITLE_CODECS = frozenset({"dvd_subtitle", "hdmv_pgs_subtitle", "dvb_subtitle"})
 
 QUALITY_QP = {"high": 20, "balanced": 24, "saver": 28}
 QUALITY_LABELS = {
@@ -197,7 +204,8 @@ _VOLUME_CACHE_LIMIT = 64
 _VOLUME_LOCK = threading.Lock()
 
 
-def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
+def _volume_cache_key(path: str, max_seconds: int, track: int,
+                      downmix: str | None = None) -> tuple | None:
     """Identity of one measurement; None when the file cannot be identified.
 
     Size and mtime invalidate the entry when the film changes; the track and
@@ -205,13 +213,14 @@ def _volume_cache_key(path: str, max_seconds: int, track: int) -> tuple | None:
     """
     try:
         info = os.stat(path)
-        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds)
+        return (os.path.realpath(path), info.st_size, info.st_mtime_ns, track, max_seconds, downmix)
     except OSError:
         return None
 
 
 def measure_mean_volume(path: str, max_seconds: int = 60,
-                        audio_track_index: int = 0) -> float | None:
+                        audio_track_index: int = 0,
+                        downmix: str | None = None) -> float | None:
     """Quick volumedetect pass over the first *max_seconds* of one audio track.
 
     ``audio_track_index`` is the relative ``0:a:N`` stream, matching the track
@@ -219,7 +228,8 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     soundtrack. Skips video (``-vn``) so this is fast even for large files.
     Returns mean volume in dBFS, or ``None`` when the file has no audio stream
     or ffmpeg fails. Bounded by a 30-second timeout so a corrupt file cannot
-    stall cast startup.
+    stall cast startup. ``downmix`` is an optional ``pan`` filter applied
+    first, so the level is measured on the signal that will actually be sent.
     """
     track = (audio_track_index if type(audio_track_index) is int
              and audio_track_index >= 0 else 0)
@@ -227,7 +237,7 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     # every seek restart would otherwise repeat a pass that can take 30 s.
     # Only successful measurements are kept, so a transient failure or
     # timeout is retried rather than remembered.
-    key = _volume_cache_key(path, max_seconds, track)
+    key = _volume_cache_key(path, max_seconds, track, downmix)
     if key is not None:
         with _VOLUME_LOCK:
             if key in _VOLUME_CACHE:
@@ -236,7 +246,9 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     try:
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
-             "-t", str(max_seconds), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+             "-t", str(max_seconds), "-vn",
+             "-af", ",".join([downmix, "volumedetect"] if downmix else ["volumedetect"]),
+             "-f", "null", "-"],
             capture_output=True, text=True, timeout=30,
         )
     except Exception:
@@ -256,7 +268,8 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
     return None
 
 
-def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0) -> float:
+def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0,
+                   downmix: str | None = None) -> float:
     """Return the dB gain needed so the compressor is always engaging.
 
     Measures the input's selected audio track and computes a trim that brings
@@ -267,7 +280,9 @@ def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0) -> float
     """
     if profile == "original":
         return 0.0
-    mean = measure_mean_volume(path, audio_track_index=audio_track_index)
+    mean = (measure_mean_volume(path, audio_track_index=audio_track_index,
+                                downmix=downmix) if downmix else
+            measure_mean_volume(path, audio_track_index=audio_track_index))
     if mean is None:
         return 0.0
     lo, hi = _AUTO_TRIM_CLAMP_DB
@@ -323,6 +338,9 @@ def preferred_audio_track(media: "MediaInfo", requested: int = -1) -> AudioTrack
     """Resolve a requested relative audio index, or default/first in auto mode."""
     if requested >= 0:
         return next((t for t in media.audio_streams if t.index == requested), None)
+    chosen = language_prefs.choose_audio(media.audio_streams, language_prefs.load(media.path))
+    if chosen is not None:
+        return chosen
     return next((t for t in media.audio_streams if t.default), None) or (
         media.audio_streams[0] if media.audio_streams else None
     )
@@ -343,25 +361,40 @@ class SubtitleTrack:
         return self.codec in TEXT_SUBTITLE_CODECS
 
     @property
+    def is_bitmap(self) -> bool:
+        return self.codec in BITMAP_SUBTITLE_CODECS
+
+    @property
+    def is_supported(self) -> bool:
+        return self.is_text or self.is_bitmap
+
+    @property
     def label(self) -> str:
         parts = [self.language.upper() if self.language else "Undetermined", self.title or self.codec]
         if self.forced:
             parts.append("forced")
         elif self.default:
             parts.append("default")
-        if not self.is_text:
-            parts.append("image track — unsupported burn-in")
+        if self.is_bitmap:
+            parts.append("image track")
+        elif not self.is_text:
+            parts.append("unsupported subtitle format")
         return " · ".join(parts)
 
 
 def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> SubtitleTrack | None:
-    """Select a text track; never silently substitute an unsupported PGS track."""
+    """Select a supported text or bitmap track without guessing unknown formats."""
     if selected >= 0:
-        return next((t for t in media.subtitle_tracks if t.index == selected and t.is_text), None)
-    text_tracks = [t for t in media.subtitle_tracks if t.is_text]
-    if not text_tracks:
+        return next((t for t in media.subtitle_tracks if t.index == selected and t.is_supported), None)
+    supported = [t for t in media.subtitle_tracks if t.is_supported]
+    if not supported:
         return None
-    return min(text_tracks, key=lambda t: (
+    prefs = language_prefs.load(media.path)
+    if prefs.subtitles:
+        decision = language_prefs.choose_subtitle(supported, prefs, preferred_audio_track(media))
+        if decision.decided:
+            return decision.track
+    return min(supported, key=lambda t: (
         not t.forced, not t.default, t.language.lower() not in {"en", "eng", "english"}, t.index
     ))
 
@@ -865,6 +898,7 @@ class SessionState:
     caster_created_at: float = 0.0
     stream_url: str = ""
     subtitle_delay_ms: int = 0
+    audio_delay_ms: int = 0
 
 
 def load_session() -> SessionState | None:
@@ -876,8 +910,37 @@ def load_session() -> SessionState | None:
     if not isinstance(raw, dict):
         return None
     known = {k: v for k, v in raw.items() if k in SessionState.__dataclass_fields__}
+    return _checked_state(known)
+
+
+def _field_ok(value: object, expected: type) -> bool:
+    if expected is bool:
+        return isinstance(value, bool)
+    if isinstance(value, bool):
+        return False
+    if expected is float:
+        return isinstance(value, (int, float)) and math.isfinite(value)
+    return isinstance(value, expected)
+
+
+def _checked_state(known: dict) -> SessionState | None:
+    """Build a SessionState from untrusted JSON, never trusting field types.
+
+    A hand-edited or corrupt session.json (``"server_pid": []``) must not crash
+    startup cleanup or process signalling. Required fields of the wrong type
+    reject the whole file; optional ones fall back to their defaults.
+    """
+    clean: dict = {}
+    for name, spec in SessionState.__dataclass_fields__.items():
+        required = spec.default is dataclasses.MISSING
+        expected = str if required and name not in ("offset", "duration") else (
+            float if name in ("offset", "duration") else type(spec.default))
+        if name in known and _field_ok(known[name], expected):
+            clean[name] = known[name]
+        elif required:
+            return None
     try:
-        return SessionState(**known)
+        return SessionState(**clean)
     except TypeError:
         return None
 
@@ -1129,7 +1192,7 @@ class Session:
                     f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
             self.port = free
         self.server = subprocess.Popen(
-            [sys.executable, str(SERVER_SCRIPT), "--port", str(self.port)]
+            frozen_runtime.server_command(SERVER_SCRIPT) + ["--port", str(self.port)]
             + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1233,13 +1296,49 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "") -> list[str]:
         chain: list[str] = []
+        # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
+        # the picture that is actually sent and every later size check sees it.
+        plan_filters = video_plan.filters() if video_plan is not None else []
+        if plan_filters and video_size and video_plan is not None:
+            video_size = video_plan.output_size(*video_size)
+        chain.extend(plan_filters)
+        if embedded_bitmap and embedded_subtitle_index is not None:
+            # FFmpeg exposes bitmap subtitle rectangles as a temporary video
+            # input to filter_complex. Keep this path on software frames; the
+            # subtitle stream already carries its palette, geometry and timing.
+            post_overlay = list(chain[len(plan_filters):])
+            if speed != 1.0:
+                post_overlay.append(f"setpts=PTS/{speed:g}")
+            post_overlay.extend(rotation_filters(rotation))
+            if video_size:
+                out_w, out_h = _rotated_dimensions(*video_size, rotation)
+                if out_w > 1920 or out_h > 1080:
+                    post_overlay.append(
+                        "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
+                        "force_divisible_by=2"
+                    )
+                elif out_w % 2 or out_h % 2:
+                    post_overlay.append("scale=w=trunc(iw/2)*2:h=trunc(ih/2)*2")
+            video = f"[0:{video_stream_index}]"
+            graph = ""
+            if plan_filters:
+                graph += f"{video}{','.join(plan_filters)}[picture];"
+                video = "[picture]"
+            delay = subtitle_delay.normalize(subtitle_delay_ms) / 1000
+            graph += (f"[0:s:{embedded_subtitle_index}]setpts=PTS{delay:+g}/TB[bitmap];"
+                      f"{video}[bitmap]overlay=eof_action=pass:repeatlast=0")
+            if post_overlay:
+                graph += f",{','.join(post_overlay)}"
+            graph += "[v]"
+            return ["-filter_complex", graph]
         sub_filter: str | None = None
         if embedded_subtitle_index is not None and embedded_source is not None:
-            sub_filter = f"subtitles=filename={self._filter_path(embedded_source)}:si={embedded_subtitle_index}"
+            sub_filter = (f"subtitles=filename={self._filter_path(embedded_source)}"
+                          f":si={embedded_subtitle_index}{subtitle_force_style}")
         elif burn_subs and staged is not None:
-            sub_filter = f"subtitles=filename={staged.name}"
+            sub_filter = f"subtitles=filename={staged.name}{subtitle_force_style}"
         if sub_filter is not None:
             # libass sees encode-relative timestamps: re-add the -ss start and
             # apply the user delay, then restore the stream's own timeline.
@@ -1264,7 +1363,7 @@ class Session:
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
                                 or embedded_subtitle_index is not None)
-        force_software = not software and rotation != 0
+        force_software = not software and (rotation != 0 or bool(plan_filters))
         if (not software and need_subtitle_filter) or force_software:
             return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
         if chain:
@@ -1289,12 +1388,15 @@ class Session:
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
         subtitle_delay_ms: int = 0,
+        subtitle_preset: str = subtitle_style.DEFAULT,
+        audio_delay_ms: int = 0,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Fail before touching existing streaming resources or launching FFmpeg.
         require_compatible_ffmpeg()
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
+        audio_delay_ms = audio_delay.normalize(audio_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
@@ -1315,18 +1417,22 @@ class Session:
         (ROOT / HLS_NAME).unlink(missing_ok=True)
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
+        embedded_codec = ""
+        bitmap_track = None
         if embedded_subtitle_index is not None:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
-            if track is None or not track.is_text:
-                raise StreamError("Selected MKV subtitle track cannot be burned into video")
+            if track is None or not track.is_supported:
+                raise StreamError("Selected embedded subtitle track is unavailable or unsupported")
+            bitmap_track = track if track.is_bitmap else None
+            embedded_codec = track.codec if track.is_text else ""
             burn_subs = True
         # Explicit selections must fail before starting a new encoder. Keep
         # the optional audio map for silent videos with no audio streams.
-        track = preferred_audio_track(media, audio_track_index)
-        if audio_track_index >= 0 and track is None:
+        audio_track = preferred_audio_track(media, audio_track_index)
+        if audio_track_index >= 0 and audio_track is None:
             raise StreamError(f"Audio track {audio_track_index + 1} is unavailable in this file")
-        audio_map = f"0:a:{track.index}" if track is not None else "0:a:0?"
+        audio_map = f"0:a:{audio_track.index}" if audio_track is not None else "0:a:0?"
         staged = self._stage_subs(subs_file) if burn_subs and subs_file is not None else None
         receiver_subs = (
             self._stage_subs(subs_file, receiver=True)
@@ -1335,9 +1441,14 @@ class Session:
         )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
-        out_w, out_h = _rotated_dimensions(media.width, media.height, rotation)
+        video_plan = video_policy.make_plan(
+            str(media.path), media.duration, media.width, media.height,
+            video_stream=media.video_stream_index)
+        out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
         if (out_w > 1920 or out_h > 1080
                 or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
+            self.used_software_fallback = True
+        if bitmap_track is not None:
             self.used_software_fallback = True
         if not self.used_software_fallback and self._vaapi_known_bad():
             # Skip a hardware start that already stalled on this exact setup.
@@ -1351,16 +1462,29 @@ class Session:
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
         args += self._hwaccel_args(software)
-        args += ["-i", str(media.path), "-map", f"0:{media.video_stream_index}", "-map", audio_map]
+        args += ["-i", str(media.path)]
+        if bitmap_track is None:
+            args += ["-map", f"0:{media.video_stream_index}"]
+        args += ["-map", audio_map]
         args += self._codec_args(quality, software)
-        args += self._filter_args(
+        filter_args = self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
+            embedded_bitmap=bitmap_track is not None,
+            video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
+            video_plan=video_plan,
+            subtitle_force_style=subtitle_style.force_style(
+                subtitle_preset, codec=embedded_codec, path=staged) or "",
         )
+        args += filter_args
+        if filter_args[:1] == ["-filter_complex"]:
+            args += ["-map", "[v]"]
+        downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
+                   if audio_track is not None else None)
         filters = audio_filters(audio_profile, audio_gain_db)
         if filters:
             # Auto-trim the selected soundtrack so the compressor always
@@ -1368,10 +1492,13 @@ class Session:
             # total so the monitor and resume paths use the exact same chain.
             trim = auto_trim_gain(
                 str(media.path), audio_profile,
-                audio_track_index=(track.index if track is not None else 0),
+                audio_track_index=(audio_track.index if audio_track is not None else 0),
+                downmix=downmix,
             )
             effective_gain = trim + audio_gain_db
             filters = audio_filters(audio_profile, effective_gain)
+            if downmix:
+                filters = [downmix] + filters  # matrix first, then gain/compressor
         else:
             effective_gain = 0.0
         if speed != 1.0:
@@ -1379,6 +1506,8 @@ class Session:
             # and audio is resampled with atempo so A/V stay in sync.
             filters += atempo_filters(speed)
         self.audio_chain = filters
+        # Lip-sync delay last, after atempo, so it is measured in output time (#113).
+        filters = filters + audio_delay.filters(audio_delay_ms)
         if filters:
             args += ["-af", ",".join(filters)]
         if media.fps > 30.01:
@@ -1429,6 +1558,7 @@ class Session:
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
                     subtitle_delay_ms=subtitle_delay_ms,
+                    audio_delay_ms=audio_delay_ms,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -1443,7 +1573,7 @@ class Session:
         else:
             cast_args += ["--no-subs"]
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *cast_args],
+            castctl.catt_command(cast_args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )
@@ -1461,6 +1591,7 @@ class Session:
             speed=speed,
             rotation=rotation,
             subtitle_delay_ms=subtitle_delay_ms,
+            audio_delay_ms=audio_delay_ms,
             started_at=time.time(),
             ffmpeg_pid=getattr(self.ffmpeg, "pid", 0),
             server_pid=getattr(self.server, "pid", 0) if self.server else 0,
@@ -1581,7 +1712,7 @@ class Session:
             args += ["-s", str(receiver_subs)]
         args.append(str(media.path))
         self.caster = subprocess.Popen(
-            [str(castctl.CATT), *args],
+            castctl.catt_command(args),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, text=True,
         )

@@ -13,7 +13,7 @@ METHODS = main_window_methods()
 
 def lifecycle_type():
     """Execute only extracted lifecycle methods against a test double."""
-    names = ("_on_close", "_finish_delayed_close")
+    names = ("_on_close", "_finish_delayed_close", "_stop_portal")
     code = "class Lifecycle:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(METHODS[name]), "    ") for name in names
     )
@@ -39,6 +39,7 @@ def window(*, keep=False, mode="transcode"):
         def __init__(self):
             self.app = FakeApp()
             self._closing = False
+            self._portal = None
             self._closing_hold = False
             self._cast_starting = True
             self._dlna_cancel = None

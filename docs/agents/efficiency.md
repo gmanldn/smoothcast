@@ -57,8 +57,25 @@ do not claim savings without observed billing/quality data.
 dependencies, user credential routing or background telemetry by default.
 Keep desktop tests headless per [testing](testing.md).
 
-## Sources (retrieved 18 November 2026)
+## Why the root file stays small
 
+Gloaguen et al., ["Evaluating AGENTS.md"](https://arxiv.org/abs/2602.11988)
+(arXiv 2602.11988), found repository context files generally did not raise task
+success and added over 20% inference cost; repository overviews did not help,
+while non-standard practices did. Anthropic recommends under 200 lines per
+`CLAUDE.md`, concrete verifiable instructions, imports for sharing
+`AGENTS.md`, and hooks (not instructions) for anything that must be enforced.
+So the root files hold commands, hard rules and pointers only, and code
+structure stays in the handbook, read on demand.
+
+## Sources (retrieved 18 and 19 November 2026)
+
+- [Anthropic: how Claude remembers your project](https://code.claude.com/docs/en/memory):
+  load order, `@AGENTS.md` import, size and writing guidance (19 November).
+- [agents.md](https://agents.md): the tool-neutral format and nearest-file
+  precedence (19 November).
+- [HumanLayer: writing a good CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md):
+  universal instructions, progressive disclosure, no linter rules (19 November).
 - [OpenAI: AGENTS.md guidance](https://learn.chatgpt.com/docs/agent-configuration/agents-md):
   concise root instructions, per-directory overrides and linked details.
 - [OpenAI: Codex best practices](https://learn.chatgpt.com/docs/learn/best-practices):
@@ -69,3 +86,21 @@ Keep desktop tests headless per [testing](testing.md).
   limit irrelevant editor, chat and tool context; compact long tasks.
 - [Anthropic: agent configuration](https://claude.com/resources/articles/steering-claude-code-skills-hooks-rules-subagents-and-more):
   separate always-on guidance from on-demand skills and subprocesses.
+
+## GitHub CLI in Claude Code web sessions
+
+There `gh issue list|view|edit|create` use GraphQL and fail with HTTP 403;
+`scripts/ticket_digest.py` falls back to REST on that error. The repository must also be attached with
+push access (otherwise REST returns 403 "access ... not enabled"). Use REST,
+and keep field lists short:
+
+```sh
+R=repos/gmanldn/smoothcast
+gh api "$R/issues?state=open&per_page=30" --jq '.[] | select(.pull_request|not) | "#\(.number) \(.title)"'
+gh api "$R/issues/N" --jq '{number,title,state,assignees:[.assignees[].login],body}'
+gh api -X POST "$R/issues/N/assignees" -f "assignees[]=$(gh api user --jq .login)"
+gh api -X POST "$R/issues/N/comments" -f body='Claim: <agent>; scope: <files>'
+```
+
+`gh auth status` can report an invalid token while `gh api` works; trust
+`gh api user`. Use `--paginate` for more than 100 issues.

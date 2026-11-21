@@ -27,8 +27,11 @@ from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+import audio_delay
+import audio_downmix
 import cache_policy
 import process_priority
+import video_policy
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -80,6 +83,8 @@ class Renderer:
     rendering_url: str = ""
     rendering_service: str = ""
     model: str = ""
+    connection_url: str = ""
+    connection_service: str = ""
 
     @property
     def key(self) -> str:
@@ -98,8 +103,11 @@ def _private_host(host: str) -> bool:
 
 
 def _url(url: str, *, expected_host: str = "") -> tuple[str, int, str]:
-    parts = urlsplit(url)
-    host = parts.hostname or ""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError as exc:  # e.g. "http://[" from a broken or hostile device
+        raise DlnaError("Renderer URL is malformed") from exc
     if (parts.scheme != "http" or not _private_host(host)
             or (expected_host and host != expected_host)
             or parts.username is not None or parts.password is not None):
@@ -162,6 +170,7 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
     _url(base, expected_host=sender_host)
     transport = None
     rendering = None
+    connection = None
     for service in device.iter():
         if _local(service.tag) != "service":
             continue
@@ -175,6 +184,8 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
             transport = (endpoint, service_type)
         elif service_type.startswith(SERVICE_PREFIX + "RenderingControl:"):
             rendering = (endpoint, service_type)
+        elif service_type.startswith(SERVICE_PREFIX + "ConnectionManager:"):
+            connection = (endpoint, service_type)
     if transport is None:
         raise DlnaError("UPnP MediaRenderer has no AVTransport service")
     name = _child_text(device, "friendlyName") or sender_host
@@ -184,6 +195,8 @@ def parse_renderer(xml: bytes, location: str, sender_host: str) -> Renderer:
         rendering_url=rendering[0] if rendering else "",
         rendering_service=rendering[1] if rendering else "",
         model=_child_text(device, "modelName")[:120],
+        connection_url=connection[0] if connection else "",
+        connection_service=connection[1] if connection else "",
     )
 
 
@@ -297,8 +310,10 @@ def _upnp_fault(data: bytes) -> str:
 
 
 def _soap(renderer: Renderer, action: str, params: dict[str, str],
-          *, rendering: bool = False) -> ET.Element:
-    if rendering:
+          *, rendering: bool = False, connection: bool = False) -> ET.Element:
+    if connection:
+        url, service = renderer.connection_url, renderer.connection_service
+    elif rendering:
         if not renderer.rendering_url:
             raise DlnaError("This renderer does not expose RenderingControl")
         url, service = renderer.rendering_url, renderer.rendering_service
@@ -344,6 +359,32 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
 def _value(root: ET.Element, key: str) -> str:
     return next((str(node.text or "").strip() for node in root.iter()
                  if _local(node.tag) == key), "")
+
+
+def advertised_http_formats(renderer: Renderer) -> frozenset[str]:
+    """Return advertised HTTP MIME types, or an empty set when unknown."""
+    if not renderer.connection_url:
+        return frozenset()
+    try:
+        response = _soap(renderer, "GetProtocolInfo", {}, connection=True)
+    except DlnaError:
+        return frozenset()
+
+    formats = set()
+    for entry in _value(response, "Sink").split(","):
+        fields = entry.strip().split(":", 3)
+        if len(fields) == 4 and fields[0].lower() in {"http-get", "*"}:
+            mime = fields[2].strip().lower()
+            if mime == "*" or "/" in mime:
+                formats.add(mime)
+    return frozenset(formats)
+
+
+def require_mp4_output(renderer: Renderer) -> None:
+    """Check whether the advertised formats include our progressive output."""
+    formats = advertised_http_formats(renderer)
+    if formats and formats.isdisjoint({MEDIA_TYPE, "video/*", "*"}):
+        raise DlnaError("The receiver does not advertise MP4 playback over HTTP")
 
 
 def _seconds(clock: str) -> float:
@@ -456,8 +497,28 @@ class ProgressiveFileServer:
         resource = "/media/" + self.token
 
         class Handler(BaseHTTPRequestHandler):
+            def setup(self) -> None:
+                super().setup()
+                # Bound each accepted connection (including request headers
+                # and slow streaming clients), not only the accept loop.
+                self.connection.settimeout(15.0)
+
             def log_message(self, _format: str, *_args) -> None:
                 pass
+
+            def _host_allowed(self) -> bool:
+                hosts = self.headers.get_all("Host", [])
+                if not hosts:
+                    # DLNA devices sometimes use HTTP/1.0 without Host.
+                    return self.request_version == "HTTP/1.0"
+                if len(hosts) != 1:
+                    return False
+                if not isinstance(self.server, ThreadingHTTPServer):
+                    return False
+                host = hosts[0].strip()
+                return host in {
+                    bind_ip, f"{bind_ip}:{self.server.server_port}",
+                }
 
             def do_HEAD(self) -> None:
                 self._serve(False)
@@ -469,12 +530,23 @@ class ProgressiveFileServer:
                 if self.client_address[0] not in allowed or self.path != resource:
                     self.send_error(404)
                     return
+                if not self._host_allowed():
+                    # Reject DNS-rebinding and Host-header ambiguities even
+                    # when the client guessed the session capability token.
+                    self.send_error(400, "Invalid DLNA Host header")
+                    return
                 try:
                     size = source.stat().st_size
                     raw = self.headers.get("Range")
                     start, end = 0, size - 1
                     partial = False
                     if raw is not None:
+                        # Huge numeric ranges can trigger Python's int digit
+                        # conversion limit. Reject them as 416, not an
+                        # uncaught handler exception or unbounded parse.
+                        if len(raw) > 128:
+                            self._range_error(size)
+                            return
                         match = RANGE_RE.fullmatch(raw.strip())
                         if match is None or not (match.group(1) or match.group(2)):
                             self._range_error(size)
@@ -541,11 +613,28 @@ class ProgressiveFileServer:
         self.thread.join(timeout=2)
 
 
+def _selected_audio(media, index: int):
+    try:
+        tracks = media.audio_streams
+    except (AttributeError, TypeError):
+        return None
+    if not isinstance(tracks, (list, tuple)):
+        return None
+    return next((track for track in tracks if track.index == index), None)
+
+
+def _downmix(track, profile: str) -> str | None:
+    if track is None:
+        return None
+    return audio_downmix.downmix_filter(track.channels, track.layout, profile)
+
+
 def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 embedded_subtitle_index: int | None = None,
                 audio_track: int = 0, subtitle_delay_ms: int = 0,
                 cancel: threading.Event | None = None,
-                scratch_lease_fd: int | None = None) -> Path:
+                scratch_lease_fd: int | None = None,
+                audio_delay_ms: int = 0, audio_profile: str = "original") -> Path:
     """Prepare a complete progressive MP4; never expose a partially written file.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -561,8 +650,8 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         raise DlnaError("Selected subtitle file is missing")
     if embedded_subtitle_index is not None:
         track = next((t for t in media.subtitle_tracks if t.index == embedded_subtitle_index), None)
-        if track is None or not track.is_text:
-            raise DlnaError("DLNA subtitles: selected embedded track cannot be burned")
+        if track is None or not track.is_supported:
+            raise DlnaError("DLNA subtitles: selected embedded track is unavailable or unsupported")
     output.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(output.parent).free
     if free < max(512 * 1024 * 1024, source.stat().st_size * 2):
@@ -575,10 +664,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         raise DlnaError(blocked)
 
     audio_track = int(audio_track)
-    selected_audio = next(
-        (track for track in media.audio_streams if track.index == audio_track),
-        None,
-    )
+    selected_audio = _selected_audio(media, audio_track)
     if audio_track < 0 or (
         media.audio_streams and selected_audio is None
     ) or (audio_track != 0 and not media.audio_streams):
@@ -591,7 +677,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         else (media.acodec or "").lower()
     )
     has_audio = bool(media.audio_streams or media.acodec)
-    copy_audio = (not has_audio) or selected_codec in {"aac", "mp3"}
+    audio_delay_ms = audio_delay.normalize(audio_delay_ms)
+    # A copied stream cannot be shifted: a lip-sync delay needs a re-encode (#113).
+    downmix = _downmix(selected_audio, audio_profile)
+    copy_audio = (
+        (not has_audio or selected_codec in {"aac", "mp3"})
+        and audio_delay_ms == 0 and downmix is None
+    )
     copy_video = (
         media.vcodec == "h264"
         and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
@@ -600,8 +692,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         and subtitle_file is None and embedded_subtitle_index is None
     )
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
-            "-y", "-i", str(source),
-            "-map", f"0:{media.video_stream_index}", "-map", f"0:a:{audio_track}?"]
+            "-y", "-i", str(source)]
+    bitmap_track = next((t for t in media.subtitle_tracks
+                         if embedded_subtitle_index is not None
+                         and t.index == embedded_subtitle_index and t.is_bitmap), None)
+    if bitmap_track is None:
+        args += ["-map", f"0:{media.video_stream_index}"]
+    args += ["-map", f"0:a:{audio_track}?"]
     if copy_video:
         args += ["-c:v", "copy"]
     else:
@@ -611,15 +708,26 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             subtitle_file is not None, subtitle_file, True, 1.0,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
+            embedded_bitmap=bitmap_track is not None,
+            video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
             subtitle_delay_ms=subtitle_delay_ms,
+            video_plan=video_policy.make_plan(
+                str(source), media.duration, media.width, media.height,
+                video_stream=media.video_stream_index),
         )
         args += vf
+        if vf[:1] == ["-filter_complex"]:
+            args += ["-map", "[v]"]
         if media.fps > 30.01:
             args += ["-r", "30"]
     if copy_audio:
         args += ["-c:a", "copy"]
     else:
+        filters = [downmix] if downmix else []
+        filters.extend(audio_delay.filters(audio_delay_ms))
+        if filters:
+            args += ["-af", ",".join(filters)]
         args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
     args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
     # A full-film conversion is slow. Poll the child process so the UI's
@@ -627,12 +735,13 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     with tempfile.TemporaryFile() as error_log:
         try:
             low_priority = process_priority.enabled()
-            proc = subprocess.Popen(
-                args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=error_log, start_new_session=True,
-                pass_fds=(scratch_lease_fd,) if scratch_lease_fd is not None else (),
-                **process_priority.launch_kwargs(low_priority),
-            )
+            with cache_policy.encoder_lease_kwargs(scratch_lease_fd) as lease_kwargs:
+                proc = subprocess.Popen(
+                    args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=error_log, start_new_session=True,
+                    **lease_kwargs,
+                    **process_priority.launch_kwargs(low_priority),
+                )
             process_priority.lower(proc, low_priority)
         except OSError as exc:
             output.unlink(missing_ok=True)
@@ -700,7 +809,8 @@ class Session:
               title: str, subtitle_file: Path | None = None,
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
               subtitle_delay_ms: int = 0,
-              cancel: threading.Event | None = None) -> None:
+              cancel: threading.Event | None = None,
+              audio_delay_ms: int = 0, audio_profile: str = "original") -> None:
         from streamer import SessionState
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
@@ -719,6 +829,8 @@ class Session:
                 and media.width <= 1920 and media.height <= 1080 and media.fps <= 30.01
                 and subtitle_file is None and embedded_subtitle_index is None
                 and audio_track == 0
+                and _downmix(_selected_audio(media, audio_track), audio_profile) is None
+                and audio_delay.normalize(audio_delay_ms) == 0
             )
             if not direct:
                 path = prepare_mp4(
@@ -726,7 +838,7 @@ class Session:
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
-                    cancel=cancel,
+                    audio_delay_ms=audio_delay_ms, audio_profile=audio_profile, cancel=cancel,
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
                 )
@@ -743,12 +855,13 @@ class Session:
             self.state = SessionState(
                 file=str(media.path), mode="dlna", offset=max(0.0, offset),
                 duration=media.duration, device=renderer.key, title=title,
-                audio="original", audio_track_index=audio_track,
+                audio=audio_profile, audio_track_index=audio_track,
                 subs=str(subtitle_file or ""),
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(
                     embedded_subtitle_index if embedded_subtitle_index is not None else -1),
                 subtitle_delay_ms=subtitle_delay_ms,
+                audio_delay_ms=audio_delay.normalize(audio_delay_ms),
                 started_at=time.time(),
             )
         except Exception:
@@ -764,14 +877,12 @@ class Session:
         if self.http is not None:
             self.http.close()
             self.http = None
-        try:
-            if self.tmp is not None:
-                self.tmp.cleanup()
-                self.tmp = None
-        finally:
-            if self._scratch_lease is not None:
-                self._scratch_lease.close()
-                self._scratch_lease = None
+        if self._scratch_lease is not None:
+            self._scratch_lease.close()
+            self._scratch_lease = None
+        if self.tmp is not None:
+            self.tmp.cleanup()
+            self.tmp = None
         self.state = None
         self._owns_renderer = False
         self.renderer = None

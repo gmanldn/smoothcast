@@ -55,13 +55,18 @@ DEFAULTS: dict = {
     "subs_path": "",
     "subtitle_track_by_file": {},
     "subtitle_delay_by_file": {},
+    "audio_delay_by_file": {},  # per-film lip-sync delay in ms, +/-5000 (#113)
+    "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,
     "autonext": False,
     "auto_shutdown": False,
+    "notifications": True,  # Desktop notifications when the window is unfocused (#267)
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
+    "accent": "default",  # Accent colour preset; "default" adds no override (#135).
+    "density": "comfortable",  # compact | comfortable | spacious; comfortable adds no override (#136).
     "auto_theme": False,
     "recents": [],
     "favourites": [],
@@ -83,6 +88,11 @@ DEFAULTS: dict = {
     "verify_updates": False,  # Require a GPG-verified commit or tag to update.
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
     "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
+    "preferred_audio_languages": [],  # e.g. ["ja", "en"]; empty = file default (#38)
+    "preferred_subtitle_languages": [],  # e.g. ["en"]; empty = previous behaviour (#38)
+    "language_overrides": {},  # {"series name": {"audio": [...], "subtitles": [...]}} (#38)
+    "auto_crop": False,  # Detect and crop black bars before casting (#54).
+    "auto_deinterlace": False,  # Deinterlace only when the film is clearly interlaced (#54).
     "cache_cap_mb": 8192,  # Scratch cap per DLNA conversion; 0 = unlimited (#277).
 }
 
@@ -257,6 +267,117 @@ class SeekBar(Gtk.DrawingArea):
         cr.arc(x + radius, y + height - radius, radius, 1.5708, 3.1416)
         cr.arc(x + radius, y + radius, radius, 3.1416, 4.7124)
         cr.close_path()
+
+
+class BufferHealthGraph(Gtk.DrawingArea):
+    """Compact time series of measured HLS buffer health (#133).
+
+    The area is signed buffer-ahead seconds (positive = encoder ahead of the
+    receiver), the thin line is the available HLS segment count and red marks
+    are watchdog restarts. It only reads the bounded history supplied by the
+    existing GUI tick; it never polls, reads disk or controls a receiver.
+    """
+
+    _STALL = (0.93, 0.28, 0.24)
+    _SEGMENTS = (0.55, 0.78, 0.98)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_size_request(-1, 58)
+        self.set_hexpand(True)
+        self.set_draw_func(self._draw)
+        self.set_tooltip_text(
+            "Measured HLS buffer health: area is buffer ahead/behind, "
+            "line is available segments, red marks are watchdog restarts."
+        )
+        self._samples: tuple = ()
+
+    def set_health(self, health) -> None:
+        """Show the supplied :class:`buffer_health.BufferHealth` history."""
+        self._samples = health.samples
+        self.queue_draw()
+
+    def _draw(self, _widget, cr, width: int, height: int) -> None:
+        fg = self.get_color()
+        pad = 6.0
+        plot_w = max(1.0, width - pad * 2)
+        plot_h = max(1.0, height - pad * 2)
+        mid = pad + plot_h / 2.0
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.06)
+        SeekBar._rounded(cr, 0, 0, width, height, 8)
+        cr.fill()
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.22)
+        cr.set_line_width(1)
+        cr.move_to(pad, mid)
+        cr.line_to(pad + plot_w, mid)
+        cr.stroke()
+        if len(self._samples) < 2:
+            return
+        ahead = [sample[0] for sample in self._samples]
+        segments = [sample[1] for sample in self._samples]
+        known = [value for value in ahead if value is not None]
+        scale = max((abs(value) for value in known), default=0.0) or 1.0
+        step = plot_w / (len(self._samples) - 1)
+
+        def x_at(index: int) -> float:
+            return pad + index * step
+
+        def y_ahead(value: float) -> float:
+            return mid - (value / scale) * (plot_h / 2.0)
+
+        cr.new_path()
+        cr.move_to(x_at(0), mid)
+        previous = None
+        for index, value in enumerate(ahead):
+            if value is None:
+                if previous is not None:
+                    cr.line_to(x_at(index), mid)
+                previous = None
+                continue
+            if previous is None:
+                cr.line_to(x_at(index), mid)
+            cr.line_to(x_at(index), y_ahead(value))
+            previous = value
+        cr.line_to(x_at(len(ahead) - 1), mid)
+        cr.close_path()
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.20)
+        cr.fill()
+
+        cr.new_path()
+        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.85)
+        cr.set_line_width(1.5)
+        started = False
+        for index, value in enumerate(ahead):
+            if value is None:
+                started = False
+                continue
+            if not started:
+                cr.move_to(x_at(index), y_ahead(value))
+                started = True
+            else:
+                cr.line_to(x_at(index), y_ahead(value))
+        cr.stroke()
+
+        top_segments = max(segments, default=0) or 1
+        cr.new_path()
+        cr.set_source_rgba(*self._SEGMENTS, 0.65)
+        cr.set_line_width(1.0)
+        for index, count in enumerate(segments):
+            y = pad + plot_h - (count / top_segments) * plot_h
+            if index == 0:
+                cr.move_to(x_at(index), y)
+            else:
+                cr.line_to(x_at(index), y)
+        cr.stroke()
+
+        for index, sample in enumerate(self._samples):
+            if not sample[2]:
+                continue
+            cr.set_source_rgba(*self._STALL, 0.95)
+            cr.set_line_width(2.0)
+            cr.move_to(x_at(index), pad)
+            cr.line_to(x_at(index), pad + plot_h)
+            cr.stroke()
 
 
 class LevelMeter(Gtk.DrawingArea):
@@ -690,7 +811,7 @@ class PreviewScreen(Gtk.DrawingArea):
 
         cr.select_font_face("Sans")
         cr.set_font_size(17 if height >= 140 else 14)
-        heading = "READY FOR YOUR NEXT FILM" if empty else title
+        heading = "Video preview" if empty else title
         if empty:
             display_title = fit(heading, width - 30)
             text_x = max(10, (width - cr.text_extents(display_title).width) / 2)
@@ -702,7 +823,7 @@ class PreviewScreen(Gtk.DrawingArea):
         cr.set_source_rgb(0.93, 0.96, 1.0)
         cr.move_to(text_x, text_y)
         cr.show_text(display_title)
-        subheading = "Open a video to start casting" if empty else info
+        subheading = "" if empty else info
         if subheading:
             cr.set_font_size(12)
             subtitle = fit(subheading, width - 32 if empty else width - text_x - 18)

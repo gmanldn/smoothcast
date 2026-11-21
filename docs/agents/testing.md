@@ -37,12 +37,12 @@ GitHub Actions updates. `tests/test_actions_sha_pinning.py` scans all present
 and newly added workflows; update pinned refs only after reviewing their
 upstream release and the exact SHA. Keep CodeQL init/analyze on the same commit.
 
-**Fake receivers (#278):** `tests/fake_receivers.py` tests playback without a
-TV and mocks nothing in `dlna`/`castctl`: `FakeDlnaRenderer` (real HTTP/SOAP on
-loopback, inside `allow_loopback()`) and `FakeCast` (a stand-in `catt`, POSIX).
-Time moves only on `advance(seconds)`; script `fail`, `drop`/`go_offline`,
-`delay`; read `calls`. Examples: `tests/test_fake_receivers.py`. They do not
-replace device tests.
+**Fake receivers (#278):** `tests/fake_receivers.py` provides `FakeDlnaRenderer`
+(loopback HTTP/SOAP; `allow_loopback()`) and `FakeCast` (POSIX `catt` stand-in).
+Clock: `advance(seconds)`; script `fail`/`drop`/`go_offline`/`delay`; inspect
+`calls`. Six DLNA profiles and loopback-only `fetch_media()` cover token media.
+SSDP discovery uses loopback; CLI: `python3 tests/fake_receivers.py --help`.
+See the [profile guide](fake_receivers.md) and tests; device testing remains required.
 
 **Minimum FFmpeg (#242):** `ffmpeg_compat.require_supported_ffmpeg` runs a
 bounded, GTK-free `ffmpeg -version` query before a receiver is replaced;
@@ -120,7 +120,7 @@ failures only; the symlink and foreign-user guards never touch real user files.
 **Optional GTK smoke** is a *separate explicit* action:
 `python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
 private runtime/configuration, one-use token and isolated credentials.
-It quits promptly and forcibly terminates its process group on timeout.
+It quits promptly and forcibly terminates its process group on timeout. `scripts/gui_checks.py` runs real-widget behaviour checks the same way.
 Do not call the smoke runner inside pytest or point it at the active desktop.
 
 **Real-device tests:** require an intentionally available receiver and clear

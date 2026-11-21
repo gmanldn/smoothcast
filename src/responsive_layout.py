@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+import density
+
 
 @dataclass(frozen=True)
 class Layout:
@@ -21,6 +23,8 @@ class Layout:
 
 
 def _dimension(raw: object, default: int) -> int:
+    if not isinstance(raw, (int, float, str)):
+        return default
     try:
         number = float(raw)
         if not math.isfinite(number) or number <= 0:
@@ -50,23 +54,30 @@ def window_size(
     return width, height
 
 
-def layout_for_size(width: int, height: int) -> Layout:
-    """Choose card layout and control density from *allocated* window size."""
+def layout_for_size(width: int, height: int, density_id: object = None) -> Layout:
+    """Choose card layout and control density from *allocated* window size.
+
+    *density_id* (compact/comfortable/spacious, see ``density``) scales margins,
+    spacing, the preview height and the widths at which control rows wrap, so
+    bigger controls wrap earlier instead of being clipped. The default is the
+    unscaled layout.
+    """
+    scale = density.scale_for(density_id)
     width = max(1, int(width))
     height = max(1, int(height))
     stacked = width < 1180
     compact = width < 1000 or height < 800
-    margin = 8 if compact else 14
+    margin = density.px(8 if compact else 14, scale, 4)
     # Wide mode reserves a natural-width settings column (~440 logical px).
     left_width = width - 440 - 2 * margin - 14 if not stacked else width - 2 * margin
     return Layout(
         stacked=stacked,
         compact=compact,
-        transport_wrapped=left_width < 680,
-        actions_wrapped=left_width < 490,
+        transport_wrapped=left_width < density.px(680, scale),
+        actions_wrapped=left_width < density.px(490, scale),
         margin=margin,
-        spacing=10 if compact else 14,
-        preview_height=110 if height < 700 else (145 if compact else 190),
+        spacing=density.px(10 if compact else 14, scale, 4),
+        preview_height=density.px(110 if height < 700 else (145 if compact else 190), scale, 60),
     )
 
 

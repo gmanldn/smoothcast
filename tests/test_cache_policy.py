@@ -22,6 +22,39 @@ MB = cp.MB
 
 
 class CapTests(unittest.TestCase):
+    def test_windows_encoder_receives_an_inheritable_lease_handle(self):
+        startup = mock.Mock()
+        windows_lock = mock.Mock(get_osfhandle=mock.Mock(return_value=1234))
+        lease = mock.Mock()
+        lease.fileno.return_value = 17
+        duplicate_fd = mock.Mock(return_value=23)
+        with mock.patch.object(cp, "fcntl", None), \
+             mock.patch.object(cp, "msvcrt", windows_lock), \
+             mock.patch.object(cp.os, "dup", duplicate_fd), \
+             mock.patch.object(cp.os, "set_handle_inheritable", create=True) as inheritable, \
+             mock.patch.object(cp.os, "close") as close, \
+             mock.patch("subprocess.STARTUPINFO", return_value=startup, create=True):
+            with cp.encoder_lease_kwargs(lease) as options:
+                self.assertEqual(options, {"startupinfo": startup})
+                self.assertEqual(startup.lpAttributeList, {"handle_list": [1234]})
+                inheritable.assert_called_once_with(1234, True)
+            close.assert_called_once_with(23)
+        windows_lock.get_osfhandle.assert_called_once_with(23)
+
+    def test_windows_temp_sweep_requires_the_current_users_local_temp(self):
+        with tempfile.TemporaryDirectory() as work:
+            local = Path(work)
+            temp = local / "Temp"
+            temp.mkdir()
+            other = local / "Shared"
+            other.mkdir()
+            with mock.patch.object(cp.sys, "platform", "win32"), \
+                 mock.patch.object(cp, "msvcrt", mock.Mock()), \
+                 mock.patch.dict(os.environ, {"LOCALAPPDATA": str(local)}):
+                self.assertTrue(cp.current_user_temp_root(temp))
+                self.assertFalse(cp.current_user_temp_root(other))
+                self.assertFalse(cp.current_user_temp_root(local / "missing"))
+
     def test_validation_accepts_only_bounded_integers(self):
         for good in (0, 1, 8192, cp.MAX_CAP_MB):
             self.assertEqual(cp.valid_cap_mb(good), good)
@@ -110,12 +143,13 @@ class ConversionGateTests(unittest.TestCase):
             self.prepare(size=600 * MB, cap_mb=1000)  # needs ~1200 MB
 
 
-@unittest.skipUnless(os.name == "posix", "POSIX scratch lease required")
 class StartupSweepTests(unittest.TestCase):
     def sweep(self, scratch: Path):
         with mock.patch.object(startup_cleanup, "discover", return_value=[]), \
              mock.patch.object(startup_cleanup.streamer, "load_session", return_value=None), \
-             mock.patch.object(startup_cleanup.streamer, "ROOT", scratch / "cache"):
+             mock.patch.object(startup_cleanup.streamer, "ROOT", scratch / "cache"), \
+             mock.patch.object(startup_cleanup.process_identity, "psutil", mock.Mock()), \
+             mock.patch.object(cp, "current_user_temp_root", return_value=True):
             return startup_cleanup.cleanup_before_window(
                 keep_streaming=False, proc_root=scratch / "noproc", temp_root=scratch)
 
@@ -157,7 +191,8 @@ class StartupSweepTests(unittest.TestCase):
             stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
             os.utime(old, (stamp, stamp))
             try:
-                self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
+                if os.name == "posix":
+                    self.assertEqual((old / cp.SCRATCH_LEASE_NAME).stat().st_mode & 0o777, 0o600)
                 self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
                 self.assertTrue((old / "movie.mp4").exists())
             finally:
@@ -178,12 +213,12 @@ class StartupSweepTests(unittest.TestCase):
             # it old *after* the lock is held to reproduce the reported race.
             stamp = time.time() - cp.MIN_STALE_AGE_SECONDS - 60
             os.utime(old, (stamp, stamp))
-            proc = subprocess.Popen(
-                [sys.executable, "-c", "import time; time.sleep(2)"],
-                pass_fds=(lease.fileno(),),
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            with cp.encoder_lease_kwargs(lease) as lease_kwargs:
+                proc = subprocess.Popen(
+                    [sys.executable, "-c", "import time; time.sleep(2)"],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, **lease_kwargs,
+                )
             try:
                 lease.close()  # Simulate GUI crash while FFmpeg keeps writing.
                 self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
@@ -207,7 +242,10 @@ class StartupSweepTests(unittest.TestCase):
             )
             outside = root / "outside"
             outside.write_text("protected")
-            (linked / cp.SCRATCH_LEASE_NAME).symlink_to(outside)
+            try:
+                (linked / cp.SCRATCH_LEASE_NAME).symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("this platform or account cannot create symlinks")
             self.assertEqual(self.sweep(root).temp_dirs_removed, 0)
             self.assertTrue(legacy.exists())
             self.assertTrue(linked.exists())
@@ -217,7 +255,10 @@ class StartupSweepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as victim:
             root = Path(work)
             Path(victim, "precious").write_text("keep")
-            os.symlink(victim, root / "smoothcast-dlna-link")
+            try:
+                os.symlink(victim, root / "smoothcast-dlna-link")
+            except (OSError, NotImplementedError):
+                self.skipTest("this platform or account cannot create symlinks")
             self.sweep(root)
             self.assertTrue(Path(victim, "precious").exists())
 

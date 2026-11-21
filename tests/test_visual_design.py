@@ -18,18 +18,6 @@ from gui_source import GUI_MODULES, combined_source
 import ui_theme
 
 
-def luminance(value: str) -> float:
-    channels = [int(value[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
-    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-              for c in channels]
-    return sum(x * k for x, k in zip(linear, (0.2126, 0.7152, 0.0722)))
-
-
-def contrast(fg: str, bg: str) -> float:
-    light, dark = sorted((luminance(fg), luminance(bg)), reverse=True)
-    return (light + 0.05) / (dark + 0.05)
-
-
 class VisualDesignTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -41,22 +29,18 @@ class VisualDesignTests(unittest.TestCase):
             path = ROOT / "src" / name
             ast.parse(path.read_text("utf-8"), filename=str(path))
 
-    def test_high_contrast_text_across_canonical_surfaces(self):
-        for background in ("canvas", "surface", "surface_raised"):
-            for foreground in ("text", "muted"):
-                with self.subTest(background=background, foreground=foreground):
-                    self.assertGreaterEqual(
-                        contrast(ui_theme.PALETTE[foreground],
-                                 ui_theme.PALETTE[background]), 4.5)
+    def test_surfaces_and_primary_actions_use_native_colour_pairs(self):
+        for role in ("card", "accent"):
+            for channel in ("fg", "bg"):
+                self.assertIn(f"@{role}_{channel}_color", self.theme)
+        self.assertNotRegex(self.theme, r"#[0-9a-fA-F]{6}")
 
     def test_theme_keeps_semantic_control_hierarchy(self):
         for selector in (".hero-card", ".hero-title", ".big-play", ".primary-action",
-                         ".settings-card", ".setting-group", ".device-badge",
+                         ".setting-group", ".device-badge",
                          ".empty-state", ".detail-section", ".console-idle"):
             with self.subTest(selector=selector):
                 self.assertIn(selector, self.theme)
-        self.assertIn(".dim-label {", self.theme)
-        self.assertIn("opacity: 0.93", self.theme)
 
     def test_not_a_gtk_theme_only_mock(self):
         for snippet in (
@@ -72,6 +56,15 @@ class VisualDesignTests(unittest.TestCase):
         ):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.source)
+
+    def test_icon_only_transport_controls_have_accessible_labels(self):
+        for label in (
+            "Play or pause", "Mute", "Volume", "Captions",
+            "Previous in queue (P)", "Next in queue (N)",
+        ):
+            with self.subTest(label=label):
+                self.assertIn(label, self.source)
+        self.assertIn("Gtk.AccessibleProperty.LABEL", self.source)
 
     def test_original_playback_actions_remain_wired(self):
         for snippet in (
@@ -103,7 +96,7 @@ class VisualDesignTests(unittest.TestCase):
     def test_responsiveness_is_not_sacrificed_for_styling(self):
         for snippet in (
             'self.page_scroller.set_child(self.page)',
-            'responsive_layout.layout_for_size(width, height)',
+            'responsive_layout.layout_for_size(width, height, self.cfg.get("density"))',
             'self.transport_grid.attach(button, column, row, 1, 1)',
             'self.action_grid.attach(child, col, row, 1, 1)',
         ):

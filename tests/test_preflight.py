@@ -109,9 +109,31 @@ class PreflightTests(unittest.TestCase):
             with mock.patch.object(preflight.subprocess, "run") as run:
                 with self.assertRaisesRegex(preflight.PreflightError, "audio track"):
                     preflight.check_media(media, audio_track_index=9)
-                with self.assertRaisesRegex(preflight.PreflightError, "bitmap-only"):
+                with self.assertRaisesRegex(preflight.PreflightError, "unsupported"):
                     preflight.check_media(media, embedded_subtitle_index=99)
             run.assert_not_called()
+
+    def test_bitmap_preflight_uses_a_private_overlay_graph(self):
+        with TemporaryDirectory() as folder:
+            media = self.media(Path(folder))
+            media.subtitle_tracks = [streamer.SubtitleTrack(0, "hdmv_pgs_subtitle", "eng")]
+            seen = {}
+            def complete(args, **_kwargs):
+                if args[0] == "ffprobe":
+                    return subprocess.CompletedProcess(
+                        args, 0, '{"streams":[{"nb_read_frames":"1"}]}', "",
+                    )
+                seen["args"] = args
+                Path(args[-1]).write_bytes(b"matroska sample")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            with mock.patch.object(preflight.subprocess, "run", side_effect=complete):
+                preflight.check_media(media, embedded_subtitle_index=0)
+            args = seen["args"]
+            self.assertIn("-filter_complex", args)
+            graph = args[args.index("-filter_complex") + 1]
+            self.assertIn("[0:0][0:s:0]overlay=eof_action=pass:repeatlast=0", graph)
+            self.assertIn("-map", args)
+            self.assertIn("[v]", args)
 
     def test_invalid_caption_fails_before_ffmpeg(self):
         with TemporaryDirectory() as folder:

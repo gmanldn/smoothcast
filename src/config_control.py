@@ -13,8 +13,13 @@ import os
 from pathlib import Path
 import shutil
 
+import audio_delay
 import cache_policy
 import subtitle_delay
+import accent
+import density
+import subtitle_style
+import language_prefs
 import watch_history
 
 
@@ -23,10 +28,13 @@ _OPTIONS = {
     "audio": frozenset({"original", "dialogue", "night"}),
     "subs": frozenset({"off", "auto", "pick", "embedded"}),
     "color_scheme": frozenset({"default", "force-light", "prefer-dark"}),
+    "subtitle_style": frozenset(subtitle_style.PRESETS),
+    "accent": accent.IDS,
+    "density": density.IDS,
 }
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
-    "device_last_used", "subtitle_delay_by_file",
+    "device_last_used", "subtitle_delay_by_file", "audio_delay_by_file",
 })
 _MAX_PATH = 4096
 _MAX_ITEMS = 512
@@ -86,6 +94,10 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                     item for item in value[:_MAX_ITEMS]
                     if isinstance(item, str) and 0 < len(item) <= _MAX_PATH
                 ][:limit]
+        elif key in {"preferred_audio_languages", "preferred_subtitle_languages"}:
+            cfg[key] = language_prefs.clean_languages(value)
+        elif key == "language_overrides":
+            cfg[key] = language_prefs.clean_overrides(value)
         elif key in _LIMITED_MAPS:
             if isinstance(value, dict):
                 clean: dict = {}
@@ -98,6 +110,10 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                     elif key == "subtitle_delay_by_file":
                         if (type(selection) is int and selection != 0
                                 and -subtitle_delay.LIMIT_MS <= selection <= subtitle_delay.LIMIT_MS):
+                            clean[path] = selection
+                    elif key == "audio_delay_by_file":
+                        if (type(selection) is int and selection != 0
+                                and -audio_delay.LIMIT_MS <= selection <= audio_delay.LIMIT_MS):
                             clean[path] = selection
                     elif type(selection) is int and -1 <= selection <= 1024:
                         clean[path] = selection

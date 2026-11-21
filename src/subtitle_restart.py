@@ -63,7 +63,7 @@ def validate_restart(state: Any, media: streamer.MediaInfo,
     if selected >= 0:
         tracks = getattr(media, "subtitle_tracks", []) or []
         matches = [track for track in tracks
-                   if track.index == selected and track.is_text]
+                   if track.index == selected and track.is_supported]
         if len(matches) != 1:
             raise streamer.StreamError(
                 "Previously selected embedded subtitle track is no longer "

@@ -48,11 +48,20 @@ def is_manual(name: str, manual: list[str]) -> bool:
     return name in set(m for m in manual if isinstance(m, str))
 
 
-NO_SELECTION = 2 ** 32 - 1  # Gtk.INVALID_LIST_POSITION
+CHOOSE_RECEIVER = "Choose a receiver…"
 
 
 def select_index(names: list[str], device: str) -> int:
-    """Index of *device* in *names*, adding a saved one; NO_SELECTION if unset (#239)."""
-    if device and device not in names:
+    """Index of *device* in *names*, adding a saved one (#239).
+
+    With no receiver chosen, a placeholder row is added and selected: GTK's
+    DropDown auto-selects item 0 of any non-empty list and cannot show "nothing
+    selected", so without it the first real receiver looked chosen but was never
+    saved, and picking it again fired no change.
+    """
+    if not device:
+        names.insert(0, CHOOSE_RECEIVER)
+        return 0
+    if device not in names:
         names.insert(0, device)
-    return names.index(device) if device in names else NO_SELECTION
+    return names.index(device)

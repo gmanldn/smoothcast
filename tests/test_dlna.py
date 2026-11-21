@@ -36,6 +36,48 @@ DESCRIPTION = b"""<?xml version="1.0"?>
 LOCATION = "http://192.168.12.25:1400/desc.xml"
 
 
+class DlnaCapabilityTests(unittest.TestCase):
+    def test_sink_formats_exclude_source_and_other_transports(self):
+        from dataclasses import replace
+        from xml.etree import ElementTree
+
+        renderer = replace(
+            dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25"),
+            connection_url="http://192.168.12.25:1400/connection",
+        )
+        response = ElementTree.fromstring(
+            "<GetProtocolInfoResponse>"
+            "<Source>http-get:*:audio/aac:*</Source>"
+            "<Sink>http-get:*:Video/MP4:*,rtsp-rtp-udp:*:video/mpeg:*,"
+            "malformed,http-get:*:video/webm:DLNA.ORG_OP=01</Sink>"
+            "</GetProtocolInfoResponse>"
+        )
+        with mock.patch.object(dlna, "_soap", return_value=response) as soap:
+            self.assertEqual(dlna.advertised_http_formats(renderer),
+                             {"video/mp4", "video/webm"})
+        soap.assert_called_once_with(renderer, "GetProtocolInfo", {}, connection=True)
+
+        with mock.patch.object(dlna, "_soap", side_effect=dlna.DlnaError("timeout")):
+            self.assertEqual(dlna.advertised_http_formats(renderer), set())
+
+    def test_mp4_preflight_accepts_wildcards_and_unknown_but_rejects_other_formats(self):
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        for formats in (set(), {"video/mp4"}, {"video/*"}, {"*"}):
+            with self.subTest(formats=formats), mock.patch.object(
+                dlna, "advertised_http_formats", return_value=formats
+            ):
+                dlna.require_mp4_output(renderer)
+        with mock.patch.object(dlna, "advertised_http_formats", return_value={"video/mpeg"}):
+            with self.assertRaisesRegex(dlna.DlnaError, "does not advertise MP4"):
+                dlna.require_mp4_output(renderer)
+
+    def test_absent_service_does_not_make_a_request(self):
+        renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
+        with mock.patch.object(dlna, "_soap") as soap:
+            self.assertEqual(dlna.advertised_http_formats(renderer), set())
+        soap.assert_not_called()
+
+
 class DlnaDiscoveryTests(unittest.TestCase):
     def test_parser_extracts_renderer_and_services(self):
         renderer = dlna.parse_renderer(DESCRIPTION, LOCATION, "192.168.12.25")
@@ -45,6 +87,22 @@ class DlnaDiscoveryTests(unittest.TestCase):
         self.assertIn("AVTransport:1", renderer.transport_service)
         self.assertIn("DLNA · Living & Room TV", renderer.key)
         self.assertIn("RenderingControl", renderer.rendering_service)
+
+    def test_parser_extracts_optional_connection_manager(self):
+        service = b"""
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+        <controlURL>/upnp/control/connection</controlURL>
+      </service>
+"""
+        description = DESCRIPTION.replace(b"</serviceList>", service + b"</serviceList>")
+        renderer = dlna.parse_renderer(description, LOCATION, "192.168.12.25")
+        self.assertEqual(renderer.connection_url,
+                         "http://192.168.12.25:1400/upnp/control/connection")
+        self.assertEqual(renderer.connection_service,
+                         "urn:schemas-upnp-org:service:ConnectionManager:1")
+        self.assertEqual(dlna.parse_renderer(
+            DESCRIPTION, LOCATION, "192.168.12.25").connection_url, "")
 
     def test_description_must_be_media_renderer(self):
         xml = DESCRIPTION.replace(b"MediaRenderer:1", b"MediaServer:1")
@@ -93,6 +151,9 @@ class DlnaDiscoveryTests(unittest.TestCase):
             ("http://localhost/desc", "192.168.12.25"),
             ("http://foo@192.168.12.25/desc", "192.168.12.25"),
             ("https://192.168.12.25/desc", "192.168.12.25"),
+            # Malformed URLs from a broken device must be rejected, not crash.
+            ("http://[/desc", "192.168.12.25"),
+            ("http://192.168.12.25]/desc", "192.168.12.25"),
         ]:
             with self.subTest(location=location), self.assertRaises(dlna.DlnaError):
                 dlna.parse_renderer(DESCRIPTION, location, sender)
@@ -247,6 +308,28 @@ class DlnaRangeServerTests(unittest.TestCase):
             status, _, _ = self._request("GET", forbidden)
             self.assertEqual(status, 404)
 
+    def test_host_header_must_match_the_bound_interface(self):
+        path = "/media/" + self.server.token
+        for host in (f"127.0.0.1:{self.server.port}", "127.0.0.1"):
+            with self.subTest(host=host):
+                self.assertEqual(self._request("GET", path, {"Host": host})[0], 200)
+        for host in ("evil.example", "192.168.12.2", "127.0.0.1:9999",
+                     "127.0.0.1.evil.example", "[::1]"):
+            with self.subTest(host=host):
+                self.assertEqual(self._request("GET", path, {"Host": host})[0], 400)
+                self.assertEqual(self._request("HEAD", path, {"Host": host})[0], 400)
+
+    def test_oversized_range_is_416_without_crashing_server(self):
+        path = "/media/" + self.server.token
+        status, headers, body = self._request(
+            "GET", path, {"Range": "bytes=" + "9" * 512},
+        )
+        self.assertEqual(status, 416)
+        self.assertEqual(headers["Content-Range"], f"bytes */{len(self.data)}")
+        self.assertEqual(body, b"")
+        # A malformed client must not kill the server's accept loop.
+        self.assertEqual(self._request("GET", path)[0], 200)
+
     def test_receiver_routed_binding_is_exact_and_never_wildcard(self):
         # No NIC or TV required: assert the actual socket bind arguments.
         with mock.patch.object(dlna, "ThreadingHTTPServer") as server_class, \
@@ -311,7 +394,7 @@ class DlnaPrepareTests(unittest.TestCase):
                 width=1280, height=720, fps=24, duration=5,
                 audio_streams=[
                     streamer.AudioTrack(index=0, codec="aac", default=True),
-                    streamer.AudioTrack(index=1, codec="dts"),
+                    streamer.AudioTrack(index=1, codec="dts", channels=6, layout="5.1"),
                 ],
             )
             target = Path(dirname) / "prepared.mp4"
@@ -335,6 +418,15 @@ class DlnaPrepareTests(unittest.TestCase):
             self.assertIn("0:a:0?", args)
             self.assertEqual(args[args.index("-c:v") + 1], "copy")
             self.assertEqual(args[args.index("-c:a") + 1], "copy")
+            with mock.patch.object(dlna.subprocess, "Popen", side_effect=make_file) as ffmpeg:
+                dlna.prepare_mp4(media, target, audio_track=1, audio_profile="dialogue",
+                                 audio_delay_ms=50)
+            args = ffmpeg.call_args.args[0]
+            self.assertIn("0:a:1?", args)
+            self.assertEqual(args[args.index("-c:v") + 1], "copy")
+            filters = args[args.index("-af") + 1]
+            self.assertTrue(filters.startswith("pan=stereo|"))
+            self.assertIn(",adelay=delays=50:all=1", filters)
 
     def test_missing_selected_audio_fails_before_ffmpeg(self):
         with tempfile.TemporaryDirectory() as dirname:
@@ -356,7 +448,7 @@ class DlnaPrepareTests(unittest.TestCase):
             source = Path(dirname) / "dual-tone.mkv"
             output = Path(dirname) / "selected.mp4"
             # AAC is the default soundtrack. FLAC is a deliberately
-            # incompatible alternative, like DTS, and should be transcoded
+            # incompatible surround alternative, like DTS, and should be transcoded
             # while preserving the H.264 picture without re-encoding.
             command = [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -365,23 +457,25 @@ class DlnaPrepareTests(unittest.TestCase):
                 "-f", "lavfi", "-i", "sine=frequency=880:duration=2",
                 "-map", "0:v:0", "-map", "1:a:0", "-map", "2:a:0",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-c:a:0", "aac", "-c:a:1", "flac",
+                "-c:a:0", "aac", "-c:a:1", "flac", "-filter:a:1", "pan=5.1|FC=c0",
                 "-disposition:a:0", "default",
                 "-disposition:a:1", "0", "-shortest", str(source),
             ]
             subprocess.run(command, check=True, capture_output=True, timeout=25)
             media = streamer.ffprobe(source)
             self.assertEqual([t.codec for t in media.audio_streams], ["aac", "flac"])
-            dlna.prepare_mp4(media, output, audio_track=1)
+            self.assertEqual(media.audio_streams[1].channels, 6)
+            dlna.prepare_mp4(media, output, audio_track=1, audio_profile="dialogue")
             probe = subprocess.run(
                 ["ffprobe", "-v", "error", "-show_entries",
-                 "stream=codec_type,codec_name", "-of", "json", str(output)],
+                 "stream=codec_type,codec_name,channels", "-of", "json", str(output)],
                 check=True, capture_output=True, text=True, timeout=10,
             )
             streams = json.loads(probe.stdout)["streams"]
             self.assertEqual(
-                [item["codec_name"] for item in streams if item["codec_type"] == "audio"],
-                ["aac"],
+                [(item["codec_name"], item["channels"])
+                 for item in streams if item["codec_type"] == "audio"],
+                [("aac", 2)],
             )
             self.assertEqual(
                 [item["codec_name"] for item in streams if item["codec_type"] == "video"],

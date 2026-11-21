@@ -5,12 +5,17 @@ Gtk.DropDown controls, so preferences delegate to their established handlers.
 """
 from __future__ import annotations
 
+import accent
+import density
+
 OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),
     "audio": (("Original", "original"), ("Dialogue auto-fix", "dialogue"), ("Night mode", "night")),
     "rotation": (("No rotation", 0), ("90°", 90), ("180°", 180), ("270°", 270)),
     "subs": (("Off", "off"), ("Automatic", "auto"), ("Choose a file…", "pick"), ("Embedded text", "embedded")),
     "color_scheme": (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")),
+    "accent": tuple((label, preset_id) for preset_id, label, _hex in accent.PRESETS),
+    "density": tuple((label, preset_id) for preset_id, label, _scale in density.PRESETS),
 }
 
 

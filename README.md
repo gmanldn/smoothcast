@@ -7,9 +7,13 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Live compressor metering** — DJM-style segmented LED meters showing input/output levels and pump/gain reduction in real time, with smooth attack/release ballistics (no flicker); bounded metadata memory for long films and asynchronous FFmpeg shutdown
 - **Dialogue auto-fix** — automatic input trim that drives the compressor to always engage, plus acompressor + limiter chain that keeps dialogue audible over action scenes
 - **Night mode** — stronger compression for late-night low-volume viewing
+- **Dialogue-first surround downmix** — with the Dialogue or Night profile, 5.0/5.1/6.1/7.1 and quad tracks are mixed to stereo with the centre channel lifted ~5 dB over FFmpeg's default matrix, surrounds lowered, the LFE dropped and no clipping; the level used for auto-trim is measured on that same mix. Original, stereo/mono and unrecognised layouts keep the plain `-ac 2` downmix
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
+- **PIN-protected LAN dashboard** — view current playback and queue from another device on the local network, with play/pause, stop, seek and volume controls
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
+- **Desktop notifications** — posts a Gio notification when a cast finishes, fails or the receiver disappears, but never while the window is focused; Preferences > Playback > Notifications turns it off and the choice is stored as `"notifications"` in `config.json`
+- **Fullscreen idle chrome** — hides the header bar after ~2.5 s without input while fullscreen and focused, then restores it on pointer motion, key presses, focus or accessibility changes; leaving fullscreen always restores the chrome
 - **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
 - **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
@@ -18,6 +22,15 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
 - **Keyboard shortcuts and capture** — GTK4-compatible fullscreen, working Clear recent files action, and non-blocking, collision-safe FFmpeg screenshots (always-on-top is compositor-controlled)
+
+## Release packages — PyInstaller
+
+**PyInstaller is the canonical release packager** for native SmoothCast desktop
+bundles. Existing Python-first setup scripts remain source/developer installation
+paths. See the [packaging guide](docs/PACKAGING.md) for build requirements,
+platform qualification, checksums and headless artefact checks. A Python wheel
+is not a native desktop release, and unsigned CI builds still require real-device
+qualification.
 
 ## Install — Python-first, all three desktops
 
@@ -71,10 +84,16 @@ the Google Cast backend. A receiver must advertise a compatible DLNA
 AVTransport service; some TVs with only UPnP *media browsing* are not
 MediaRenderers and will not be listed.
 
+If a receiver reports HTTP media formats through ConnectionManager, SmoothCast
+checks that the list allows MP4 before replacing an active cast. Receivers that
+return no usable format information can still use the normal MP4 path.
+
 For compatible H.264/AAC MP4 files, DLNA playback starts directly. An MKV
 with compatible tracks is remuxed to a temporary MP4; incompatible codecs,
 non-default audio tracks or selected subtitles require full FFmpeg
-transcoding and burn-in **before playback starts**. For long films this can
+transcoding and burn-in **before playback starts**. With Dialogue or Night
+selected, known surround layouts are mixed to stereo with extra weight on
+the centre channel and no LFE contribution. For long films preparation can
 take significant time and disk space (roughly twice the source-file size must
 be available). The application checks local free space, refuses a conversion
 larger than the scratch cap (`cache_cap_mb` in `~/.config/cast-control/config.json`,
@@ -90,20 +109,27 @@ interface routed to the selected receiver, never all interfaces. An invalid,
 missing or unbindable local interface prevents a new cast and does not stop
 another receiver's playback; loopback binding is used only by isolated tests.
 Receiver IP and an unguessable per-session URL still restrict requests.
-This does not replace host-header hardening or real-device qualification.
+HTTP/1.1 requests also require a Host header matching the bound interface
+(optionally including the port), so a malicious Host cannot use DNS rebinding
+to fetch the film. Duplicate/mismatched Host headers are rejected; optional
+HTTP/1.0 Host is retained for older DLNA devices. Connections time out after
+15 seconds without socket activity, and oversized byte-range headers return
+HTTP 416 without parsing unbounded integers. These guards do not replace
+real-device protocol qualification or the remaining HLS hardening work.
 
 DLNA discovery currently requires private IPv4 SSDP responses with a matching
 HTTP device-description host. VPNs, Wi-Fi isolation and firewall rules may
 prevent discovery or TV-to-computer HTTP connections. Stopping SmoothCast
 also stops its private DLNA HTTP server, even if **Keep streaming** is enabled.
 
-On POSIX systems, each DLNA scratch directory has a process-held exclusive
-lease. The FFmpeg converter inherits that lease, so a concurrent SmoothCast
-startup never deletes an old-but-active conversion or playback file. A crashed
-session's directory is reclaimed after the stale-age threshold only once its
-lease can be acquired. Legacy directories without a verifiable lease are kept
-rather than risking another active instance's film. Windows scratch sweeping
-remains disabled pending a safe cross-process ownership mechanism.
+Each DLNA scratch directory has a process-held exclusive lease. FFmpeg inherits
+that lease, so a concurrent SmoothCast startup never deletes an old-but-active
+conversion or playback file. A crashed session's directory is reclaimed after
+the stale-age threshold only once its lease can be acquired. Legacy directories
+without a verifiable lease are kept rather than risking another active
+instance's film. Windows inherits the lease handle through the explicit process
+handle list and only sweeps the current user's LocalAppData `Temp` directory;
+custom or shared Windows temp roots fail closed and remain untouched.
 DLNA has automated protocol tests but **has not yet been verified on a real
 television**; device-specific MIME/codec negotiation is a follow-up in
 [GitHub issue #8 (SC-001)](https://github.com/gmanldn/smoothcast/issues/8).
@@ -137,9 +163,22 @@ as external receiver tracks. **Auto** chooses a same-name sidecar
 (`Film.srt` or `Film.en.srt`) first; otherwise it uses a compatible
 embedded MKV text track. **Embedded (MKV track)** lets you choose a
 particular track and language; an embedded track is burned into the
-transcoded picture. PGS/VobSub/DVB bitmap subtitles are detected but
-**not yet rendered**. Missing or incompatible subtitle files return a
-visible error instead of silently proceeding with another track.
+transcoded picture. PGS, VobSub and DVB bitmap tracks are decoded by FFmpeg
+and overlaid with their authored palette and cue timing; they use software
+encoding. Forced-only and multilingual tracks follow the same per-film and
+language-preference rules as text tracks. Unknown subtitle formats fail with
+a visible error instead of silently proceeding with another track. Bitmap
+placement has not been qualified on physical receivers.
+
+**Audio delay (lip-sync):** if the sound is ahead of or behind the picture, use
+**Audio delay (lip-sync)** in the main menu, or press **Shift+G** (sound 50 ms
+earlier) / **Shift+H** (50 ms later); *Reset delay* clears it. The offset is
+limited to ±5 s and is remembered per film. While casting over HLS or DLNA the
+stream restarts at the current position. A non-zero delay needs a transcode
+(DLNA re-encodes the audio), so it is not applied to direct play; the saved
+value is used on your next cast. The FFmpeg arguments are covered by
+`tests/test_audio_delay.py`; it has **not** been verified on a physical
+receiver yet.
 
 **Subtitle delay:** if captions run early or late, use **Subtitle delay** in
 the main menu, or press **G** (100 ms earlier) / **H** (100 ms later); *Reset
@@ -151,9 +190,49 @@ so it needs the slower transcode path and is not applied to direct play; the
 saved value is used on your next cast instead. Burn-in timing is checked with
 real FFmpeg renders in `tests/test_subtitle_delay.py`; it has **not** been
 verified on physical receivers yet. Streams resumed or seeked to a later
-position also now draw burned-in captions at the correct film time.
+position also now draw burned-in captions at the correct film time. Bitmap
+subtitle rendering uses FFmpeg's bitmap-subtitle video input to the overlay
+filter; check that the installed FFmpeg build includes the needed decoder.
+
+**Subtitle style:** set `"subtitle_style"` in the config file to `large`,
+`high-contrast` (bold, on a translucent box) or `raised` (higher margin, clear
+of overscan); `default` changes nothing. A preset burns captions into the
+picture, so, like a delay, it needs the transcode path and applies from your
+next cast or restart. It is applied only to plain-text subtitles (SRT, WebVTT,
+embedded SubRip/mov_text); ASS/SSA keep their own authored styling. Presets are
+checked with real libass renders in `tests/test_subtitle_style.py`. Styling
+presets apply to text subtitles; bitmap captions retain their encoded palette
+and placement. Physical receivers have not been qualified.
+
+### Language preferences
+
+Set preferred audio and subtitle languages once in `~/.config/cast-control/config.json` and SmoothCast applies them to every film that has no explicit per-file track choice:
+
+```json
+{
+  "preferred_audio_languages": ["ja", "en"],
+  "preferred_subtitle_languages": ["en"],
+  "language_overrides": {"some show": {"audio": ["fr"]}}
+}
+```
+
+Languages are ISO 639-1/2 codes or English names (`en`, `eng`, `English`, `pt-BR`). The first preference with a matching audio track wins; commentary and audio-description tracks are used only if nothing else matches. **Forced** captions (foreign-language dialogue only) and **full** subtitles are handled separately: when the chosen audio is already in a preferred subtitle language you get that language's forced track, or no subtitles if it has none; when the audio is in another language you get the full track in your first matching language. If no preference matches, or none is set, the previous behaviour applies unchanged (the file's default audio; forced, then default, then English subtitles). An override applies to files named like `Some.Show.S01E02.mkv` and replaces only the lists it sets; files without an episode marker are films and never match one. A track you pick by hand always wins; supported bitmap tracks (PGS, VobSub and DVB) participate in the same preference rules. There is no Preferences control yet: edit the file.
+
+### Automatic crop and deinterlace (opt-in)
+
+Two detectors can clean up the picture before it is encoded for the TV. Both are **off by default** because detection adds a few seconds to a cast start. Turn them on in **Preferences > Playback > Picture and delivery** (the **Check this film** row there previews what each would do to the selected film, for example "crop to 1920×800 (removes 26% of the picture)", without changing anything), or in `~/.config/cast-control/config.json`:
+
+```json
+{"auto_crop": true, "auto_deinterlace": true}
+```
+
+`auto_crop` samples three short windows with FFmpeg's `cropdetect` and crops only when most samples agree on one even, in-frame rectangle that removes at least 2% of the picture and keeps at least 40% of it (so dark scenes never produce a bad crop). `auto_deinterlace` runs a short `idet` field analysis and applies `yadif` only when most frames are interlaced **and** share one field order, so progressive video is never blurred. Detection is bounded (12 s per pass), cached per file so seeks and retries are free, and any failure means no filter is applied. The filters run before subtitles are burned in, apply to HLS and DLNA transcodes (not direct play or a copied DLNA stream), and make a hardware encode download frames to the CPU for the filter. Tests that run real FFmpeg on synthetic clips are in `tests/test_video_policy_ffmpeg.py` (set `SMOOTHCAST_REAL_FFMPEG=1`; CI does).
 
 ## Interface and visual design
+
+**Accent colour.** Preferences > Appearance > Accent colour offers seven presets (Default blue, Teal, Green, Amber, Orange, Rose, Violet) that recolour suggested-action and play buttons, sliders, checked switches and the current queue row, live and without a restart. Every preset is checked for accessibility: button text reaches at least 4.5:1 contrast on the accent and its hover shade (the text colour, dark or white, is calculated from the accent), and the accent itself reaches at least 3:1 against the app surfaces. The choice is stored as `"accent"` in `config.json` (a corrupt value falls back to the default). It is an extra stylesheet layered over SmoothCast's own; the system GTK theme is never edited, and **Default blue** removes the override entirely.
+
+**Interface density.** Preferences > Appearance > Interface density offers Compact, Comfortable (the default, exactly the stylesheet as designed) and Spacious. It scales page margins, column spacing, the preview height, card and chip padding, and the sizes of the play, transport and action controls, live and without a restart; control rows wrap earlier at larger densities instead of being clipped. The choice is stored as `"density"` in `config.json` (a corrupt value falls back to Comfortable). **No clipping at 360 px or under large fonts:** in windows narrower than 1000 px, long labels wrap and captions inside buttons ellipsize instead of raising the window's minimum width. Measured with real widgets (`scripts/gui_checks.py`), the 360 px layout stays within 360 px at every density with 14, 18 and 22 pt interface fonts (without this the minimum was 624 px at 22 pt). Wide windows are left exactly as designed.
 
 **Preferences:** choose **Preferences…** from the main menu, use **Ctrl+,**,
 or select **Open Preferences…** in the Playback settings card. A searchable,
@@ -169,7 +248,7 @@ This follows GNOME's guidance on [adaptive layouts](https://developer.gnome.org/
 [application preferences](https://developer.gnome.org/hig/patterns/controls/menus.html)
 and [GTK main-thread ownership](https://docs.gtk.org/gtk4/section-threading.html).
 
-SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections.
+SmoothCast uses a consistent midnight-blue GTK4 palette, 14px base text, higher-contrast secondary labels, a contextual primary action (Open before selection, Cast afterward) and compact technical panels. The local preview shows real decoded frames while scrubbing and an embedded video player on Play; a metadata slate is retained as the empty or decode-error fallback. The queue and event console occupy minimal space when empty and become scrollable only when there is content. The device card distinguishes a Chromecast found on the network from one confirmed reachable by a status query. Playback settings are grouped by function; diagnostics show separate playback/encoder and media/output sections. The diagnostics card also keeps a bounded 60-second buffer-health graph: measured buffer-ahead (area), available HLS segments (line) and watchdog restart marks (red), sampled from the existing half-second tick without extra polling.
 
 The design follows GNOME's [Human Interface Guidelines on adaptive layout](https://developer.gnome.org/hig/guidelines/adaptive.html) and [typography](https://developer.gnome.org/hig/guidelines/typography.html). Media-player hierarchy draws on familiar patterns from IINA and Plexamp, while keeping functional GTK4/libadwaita controls. Colours and selectors are maintained centrally in `src/ui_theme.py`; `tests/test_visual_design.py` checks contrast and core UI wiring.
 
@@ -244,6 +323,38 @@ Give the receiver with `-d/--device` (name or IPv4) or the `SMOOTHCAST_DEVICE` e
 
 DLNA renderers are not supported from the command line yet, and a real-receiver check of these commands is device-pending. Portable tests run them against mocked receivers.
 
+## Local control API (opt-in, for Home Assistant and scripts)
+
+A small headless HTTP API controls a Chromecast without the GUI. It is **off by default**: nothing listens until you run it yourself, and it never imports GTK.
+
+```sh
+smoothcast --control-api token          # creates ~/.config/cast-control/control_api_token (0600) and prints it
+smoothcast --control-api serve          # 127.0.0.1:8800, casting disabled
+smoothcast --control-api serve --bind 192.168.1.20 --port 8800 --media-root ~/Videos
+```
+
+Security: every request needs `Authorization: Bearer <token>` (compared in constant time; the token may also come from `SMOOTHCAST_CONTROL_TOKEN`, at least 16 characters). `--bind` accepts only loopback or a private LAN IPv4 address, never `0.0.0.0` or a public one. No CORS headers are sent, so web pages cannot call it. `POST /v1/cast` is refused unless `--media-root DIR` is given, and then only files inside those directories (after resolving `..` and symlinks) can be cast. Request bodies are limited to 64 KiB, one receiver command runs at a time, and the server logs method, path and status only, never tokens. It speaks plain HTTP: keep it on loopback or a trusted LAN, or put a TLS proxy in front.
+
+| Endpoint | Body or query | Result |
+| --- | --- | --- |
+| `GET /v1/health` | none | `{"ok": true, "version": "v1.0.60"}` |
+| `GET /v1/status?device=NAME` | `device` | state, position, duration, title, volume, muted, session |
+| `POST /v1/pause`, `/v1/resume`, `/v1/stop` | `{"device": NAME}` | `{"ok": true, ...}` |
+| `POST /v1/seek` | `{"device": NAME, "time": 90 or "1:02:03"}` | new position and method |
+| `POST /v1/cast` | `{"device": NAME, "file": PATH, "mode", "offset", "subs", "no_subs", "quality", "audio", "title"}` | stream details |
+
+Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad request), 401 (token), 403 (cast not allowed or outside the media roots), 404, 405, 413, 422 (media), 502 (receiver refused) or 503 (receiver unreachable). `device` is a receiver name or IPv4, exactly as for the command line; DLNA renderers are not supported yet. Example: `curl -H "Authorization: Bearer $TOKEN" -d '{"device": "Living Room"}' http://127.0.0.1:8800/v1/pause`. A real-receiver check is still pending; the API is covered by portable tests with fake handlers.
+
+## LAN dashboard
+
+The desktop app starts an authenticated, browser-based dashboard while it is
+running. The main screen shows its private-LAN URL and a fresh six-character
+PIN. A paired browser can view playback state and queue, then use the supported
+playback controls. The portal uses the Python standard library and adds no web
+framework dependency. It stops with the app and restarts with a new PIN if the
+selected LAN interface changes. See the [LAN dashboard guide](docs/LAN_PORTAL.md)
+for pairing, security and verification details.
+
 ## Playlists, resume and safe playback transitions
 
 **Save playlist** writes an atomic local `smoothcast_playlist.m3u` under your home directory. **Load playlist** accepts M3U comments and relative paths, skips missing/unavailable entries and removes duplicates without changing the Loop setting. The Loop menu action independently toggles repeat-one.
@@ -296,6 +407,14 @@ If the menu entry is missing despite a successful read-only check, log out and b
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
 ## Streaming reliability and local-network safety
+
+HLS HTTP/1.1 requests require a Host header matching the exact listening
+interface IP (loopback or the receiver-routed LAN address), optionally with
+the port. Duplicate or mismatched Host headers return HTTP 400 to prevent
+DNS-rebinding attacks. Old HTTP/1.0 clients may omit Host. Handler sockets
+have a 15-second inactivity timeout to prevent idle clients from indefinitely
+occupying a thread. Keep the receiver allowlist and per-generation token as
+separate security controls. Physical Chromecast qualification is still needed.
 
 The HLS server prefers port 8767 (set `"hls_port"` in `config.json` to use another, 1024–65535). If another program holds that port SmoothCast uses the next free one in 8767–8798, passes it to the server, the stream URL and `session.json`, and reuses a kept-alive SmoothCast server wherever it is listening; if every port is taken the cast fails with a clear error. `smoothcast --network-check` probes the port of the active stream. The server listens on its port for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver and the **active stream generation** (a random 128-bit token in the playlist and segment names) are published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It serves only the active generation (`movie-<token>.m3u8`, `segment-<token>-N.ts`): any other token, a previous cast's URL and the old fixed `/movie.m3u8` name get 404, and stopping a cast revokes its token. It exposes only the generated playlist and segment media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. HLS responses omit cross-origin wildcard headers; native receiver playback must be qualified on hardware. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
@@ -368,6 +487,8 @@ python3 -m compileall -q src scripts setup tests
 These commands do not launch SmoothCast or bring an existing window to the
 foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
 `--self-test` on the normal launcher is refused before bootstrap.
+
+Opt-in, outside pytest: `python3 scripts/gui_checks.py` runs real GTK widgets through first-run receiver choice, a saved device and Help > Report a problem inside a private Xvfb session (private XDG directories, no session bus, no LAN scan, no receiver contact, browser launch patched). It needs Linux with `xvfb`, `xauth` and GTK 4/libadwaita, and prints one PASS/FAIL line per check.
 
 **Version coverage:** GitHub Actions runs the **entire** portable pytest suite
 and Python syntax check using both Python **3.10** (the published minimum)
