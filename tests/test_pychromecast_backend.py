@@ -178,6 +178,31 @@ def test_status_commands_and_direct_media_use_the_persistent_cast():
     backend.close()
 
 
+def test_fmp4_hls_cast_declares_segment_formats_to_receiver():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+
+    assert backend.command(
+        "Living Room", "cast",
+        "http://192.168.1.5/movie-" + "a" * 32 + "-fmp4.m3u8",
+    ) == (True, "")
+    assert cast.media_controller.calls[-1] == (
+        "play_media",
+        "http://192.168.1.5/movie-" + "a" * 32 + "-fmp4.m3u8",
+        "application/vnd.apple.mpegurl",
+        {
+            "title": "movie-" + "a" * 32 + "-fmp4.m3u8",
+            "stream_type": "BUFFERED",
+            "media_info": {
+                "hlsSegmentFormat": "fmp4",
+                "hlsVideoSegmentFormat": "fmp4",
+            },
+        },
+    )
+    backend.close()
+
+
 def test_status_push_reaches_subscriber_and_unsubscribe_stops_delivery():
     cast = FakeCast()
     backend, _browser = discovered_backend([cast])

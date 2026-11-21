@@ -34,7 +34,10 @@ BIND = LOOPBACK
 # segments. Legacy names are read-only compatibility for already saved casts;
 # new sessions never write those names, so stale requests cannot alias them.
 _SEGMENT = re.compile(r"/segment-[0-9]+\.ts\Z")
-_GENERATION = re.compile(r"/(?:movie-[0-9a-f]{32}\.m3u8|segment-[0-9a-f]{32}-[0-9]+\.ts)\Z")
+_GENERATION = re.compile(
+    r"/(?:movie-[0-9a-f]{32}(?:-fmp4)?\.m3u8|"
+    r"segment-[0-9a-f]{32}-[0-9]+\.(?:ts|m4s)|init-[0-9a-f]{32}\.mp4)\Z"
+)
 
 
 def _url_path(url: str) -> str:
@@ -56,8 +59,9 @@ def public_resource(url: str, token: str = "") -> bool:
     # new files under ROOT never become LAN-visible. Query strings don't
     # change the identity of the underlying generation-specific resource.
     if token:
-        return (path == f"/movie-{token}.m3u8"
-                or re.fullmatch(rf"/segment-{token}-[0-9]+\.ts", path) is not None)
+        return (path in {f"/movie-{token}.m3u8", f"/movie-{token}-fmp4.m3u8"}
+                or re.fullmatch(rf"/segment-{token}-[0-9]+\.(?:ts|m4s)", path) is not None
+                or path == f"/init-{token}.mp4")
     return (path == "/movie.m3u8" or _SEGMENT.fullmatch(path) is not None
             or _GENERATION.fullmatch(path) is not None)
 
@@ -262,6 +266,8 @@ class H(SimpleHTTPRequestHandler):
             return "application/vnd.apple.mpegurl"
         if suffix == ".ts":
             return "video/mp2t"
+        if suffix in {".m4s", ".mp4"}:
+            return "video/mp4"
         return super().guess_type(path)
 
     def end_headers(self):

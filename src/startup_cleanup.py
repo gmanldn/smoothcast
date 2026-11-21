@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 import platform
+import re
 import shutil
 import signal
 import tempfile
@@ -202,6 +203,10 @@ def cleanup_before_window(
         root = streamer.ROOT
         files = [streamer.PROGRESS_FILE, root / streamer.HLS_NAME,
                  *root.glob(streamer.SEGMENT_GLOB), *root.glob("movie-*.m3u8")]
+        files.extend(path for path in root.glob("segment-*.m4s")
+                     if re.fullmatch(r"segment-[0-9a-f]{32}-[0-9]+\.m4s", path.name))
+        files.extend(path for path in root.glob("init-*.mp4")
+                     if re.fullmatch(r"init-[0-9a-f]{32}\.mp4", path.name))
         if not report.retained_stream:
             files.insert(0, streamer.SESSION_FILE)
             # Never remove the captions from a deliberately retained cast;

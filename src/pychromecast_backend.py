@@ -301,12 +301,19 @@ class PyChromecastBackend:
                 if not content_type:
                     return False, "The media URL has no supported content type."
                 title = PurePosixPath(unquote(parsed.path)).name or "SmoothCast media"
-                media.play_media(
-                    url,
-                    content_type,
-                    title=title,
-                    stream_type="BUFFERED",
-                )
+                media_info = None
+                if parsed.path.endswith("-fmp4.m3u8"):
+                    # Cast defaults unspecified HLS segment formats to TS.
+                    # Declare both tracks so the default receiver parses the
+                    # experimental CMAF playlist correctly (#246).
+                    media_info = {
+                        "hlsSegmentFormat": "fmp4",
+                        "hlsVideoSegmentFormat": "fmp4",
+                    }
+                options: dict[str, Any] = {"title": title, "stream_type": "BUFFERED"}
+                if media_info is not None:
+                    options["media_info"] = media_info
+                media.play_media(url, content_type, **options)
             else:
                 return False, f"Unsupported Google Cast command: {action}"
         except (TypeError, ValueError) as exc:

@@ -21,6 +21,9 @@ class StreamServerTests(unittest.TestCase):
         for name, content in {
             "movie.m3u8": b"#EXTM3U\n#EXTINF:4,\nsegment-00000.ts\n",
             "segment-00000.ts": b"mpeg-ts",
+            ("movie-" + "a" * 32 + "-fmp4.m3u8"): b"#EXTM3U\n",
+            ("segment-" + "a" * 32 + "-00000.m4s"): b"fragmented-mp4",
+            ("init-" + "a" * 32 + ".mp4"): b"init-segment",
             "session.json": b'{"file": "/home/private/film.mp4"}',
             "ffmpeg.log": b"private encoder output",
             "burned_subs.srt": b"private subtitles",
@@ -98,6 +101,8 @@ class StreamServerTests(unittest.TestCase):
             ("/movie.m3u8", "application/vnd.apple.mpegurl",
              (self.root / "movie.m3u8").read_bytes()),
             ("/segment-00000.ts", "video/mp2t", b"mpeg-ts"),
+            ("/segment-" + "a" * 32 + "-00000.m4s", "video/mp4", b"fragmented-mp4"),
+            ("/init-" + "a" * 32 + ".mp4", "video/mp4", b"init-segment"),
         )
         # Test the actual HTTP handler, not just a platform MIME lookup.
         for path, content_type, payload in samples:

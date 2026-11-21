@@ -104,6 +104,10 @@ class StartupCleanupTests(unittest.TestCase):
         with TemporaryDirectory() as d:
             root = Path(d)
             (root / "segment-00001.ts").write_text("segment")
+            generation = "d" * 32
+            (root / f"segment-{generation}-00001.m4s").write_text("fragment")
+            (root / f"init-{generation}.mp4").write_text("init")
+            (root / "init-user.mp4").write_text("preserve")
             (root / "movie.m3u8").write_text("playlist")
             (root / "ffmpeg.log").write_text("keep logs")
             processes = [process(100, "server"), process(102, "monitor")]
@@ -118,8 +122,9 @@ class StartupCleanupTests(unittest.TestCase):
                 )
             self.assertFalse(report.retained_stream)
             self.assertEqual([p.pid for p in stop.call_args.args[0]], [100, 102])
-            self.assertEqual(report.files_removed, 2)
+            self.assertEqual(report.files_removed, 4)
             self.assertTrue((root / "ffmpeg.log").exists())
+            self.assertTrue((root / "init-user.mp4").exists())
 
     def test_abandoned_staged_captions_cleaned_but_saved_direct_captions_kept(self):
         with TemporaryDirectory() as folder:

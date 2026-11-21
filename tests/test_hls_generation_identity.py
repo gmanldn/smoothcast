@@ -23,6 +23,12 @@ def test_generation_names_accept_only_canonical_128_bit_hex_identifiers():
         f"http://192.168.1.2:8767/movie-{token}.m3u8"
     ) == (f"movie-{token}.m3u8", f"segment-{token}-*.ts")
     assert streamer._hls_names_from_url(
+        f"http://192.168.1.2:8767/movie-{token}-fmp4.m3u8"
+    ) == (f"movie-{token}-fmp4.m3u8", f"segment-{token}-*.m4s")
+    assert streamer._hls_init_from_url(
+        f"http://192.168.1.2:8767/movie-{token}-fmp4.m3u8"
+    ) == f"init-{token}.mp4"
+    assert streamer._hls_names_from_url(
         "http://192.168.1.2:8767/movie.m3u8"
     ) == (streamer.HLS_NAME, streamer.SEGMENT_GLOB)
     for invalid in (
@@ -32,6 +38,22 @@ def test_generation_names_accept_only_canonical_128_bit_hex_identifiers():
         f"http://x/movie-{token}.m3u8/extra",
     ):
         assert streamer._hls_names_from_url(invalid) == ("", "")
+
+
+def test_fmp4_output_names_and_ffmpeg_args_are_generation_bound(tmp_path):
+    token = "c" * 32
+    with mock.patch.object(streamer, "ROOT", tmp_path), \
+         mock.patch.object(streamer, "HLS_SEGMENT_TYPE", "fmp4"):
+        playlist, pattern, init, args = streamer._hls_output(token)
+    assert playlist == f"movie-{token}-fmp4.m3u8"
+    assert pattern == f"segment-{token}-*.m4s"
+    assert init == f"init-{token}.mp4"
+    assert args == [
+        "-hls_segment_type", "fmp4",
+        "-hls_fmp4_init_filename", init,
+        "-hls_segment_filename", str(tmp_path / f"segment-{token}-%05d.m4s"),
+        str(tmp_path / playlist),
+    ]
 
 
 def test_missing_saved_stream_url_cannot_scan_all_cached_media(tmp_path):
@@ -58,6 +80,9 @@ def test_allowed_resources_reject_aliases_and_other_private_files():
         "/movie.m3u8", "/segment-00012.ts",
         f"/movie-{token}.m3u8",
         f"/segment-{token}-00012.ts",
+        f"/movie-{token}-fmp4.m3u8",
+        f"/init-{token}.mp4",
+        f"/segment-{token}-00012.m4s",
     ):
         assert server.public_resource(allowed), allowed
     for denied in (
@@ -148,6 +173,32 @@ def test_finalized_recovery_only_accepts_own_generation_segments():
             assert not session.recoverable_hls()
             session.state.stream_url = "http://192.168.1.9:8767/session.json"
             assert not session.recoverable_hls()
+
+
+def test_finalized_fmp4_recovery_requires_generation_init_and_fragments(tmp_path):
+    token = "a" * 32
+    playlist = tmp_path / f"movie-{token}-fmp4.m3u8"
+    init = tmp_path / f"init-{token}.mp4"
+    segment = tmp_path / f"segment-{token}-00000.m4s"
+    init.write_bytes(b"init")
+    segment.write_bytes(b"fragment")
+    playlist.write_text(
+        "#EXTM3U\n#EXT-X-MAP:URI=\"" + init.name + "\"\n"
+        "#EXTINF:2,\n" + segment.name + "\n#EXT-X-ENDLIST\n"
+    )
+    session = streamer.Session()
+    session.state = streamer.SessionState(
+        file="/film.mkv", mode="transcode", offset=0, duration=2,
+        device="TV", title="Film",
+        stream_url=f"http://192.168.1.9:8767/{playlist.name}",
+    )
+    session.ffmpeg = mock.Mock()
+    session.ffmpeg.poll.return_value = 0
+    with mock.patch.object(streamer, "ROOT", tmp_path), \
+         mock.patch.object(streamer, "_server_healthy", return_value=True):
+        assert session.recoverable_hls()
+        init.unlink()
+        assert not session.recoverable_hls()
 
 
 def test_each_encoder_start_generates_unreused_url_and_segment_template():

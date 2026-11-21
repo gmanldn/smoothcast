@@ -53,9 +53,13 @@ HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
 HLS_SEGMENT_SECONDS = 4
 HLS_PLAYLIST_SEGMENTS = 12
+# Experimental #246 opt-in. Keep MPEG-TS default until receiver qualification.
+HLS_SEGMENT_TYPE = os.environ.get("SMOOTHCAST_HLS_SEGMENT_TYPE", "mpegts").lower()
+if HLS_SEGMENT_TYPE not in {"mpegts", "fmp4"}:
+    HLS_SEGMENT_TYPE = "mpegts"
 # A half-window margin avoids resuming into deleted live HLS segments.
 HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
-_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
+_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})(-fmp4)?\.m3u8\Z")
 
 
 def _hls_names_from_url(url: str) -> tuple[str, str]:
@@ -70,8 +74,34 @@ def _hls_names_from_url(url: str) -> tuple[str, str]:
     match = _GENERATION_PLAYLIST.fullmatch(path.removeprefix("/"))
     if not path.startswith("/") or not match:
         return "", ""
-    token = match.group(1)
-    return f"movie-{token}.m3u8", f"segment-{token}-*.ts"
+    token, fmp4 = match.groups()
+    extension = "m4s" if fmp4 else "ts"
+    suffix = "-fmp4" if fmp4 else ""
+    return f"movie-{token}{suffix}.m3u8", f"segment-{token}-*.{extension}"
+
+
+def _hls_init_from_url(url: str) -> str:
+    """Return the generation-bound fMP4 initialization resource, if any."""
+    match = _GENERATION_PLAYLIST.fullmatch(urlsplit(url).path.removeprefix("/"))
+    return f"init-{match.group(1)}.mp4" if match and match.group(2) else ""
+
+
+def _hls_output(generation: str) -> tuple[str, str, str, list[str]]:
+    """Return private resource names and FFmpeg output args for one generation."""
+    fmp4 = HLS_SEGMENT_TYPE == "fmp4"
+    suffix = "-fmp4" if fmp4 else ""
+    extension = "m4s" if fmp4 else "ts"
+    playlist = f"movie-{generation}{suffix}.m3u8"
+    pattern = f"segment-{generation}-*.{extension}"
+    init = f"init-{generation}.mp4" if fmp4 else ""
+    output_args = []
+    if fmp4:
+        output_args += ["-hls_segment_type", "fmp4",
+                        "-hls_fmp4_init_filename", init]
+    output_args += ["-hls_segment_filename",
+                    str(ROOT / f"segment-{generation}-%05d.{extension}"),
+                    str(ROOT / playlist)]
+    return playlist, pattern, init, output_args
 
 
 VAAPI_PATH = "/dev/dri/renderD128"
@@ -1011,6 +1041,7 @@ class Session:
         self._playlist_name, self._segment_pattern = _hls_names_from_url(
             state.stream_url if state.mode == "transcode" else "",
         )
+        self._init_name = _hls_init_from_url(state.stream_url)
         self.audio_chain = audio_filters(
             state.audio, state.audio_gain_db, state.audio_loudness)
         def recovered(pid: int, role: str, created_at: float):
@@ -1050,6 +1081,7 @@ class Session:
         if not playlist or not pattern:
             return False
         self._playlist_name, self._segment_pattern = playlist, pattern
+        self._init_name = _hls_init_from_url(self.state.stream_url)
         return self._playlist_is_complete(ROOT / playlist) and _server_healthy()
 
     def encoder_finished(self) -> bool:
@@ -1163,6 +1195,9 @@ class Session:
             (ROOT / hls_server.POLICY_NAME).unlink(missing_ok=True)
         for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
+        init_name = getattr(self, "_init_name", "")
+        if init_name and re.fullmatch(r"init-[0-9a-f]{32}\.mp4", init_name):
+            (ROOT / init_name).unlink(missing_ok=True)
         playlist = getattr(self, "_playlist_name", HLS_NAME)
         if playlist == HLS_NAME or _GENERATION_PLAYLIST.fullmatch(playlist):
             (ROOT / playlist).unlink(missing_ok=True)
@@ -1433,11 +1468,17 @@ class Session:
         # File names, not just query parameters, identify each encoder
         # generation: stale TV requests cannot read the replacement film.
         generation = secrets.token_hex(16)
-        self._playlist_name = f"movie-{generation}.m3u8"
-        self._segment_pattern = f"segment-{generation}-*.ts"
+        (self._playlist_name, self._segment_pattern, self._init_name,
+         hls_output_args) = _hls_output(generation)
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
             segment.unlink(missing_ok=True)
+        for segment in ROOT.glob("segment-*.m4s"):
+            if re.fullmatch(r"segment-[0-9a-f]{32}-[0-9]+\.m4s", segment.name):
+                segment.unlink(missing_ok=True)
+        for init in ROOT.glob("init-*.mp4"):
+            if re.fullmatch(r"init-[0-9a-f]{32}\.mp4", init.name):
+                init.unlink(missing_ok=True)
         # Remove only generated HLS playlists, not arbitrary cache content.
         for playlist in ROOT.glob("movie-*.m3u8"):
             if _GENERATION_PLAYLIST.fullmatch(playlist.name):
@@ -1545,9 +1586,8 @@ class Session:
             "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS),
             "-hls_list_size", str(HLS_PLAYLIST_SEGMENTS),
             "-hls_flags", "delete_segments+independent_segments",
-            "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
-            str(ROOT / self._playlist_name),
         ]
+        args += hls_output_args
         with open(FFMPEG_LOG, "w") as log:
             low_priority = process_priority.enabled()
             self.ffmpeg = subprocess.Popen(
@@ -1706,9 +1746,21 @@ class Session:
                 valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
             else:
                 match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
-                valid = bool(match and re.fullmatch(
-                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
-                ))
+                if match and match.group(2):
+                    init = f"init-{match.group(1)}.mp4"
+                    if f'#EXT-X-MAP:URI="{init}"' not in text:
+                        return False
+                    try:
+                        init_path = ROOT / init
+                        if not init_path.is_file() or init_path.stat().st_size == 0:
+                            return False
+                    except OSError:
+                        return False
+                    valid = re.fullmatch(rf"segment-{match.group(1)}-[0-9]+\.m4s", name) is not None
+                else:
+                    valid = bool(match and re.fullmatch(
+                        rf"segment-{match.group(1)}-[0-9]+\.ts", name,
+                    ))
             if not valid:
                 return False
             try:
