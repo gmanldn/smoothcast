@@ -139,7 +139,7 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     previous.stop = mock.Mock()
     monkeypatch.setattr(streamer, "ffprobe", lambda path: object())
     monkeypatch.setattr(streamer, "require_compatible_ffmpeg", lambda: None)
-    monkeypatch.setattr(dlna, "advertised_http_formats", lambda target: {"video/mpeg"})
+    monkeypatch.setattr(dlna, "advertised_http_formats", lambda target: {"video/webm"})
 
     w._cast_path(pathlib.Path("/new-film.mp4"), 0.0)
 
@@ -147,4 +147,4 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     w._cast_failed.assert_not_called()
     assert w.session is previous
     assert not w.busy and w._dlna_cancel is None
-    assert "does not advertise MP4" in w.toast.call_args.args[0]
+    assert "no supported MP4 or MPEG-TS" in w.toast.call_args.args[0]
