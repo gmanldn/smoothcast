@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import errno
@@ -31,6 +32,7 @@ import portal_room
 import portal_screen_page
 import portal_screens_http
 import portal_uploads
+import version
 
 
 PIN_DIGITS = "0123456789"
@@ -45,6 +47,7 @@ LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
 QUEUE_COMMAND_TTL = 120.0
 QUEUE_COMMAND_CAPACITY = 512
+CLIENT_SCHEMA = 1
 MIN_PORT = 49152
 MAX_PORT = 65535
 
@@ -126,11 +129,19 @@ def valid_friendly_name(value: str) -> bool:
     )
 
 
+@lru_cache(maxsize=1)
+def page_build() -> str:
+    """Version plus the served page's hash, never a duplicated release constant."""
+    return version.__version__ + "-" + hashlib.sha256(
+        (_HTML + portal_screen_page.panel_html()).encode("utf-8")
+    ).hexdigest()[:12]
+
+
 def _page() -> bytes:
-    # The Screens panel is self-contained; it hides itself until the dashboard
-    # has loaded and is inert on rooms where no screen ever connects.
-    return _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1
-                         ).encode("utf-8")
+    # Replace just the main closing tag; the Screens panel is part of the build.
+    markup = _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1)
+    return (markup.replace("__SC_BUILD__", page_build())
+            .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -575,6 +586,24 @@ class _Handler(BaseHTTPRequestHandler):
             return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
         return True
 
+    def _client_compatible(self) -> bool:
+        """Reject stale browser writes before mutation or GTK dispatch."""
+        schema = self.headers.get("X-SmoothCast-Client-Schema")
+        build = self.headers.get("X-SmoothCast-Client-Build")
+        # Older headless/CLI integrations omit Fetch Metadata. An old browser
+        # tab, however, sends Sec-Fetch-Mode and must reload before mutating.
+        browser_fetch = bool(self.headers.get("Sec-Fetch-Mode"))
+        if schema is None and build is None and not browser_fetch:
+            return True
+        if schema == str(CLIENT_SCHEMA) and build == page_build():
+            return True
+        self._error(
+            409, "SmoothCast was updated. Reload this page to continue.",
+            code="client_reload_required",
+            build=page_build(), client_schema=CLIENT_SCHEMA,
+        )
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
         if not self._safe_origin(required=False):
@@ -600,6 +629,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {
                 "ok": True, "csrf": csrf,
                 "participant": participant.public(self.server.clock()),
+                "build": page_build(), "client_schema": CLIENT_SCHEMA,
             })
         if path == "/api/status":
             if not self._authenticated():
@@ -634,7 +664,8 @@ class _Handler(BaseHTTPRequestHandler):
             state["screens"] = self.server.screens.snapshot()
             state["peers"] = directory.snapshot() if directory is not None else []
             state["peer_discovery_available"] = directory is not None
-            return self._send(200, {"ok": True, "state": state})
+            return self._send(200, {"ok": True, "state": state,
+                                    "build": page_build(), "client_schema": CLIENT_SCHEMA})
         upload_id = self._upload_route(path)
         if upload_id and self._authenticated():
             if self.server.uploads is None:
@@ -652,6 +683,9 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         path = self._path()
+        if (path in {"/api/login", "/api/action", "/api/profile"}
+                or path.startswith("/api/uploads")) and not self._client_compatible():
+            return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
@@ -749,6 +783,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "ok": True, "csrf": csrf,
                 "participant": participant.public(self.server.clock()),
                 "room": self.server.room.snapshot(participant.id),
+                "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
         if path == "/api/profile":
             if not self._authenticated(csrf=True):
@@ -894,6 +929,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.uploads.mark_early_cast(upload_id, accepted=accepted)
 
     def do_PUT(self) -> None:  # noqa: N802
+        if self._path().startswith("/api/uploads") and not self._client_compatible():
+            return
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
         upload_id = self._upload_route(self._path())
@@ -925,6 +962,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(507, "Could not store this upload chunk")
 
     def do_DELETE(self) -> None:  # noqa: N802
+        if self._path().startswith("/api/uploads") and not self._client_compatible():
+            return
         if portal_screens_http.route(self, "DELETE", self._path()):
             return
         if not self._authenticated(csrf=True):
@@ -1098,6 +1137,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :focus-visible{outline:3px solid #ffd166;outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
 </style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
+<div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login"><h2>Connect to SmoothCast</h2><p id="loginHint">Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>
 <form id="loginForm"><label for="name">Your name</label><input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" required>
 <div id="pinRow"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></div>
@@ -1119,8 +1159,22 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
+const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
+let stalePage=false;
+function showUpdateNotice(){
+  stalePage=true;
+  document.getElementById("updateNotice").hidden=false;
+  document.getElementById("dashboard").hidden=true;
+  document.getElementById("uploadCard").hidden=true;
+}
+document.getElementById("reloadNow").addEventListener("click",()=>location.reload());
+function matchingBuild(data){
+  if(data?.build===PAGE_BUILD&&data.client_schema===CLIENT_SCHEMA)return true;
+  showUpdateNotice();return false;
+}
+const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-SmoothCast-Client-Build":PAGE_BUILD};
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
-async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
@@ -1130,6 +1184,7 @@ $("loginForm").addEventListener("submit",async e=>{
   showError("error","");
   try{
     const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});
+    if(!matchingBuild(d))return;
     csrf=d.csrf;
     $("pin").value="";
     try{localStorage.setItem("sc_name",d.participant.name)}catch(_){}
@@ -1146,6 +1201,7 @@ $("loginForm").addEventListener("submit",async e=>{
       if(!response.ok)return false;
       const data=await response.json();
       if(!data.ok||!data.csrf||!data.participant)return false;
+      if(!matchingBuild(data))return true;
       csrf=data.csrf;
       try{localStorage.setItem("sc_name",data.participant.name)}catch(_){}
       $("displayName").value=data.participant.name;
@@ -1250,13 +1306,13 @@ function renderQueue(items){
 let statusRequest=null,statusTimer=null,statusFailures=0;
 function scheduleRefresh(){
   clearTimeout(statusTimer);
-  if(!csrf||document.hidden)return;
+  if(!csrf||stalePage||document.hidden)return;
   const delay=statusFailures?Math.min(30000,2000*2**statusFailures+Math.random()*500):2000;
   statusTimer=setTimeout(refresh,delay);
 }
 async function refresh(){
   clearTimeout(statusTimer);
-  if(!csrf||document.hidden||busy||statusRequest)return;
+  if(!csrf||stalePage||document.hidden||busy||statusRequest)return;
   const controller=new AbortController();
   statusRequest=controller;
   const deadline=setTimeout(()=>controller.abort(),5000);
@@ -1266,6 +1322,7 @@ async function refresh(){
     if(controller.signal.aborted||busy)return;
     if(r.status===401){expireSession();return}
     if(!r.ok)throw Error(d.error||"Connection lost");
+    if(!matchingBuild(d))return;
     const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
 $("musicAutogain").checked=!!s.music_autogain;
@@ -1345,12 +1402,14 @@ $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
+  if(stalePage)throw Error("Reload required");
   if(!csrf)throw Object.assign(Error("Room access expired"),{status:401});
   const controller=new AbortController();activeUploadController=controller;
   const deadline=setTimeout(()=>controller.abort(),60000);
   try{
-    const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...headers},body,signal:controller.signal});
+    const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
     const data=await response.json();
+    if(data.code==="client_reload_required")showUpdateNotice();
     if(!response.ok)throw Object.assign(Error(data.error||"Upload request failed"),{status:response.status});
     return data;
   }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
