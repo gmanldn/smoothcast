@@ -125,10 +125,13 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                 (0, 1440) if key == "sleep_timer_minutes" else (
                 (0, 600) if key == "sleep_fade_seconds" else (
                     (0, cache_policy.MAX_CAP_MB) if key == "cache_cap_mb" else (
-                        (1024, 65535) if key == "hls_port" else (1, 10000))))
+                        (1024, 65535) if key == "hls_port" else (
+                            (0, 65535) if key == "portal_port" else (1, 10000)
+                        ))))
             )
             if type(value) is int and lo <= value <= hi:
-                cfg[key] = value
+                if key != "portal_port" or value == 0 or 49152 <= value <= 65535:
+                    cfg[key] = value
         elif type(baseline) is float:
             bounds = {
                 "audio_gain": (0, 24),
