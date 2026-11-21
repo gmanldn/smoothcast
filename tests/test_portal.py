@@ -330,7 +330,8 @@ def test_session_recovery_checks_host_and_origin(rig):
 
 
 def test_join_reclaims_offline_room_slot_before_refusing(rig):
-    now = time.time()
+    # Presence expiry is monotonic, independent of wall-clock corrections.
+    now = rig.server.clock()
     stale = rig.server.room.join("Offline", now=now - portal.portal_room.ONLINE_SECONDS - 1)
     for index in range(portal.portal_room.MAX_PARTICIPANTS - 1):
         rig.server.room.join(f"Guest {index}", now=now)

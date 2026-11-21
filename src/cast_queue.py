@@ -681,7 +681,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 except (TypeError, ValueError, OverflowError):
                     pass
         volume = castctl.volume_percent(info)
-        if volume is not None and time.time() - self._volume_user_ts > 3:
+        if volume is not None and time.monotonic() - self._volume_user_ts > 3:
             self._syncing = True
             self.volume_scale.set_value(volume)
             self._syncing = False
