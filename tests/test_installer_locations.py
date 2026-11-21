@@ -224,6 +224,41 @@ class VirginEntrypointTests(unittest.TestCase):
             self.assertEqual(struct.unpack("<II", data[14:22]), (len(png), 22))
             self.assertEqual(data[22:], png)
 
+    def test_ffmpeg_4_is_detected_before_starting_a_film(self):
+        def probe(argv, **kwargs):
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=(b"ffmpeg version 4.4.2\n"
+                                  if Path(argv[0]).name == "ffmpeg" else None))
+        with mock.patch.object(bootstrap.shutil, "which",
+                               side_effect=lambda tool, path=None: "/fake/" + tool), \
+             mock.patch.object(bootstrap.subprocess, "run", side_effect=probe):
+            failures = bootstrap.check_tools()
+        self.assertEqual(failures, ["ffmpeg 4 (requires >=5.0)"])
+
+    def test_macos_pinned_homebrew_constants_match_python_bootstrap(self):
+        import re
+        script = (ROOT / "setup" / "macsetup.sh").read_text(encoding="utf-8")
+        commit = re.search(r'^BREW_COMMIT="([^"]+)"', script, re.M)
+        digest = re.search(r'^BREW_SHA256="([^"]+)"', script, re.M)
+        self.assertIsNotNone(commit)
+        self.assertIsNotNone(digest)
+        self.assertEqual(commit.group(1), bootstrap.HOMEBREW_INSTALL_COMMIT)
+        self.assertEqual(digest.group(1), bootstrap.HOMEBREW_INSTALL_SHA256)
+
+    def test_terminal_symlink_install_destination_is_rejected(self):
+        if os.name == "nt":
+            self.skipTest("Creating directory symlinks may require Windows developer mode")
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            source = parent / "source"
+            source.mkdir()
+            target = parent / "data"
+            target.mkdir()
+            link = parent / "alias"
+            link.symlink_to(target, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symbolic link"):
+                install_location.validate_destination(source, link)
+
     def test_native_shortcut_contains_icon_path(self):
         cmd = shortcuts.windows_shortcut_command(
             executable=Path("C:/Python/python.exe"),
