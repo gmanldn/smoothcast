@@ -86,7 +86,7 @@ class ErrorLog:
         """Atomically compact the recent tail (also used for clear)."""
         tmp = self._path.with_name(self._path.name + ".tmp")
         try:
-            with tmp.open("w", encoding="utf-8") as fh:
+            with tmp.open("w", encoding="utf-8", newline="\n") as fh:
                 for line in self._lines:
                     fh.write(line + "\n")
             tmp.replace(self._path)
@@ -97,7 +97,7 @@ class ErrorLog:
 
     def _append(self, entry: str) -> None:
         """One append per error; only compact after exceeding the byte limit."""
-        with self._path.open("a", encoding="utf-8") as fh:
+        with self._path.open("a", encoding="utf-8", newline="\n") as fh:
             fh.write(entry + "\n")
         self._disk_size += self._bytes(entry)
         if self._disk_size > MAX_LOG_BYTES:

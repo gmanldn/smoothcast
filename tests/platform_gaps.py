@@ -18,8 +18,6 @@ GAPS: dict[str, dict[str, str]] = {
     "win32": {
         "test_desktop_integration.py::DesktopIntegrationTests::test_actual_cli_install_twice_then_check_from_spaced_checkout":
             "desktop-entry (Linux freedesktop) Exec= quoting assumed",
-        "test_error_log.py::test_large_multiline_traceback_keeps_beginning_and_final_cause":
-            "text-mode newline translation makes an entry exceed MAX_ENTRY_BYTES (product limit is measured before \r\n)",
         "test_gui_test_safety.py::GuiTestSafetyTests::test_normal_shell_launcher_rejects_gui_test_before_bootstrap":
             "shell launcher / POSIX process groups (os.killpg) assumed",
         "test_gui_test_safety.py::GuiTestSafetyTests::test_runner_timeout_terminates_whole_process_group":
