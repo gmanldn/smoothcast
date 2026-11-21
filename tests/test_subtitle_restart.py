@@ -249,6 +249,7 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
 
 
 def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget():
+    """INV-004: Subtitle validation must precede existing cast cleanup."""
     """INV-004: Validate subtitle choice before stopping an existing cast."""
     text = main_window_methods()["_restart_at"]
     assert text.index("subtitle_restart.validate_restart(state, media, delay)") < (
