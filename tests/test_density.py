@@ -110,10 +110,10 @@ def test_spacious_and_compact_scale_from_the_base_values():
 # --- the responsive layout -----------------------------------------------------------------
 
 @pytest.mark.parametrize("size,expected", [
-    ((1600, 1000), rl.Layout(False, False, False, False, 14, 14, 190)),
-    ((900, 700), rl.Layout(True, True, False, False, 8, 10, 145)),
-    ((360, 800), rl.Layout(True, True, True, True, 8, 10, 145)),
-    ((500, 600), rl.Layout(True, True, True, True, 8, 10, 110)),   # left width 484 < 490: actions wrap
+    ((1600, 1000), rl.Layout(False, False, False, False, 14, 14, 360, 460, 4, False)),
+    ((900, 700), rl.Layout(True, True, False, False, 8, 10, 210, 0, 4, False)),
+    ((360, 800), rl.Layout(True, True, True, True, 8, 10, 180, 0, 2, True)),
+    ((500, 600), rl.Layout(True, True, True, False, 8, 10, 180, 0, 4, False)),   # transport row needs 572 px: wraps
 ])
 def test_default_layout_is_exactly_the_unscaled_one(size, expected):
     assert rl.layout_for_size(*size) == expected
@@ -170,9 +170,9 @@ def test_wiring_density_provider_layout_and_text_fit_pass():
     assert "STYLE_PROVIDER_PRIORITY_APPLICATION + 2" in control and "apply_density(load_config().get(\"density\"))" in control
     prefs = (ROOT / "src" / "preferences_ui.py").read_text(encoding="utf-8")
     assert 'key == "density"' in prefs and "apply_density(value)" in prefs and "_refresh_responsive_layout()" in prefs
-    ui = (ROOT / "src" / "cast_ui.py").read_text(encoding="utf-8")
+    ui = (ROOT / "src" / "panel_ui.py").read_text(encoding="utf-8")
     reflow = ui.split("def _refresh_responsive_layout", 1)[1]
-    assert 'layout_for_size(width, height, self.cfg.get("density"))' in reflow
+    assert 'width, height, self.cfg.get("density"),' in reflow
     assert reflow.index("text_fit.fit_labels(self)") < reflow.index("if state == self._layout_state")
     assert '"density": "comfortable"' in (ROOT / "src" / "cast_widgets.py").read_text(encoding="utf-8")
     toml = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

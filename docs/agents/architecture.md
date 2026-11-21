@@ -3,13 +3,14 @@
 SmoothCast is Python 3.10+ with GTK4/libadwaita, FFmpeg, Chromecast (`catt`)
 and DLNA. Ordinary tests do not import GTK.
 
-## GTK window: seven smaller modules
+## GTK window: smaller modules
 
 Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 
 | Concern | Module |
 | --- | --- |
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
+| Header, player + tabbed side panel, reflow | `src/panel_ui.py` (`PanelMixin`) |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
@@ -106,8 +107,7 @@ every playlist segment belongs to its saved generation.
 
 `tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
 cross-generation stale requests, narrow allowlists, encoder arguments and
-finalised recovery. All tests use mock encoders/TV and ephemeral local
-servers; do not launch GTK or send commands to a receiver.
+finalised recovery, using only mock encoders/TV and ephemeral local servers.
 
 ## Cast diagnostics and workers
 
@@ -144,6 +144,6 @@ This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
 cancellation, retry policy and full physical receiver acceptance remain
 open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
 
-Search symbols and affected callers before opening large files; follow runtime
-state ownership through the whole cast/cleanup lifecycle. For historical
-edge-case notes see [archived instructions](../AGENT_REFERENCE.md).
+Search symbols and callers before opening large files; follow runtime state
+ownership through the whole cast/cleanup lifecycle. Historical notes:
+[archive](../AGENT_REFERENCE.md).

@@ -69,7 +69,7 @@ class PreferenceChoiceTests(unittest.TestCase):
         self.assertIn('self.set_accels_for_action("app.preferences", ["<Control>comma"])', control)
         self.assertIn('menu.append("Preferences…", "app.preferences")', player)
         self.assertIn('preferences_button.connect("clicked", lambda _button: self.action_preferences())', player)
-        self.assertIn('inline = Gtk.Expander(label="Show inline playback controls")', player)
+        self.assertNotIn("Show inline playback controls", player)  # controls live in the Settings tab
         self.assertIn('self.keep_switch = self._switch_row(', player)
         self.assertIn('_choice(\n            captions, "subtitle_style", "Subtitle appearance"', source("preferences_ui.py"))
         for item in ('"preferences_ui"', '"preference_choices"'):

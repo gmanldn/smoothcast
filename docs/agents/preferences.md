@@ -2,7 +2,8 @@
 
 ## Media-first presentation
 
-`cast_ui.UiMixin` builds the responsive media layout. `cast_settings.SettingsCardMixin`
+`panel_ui.PanelMixin` builds the window (player beside a tabbed side panel) and
+reflows it; `cast_ui.UiMixin` builds the player and the cards placed in the tabs. `cast_settings.SettingsCardMixin`
 builds the collapsible inline player settings card; its original widgets
 remain active while collapsed. `preferences_ui.PreferencesWindow` is the
 searchable native libadwaita window, created only on request.

@@ -117,7 +117,7 @@ def test_leaving_fullscreen_restores_chrome_and_cancels_timer():
 
 
 def test_wiring_and_packaging():
-    ui = (ROOT / "src" / "cast_ui.py").read_text(encoding="utf-8")
+    ui = (ROOT / "src" / "panel_ui.py").read_text(encoding="utf-8")
     package = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "import idle_chrome" in ui
