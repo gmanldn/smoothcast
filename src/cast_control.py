@@ -46,6 +46,7 @@ import error_log
 import local_playback
 
 import startup_cleanup
+import mpris
 
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
@@ -182,6 +183,8 @@ class CastControlApp(Adw.Application):
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
         self._pending_files: list[str] = []
+        self._mpris = None
+        self._mpris_started = False
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -357,6 +360,13 @@ class CastControlApp(Adw.Application):
         return window
 
 
+    def _mpris_tick(self) -> bool:
+        """Push a fresh MPRIS2 snapshot; cheap when nothing changed (#266)."""
+        if self._mpris is not None:
+            self._mpris.refresh()
+        return True
+
+
     def _quit_fatal(self) -> bool:
         """End a process whose window failed so the next launch can take over."""
         self.quit()
@@ -366,6 +376,12 @@ class CastControlApp(Adw.Application):
     def do_activate(self) -> None:
         window = self._window()
         window.present()
+        if not self.selftest and not self._mpris_started:
+            # MPRIS2 media widget / media keys (Linux desktop bus, issue #266).
+            self._mpris_started = True
+            self._mpris = mpris.start(window)
+            if self._mpris is not None:
+                GLib.timeout_add_seconds(1, self._mpris_tick)
         if not self._startup_reported:
             self._startup_reported = True
             report = self._startup_report

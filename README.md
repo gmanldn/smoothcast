@@ -407,6 +407,10 @@ If the menu entry is missing despite a successful read-only check, log out and b
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
+## Desktop media controls (MPRIS2)
+
+On Linux, SmoothCast publishes an MPRIS2 player (`org.mpris.MediaPlayer2.smoothcast`) on the session bus, so the desktop's media widget and media keys (play/pause, next, previous, seek) control the current cast without focusing the window. Metadata (title and length) and the live position are exposed. Another application's cast is never controlled: when SmoothCast does not own playback the player reports `Stopped` and exposes no controls. MPRIS2 is Linux-only and best-effort — a missing session bus is ignored, and the application runs normally. The mapping is covered by portable tests with a fake bus plus one real private-`dbus-daemon` round trip; a desktop media-widget check is still pending.
+
 ## Streaming reliability and local-network safety
 
 HLS HTTP/1.1 requests require a Host header matching the exact listening
