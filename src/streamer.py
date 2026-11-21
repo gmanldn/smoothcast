@@ -29,6 +29,7 @@ import font_attachments
 import castctl
 import frozen_runtime
 import hw_encoder_state
+import hdr_tonemap
 import lan_interfaces
 import language_prefs
 import loudness
@@ -555,6 +556,9 @@ class MediaInfo:
     bitrate: int = 0
     direct_ok: bool = False
     direct_reason: str = ""
+    color_transfer: str = ""
+    color_primaries: str = ""
+    color_space: str = ""
 
     @property
     def has_video(self) -> bool:
@@ -942,6 +946,9 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             media.vcodec = str(stream.get("codec_name") or "")
             media.vprofile = str(stream.get("profile") or "")
             media.pix_fmt = str(stream.get("pix_fmt") or "")
+            media.color_transfer = str(stream.get("color_transfer") or "").lower()
+            media.color_primaries = str(stream.get("color_primaries") or "").lower()
+            media.color_space = str(stream.get("color_space") or "").lower()
             media.width = int(stream.get("width") or 0)
             media.height = int(stream.get("height") or 0)
             try:
@@ -1524,11 +1531,14 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None) -> list[str]:
         chain: list[str] = []
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
         plan_filters = video_plan.filters() if video_plan is not None else []
+        if hdr_filter:
+            # Tone-map the source before drawing any SDR caption overlays.
+            plan_filters.append(hdr_filter)
         if plan_filters and video_size and video_plan is not None:
             video_size = video_plan.output_size(*video_size)
         chain.extend(plan_filters)
@@ -1626,6 +1636,10 @@ class Session:
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
         # Fail before touching existing streaming resources or launching FFmpeg.
         require_compatible_ffmpeg()
+        try:
+            hdr_tonemap.require_available(media)
+        except hdr_tonemap.TonemapUnavailable as exc:
+            raise StreamError(str(exc)) from exc
         subtitle_delay_ms = subtitle_delay.normalize(subtitle_delay_ms)
         audio_delay_ms = audio_delay.normalize(audio_delay_ms)
         # Detect an unusable source address before spawning encoder/server jobs.
@@ -1691,7 +1705,7 @@ class Session:
                 str(media.path), media.duration, media.width, media.height,
                 video_stream=media.video_stream_index)
             out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
-            if (out_w > 1920 or out_h > 1080
+            if (out_w > 1920 or out_h > 1080 or hdr_tonemap.filter_for(media)
                     or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
                 self.used_software_fallback = True
         if bitmap_track is not None:
@@ -1736,6 +1750,7 @@ class Session:
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
+            hdr_filter=hdr_tonemap.filter_for(media),
             subtitle_force_style=subtitle_style.force_style(
                 subtitle_preset, codec=embedded_codec, path=staged) or "",
             fonts_dir=self._fonts_dir,

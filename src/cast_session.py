@@ -38,6 +38,7 @@ import direct_probe
 import stream_watchdog
 
 import hls_pause_recovery
+import hdr_tonemap
 
 import preflight
 import queue_metadata
@@ -135,6 +136,11 @@ class SessionMixin:
             if cancel.is_set():
                 raise streamer.StreamError("Cast cancelled before receiver handoff")
             streamer.require_compatible_ffmpeg()
+            # Reject an FFmpeg without HDR filters before stopping an owned cast.
+            try:
+                hdr_tonemap.require_available(media)
+            except hdr_tonemap.TonemapUnavailable as exc:
+                raise streamer.StreamError(str(exc)) from exc
             effective_subs_path, effective_burn = streamer.audio_cast_options(
                 media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
