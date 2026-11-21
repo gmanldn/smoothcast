@@ -121,6 +121,7 @@ class SessionMixin:
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
+            and not getattr(self, "_portal_early", False)
         )
 
         def work():
@@ -332,9 +333,8 @@ class SessionMixin:
                 send_stop = True
                 state = session.state
                 if state is not None and state.mode == "transcode":
-                    # Do not stop unrelated TV content merely because our
-                    # local encoder/server still has a saved session. Check
-                    # receiver identity *at command time*, off the GTK thread.
+                    # Do not stop unrelated TV content for our own stale
+                    # session; check receiver identity off the GTK thread.
                     try:
                         observed = castctl.info(device)
                     except (OSError, ValueError, TypeError):

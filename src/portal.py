@@ -277,7 +277,8 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._error(503, "Upload storage is unavailable")
                 body = self._body()
                 created = self.server.uploads.create(
-                    self._cookie_token() or "", body.get("name"), body.get("size"))
+                    self._cookie_token() or "", body.get("name"), body.get("size"),
+                    self.client_address[0])
             except PortalRequestError as exc:
                 return self._error(exc.status, exc.message)
             except portal_uploads.UploadError as exc:
@@ -297,7 +298,8 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         self.server.dispatch("cast_upload", {
                             "path": str(media_path), "name": name,
-                            "upload_id": upload_id,
+                            "upload_id": upload_id, "early": False,
+                            "client": self.client_address[0],
                         })
                     except PortalRequestError:
                         self.server.uploads.finish_dispatch(
@@ -372,6 +374,23 @@ class _Handler(BaseHTTPRequestHandler):
                 return upload_id
         return None
 
+    def _start_early_cast(self, upload_id: str, result: dict) -> None:
+        """Ask SmoothCast to cast the growing file before it finishes arriving.
+
+        Best-effort: a rejection (busy, unsupported) declines early casting and
+        the upload continues, so the completed file is still cast on finalize.
+        """
+        try:
+            self.server.dispatch("cast_upload", {
+                "path": result["cast_path"], "name": result["name"],
+                "upload_id": upload_id, "early": True,
+                "client": result.get("client", ""),
+            })
+            accepted = True
+        except Exception:
+            accepted = False
+        self.server.uploads.mark_early_cast(upload_id, accepted=accepted)
+
     def do_PUT(self) -> None:  # noqa: N802
         if not self._authenticated(csrf=True):
             return self._error(403, "Session expired or request token invalid")
@@ -393,6 +412,8 @@ class _Handler(BaseHTTPRequestHandler):
             result = self.server.uploads.append(
                 self._cookie_token() or "", upload_id,
                 self.headers.get("Content-Range", ""), length, self.rfile)
+            if result.get("ready_to_cast"):
+                self._start_early_cast(upload_id, result)
             return self._send(200, {"ok": True, **result})
         except portal_uploads.UploadError as exc:
             self.close_connection = True
@@ -490,7 +511,7 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and cast</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false,uploading=false,cancelUpload=false;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
@@ -502,7 +523,7 @@ async function act(action,value){if(busy)return;busy=true;try{const body={action
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
 async function uploadRequest(method,path,body,headers={}){const r=await fetch(path,{method,credentials:"same-origin",headers:{"X-CSRF-Token":csrf,...headers},body});const d=await r.json();if(!r.ok)throw Error(d.error||"Upload request failed");return d}
-$("uploadButton").addEventListener("click",async()=>{const file=$("videoFile").files[0];if(!file||uploading)return;uploading=true;cancelUpload=false;$("uploadButton").disabled=true;$("cancelUpload").hidden=false;showError("uploadStatus","Preparing upload…");$("uploadProgress").value=0;let id="";try{let state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size}),{"Content-Type":"application/json"});id=state.id;const chunk=state.chunk_size;let offset=state.received;while(offset<file.size){if(cancelUpload)throw Error("Upload cancelled");const end=Math.min(offset+chunk,file.size),part=file.slice(offset,end);let accepted=false,lastError;for(let attempt=0;attempt<5&&!accepted;attempt++){try{state=await uploadRequest("PUT","/api/uploads/"+id,part,{"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`});accepted=true}catch(err){lastError=err;if(attempt<4){await new Promise(resolve=>setTimeout(resolve,250*Math.pow(2,attempt)));try{state=await fetch("/api/uploads/"+id,{credentials:"same-origin",cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||"Could not resume upload");return d});accepted=state.received>=end}catch(_){}}} }if(!accepted)throw lastError||Error("Upload could not be resumed");offset=state.received;$("uploadProgress").max=file.size;$("uploadProgress").value=offset;showError("uploadStatus",`Uploading ${file.name}: ${Math.floor(offset*100/file.size)}%`)}if(cancelUpload)throw Error("Upload cancelled");const result=await uploadRequest("POST","/api/uploads/"+id+"/complete","{}",{"Content-Type":"application/json"});showError("uploadStatus",result.message||"Upload complete") }catch(err){showError("uploadStatus",err.message);if(id&&cancelUpload){try{await uploadRequest("DELETE","/api/uploads/"+id)}catch(_){}}}finally{uploading=false;$("uploadButton").disabled=false;$("cancelUpload").hidden=true;$("videoFile").disabled=false}});
+$("uploadButton").addEventListener("click",async()=>{const file=$("videoFile").files[0];if(!file||uploading)return;uploading=true;cancelUpload=false;casting=false;$("uploadButton").disabled=true;$("cancelUpload").hidden=false;showError("uploadStatus","Preparing upload…");$("uploadProgress").value=0;let id="";try{let state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size}),{"Content-Type":"application/json"});id=state.id;const chunk=state.chunk_size;let offset=state.received;while(offset<file.size){if(cancelUpload)throw Error("Upload cancelled");const end=Math.min(offset+chunk,file.size),part=file.slice(offset,end);let accepted=false,lastError;for(let attempt=0;attempt<5&&!accepted;attempt++){try{state=await uploadRequest("PUT","/api/uploads/"+id,part,{"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`});accepted=true}catch(err){lastError=err;if(attempt<4){await new Promise(resolve=>setTimeout(resolve,250*Math.pow(2,attempt)));try{state=await fetch("/api/uploads/"+id,{credentials:"same-origin",cache:"no-store"}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||"Could not resume upload");return d});accepted=state.received>=end}catch(_){}}} }if(!accepted)throw lastError||Error("Upload could not be resumed");offset=state.received;$("uploadProgress").max=file.size;$("uploadProgress").value=offset;if(state.ready_to_cast)casting=true;const percent=Math.floor(offset*100/file.size);showError("uploadStatus",casting?`Casting now — still sending the rest of ${file.name}: ${percent}%`:`Uploading ${file.name}: ${percent}%`)}if(cancelUpload)throw Error("Upload cancelled");const result=await uploadRequest("POST","/api/uploads/"+id+"/complete","{}",{"Content-Type":"application/json"});showError("uploadStatus",result.message||"Upload complete") }catch(err){showError("uploadStatus",err.message);if(id&&cancelUpload){try{await uploadRequest("DELETE","/api/uploads/"+id)}catch(_){}}}finally{uploading=false;$("uploadButton").disabled=false;$("cancelUpload").hidden=true;$("videoFile").disabled=false}});
 $("cancelUpload").addEventListener("click",()=>{cancelUpload=true;showError("uploadStatus","Cancelling upload…")});
 setInterval(refresh,2000);
 </script></body></html>"""

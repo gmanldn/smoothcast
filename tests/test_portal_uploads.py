@@ -14,9 +14,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import portal_uploads
 
 
-def manager(tmp_path, *, free=10 * 1024**3):
+def manager(tmp_path, *, free=10 * 1024**3, early_cast_min_bytes=portal_uploads.EARLY_CAST_MIN_BYTES):
     return portal_uploads.UploadManager(
-        tmp_path / "uploads", disk_usage=lambda _path: SimpleNamespace(free=free))
+        tmp_path / "uploads",
+        disk_usage=lambda _path: SimpleNamespace(free=free),
+        early_cast_min_bytes=early_cast_min_bytes)
+
+
+def _box(kind, payload=b""):
+    return (8 + len(payload)).to_bytes(4, "big") + kind + payload
+
+
+# moov before mdat: a faststart/progressive MP4 that can cast while arriving.
+FASTSTART_MP4 = _box(b"ftyp", b"isom") + _box(b"moov") + _box(b"mdat", b"\x00" * 16)
+# mdat before moov: the index is at the end, so it must arrive fully first.
+INDEXED_MP4 = _box(b"ftyp", b"isom") + _box(b"mdat", b"\x00" * 16) + _box(b"moov")
 
 
 def test_chunks_are_bounded_resumable_and_owner_private(tmp_path):
@@ -98,3 +110,67 @@ def test_symlink_partial_is_rejected_without_reading_target(tmp_path):
     assert target.read_bytes() == b"x"
     partial.unlink()
     uploads.close()
+
+
+def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 6, "192.168.1.5")
+    first = uploads.append("owner", created["id"], "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert first["ready_to_cast"] is True
+    assert first["cast_path"] == str(uploads.root / f"{created['id']}.partial")
+    assert first["client"] == "192.168.1.5"
+    # The threshold is crossed only once.
+    second = uploads.append("owner", created["id"], "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert second["ready_to_cast"] is False
+    uploads.mark_early_cast(created["id"], accepted=True)
+    assert uploads.by_id(created["id"])["phase"] == "casting"
+    path, name, dispatch = uploads.finalize("owner", created["id"])
+    assert (name, dispatch) == ("film.mkv", True)
+    # A cast may still be reading the growing file, so the path stays stable.
+    assert path == uploads.root / f"{created['id']}.partial"
+    assert path.read_bytes() == b"abcdef"
+    uploads.close()
+
+
+def test_indexed_mp4_is_not_cast_before_it_finishes_arriving(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mp4", len(INDEXED_MP4))
+    result = uploads.append("owner", created["id"], f"bytes 0-{len(INDEXED_MP4) - 1}/{len(INDEXED_MP4)}",
+                            len(INDEXED_MP4), BytesIO(INDEXED_MP4))
+    assert result["ready_to_cast"] is False
+    assert uploads.by_id(created["id"])["phase"] == "finalizing"
+    uploads.close()
+
+
+def test_faststart_mp4_is_cast_while_arriving(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    prefix = FASTSTART_MP4[:24]
+    created = uploads.create("owner", "film.mp4", len(FASTSTART_MP4))
+    result = uploads.append("owner", created["id"], f"bytes 0-{len(prefix) - 1}/{len(FASTSTART_MP4)}",
+                            len(prefix), BytesIO(prefix))
+    assert result["ready_to_cast"] is True
+    uploads.close()
+
+
+def test_declined_early_cast_falls_back_and_snapshot_reports_progress(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 6)
+    uploads.append("owner", created["id"], "bytes 0-2/6", 3, BytesIO(b"abc"))
+    uploads.mark_early_cast(created["id"], accepted=False)
+    assert uploads.by_id(created["id"])["phase"] == "receiving"
+    snapshot = uploads.snapshot()
+    assert snapshot and snapshot[0]["name"] == "film.mkv"
+    assert snapshot[0]["received"] == 3 and snapshot[0]["percent"] == 50
+    assert uploads.by_id("missing") is None
+    uploads.close()
+
+
+def test_format_portal_activity_summarises_phases():
+    assert portal_uploads.format_portal_activity([]) == "No client activity"
+    text = portal_uploads.format_portal_activity([
+        {"name": "film.mkv", "phase": "casting", "percent": 40, "client": "192.168.1.5"},
+        {"name": "clip.mp4", "phase": "receiving", "percent": 10,
+         "bytes_per_second": 5 * 1024 * 1024, "client": ""},
+    ])
+    assert "192.168.1.5 · film.mkv: casting now (40% received)" in text
+    assert "clip.mp4: receiving 10% (5.0 MB/s)" in text

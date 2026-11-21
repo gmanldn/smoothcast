@@ -200,10 +200,13 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "_build_portal_card" in methods
     card = methods["_build_portal_card"]
     assert "portal_status_label" in card and "portal_url_label" in card
-    assert "portal_pin_label" in card and "local network" in card
+    assert "portal_pin_label" in card and "portal_activity_label" in card
+    assert "local network" in card
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
+    assert "_refresh_portal_activity" in methods["_refresh_portal"]
+    assert "mark_early_cast" in methods["_reconcile_portal_casts"]
 
 
 def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_path(tmp_path):
@@ -250,6 +253,42 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         assert action == "cast_upload"
         assert Path(payload["path"]).read_bytes() == b"abcdef"
         assert Path(payload["path"]).parent == uploads.root
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads", early_cast_min_bytes=1)
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        status, raw, _ = rig.request("POST", "/api/uploads", {"name": "clip.mkv", "size": 6},
+                                     cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, raw, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie, csrf=csrf,
+            origin=origin, extra_headers={"Content-Range": "bytes 0-2/6"},
+            content_type="application/octet-stream")
+        body = decode(raw)
+        assert status == 200 and body["ready_to_cast"] is True
+        action, payload = rig.calls[-1]
+        assert action == "cast_upload" and payload["early"] is True
+        assert payload["upload_id"] == upload_id
+        assert uploads.by_id(upload_id)["phase"] == "casting"
+        # Finalize still dispatches; the GUI dedupes by upload id.
+        rig.request("PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie, csrf=csrf,
+                    origin=origin, extra_headers={"Content-Range": "bytes 3-5/6"},
+                    content_type="application/octet-stream")
+        rig.request("POST", f"/api/uploads/{upload_id}/complete", {},
+                    cookie=cookie, csrf=csrf, origin=origin)
+        action, payload = rig.calls[-1]
+        assert action == "cast_upload" and payload["early"] is False
     finally:
         rig.close()
         uploads.close()

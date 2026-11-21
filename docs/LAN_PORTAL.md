@@ -36,10 +36,27 @@ served locally with no external assets.
   when the portal stops and stale partials older than 24 hours are removed.
   Completed media files are retained because active/recoverable cast sessions
   may still read them.
-- The dashboard reports transfer progress and supports cancellation. Only a
-  fully received and size-checked staged file is passed to SmoothCast's normal
-  cast path, which performs server-side media probing, transcoding and device
+- The dashboard reports transfer progress and supports cancellation. A fully
+  received and size-checked staged file is passed to SmoothCast's normal cast
+  path, which performs server-side media probing, transcoding and device
   streaming.
+- **Casting while a file is still arriving.** For a large upload of a
+  progressively readable container (MKV, MPEG-TS, WebM, or a faststart MP4 whose
+  index precedes its media data), SmoothCast starts casting as soon as a small
+  buffer has been received, then keeps streaming the rest of the file to the
+  instance automatically. The cast is transcoded to HLS (never direct-played),
+  so the receiver is never handed a partial file. The staged path stays stable
+  while the cast reads it, so the transfer never interrupts playback. FFmpeg
+  reads the growing file at the playback rate, so the transfer stays ahead of
+  the cast on a local network.
+- Formats whose index is at the end of the file (for example a non-faststart
+  MP4) cannot be probed or cast until they are complete, so they are cast from
+  the finished file. If an early cast cannot start, the completed file is cast
+  instead; no upload is lost.
+- The LAN dashboard card shows what connected clients are doing: each upload's
+  name, progress, transfer rate, phase (receiving, casting while receiving, or
+  received) and the client address. The browser shows the same state, including
+  "Casting now" once an early cast has started.
 - The listener binds only to a private RFC 1918 address chosen by SmoothCast;
   it never binds to all interfaces, a public address or a router port-forward.
   If no usable private IPv4 address is available, the card reports that the
@@ -57,8 +74,9 @@ stops the listener.
 ## Verification
 
 Portable tests exercise PIN creation, rate limits, authentication, Host/Origin
-and CSRF checks, action validation, resumable staged uploads, HTTP responses,
-and clean listener shutdown on loopback. They do not verify reachability from a
-phone or another LAN host.
+and CSRF checks, action validation, resumable staged uploads, early-cast
+selection and fallback, activity summaries, HTTP responses, and clean listener
+shutdown on loopback. They do not verify reachability from a phone or another
+LAN host, nor real transcoding of a growing file on a device.
 The isolated GUI smoke checks that the dashboard card builds; real second-device
 and physical playback-control checks remain device qualification.

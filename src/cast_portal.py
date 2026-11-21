@@ -5,11 +5,17 @@ import pathlib
 import threading
 import os
 import stat
+import time
 
 import castctl
 import lan_interfaces
 import portal
+import portal_uploads
 from gi.repository import GLib
+
+# An early portal cast that has not started playing within this many seconds is
+# treated as failed, so the completed file is cast instead of being skipped.
+PORTAL_CAST_GRACE_SECONDS = 5.0
 
 
 class PortalMixin:
@@ -33,20 +39,91 @@ class PortalMixin:
             self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
             return True
         self._portal_ip = address
+        self._portal_cast_uploads = {}
+        self._portal_cast_retried = set()
         self.portal_url_label.set_text(self._portal.url)
         self.portal_pin_label.set_text(self._portal.pin)
         self.portal_status_label.set_text("Available on your local network")
+        if getattr(self, "_portal_activity_timer", None) is None:
+            self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True
 
     def _stop_portal(self) -> None:
         current, self._portal = getattr(self, "_portal", None), None
         self._portal_ip = None
+        timer = getattr(self, "_portal_activity_timer", None)
+        if timer is not None:
+            try:
+                GLib.source_remove(timer)
+            except (ValueError, TypeError):
+                pass
+            self._portal_activity_timer = None
         if current is not None:
             current.stop()
         if hasattr(self, "portal_url_label"):
             self.portal_status_label.set_text("Portal stopped")
             self.portal_url_label.set_text("—")
             self.portal_pin_label.set_text("—")
+        if hasattr(self, "portal_activity_label"):
+            self.portal_activity_label.set_text("No client activity")
+
+    def _refresh_portal_activity(self) -> bool:
+        """Show what LAN clients are sending or casting, refreshed every second."""
+        label = getattr(self, "portal_activity_label", None)
+        if label is None or getattr(self, "_closing", False):
+            self._portal_activity_timer = None
+            return False
+        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
+        try:
+            activity = uploads.snapshot() if uploads is not None else []
+        except Exception:
+            activity = []
+        label.set_text(portal_uploads.format_portal_activity(activity))
+        self._reconcile_portal_casts()
+        return True
+
+    def _reconcile_portal_casts(self) -> None:
+        """Drop early casts that never started so the finished file still casts."""
+        casting = getattr(self, "_portal_cast_uploads", None)
+        if not casting:
+            return
+        for upload_id, (path, _started) in list(casting.items()):
+            if self.now_playing == path:
+                casting.pop(upload_id, None)  # confirmed playing; no longer tracked
+        now = time.monotonic()
+        stale = portal_uploads.stale_early_casts(
+            casting, now=now, busy=bool(self.busy),
+            now_playing=self.now_playing, grace=PORTAL_CAST_GRACE_SECONDS)
+        if not stale:
+            return
+        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
+        accepted = getattr(self, "_portal_accepted_uploads", None)
+        for upload_id in stale:
+            path = casting.pop(upload_id, (None, 0.0))[0]
+            if accepted is not None:
+                accepted.discard(upload_id)
+            if uploads is None or path is None:
+                continue
+            uploads.mark_early_cast(upload_id, accepted=False)
+            status = uploads.by_id(upload_id)
+            if status and status.get("complete"):
+                retried = getattr(self, "_portal_cast_retried", None)
+                if retried is not None and upload_id not in retried:
+                    retried.add(upload_id)
+                    GLib.idle_add(self._retry_portal_cast, upload_id, path)
+
+    def _retry_portal_cast(self, upload_id: str, path: str) -> bool:
+        if self.busy or getattr(self, "_closing", False):
+            return False
+        casting = getattr(self, "_portal_cast_uploads", None)
+        if casting is None:
+            return False
+        casting[upload_id] = (path, time.monotonic())
+        accepted = getattr(self, "_portal_accepted_uploads", None)
+        if accepted is not None:
+            accepted.add(upload_id)
+        self._cast_path(pathlib.Path(path), 0)
+        return False
 
     def _portal_dispatch(self, operation: str, payload: dict) -> dict | str:
         """Marshal web requests onto GTK's main thread; never read GTK off-thread."""
@@ -91,6 +168,7 @@ class PortalMixin:
             }
         if operation == "cast_upload":
             upload_id = payload.get("upload_id")
+            early = bool(payload.get("early"))
             accepted_uploads = getattr(self, "_portal_accepted_uploads", None)
             if accepted_uploads is None:
                 accepted_uploads = self._portal_accepted_uploads = set()
@@ -111,9 +189,24 @@ class PortalMixin:
                 raise portal.PortalRequestError(400, "Uploaded media is unavailable")
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            if upload_id:
+                accepted_uploads.add(upload_id)
+                if early:
+                    # Tracked only until it is confirmed playing or declared
+                    # stale; a failed early cast is discarded so the finished
+                    # file is cast instead.
+                    casting = getattr(self, "_portal_cast_uploads", None)
+                    if casting is None:
+                        casting = self._portal_cast_uploads = {}
+                    casting[upload_id] = (str(path), time.monotonic())
             self.set_selection(str(path))
-            self._cast_path(path, 0)
-            accepted_uploads.add(upload_id)
+            # A partial file must not be direct-cast (catt would stream a
+            # truncated file); force the growing-file HLS transcode instead.
+            self._portal_early = early
+            try:
+                self._cast_path(path, 0)
+            finally:
+                self._portal_early = False
             return "Upload received; casting started."
         if self.busy:
             raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
