@@ -117,8 +117,9 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             with self.subTest(module=name):
                 path = ROOT / "src" / name
                 self.assertTrue(path.exists(), f"{name} is missing from the split GUI")
+                size = len(path.read_bytes().replace(b"\r\n", b"\n"))
                 self.assertLess(
-                    path.stat().st_size, limit,
+                    size, limit,
                     f"{name} is regrowing; split or trim it instead",
                 )
 

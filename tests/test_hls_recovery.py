@@ -74,7 +74,8 @@ class HlsRecoveryTests(unittest.TestCase):
         with mock.patch.object(streamer, "_server_healthy", return_value=True):
             self.playlist(segment_name="../film.ts")
             self.assertFalse(session.recoverable_hls())
-            self.playlist(segment_name="/tmp/segment-00000.ts")
+            outside = str((self.root.parent / "outside-segment.ts").resolve())
+            self.playlist(segment_name=outside)
             self.assertFalse(session.recoverable_hls())
 
     def test_live_encoder_still_uses_normal_active_path(self):

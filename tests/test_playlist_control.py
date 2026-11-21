@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PlaylistTests(unittest.TestCase):
     def test_round_trip_preserves_local_track_order(self):
         with TemporaryDirectory() as folder:
-            base = Path(folder)
+            base = Path(folder).resolve()
             first, second = base / "one.mp4", base / "two.mkv"
             first.touch()
             second.touch()
@@ -32,7 +32,7 @@ class PlaylistTests(unittest.TestCase):
 
     def test_playlist_with_media_tree_survives_folder_move(self):
         with TemporaryDirectory() as folder:
-            base = Path(folder)
+            base = Path(folder).resolve()
             old = base / "original"
             media = old / "movies"
             media.mkdir(parents=True)
@@ -43,7 +43,7 @@ class PlaylistTests(unittest.TestCase):
             playlist_control.save_playlist(playlist, [str(b), str(a)])
             saved = playlist.read_text()
             self.assertIn("movies/second.mp4", saved.replace("\\", "/"))
-            self.assertNotIn(str(old), saved)
+            self.assertNotIn(str(old).replace("\\", "/"), saved.replace("\\", "/"))
             moved = base / "renamed"
             shutil.move(str(old), str(moved))
             tracks, skipped = playlist_control.load_playlist(moved / "my queue.m3u")
@@ -53,7 +53,7 @@ class PlaylistTests(unittest.TestCase):
 
     def test_windows_cross_drive_falls_back_to_absolute_media_path(self):
         with TemporaryDirectory() as folder:
-            base = Path(folder)
+            base = Path(folder).resolve()
             film = base / "clip.mkv"
             film.touch()
             destination = base / "playlist.m3u"

@@ -15,8 +15,8 @@ from gui_source import main_window_methods
 import screenshot as screenshot_module
 
 
-CURRENT = "/films/playing.mkv"
-OTHER = "/films/queued.mkv"
+CURRENT = str(Path("/films/playing.mkv"))
+OTHER = str(Path("/films/queued.mkv"))
 
 
 def make_window():

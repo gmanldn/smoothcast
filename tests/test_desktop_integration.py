@@ -16,7 +16,8 @@ class DesktopIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name) / 'project with spaces'
+        # macOS temporary-directory paths may traverse /var -> /private/var.
+        self.root = Path(self.tmp.name).resolve() / 'project with spaces'
         (self.root / "data").mkdir(parents=True)
         (self.root / "data/cast-control.png").write_bytes(b"PNG-fixture")
         self.data_home = Path(self.tmp.name) / "xdg"

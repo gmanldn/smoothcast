@@ -34,7 +34,7 @@ class HistoricalFeatureTests(unittest.TestCase):
 
     def test_playlist_round_trip(self):
         with tempfile.TemporaryDirectory() as work:
-            root = pathlib.Path(work)
+            root = pathlib.Path(work).resolve()
             first = root / "a.mp4"
             first.write_bytes(b"x")
             second = root / "b.mp4"

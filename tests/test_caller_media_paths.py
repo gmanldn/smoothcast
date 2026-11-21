@@ -34,7 +34,8 @@ def command_line_method():
 class CallerMediaPathTests(unittest.TestCase):
     def test_argument_translation_precedes_launcher_chdir(self):
         with tempfile.TemporaryDirectory() as folder:
-            base = Path(folder)
+            # macOS temp roots can be symlinks (for example /var -> /private/var).
+            base = Path(folder).resolve()
             caller, checkout = base / "caller", base / "checkout"
             caller.mkdir()
             checkout.mkdir()
@@ -60,7 +61,7 @@ class CallerMediaPathTests(unittest.TestCase):
 
     def test_missing_caller_media_must_not_fall_back_to_checkout_decoy(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, checkout = root / "caller", root / "checkout"
             caller.mkdir()
             checkout.mkdir()
@@ -71,7 +72,7 @@ class CallerMediaPathTests(unittest.TestCase):
             self.assertEqual(result, [str(caller / "missing.mkv")])
 
     def test_action_option_and_uri_are_preserved(self):
-        cwd = Path("/another directory")
+        cwd = Path(tempfile.gettempdir()) / "another directory"
         args = ["--action", "stop", "file:///tmp/test.mkv", "--whatever", "film.mp4"]
         got = launch.media_arguments_from_caller(args, cwd)
         self.assertEqual(got[:4], args[:4])
@@ -80,7 +81,7 @@ class CallerMediaPathTests(unittest.TestCase):
     def test_forwarded_command_line_uses_callers_cwd_not_running_process(self):
         cls = command_line_method()
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, other = root / "called from", root / "already running"
             caller.mkdir()
             other.mkdir()
@@ -104,7 +105,7 @@ class CallerMediaPathTests(unittest.TestCase):
     def test_forwarded_missing_caller_file_does_not_use_decoy(self):
         cls = command_line_method()
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, checkout = root / "caller", root / "checkout"
             caller.mkdir()
             checkout.mkdir()
