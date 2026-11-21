@@ -42,7 +42,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
-                                         commands=commands, fence=fence)
+                                         commands=commands, fence=fence,
+                                         pin_required=bool(self.cfg.get("house_pin_enabled", False)))
         except (OSError, portal.PortalError) as exc:
             self._portal = None
             self._portal_ip = None
@@ -53,7 +54,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self._portal_cast_retried = set()
         self.portal_url_label.set_text(self._portal.url)
         self.portal_copy_button.set_sensitive(True)
-        self.portal_pin_label.set_text(self._portal.pin)
+        self.portal_pin_label.set_text(
+            self._portal.pin if self._portal.server.pin_required else "Not required")
         self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:

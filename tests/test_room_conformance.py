@@ -377,3 +377,45 @@ def test_simultaneous_seeks_are_serialized_and_one_stale_generation_is_rejected(
 
     assert sorted(results) == [202, 409]
     assert sum(action == "seek" for action, _payload in room.calls) == 1
+
+
+def test_open_join_without_pin_when_pin_not_required():
+    harness = RoomHarness(count=1)
+    harness.close()
+    server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, lambda *_: "ok", pin_required=False)
+    import threading as _t
+    thread = _t.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        host = f"127.0.0.1:{port}"
+        for path in ("/api/config",):
+            conn = HTTPConnection("127.0.0.1", port, timeout=3)
+            conn.request("GET", path, headers={"Host": host})
+            reply = json.loads(conn.getresponse().read())
+            assert reply["pin_required"] is False
+        conn = HTTPConnection("127.0.0.1", port, timeout=3)
+        conn.request("GET", "/", headers={"Host": host})
+        assert b'const PIN_REQUIRED="0"!=="0"' in conn.getresponse().read()
+        conn = HTTPConnection("127.0.0.1", port, timeout=3)
+        conn.request("POST", "/api/login", body=json.dumps({"name": "Sam"}),
+                     headers={"Host": host, "Origin": f"http://{host}",
+                              "Content-Type": "application/json"})
+        response = conn.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())["participant"]["name"] == "Sam"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(3)
+
+
+def test_pin_still_required_by_default():
+    harness = RoomHarness(count=1)
+    try:
+        status, _, _ = harness.request("POST", "/api/login", {"name": "Sam"})
+        assert status == 401
+        status, reply, _ = harness.request("GET", "/api/config")
+        assert reply["pin_required"] is True
+    finally:
+        harness.close()

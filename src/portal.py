@@ -112,6 +112,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
+                 pin_required: bool = True,
                  uploads: portal_uploads.UploadManager | None = None,
                  hostname: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
@@ -128,6 +129,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.fence = fence or portal_commands.CommandFence(clock=clock)
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
+        self.pin_required = bool(pin_required)
+        self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
         self._queue_command_cache: OrderedDict[tuple[str, str], tuple] = OrderedDict()
@@ -205,7 +208,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         A PIN validated before a rotation must never mint a new cookie after it.
         """
         with self._lock:
-            if not self.pin_allowed(client, pin):
+            if self.pin_required and not self.pin_allowed(client, pin):
                 raise PortalRequestError(401, "Incorrect PIN or too many attempts")
             return self.create_session(name)
 
@@ -490,9 +493,14 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
         if path in {"/", "/index.html"}:
-            return self._send(200, _page(), content_type="text/html; charset=utf-8")
+            page = _page().replace(
+                b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
+            return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
+        if path == "/api/config":
+            return self._send(200, {"pin_required": self.server.pin_required,
+                                    "name": self.server.hostname_label})
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
@@ -846,7 +854,8 @@ class Portal:
                  uploads: portal_uploads.UploadManager | None = None,
                  name: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
-                 fence: portal_commands.CommandFence | None = None) -> None:
+                 fence: portal_commands.CommandFence | None = None,
+                 pin_required: bool = True) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -870,7 +879,7 @@ class Portal:
         self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch,
                                         uploads=self.uploads, hostname=self.name,
                                         commands=commands, fence=fence,
-                                        room=self.room)
+                                        room=self.room, pin_required=pin_required)
         self.port = int(self.server.server_address[1])
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
@@ -978,9 +987,9 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
 :focus-visible{outline:3px solid #ffd166;outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
 </style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
-<section id="login"><h2>Connect to SmoothCast</h2><p>Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>
+<section id="login"><h2>Connect to SmoothCast</h2><p id="loginHint">Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>
 <form id="loginForm"><label for="name">Your name</label><input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" required>
-<label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+<div id="pinRow"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></div>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Connect</button></form></section>
 <div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p><progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
@@ -1001,6 +1010,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <script>
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
+const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -1011,12 +1021,21 @@ $("loginForm").addEventListener("submit",async e=>{
     const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});
     csrf=d.csrf;
     $("pin").value="";
+    try{localStorage.setItem("sc_name",d.participant.name)}catch(_){}
     $("displayName").value=d.participant.name;
     $("login").hidden=true;
     refresh();
   }catch(err){showError("error",err.message)}
   finally{loginButton.disabled=false}
 });
+(()=>{
+  if(PIN_REQUIRED)return;
+  $("pinRow").hidden=true;$("pin").required=false;$("pin").value="";
+  $("loginHint").textContent="Enter your name to join the house.";
+  loginButton.textContent="Join";
+  let saved="";try{saved=localStorage.getItem("sc_name")||""}catch(_){}
+  if(saved){$("name").value=saved;loginButton.click()}
+})();
 function expireSession(){
   csrf="";
   statusFailures=0;

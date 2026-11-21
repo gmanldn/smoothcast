@@ -90,6 +90,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
 
         self._switch(queue, "portal_screens", "Let room browsers play the queue",
                      "Paired phones and TVs can act as screens or speakers.")
+        self._switch(queue, "house_pin_enabled", "Require a house PIN to join",
+                     "Only needed if people you don't trust use your Wi-Fi. Applies the next time the room restarts.")
 
         alerts = self._group(
             playback, "Notifications",
@@ -252,7 +254,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
-        elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens"):
+        elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
+                     "house_pin_enabled"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
