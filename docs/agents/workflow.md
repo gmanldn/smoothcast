@@ -32,7 +32,7 @@ git worktree add --detach ../smoothcast-N origin/develop
 cd ../smoothcast-N                       # work, test and commit only here
 # ... edit, then run the checks below and commit ...
 git fetch origin && git rebase origin/develop   # replays YOUR unpushed commits
-python3 -m pytest -q tests                      # re-test after integrating
+python3 -m pytest -q tests -n auto              # optional full local suite
 git push origin HEAD:develop                    # fast-forward only, never --force
 cd .. && git worktree remove smoothcast-N       # clean up when pushed
 ```
@@ -49,8 +49,9 @@ amend commits that are already on `origin`.
 3. Locate the changed symbols, callers and tests. Choose a minimal **complete**
    fix; reuse helpers and standard library where sensible. Preserve validation,
    casting ownership, accessibility, existing behaviour and diagnostics.
-4. Add or adjust focused regression tests, then run the full headless checks.
-   Never open the real GUI to test.
+4. Add or adjust focused regression tests and run them before committing.
+   The full suite runs in parallel in CI after each push. Run it locally for
+   changes spanning components or test infrastructure. Never open the real GUI.
 5. Commit small, coherent changes with a message that names the issue
    (`Refs #N`; GitHub closes issues only from the default branch, and an issue
    closes only when **all** acceptance criteria are supported, so close it by
@@ -60,7 +61,7 @@ amend commits that are already on `origin`.
 
 ## Repo hygiene — commit checklist
 
-- **Before every commit:** run `python3 -m pytest -q tests`,
+- **Before every commit:** run focused tests covering changed behavior,
   `python3 -m compileall -q src scripts setup tests` and
   `ruff check src scripts setup tests sc.py setup.py` (plus `mypy` if you touched
   a gated module). `git status` and `git diff --stat` must show only files you

@@ -109,24 +109,40 @@ class SetupContractTests(unittest.TestCase):
         self.assertNotIn("assert sys.version_info", launcher)
 
     def test_catt_prerelease_rejected_even_under_optimized_python(self):
-        for version, accepted in (
+        cases = (
             ("0.11.99", False), ("0.12rc1", False),
             ("0.12.0rc1", False), ("0.13.dev0", False),
             ("0.12", True), ("0.12.0", True),
             ("0.12.post1", True), ("1.0", True),
-        ):
-            with self.subTest(version=version):
-                injection = (
-                    "import importlib.metadata as _m; "
-                    f"_m.version=lambda name:{version!r}; "
-                )
-                for optimize in (False, True):
-                    argv = [sys.executable] + (["-O"] if optimize else [])
-                    result = subprocess.run(
-                        argv + ["-c", injection + bootstrap.CATT_CHECK],
-                        capture_output=True, text=True, timeout=10,
-                    )
-                    self.assertEqual(result.returncode == 0, accepted,
+        )
+        # One fresh interpreter per optimization mode exercises the shipped check
+        # for every version, instead of one interpreter per version (16 spawns).
+        script = (
+            "import importlib.metadata as m, json\n"
+            f"cases = {[version for version, _ in cases]!r}\n"
+            f"check = {bootstrap.CATT_CHECK!r}\n"
+            "codes = []\n"
+            "for version in cases:\n"
+            "    m.version = lambda name, version=version: version\n"
+            "    try:\n"
+            "        exec(compile(check, '<catt-check>', 'exec'), {'__name__': '__main__'})\n"
+            "    except SystemExit as exc:\n"
+            "        codes.append(exc.code)\n"
+            "    else:\n"
+            "        codes.append(None)\n"
+            "print(json.dumps(codes))\n"
+        )
+        for optimize in (False, True):
+            argv = [sys.executable] + (["-O"] if optimize else [])
+            result = subprocess.run(
+                argv + ["-c", script], capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            codes = json.loads(result.stdout)
+            self.assertEqual(len(codes), len(cases))
+            for (version, accepted), code in zip(cases, codes):
+                with self.subTest(version=version, optimize=optimize):
+                    self.assertEqual(code == 0, accepted,
                                      (version, optimize, result.stderr))
         launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
         self.assertNotIn("assert tuple(v)", launcher)

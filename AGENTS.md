@@ -36,10 +36,11 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 
 ## Testing — no desktop focus
 
-**Never launch the real GUI, activate the user's window or control their TV
-during routine tests.** No `gtk-launch`, `./smoothcast` or bare `--self-test`.
-Use `python3 -m pytest -q tests` and
-`python3 -m compileall -q src scripts setup tests`. Optional GUI smoke:
+**Routine tests never launch the GUI, focus the desktop or control the TV.**
+No `gtk-launch`, `./smoothcast` or bare `--self-test`. Test changed behavior
+before committing. CI runs all tests in parallel: `python3 -m pytest -q tests
+-n auto`. Also run `python3 -m compileall -q src scripts setup tests` and
+`ruff check src scripts setup tests sc.py setup.py`. Optional GUI smoke:
 `python3 scripts/test_gui_isolated.py` (private Xvfb only).
 [Test safety](docs/agents/testing.md).
 

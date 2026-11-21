@@ -91,17 +91,17 @@ jobs:
         run: python -m compileall -q src scripts setup tests
 
       - name: Install portable test dependencies
-        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'hypothesis>=6,<7'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7'
 
       - name: Run all portable regression tests
         if: matrix.python-version != '3.13'
-        run: python -m pytest -q tests
+        run: python -m pytest -q tests -n auto
 
       - name: Run all portable regression tests with coverage
         if: matrix.python-version == '3.13'
         # Baseline measured 40% line coverage on 19 Nov 2026; the gate sits
         # just below it and may only be raised.
-        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=38
+        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=38 -n auto
 
       - name: Prove tests cannot see a simulated active desktop
         env:
@@ -134,10 +134,10 @@ jobs:
 
       - name: Install portable test dependencies
         # psutil is a runtime dependency used for native process identity.
-        run: python -m pip install 'pytest>=8,<10' 'hypothesis>=6,<7' 'psutil>=5.9,<8'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'psutil>=5.9,<8'
 
       - name: Run all portable regression tests
-        run: python -m pytest -q tests -p no:cacheprovider --tb=short
+        run: python -m pytest -q tests -p no:cacheprovider --tb=short -n auto
 
   media-integration:
     name: FFmpeg MKV/SRT runtime integration

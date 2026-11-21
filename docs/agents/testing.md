@@ -9,7 +9,7 @@ Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 Headless portable verification from repo root:
 
 ```sh
-python3 -m pytest -q tests
+python3 -m pytest -q tests -n auto
 python3 -m compileall -q src scripts setup tests
 ```
 

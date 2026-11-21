@@ -26,10 +26,13 @@ session. [Handbook index](README.md) is the fallback for ambiguous tasks.
    document (when relevant), then specific sources. Open
    [archived notes](../AGENT_REFERENCE.md) only for historical edge cases.
    Do not add more long global agent instructions.
-3. **Limit noisy command output.** Prefer `pytest -q`, bounded `git log`,
-   `git diff --stat`, targeted `rg -n`, and `git show --format=short --stat`
-   before full logs or diffs. Keep complete errors and test logs accessible;
-   never discard causal context, exact stderr, source, security checks or data.
+3. **Limit noisy command output.** Prefer focused tests for changed behavior
+   while iterating, then `pytest -q -n auto` for the full parallel suite when
+   warranted. CI runs the full suite after each push. Also prefer bounded
+   `git log`, `git diff --stat`, targeted `rg -n`, and
+   `git show --format=short --stat` before full logs or diffs. Keep complete
+   errors and test logs accessible; never discard causal context, exact
+   stderr, source, security checks or data.
 4. **Avoid unnecessary agent work.** Start with existing helpers and a
    focused test; don't spawn a separate agent for a tiny single-file task.
    Use specialised agents for substantial independent investigations with a
