@@ -1,7 +1,7 @@
 # SmoothCast architecture — open the relevant module
 
 SmoothCast is Python 3.10+ with GTK4/libadwaita, FFmpeg, Chromecast (`catt`)
-and DLNA. Native setup is under `setup/`; ordinary tests do not import GTK.
+and DLNA. Ordinary tests do not import GTK.
 
 ## GTK window: seven smaller modules
 
@@ -15,12 +15,13 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |
-| Authenticated LAN dashboard lifecycle and GTK dispatch | `src/cast_portal.py` |
+| LAN dashboard lifecycle and GTK dispatch | `src/cast_portal.py` |
+| Command fencing and replay | `src/portal_commands.py` |
 
-For source-level GUI tests use `tests/gui_source.py`:
+For GUI tests use `tests/gui_source.py`:
 `combined_source()` for substring assertions and
-`main_window_methods()` for AST method lookup. **Do not** rebuild a giant
-single GUI file or import GTK during ordinary tests.
+`main_window_methods()` for AST lookup. **Do not** rebuild a giant GUI file
+or import GTK in ordinary tests.
 
 ## Discovered receiver identity
 

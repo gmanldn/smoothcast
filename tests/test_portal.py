@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import threading
 import json
+import time
 
 import pytest
 
@@ -17,7 +18,7 @@ PIN = "234567"
 
 
 class PortalRig:
-    def __init__(self, uploads=None):
+    def __init__(self, uploads=None, clock=None):
         self.calls = []
 
         def dispatch(action, payload):
@@ -26,7 +27,8 @@ class PortalRig:
                 return {"title": "sample.mp4", "state": "PLAYING", "queue": []}
             return "accepted"
 
-        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch, uploads=uploads)
+        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, dispatch,
+                                                uploads=uploads, clock=clock or time.monotonic)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.02}, daemon=True)
@@ -204,6 +206,95 @@ def test_invalid_actions_are_rejected_before_dispatch(rig, payload):
                                csrf=result["csrf"], origin=f"http://{rig.host}")
     assert status == 400
     assert rig.calls == []
+
+
+def _envelope(rig, *, command_id="cmd-1", action="stop", payload=None):
+    session_id, revision, _ = rig.server.fence.snapshot()
+    return {
+        "client_id": "phone-1", "command_id": command_id,
+        "expected_session_id": session_id, "expected_revision": revision,
+        "action": action, "payload": payload or {},
+    }
+
+
+def test_action_envelope_is_idempotent_and_fenced(rig):
+    _, result, cookie = login(rig)
+    origin = f"http://{rig.host}"
+    envelope = _envelope(rig)
+    status, body, _ = rig.request("POST", "/api/action", envelope, cookie=cookie,
+                                  csrf=result["csrf"], origin=origin)
+    assert status == 202
+    receipt = decode(body)
+    assert receipt["ok"] and receipt["command_id"] == "cmd-1"
+    assert rig.calls == [("stop", {"action": "stop"})]
+    status, body, _ = rig.request("POST", "/api/action", envelope, cookie=cookie,
+                                  csrf=result["csrf"], origin=origin)
+    assert status == 202 and decode(body) == receipt
+    assert len(rig.calls) == 1
+
+
+def test_altered_replay_and_stale_generation_are_rejected(rig):
+    _, result, cookie = login(rig)
+    origin = f"http://{rig.host}"
+    envelope = _envelope(rig, action="seek", payload={"value": 1})
+    status, _, _ = rig.request("POST", "/api/action", envelope, cookie=cookie,
+                               csrf=result["csrf"], origin=origin)
+    assert status == 202
+    altered = {**envelope, "payload": {"value": 2}}
+    status, body, _ = rig.request("POST", "/api/action", altered, cookie=cookie,
+                                  csrf=result["csrf"], origin=origin)
+    assert status == 409 and decode(body)["conflict"] is True
+    assert "revision" in decode(body)
+    stale = {**_envelope(rig, command_id="cmd-2"),
+             "expected_session_id": envelope["expected_session_id"],
+             "expected_revision": envelope["expected_revision"]}
+    status, body, _ = rig.request("POST", "/api/action", stale, cookie=cookie,
+                                  csrf=result["csrf"], origin=origin)
+    assert status == 409
+    assert decode(body)["revision"] == rig.server.fence.snapshot()[1]
+    assert len(rig.calls) == 1
+
+
+@pytest.mark.parametrize("patch", [
+    {"command_id": ""},
+    {"command_id": "x" * 200},
+    {"client_id": "bad id"},
+    {"expected_session_id": "not-a-session"},
+    {"expected_revision": -1},
+    {"expected_revision": True},
+    {"action": "cast"},
+    {"payload": {"value": 1}},
+])
+def test_action_envelope_rejects_invalid_fields_before_dispatch(rig, patch):
+    _, result, cookie = login(rig)
+    envelope = _envelope(rig)
+    envelope.update(patch)
+    status, _, _ = rig.request("POST", "/api/action", envelope, cookie=cookie,
+                               csrf=result["csrf"], origin=f"http://{rig.host}")
+    assert status == 400
+    assert rig.calls == []
+
+
+class _Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_expired_session_is_rejected_before_dispatch():
+    clock = _Clock()
+    rig = PortalRig(clock=clock)
+    try:
+        _, result, cookie = login(rig)
+        clock.now = portal.SESSION_SECONDS + 1
+        status, _, _ = rig.request("POST", "/api/action", _envelope(rig), cookie=cookie,
+                                   csrf=result["csrf"], origin=f"http://{rig.host}")
+        assert status == 403
+        assert rig.calls == []
+    finally:
+        rig.close()
 
 
 def test_invalid_origin_and_unknown_paths_fail_closed(rig):

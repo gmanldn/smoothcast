@@ -21,6 +21,7 @@ import time
 from typing import Callable
 from urllib.parse import urlsplit
 
+import portal_commands
 import portal_uploads
 
 
@@ -94,12 +95,17 @@ class _PortalHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
                  uploads: portal_uploads.UploadManager | None = None,
-                 hostname: str | None = None) -> None:
+                 hostname: str | None = None,
+                 commands: portal_commands.CommandDispatcher | None = None,
+                 fence: portal_commands.CommandFence | None = None) -> None:
         super().__init__(address, _Handler)
         self.pin = pin
         self.dispatch = dispatch
         self.uploads = uploads
         self.clock = clock
+        self.fence = fence or portal_commands.CommandFence(clock=clock)
+        self.commands = commands or portal_commands.CommandDispatcher(
+            self._apply_default_command, fence=self.fence, clock=clock)
         self._lock = threading.Lock()
         self._sessions: dict[str, tuple[str, float]] = {}
         self._attempts: dict[str, deque[float]] = {}
@@ -112,6 +118,26 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         }
         if hostname:
             self._allowed_hosts.update({f"{hostname}.local:{port}", f"{hostname}.local"})
+
+    def _apply_default_command(self, envelope: portal_commands.MutationEnvelope):
+        """Apply a command when the caller did not supply a GTK dispatcher."""
+        self.fence.check(envelope.expected_session_id, envelope.expected_revision)
+        try:
+            result = self.dispatch(envelope.action, {"action": envelope.action, **envelope.payload})
+        except PortalRequestError as exc:
+            raise portal_commands.CommandError(exc.status, exc.message) from exc
+        except Exception as exc:
+            raise portal_commands.CommandError(
+                503, "SmoothCast could not accept that command") from exc
+        session_id, revision, _owner = self.fence.rotate()
+        return portal_commands.CommandReceipt(
+            envelope.command_id, session_id, revision, result or "Command accepted")
+
+    def server_close(self) -> None:
+        try:
+            self.commands.close()
+        finally:
+            super().server_close()
 
     def host_allowed(self, host: str) -> bool:
         return bool(host) and host.lower() in self._allowed_hosts
@@ -221,8 +247,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self.close_connection = True
 
-    def _error(self, status: int, message: str) -> None:
-        self._send(status, {"ok": False, "error": message})
+    def _error(self, status: int, message: str, **extra: object) -> None:
+        payload = {"ok": False, "error": message}
+        payload.update(extra)
+        self._send(status, payload)
 
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
@@ -371,30 +399,46 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/action":
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
-            action = body.get("action")
-            if not isinstance(action, str) or action not in {
-                    "play_pause", "stop", "seek", "volume", "music_autogain"}:
-                return self._error(400, "Unsupported action")
-            if action == "seek":
-                value = body.get("value")
-                if isinstance(value, bool) or not isinstance(value, (float, int)):
-                    return self._error(400, "Seek position must be a number")
-                if not math.isfinite(float(value)) or not 0 <= float(value) <= 24 * 60 * 60:
-                    return self._error(400, "Seek position is out of range")
-                body["value"] = float(value)
-            if action == "volume":
-                value = body.get("value")
-                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
-                    return self._error(400, "Volume must be from 0 to 100")
-            if action == "music_autogain" and type(body.get("value")) is not bool:
-                return self._error(400, "Music autogain must be on or off")
             try:
-                result = self.server.dispatch(action, body)
-            except PortalRequestError as exc:
-                return self._error(exc.status, exc.message)
-            except Exception:
-                return self._error(503, "SmoothCast could not accept that command")
-            return self._send(202, {"ok": True, "message": result or "Command accepted"})
+                envelope = portal_commands.parse_envelope(body)
+                if envelope is None:
+                    action = body.get("action")
+                    if not isinstance(action, str) or action not in {
+                            "play_pause", "stop", "seek", "volume", "music_autogain"}:
+                        return self._error(400, "Unsupported action")
+                    if action == "seek":
+                        value = body.get("value")
+                        if isinstance(value, bool) or not isinstance(value, (float, int)):
+                            return self._error(400, "Seek position must be a number")
+                        if not math.isfinite(float(value)) or not 0 <= float(value) <= 24 * 60 * 60:
+                            return self._error(400, "Seek position is out of range")
+                        body["value"] = float(value)
+                    if action == "volume":
+                        value = body.get("value")
+                        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+                            return self._error(400, "Volume must be from 0 to 100")
+                    if action == "music_autogain" and type(body.get("value")) is not bool:
+                        return self._error(400, "Music autogain must be on or off")
+                    token = self._cookie_token() or ""
+                    envelope = portal_commands.legacy_envelope(
+                        body, self.server.fence,
+                        client_id="legacy-" + self.server._session_key(token)[:40])
+                receipt = self.server.commands.execute(envelope)
+            except portal_commands.CommandError as exc:
+                extra = {}
+                if exc.status == 409:
+                    extra["conflict"] = True
+                if exc.revision is not None:
+                    extra["revision"] = exc.revision
+                if exc.session_id is not None:
+                    extra["session_id"] = exc.session_id
+                return self._error(exc.status, exc.message, **extra)
+            return self._send(202, {
+                "ok": True, "message": receipt.message,
+                "command_id": receipt.command_id,
+                "session_id": receipt.session_id,
+                "revision": receipt.revision,
+            })
         return self._error(404, "Not found")
 
     @staticmethod
@@ -486,7 +530,9 @@ class Portal:
 
     def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
-                 name: str | None = None) -> None:
+                 name: str | None = None,
+                 commands: portal_commands.CommandDispatcher | None = None,
+                 fence: portal_commands.CommandFence | None = None) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -507,7 +553,8 @@ class Portal:
         self.bind_ip = str(address)
         self.uploads = uploads or portal_uploads.UploadManager()
         self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch,
-                                        uploads=self.uploads, hostname=self.name)
+                                        uploads=self.uploads, hostname=self.name,
+                                        commands=commands, fence=fence)
         self.port = int(self.server.server_address[1])
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
