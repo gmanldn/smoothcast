@@ -94,6 +94,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._switch(queue, "auto_shutdown", "Close app after the final film",
                      "Close SmoothCast when playback finishes; receiver behaviour follows the keep-casting setting.")
 
+        alerts = self._group(
+            playback, "Notifications",
+            "Desktop notifications are suppressed while SmoothCast is focused.",
+        )
+        self._switch(alerts, "notifications", "Show desktop notifications",
+                     "Notify when a cast finishes, fails or the receiver disappears.")
+
         sound = self._page("Sound & subtitles", "audio-speakers-symbolic")
         audio = self._group(
             sound, "Audio",
@@ -238,7 +245,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
-        elif key in ("auto_crop", "auto_deinterlace"):
+        elif key in ("auto_crop", "auto_deinterlace", "notifications"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:

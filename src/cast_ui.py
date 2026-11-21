@@ -18,6 +18,7 @@ import watch_history
 import responsive_layout
 
 import buffer_health
+import notifications
 import playback_state
 import progress_model
 import text_fit
@@ -838,11 +839,41 @@ class UiMixin:
 
     def _set_device_badge(self, label: str, state: str = "") -> None:
         badge = self.device_status_badge
-        for previous in ("online", "offline"):
-            badge.remove_css_class(previous)
+        previous_label = badge.get_text()
+        for previous_class in ("online", "offline"):
+            badge.remove_css_class(previous_class)
         if state in ("online", "offline"):
             badge.add_css_class(state)
         badge.set_text(label)
+        if label == "OFFLINE" and previous_label != "OFFLINE" and (
+                self.session is not None or self.external):
+            self._notify(notifications.DEVICE_LOST, self._device())
+
+
+    def _notify(self, event: str, detail: str = "") -> None:
+        """Post a desktop notification without presenting or focusing the window."""
+        try:
+            active = bool(self.is_active())
+        except Exception:
+            active = False
+        if not notifications.should_notify(self.cfg, event, window_active=active):
+            return
+        if event == notifications.FINISHED:
+            title = "Playback finished"
+            name = pathlib.Path(detail).name if detail else ""
+            body = f"{name} finished playing." if name else "The cast finished."
+        elif event == notifications.ERROR:
+            title = "Cast failed"
+            body = detail or "The cast failed."
+        else:
+            title = "Receiver lost"
+            body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
+        try:
+            notification = Gio.Notification.new(title)
+            notification.set_body(body)
+            self.app.send_notification(None, notification)
+        except Exception as exc:
+            self._console(f"Notification unavailable: {exc}")
 
 
     def _set_chip(self, label: str, kind: str) -> None:

@@ -62,6 +62,7 @@ DEFAULTS: dict = {
     "direct": True,
     "autonext": False,
     "auto_shutdown": False,
+    "notifications": True,  # Desktop notifications when the window is unfocused (#267)
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
     "accent": "default",  # Accent colour preset; "default" adds no override (#135).

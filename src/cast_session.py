@@ -757,6 +757,7 @@ class SessionMixin:
         self.tracker.clear()
         self.now_playing = None
         self.toast("Finished")
+        self._notify("finished", item or "")
         self._rebuild_queue()
         self._refresh_controls()
 
@@ -1140,6 +1141,7 @@ class SessionMixin:
             self._finished_handled = False
         self.toast(f"Cast failed: {message}", error=True)
         self._console(f"Cast failed: {message}")
+        self._notify("error", message)
         self._refresh_controls()
 
 
