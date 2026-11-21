@@ -203,9 +203,9 @@ class VirginEntrypointTests(unittest.TestCase):
     def test_all_declared_runtime_packages_are_bootstrapped(self):
         import re
         project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        match = re.search(r"(?m)^dependencies = \\[\\n(.*?)^\\]", project, re.S | re.M)
-        self.assertIsNotNone(match)
-        dependencies = re.findall(r'^\\s*"([^"]+)"', match.group(1), re.M)
+        self.assertIn("dependencies = [", project)
+        section = project.split("dependencies = [", 1)[1].split("]", 1)[0]
+        dependencies = re.findall('"([A-Za-z][^"]+)"', section)
         self.assertEqual(set(dependencies), set(bootstrap.PIP_PACKAGES))
         for name in ("psutil", "zeroconf", "smoothcast"):
             self.assertIn(name, bootstrap.PROJECT_DEPENDENCIES_CHECK)
