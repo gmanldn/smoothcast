@@ -10,6 +10,7 @@ import sys
 import threading
 import json
 import time
+from unittest import mock
 
 import pytest
 
@@ -858,13 +859,59 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
             extra_headers={"Content-Range": "bytes 0-5/6"},
             content_type="application/octet-stream")
         assert status == 200
-        status, raw, _ = rig.request(
-            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
-            csrf=login_result["csrf"], origin=origin)
-        assert status == 202
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video) as probe:
+            status, raw, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            dispatch_count = len(rig.calls)
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            assert len(rig.calls) == dispatch_count
+            assert probe.call_count == 1
         assert decode(raw)["message"] == "Added to the shared queue."
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_queue_only_upload_rejects_invalid_media_without_dispatch(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads", {"name": "broken.mkv", "size": 6, "queue": True},
+            cookie=cookie, csrf=login_result["csrf"], origin=origin,
+        )
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"broken", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 0-5/6"},
+            content_type="application/octet-stream",
+        )
+        assert status == 200
+        with mock.patch("streamer.ffprobe", side_effect=RuntimeError("bad media")):
+            status, body, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin,
+            )
+        assert status == 422
+        assert decode(body)["error"] == "The uploaded file is not readable media"
+        assert rig.calls == []
+        assert not (uploads.root / f"{upload_id}.mkv").exists()
     finally:
         rig.close()
         uploads.close()
@@ -1050,9 +1097,13 @@ def test_upload_defaults_to_queue_when_intent_is_omitted(tmp_path):
             origin=origin, extra_headers={"Content-Range": "bytes 3-5/6"},
             content_type="application/octet-stream")
         assert status == 200
-        status, _, _ = rig.request(
-            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
-            csrf=csrf, origin=origin)
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video):
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=csrf, origin=origin)
         assert status == 202
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"

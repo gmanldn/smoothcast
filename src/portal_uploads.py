@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import hmac
+import math
 import os
 from pathlib import Path
 import re
@@ -184,7 +185,7 @@ class _Upload:
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
-    audio_validated: bool = False
+    media_validated: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -466,7 +467,7 @@ class UploadManager:
                         if os.name != "nt":
                             raise
                     upload.complete_path = destination
-            if upload.audio_only and not upload.audio_validated:
+            if upload.queue_only and not upload.media_validated:
                 try:
                     import streamer
                     media = streamer.ffprobe(upload.complete_path)
@@ -476,18 +477,28 @@ class UploadManager:
                     upload.complete_path = None
                     upload.cancelled = True
                     upload.partial_path.unlink(missing_ok=True)
-                    raise UploadError(422, "The uploaded file is not readable audio") from exc
-                if (not media.is_audio_only or not media.audio_streams
-                        or not 0 < media.duration <= MAX_AUDIO_DURATION_SECONDS):
+                    message = ("The uploaded file is not readable audio" if upload.audio_only
+                               else "The uploaded file is not readable media")
+                    raise UploadError(422, message) from exc
+                duration_valid = math.isfinite(media.duration) and media.duration > 0
+                playable = bool(media.audio_streams or media.has_video)
+                audio_valid = (not upload.audio_only or (
+                    media.is_audio_only and bool(media.audio_streams)
+                    and duration_valid and media.duration <= MAX_AUDIO_DURATION_SECONDS
+                ))
+                if not playable or not duration_valid or not audio_valid:
                     if upload.complete_path != upload.partial_path:
                         upload.complete_path.unlink(missing_ok=True)
                     upload.complete_path = None
                     upload.cancelled = True
                     upload.partial_path.unlink(missing_ok=True)
-                    raise UploadError(
-                        422, "Choose a readable audio file up to 24 hours long",
+                    message = (
+                        "Choose a readable audio file up to 24 hours long"
+                        if upload.audio_only else
+                        "Choose a readable audio or video file with a playable track"
                     )
-                upload.audio_validated = True
+                    raise UploadError(422, message)
+                upload.media_validated = True
             should_dispatch = not upload.cast_submitted
             upload.cast_submitted = True
             return upload.complete_path, upload.name, should_dispatch
