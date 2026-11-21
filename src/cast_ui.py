@@ -603,14 +603,14 @@ class UiMixin(BookmarkUiMixin):
         )
         self.portal_activity_label.add_css_class("section-caption")
         body.append(self.portal_activity_label)
-        body.append(Gtk.Label(label="Nearby SmoothCast hosts", xalign=0.0))
+        nearby_hosts = Gtk.Expander(label="Nearby SmoothCast hosts")
         self.portal_peers_box = Gtk.Box(
             orientation=Gtk.Orientation.VERTICAL, spacing=4,
         )
         self.portal_peers_box.append(Gtk.Label(
             label="Looking for SmoothCast hosts…", xalign=0.0, wrap=True,
         ))
-        body.append(self.portal_peers_box)
+        nearby_hosts.set_child(self.portal_peers_box)
         body.append(Gtk.Label(label="Address", xalign=0.0))
         self.portal_url_label = Gtk.Label(
             label="—", xalign=0.0, wrap=False, selectable=True,
@@ -679,6 +679,7 @@ class UiMixin(BookmarkUiMixin):
         self.portal_end_access_button.connect(
             "clicked", self._portal_confirm_end_access)
         body.append(self.portal_end_access_button)
+        body.append(nearby_hosts)
         return card
 
     def _build_details_card(self) -> Gtk.Box:
