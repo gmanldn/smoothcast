@@ -13,7 +13,10 @@ clear Up Next, start a title, skip forward/back, and use play/pause, stop, seek
 and volume. Clearing Up Next never stops or replaces the active cast.
 Queue moves, removals and clears carry the latest queue revision; if another
 client or the desktop changes the order first, the stale edit is rejected and
-the dashboard refreshes before the user retries.
+the dashboard refreshes before the user retries. Edits also use per-participant
+command IDs: an identical retry returns its original receipt, while reusing an
+ID for a different edit is rejected. Recent receipts are held in a bounded
+two-minute cache.
 The room also shows live presence and a bounded activity feed. Votes are a
 visible signal and are preserved across refreshes; queue order remains under
 the room's control so nobody's film can be silently displaced.

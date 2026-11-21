@@ -123,10 +123,15 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     for index, client in enumerate(clients):
         item_id = f"item-{index}"
         status, _body, _headers = client.action(
-            {"action": "queue_move", "id": item_id, "position": 0},
+            {"action": "queue_move", "id": item_id, "position": 0,
+             "queue_revision": 0,
+             "queue_command_id": f"{client.participant_id}-move"},
         )
         assert status == 202
-        status, _body, _headers = client.action({"action": "queue_remove", "id": item_id})
+        status, _body, _headers = client.action({
+            "action": "queue_remove", "id": item_id, "queue_revision": 0,
+            "queue_command_id": f"{client.participant_id}-remove",
+        })
         assert status == 202
 
     status, final, _headers = clients[0].status()

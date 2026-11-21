@@ -6,7 +6,7 @@ and are dispatched onto the GTK main context by the application layer.
 """
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
@@ -37,6 +37,8 @@ ATTEMPT_WINDOW_SECONDS = 60
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
+QUEUE_COMMAND_TTL = 120.0
+QUEUE_COMMAND_CAPACITY = 512
 
 
 @dataclass
@@ -121,6 +123,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
         self._lock = threading.Lock()
+        self._queue_command_lock = threading.Lock()
+        self._queue_command_cache: OrderedDict[tuple[str, str], tuple] = OrderedDict()
         self._sessions: dict[str, _Session] = {}
         self.queue_ids: set[str] = set()
         self._attempts: dict[str, deque[float]] = {}
@@ -224,6 +228,55 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self._sessions.pop(key, None)
                 return None
             return session.participant_id
+
+    def execute_queue_command(self, participant_id: str, body: dict) -> tuple[int, str]:
+        """Serialize queue edits and replay the receipt for an identical request."""
+        command_id = body.get("queue_command_id")
+        revision = body.get("queue_revision")
+        if (not isinstance(command_id, str)
+                or re.fullmatch(r"[A-Za-z0-9:_.-]{1,128}", command_id) is None):
+            return 400, "Queue command ID is invalid"
+        if (isinstance(revision, bool) or not isinstance(revision, int)
+                or not 0 <= revision < 2**63):
+            return 400, "Queue revision is invalid"
+        try:
+            fingerprint = hashlib.sha256(json.dumps({
+                "participant": participant_id,
+                "body": {key: value for key, value in body.items()
+                         if key != "queue_command_id"},
+            }, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        except (TypeError, ValueError):
+            return 400, "Queue command is invalid"
+        key = (participant_id, command_id)
+        with self._queue_command_lock:
+            now = self.clock()
+            for old_key, entry in list(self._queue_command_cache.items()):
+                if entry[0] <= now:
+                    self._queue_command_cache.pop(old_key, None)
+            cached = self._queue_command_cache.get(key)
+            if cached is not None:
+                self._queue_command_cache.move_to_end(key)
+                if cached[1] != fingerprint:
+                    return 409, "Queue command ID was already used with different data"
+                return cached[2], cached[3]
+            action = body.get("action")
+            try:
+                message = self.dispatch(action, body)
+                self.room.record(participant_id, "action", {
+                    "action": action, "id": body.get("id"),
+                })
+                status, result = 202, str(message or "Queue updated")
+            except PortalRequestError as exc:
+                status, result = exc.status, exc.message
+            except Exception:
+                status, result = 503, "SmoothCast could not accept that queue edit"
+            self._queue_command_cache[key] = (
+                now + QUEUE_COMMAND_TTL, fingerprint, status, result,
+            )
+            self._queue_command_cache.move_to_end(key)
+            while len(self._queue_command_cache) > QUEUE_COMMAND_CAPACITY:
+                self._queue_command_cache.popitem(last=False)
+            return status, result
 
     def pin_allowed(self, client: str, pin: str) -> bool:
         now = self.clock()
@@ -530,8 +583,19 @@ class _Handler(BaseHTTPRequestHandler):
                             return self._error(exc.status, exc.message)
                         return self._send(202, {"ok": True, "message": "Vote saved",
                                                 "vote": result})
-                    if action in {"next", "previous", "queue_play", "queue_remove",
-                                  "queue_move", "queue_clear"}:
+                    if action in {"queue_remove", "queue_move", "queue_clear"}:
+                        status, message = self.server.execute_queue_command(
+                            participant_id, body,
+                        )
+                        if status >= 400:
+                            return self._error(status, message, **(
+                                {"conflict": True} if status == 409 else {}
+                            ))
+                        return self._send(status, {
+                            "ok": True, "message": message,
+                            "queue_command_id": body.get("queue_command_id"),
+                        })
+                    if action in {"next", "previous", "queue_play"}:
                         try:
                             result = self.server.dispatch(action, body)
                         except PortalRequestError as exc:
@@ -807,7 +871,7 @@ progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
 <script>
-let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null,queueRevision=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
 $("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim(),name:$("name").value.trim()});csrf=d.csrf;$("displayName").value=d.participant.name;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
@@ -823,7 +887,7 @@ function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=
 function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");activity.replaceChildren();if(room&&room.activity)for(const event of [...room.activity].slice(-12).reverse()){const line=document.createElement("div");line.className="ev";const time=document.createElement("time");time.textContent=new Date(event.at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});const text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activity.append(line)}}
 function renderPeers(peers,available){const list=$("peers");list.replaceChildren();if(!available||!Array.isArray(peers)||!peers.length){const empty=document.createElement("li");empty.className="empty";empty.textContent=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";list.append(empty);return}const counts=new Map();for(const peer of peers){const key=String(peer.name||"").toLowerCase();counts.set(key,(counts.get(key)||0)+1)}for(const peer of peers){const item=document.createElement("li"),name=peer.name||"SmoothCast host",label=name+(counts.get(String(name).toLowerCase())>1?" · "+String(peer.id||"").slice(0,6):"");if(!peer.compatible){item.textContent=label+" · incompatible version"}else{const link=document.createElement("a");link.textContent=label;link.href=peer.url;link.target="_blank";link.rel="noopener noreferrer";item.append(link,document.createTextNode(" · video upload and Cast control after PIN"))}list.append(item)}}
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
-async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(["queue_remove","queue_move","queue_clear"].includes(action))body.queue_revision=queueRevision;if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+async function act(action,value,extra={}){if(busy)return;busy=true;try{const body={action,...extra};if(["queue_remove","queue_move","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 $("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));

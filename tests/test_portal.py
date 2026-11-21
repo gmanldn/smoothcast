@@ -132,7 +132,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
-    assert "queue_revision=queueRevision" in page
+    assert "queue_revision=queueRevision" in page and "body.queue_command_id=`q" in page
     assert "Add to the shared queue" in page
 
 
@@ -245,16 +245,40 @@ def test_queue_actions_are_forwarded_to_the_gui(rig):
     _, result, cookie = login(rig)
     rig.request("GET", "/api/status", cookie=cookie)
     origin = f"http://{rig.host}"
-    for action, extra in (
+    for index, (action, extra) in enumerate((
             ("next", {}), ("previous", {}),
             ("queue_play", {"id": "one"}),
             ("queue_remove", {"id": "one"}),
             ("queue_move", {"id": "one", "position": 0}),
-            ("queue_clear", {})):
+            ("queue_clear", {}))):
         payload = {"action": action, **extra}
+        if action in {"queue_remove", "queue_move", "queue_clear"}:
+            payload.update(queue_command_id=f"test-{index}", queue_revision=0)
         status, body, _ = rig.request("POST", "/api/action", payload, cookie=cookie,
                                       csrf=result["csrf"], origin=origin)
         assert status == 202, (action, body)
+
+
+def test_queue_command_id_replays_and_rejects_altered_payload(rig):
+    _, result, cookie = login(rig)
+    origin = f"http://{rig.host}"
+    command = {"action": "queue_clear", "queue_revision": 0,
+               "queue_command_id": "clear-once"}
+
+    first_status, first_body, _ = rig.request(
+        "POST", "/api/action", command, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+    replay_status, replay_body, _ = rig.request(
+        "POST", "/api/action", command, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+    altered_status, _, _ = rig.request(
+        "POST", "/api/action", {**command, "queue_revision": 1}, cookie=cookie,
+        csrf=result["csrf"], origin=origin)
+
+    assert first_status == replay_status == 202
+    assert decode(first_body) == decode(replay_body)
+    assert altered_status == 409
+    assert [action for action, _ in rig.calls].count("queue_clear") == 1
 
 
 def test_bad_pin_is_rate_limited_per_client(rig):
