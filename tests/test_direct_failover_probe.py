@@ -214,7 +214,6 @@ def test_receiver_acceptance_or_unknown_status_keeps_direct_cast():
 
 def test_foreign_active_stream_blocks_auto_hls_and_never_sends_stop():
     """INV-003: Foreign playback must not trigger HLS fallback or Stop."""
-    """INV-003: Foreign active playback must not trigger HLS fallback or Stop."""
     work, first, second, probe, fake = cast_worker(status="unimportant")
     probe.side_effect = direct_probe.ForeignPlayback("foreign stream")
     with pytest.raises(direct_probe.ForeignPlayback):
