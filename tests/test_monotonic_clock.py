@@ -10,8 +10,11 @@ import portal_room
 def test_wall_clock_jumps_do_not_change_presence_or_session_expiry():
     monotonic = [1000.0]
     wall = [1700000000.0]
-    clock = lambda: monotonic[0]
-    wall_clock = lambda: wall[0]
+    def clock():
+        return monotonic[0]
+
+    def wall_clock():
+        return wall[0]
     room = portal_room.PortalRoom(clock=clock, wall_clock=wall_clock)
     server = portal._PortalHTTPServer(
         ("127.0.0.1", 0), "234567", lambda *_args: {},
