@@ -488,6 +488,10 @@ def set_muted(renderer: Renderer, muted: bool) -> None:
                                 "DesiredMute": "1" if muted else "0"}, rendering=True)
 
 
+class _DLNAMediaHTTPServer(ThreadingHTTPServer):
+    media_type: str
+
+
 class ProgressiveFileServer:
     """Serve one receiver-compatible movie with byte ranges and an ephemeral URL."""
 
@@ -527,7 +531,7 @@ class ProgressiveFileServer:
                     return self.request_version == "HTTP/1.0"
                 if len(hosts) != 1:
                     return False
-                if not isinstance(self.server, ThreadingHTTPServer):
+                if not isinstance(self.server, _DLNAMediaHTTPServer):
                     return False
                 host = hosts[0].strip()
                 return host in {
@@ -541,6 +545,8 @@ class ProgressiveFileServer:
                 self._serve(True)
 
             def _serve(self, body: bool) -> None:
+                if not isinstance(self.server, _DLNAMediaHTTPServer):
+                    return
                 if self.client_address[0] not in allowed or self.path != resource:
                     self.send_error(404)
                     return
@@ -605,7 +611,7 @@ class ProgressiveFileServer:
                 self.end_headers()
 
         try:
-            self.httpd = ThreadingHTTPServer((bind_ip, 0), Handler)
+            self.httpd = _DLNAMediaHTTPServer((bind_ip, 0), Handler)
         except OSError as exc:
             raise DlnaError(f"Cannot listen for DLNA on {bind_ip}: {exc}") from exc
         self.httpd.daemon_threads = True

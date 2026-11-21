@@ -373,7 +373,7 @@ class DlnaRangeServerTests(unittest.TestCase):
 
     def test_receiver_routed_binding_is_exact_and_never_wildcard(self):
         # No NIC or TV required: assert the actual socket bind arguments.
-        with mock.patch.object(dlna, "ThreadingHTTPServer") as server_class, \
+        with mock.patch.object(dlna, "_DLNAMediaHTTPServer") as server_class, \
              mock.patch.object(dlna.threading, "Thread"):
             routed = dlna.ProgressiveFileServer(
                 self.path, receiver_ip="192.168.12.25",
