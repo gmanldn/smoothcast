@@ -16,6 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import preflight
+import reliability_metrics
 import server as hls_server
 import streamer
 from fakecast.receiver import CastMessage, FakeCastReceiver, NS_MEDIA
@@ -190,6 +191,7 @@ class AudioOnlyMediaTests(unittest.TestCase):
         namespace = {
             "pathlib": pathlib,
             "playback_state": __import__("playback_state"),
+            "reliability_metrics": reliability_metrics,
             "Async": type("Async", (), {
                 "run": staticmethod(lambda work, done=None, failed=None, **_kw:
                                      done(work()) if done else work()),
