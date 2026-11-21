@@ -261,8 +261,8 @@ class SessionMixin:
             if session.mode == "transcode":
                 profile = cfg["audio"]
                 gain = session.state.audio_gain_db if session.state else 0.0
-                mode = getattr(session.state, "audio_loudness", "off") if session.state else "off"
-                chain, hint = streamer.monitor_summary(profile, gain, mode)
+                chain, hint = streamer.monitor_summary(
+                    profile, gain, streamer.state_loudness(session.state))
             else:
                 chain = []
                 hint = ("DLNA progressive MP4"
@@ -608,8 +608,8 @@ class SessionMixin:
             self._update_audio_choices(media_result)
             self.busy = False
             gain = _session.state.audio_gain_db if _session.state else 0.0
-            mode = getattr(_session.state, "audio_loudness", "off") if _session.state else "off"
-            chain, hint = streamer.monitor_summary(audio, gain, mode)
+            chain, hint = streamer.monitor_summary(
+                audio, gain, streamer.state_loudness(_session.state))
             self._start_monitor(media_result.path, target, chain)
             self._set_levels_hint(hint)
             self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
@@ -937,7 +937,7 @@ class SessionMixin:
             gain = state.audio_gain_db
             if session.mode == "transcode":
                 chain, hint = streamer.monitor_summary(
-                    state.audio, gain, getattr(state, "audio_loudness", "off"))
+                    state.audio, gain, streamer.state_loudness(state))
             else:
                 chain = []
                 hint = "Original audio (direct play)"
@@ -1148,8 +1148,9 @@ class SessionMixin:
 
 
     def _skip(self, delta: float) -> None:
-        position = (self._preview_position if self.session is None and self._preview_path is not None
-                    and not self.external else self.tracker.value())
+        preview = (self.session is None and self._preview_path is not None
+                   and not self.external)
+        position = self._preview_position if preview else self.tracker.value()
         if position is None:
             self.toast("Position unknown — nothing to skip in")
             return

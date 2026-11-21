@@ -159,6 +159,11 @@ def audio_filters(profile: str, gain_db: float = 0.0,
     return filters
 
 
+def state_loudness(state) -> str:
+    """Loudness mode recorded on a session state, including older states."""
+    return getattr(state, "audio_loudness", loudness.DEFAULT) if state else loudness.DEFAULT
+
+
 def monitor_summary(profile: str, gain_db: float,
                     loudness_mode: str = loudness.DEFAULT) -> tuple[list, str]:
     """Metering chain and a concise hint for the current audio settings."""
