@@ -51,6 +51,7 @@ class GuiTestSafetyTests(unittest.TestCase):
         self.assertIn("os.environ.pop(name, None)", source)
 
     def test_live_desktop_refused_even_when_selftest_argument_explicit(self):
+        """INV-009: Headless tests must never touch the user's active desktop."""
         for env in (
             {},
             {"DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0"},
