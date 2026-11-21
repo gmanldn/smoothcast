@@ -90,14 +90,19 @@ class PortalQueueMixin:
             self._remove_queue(self._portal_queue_index(payload.get("id")))
             self._portal_observe_queue()
             return "Removed from the queue."
-        if operation == "queue_next":
-            # Insert-next is a fenced move to the front; it never touches playback.
-            self._portal_queue_action("queue_move", {**payload, "position": 0})
-            return "Will play next."
-        if operation == "queue_move":
+        if operation in {"queue_move", "queue_next"}:
             self._portal_check_queue_revision(payload)
             item_id, position = payload.get("id"), payload.get("position")
             index = self._portal_queue_index(item_id)
+            if operation == "queue_next":
+                current = self.now_playing or getattr(self, "_local_video_path", None)
+                if self.queue[index] == current:
+                    raise portal.PortalRequestError(409, "That item is already playing")
+                if current in self.queue:
+                    current_index = self.queue.index(current)
+                    position = current_index + int(index > current_index)
+                else:
+                    position = 0
             if type(position) is not int or not 0 <= position < len(self.queue):
                 raise portal.PortalRequestError(400, "Queue position is outside the queue")
             selected = getattr(self, "selected_index", None)
@@ -110,7 +115,7 @@ class PortalQueueMixin:
                                    if selected_path in self.queue else None)
             self._rebuild_queue()
             self._portal_observe_queue()
-            return "Queue order updated."
+            return "Queued next." if operation == "queue_next" else "Queue order updated."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))
             if self.busy:
