@@ -29,9 +29,14 @@ class PortalQueueMixin:
         return self._portal_queue_revision
 
     def _portal_queue_status(self) -> list[dict]:
+        display_names = getattr(self, "_portal_queue_display_names", {})
+        queued_paths = set(self.queue)
+        for path in tuple(display_names):
+            if path not in queued_paths:
+                display_names.pop(path, None)
         rows = [{
             "id": portal_queue_id(path),
-            "title": pathlib.Path(path).name,
+            "title": display_names.get(path, pathlib.Path(path).name),
             "duration": self.queue_durations.get(path, 0.0),
         } for path in self.queue[:100]]
         self._portal_observe_queue()
@@ -72,6 +77,13 @@ class PortalQueueMixin:
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             self._enqueue([str(path)])
+            name = payload.get("name")
+            if isinstance(name, str) and name:
+                display_names = getattr(self, "_portal_queue_display_names", None)
+                if display_names is None:
+                    display_names = {}
+                    self._portal_queue_display_names = display_names
+                display_names[str(path)] = name
             return "Added to the queue."
         if operation == "queue_remove":
             self._portal_check_queue_revision(payload)

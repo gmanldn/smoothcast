@@ -5,7 +5,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 import shutil
 import subprocess
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 import sys
 import threading
 import json
@@ -776,6 +776,93 @@ def test_phone_audio_upload_is_validated_and_forced_into_shared_queue(tmp_path):
         action, payload = rig.calls[-1]
         assert action == "queue_add"
         assert Path(payload["path"]).read_bytes() == data
+    finally:
+        rig.close()
+        uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+                    reason="FFmpeg required")
+def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
+    import portal_uploads
+    import cast_portal_queue
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    queue = []
+    host = SimpleNamespace(
+        _portal=SimpleNamespace(server=SimpleNamespace(uploads=uploads)),
+        busy=False,
+        queue=queue,
+        queue_durations={},
+        _enqueue=lambda paths: queue.extend(paths),
+    )
+    host._portal_upload_path = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_upload_path, host,
+    )
+    host._portal_observe_queue = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_observe_queue, host,
+    )
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        csrf = login_result["csrf"]
+        finalized = []
+        for index, frequency in enumerate((330, 440, 550), start=1):
+            audio = tmp_path / f"guest-track-{index}.mp3"
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", f"sine=frequency={frequency}:duration=0.25", "-c:a",
+                 "libmp3lame", "-y", str(audio)],
+                check=True, capture_output=True, timeout=20,
+            )
+            data = audio.read_bytes()
+            status, raw, _ = rig.request(
+                "POST", "/api/uploads",
+                {"name": audio.name, "size": len(data), "queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 201
+            upload_id = decode(raw)["id"]
+            status, raw, _ = rig.request(
+                "PUT", f"/api/uploads/{upload_id}", data, cookie=cookie,
+                csrf=csrf, origin=origin,
+                extra_headers={"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"},
+                content_type="application/octet-stream",
+            )
+            assert status == 200 and decode(raw)["ready_to_cast"] is False
+            status, raw, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 202 and decode(raw)["message"] == "Added to the shared queue."
+            action, payload = rig.calls[-1]
+            assert action == "queue_add"
+            assert payload["early"] is False
+            cast_portal_queue.PortalQueueMixin._portal_queue_action(
+                host, "queue_add", payload,
+            )
+            finalized.append((upload_id, payload))
+
+            # Retrying completion is accepted but never dispatches the same item again.
+            call_count = len(rig.calls)
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {"queue": False},
+                cookie=cookie, csrf=csrf, origin=origin,
+            )
+            assert status == 202 and len(rig.calls) == call_count
+
+        assert len(queue) == 3
+        assert {row["title"] for row in
+                cast_portal_queue.PortalQueueMixin._portal_queue_status(host)} == {
+            f"guest-track-{index}.mp3" for index in range(1, 4)
+        }
+        assert len({upload_id for upload_id, _payload in finalized}) == 3
+        assert all(Path(payload["path"]).is_file() for _upload_id, payload in finalized)
+        assert all(action != "cast_upload" for action, _payload in rig.calls)
+        queue.clear()
+        assert cast_portal_queue.PortalQueueMixin._portal_queue_status(host) == []
+        assert host._portal_queue_display_names == {}
     finally:
         rig.close()
         uploads.close()
