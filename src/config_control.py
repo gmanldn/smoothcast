@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from contextlib import contextmanager
+import errno
 from itertools import islice
 import json
 import math
@@ -169,6 +170,7 @@ _PROTECTED: set[str] = set()
 _CORRUPT_BACKED_UP: set[str] = set()
 _STATE_LOCK = threading.RLock()
 _BASELINES: dict[str, dict] = {}
+_FILE_LOCKS: dict[str, threading.RLock] = {}
 _MISSING = object()
 
 
@@ -185,31 +187,46 @@ def _remember(path: Path, cfg: dict) -> dict:
 @contextmanager
 def _advisory_lock(path: Path) -> Iterator[None]:
     """Serialize writers across threads and processes on all supported OSes."""
-    lock_path = path.with_name(path.name + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as lock_file:
-        if os.name == "nt":
-            import msvcrt
+    key = _path_key(path)
+    with _STATE_LOCK:
+        thread_lock = _FILE_LOCKS.setdefault(key, threading.RLock())
+    with thread_lock:
+        lock_path = path.with_name(path.name + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock_file:
+            if os.name == "nt":
+                import msvcrt
 
-            lock_file.seek(0)
-            if lock_file.read(1) == b"":
-                lock_file.write(b"0")
-                lock_file.flush()
-            lock_file.seek(0)
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
                 lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
+                if lock_file.read(1) == b"":
+                    lock_file.seek(0)
+                    lock_file.write(b"0")
+                    lock_file.flush()
+                deadline = time.monotonic() + 30
+                while True:
+                    lock_file.seek(0)
+                    try:
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError as exc:
+                        if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("timed out locking SmoothCast settings") from exc
+                        time.sleep(0.01)
+                try:
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _read_object(path: Path) -> dict | None:
