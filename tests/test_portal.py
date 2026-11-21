@@ -1210,3 +1210,63 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
     finally:
         rig.close()
         uploads.close()
+
+
+def test_page_build_is_embedded_and_status_session_expose_schema(rig):
+    html = portal._page().decode("utf-8")
+    assert portal.page_build() in html
+    assert "__SC_BUILD__" not in html
+    assert "__SC_SCHEMA__" not in html
+    assert 'id="updateNotice"' in html
+    assert 'id="reloadNow"' in html
+    assert '"X-SmoothCast-Client-Build":PAGE_BUILD' in html
+    status, session, cookie = login(rig)
+    assert status == 200
+    assert session["build"] == portal.page_build()
+    assert session["client_schema"] == portal.CLIENT_SCHEMA
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    assert decode(body)["build"] == portal.page_build()
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 200
+    assert decode(body)["client_schema"] == portal.CLIENT_SCHEMA
+
+
+def test_stale_browser_mutations_fail_before_dispatch(rig):
+    origin = f"http://{rig.host}"
+    stale = {
+        "X-SmoothCast-Client-Schema": "0",
+        "X-SmoothCast-Client-Build": "old-build",
+    }
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert not rig.server.room.participants
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers={"Sec-Fetch-Mode": "cors"},
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    status, data, cookie = login(rig)
+    assert status == 200
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert rig.calls == []
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin,
+        extra_headers={
+            "X-SmoothCast-Client-Schema": str(portal.CLIENT_SCHEMA),
+            "X-SmoothCast-Client-Build": portal.page_build(),
+        },
+    )
+    assert status == 202
+    assert len(rig.calls) == 1
