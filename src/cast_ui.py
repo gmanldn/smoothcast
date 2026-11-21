@@ -885,6 +885,7 @@ class UiMixin(BookmarkUiMixin):
         add("j", self._skip_back10)
         add("l", self._skip_forward10)
         add("m", self.toggle_mute)
+        add("question", self.action_shortcuts)
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("g", lambda: self._adjust_subtitle_delay(-1))
