@@ -539,7 +539,7 @@ def bookmarks_menu(app, window) -> None:
     items = menu_items(window._build_menu())
     check("Bookmarks menu has add and saved jump actions",
           ("Add bookmark at current position…", "app.bookmark-add") in items
-          and ("Favourite scene — film.mkv (12s)", "app.bookmark-0") in items,
+          and ("Favourite scene — film.mkv (00:12)", "app.bookmark-0") in items,
           repr([item for item in items if "bookmark" in item[1]]))
     check("bookmark actions are registered",
           app.lookup_action("bookmark-add") is not None
