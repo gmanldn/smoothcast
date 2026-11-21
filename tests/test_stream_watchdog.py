@@ -23,6 +23,7 @@ def observe(w, now, *, session=None, epoch=1, state="PLAYING",
 
 
 def test_encoder_stall_restarts_once_and_stays_bounded_across_generation():
+    """INV-002: Exactly one watchdog restart is permitted per owned stream."""
     w = stream_watchdog.StreamWatchdog(encoder_timeout=20, receiver_timeout=35)
     assert observe(w, 0) is None
     assert observe(w, 10, encoded=11, received=6) is None
