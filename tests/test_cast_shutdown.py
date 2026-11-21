@@ -21,6 +21,7 @@ def lifecycle_type():
     namespace = {
         "threading": threading, "save_config": lambda _: None,
         "reliability_metrics": reliability_metrics, "Async": mock.Mock(),
+        "peer_discovery_ui": mock.Mock(),
     }
     exec(compile(code, "<lifecycle-test>", "exec"), namespace)
     return namespace["Lifecycle"]
