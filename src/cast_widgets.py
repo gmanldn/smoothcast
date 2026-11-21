@@ -71,6 +71,7 @@ DEFAULTS: dict = {
     "recents": [],
     "favourites": [],
     "watch_history": [],
+    "bookmarks": [],
     "positions": {},
     "loop": False,
     "loop_all": False,

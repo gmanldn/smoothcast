@@ -311,9 +311,11 @@ class CastControlApp(Adw.Application):
         simple("benchmark", lambda *a: self._window().action_benchmark())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("favourite", lambda *a: self._window()._toggle_favourite())
+        simple("bookmark-add", lambda *a: self._window()._add_bookmark())
         simple("pin-receiver", lambda *a: self._window()._toggle_device_favourite())
         simple("clear-history", lambda *a: self._window()._clear_watch_history())
         simple("clear-favourites", lambda *a: self._window()._clear_favourites())
+        simple("clear-bookmarks", lambda *a: self._window()._clear_bookmarks())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
@@ -323,6 +325,10 @@ class CastControlApp(Adw.Application):
         for index in range(16):
             action = Gio.SimpleAction.new(f"favourite-{index}", None)
             action.connect("activate", lambda _a, _p, i=index: self._window()._open_favourite(i))
+            self.add_action(action)
+        for index in range(64):
+            action = Gio.SimpleAction.new(f"bookmark-{index}", None)
+            action.connect("activate", lambda _a, _p, i=index: self._window()._open_bookmark(i))
             self.add_action(action)
         scheme = Gio.SimpleAction.new_stateful(
             "color-scheme", GLib.VariantType.new("s"), GLib.Variant("s", "prefer-dark")

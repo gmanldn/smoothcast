@@ -530,6 +530,26 @@ def audio_delay_menu(app, window) -> None:
     check("another film starts with no delay", window.cfg["audio_delay_by_file"].get(window._preview_path) is None)
 
 
+def bookmarks_menu(app, window) -> None:
+    """Named bookmark actions appear in the real menu and clear safely (#117)."""
+    window.cfg["bookmarks"] = [{
+        "fingerprint": "a" * 64, "name": "Favourite scene", "media": "film.mkv",
+        "position": 12.0, "created": 1.0,
+    }]
+    items = menu_items(window._build_menu())
+    check("Bookmarks menu has add and saved jump actions",
+          ("Add bookmark at current position…", "app.bookmark-add") in items
+          and ("Favourite scene — film.mkv (12s)", "app.bookmark-0") in items,
+          repr([item for item in items if "bookmark" in item[1]]))
+    check("bookmark actions are registered",
+          app.lookup_action("bookmark-add") is not None
+          and app.lookup_action("bookmark-0") is not None
+          and app.lookup_action("clear-bookmarks") is not None)
+    app.lookup_action("clear-bookmarks").activate(None)
+    pump(0.2)
+    check("Clear bookmarks empties the list", window.cfg["bookmarks"] == [])
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
@@ -538,7 +558,8 @@ SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-probl
              "audio-delay": audio_delay_menu,
              "subtitle-style": subtitle_style_choice,
              "subtitle-style-saved": subtitle_style_saved,
-             "subtitle-style-junk": subtitle_style_junk}
+             "subtitle-style-junk": subtitle_style_junk,
+             "bookmarks": bookmarks_menu}
 
 
 class CheckApp(cast_control.CastControlApp):

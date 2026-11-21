@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 
 import audio_delay
+import bookmarks
 import cache_policy
 import subtitle_delay
 import accent
@@ -86,6 +87,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                             "position": float(position), "at": float(at),
                         })
                 cfg[key] = clean[:watch_history.LIMIT]
+        elif key == "bookmarks":
+            cfg[key] = bookmarks.clean(value)
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (

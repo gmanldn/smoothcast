@@ -364,6 +364,8 @@ Opening a previously watched video can resume from its saved position. An intent
 
 When one film finishes, the UI holds incoming cast commands until the old server and HLS files have been cleaned up, avoiding overlap between sessions. Once the TV reports that a movie ended, cleanup does not send an unnecessary second Stop command that might interrupt other playback.
 
+**Bookmarks** save named positions in the current local film. They survive restarts and file moves because each marker is tied to a SHA-256 content fingerprint rather than the path; opening a bookmark on different media is refused. Use the **Bookmarks** menu to add a marker at the current position, jump to a saved marker, or clear all markers. Bookmark names and positions are bounded and validated when configuration is loaded.
+
 ## Responsive sizing
 
 The application no longer requires fullscreen or a 1400-pixel-wide minimum window. Saved startup dimensions are bounded by the detected monitor's logical geometry, leaving space for decorations. Layout automatically reflows on resize: **1180+ logical px** shows two columns; narrower widths stack cards. Transport controls and action buttons wrap as needed, preview height and card padding become more compact, and one outer vertical scroller keeps every card accessible even when the window is shorter than the full interface. Resizing wider restores the two-column layout. The app avoids shrinking controls to unreadable sizes.

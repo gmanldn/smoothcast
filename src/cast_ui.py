@@ -13,6 +13,7 @@ import time
 
 from utils import pretty_title
 import cast_targets
+import bookmarks
 import watch_history
 
 import responsive_layout
@@ -162,6 +163,16 @@ class UiMixin:
         if self.cfg["favourites"]:
             favourites.append("Clear favourites", "app.clear-favourites")
         section.append_submenu("Favourites", favourites)
+        markers = Gio.Menu()
+        markers.append("Add bookmark at current position…", "app.bookmark-add")
+        for index, item in enumerate(bookmarks.clean(self.cfg.get("bookmarks"))):
+            markers.append(
+                f"{item['name']} — {item['media']} ({fmt_time(item['position'])})",
+                f"app.bookmark-{index}",
+            )
+        if self.cfg.get("bookmarks"):
+            markers.append("Clear bookmarks", "app.clear-bookmarks")
+        section.append_submenu("Bookmarks", markers)
         menu.append_section(None, section)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
@@ -1269,6 +1280,96 @@ class UiMixin:
             self.toast("That file has moved or been deleted", error=True)
             return
         self.open_paths([str(path)])
+
+
+    def _bookmark_current(self) -> tuple[str | None, float | None]:
+        previewing = self.session is None and self._preview_path is not None
+        path = self._preview_path if previewing else self.now_playing
+        position = self._preview_position if previewing else self.tracker.value()
+        return path, position
+
+
+    def _add_bookmark(self) -> None:
+        path, position = self._bookmark_current()
+        if not path or position is None:
+            self.toast("Open or play a local video before saving a bookmark", error=True)
+            return
+        media = pathlib.Path(path).name
+        position = max(0.0, float(position))
+        self.toast("Identifying media for the bookmark…")
+        Async.run(
+            lambda: bookmarks.fingerprint(path),
+            done=lambda digest: self._prompt_bookmark_name(path, media, position, digest),
+            failed=lambda message: self.toast(f"Could not identify media: {message}", error=True),
+        )
+
+
+    def _prompt_bookmark_name(self, path: str, media: str, position: float,
+                              digest: str) -> None:
+        entry = Gtk.Entry()
+        entry.set_text(f"Bookmark {len(bookmarks.clean(self.cfg.get('bookmarks'))) + 1}")
+        entry.set_max_length(bookmarks.MAX_LABEL)
+        entry.set_activates_default(True)
+        dialog = Adw.AlertDialog.new("Save bookmark", f"{media} at {fmt_time(position)}")
+        dialog.set_extra_child(entry)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("save", "Save")
+        dialog.set_default_response("save")
+        dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+
+        def response(_dialog, result):
+            if result != "save":
+                return
+            active_path, _ = self._bookmark_current()
+            if active_path != path:
+                self.toast("Playback changed; save the bookmark again", error=True)
+                return
+            try:
+                self.cfg["bookmarks"] = bookmarks.add(
+                    self.cfg.get("bookmarks"), digest, entry.get_text(), media,
+                    position, time.time(),
+                )
+            except ValueError as exc:
+                self.toast(str(exc), error=True)
+                return
+            save_config(self.cfg)
+            self.menu_button.set_menu_model(self._build_menu())
+            self.toast(f"Saved bookmark: {entry.get_text().strip()}")
+
+        dialog.connect("response", response)
+        dialog.present(self)
+
+
+    def _open_bookmark(self, index: int) -> None:
+        item = bookmarks.at(self.cfg.get("bookmarks"), index)
+        if item is None:
+            return
+        path, _ = self._bookmark_current()
+        if not path:
+            self.toast(f"Open {item['media']} before returning to this bookmark", error=True)
+            return
+        self.toast("Checking bookmark media…")
+
+        def verified(digest: str) -> None:
+            active_path, _ = self._bookmark_current()
+            if active_path != path:
+                self.toast("Playback changed; choose the bookmark again", error=True)
+            elif digest != item["fingerprint"]:
+                self.toast(f"This bookmark belongs to {item['media']}; open that file first", error=True)
+            else:
+                self.seek_to(item["position"])
+
+        Async.run(
+            lambda: bookmarks.fingerprint(path), done=verified,
+            failed=lambda message: self.toast(f"Could not verify bookmark: {message}", error=True),
+        )
+
+
+    def _clear_bookmarks(self) -> None:
+        self.cfg["bookmarks"] = []
+        save_config(self.cfg)
+        self.menu_button.set_menu_model(self._build_menu())
+        self.toast("Bookmarks cleared")
 
 
     def _note_device_used(self) -> None:
