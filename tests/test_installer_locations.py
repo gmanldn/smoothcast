@@ -210,6 +210,28 @@ class VirginEntrypointTests(unittest.TestCase):
         for name in ("psutil", "zeroconf", "smoothcast"):
             self.assertIn(name, bootstrap.PROJECT_DEPENDENCIES_CHECK)
 
+    def test_project_runtime_version_ranges(self):
+        import importlib.metadata
+        import types
+        cases = [
+            ("5.8.0", "0.132.0", False),
+            ("5.9.0", "0.131.9", False),
+            ("5.9.0", "0.132.0", True),
+            ("7.8.0", "0.200.1", True),
+            ("8.0.0", "0.132.0", False),
+            ("6.1.0", "1.0.0", False),
+        ]
+        modules = {name: types.ModuleType(name) for name in ('psutil', 'zeroconf')}
+        for psutil, zeroconf, accepted in cases:
+            versions = {'smoothcast': '3.2.0', 'psutil': psutil, 'zeroconf': zeroconf}
+            with self.subTest(psutil=psutil, zeroconf=zeroconf), \
+                 mock.patch.dict(sys.modules, modules), \
+                 mock.patch.object(importlib.metadata, 'version',
+                                   side_effect=lambda name: versions[name]):
+                with self.assertRaises(SystemExit) as result:
+                    exec(compile(bootstrap.PROJECT_DEPENDENCIES_CHECK,
+                                 '<runtime-check>', 'exec'), {})
+                self.assertEqual(result.exception.code == 0, accepted)
     def test_windows_icon_is_actual_ico_container(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
