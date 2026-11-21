@@ -41,12 +41,12 @@ CAST_DEPENDENCIES_CHECK = (
     "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',p); "
     "pv=tuple(map(int,pc.groups())) if pc else (); "
     "sys.exit(0 if c and (int(c[1]),int(c[2])) >= (0,12) "
-    "and pc and (14,1,1) <= pv < (15,0,0) else 1)"
+    "and pc and (13,1,0) <= pv < (15,0,0) else 1)"
 )
 # pip dependencies installed into the isolated runtime. Keep in sync with the
 # `dependencies` list in pyproject.toml; the project itself is installed in
 # editable mode alongside these, and there is no separate requirements file.
-PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=14.1.1,<15")
+PIP_PACKAGES = ("catt>=0.12,<0.14", "PyChromecast>=13.1.0,<15")
 # A compromised or corrupt release asset must never exhaust the local disk.
 MAX_MSYS2_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 # Reviewed immutable Homebrew installer (2026-11-18); update commit and digest
@@ -434,7 +434,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
             raise SetupError("SmoothCast virtual environment is missing or cannot load GTK.")
         if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
             raise SetupError(
-                "catt >= 0.12, < 0.14 and PyChromecast >= 14.1.1, < 15 "
+                "catt >= 0.12, < 0.14 and PyChromecast >= 13.1.0, < 15 "
                 "are not installed in SmoothCast's environment."
             )
         missing = check_tools(env)
@@ -477,7 +477,7 @@ def ensure_venv(python: Path, env: dict[str, str], *,
                          "-e", str(ROOT)], env=env)
         if not works(installed, CAST_DEPENDENCIES_CHECK, env=env):
             raise SetupError(
-                "catt >= 0.12, < 0.14 and PyChromecast >= 14.1.1, < 15 "
+                "catt >= 0.12, < 0.14 and PyChromecast >= 13.1.0, < 15 "
                 "are not installed in SmoothCast's environment."
             )
         missing = check_tools(env)

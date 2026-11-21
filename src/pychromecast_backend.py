@@ -6,6 +6,7 @@ remain GTK-free and marshal listener callbacks onto their own UI loop.
 """
 from __future__ import annotations
 
+import inspect
 import mimetypes
 import threading
 import time
@@ -19,6 +20,13 @@ from castctl import CastError, Device, NO_DEVICE_MESSAGE, ReceiverInfo, validate
 
 
 StatusListener = Callable[[ReceiverInfo], None]
+
+
+def _media_call(method: Callable[..., Any], *args: Any, timeout: float) -> Any:
+    """Call media APIs across PyChromecast 13 and 14 timeout signatures."""
+    if "timeout" in inspect.signature(method).parameters:
+        return method(*args, timeout=timeout)
+    return method(*args)
 
 
 class _MediaStatusListener:
@@ -254,19 +262,19 @@ class PyChromecastBackend:
         action = args[0].lower()
         try:
             if action == "play":
-                media.play(timeout=timeout)
+                _media_call(media.play, timeout=timeout)
             elif action == "pause":
-                media.pause(timeout=timeout)
+                _media_call(media.pause, timeout=timeout)
             elif action == "play_toggle":
                 status = self.info(device, timeout=timeout) or {}
                 if status.get("player_state") in {"PLAYING", "BUFFERING"}:
-                    media.pause(timeout=timeout)
+                    _media_call(media.pause, timeout=timeout)
                 else:
-                    media.play(timeout=timeout)
+                    _media_call(media.play, timeout=timeout)
             elif action == "stop":
-                media.stop(timeout=timeout)
+                _media_call(media.stop, timeout=timeout)
             elif action == "seek" and len(args) > 1:
-                media.seek(float(args[1]), timeout=timeout)
+                _media_call(media.seek, float(args[1]), timeout=timeout)
             elif action == "volume" and len(args) > 1:
                 media_level = max(0.0, min(1.0, float(args[1]) / 100.0))
                 cast.set_volume(media_level, timeout=timeout)
@@ -274,14 +282,14 @@ class PyChromecastBackend:
                 cast.set_volume_muted(args[1].lower() == "true", timeout=timeout)
             elif action == "subs":
                 if len(args) > 1 and args[1] == "-n":
-                    media.disable_subtitle(timeout=timeout)
+                    _media_call(media.disable_subtitle, timeout=timeout)
                 else:
                     status = media.status
                     tracks = getattr(status, "subtitle_tracks", {}) or {}
                     track_ids = sorted(int(track_id) for track_id in tracks if str(track_id).isdigit())
                     if not track_ids:
                         return False, "The receiver has no selectable subtitle track."
-                    media.enable_subtitle(track_ids[0], timeout=timeout)
+                    _media_call(media.enable_subtitle, track_ids[0], timeout=timeout)
             elif action == "cast":
                 url = next((arg for arg in reversed(args[1:]) if arg.startswith(("http://", "https://"))), "")
                 if not url:

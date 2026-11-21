@@ -111,14 +111,14 @@ class SetupContractTests(unittest.TestCase):
 
     def test_cast_dependency_bounds_rejected_under_optimized_python(self):
         cases = (
-            ("0.11.99", "14.1.1", False),
-            ("0.12rc1", "14.1.1", False),
-            ("0.12.0rc1", "14.1.1", False),
-            ("0.13.dev0", "14.1.1", False),
-            ("0.12", "14.1.1", True), ("0.12.0", "14.1.1", True),
-            ("0.12.post1", "14.1.1", True), ("1.0", "14.1.1", True),
-            ("0.12", "14.1.0", False), ("0.12", "15.0.0", False),
-            ("0.12", "14.1.1rc1", False),
+            ("0.11.99", "13.1.0", False),
+            ("0.12rc1", "13.1.0", False),
+            ("0.12.0rc1", "13.1.0", False),
+            ("0.13.dev0", "13.1.0", False),
+            ("0.12", "13.1.0", True), ("0.12.0", "13.1.0", True),
+            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", True),
+            ("0.12", "13.0.8", False), ("0.12", "15.0.0", False),
+            ("0.12", "13.1.0rc1", False), ("0.12", "14.1.0", True),
         )
         # One fresh interpreter per optimization mode exercises the shipped check
         # for every version, instead of one interpreter per version (16 spawns).
@@ -350,7 +350,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertEqual(installed, Path(sys.executable))
         command = run.call_args.args[0]
         self.assertIn("catt>=0.12,<0.14", command)
-        self.assertIn("PyChromecast>=14.1.1,<15", command)
+        self.assertIn("PyChromecast>=13.1.0,<15", command)
         self.assertNotIn("requirements.txt", command)
 
     def test_macos_application_bundle_has_valid_plist_and_executable(self):

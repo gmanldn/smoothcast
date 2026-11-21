@@ -50,7 +50,7 @@ class DependencyGateTests(unittest.TestCase):
         bound = "catt>=0.12,<0.14"
         self.assertIn(bound, read("pyproject.toml"))
         self.assertIn(bound, read("setup/bootstrap.py"))
-        pychromecast = "PyChromecast>=14.1.1,<15"
+        pychromecast = "PyChromecast>=13.1.0,<15"
         self.assertIn(pychromecast, read("pyproject.toml"))
         self.assertIn(pychromecast, read("setup/bootstrap.py"))
         workflow = read(".github/workflows/verify.yml")

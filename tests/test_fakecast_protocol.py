@@ -5,13 +5,8 @@ import time
 import uuid
 from types import SimpleNamespace
 
+import pychromecast
 import pytest
-
-pychromecast = pytest.importorskip(
-    "pychromecast",
-    minversion="14.1.1",
-    reason="PyChromecast 14 requires Python 3.11 or newer",
-)
 
 from fakecast import FakeCastReceiver
 from fakecast.receiver import NS_HEARTBEAT, NS_MEDIA, NS_RECEIVER
@@ -27,7 +22,7 @@ def wait_for(predicate, timeout: float = 3.0) -> bool:
     return bool(predicate())
 
 
-def test_receiver_accepts_tls_castv2_and_answers_backend_commands():
+def test_receiver_accepts_tls_castv2_and_answers_backend_cast_command():
     with FakeCastReceiver() as receiver:
         cast = pychromecast.get_chromecast_from_host(
             (
@@ -53,7 +48,7 @@ def test_receiver_accepts_tls_castv2_and_answers_backend_commands():
             devices = backend.scan(timeout=0)
             assert [device.name for device in devices] == ["Loopback Receiver"]
             cast.wait(timeout=2)
-            cast.start_app("CC1AD845", timeout=3)
+            cast.start_app("CC1AD845")
             unsubscribe = backend.subscribe("Loopback Receiver", updates.append)
             assert backend.command(
                 "Loopback Receiver", "cast", "http://127.0.0.1/movie.mp4",

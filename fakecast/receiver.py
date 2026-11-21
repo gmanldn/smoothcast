@@ -15,7 +15,11 @@ import struct
 import threading
 from typing import Any
 
-from pychromecast.socket_client import CastMessage
+try:
+    # PyChromecast 14 exposes the generated message type from socket_client.
+    from pychromecast.socket_client import CastMessage
+except ImportError:  # PyChromecast 13 keeps the same type in its proto module.
+    from pychromecast.cast_channel_pb2 import CastMessage
 
 
 NS_CONNECTION = "urn:x-cast:com.google.cast.tp.connection"
