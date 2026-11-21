@@ -24,6 +24,9 @@ class PortalHostMixin:
             indexer.start()
         if indexer is not None:
             indexer.set_folders(folders)
+            current = getattr(self, "_portal", None)
+            if current is not None:
+                current.server.library_search = indexer.search
 
     def on_library_folders_changed(self, folders) -> None:
         self._ensure_library_indexer(folders)

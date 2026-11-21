@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import lan_guard
 import portal_commands
@@ -130,6 +130,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.commands = commands or portal_commands.CommandDispatcher(
             self._apply_default_command, fence=self.fence, clock=clock)
         self.pin_required = bool(pin_required)
+        self.library_search: Callable | None = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -442,6 +443,27 @@ class _Handler(BaseHTTPRequestHandler):
             not origin or self.server.origin_allowed(origin, host)
         )
 
+    def _search(self) -> None:
+        """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
+        if not self._authenticated():
+            return self._error(401, "Session expired")
+        engine = getattr(self.server, "library_search", None)
+        query = parse_qs(urlsplit(self.path).query)
+        text = (query.get("q") or [""])[0]
+        if not text.strip():
+            return self._error(400, "Type something to search.")
+        if engine is None:
+            return self._send(200, {"q": text[:200], "partial": False, "groups": [], "next": None})
+        try:
+            limit = int((query.get("limit") or ["50"])[0])
+        except ValueError:
+            limit = 50
+        cursor = (query.get("cursor") or [None])[0]
+        try:
+            return self._send(200, engine(text, limit, cursor))
+        except Exception:
+            return self._error(503, "Search is unavailable right now.")
+
     def _body(self) -> dict:
         raw_length = self.headers.get("Content-Length")
         try:
@@ -498,6 +520,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
+        if path == "/api/search":
+            return self._search()
         if path == "/api/config":
             return self._send(200, {"pin_required": self.server.pin_required,
                                     "name": self.server.hostname_label})

@@ -21,6 +21,7 @@ from typing import Callable
 import fingerprint
 import library_folders
 import media_names
+import search_engine
 
 VIDEO_EXT = {".mkv", ".mp4", ".mov", ".avi", ".webm", ".m4v", ".ts", ".mpeg", ".mpg", ".wmv"}
 AUDIO_EXT = {".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".wma"}
@@ -156,6 +157,7 @@ class LibraryIndexer:
         self._thread: threading.Thread | None = None
         self.rescan_seconds = 15 * 60
         with self._lock:
+            search_engine.ensure_schema(self._conn)
             if self._meta("epoch") is None:
                 self._set_meta("epoch", secrets.token_hex(8))
                 self._set_meta("origin_id", "o_" + secrets.token_hex(8))
@@ -185,6 +187,10 @@ class LibraryIndexer:
             "INSERT INTO changelog(content_key, op, folder_id, at) VALUES(?,?,?,?)",
             (key, op, folder_id, self.clock()))
         return int(cursor.lastrowid or 0)
+
+    def search(self, text: object, limit: int = 50, cursor: str | None = None) -> dict:
+        with self._lock:
+            return search_engine.search(self._conn, text, limit, cursor)
 
     # -- reads for replication / search ----------------------------------
     def entry(self, key: str) -> dict | None:
