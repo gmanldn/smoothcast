@@ -73,7 +73,7 @@ def list_topics() -> str:
 
 def related_invariants(words: list[str]) -> str:
     """Annotate a relevant source path from the sole invariant matrix authority."""
-    paths = set(re.findall(r"src/[a-z0-9_]+\\.py", " ".join(words).lower()))
+    paths = set(re.findall(r"src/[a-z0-9_]+\.py", " ".join(words).lower()))
     if not paths:
         return ""
     identifiers = []
