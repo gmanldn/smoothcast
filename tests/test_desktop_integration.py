@@ -85,6 +85,7 @@ class DesktopIntegrationTests(unittest.TestCase):
             self.assertEqual(desktop.main(), 0)
         install.assert_called_once_with(repair_pins=True, pin=True)
 
+    @unittest.skipIf(os.name == "nt", "Linux freedesktop CLI installer")
     def test_actual_cli_install_twice_then_check_from_spaced_checkout(self):
         # The shipped CLI, not just install(), must be idempotent and agree
         # with --check when launched from a checkout whose path has spaces and

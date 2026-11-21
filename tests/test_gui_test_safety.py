@@ -111,6 +111,7 @@ class GuiTestSafetyTests(unittest.TestCase):
         self.assertNotIn("gi.repository", result.stderr)
 
     @unittest.skipUnless(shutil.which("bash"), "Bash unavailable")
+    @unittest.skipIf(os.name == "nt", "POSIX shell launcher contract")
     def test_normal_shell_launcher_rejects_gui_test_before_bootstrap(self):
         result = subprocess.run(
             ["bash", str(ROOT / "smoothcast"), "--self-test"], cwd=ROOT,
@@ -150,6 +151,7 @@ class GuiTestSafetyTests(unittest.TestCase):
                 self.assertTrue(env[name].endswith(("home", "config", "data",
                                                     "cache", "runtime")))
 
+    @unittest.skipIf(os.name == "nt", "POSIX process-group termination contract")
     def test_runner_timeout_terminates_whole_process_group(self):
         process = mock.Mock(pid=12345)
         process.wait.side_effect = [subprocess.TimeoutExpired("xvfb-run", 20), 0]

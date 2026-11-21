@@ -211,6 +211,7 @@ class StartupCleanupTests(unittest.TestCase):
             )
             kill.assert_not_called()
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc process identity and signals")
     def test_verified_stale_process_gets_bounded_sigterm_and_sigkill(self):
         proc = process(100, "encoder")
         report = cleanup.CleanupReport()
@@ -223,6 +224,7 @@ class StartupCleanupTests(unittest.TestCase):
             [cleanup.signal.SIGTERM, cleanup.signal.SIGKILL],
         )
 
+    @unittest.skipIf(os.name == "nt", "POSIX user-id process ownership")
     def test_other_users_processes_are_never_inspected_or_signalled(self):
         with TemporaryDirectory() as d:
             pid = 55001
@@ -235,6 +237,7 @@ class StartupCleanupTests(unittest.TestCase):
             with mock.patch.object(cleanup.os, "getuid", return_value=-1):
                 self.assertIsNone(cleanup.inspect_process(pid, Path(d)))
 
+    @unittest.skipIf(os.name == "nt", "Linux /proc process start-time parser")
     def test_proc_starttime_with_parentheses_in_command_name(self):
         with TemporaryDirectory() as d:
             root = Path(d)
@@ -254,6 +257,7 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertEqual(found.start_ticks, 7319)
             self.assertEqual(found.kind, "encoder")
 
+    @unittest.skipIf(os.name == "nt", "POSIX user-id process ownership")
     def test_only_owned_orphan_meter_directories_are_removed(self):
         with TemporaryDirectory() as d:
             root = Path(d)

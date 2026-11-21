@@ -31,6 +31,7 @@ def fake_proc(root: Path, pid: str, argv: tuple[str, ...]) -> None:
 
 
 class ProcScanTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX /proc process-table contract")
     def test_matches_only_this_checkout(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -41,6 +42,7 @@ class ProcScanTests(unittest.TestCase):
             (root / "uptime").write_text("1\n")
             self.assertEqual(sorted(launch.gui_instances(root)), [4242])
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc process-table contract")
     def test_exclusions_never_report_own_process(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -70,6 +72,7 @@ class GuardBehaviourTests(unittest.TestCase):
     def test_no_running_instance_launches_normally(self):
         self.assertEqual(self.guard([], None, []), (None, []))
 
+    @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
     def test_second_launch_presents_and_does_not_start_again(self):
         self.assertEqual(self.guard([101], True, []), (0, []))
 
@@ -77,6 +80,7 @@ class GuardBehaviourTests(unittest.TestCase):
         # GApplication must forward the file, so let the GTK instance handle it.
         self.assertEqual(self.guard([101], True, ["/films/a.mkv"]), (None, []))
 
+    @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
     def test_unresponsive_instance_is_cleared_before_launch(self):
         self.assertEqual(self.guard([101, 102], False, []), (None, [[101, 102]]))
 
@@ -84,6 +88,7 @@ class GuardBehaviourTests(unittest.TestCase):
         # No session bus or no gdbus: never guess, let GApplication forward.
         self.assertEqual(self.guard([101], None, []), (None, []))
 
+    @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
     def test_stop_instances_escalates_to_sigkill(self):
         with mock.patch.object(launch, "_alive", return_value=True), \
                 mock.patch.object(launch.os, "kill") as kill:
