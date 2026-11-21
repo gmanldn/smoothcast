@@ -15,6 +15,7 @@ import threading
 
 import castctl
 import config_control
+import config_persistence
 
 import audio_monitor
 
@@ -109,14 +110,13 @@ CSS = ui_theme.CSS
 
 
 def load_config() -> dict:
-    # Migrate, then validate every field before GTK consumes it; malformed
-    # neighbours must not lose valid preferences or share DEFAULTS identities.
     return config_control.load_file(CONFIG_FILE, DEFAULTS)
 
 
-def save_config(cfg: dict) -> None:
-    # Atomic; skipped when the on-disk file uses a newer/unmigratable schema.
-    config_control.save_file(CONFIG_FILE, cfg)
+config_persistence.configure(CONFIG_FILE, DEFAULTS, error_log.log)
+save_config = config_persistence.save_config
+refresh_config = config_persistence.refresh_config
+flush_config = config_persistence.flush_config
 
 
 def fmt_time(seconds: float | None) -> str:

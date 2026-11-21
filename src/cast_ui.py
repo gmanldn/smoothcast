@@ -29,7 +29,7 @@ import ui_theme
 import version
 
 from cast_widgets import (
-    APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
+    APP_NAME, DEFAULTS, fmt_time, refresh_config, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
     BufferHealthGraph,
 )
 import network_route_ui
@@ -37,6 +37,54 @@ from bookmark_ui import BookmarkUiMixin
 
 
 class UiMixin(BookmarkUiMixin):
+
+    def _refresh_config_on_focus(self, *_args) -> None:
+        """Pick up other instances' settings without replacing local edits."""
+        if not self.is_active() or not refresh_config(self.cfg):
+            return
+        self.app.apply_accent(self.cfg.get("accent", "default"))
+        self.app.apply_density(self.cfg.get("density", "comfortable"))
+        self._apply_color_scheme()
+        scheme_action = getattr(self.app, "scheme_action", None)
+        if scheme_action is not None:
+            scheme_action.set_state(GLib.Variant("s", self.cfg["color_scheme"]))
+        self._refresh_direct_note()
+        self._sync_settings_card_from_config()
+        preferences = getattr(self, "_preferences_window", None)
+        if preferences is not None:
+            preferences.sync_from_owner()
+        menu = getattr(self, "menu_button", None)
+        if menu is not None:
+            menu.set_menu_model(self._build_menu())
+
+    def _sync_settings_card_from_config(self) -> None:
+        """Update visible inline controls after another process saves settings."""
+        self._syncing = True
+        try:
+            choices = (
+                ("quality_dropdown", "quality", {"high": 0, "balanced": 1, "saver": 2}),
+                ("audio_dropdown", "audio", {"original": 0, "dialogue": 1, "night": 2}),
+                ("loudness_dropdown", "audio_loudness", {"off": 0, "programme": 1, "album": 2}),
+                ("rotation_dropdown", "rotation", {0: 0, 90: 1, 180: 2, 270: 3}),
+                ("subs_dropdown", "subs", {"off": 0, "auto": 1, "pick": 2, "embedded": 3}),
+            )
+            for name, key, indexes in choices:
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_selected(indexes.get(self.cfg.get(key), 0))
+            for name, key in (
+                ("music_autogain_switch", "music_autogain"),
+                ("burn_switch", "burn_subs"), ("direct_switch", "direct"),
+                ("keep_switch", "keep_streaming"),
+            ):
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_active(bool(self.cfg.get(key, False)))
+            gain = getattr(self, "gain_spin", None)
+            if gain is not None:
+                gain.set_value(float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])))
+        finally:
+            self._syncing = False
 
 
     def present(self) -> None:

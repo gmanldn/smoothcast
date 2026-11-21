@@ -6,7 +6,7 @@ One malformed value must not discard other valid settings.
 from __future__ import annotations
 
 from copy import deepcopy
-import hashlib
+from contextlib import contextmanager
 from itertools import islice
 import json
 import math
@@ -15,7 +15,8 @@ from pathlib import Path
 import shutil
 import tempfile
 import threading
-from contextlib import contextmanager
+import time
+from collections.abc import Callable, Iterator
 
 import audio_delay
 import bookmarks
@@ -25,7 +26,6 @@ import accent
 import density
 import subtitle_style
 import language_prefs
-import library_folders
 import loudness
 import watch_history
 
@@ -78,8 +78,6 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             cfg[key] = watch_history.clean(value)
         elif key == "bookmarks":
             cfg[key] = bookmarks.clean(value)
-        elif key == "library_folders":
-            cfg[key] = library_folders.to_config(library_folders.load({key: value}))
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (
@@ -165,6 +163,109 @@ MIGRATIONS = {0: _v0_to_v1}
 # Paths whose original file must not be overwritten (newer schema, failed
 # migration, unreadable). Saves to them are skipped for this process.
 _PROTECTED: set[str] = set()
+_CORRUPT_BACKED_UP: set[str] = set()
+_STATE_LOCK = threading.RLock()
+_BASELINES: dict[str, dict] = {}
+_MISSING = object()
+
+
+def _path_key(path: Path) -> str:
+    return str(path.resolve())
+
+
+def _remember(path: Path, cfg: dict) -> dict:
+    with _STATE_LOCK:
+        _BASELINES[_path_key(path)] = deepcopy(cfg)
+    return cfg
+
+
+@contextmanager
+def _advisory_lock(path: Path) -> Iterator[None]:
+    """Serialize writers across threads and processes on all supported OSes."""
+    lock_path = path.with_name(path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            if lock_file.read(1) == b"":
+                lock_file.write(b"0")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _read_object(path: Path) -> dict | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(path, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_write(path: Path, cfg: dict) -> None:
+    """Durably replace a config without sharing a temporary pathname."""
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent,
+    )
+    tmp = Path(tmp_name)
+    try:
+        if os.name != "nt":
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(cfg, handle, indent=1, ensure_ascii=False, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        _fsync_directory(path.parent)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _as_current_config(raw: dict | None, defaults: dict) -> dict:
+    if raw is None:
+        return deepcopy(defaults)
+    try:
+        migrated, _ = migrate(raw)
+    except ConfigSchemaError:
+        raise
+    except Exception as exc:
+        raise ConfigSchemaError("saved settings cannot be migrated") from exc
+    config = sanitise_config(migrated, defaults)
+    for name, value in migrated.items():
+        if name not in defaults:
+            config[name] = deepcopy(value)
+    config["schema_version"] = SCHEMA_VERSION
+    return config
 
 
 def migrate(raw: dict) -> tuple[dict, int]:
@@ -188,152 +289,210 @@ def migrate(raw: dict) -> tuple[dict, int]:
     return data, original
 
 
-def _backup(path: Path, label: str) -> None:
+def _backup(path: Path, label: str) -> bool:
     """Keep one copy of the original; an existing backup is never replaced."""
     target = path.with_name(f"{path.name}.{label}.bak")
     try:
-        if not target.exists():
-            shutil.copy2(path, target)
+        if target.exists():
+            return False
+        shutil.copy2(path, target)
     except OSError:
-        pass
+        return False
+    return True
 
 
 def load_file(path: Path, defaults: dict) -> dict:
     """Read, migrate and validate settings; protect the original on failure."""
-    cfg = _load_file(Path(path), defaults)
-    if str(path) not in _PROTECTED:
-        _BASELINES[str(path)] = deepcopy(cfg)
-    return cfg
-
-
-def _load_file(path: Path, defaults: dict) -> dict:
     path = Path(path)
-    key = str(path)
-    _PROTECTED.discard(key)
+    key = _path_key(path)
+    with _STATE_LOCK:
+        _PROTECTED.discard(key)
+        _CORRUPT_BACKED_UP.discard(key)
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return sanitise_config({}, defaults)
+        return _remember(path, sanitise_config({}, defaults))
     except OSError:
-        _PROTECTED.add(key)  # Unreadable now does not mean worthless.
-        return sanitise_config({}, defaults)
+        with _STATE_LOCK:
+            _PROTECTED.add(key)  # Unreadable now does not mean worthless.
+        return _remember(path, sanitise_config({}, defaults))
     except ValueError:
-        _backup(path, "corrupt")
-        return sanitise_config({}, defaults)
+        if _backup(path, "corrupt"):
+            with _STATE_LOCK:
+                _CORRUPT_BACKED_UP.add(key)
+        else:
+            with _STATE_LOCK:
+                _PROTECTED.add(key)
+        return _remember(path, sanitise_config({}, defaults))
     if not isinstance(raw, dict):
-        _backup(path, "corrupt")
-        return sanitise_config({}, defaults)
+        if _backup(path, "corrupt"):
+            with _STATE_LOCK:
+                _CORRUPT_BACKED_UP.add(key)
+        else:
+            with _STATE_LOCK:
+                _PROTECTED.add(key)
+        return _remember(path, sanitise_config({}, defaults))
     try:
         migrated, original = migrate(raw)
     except Exception:  # A buggy migration must never cost the user's settings.
-        _PROTECTED.add(key)
-        return sanitise_config(raw, defaults)
+        with _STATE_LOCK:
+            _PROTECTED.add(key)
+        return _remember(path, sanitise_config(raw, defaults))
     if original < SCHEMA_VERSION:
         _backup(path, f"schema{original}")
     cfg = sanitise_config(migrated, defaults)
     cfg["schema_version"] = SCHEMA_VERSION
-    return cfg
+    return _remember(path, cfg)
 
 
-# What this process last loaded or wrote per file; a save writes only keys that
-# differ from it, so another writer's changes to other keys are never reverted.
-_BASELINES: dict[str, dict] = {}
-_THREAD_LOCK = threading.RLock()
-_MISSING = object()
-
-
-@contextmanager
-def _file_lock(path: Path):
-    """Advisory cross-process lock (fcntl/msvcrt); degrades to thread-only."""
-    with _THREAD_LOCK:
-        handle = None
-        try:
-            digest = hashlib.sha1(str(path).encode("utf-8", "replace")).hexdigest()[:16]
-            handle = open(Path(tempfile.gettempdir()) / f"smoothcast-config-{digest}.lock", "a+b")
-            if os.name == "nt":
-                import msvcrt
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        except (OSError, ImportError):
-            pass
-        try:
-            yield
-        finally:
-            if handle is not None:
-                try:
-                    if os.name == "nt":
-                        import msvcrt
-                        handle.seek(0)
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-                except (OSError, ImportError):
-                    pass
-                handle.close()
-
-
-def _fsync_dir(directory: Path) -> None:
-    if os.name == "nt":
-        return
-    try:
-        fd = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-    except OSError:
-        pass
-
-
-def _merged(path: Path, cfg: dict, baseline: dict | None) -> dict:
-    """Apply only this process's changes on top of the current on-disk file."""
-    if baseline is None:
-        return cfg
-    try:
-        disk = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return cfg
-    if not isinstance(disk, dict) or disk.get("schema_version", SCHEMA_VERSION) != cfg.get("schema_version", SCHEMA_VERSION):
-        return cfg
-    for key, value in cfg.items():
-        if baseline.get(key, _MISSING) != value:
-            disk[key] = value
-    for key in baseline:
-        if key not in cfg:
-            disk.pop(key, None)
-    return disk
-
-
-def save_file(path: Path, cfg: dict) -> bool:
-    """Atomically write settings unless the original is protected.
-
-    Unique temp file, fsync of file and directory, and a cross-process lock; the
-    write merges this process's changed keys into the current file contents.
-    """
+def save_file(path: Path, cfg: dict, *, snapshot_only: bool = False) -> bool:
+    """Merge this process's changed keys and durably replace the config."""
     path = Path(path)
-    key = str(path)
-    if key in _PROTECTED:
-        return False
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with _file_lock(path):
-            data = _merged(path, cfg, _BASELINES.get(key))
-            fd, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+        key = _path_key(path)
+        with _STATE_LOCK:
+            if key in _PROTECTED:
+                return False
+            may_replace_corrupt = key in _CORRUPT_BACKED_UP
+            baseline = deepcopy(_BASELINES.get(key, cfg))
+        with _advisory_lock(path):
+            raw = _read_object(path)
+            if raw is None and path.exists() and not may_replace_corrupt:
+                return False
             try:
-                with os.fdopen(fd, "w") as handle:
-                    handle.write(json.dumps(data, indent=1))
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(name, path)
-            except BaseException:
-                try:
-                    os.unlink(name)
-                except OSError:
-                    pass
-                raise
-            _fsync_dir(path.parent)
-            _BASELINES[key] = deepcopy(cfg)
-    except OSError:
+                disk_config = _as_current_config(raw, baseline)
+            except ConfigSchemaError:
+                with _STATE_LOCK:
+                    _PROTECTED.add(key)
+                return False
+            changed = {
+                name for name in set(baseline) | set(cfg)
+                if baseline.get(name, _MISSING) != cfg.get(name, _MISSING)
+            }
+            merged = deepcopy(disk_config)
+            for name in changed:
+                if name in cfg:
+                    merged[name] = deepcopy(cfg[name])
+                else:
+                    merged.pop(name, None)
+            merged["schema_version"] = SCHEMA_VERSION
+            _atomic_write(path, merged)
+        saved_baseline = deepcopy(cfg) if snapshot_only else deepcopy(merged)
+        cfg.clear()
+        cfg.update(merged)
+        with _STATE_LOCK:
+            _BASELINES[key] = saved_baseline
+            _CORRUPT_BACKED_UP.discard(key)
+    except (OSError, TypeError, ValueError):
         return False
     return True
+
+
+def refresh_file(path: Path, cfg: dict, defaults: dict) -> bool:
+    """Refresh keys untouched locally, preserving unsaved in-memory edits."""
+    path = Path(path)
+    key = _path_key(path)
+    with _STATE_LOCK:
+        baseline = deepcopy(_BASELINES.get(key))
+        if key in _PROTECTED:
+            return False
+    if baseline is None:
+        return False
+    raw = _read_object(path)
+    if raw is None:
+        return False
+    try:
+        disk = _as_current_config(raw, defaults)
+    except (OSError, ConfigSchemaError, TypeError, ValueError):
+        return False
+    for name in baseline:
+        old = baseline[name]
+        if cfg.get(name) == old:
+            cfg[name] = deepcopy(disk.get(name, old))
+            baseline[name] = deepcopy(disk.get(name, old))
+    with _STATE_LOCK:
+        _BASELINES[key] = baseline
+    return True
+
+
+class DebouncedWriter:
+    """Coalesce bursty config updates onto one serialized background writer."""
+
+    def __init__(
+        self, write: Callable[[dict], bool], *, delay: float = 0.15,
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
+        if delay < 0:
+            raise ValueError("debounce delay cannot be negative")
+        self._write = write
+        self._delay = delay
+        self._on_error = on_error
+        self._condition = threading.Condition()
+        self._pending: tuple[int, dict, float] | None = None
+        self._sequence = 0
+        self._completed_sequence = 0
+        self._last_result = True
+        self._running = False
+        self._thread: threading.Thread | None = None
+
+    def submit(self, cfg: dict) -> int:
+        with self._condition:
+            self._sequence += 1
+            sequence = self._sequence
+            self._pending = (sequence, deepcopy(cfg), time.monotonic() + self._delay)
+            if self._thread is None:
+                self._thread = threading.Thread(
+                    target=self._run, name="smoothcast-config-writer", daemon=True,
+                )
+                self._thread.start()
+            self._condition.notify_all()
+            return sequence
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                while self._pending is None:
+                    self._condition.wait()
+                sequence, cfg, deadline = self._pending
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    self._condition.wait(remaining)
+                    continue
+                if self._pending is None or self._pending[0] != sequence:
+                    continue
+                self._pending = None
+                self._running = True
+            ok = False
+            error = None
+            try:
+                ok = self._write(cfg)
+            except Exception as exc:
+                error = f"Could not save SmoothCast settings: {exc}"
+            if not ok and self._on_error is not None:
+                try:
+                    self._on_error(error or "Could not save SmoothCast settings")
+                except Exception:
+                    pass
+            with self._condition:
+                self._completed_sequence = sequence
+                self._last_result = ok
+                self._running = False
+                self._condition.notify_all()
+
+    def flush(self, timeout: float | None = 5.0) -> bool:
+        """Force pending data now and wait until the current write completes."""
+        end = None if timeout is None else time.monotonic() + timeout
+        with self._condition:
+            target = self._sequence
+            if self._pending is not None:
+                sequence, cfg, _ = self._pending
+                self._pending = (sequence, cfg, time.monotonic())
+                self._condition.notify_all()
+            while (self._pending is not None or self._running
+                   or self._completed_sequence < target):
+                remaining = None if end is None else end - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            return self._last_result

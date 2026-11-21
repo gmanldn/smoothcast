@@ -67,6 +67,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         super().__init__(application=app)
         self.app = app
         self.cfg = load_config()
+        self.connect("notify::is-active", self._refresh_config_on_focus)
         self.session: streamer.Session | None = None
         self.media: streamer.MediaInfo | None = None
         self.device_info: dict | None = None
@@ -118,6 +119,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._preview_position = 0.0
         self._preview_generation = 0
         self._preview_pending: tuple[str, float, int] | None = None
+
         self._preview_busy = False
         self._preview_timer_id = 0
         self._local_video_path: str | None = None

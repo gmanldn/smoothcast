@@ -460,7 +460,7 @@ class SessionMixin:
 
 
     def seek_to(self, target: float) -> None:
-        # Guard before optimistic seekbar moves.
+        # Guard before seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -499,7 +499,7 @@ class SessionMixin:
         if session.mode == "dlna" and renderer is None:
             self.toast("DLNA receiver disappeared; rescan devices", error=True)
             return
-        # Receiver polling reconciles failed seeks.
+        # Poll to reconcile failed seeks.
         if self.seekbar is not None:
             self.seekbar.set_state(target, duration, self.seekbar.buffered)
         if session.mode == "dlna" or (
@@ -552,7 +552,6 @@ class SessionMixin:
                     audio_track_override: int | None = None,
                     resume_after_pause: bool = False) -> None:
         if session.mode == "dlna":
-            # DLNA restart.
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
             return
@@ -611,7 +610,7 @@ class SessionMixin:
                     pass
                 raise
             if was_paused:
-                # Retain pause on ordinary restarts.
+                # Preserve pause.
                 try:
                     castctl.pause(device)
                 except (OSError, ValueError, TypeError):
@@ -835,12 +834,16 @@ class SessionMixin:
 
 
     def _on_direct(self, switch, _param) -> None:
+        if self._syncing:
+            return
         self.cfg["direct"] = switch.get_active()
         save_config(self.cfg)
         self._refresh_direct_note()
 
 
     def _on_keep(self, switch, _param) -> None:
+        if self._syncing:
+            return
         self.cfg["keep_streaming"] = switch.get_active()
         save_config(self.cfg)
 
@@ -856,7 +859,7 @@ class SessionMixin:
             return False
         session = streamer.Session()
         session.restore(state)
-        # Match the saved receiver.
+        # Match saved receiver.
         if state.device != self._device():
             return False
         # Check HLS/server ownership off-thread.
