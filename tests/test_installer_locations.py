@@ -38,11 +38,14 @@ class InstallLocationTests(unittest.TestCase):
             with mock.patch.object(install_location.sys.stdin, "isatty", return_value=True):
                 actual = install_location.select_directory(
                     "linux", home=home, input_fn=lambda _prompt: str(expected))
-                self.assertEqual(actual, expected.absolute())
+                self.assertTrue(os.path.samefile(actual.parents[1], home))
+                self.assertEqual((actual.parent.name, actual.name),
+                                 (expected.parent.name, expected.name))
                 unprompted = install_location.select_directory(
                     "linux", home=home, yes=True,
                     input_fn=lambda _: self.fail("--yes prompted"))
-                self.assertEqual(unprompted, (home / ".local/opt/SmoothCast").resolve())
+                self.assertTrue(os.path.samefile(unprompted.parents[2], home))
+                self.assertEqual(unprompted.parts[-3:], (".local", "opt", "SmoothCast"))
                 checked = install_location.select_directory(
                     "linux", home=home, check=True,
                     input_fn=lambda _: self.fail("--check prompted"))
