@@ -16,7 +16,6 @@ import reliability_metrics
 import diagnostics
 
 import playback_state
-import room_checkpoint
 
 import screenshot
 
@@ -26,84 +25,6 @@ from cast_widgets import APP_NAME, ICON_NAME, save_config, fmt_time, Async
 
 
 class LifecycleMixin:
-    def _offer_room_recovery(self) -> None:
-        """Ask before restoring queue paths; never resume an old cast/session."""
-        if getattr(getattr(self, "app", None), "selftest", False):
-            return
-        checkpoint = getattr(self, "_room_checkpoint_file", None)
-        if checkpoint is None or not checkpoint.exists():
-            return
-        saved = room_checkpoint.load_checkpoint(checkpoint)
-        if saved.error:
-            dialog = Adw.AlertDialog.new(
-                "Previous room could not be read",
-                "The saved queue is damaged or uses an unsupported format. Keep it for inspection, or discard it.",
-            )
-            dialog.add_response("keep", "Keep saved data")
-            dialog.add_response("discard", "Discard previous room")
-            dialog.set_default_response("keep")
-            dialog.set_close_response("keep")
-            dialog.connect("response", lambda _dialog, response:
-                           self._discard_room_checkpoint()
-                           if response == "discard" else None)
-            dialog.present(self)
-            return
-        if not saved.items and not saved.unavailable:
-            return
-        detail = f"Recover {len(saved.items)} available queued item(s)?"
-        if saved.unavailable:
-            detail += f" {saved.unavailable} missing or unavailable item(s) will be skipped."
-        detail += " Playback and old guest sessions will not resume."
-        dialog = Adw.AlertDialog.new("Recover previous room?", detail)
-        dialog.add_response("keep", "Decide later")
-        dialog.add_response("discard", "Discard previous room")
-        dialog.add_response("recover", "Recover queue")
-        dialog.set_default_response("keep")
-        dialog.set_close_response("keep")
-        dialog.set_response_appearance("recover", Adw.ResponseAppearance.SUGGESTED)
-
-        def response(_dialog, result):
-            if result == "recover":
-                self._recover_room_checkpoint()
-            elif result == "discard":
-                self._discard_room_checkpoint()
-
-        dialog.connect("response", response)
-        dialog.present(self)
-
-
-    def _recover_room_checkpoint(self) -> None:
-        checkpoint = getattr(self, "_room_checkpoint_file", None)
-        if checkpoint is None:
-            return
-        saved = room_checkpoint.load_checkpoint(checkpoint)
-        if saved.error:
-            self.toast("Shared room recovery could not be read", error=True)
-            return
-        self.queue = list(saved.items)
-        self.selected_index = None
-        self.queue_durations = {}
-        self._rebuild_queue()
-        if saved.unavailable:
-            self.toast(f"Recovered {len(saved.items)} item(s); skipped {saved.unavailable} unavailable item(s)")
-        else:
-            self.toast(f"Recovered {len(saved.items)} queued item(s)")
-
-
-    def _discard_room_checkpoint(self) -> None:
-        checkpoint = getattr(self, "_room_checkpoint_file", None)
-        if checkpoint is None:
-            return
-        try:
-            room_checkpoint.write_checkpoint(checkpoint, ())
-        except (OSError, ValueError) as exc:
-            self.toast("Previous room could not be discarded", error=True)
-            self._console(f"Room checkpoint discard failed: {exc}")
-            return
-        self._room_checkpoint_last = ()
-        self.toast("Previous room discarded")
-
-
     def _cast_preflight_failed(self, message: str) -> None:
         """A rejected new cast must not tear down its still-owned predecessor."""
         reliability_metrics.fail_attempt(self, Async.run)

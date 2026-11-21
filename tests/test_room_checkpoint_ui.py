@@ -51,6 +51,7 @@ def recovery_type():
     )
     namespace = {
         "room_checkpoint": room_checkpoint,
+        "ROOM_CHECKPOINT_FILE": None,
         "Adw": SimpleNamespace(
             AlertDialog=FakeDialog,
             ResponseAppearance=SimpleNamespace(SUGGESTED=1),

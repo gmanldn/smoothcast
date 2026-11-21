@@ -30,7 +30,7 @@ from queue_prewarm_ui import QueuePrewarmMixin
 from queue_row_ui import QueueRowMixin
 from music_import_ui import MusicImportMixin
 
-from cast_widgets import save_config, fmt_time, Async
+from cast_widgets import ROOM_CHECKPOINT_FILE, save_config, fmt_time, Async
 
 
 class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
@@ -301,9 +301,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
     def _save_room_checkpoint(self) -> None:
         if getattr(getattr(self, "app", None), "selftest", False):
             return
-        checkpoint = getattr(self, "_room_checkpoint_file", None)
-        if checkpoint is None:
-            return
+        checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
         items = tuple(self.queue)
         if items == getattr(self, "_room_checkpoint_last", None):
             return

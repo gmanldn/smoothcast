@@ -49,7 +49,7 @@ import local_playback
 import startup_cleanup
 import mpris
 
-from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, ROOM_CHECKPOINT_FILE, load_config, save_config, LevelMeter, PreviewScreen, Async
+from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
@@ -59,9 +59,10 @@ from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
+from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -86,9 +87,6 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._scan_again = False
         self.queue: list[str] = []
         self.queue_durations: dict[str, float] = {}
-        self._room_checkpoint_file = ROOM_CHECKPOINT_FILE
-        self._room_checkpoint_last: tuple[str, ...] | None = None
-        self._room_checkpoint_error_shown = False
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
@@ -194,10 +192,8 @@ class CastControlApp(Adw.Application):
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
-        # This is executed only in the primary GApplication process, once,
-        # before MainWindow and its monitor/session timers can be created.
-        # Reactivating via a second dock click must NEVER stop an active cast.
-        # Standalone --self-test instances must NEVER affect the user's app.
+        # Primary-only and before MainWindow; reactivation and --self-test must
+        # never stop the active user's cast.
         if not self.selftest:
             try:
                 self._startup_report = startup_cleanup.cleanup_before_window(

@@ -2,7 +2,8 @@
 
 ``cast_control.py`` was split into ``cast_widgets.py`` (shared constants, config
 helpers, custom widgets) plus one mixin module per concern (``cast_ui``,
-``cast_queue``, ``cast_session``, ``cast_av``, ``cast_lifecycle``). ``MainWindow``
+``cast_queue``, ``cast_session``, ``cast_av``, ``cast_lifecycle`` and focused
+UI mixins). ``MainWindow``
 now inherits those mixins, so the GUI source a test cares about is spread across
 files.
 
@@ -37,6 +38,7 @@ GUI_MODULES = (
     "cast_av.py",
     "cast_subtitle_files.py",
     "cast_lifecycle.py",
+    "room_checkpoint_ui.py",
     "cast_portal_queue.py",
     "cast_portal_host.py",
     "portal_upload_recovery.py",
@@ -47,7 +49,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
+MIXIN_CLASSES = ("UiMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
