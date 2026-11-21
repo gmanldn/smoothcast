@@ -37,6 +37,7 @@ import video_policy
 SSDP_ADDRESS = ("239.255.255.250", 1900)
 DEVICE_TYPE = "urn:schemas-upnp-org:device:MediaRenderer:1"
 SERVICE_PREFIX = "urn:schemas-upnp-org:service:"
+IDEMPOTENT_SOAP_ACTIONS = {"Play", "Pause", "Stop", "Seek", "SetVolume", "SetMute"}
 MAX_DESCRIPTION = 512 * 1024
 MAX_SOAP_RESPONSE = 128 * 1024
 MAX_RENDERERS = 64
@@ -335,32 +336,38 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
         f'<s:Body><u:{action} xmlns:u="{service}">{params_xml}'
         f'</u:{action}></s:Body></s:Envelope>'
     ).encode("utf-8")
-    conn = HTTPConnection(host, port, timeout=5)
-    try:
-        conn.request("POST", target, body=request_xml, headers={
-            "Content-Type": 'text/xml; charset="utf-8"',
-            "SOAPACTION": f'"{service}#{action}"',
-            "Connection": "close",
-        })
-        response = conn.getresponse()
-        data = response.read(MAX_SOAP_RESPONSE + 1)
-        if len(data) > MAX_SOAP_RESPONSE:
-            raise DlnaError("DLNA response exceeds safe size limit")
-        if response.status != 200:
+    attempts = 2 if action in IDEMPOTENT_SOAP_ACTIONS else 1
+    for attempt in range(attempts):
+        conn = HTTPConnection(host, port, timeout=5)
+        try:
+            conn.request("POST", target, body=request_xml, headers={
+                "Content-Type": 'text/xml; charset="utf-8"',
+                "SOAPACTION": f'"{service}#{action}"',
+                "Connection": "close",
+            })
+            response = conn.getresponse()
+            data = response.read(MAX_SOAP_RESPONSE + 1)
+            if len(data) > MAX_SOAP_RESPONSE:
+                raise DlnaError("DLNA response exceeds safe size limit")
+            if response.status != 200:
+                fault = _upnp_fault(data)
+                suffix = f"; {fault}" if fault else ""
+                raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
+            root = ET.fromstring(data)
             fault = _upnp_fault(data)
-            suffix = f"; {fault}" if fault else ""
-            raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
-        root = ET.fromstring(data)
-        fault = _upnp_fault(data)
-        if fault:
-            raise DlnaError(f"DLNA {action} failed ({fault})")
-        return root
-    except ET.ParseError as exc:
-        raise DlnaError(f"DLNA {action} returned invalid XML") from exc
-    except (OSError, HTTPException) as exc:
-        raise DlnaError(f"DLNA {action} failed: {exc}") from exc
-    finally:
-        conn.close()
+            if fault:
+                raise DlnaError(f"DLNA {action} failed ({fault})")
+            return root
+        except ET.ParseError as exc:
+            raise DlnaError(f"DLNA {action} returned invalid XML") from exc
+        except (OSError, HTTPException) as exc:
+            if (attempt + 1 < attempts
+                    and isinstance(exc, (TimeoutError, ConnectionResetError, HTTPException))):
+                continue
+            raise DlnaError(f"DLNA {action} failed: {exc}") from exc
+        finally:
+            conn.close()
+    raise DlnaError(f"DLNA {action} failed")
 
 
 def _value(root: ET.Element, key: str) -> str:

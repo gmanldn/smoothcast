@@ -228,6 +228,24 @@ class DlnaSOAPTests(unittest.TestCase):
         self.assertIn(b"<DesiredMute>1</DesiredMute>", bodies[4])
         self.assertEqual(conn.request.call_count, 6)
 
+    def test_absolute_seek_retries_one_transport_timeout(self):
+        first = mock.MagicMock()
+        first.request.side_effect = TimeoutError("response timed out")
+        second = mock.MagicMock()
+        second.getresponse.return_value = self._reply(b"<root />")
+        with mock.patch.object(dlna, "HTTPConnection", side_effect=[first, second]) as connect:
+            dlna.seek(self.renderer, 123.0)
+        self.assertEqual(connect.call_count, 2)
+        self.assertEqual(first.request.call_args, second.request.call_args)
+
+    def test_set_uri_is_not_retried_after_transport_timeout(self):
+        conn = mock.MagicMock()
+        conn.request.side_effect = TimeoutError("response timed out")
+        with mock.patch.object(dlna, "HTTPConnection", return_value=conn):
+            with self.assertRaisesRegex(dlna.DlnaError, "SetAVTransportURI failed"):
+                dlna.set_uri(self.renderer, "http://192.168.12.2/media/token", "Film")
+        conn.request.assert_called_once()
+
     def test_http_500_fault_surfaces_safe_upnp_error_code(self):
         fault = (
             b'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
