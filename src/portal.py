@@ -37,6 +37,7 @@ PIN_LENGTH = 6
 FRIENDLY_NAME_MAX = 32
 MAX_BODY = 2048
 SESSION_SECONDS = 8 * 60 * 60
+MAX_SESSIONS = 128
 ATTEMPT_WINDOW_SECONDS = 60
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
@@ -137,7 +138,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
         self._queue_command_cache: OrderedDict[tuple[str, str], tuple] = OrderedDict()
-        self._sessions: dict[str, _Session] = {}
+        self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self.queue_ids: set[str] = set()
         portal_screens_http.attach(self)
         self._attempts: dict[str, deque[float]] = {}
@@ -263,9 +264,11 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         now = self.clock()
         with self._lock:
             self._expire_sessions(now)
-            while len(self._sessions) >= 128:
-                key, session = self._sessions.popitem()
+            while len(self._sessions) >= MAX_SESSIONS:
+                key, session = self._sessions.popitem(last=False)
                 self.room.leave(session.participant_id)
+            # Move stale clients to the dormant roster before checking capacity.
+            self.room.expire_inactive(time.time())
             participant = self.room.join(name, now=time.time())
             self._sessions[self._session_key(token)] = _Session(
                 csrf, now + SESSION_SECONDS, participant.id,
@@ -305,7 +308,27 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             except portal_room.RoomError:
                 self._sessions.pop(key, None)
                 return None
+            self._sessions.move_to_end(key)
             return session.participant_id
+
+    def resume_session(self, token: str | None) -> tuple[str, portal_room.Participant] | None:
+        """Return the existing CSRF token and participant for a valid cookie."""
+        if not token:
+            return None
+        key = self._session_key(token)
+        now = self.clock()
+        with self._lock:
+            self._expire_sessions(now)
+            session = self._sessions.get(key)
+            if session is None:
+                return None
+            try:
+                participant = self.room.touch(session.participant_id, now=time.time())
+            except portal_room.RoomError:
+                self._sessions.pop(key, None)
+                return None
+            self._sessions.move_to_end(key)
+            return session.csrf, participant
 
     def execute_queue_command(self, participant_id: str, body: dict,
                               *, session_key: str | None = None) -> tuple[int, str]:
@@ -544,6 +567,15 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             return self._send(200, {"pin_required": self.server.pin_required,
                                     "name": self.server.hostname_label})
+        if path == "/api/session":
+            resumed = self.server.resume_session(self._cookie_token())
+            if resumed is None:
+                return self._error(401, "Session expired")
+            csrf, participant = resumed
+            return self._send(200, {
+                "ok": True, "csrf": csrf,
+                "participant": participant.public(time.time()),
+            })
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
@@ -676,8 +708,14 @@ class _Handler(BaseHTTPRequestHandler):
             name = body.get("name", "Guest")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
+            token = self._cookie_token()
+            resumed = self.server.resume_session(token)
             try:
-                token, csrf, participant = self.server.login(client, pin, name)
+                if resumed is not None:
+                    csrf, participant = resumed
+                    assert token is not None
+                else:
+                    token, csrf, participant = self.server.login(client, pin, name)
             except (portal_room.RoomError, PortalRequestError) as exc:
                 return self._error(exc.status, exc.message)
             cookie = (f"sc_portal_session={token}; Path=/; HttpOnly; SameSite=Strict; "
@@ -1072,12 +1110,28 @@ $("loginForm").addEventListener("submit",async e=>{
   finally{loginButton.disabled=false}
 });
 (()=>{
-  if(PIN_REQUIRED)return;
-  $("pinRow").hidden=true;$("pin").required=false;$("pin").value="";
-  $("loginHint").textContent="Enter your name to join the house.";
-  loginButton.textContent="Join";
-  let saved="";try{saved=localStorage.getItem("sc_name")||""}catch(_){}
-  if(saved){$("name").value=saved;loginButton.click()}
+  async function restoreSession(){
+    try{
+      const response=await fetch("/api/session",{credentials:"same-origin",cache:"no-store"});
+      if(!response.ok)return false;
+      const data=await response.json();
+      if(!data.ok||!data.csrf||!data.participant)return false;
+      csrf=data.csrf;
+      try{localStorage.setItem("sc_name",data.participant.name)}catch(_){}
+      $("displayName").value=data.participant.name;
+      $("login").hidden=true;
+      refresh();
+      return true;
+    }catch(_){return false}
+  }
+  restoreSession().then(restored=>{
+    if(restored||PIN_REQUIRED)return;
+    $("pinRow").hidden=true;$("pin").required=false;$("pin").value="";
+    $("loginHint").textContent="Enter your name to join the house.";
+    loginButton.textContent="Join";
+    let saved="";try{saved=localStorage.getItem("sc_name")||""}catch(_){}
+    if(saved){$("name").value=saved;loginButton.click()}
+  });
 })();
 function expireSession(){
   csrf="";
