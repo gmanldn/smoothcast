@@ -46,7 +46,7 @@ The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which v
 
 On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms. Version lookup remains side-effect free: `smoothcast --version` (Unix) or `python src/version.py` (any OS).
 
-**Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI.
+**Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI. See the dated [platform status matrix](docs/PLATFORM_STATUS.md) for the current CI evidence and unverified native checks.
 
 ### FFmpeg compatibility
 
