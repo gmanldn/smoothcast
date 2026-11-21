@@ -350,8 +350,9 @@ Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad 
 ## LAN dashboard
 
 The desktop app starts an authenticated, browser-based dashboard while it is
-running. The main screen shows its private-LAN URL and a fresh six-character
-PIN. A paired browser can view playback state and queue, then use the supported
+running. The main screen shows a friendly mDNS address such as
+`smoothcast-lounge.local` (with the numeric IP as a fallback) and a fresh
+six-digit PIN. A paired browser can view playback state and queue, then use the supported
 playback controls. The portal uses the Python standard library and adds no web
 framework dependency. It stops with the app and restarts with a new PIN if the
 selected LAN interface changes. See the [LAN dashboard guide](docs/LAN_PORTAL.md)

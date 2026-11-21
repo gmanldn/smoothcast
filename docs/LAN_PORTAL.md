@@ -2,9 +2,15 @@
 
 When the SmoothCast desktop app is running, it starts a small web dashboard on
 the selected private LAN IPv4 interface. The **LAN dashboard** card on the main
-screen shows the address and a six-character PIN. Open that address in a
+screen shows the address and a six-digit PIN. Open that address in a
 browser on the same local network and enter the PIN to view playback state and
 use play/pause, stop, seek and volume controls. The queue is shown read-only.
+
+The address is a friendly mDNS name such as
+`http://smoothcast-lounge.local:PORT/`. SmoothCast derives the name from the
+machine hostname, prefixes it with `smoothcast`, and advertises it with
+mDNS/Bonjour when the `zeroconf` dependency is available. The card also shows
+the numeric IP address as a fallback for networks that block multicast DNS.
 
 The portal chooses a port by binding directly to an operating-system-assigned
 ephemeral port. It does not check a port and bind later. It uses Python's
@@ -15,8 +21,7 @@ served locally with no external assets.
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes
-  interfaces. The PIN uses six characters from an alphabet that omits easily
-  confused letters and digits.
+  interfaces. The PIN uses six digits so it is easy to read aloud.
 - After pairing, the browser receives a temporary, HTTP-only, same-site session
   cookie. Sessions expire after eight hours or when the portal stops. Reloading
   the page after expiry asks for the current PIN again.

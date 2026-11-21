@@ -41,9 +41,10 @@ class PortalMixin:
         self._portal_ip = address
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.url)
+        self.portal_url_label.set_text(self._portal.friendly_url)
         self.portal_pin_label.set_text(self._portal.pin)
-        self.portal_status_label.set_text("Available on your local network")
+        self.portal_status_label.set_text(
+            f"Available on your local network · IP {self._portal.url}")
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True

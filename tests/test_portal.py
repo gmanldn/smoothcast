@@ -78,11 +78,22 @@ def decode(body):
     return json.loads(body)
 
 
-def test_pin_is_six_securely_selected_readable_characters():
+def test_pin_is_six_securely_selected_digits():
     assert len(portal.new_pin()) == portal.PIN_LENGTH
-    assert set(portal.new_pin()).issubset(set(portal.PIN_ALPHABET))
-    choices = iter("AB2345")
-    assert portal.new_pin(choice=lambda _alphabet: next(choices)) == "AB2345"
+    assert set(portal.new_pin()).issubset(set(portal.PIN_DIGITS))
+    choices = iter("123456")
+    assert portal.new_pin(choice=lambda _alphabet: next(choices)) == "123456"
+
+
+def test_friendly_name_is_short_lowercase_and_stable():
+    assert portal.friendly_name("Living-Room Laptop") == "smoothcast-living-room-laptop"
+    assert portal.friendly_name("smoothcast") == "smoothcast"
+    assert portal.friendly_name("  --  ") == "smoothcast"
+    assert portal.friendly_name("A" * 80) == "smoothcast-" + "a" * 21
+    assert portal.valid_friendly_name("smoothcast-lounge")
+    assert not portal.valid_friendly_name("SmoothCast")
+    assert not portal.valid_friendly_name("bad name")
+    assert not portal.valid_friendly_name("")
 
 
 def test_portal_rejects_non_rfc1918_addresses():
@@ -104,6 +115,9 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume upload to retry" in page
     assert "start streaming to your receiver while the rest arrives" in page
+    assert "six-digit PIN" in page
+    assert 'inputmode="numeric"' in page
+    assert 'pattern="[0-9]{6}"' in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
@@ -196,6 +210,18 @@ def test_ephemeral_port_and_clean_shutdown():
     thread.join(2)
     assert not thread.is_alive()
     server.server_close()
+
+
+def test_friendly_hostname_is_allowed_when_configured():
+    server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, lambda *_args: {},
+                                      hostname="smoothcast-lounge")
+    try:
+        port = server.server_address[1]
+        assert server.host_allowed(f"smoothcast-lounge.local:{port}")
+        assert server.host_allowed("smoothcast-lounge.local")
+        assert not server.host_allowed("evil.example")
+    finally:
+        server.server_close()
 
 
 def test_application_wires_portal_into_home_screen_and_closes_it():

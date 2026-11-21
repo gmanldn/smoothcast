@@ -13,7 +13,9 @@ import hmac
 import ipaddress
 import json
 import math
+import re
 import secrets
+import socket
 import threading
 import time
 from typing import Callable
@@ -22,8 +24,9 @@ from urllib.parse import urlsplit
 import portal_uploads
 
 
-PIN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+PIN_DIGITS = "0123456789"
 PIN_LENGTH = 6
+FRIENDLY_NAME_MAX = 32
 MAX_BODY = 2048
 SESSION_SECONDS = 8 * 60 * 60
 ATTEMPT_WINDOW_SECONDS = 60
@@ -46,8 +49,38 @@ class PortalRequestError(Exception):
 
 
 def new_pin(*, choice=secrets.choice) -> str:
-    """Return a six-character PIN using a cryptographically secure chooser."""
-    return "".join(choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
+    """Return a six-digit PIN using a cryptographically secure chooser."""
+    return "".join(choice(PIN_DIGITS) for _ in range(PIN_LENGTH))
+
+
+def _dns_label(value: str) -> str:
+    """Reduce arbitrary text to a short, lowercase DNS label."""
+    label = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
+    label = re.sub(r"-{2,}", "-", label).strip("-")
+    return label[:FRIENDLY_NAME_MAX].strip("-")
+
+
+def friendly_name(hostname: str | None = None) -> str:
+    """Return a short, human-friendly mDNS name for this machine.
+
+    The system hostname is sanitised and prefixed with ``smoothcast`` so the
+    name is memorable and unlikely to collide with another device. A caller may
+    pass an explicit hostname to keep the helper deterministic in tests.
+    """
+    raw = hostname if hostname is not None else socket.gethostname()
+    label = _dns_label((raw or "").split(".")[0])
+    if not label:
+        return "smoothcast"
+    if label.startswith("smoothcast"):
+        return label
+    return _dns_label(f"smoothcast-{label}") or "smoothcast"
+
+
+def valid_friendly_name(value: str) -> bool:
+    """Return whether ``value`` is safe as a single mDNS hostname label."""
+    return bool(value) and len(value) <= FRIENDLY_NAME_MAX and bool(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", value)
+    )
 
 
 def _page() -> bytes:
@@ -60,7 +93,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
-                 uploads: portal_uploads.UploadManager | None = None) -> None:
+                 uploads: portal_uploads.UploadManager | None = None,
+                 hostname: str | None = None) -> None:
         super().__init__(address, _Handler)
         self.pin = pin
         self.dispatch = dispatch
@@ -70,11 +104,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._sessions: dict[str, tuple[str, float]] = {}
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
+        port = self.server_address[1]
         self._allowed_hosts = {
-            f"{self.server_address[0]}:{self.server_address[1]}".lower(),
-            f"127.0.0.1:{self.server_address[1]}",
-            f"localhost:{self.server_address[1]}",
+            f"{self.server_address[0]}:{port}".lower(),
+            f"127.0.0.1:{port}",
+            f"localhost:{port}",
         }
+        if hostname:
+            self._allowed_hosts.update({f"{hostname}.local:{port}", f"{hostname}.local"})
 
     def host_allowed(self, host: str) -> bool:
         return bool(host) and host.lower() in self._allowed_hosts
@@ -446,7 +483,8 @@ class Portal:
     """One-interface LAN portal with a per-run PIN and clean thread shutdown."""
 
     def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
-                 uploads: portal_uploads.UploadManager | None = None) -> None:
+                 uploads: portal_uploads.UploadManager | None = None,
+                 name: str | None = None) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -459,20 +497,71 @@ class Portal:
         if not any(address in network for network in private_nets):
             raise PortalError("Refusing to host the LAN portal on a non-private interface")
         self.pin = pin or new_pin()
-        if len(self.pin) != PIN_LENGTH or any(char not in PIN_ALPHABET for char in self.pin):
-            raise PortalError("PIN must contain six characters from the portal alphabet")
+        if len(self.pin) != PIN_LENGTH or any(char not in PIN_DIGITS for char in self.pin):
+            raise PortalError("PIN must contain six digits")
+        self.name = name or friendly_name()
+        if not valid_friendly_name(self.name):
+            raise PortalError("Friendly name must be a short lowercase DNS label")
         self.bind_ip = str(address)
         self.uploads = uploads or portal_uploads.UploadManager()
         self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch,
-                                        uploads=self.uploads)
+                                        uploads=self.uploads, hostname=self.name)
         self.port = int(self.server.server_address[1])
         self.url = f"http://{self.bind_ip}:{self.port}/"
+        self.friendly_url = f"http://{self.name}.local:{self.port}/"
+        self._zeroconf = None
+        self._service_info = None
+        self._advertise()
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.1},
                                        name="smoothcast-portal", daemon=True)
         self.thread.start()
 
+    def _advertise(self) -> None:
+        """Best-effort mDNS advertisement so the friendly name resolves."""
+        try:
+            from zeroconf import ServiceInfo, Zeroconf
+        except ImportError:
+            return
+        zeroconf = None
+        try:
+            info = ServiceInfo(
+                "_http._tcp.local.",
+                f"SmoothCast on {self.name}._http._tcp.local.",
+                addresses=[socket.inet_aton(self.bind_ip)],
+                port=self.port,
+                properties={"path": "/", "name": self.name},
+                server=f"{self.name}.local.",
+            )
+            zeroconf = Zeroconf(interfaces=[self.bind_ip])
+            zeroconf.register_service(info)
+        except Exception:
+            if zeroconf is not None:
+                try:
+                    zeroconf.close()
+                except Exception:
+                    pass
+            return
+        self._zeroconf = zeroconf
+        self._service_info = info
+
+    def _unadvertise(self) -> None:
+        zeroconf, info = self._zeroconf, self._service_info
+        self._zeroconf = self._service_info = None
+        if zeroconf is None:
+            return
+        try:
+            if info is not None:
+                zeroconf.unregister_service(info)
+        except Exception:
+            pass
+        try:
+            zeroconf.close()
+        except Exception:
+            pass
+
     def stop(self) -> None:
+        self._unadvertise()
         if self.thread.is_alive():
             self.server.shutdown()
             self.thread.join(timeout=2)
@@ -496,8 +585,8 @@ button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;c
 progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
 :focus-visible{outline:3px solid #ffd166;outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
 </style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
-<section id="login"><h2>Connect to SmoothCast</h2><p>Enter the six-character PIN shown on the SmoothCast home screen.</p>
-<form id="loginForm"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" autocomplete="one-time-code" required>
+<section id="login"><h2>Connect to SmoothCast</h2><p>Enter the six-digit PIN shown on the SmoothCast home screen.</p>
+<form id="loginForm"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Connect</button></form></section>
 <div id="dashboard" hidden><section><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p><progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
@@ -513,7 +602,7 @@ progress{width:100%;height:10px}ul{padding-left:24px}li{padding:4px 0;overflow-w
 <script>
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,activeUploadController=null;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
-$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim().toUpperCase()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
+$("loginForm").addEventListener("submit",async e=>{e.preventDefault();showError("error","");try{const d=await post("/api/login",{pin:$("pin").value.trim()});csrf=d.csrf;$("login").hidden=true;$("dashboard").hidden=false;$("uploadCard").hidden=false;refresh()}catch(err){showError("error",err.message)}});
 function clock(s){if(s==null||!Number.isFinite(s))return "—";s=Math.floor(Math.max(0,s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`}
 async function refresh(){if(!csrf||busy)return;try{const r=await fetch("/api/status",{credentials:"same-origin",cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"Connection lost");const s=d.state||{};$("state").textContent=s.state||"—";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;

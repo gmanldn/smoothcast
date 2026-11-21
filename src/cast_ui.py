@@ -606,7 +606,7 @@ class UiMixin(BookmarkUiMixin):
         )
         self.portal_url_label.add_css_class("mono")
         body.append(self.portal_url_label)
-        body.append(Gtk.Label(label="Access PIN", xalign=0.0))
+        body.append(Gtk.Label(label="6-digit PIN", xalign=0.0))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")
         self.portal_pin_label.add_css_class("mono")

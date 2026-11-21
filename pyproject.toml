@@ -14,6 +14,7 @@ dependencies = [
     "catt>=0.12,<0.14",
     "PyChromecast>=13.1.0,<15",
     "psutil>=5.9,<8",  # Verified process identity and native LAN discovery
+    "zeroconf>=0.132,<1",  # Friendly LAN dashboard hostname advertisement
 ]
 
 [project.optional-dependencies]
