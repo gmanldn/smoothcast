@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import threading
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import music_import
@@ -107,3 +108,24 @@ def test_missing_paths_and_unsupported_directories_are_counted(tmp_path):
     assert result.paths == ()
     assert result.skipped == 2
     assert result.visited == 2
+
+
+def test_embedded_album_tags_order_by_disc_then_track():
+    paths = ["album/track10.flac", "album/track2.flac", "album/track1-disc2.flac"]
+    metadata = {
+        paths[0]: SimpleNamespace(artist="Artist", album="Album", disc_number=1, track_number=10),
+        paths[1]: SimpleNamespace(artist="Artist", album="Album", disc_number=1, track_number=2),
+        paths[2]: SimpleNamespace(artist="Artist", album="Album", disc_number=2, track_number=1),
+    }
+
+    assert music_import.order_tracks(paths, metadata) == [paths[1], paths[0], paths[2]]
+
+
+def test_incomplete_album_tags_fall_back_to_natural_filename_order():
+    paths = ["album/track10.mp3", "album/track2.mp3"]
+    metadata = {
+        paths[0]: SimpleNamespace(artist="Artist", album="Album", track_number=10),
+        paths[1]: SimpleNamespace(artist="Artist", album="Album", track_number=0),
+    }
+
+    assert music_import.order_tracks(paths, metadata) == [paths[1], paths[0]]

@@ -531,6 +531,11 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
 class MediaInfo:
     path: pathlib.Path
     duration: float = 0.0
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    track_number: int = 0
+    disc_number: int = 0
     # FFprobe's absolute input stream index (not ordinal among video tracks).
     # Cover artwork can occupy stream 0, before the actual motion picture.
     video_stream_index: int = 0
@@ -905,6 +910,24 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
     """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
+    tags = {str(key).casefold(): value for key, value in (fmt.get("tags") or {}).items()}
+    media.title = str(tags.get("title") or "").strip()
+    media.artist = str(tags.get("artist") or tags.get("album_artist") or "").strip()
+    media.album = str(tags.get("album") or "").strip()
+
+    def positive_tag(*names: str) -> int:
+        for name in names:
+            value = str(tags.get(name) or "").split("/", 1)[0].strip()
+            try:
+                number = int(value)
+            except ValueError:
+                continue
+            if number > 0:
+                return number
+        return 0
+
+    media.track_number = positive_tag("track", "tracknumber", "track_number")
+    media.disc_number = positive_tag("disc", "discnumber", "disc_number") or 1
     try:
         media.bitrate = int(fmt.get("bit_rate") or 0)
     except (TypeError, ValueError):
