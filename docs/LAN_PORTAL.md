@@ -9,7 +9,8 @@ queue and the receiver; web actions are marshalled onto the GTK thread.
 
 Each person can add videos from their device, add uploads to the queue instead
 of playing them immediately, vote on titles, reorder or remove queue entries,
-start a title, skip forward/back, and use play/pause, stop, seek and volume.
+clear Up Next, start a title, skip forward/back, and use play/pause, stop, seek
+and volume. Clearing Up Next never stops or replaces the active cast.
 The room also shows live presence and a bounded activity feed. Votes are a
 visible signal and are preserved across refreshes; queue order remains under
 the room's control so nobody's film can be silently displaced.

@@ -131,6 +131,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
+    assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
     assert "Add to the shared queue" in page
 
 
@@ -247,7 +248,8 @@ def test_queue_actions_are_forwarded_to_the_gui(rig):
             ("next", {}), ("previous", {}),
             ("queue_play", {"id": "one"}),
             ("queue_remove", {"id": "one"}),
-            ("queue_move", {"id": "one", "position": 0})):
+            ("queue_move", {"id": "one", "position": 0}),
+            ("queue_clear", {})):
         payload = {"action": action, **extra}
         status, body, _ = rig.request("POST", "/api/action", payload, cookie=cookie,
                                       csrf=result["csrf"], origin=origin)
@@ -458,8 +460,9 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "mark_early_cast" in methods["_reconcile_portal_casts"]
     queue_actions = methods["_portal_queue_action"]
     for operation in ("queue_add", "queue_remove", "queue_move", "queue_play",
-                      "next", "previous"):
+                      "queue_clear", "next", "previous"):
         assert operation in queue_actions
+    assert "self.clear_queue()" in queue_actions
     assert "portal_queue_id" in methods["_portal_queue_status"]
     assert "queue_durations" in methods["_portal_queue_status"]
 

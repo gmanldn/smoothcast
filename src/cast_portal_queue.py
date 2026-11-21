@@ -52,6 +52,9 @@ class PortalQueueMixin:
         raise portal.PortalRequestError(404, "That queue item is no longer here")
 
     def _portal_queue_action(self, operation: str, payload: dict) -> str | None:
+        if operation == "queue_clear":
+            self.clear_queue()
+            return "Up Next cleared. Current playback is unchanged."
         if operation == "queue_add":
             path = self._portal_upload_path(payload)
             if self.busy:
