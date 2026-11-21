@@ -740,9 +740,9 @@ class PidHandle:
         _terminate_pid(self.pid, self.role, self.created_at)
 
     def wait(self, timeout: float | None = None) -> int:
-        deadline = None if timeout is None else time.time() + timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
         while self.poll() is None:
-            if deadline is not None and time.time() > deadline:
+            if deadline is not None and time.monotonic() > deadline:
                 raise TimeoutError("process did not exit")
             time.sleep(0.1)
         return 0
@@ -1880,8 +1880,8 @@ class Session:
         _save_session(self.state)
 
     def _wait_for_segments(self, timeout: float) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             playlist = ROOT / getattr(self, "_playlist_name", HLS_NAME)
             pattern = getattr(self, "_segment_pattern", SEGMENT_GLOB)
             if playlist.exists() and len(list(ROOT.glob(pattern))) >= 2:
