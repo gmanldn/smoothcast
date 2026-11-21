@@ -29,7 +29,10 @@ Available profiles: `chromecast-gen2`, `chromecast-gen3`, `chromecast-ultra`,
 in-process receiver (`advertise=True`) and enabled by the standalone CLI. It
 advertises `_googlecast._tcp.local.` on loopback only with Cast TXT fields. The
 discovery test is marked `multicast` and skips cleanly when local multicast is
-unavailable. Receiver-side playlist/segment fetching is still under development.
+unavailable. Finite HLS playlists and segments are fetched from loopback HTTP
+only; content types, byte ranges and CORS response headers are checked. The
+fake reports buffering, per-segment progress and `IDLE/FINISHED` at the end of
+a finite playlist. It does not fetch URLs that resolve outside loopback.
 
 Run it as a standalone development process with:
 
@@ -61,9 +64,8 @@ Do not infer device qualification from a passing fake test.
 
 Fault injection is available through `answer_heartbeats`, `delay_command()`,
 `error_command()`, `drop_connection_on()`, `stale_media_session`,
-`unsupported_seek`, `crash_on_commands`, and `reboot()`. Segment-consumption
-faults require the receiver-side HTTP fetch path and remain unimplemented.
+`unsupported_seek`, `crash_on_commands`, `slow_segments()`, and `reboot()`.
 
 The CASTV2 fake remains an active slice of [#203](https://github.com/gmanldn/smoothcast/issues/203).
-It does not yet cover the complete CastBackend contract or receiver-side media
-fetching; keep those acceptance items open until their tests exist.
+It does not yet cover the complete CastBackend contract; keep that acceptance
+item open until both adapters pass the shared contract suite against it.

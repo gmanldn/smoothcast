@@ -35,8 +35,10 @@ covers a persistent PyChromecast sender connection, heartbeat, receiver status
 and basic media commands. Its five model profiles summarize Google's published
 codec and resolution limits; they are fixtures, not real-device qualifications.
 The fake advertises `_googlecast._tcp.local.` on loopback only with the Cast
-TXT fields. It does not fetch media yet. See [Testing SmoothCast](../TESTING.md)
-and issue #203 for the current scope.
+TXT fields. It fetches finite HLS playlists and segments from loopback HTTP,
+checking MIME types, byte ranges and CORS headers. Media URLs resolving off
+loopback are rejected. See [Testing SmoothCast](../TESTING.md) and issue #203
+for the current scope.
 
 Protocol fault tests can set `answer_heartbeats = False`, use
 `delay_command()`, `error_command()` or `drop_connection_on()` for a named

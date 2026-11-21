@@ -39,7 +39,10 @@ def test_advertisement_has_cast_txt_and_pychromecast_discovers_loopback_receiver
             assert service.parsed_addresses() == ["127.0.0.1"]
 
             devices = backend.scan(timeout=5)
-            fake = [device for device in devices if device.name.startswith("SmoothCast Test")]
+            fake = [
+                device for device in devices
+                if device.host == "127.0.0.1" and device.port == receiver.port
+            ]
             if not fake:
                 pytest.skip("Cast mDNS browser cannot receive loopback multicast here")
             assert len(fake) == 1

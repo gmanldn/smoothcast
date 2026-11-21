@@ -18,6 +18,7 @@ from typing import Any
 import uuid
 
 from .discovery import CastAdvertiser
+from .media import FetchResult, HlsFetcher, MediaFetchError
 from .profiles import PROFILES, supports
 
 try:
@@ -60,6 +61,8 @@ class FakeCastReceiver:
         self._accept_thread: threading.Thread | None = None
         self._client_threads: set[threading.Thread] = set()
         self._clients: set[ssl.SSLSocket] = set()
+        self._fetch_threads: set[threading.Thread] = set()
+        self._send_lock = threading.RLock()
         self._tls_context: ssl.SSLContext | None = None
         self._advertiser: CastAdvertiser | None = None
         self._advertisement_id = uuid.uuid4().hex
@@ -79,6 +82,9 @@ class FakeCastReceiver:
         self.command_delays: dict[str, float] = {}
         self.command_errors: dict[str, str] = {}
         self.drop_commands: set[str] = set()
+        self.segment_delay = 0.0
+        self.media_fetch_results: list[FetchResult] = []
+        self.media_fetch_errors: list[str] = []
 
     def delay_command(self, command: str, seconds: float) -> None:
         """Delay a named CASTV2 command for deterministic timeout tests."""
@@ -100,6 +106,13 @@ class FakeCastReceiver:
             raise ValueError("command is required")
         with self._lock:
             self.drop_commands.add(command.strip().upper())
+
+    def slow_segments(self, seconds: float) -> None:
+        """Delay each fetched HLS segment to exercise slow-consumer buffering."""
+        if not 0 <= seconds <= 30:
+            raise ValueError("segment delay must be between 0 and 30 seconds")
+        with self._lock:
+            self.segment_delay = seconds
 
     def reboot(self, *, delay: float = 0.05) -> None:
         """Disappear and restart on the same loopback port, clearing app state."""
@@ -163,10 +176,14 @@ class FakeCastReceiver:
             self._accept_thread = None
         with self._lock:
             threads = list(self._client_threads)
+            fetch_threads = list(self._fetch_threads)
         for thread in threads:
             thread.join(timeout=1)
+        for thread in fetch_threads:
+            thread.join(timeout=3)
         with self._lock:
             self._client_threads.clear()
+            self._fetch_threads.clear()
             self._clients.clear()
 
     @property
@@ -356,8 +373,14 @@ class FakeCastReceiver:
         data: dict[str, Any],
     ) -> None:
         message_type = data.get("type")
+        media = data.get("media", {})
+        content_id = str(media.get("contentId", "")) if isinstance(media, dict) else ""
+        content_type = str(media.get("contentType", "")) if isinstance(media, dict) else ""
+        fetch_hls = message_type == "LOAD" and (
+            content_id.lower().split("?", 1)[0].endswith(".m3u8")
+            or "mpegurl" in content_type.lower()
+        )
         if message_type == "LOAD":
-            media = data.get("media", {})
             custom_data = media.get("customData", {}) if isinstance(media, dict) else {}
             fake_stream = (
                 custom_data.get("fakeStream") if isinstance(custom_data, dict) else None
@@ -371,9 +394,8 @@ class FakeCastReceiver:
                 return
         with self._lock:
             if message_type == "LOAD":
-                self._media_state = "PLAYING"
+                self._media_state = "BUFFERING" if fetch_hls else "PLAYING"
                 self._current_time = 0.0
-                media = data.get("media", {})
                 if isinstance(media, dict):
                     self._content_id = str(media.get("contentId", self._content_id))
                     self._content_type = str(media.get("contentType", self._content_type))
@@ -409,9 +431,82 @@ class FakeCastReceiver:
             "type": "MEDIA_STATUS",
             "status": [status],
         })
+        if fetch_hls:
+            thread = threading.Thread(
+                target=self._fetch_media, args=(client, request, content_id),
+                name="fakecast-media-fetch", daemon=True,
+            )
+            with self._lock:
+                self._fetch_threads.add(thread)
+            thread.start()
 
-    @staticmethod
+    def _fetch_media(
+        self, client: ssl.SSLSocket, request: CastMessage, content_id: str,
+    ) -> None:
+        with self._lock:
+            delay = self.segment_delay
+        fetcher = HlsFetcher(segment_delay=delay, cancelled=self._stopped)
+        try:
+            result = fetcher.fetch(
+                content_id,
+                on_segment=lambda duration, _count: self._media_progress(
+                    client, request, duration),
+            )
+        except Exception as exc:
+            error = (str(exc) if isinstance(exc, MediaFetchError)
+                     else f"{type(exc).__name__} while fetching media")
+            with self._lock:
+                self._media_state = "IDLE"
+                self.media_fetch_errors.append(error)
+            self._send(client, request, NS_MEDIA, {
+                "type": "LOAD_FAILED",
+                "itemId": 1,
+                "reason": "INVALID_REQUEST",
+            })
+        else:
+            with self._lock:
+                self.media_fetch_results.append(result)
+                self._media_state = "IDLE" if result.ended else "PLAYING"
+            self._send(client, request, NS_MEDIA, {
+                "type": "MEDIA_STATUS",
+                "status": [self._media_status("FINISHED" if result.ended else None)],
+            })
+        finally:
+            with self._lock:
+                self._fetch_threads.discard(threading.current_thread())
+
+    def _media_progress(
+        self, client: ssl.SSLSocket, request: CastMessage, duration: float,
+    ) -> None:
+        with self._lock:
+            self._current_time = duration
+            self._media_state = "PLAYING"
+        self._send(client, request, NS_MEDIA, {
+            "type": "MEDIA_STATUS",
+            "status": [self._media_status()],
+        })
+
+    def _media_status(self, idle_reason: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            status: dict[str, Any] = {
+                "currentTime": self._current_time,
+                "media": {
+                    "contentId": self._content_id,
+                    "contentType": self._content_type,
+                    "duration": self._duration,
+                    "streamType": "BUFFERED",
+                },
+                "mediaSessionId": self._media_session_id,
+                "playerState": self._media_state,
+                "supportedMediaCommands": 15,
+                "volume": {"level": self._volume, "muted": self._muted},
+            }
+            if idle_reason:
+                status["idleReason"] = idle_reason
+            return status
+
     def _send(
+        self,
         client: ssl.SSLSocket,
         request: CastMessage,
         namespace: str,
@@ -429,4 +524,8 @@ class FakeCastReceiver:
                 data["requestId"] = request_data["requestId"]
         response.payload_utf8 = json.dumps(data, separators=(",", ":"))
         frame = response.SerializeToString()
-        client.sendall(struct.pack(">I", len(frame)) + frame)
+        with self._send_lock:
+            try:
+                client.sendall(struct.pack(">I", len(frame)) + frame)
+            except OSError:
+                return
