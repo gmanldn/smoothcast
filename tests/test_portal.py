@@ -1270,3 +1270,40 @@ def test_stale_browser_mutations_fail_before_dispatch(rig):
     )
     assert status == 202
     assert len(rig.calls) == 1
+
+
+def test_authenticated_guest_flood_gets_429_and_other_guest_stays_responsive(rig):
+    _status, first, first_cookie = login(rig, name="Noisy")
+    _status, second, second_cookie = login(rig, name="Quiet")
+    origin = f"http://{rig.host}"
+    statuses = []
+    for _ in range(40):
+        status, data, headers = rig.request(
+            "POST", "/api/action", {"action": "stop"}, cookie=first_cookie,
+            csrf=first["csrf"], origin=origin,
+        )
+        statuses.append(status)
+        if status == 429:
+            assert int(headers["Retry-After"]) >= 1
+            assert decode(data)["ok"] is False
+    assert 202 in statuses and 429 in statuses
+    before = len(rig.calls)
+    status, data, _ = rig.request(
+        "POST", "/api/action", {"action": "stop"}, cookie=second_cookie,
+        csrf=second["csrf"], origin=origin,
+    )
+    assert status == 202 and decode(data)["ok"]
+    assert len(rig.calls) == before + 1
+
+
+def test_authenticated_read_rate_limit_does_not_block_room_recovery(rig):
+    _status, data, cookie = login(rig, name="Reader")
+    statuses = [rig.request("GET", "/api/status", cookie=cookie)[0] for _ in range(30)]
+    assert 200 in statuses and 429 in statuses
+    status, body, headers = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 429
+    assert int(headers["Retry-After"]) >= 1
+    # Existing cookie and PIN remain valid. Another participant can read.
+    _, other, other_cookie = login(rig, name="Other")
+    assert rig.request("GET", "/api/status", cookie=other_cookie)[0] == 200
+    assert other["csrf"]
