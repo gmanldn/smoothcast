@@ -105,7 +105,7 @@ class PortalRoom:
                     self._event("joined", participant.id,
                                 {"name": participant.name, "reconnected": True}, now)
             if participant is None:
-                raise RoomError(401, "Join the room again")
+                raise RoomError(401, "Your room session ended. Rejoin the room to continue.")
             participant.last_seen = now
             return participant
 

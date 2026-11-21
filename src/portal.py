@@ -202,7 +202,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 503, "SmoothCast could not accept that command") from exc
         session_id, revision, _owner = self.fence.rotate()
         return portal_commands.CommandReceipt(
-            envelope.command_id, session_id, revision, result or "Command accepted")
+            envelope.command_id, session_id, revision, result or "Command received; checking receiver state.")
 
     def server_close(self) -> None:
         try:
@@ -549,9 +549,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(raw_length or "0")
         except ValueError as exc:
-            raise PortalRequestError(400, "Invalid request body") from exc
+            raise PortalRequestError(400, "Request could not be read. Retry the action.") from exc
         if length < 0:
-            raise PortalRequestError(400, "Invalid request body")
+            raise PortalRequestError(400, "Request could not be read. Retry the action.")
         if length > MAX_BODY:
             raise PortalRequestError(413, "Request is too large")
         try:
@@ -890,7 +890,7 @@ class _Handler(BaseHTTPRequestHandler):
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
                                                 {"action": action, "id": body.get("id")})
-                        return self._send(202, {"ok": True, "message": result or "Command accepted"})
+                        return self._send(202, {"ok": True, "message": result or "Command received; checking receiver state."})
                     if action == "seek":
                         value = body.get("value")
                         if isinstance(value, bool) or not isinstance(value, (float, int)):
