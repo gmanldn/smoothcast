@@ -244,7 +244,7 @@ class CommandFence:
             foreign = bool(owner is not None and self._owner and owner != self._owner)
             if stale or foreign:
                 raise CommandError(
-                    409, "This control session has expired; refresh the dashboard",
+                    409, "Playback changed before your command. Refresh the room and retry.",
                     revision=self._revision, session_id=self._session_id)
 
 
