@@ -39,6 +39,10 @@ def test_seek_and_meter_run_at_full_rate_only_when_mapped_and_playing():
     hidden = timer_plan(mapped=False, playing=True, monitoring=True, **args)
     assert hidden.seek_ms is None and hidden.meter_ms is None
     assert hidden.poll_ms == 4000
+    assert hidden.watchdog_ms is None
+    hidden_transcode = timer_plan(
+        mapped=False, playing=True, monitoring=True, transcoding=True, **args)
+    assert hidden_transcode.watchdog_ms == 1000
     paused = timer_plan(mapped=True, playing=False, monitoring=True, **args)
     assert paused.seek_ms is None and paused.meter_ms is None
 

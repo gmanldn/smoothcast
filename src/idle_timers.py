@@ -13,6 +13,7 @@ class TimerPlan:
     sleep_ms: int | None
     fade_ms: int | None
     room_ms: int
+    watchdog_ms: int | None
 
 
 def active_deadline(value: object) -> bool:
@@ -29,6 +30,7 @@ def active_deadline(value: object) -> bool:
 def timer_plan(
     *, mapped: bool, playing: bool, monitoring: bool, foreground: bool,
     has_sleep: bool, fade_enabled: bool, fade_active: bool,
+    transcoding: bool = False,
 ) -> TimerPlan:
     """Return intervals in ms; None removes the timer source entirely."""
     return TimerPlan(
@@ -38,4 +40,5 @@ def timer_plan(
         sleep_ms=5000 if has_sleep else None,
         fade_ms=3000 if (has_sleep and fade_enabled) or fade_active else None,
         room_ms=1000 if mapped else 15000,
+        watchdog_ms=1000 if not mapped and playing and transcoding else None,
     )

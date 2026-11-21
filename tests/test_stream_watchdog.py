@@ -159,4 +159,9 @@ def test_existing_ui_tick_calls_watchdog_without_new_timer_or_cast():
     assert "stream_watchdog.recover_window(self, snapshot, position)" in source
     init_source = main_window_methods()["__init__"]
     assert "self._stream_watchdog = stream_watchdog.StreamWatchdog()" in init_source
-    assert "GLib.timeout_add(500, self._tick)" in init_source
+    timer_source = main_window_methods()["_sync_ui_timers"]
+    assert 'self._set_ui_timer("seek", schedule.seek_ms, self._tick)' in timer_source
+    assert 'self._set_ui_timer("watchdog", schedule.watchdog_ms, self._hidden_watchdog_tick)' in timer_source
+    assert "stream_watchdog.recover_window(self, session.progress()" in (
+        main_window_methods()["_hidden_watchdog_tick"]
+    )
