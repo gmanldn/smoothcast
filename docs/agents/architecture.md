@@ -3,7 +3,11 @@
 SmoothCast is Python 3.10+ with GTK4/libadwaita, FFmpeg, Chromecast (`catt`)
 and DLNA. Ordinary tests do not import GTK.
 
+<!-- invariant: INV-009 -->
+
 ## GTK window: seven smaller modules
+
+<!-- invariant: INV-011 -->
 
 Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 
@@ -25,6 +29,8 @@ or import GTK in ordinary tests.
 
 ## Discovered receiver identity
 
+<!-- invariant: INV-001 -->
+
 The selected Cast receiver has a friendly `device` and optional persisted
 `device_uuid`. An idle scan may recover a renamed receiver only when its UUID
 and new name are unique. Manual IP/DLNA selections clear that UUID. Display
@@ -33,6 +39,8 @@ qualification. Host lookup rejects duplicate/missing current records and
 failed scans, so it cannot reuse an old address.
 
 ## HLS stall watchdog (P0 SC-010)
+
+<!-- invariant: INV-002 -->
 
 `stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
 The GUI tick supplies cached FFmpeg and receiver progress; the
@@ -54,6 +62,8 @@ buffering and first-frame behavior still require qualification under
 
 ## Direct Cast acceptance and safe HLS fallback
 
+<!-- invariant: INV-003 -->
+
 `src/direct_probe.py` classifies receiver status after the `catt`
 direct-cast command returns: verified PLAYING/PAUSED with matching title is
 accepted; three consecutive explicit IDLE reports mean the decoder failed
@@ -69,6 +79,8 @@ and the actual cast worker's direct-to-HLS branch with fakes. Real device
 decoder/subtitle negotiation remains P0 issue #18.
 
 ## Subtitle selection on encoder restarts (P0 SC-015)
+
+<!-- invariant: INV-004 -->
 
 `SessionMixin._restart_at` preserves the saved external subtitle
 file, its burn-in mode, or the selected embedded *stream index*. It first
@@ -87,6 +99,8 @@ Subtitle delay lives in `src/cast_subtitles.py`; device timing and renderer
 transfers stay under [issue #22](https://github.com/gmanldn/smoothcast/issues/22).
 
 ## HLS generation identity (P1 SC-062)
+
+<!-- invariant: INV-005, INV-006 -->
 
 Every new `streamer.Session.start_transcode` generates a cryptographically
 random 128-bit stream ID. The playlist is
@@ -111,6 +125,8 @@ servers; do not launch GTK or send commands to a receiver.
 
 ## Cast diagnostics and workers
 
+<!-- invariant: INV-007, INV-010 -->
+
 `network_route_ui.start` runs opt-in Cast checks off-thread; late
 results are rejected. See [setup](../../setup/README.md).
 `Async.run` now uses bounded, separate I/O queues with GLib callback
@@ -130,6 +146,8 @@ delivery. See [worker domains](../ASYNC_WORKERS.md).
 - Tests and CI: `tests/`, `.github/workflows/verify.yml`.
 
 ## Asynchronous receiver transport safety
+
+<!-- invariant: INV-008 -->
 
 `SessionMixin.toggle_play` and `SessionMixin.seek_to` serialize direct
 Google Cast and DLNA transport commands with the window's `busy` guard.

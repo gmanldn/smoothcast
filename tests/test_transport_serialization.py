@@ -239,6 +239,7 @@ def test_dlna_seek_exception_releases_lock_and_resyncs():
 
 
 def test_stale_callbacks_never_modify_a_replaced_session_or_device():
+    """INV-008: Stale transport completion must never alter a replacement session."""
     for operation in ("toggle_play", "seek_to"):
         for replacement in ("device", "session", "closing"):
             window, jobs, _, _ = fixture()
