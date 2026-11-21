@@ -23,6 +23,7 @@ from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 import lan_guard
+import library_replication
 import portal_commands
 import peer_discovery
 import portal_room
@@ -131,6 +132,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._apply_default_command, fence=self.fence, clock=clock)
         self.pin_required = bool(pin_required)
         self.library_search: Callable | None = None
+        self.library_replication = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -406,7 +408,7 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     def _send(self, status: int, payload: dict | bytes, *, content_type="application/json",
-              cookie: str | None = None) -> None:
+              cookie: str | None = None, extra_headers: dict[str, str] | None = None) -> None:
         data = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -421,6 +423,8 @@ class _Handler(BaseHTTPRequestHandler):
                          "base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         if cookie:
             self.send_header("Set-Cookie", cookie)
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Connection", "close")
         self.end_headers()
         try:
@@ -442,6 +446,19 @@ class _Handler(BaseHTTPRequestHandler):
         return self.server.origin_allowed(origin, host) if required else (
             not origin or self.server.origin_allowed(origin, host)
         )
+
+    def _mesh_library(self, path: str) -> None:
+        """Replication pages for peers (docs/MESH_SEARCH.md section 2, #410)."""
+        handler = getattr(self.server, "library_replication", None)
+        if handler is None:
+            return self._error(404, "Library sharing is not enabled")
+        params = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items()}
+        status, payload, extra = handler.handle(path, params, self.client_address[0])
+        if status >= 400:
+            return self._send(status, {"ok": False, **payload}, extra_headers=extra)
+        body, headers = library_replication.encode(
+            payload, "gzip" in self.headers.get("Accept-Encoding", ""))
+        return self._send(status, body, extra_headers={**extra, **headers})
 
     def _search(self) -> None:
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
@@ -522,6 +539,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/search":
             return self._search()
+        if path.startswith("/mesh/library/"):
+            return self._mesh_library(path)
         if path == "/api/config":
             return self._send(200, {"pin_required": self.server.pin_required,
                                     "name": self.server.hostname_label})

@@ -5,6 +5,7 @@ from gi.repository import Adw
 
 import library_folders
 import library_index_v2
+import library_replication
 
 
 class PortalHostMixin:
@@ -27,6 +28,8 @@ class PortalHostMixin:
             current = getattr(self, "_portal", None)
             if current is not None:
                 current.server.library_search = indexer.search
+                if current.server.library_replication is None:
+                    current.server.library_replication = library_replication.Replication(indexer)
 
     def on_library_folders_changed(self, folders) -> None:
         self._ensure_library_indexer(folders)

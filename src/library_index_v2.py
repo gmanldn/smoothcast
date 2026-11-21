@@ -182,7 +182,17 @@ class LibraryIndexer:
         with self._lock:
             return int(self._conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0])
 
+    def _is_shared(self, folder_id: str) -> bool:
+        folder = next((f for f in self._folders if f.id == folder_id), None)
+        return bool(folder and folder.shared)
+
+    def folder_label(self, folder_id: str) -> str:
+        folder = next((f for f in self._folders if f.id == folder_id), None)
+        return folder.label if folder else ""
+
     def _log(self, key: str, op: str, folder_id: str) -> int:
+        if op == "upsert" and not self._is_shared(folder_id):
+            return 0  # unshared entries never enter the replication stream
         cursor = self._conn.execute(
             "INSERT INTO changelog(content_key, op, folder_id, at) VALUES(?,?,?,?)",
             (key, op, folder_id, self.clock()))
@@ -210,14 +220,18 @@ class LibraryIndexer:
                      **({"entry": self.entry(key)} if op == "upsert" else {})}
                     for s, key, op in rows]
 
-    def snapshot_page(self, cursor: str | None, limit: int = 5000
+    def snapshot_page(self, cursor: str | None, limit: int = 5000, *, shared_only: bool = False
                       ) -> tuple[list[dict], str | None, tuple[str, str, int]]:
+        limit = max(1, min(limit, 5000))
         with self._lock:
             rows = self._conn.execute(
                 f"SELECT {','.join(ENTRY_COLUMNS)} FROM entries WHERE content_key>? "
-                "ORDER BY content_key LIMIT ?", (cursor or "", max(1, min(limit, 5000)))).fetchall()
+                "ORDER BY content_key LIMIT ?", (cursor or "", limit)).fetchall()
             items = [dict(zip(ENTRY_COLUMNS, row)) for row in rows]
-            return items, (items[-1]["content_key"] if len(items) == limit else None), self.generation()
+            next_cursor = items[-1]["content_key"] if len(items) == limit else None
+            if shared_only:
+                items = [i for i in items if self._is_shared(i["folder_id"])]
+            return items, next_cursor, self.generation()
 
     def compact(self) -> None:
         now = self.clock()
@@ -234,11 +248,20 @@ class LibraryIndexer:
     # -- scanning ---------------------------------------------------------
     def set_folders(self, folders: list[library_folders.LibraryFolder]) -> None:
         with self._lock:
-            old = {f.id for f in self._folders}
+            before = {f.id: f.shared for f in self._folders}
             self._folders = list(folders)
             new = {f.id for f in folders}
-            for gone in old - new:
+            for gone in set(before) - new:
                 self._drop_folder(gone)
+            for folder in folders:
+                if folder.id in before and before[folder.id] != folder.shared:
+                    op = "upsert" if folder.shared else "delete"
+                    for (key,) in self._conn.execute(
+                            "SELECT content_key FROM entries WHERE folder_id=?", (folder.id,)).fetchall():
+                        self._conn.execute(
+                            "INSERT INTO changelog(content_key, op, folder_id, at) VALUES(?,?,?,?)",
+                            (key, op, folder.id, self.clock()))
+                    self._conn.commit()
         self._wake.set()
 
     def _drop_folder(self, folder_id: str) -> None:
