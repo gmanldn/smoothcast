@@ -10,6 +10,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
+import errno
 import hmac
 import ipaddress
 import json
@@ -44,6 +45,30 @@ LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
 QUEUE_COMMAND_TTL = 120.0
 QUEUE_COMMAND_CAPACITY = 512
+MIN_PORT = 49152
+MAX_PORT = 65535
+
+
+def preferred_room_port(value: int, *, pick=secrets.randbelow) -> int:
+    """First install chooses a high-range port; later installs reuse saved port."""
+    if type(value) is not int:
+        raise ValueError("Room port must be an integer")
+    if value == 0:
+        return MIN_PORT + pick(MAX_PORT - MIN_PORT + 1)
+    if not MIN_PORT <= value <= MAX_PORT:
+        raise ValueError("Room port must be between 49152 and 65535")
+    return value
+
+
+def bind_room_server(address, pin, dispatch, **kwargs):
+    """Bind preferred port; fall back only on an actual port collision."""
+    try:
+        return _PortalHTTPServer(address, pin, dispatch, **kwargs), False
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        return _PortalHTTPServer((address[0], 0), pin, dispatch, **kwargs), True
+
 
 
 @dataclass
@@ -936,7 +961,8 @@ class Portal:
                  name: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
-                 pin_required: bool = True) -> None:
+                 pin_required: bool = True,
+                 preferred_port: int = 0) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -957,10 +983,13 @@ class Portal:
         self.bind_ip = str(address)
         self.uploads = uploads or portal_uploads.UploadManager()
         self.room = portal_room.PortalRoom()
-        self.server = _PortalHTTPServer((self.bind_ip, 0), self.pin, dispatch,
-                                        uploads=self.uploads, hostname=self.name,
-                                        commands=commands, fence=fence,
-                                        room=self.room, pin_required=pin_required)
+        requested = preferred_room_port(preferred_port)
+        self.server, self.port_fallback = bind_room_server(
+            (self.bind_ip, requested), self.pin, dispatch,
+            uploads=self.uploads, hostname=self.name,
+            commands=commands, fence=fence,
+            room=self.room, pin_required=pin_required,
+        )
         self.port = int(self.server.server_address[1])
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
