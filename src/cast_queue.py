@@ -14,6 +14,7 @@ from utils import pretty_title
 import time
 
 import castctl
+import state_labels
 
 import dlna
 
@@ -24,12 +25,13 @@ import playback_state
 import cast_targets
 import playlist_control
 import queue_metadata
+import room_checkpoint
 import reliability_metrics
 from queue_prewarm_ui import QueuePrewarmMixin
 from queue_row_ui import QueueRowMixin
 from music_import_ui import MusicImportMixin
 
-from cast_widgets import save_config, fmt_time, Async
+from cast_widgets import ROOM_CHECKPOINT_FILE, save_config, fmt_time, Async
 
 
 class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
@@ -294,6 +296,25 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self.queue_list.select_row(row)
         self._refresh_queue_visibility()
         self._refresh_controls()
+        self._save_room_checkpoint()
+
+
+    def _save_room_checkpoint(self) -> None:
+        if getattr(getattr(self, "app", None), "selftest", False):
+            return
+        checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
+        items = tuple(self.queue)
+        if items == getattr(self, "_room_checkpoint_last", None):
+            return
+        try:
+            room_checkpoint.write_checkpoint(checkpoint, items)
+        except (OSError, ValueError) as exc:
+            if not getattr(self, "_room_checkpoint_error_shown", False):
+                self._room_checkpoint_error_shown = True
+                self.toast("Shared room recovery could not be saved", error=True)
+                self._console(f"Room queue checkpoint failed: {exc}")
+            return
+        self._room_checkpoint_last = items
 
 
     def _refresh_queue_visibility(self) -> None:
@@ -626,11 +647,10 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         self.device_state = castctl.player_state(info)
         if info is None:
             self.device_state = "OFFLINE"
-            self._set_device_badge("OFFLINE", "offline")
-        elif self.device_state in {"PLAYING", "BUFFERING"}:
-            self._set_device_badge("STREAMING", "online")
-        else:
-            self._set_device_badge("AVAILABLE", "online")
+        self._set_device_badge(
+            state_labels.present(self.device_state).short.upper(),
+            "offline" if self.device_state == "OFFLINE" else "online",
+        )
         reliability_metrics.observe(self, self.device_state)
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
@@ -661,7 +681,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 except (TypeError, ValueError, OverflowError):
                     pass
         volume = castctl.volume_percent(info)
-        if volume is not None and time.time() - self._volume_user_ts > 3:
+        if volume is not None and time.monotonic() - self._volume_user_ts > 3:
             self._syncing = True
             self.volume_scale.set_value(volume)
             self._syncing = False

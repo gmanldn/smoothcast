@@ -3,8 +3,37 @@ from __future__ import annotations
 
 from gi.repository import Adw
 
+import library_folders
+import library_index_v2
+import library_replication
+
 
 class PortalHostMixin:
+    def _ensure_library_indexer(self, folders=None) -> None:
+        """Start the shared-library indexer once folders exist (#408)."""
+        if not self.cfg.get("library_indexer", True):
+            return
+        folders = library_folders.load(self.cfg) if folders is None else folders
+        indexer = getattr(self, "_library_indexer", None)
+        if indexer is None and folders:
+            try:
+                indexer = library_index_v2.LibraryIndexer(
+                    busy=lambda: bool(getattr(self, "session", None) and self.busy))
+            except Exception:
+                return
+            self._library_indexer = indexer
+            indexer.start()
+        if indexer is not None:
+            indexer.set_folders(folders)
+            current = getattr(self, "_portal", None)
+            if current is not None:
+                current.server.library_search = indexer.search
+                if current.server.library_replication is None:
+                    current.server.library_replication = library_replication.Replication(indexer)
+
+    def on_library_folders_changed(self, folders) -> None:
+        self._ensure_library_indexer(folders)
+
     def _portal_revoke_selected(self, *_args) -> None:
         """Only the local desktop host may eject an identified room guest."""
         current = getattr(self, "_portal", None)

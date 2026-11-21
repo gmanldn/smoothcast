@@ -6,6 +6,7 @@ import threading
 import time
 
 import castctl
+import state_labels
 import lan_interfaces
 import portal
 import portal_commands
@@ -42,19 +43,33 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
-                                         commands=commands, fence=fence)
+                                         commands=commands, fence=fence,
+                                         pin_required=bool(self.cfg.get("house_pin_enabled", False)),
+                                         preferred_port=int(self.cfg.get("portal_port", 0)))
         except (OSError, portal.PortalError) as exc:
             self._portal = None
             self._portal_ip = None
             self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
             return True
         self._portal_ip = address
+        # Reuse the same port across launches; never store a failed preferred bind.
+        old_port = self.cfg.get("portal_port", 0)
+        if old_port != self._portal.port:
+            self.cfg["portal_port"] = self._portal.port
+            save_config(self.cfg)
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
         self.portal_url_label.set_text(self._portal.url)
         self.portal_copy_button.set_sensitive(True)
-        self.portal_pin_label.set_text(self._portal.pin)
-        self.portal_status_label.set_text("Listening on your local network")
+        self.portal_pin_label.set_text(
+            self._portal.pin if self._portal.server.pin_required else "Not required")
+        self._ensure_library_indexer()
+        if self._portal.port_fallback:
+            self.portal_status_label.set_text(
+                f"Previous room port {old_port} was in use. New link: {self._portal.url}"
+            )
+        else:
+            self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
@@ -136,7 +151,15 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_revoke_button.set_sensitive(bool(ids))
         summary = portal_uploads.format_portal_activity(activity)
         presence = f"In room: {roster}" if roster else "No guests connected"
-        label.set_text(f"{presence} · {summary}")
+        screens = getattr(getattr(self._portal, "server", None), "screens", None)
+        try:
+            screen_rows = screens.snapshot() if screens is not None else []
+        except Exception:
+            screen_rows = []
+        ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
+                 if isinstance(row, dict) and row.get("ready")]
+        shown = f" · Screens: {', '.join(ready)}" if ready else ""
+        label.set_text(f"{presence} · {summary}{shown}")
         peers = getattr(getattr(self, "_portal", None), "peers", None)
         peer_list = peers.snapshot() if peers is not None else []
         available = getattr(getattr(self, "_portal", None),
@@ -219,6 +242,10 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                             and not self.external and self.tracker.known)
             state = {
                 "title": title, "receiver": self._device(), "state": self.device_state,
+                "state_label": state_labels.present(self.device_state).label,
+                "state_short": state_labels.present(self.device_state).short,
+                "state_description": state_labels.present(self.device_state).accessible,
+                "state_icon": state_labels.present(self.device_state).icon,
                 "position": position, "duration": duration, "volume": volume,
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
                 "active": active, "busy": bool(self.busy),

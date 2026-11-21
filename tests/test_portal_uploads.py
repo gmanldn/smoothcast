@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import os
 import stat
+from unittest.mock import patch
 import sys
 
 import pytest
@@ -139,8 +140,26 @@ def test_queue_only_upload_never_starts_an_early_cast(tmp_path):
     assert uploads.is_queue_only("owner", created["id"]) is True
     result = uploads.append("owner", created["id"], "bytes 0-5/6", 6, BytesIO(b"abcdef"))
     assert result["ready_to_cast"] is False
-    path, name, dispatch = uploads.finalize("owner", created["id"])
+    valid_video = SimpleNamespace(
+        has_video=True, audio_streams=[], is_audio_only=False, duration=2.0,
+    )
+    with patch("streamer.ffprobe", return_value=valid_video):
+        path, name, dispatch = uploads.finalize("owner", created["id"])
     assert dispatch is True and name == "film.mkv" and path.read_bytes() == b"abcdef"
+    uploads.close()
+
+
+def test_queue_only_rejects_unreadable_media_without_a_completed_source(tmp_path):
+    uploads = manager(tmp_path)
+    created = uploads.create("owner", "film.mkv", 6, queue_only=True)
+    uploads.append("owner", created["id"], "bytes 0-5/6", 6, BytesIO(b"abcdef"))
+    with patch("streamer.ffprobe", side_effect=RuntimeError("invalid media")):
+        with pytest.raises(portal_uploads.UploadError, match="not readable media") as error:
+            uploads.finalize("owner", created["id"])
+    assert error.value.status == 422
+    with pytest.raises(portal_uploads.UploadError, match="Upload not found"):
+        uploads.status("owner", created["id"])
+    assert not (uploads.root / f"{created['id']}.mkv").exists()
     uploads.close()
 
 

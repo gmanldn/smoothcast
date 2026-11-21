@@ -1,0 +1,27 @@
+name: Shared room model nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shared-room-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test runtime
+        run: |
+          python -m pip install -e .
+          python -m pip install "pytest>=8,<10" "hypothesis>=6,<7" "PyChromecast>=13.1,<15" "catt>=0.12,<0.14"
+      - name: Explore 750 x 80 interleavings (shrunk traces on failure)
+        env:
+          SMOOTHCAST_MODEL_DEEP: "1"
+        run: python -m pytest -q tests/test_room_state_machine.py --tb=long

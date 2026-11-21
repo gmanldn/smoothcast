@@ -18,6 +18,7 @@ import responsive_layout
 
 import buffer_health
 import notifications
+import state_labels
 import playback_state
 import progress_model
 
@@ -26,7 +27,7 @@ import ui_theme
 import version
 
 from cast_widgets import (
-    APP_NAME, fmt_time, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
+    APP_NAME, DEFAULTS, fmt_time, refresh_config, save_config, SeekBar, LevelMeter, PreviewScreen, Async,
     BufferHealthGraph,
 )
 import network_route_ui
@@ -35,6 +36,54 @@ from panel_ui import PANEL_TABS, PanelMixin
 
 
 class UiMixin(PanelMixin, BookmarkUiMixin):
+
+    def _refresh_config_on_focus(self, *_args) -> None:
+        """Pick up other instances' settings without replacing local edits."""
+        if not self.is_active() or not refresh_config(self.cfg):
+            return
+        self.app.apply_accent(self.cfg.get("accent", "default"))
+        self.app.apply_density(self.cfg.get("density", "comfortable"))
+        self._apply_color_scheme()
+        scheme_action = getattr(self.app, "scheme_action", None)
+        if scheme_action is not None:
+            scheme_action.set_state(GLib.Variant("s", self.cfg["color_scheme"]))
+        self._refresh_direct_note()
+        self._sync_settings_card_from_config()
+        preferences = getattr(self, "_preferences_window", None)
+        if preferences is not None:
+            preferences.sync_from_owner()
+        menu = getattr(self, "menu_button", None)
+        if menu is not None:
+            menu.set_menu_model(self._build_menu())
+
+    def _sync_settings_card_from_config(self) -> None:
+        """Update visible inline controls after another process saves settings."""
+        self._syncing = True
+        try:
+            choices = (
+                ("quality_dropdown", "quality", {"high": 0, "balanced": 1, "saver": 2}),
+                ("audio_dropdown", "audio", {"original": 0, "dialogue": 1, "night": 2}),
+                ("loudness_dropdown", "audio_loudness", {"off": 0, "programme": 1, "album": 2}),
+                ("rotation_dropdown", "rotation", {0: 0, 90: 1, 180: 2, 270: 3}),
+                ("subs_dropdown", "subs", {"off": 0, "auto": 1, "pick": 2, "embedded": 3}),
+            )
+            for name, key, indexes in choices:
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_selected(indexes.get(self.cfg.get(key), 0))
+            for name, key in (
+                ("music_autogain_switch", "music_autogain"),
+                ("burn_switch", "burn_subs"), ("direct_switch", "direct"),
+                ("keep_switch", "keep_streaming"),
+            ):
+                widget = getattr(self, name, None)
+                if widget is not None:
+                    widget.set_active(bool(self.cfg.get(key, False)))
+            gain = getattr(self, "gain_spin", None)
+            if gain is not None:
+                gain.set_value(float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])))
+        finally:
+            self._syncing = False
 
 
     def present(self) -> None:
@@ -904,14 +953,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         if not notifications.should_notify(self.cfg, event, window_active=active):
             return
         if event == notifications.FINISHED:
-            title = "Playback finished"
+            title = notifications.event_title(event)
             name = pathlib.Path(detail).name if detail else ""
             body = f"{name} finished playing." if name else "The cast finished."
         elif event == notifications.ERROR:
-            title = "Cast failed"
+            title = notifications.event_title(event)
             body = detail or "The cast failed."
         else:
-            title = "Receiver lost"
+            title = notifications.event_title(event)
             body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
         try:
             notification = Gio.Notification.new(title)
@@ -1249,17 +1298,17 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         elif local_ready:
             self._set_chip("Preview paused" if stream is not None else "Ready to preview", "idle")
         elif self.device_state == "OFFLINE":
-            self._set_chip("Offline", "offline")
+            self._set_chip(state_labels.present("OFFLINE").short, "offline")
         elif self.busy:
-            self._set_chip("Preparing…", "buffering")
+            self._set_chip(state_labels.present("PREPARING").label, "buffering")
         elif self.external:
-            self._set_chip("External", "paused")
+            self._set_chip(state_labels.present("EXTERNAL").short, "paused")
         elif self.device_state == "BUFFERING":
-            self._set_chip("Buffering…", "buffering")
+            self._set_chip(state_labels.present("BUFFERING").label, "buffering")
         elif playing:
             self._set_chip("Live" if (self.session and self.session.mode == "transcode") else "Playing", "playing")
         elif paused:
-            self._set_chip("Paused", "paused")
+            self._set_chip(state_labels.present("PAUSED").label, "paused")
         else:
             if stream is not None and stream.get_playing():
                 self._set_chip("Playing locally", "playing")

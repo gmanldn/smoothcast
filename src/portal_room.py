@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from typing import Callable
 import secrets
 import threading
 import time
@@ -36,6 +37,7 @@ class Participant:
     color: str
     joined_at: float
     last_seen: float
+    joined_order: float = 0.0  # monotonic sort key, not displayed
 
     def public(self, now: float) -> dict:
         return {
@@ -48,8 +50,13 @@ class Participant:
 
 
 class PortalRoom:
-    def __init__(self, now: float | None = None) -> None:
-        self.created_at = time.time() if now is None else now
+    def __init__(self, now: float | None = None, *,
+                 clock: Callable[[], float] = time.monotonic,
+                 wall_clock: Callable[[], float] = time.time) -> None:
+        """Use monotonic time for expiry; wall time for human timestamps only."""
+        self.clock = clock
+        self.wall_clock = wall_clock
+        self.created_at = clock() if now is None else now
         self._lock = threading.RLock()
         self.participants: dict[str, Participant] = {}
         # A sleeping client disappears from the live roster, but its session
@@ -60,21 +67,21 @@ class PortalRoom:
         self.seq = 0
 
     def join(self, name: object, now: float | None = None) -> Participant:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             if len(self.participants) >= MAX_PARTICIPANTS:
                 raise RoomError(403, "This room is full")
             participant = Participant(
                 id=secrets.token_hex(16), name=self._unique_name(name),
                 color=COLORS[len(self.participants) % len(COLORS)],
-                joined_at=now, last_seen=now,
+                joined_at=self.wall_clock(), last_seen=now, joined_order=now,
             )
             self.participants[participant.id] = participant
             self._event("joined", participant.id, {"name": participant.name}, now)
             return participant
 
     def leave(self, participant_id: str, now: float | None = None) -> None:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             participant = (self.participants.pop(participant_id, None)
                            or self._dormant.pop(participant_id, None))
@@ -85,7 +92,7 @@ class PortalRoom:
             self._event("left", participant_id, {"name": participant.name}, now)
 
     def touch(self, participant_id: str, now: float | None = None) -> Participant:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             participant = self.participants.get(participant_id)
             if participant is None:
@@ -104,7 +111,7 @@ class PortalRoom:
 
     def rename(self, participant_id: str, name: object,
                now: float | None = None) -> Participant:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             participant = self.touch(participant_id, now)
             participant.name = self._unique_name(name, exclude_id=participant.id)
@@ -114,7 +121,7 @@ class PortalRoom:
 
     def expire_inactive(self, now: float | None = None) -> None:
         """Remove sleeping clients from the live roster, retaining brief rejoin identity."""
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             for participant_id, participant in list(self.participants.items()):
                 if now - participant.last_seen <= ONLINE_SECONDS:
@@ -134,7 +141,7 @@ class PortalRoom:
 
     def vote(self, participant_id: str, item_id: str, value: bool,
              now: float | None = None) -> dict:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         if not isinstance(value, bool):
             raise RoomError(400, "Vote must be true or false")
         with self._lock:
@@ -156,13 +163,13 @@ class PortalRoom:
 
     def record(self, participant_id: str, kind: str, data: dict | None = None,
                now: float | None = None) -> None:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             self._event(kind, participant_id, data or {}, now)
 
     def snapshot(self, participant_id: str | None = None,
                  now: float | None = None) -> dict:
-        now = time.time() if now is None else now
+        now = self.clock() if now is None else now
         with self._lock:
             me = self.participants.get(participant_id or "")
             return {
@@ -171,7 +178,7 @@ class PortalRoom:
                 "participants": [
                     person.public(now) for person in sorted(
                         self.participants.values(),
-                        key=lambda p: (p.joined_at, p.name.casefold()))
+                        key=lambda p: (p.joined_order, p.name.casefold()))
                 ],
                 "activity": list(self.events)[-20:],
             }
@@ -193,4 +200,4 @@ class PortalRoom:
     def _event(self, kind: str, actor: str, data: dict, now: float) -> None:
         self.seq += 1
         self.events.append({"seq": self.seq, "type": kind, "actor": actor,
-                            "at": now, "data": data})
+                            "at": self.wall_clock(), "data": data})

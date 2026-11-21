@@ -8,6 +8,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gio, GLib, Gtk
 
+import library_folders_ui
 import picture_check
 import preference_choices
 from cast_widgets import save_config
@@ -26,6 +27,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.set_default_size(660, 520)
         self.set_search_enabled(True)
         self._build()
+        self.library_page = library_folders_ui.LibraryFoldersPage(self)
         self.sync_from_owner()
 
     def _page(self, title: str, icon: str):
@@ -87,6 +89,21 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "After the final item, return to the first.")
         self._switch(queue, "auto_shutdown", "Close app after the final film",
                      "Close SmoothCast when playback finishes; receiver behaviour follows the keep-casting setting.")
+
+        self._switch(queue, "portal_screens", "Let room browsers play the queue",
+                     "Paired phones and TVs can act as screens or speakers.")
+        self._switch(queue, "house_pin_enabled", "Require a house PIN to join",
+                     "Only needed if people you don't trust use your Wi-Fi. Applies the next time the room restarts.")
+        room_port_row = Adw.ActionRow(
+            title="Room remote port",
+            subtitle="High-range port used by phone links and QR codes. Change takes effect on the next launch.",
+        )
+        self.portal_port_spin = Gtk.SpinButton.new_with_range(49152, 65535, 1)
+        self.portal_port_spin.set_numeric(True)
+        room_port_row.add_suffix(self.portal_port_spin)
+        room_port_row.set_activatable_widget(self.portal_port_spin)
+        self.portal_port_spin.connect("value-changed", self._change_portal_port)
+        queue.add(room_port_row)
 
         alerts = self._group(
             playback, "Notifications",
@@ -176,6 +193,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             for key, row in self._switches.items():
                 row.set_active(bool(cfg.get(key, False)))
             self.gain.set_value(float(cfg.get("audio_gain", 6.0)))
+            self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             media = self.owner.media
             audio_tracks = media.audio_streams if media is not None else []
             audio_labels = ["Auto (file default)"] + [track.label for track in audio_tracks]
@@ -249,12 +267,22 @@ class PreferencesWindow(Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
-        elif key in ("auto_crop", "auto_deinterlace", "notifications"):
+        elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
+                     "house_pin_enabled"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
             getattr(owner, toggles[key])()
         self.sync_from_owner()
+
+    def _change_portal_port(self, spin) -> None:
+        if self._syncing:
+            return
+        value = int(spin.get_value())
+        if not 49152 <= value <= 65535:
+            return
+        self.owner.cfg["portal_port"] = value
+        save_config(self.owner.cfg)
 
     def _change_gain(self, spin) -> None:
         if not self._syncing:

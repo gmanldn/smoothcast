@@ -10,6 +10,7 @@ import sys
 import threading
 import json
 import time
+from unittest import mock
 
 import pytest
 
@@ -109,6 +110,54 @@ def test_portal_rejects_non_rfc1918_addresses():
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_up_next_render_preserves_focus_and_labels_queue_actions():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index("let queueRenderKey=null;"):source.index("let statusRequest=null")]
+    harness = r"""
+const assert = require("node:assert/strict");
+class Element {
+  constructor(tag){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.listeners={};this.parentElement=null;this.className="";this.textContent="";this.classList={add:name=>{this.className+=(this.className?" ":"")+name}}}
+  append(...items){for(const item of items){item.parentElement=this;this.children.push(item)}}
+  replaceChildren(...items){this.children=[];this.append(...items)}
+  addEventListener(name,handler){this.listeners[name]=handler}
+  setAttribute(name,value){this.attributes[name]=String(value)}
+  getAttribute(name){return this.attributes[name]??null}
+  closest(selector){if(selector!=="[data-queue-id]")return null;for(let node=this;node;node=node.parentElement)if(node.dataset.queueId)return node;return null}
+  focus(){document.activeElement=this}
+}
+const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
+const document={activeElement:null,createElement:tag=>new Element(tag)};
+const elements={queue};function $(id){return elements[id]}
+const calls=[];function act(...args){calls.push(args)}
+"""
+    scenario = r"""
+const initial=[{id:"a",title:"Alpha",votes:2},{id:"b",title:"Beta",voted:true}];
+renderQueue(initial);
+const originalRow=queue.children[0];
+assert.equal(queue.children[0].getAttribute("aria-posinset"),"1");
+assert.equal(queue.children[1].getAttribute("aria-setsize"),"2");
+const buttons=queue.children[0].children[1].children;
+assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
+  "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Move Alpha later in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
+assert.equal(buttons[2].disabled,true,"the first item cannot move earlier");
+assert.equal(buttons[3].disabled,false,"the first item can move later");
+buttons[3].listeners.click();
+assert.deepEqual(calls[0], ["queue_move",undefined,{id:"a",position:1}]);
+const betaRow=queue.children[1], betaNext=betaRow.children[1].children[4];
+betaNext.focus();
+renderQueue(initial.map(item=>({...item})));
+assert.equal(queue.children[0],originalRow,"unchanged polling must retain the existing DOM row");
+renderQueue([initial[1],initial[0]]);
+const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
+assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
+renderQueue([initial[0]]);
+assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
 def test_browser_status_poll_handles_timeout_visibility_and_expired_session():
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     harness = """
@@ -136,6 +185,8 @@ const setTimeout = (callback, delay) => {
 };
 const clearTimeout = id => timers.delete(id);
 const fetch = (_url, {signal}) => {
+  if(_url==="/api/session")return Promise.resolve({status:401,ok:false,
+    json:async()=>({ok:false,error:"Session expired"})});
   requests++;
   return new Promise((resolve, reject) => {
     respond = resolve;
@@ -211,11 +262,14 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
-    assert 'title.textContent=item.title' in page
+    assert 'title.textContent=itemTitle' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
+    assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
+    assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
+    assert 'setAttribute("aria-label",label)' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
@@ -235,6 +289,67 @@ def login(rig, pin=PIN, name="Guest"):
     status, body, headers = rig.request("POST", "/api/login", {"pin": pin, "name": name},
                                         origin=f"http://{rig.host}")
     return status, decode(body), headers.get("Set-Cookie", "").split(";", 1)[0]
+
+
+def test_session_reload_recovers_same_participant_ten_times_and_login_reuses_it(rig):
+    status, data, cookie = login(rig, name="Sam")
+    assert status == 200
+    participant_id = data["participant"]["id"]
+    csrf = data["csrf"]
+    for _ in range(10):
+        status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+        assert status == 200
+        restored = decode(body)
+        assert restored["csrf"] == csrf
+        assert restored["participant"]["id"] == participant_id
+    status, body, headers = rig.request(
+        "POST", "/api/login", {"pin": "", "name": "Sam"}, cookie=cookie,
+        origin=f"http://{rig.host}")
+    assert status == 200
+    assert headers["Set-Cookie"].split(";", 1)[0] == cookie
+    assert decode(body)["participant"]["id"] == participant_id
+    assert len(rig.server.room.participants) == 1
+
+
+def test_session_recovery_rejects_expired_cookie(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    token = cookie.partition("=")[2]
+    key = rig.server._session_key(token)
+    rig.server._sessions[key].expiry = rig.server.clock() - 1
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 401
+    assert decode(body)["ok"] is False
+
+
+def test_session_recovery_checks_host_and_origin(rig):
+    _status, _data, cookie = login(rig, name="Sam")
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       host="evil.example")[0] == 400
+    assert rig.request("GET", "/api/session", cookie=cookie,
+                       origin="http://evil.example")[0] == 400
+
+
+def test_join_reclaims_offline_room_slot_before_refusing(rig):
+    # Presence expiry is monotonic, independent of wall-clock corrections.
+    now = rig.server.clock()
+    stale = rig.server.room.join("Offline", now=now - portal.portal_room.ONLINE_SECONDS - 1)
+    for index in range(portal.portal_room.MAX_PARTICIPANTS - 1):
+        rig.server.room.join(f"Guest {index}", now=now)
+    assert len(rig.server.room.participants) == portal.portal_room.MAX_PARTICIPANTS
+    _token, _csrf, joined = rig.server.create_session("New guest")
+    assert joined.id in rig.server.room.participants
+    assert stale.id in rig.server.room._dormant
+
+
+def test_session_capacity_evicts_least_recently_used(monkeypatch, rig):
+    monkeypatch.setattr(portal, "MAX_SESSIONS", 3)
+    tokens = [rig.server.create_session(f"Guest {index}")[0] for index in range(3)]
+    assert rig.server.session_participant(tokens[0]) is not None
+    newest = rig.server.create_session("Guest 3")[0]
+    assert rig.server.session_participant(tokens[0]) is not None
+    assert rig.server.session_participant(tokens[1]) is None
+    assert rig.server.session_participant(tokens[2]) is not None
+    assert rig.server.session_participant(newest) is not None
 
 
 def test_revocation_cancels_private_guest_upload_without_touching_playback(tmp_path):
@@ -807,13 +922,59 @@ def test_queue_only_upload_dispatches_queue_add_by_default(tmp_path):
             extra_headers={"Content-Range": "bytes 0-5/6"},
             content_type="application/octet-stream")
         assert status == 200
-        status, raw, _ = rig.request(
-            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
-            csrf=login_result["csrf"], origin=origin)
-        assert status == 202
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video) as probe:
+            status, raw, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            dispatch_count = len(rig.calls)
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin)
+            assert status == 202
+            assert len(rig.calls) == dispatch_count
+            assert probe.call_count == 1
         assert decode(raw)["message"] == "Added to the shared queue."
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
+    finally:
+        rig.close()
+        uploads.close()
+
+
+def test_queue_only_upload_rejects_invalid_media_without_dispatch(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        origin = f"http://{rig.host}"
+        status, raw, _ = rig.request(
+            "POST", "/api/uploads", {"name": "broken.mkv", "size": 6, "queue": True},
+            cookie=cookie, csrf=login_result["csrf"], origin=origin,
+        )
+        assert status == 201
+        upload_id = decode(raw)["id"]
+        status, _, _ = rig.request(
+            "PUT", f"/api/uploads/{upload_id}", b"broken", cookie=cookie,
+            csrf=login_result["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 0-5/6"},
+            content_type="application/octet-stream",
+        )
+        assert status == 200
+        with mock.patch("streamer.ffprobe", side_effect=RuntimeError("bad media")):
+            status, body, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=login_result["csrf"], origin=origin,
+            )
+        assert status == 422
+        assert decode(body)["error"] == "The uploaded file is not readable media"
+        assert rig.calls == []
+        assert not (uploads.root / f"{upload_id}.mkv").exists()
     finally:
         rig.close()
         uploads.close()
@@ -999,9 +1160,13 @@ def test_upload_defaults_to_queue_when_intent_is_omitted(tmp_path):
             origin=origin, extra_headers={"Content-Range": "bytes 3-5/6"},
             content_type="application/octet-stream")
         assert status == 200
-        status, _, _ = rig.request(
-            "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
-            csrf=csrf, origin=origin)
+        valid_video = SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        )
+        with mock.patch("streamer.ffprobe", return_value=valid_video):
+            status, _, _ = rig.request(
+                "POST", f"/api/uploads/{upload_id}/complete", {}, cookie=cookie,
+                csrf=csrf, origin=origin)
         assert status == 202
         assert rig.calls[-1][0] == "queue_add"
         assert Path(rig.calls[-1][1]["path"]).read_bytes() == b"abcdef"
@@ -1045,3 +1210,100 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
     finally:
         rig.close()
         uploads.close()
+
+
+def test_page_build_is_embedded_and_status_session_expose_schema(rig):
+    html = portal._page().decode("utf-8")
+    assert portal.page_build() in html
+    assert "__SC_BUILD__" not in html
+    assert "__SC_SCHEMA__" not in html
+    assert 'id="updateNotice"' in html
+    assert 'id="reloadNow"' in html
+    assert '"X-SmoothCast-Client-Build":PAGE_BUILD' in html
+    status, session, cookie = login(rig)
+    assert status == 200
+    assert session["build"] == portal.page_build()
+    assert session["client_schema"] == portal.CLIENT_SCHEMA
+    status, body, _ = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 200
+    assert decode(body)["build"] == portal.page_build()
+    status, body, _ = rig.request("GET", "/api/session", cookie=cookie)
+    assert status == 200
+    assert decode(body)["client_schema"] == portal.CLIENT_SCHEMA
+
+
+def test_stale_browser_mutations_fail_before_dispatch(rig):
+    origin = f"http://{rig.host}"
+    stale = {
+        "X-SmoothCast-Client-Schema": "0",
+        "X-SmoothCast-Client-Build": "old-build",
+    }
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert not rig.server.room.participants
+    status, body, _ = rig.request(
+        "POST", "/api/login", {"name": "Sam", "pin": PIN},
+        origin=origin, extra_headers={"Sec-Fetch-Mode": "cors"},
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    status, data, cookie = login(rig)
+    assert status == 200
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin, extra_headers=stale,
+    )
+    assert status == 409
+    assert decode(body)["code"] == "client_reload_required"
+    assert rig.calls == []
+    status, body, _ = rig.request(
+        "POST", "/api/action", {"action": "play_pause"},
+        cookie=cookie, csrf=data["csrf"], origin=origin,
+        extra_headers={
+            "X-SmoothCast-Client-Schema": str(portal.CLIENT_SCHEMA),
+            "X-SmoothCast-Client-Build": portal.page_build(),
+        },
+    )
+    assert status == 202
+    assert len(rig.calls) == 1
+
+
+def test_authenticated_guest_flood_gets_429_and_other_guest_stays_responsive(rig):
+    _status, first, first_cookie = login(rig, name="Noisy")
+    _status, second, second_cookie = login(rig, name="Quiet")
+    origin = f"http://{rig.host}"
+    statuses = []
+    for _ in range(40):
+        status, data, headers = rig.request(
+            "POST", "/api/action", {"action": "stop"}, cookie=first_cookie,
+            csrf=first["csrf"], origin=origin,
+        )
+        statuses.append(status)
+        if status == 429:
+            assert int(headers["Retry-After"]) >= 1
+            assert decode(data)["ok"] is False
+    assert 202 in statuses and 429 in statuses
+    before = len(rig.calls)
+    status, data, _ = rig.request(
+        "POST", "/api/action", {"action": "stop"}, cookie=second_cookie,
+        csrf=second["csrf"], origin=origin,
+    )
+    assert status == 202 and decode(data)["ok"]
+    assert len(rig.calls) == before + 1
+
+
+def test_authenticated_read_rate_limit_does_not_block_room_recovery(rig):
+    _status, data, cookie = login(rig, name="Reader")
+    statuses = [rig.request("GET", "/api/status", cookie=cookie)[0] for _ in range(30)]
+    assert 200 in statuses and 429 in statuses
+    status, body, headers = rig.request("GET", "/api/status", cookie=cookie)
+    assert status == 429
+    assert int(headers["Retry-After"]) >= 1
+    # Existing cookie and PIN remain valid. Another participant can read.
+    _, other, other_cookie = login(rig, name="Other")
+    assert rig.request("GET", "/api/status", cookie=other_cookie)[0] == 200
+    assert other["csrf"]

@@ -13,6 +13,16 @@ IDLE_SECONDS = 2.5
 REVEAL_EVENTS = frozenset({"motion", "key", "focus", "accessibility"})
 
 
+def animations_enabled(settings) -> bool:
+    """Read GTK accessibility preference with no GTK import (fake-testable)."""
+    if settings is None:
+        return True
+    try:
+        return bool(settings.get_property("gtk-enable-animations"))
+    except (AttributeError, TypeError, ValueError):
+        return True
+
+
 def should_hide(*, fullscreen: bool, active: bool, idle_seconds: float,
                 timeout: float = IDLE_SECONDS) -> bool:
     """Hide chrome only when fullscreen, focused and genuinely idle."""

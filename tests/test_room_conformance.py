@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 import sys
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,8 +27,11 @@ PIN = "234567"
 class RoomHarness:
     def __init__(self, count: int = 20,
                  uploads: portal_uploads.UploadManager | None = None) -> None:
+        media = ("mp3", "flac", "mp4")
         self.queue = [
-            {"id": f"item-{index}", "title": f"track-{index}.mp3", "duration": 30}
+            {"id": f"item-{index}", "title": f"track-{index}.{media[index % len(media)]}",
+             "source_kind": "video" if media[index % len(media)] == "mp4" else "audio",
+             "duration": 30}
             for index in range(count)
         ]
         self.calls: list[tuple[str, dict]] = []
@@ -153,6 +157,10 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     assert all(len(view["participants"]) == client_count for view in room_views)
     assert all({person["id"] for person in view["participants"]}
                == {client.participant_id for client in clients} for view in room_views)
+    queue_views = [body["state"]["queue"] for _status, body, _headers in snapshots]
+    assert all(view == queue_views[0] for view in queue_views)
+    assert {entry["source_kind"] for entry in queue_views[0]} == {"audio", "video"}
+    original_titles = {entry["id"]: entry["title"] for entry in queue_views[0]}
 
     for index, client in enumerate(clients):
         item_id = f"item-{index}"
@@ -178,12 +186,22 @@ def test_authenticated_clients_converge_and_all_can_edit_shared_queue(room, clie
     assert [item["id"] for item in final["state"]["queue"]] == [
         f"item-{index}" for index in range(client_count, 20)
     ]
+    assert all(item["title"] == original_titles[item["id"]]
+               for item in final["state"]["queue"])
     assert sum(action == "queue_remove" for action, _payload in room.calls) == client_count
 
 
 @pytest.mark.parametrize("client_count", [2, 5, 20])
 def test_guest_upload_is_queued_once_and_converges_across_room_clients(
-        tmp_path, client_count):
+        tmp_path, client_count, monkeypatch):
+    import streamer
+
+    monkeypatch.setattr(
+        streamer, "ffprobe",
+        lambda _path: SimpleNamespace(
+            has_video=True, audio_streams=[], is_audio_only=False, duration=1.0,
+        ),
+    )
     uploads = portal_uploads.UploadManager(tmp_path / "uploads")
     room = RoomHarness(count=0, uploads=uploads)
     try:
@@ -359,3 +377,45 @@ def test_simultaneous_seeks_are_serialized_and_one_stale_generation_is_rejected(
 
     assert sorted(results) == [202, 409]
     assert sum(action == "seek" for action, _payload in room.calls) == 1
+
+
+def test_open_join_without_pin_when_pin_not_required():
+    harness = RoomHarness(count=1)
+    harness.close()
+    server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, lambda *_: "ok", pin_required=False)
+    import threading as _t
+    thread = _t.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        host = f"127.0.0.1:{port}"
+        for path in ("/api/config",):
+            conn = HTTPConnection("127.0.0.1", port, timeout=3)
+            conn.request("GET", path, headers={"Host": host})
+            reply = json.loads(conn.getresponse().read())
+            assert reply["pin_required"] is False
+        conn = HTTPConnection("127.0.0.1", port, timeout=3)
+        conn.request("GET", "/", headers={"Host": host})
+        assert b'const PIN_REQUIRED="0"!=="0"' in conn.getresponse().read()
+        conn = HTTPConnection("127.0.0.1", port, timeout=3)
+        conn.request("POST", "/api/login", body=json.dumps({"name": "Sam"}),
+                     headers={"Host": host, "Origin": f"http://{host}",
+                              "Content-Type": "application/json"})
+        response = conn.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())["participant"]["name"] == "Sam"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(3)
+
+
+def test_pin_still_required_by_default():
+    harness = RoomHarness(count=1)
+    try:
+        status, _, _ = harness.request("POST", "/api/login", {"name": "Sam"})
+        assert status == 401
+        status, reply, _ = harness.request("GET", "/api/config")
+        assert reply["pin_required"] is True
+    finally:
+        harness.close()

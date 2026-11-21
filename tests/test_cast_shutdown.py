@@ -20,6 +20,7 @@ def lifecycle_type():
     )
     namespace = {
         "threading": threading, "save_config": lambda _: None,
+        "flush_config": lambda: True,
         "reliability_metrics": reliability_metrics, "Async": mock.Mock(),
         "peer_discovery_ui": mock.Mock(),
     }
