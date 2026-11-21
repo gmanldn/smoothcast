@@ -1,7 +1,7 @@
 # SmoothCast architecture — open the relevant module
 
 SmoothCast is Python 3.10+ with GTK4/libadwaita, FFmpeg, Chromecast (`catt`)
-and DLNA. Native setup is under `setup/`; ordinary tests do not import GTK.
+and DLNA. Ordinary tests do not import GTK.
 
 ## GTK window: seven smaller modules
 
@@ -15,22 +15,22 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |
-| Authenticated LAN dashboard lifecycle and GTK dispatch | `src/cast_portal.py` |
+| LAN dashboard, shared room, dispatch | `src/cast_portal.py`, `src/cast_portal_queue.py` |
+| Command fencing and replay | `src/portal_commands.py` |
 
-For source-level GUI tests use `tests/gui_source.py`:
+For GUI tests use `tests/gui_source.py`:
 `combined_source()` for substring assertions and
-`main_window_methods()` for AST method lookup. **Do not** rebuild a giant
-single GUI file or import GTK during ordinary tests.
+`main_window_methods()` for AST lookup. **Do not** rebuild a giant GUI file
+or import GTK in ordinary tests.
 
 ## Discovered receiver identity
 
-The selected Cast receiver has a human-friendly `device` and (when mDNS
-provides one) a persisted `device_uuid`. An idle discovery scan may recover
-a renamed receiver **only** if both its UUID and new display name are unique.
-Never migrate selection while a cast, remote URL, startup or transport command
-is active. Manual IP/DLNA selections intentionally clear the Cast UUID. Do
-not assume a display name alone proves ownership; issue #15 (SC-008)
-still tracks duplicate-name, stale-IP and real-device qualification.
+The selected Cast receiver has a friendly `device` and optional persisted
+`device_uuid`. An idle scan may recover a renamed receiver only when its UUID
+and new name are unique. Manual IP/DLNA selections clear that UUID. Display
+names alone do not prove ownership; #15 tracks mDNS reconciliation and device
+qualification. Host lookup rejects duplicate/missing current records and
+failed scans, so it cannot reuse an old address.
 
 ## HLS stall watchdog (P0 SC-010)
 
@@ -74,6 +74,7 @@ decoder/subtitle negotiation remains P0 issue #18.
 file, its burn-in mode, or the selected embedded *stream index*. It first
 probes the current source and calls `subtitle_restart.validate_restart`
 **inside the existing background worker and before stopping the old stream**.
+A forced disposition remains attached to that exact source stream on reprobe.
 A vanished/unsupported sidecar or a missing/unsupported replacement for an
 explicit embedded track is a visible error; do not silently choose the
 preferred/forced track or restart without captions. ASS/SSA files must
@@ -132,12 +133,12 @@ delivery. See [worker domains](../ASYNC_WORKERS.md).
 
 `SessionMixin.toggle_play` and `SessionMixin.seek_to` serialize direct
 Google Cast and DLNA transport commands with the window's `busy` guard.
-Every UI action, including keyboard shortcuts and seekbar signals, must obey
-that guard *before* changing optimistic UI state. Worker callbacks only
-update controls for the unchanged session and selected device and must
-release the guard on both success and failure. On failure, poll the receiver
-to resynchronise the displayed state; never infer success from an issued
-command alone. Stop and cast transitions are separate ownership paths.
+Every UI action, including shortcuts and seekbar signals, must obey that guard
+before changing optimistic state. Callbacks update controls only for the same
+session/device; release the guard on success or failure. On failure, poll the
+receiver; never infer success from an issued command.
+Stop UI trusts receiver acknowledgement; local cleanup alone is not proof that
+TV playback stopped. DLNA volume/mute need its optional RenderingControl service.
 
 This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
 cancellation, retry policy and full physical receiver acceptance remain

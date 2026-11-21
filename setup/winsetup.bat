@@ -1,23 +1,15 @@
 @echo off
-setlocal
-rem SmoothCast Windows bootstrap: only Python 3.10+ is required beforehand.
+setlocal EnableExtensions
+rem SmoothCast virgin-machine Windows installer: PowerShell detects and acquires Python,
+rem then delegates to bootstrap.py --target windows (no Python initially required).
 set "SETUP_DIR=%~dp0"
-where py >nul 2>&1
-if errorlevel 1 goto TRY_PYTHON
-py -3 -c "import sys;sys.exit(sys.version_info < (3,10))" >nul 2>&1
-if errorlevel 1 goto TRY_PYTHON
-py -3 "%SETUP_DIR%bootstrap.py" --target windows %*
-exit /b %errorlevel%
-
 :TRY_PYTHON
-where python >nul 2>&1
+where powershell.exe >nul 2>&1
 if errorlevel 1 goto NO_PYTHON
-python -c "import sys;sys.exit(sys.version_info < (3,10))" >nul 2>&1
-if errorlevel 1 goto NO_PYTHON
-python "%SETUP_DIR%bootstrap.py" --target windows %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SETUP_DIR%windows_python.ps1" -Bootstrap "%SETUP_DIR%bootstrap.py" %*
 exit /b %errorlevel%
 
 :NO_PYTHON
-echo SmoothCast setup needs Python 3.10+ installed first. 1>&2
-echo Install Python from https://www.python.org/downloads/windows/ and rerun. 1>&2
-exit /b 1
+echo SmoothCast requires built-in Windows PowerShell 5.1 or later to acquire Python. 1>&2
+cmd /c exit 1
+exit /b %errorlevel%

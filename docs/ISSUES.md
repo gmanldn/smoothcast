@@ -30,8 +30,8 @@ choose work.
    `develop` (no issue branches). Do not modify or force-reset another checkout.
 5. Validate targeted tests first, then the full headless suite when the change
    warrants it. Never launch or focus the real GTK app during routine tests.
-6. Comment compact evidence and close only when every acceptance item passes.
-   If hardware qualification remains, use `Refs #N` and leave the issue open.
+6. Comment compact evidence and close when every software/CI item passes.
+   Real-device checks are tracked in #208 and do not block closure.
 
 Measured on 18 November 2026 with 113 open issues at that time:
 
@@ -96,13 +96,14 @@ choose new identifiers only deliberately (never reuse a legacy ID).
   **Priority is encoded in the issue title**, because priority labels are
   not a prerequisite for the workflow. Do not infer priority from the
   GitHub issue number or the order issues were created.
-- **Open** means work, tests or stated verification remains. **Closed
-  (completed)** requires evidence that the stated acceptance criteria are
-  satisfied. **Closed (not planned/duplicate)** requires a clear reason and
+- **Open** means software work or tests remain. **Closed (completed)**
+  requires automated evidence that the stated criteria are satisfied;
+  real-device checks are tracked in #208, not required to close.
+  **Closed (not planned/duplicate)** requires a clear reason and
   link to the superseding issue, if any. Never silently delete work.
 - `IMPLEMENTED`, `CI PENDING`, `beta` and similar phrases in an old proposal
   are historical status notes, **not proof of final qualification**. For a
-  nearly finished item, finish the missing hardware/runtime checks instead of
+  nearly finished item, finish the missing runtime checks instead of
   rewriting functioning code.
 
 ## Required issue content
@@ -117,7 +118,8 @@ Each improvement issue should contain:
 3. **Acceptance checklist:** measurable normal, failure, boundary and
    security paths, including ownership during asynchronous playback.
 4. **Verification class:** distinguish portable unit/integration CI,
-   isolated GTK/Xvfb smoke, and actual physical receiver or OS testing.
+   isolated GTK/Xvfb smoke, and optional physical receiver or OS testing
+   (deferred device checks are tracked in #208).
 5. **Provenance and links:** legacy `SC-nnn` when relevant; reference
    tests, dependent issues, PRs, logs, source commits and known limitations.
 6. **Work-unit sizing:** use `Normalized units: 1` for one independently
@@ -150,21 +152,21 @@ additional requirements rather than creating competing tasks.
    error handling, cleanup, tests and docs. Avoid feature claims without a real
    protocol adapter. Refuse shortcuts that lose subtitle, track, seek, session
    or network-safety invariants.
-5. Validate with headless, focus-safe commands:
-   `python3 -m pytest -q tests` and
-   `python3 -m compileall -q src scripts setup tests`. Ordinary CI must never
+5. Validate with headless, focus-safe commands. Patch work uses the fast lane
+   (`compileall`, `ruff`, `mypy`); `python3 -m pytest -q tests` is required
+   only for MINOR/MAJOR bumps. Ordinary CI must never
    launch the user's actual GTK window or send commands to their TV. GTK tests
    require the **explicit** isolated Xvfb runner
-   `python3 scripts/test_gui_isolated.py`. Hardware/device checks require a
-   separately authorised, controlled test environment.
+   `python3 scripts/test_gui_isolated.py`. Optional device checks use a
+   separately authorised, controlled environment and are tracked in #208.
 6. Push the tested commit to `develop` (`Refs #68`, never a PR for agents) and
    comment exactly which acceptance checks passed, which were not performed, and
    any backward-compatibility risks. Watch CI on `develop`; if it goes red, fix
-   or `git revert` it before new work. If hardware qualification remains
-   pending, leave the issue **open**. Close issues by hand: GitHub closes them
-   from `Fixes #N` only when code reaches `main`.
-7. Comment final evidence and close as **completed** only once all specified
-   acceptance criteria pass. Use a compact, parseable close comment:
+   or `git revert` it before new work. Close by hand when automated evidence
+   satisfies the criteria: GitHub closes them from `Fixes #N` only when code
+   reaches `main`. Note any deferred device checks in #208.
+7. Comment final evidence and close as **completed** once the specified
+   software and CI criteria pass; record device checks in #208. Use a compact, parseable close comment:
    `Implementation: <SHA>`, `Why: <outcome>`, `Files: <paths>`,
    `Checklist: <pass/fail/pending per item>`,
    `Verification: portable=…; isolated GTK=…; device=…`.
@@ -175,8 +177,9 @@ additional requirements rather than creating competing tasks.
 
 - Sort/filter the live GitHub Issues list by priority and recent updates.
   Check claims and open PRs before planning a new batch.
-- Periodically reconcile **issues, source code and CI**: being merged does
-  not automatically mean finished if device qualification remains open.
+- Periodically reconcile **issues, source code and CI**: merged code with
+  green automated evidence is the completion signal; pending device checks
+  belong in #208.
 - Every proposal must remain discoverable in a GitHub issue or an explicitly
   linked, closed duplicate. Preserve paid research, original acceptance
   statements and provenance when splitting/merging tasks.

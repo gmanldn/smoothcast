@@ -66,7 +66,8 @@ def window(name="Old TV", uuid="uuid-a"):
     methods = main_window_methods()
     source = "class Discovery:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(methods[method]), "    ")
-        for method in ("_scan_done", "_on_device_selected", "_add_cast_target")
+        for method in ("_scan_done", "_scan_failed", "_on_device_selected",
+                       "_add_cast_target", "_device_host")
     )
     saved = []
     namespace = {
@@ -108,7 +109,7 @@ def window(name="Old TV", uuid="uuid-a"):
         def _poll_device(self):
             self.polls += 1
 
-        def _dlna_renderer(self):
+        def _dlna_renderer(self, device=None):
             return None
 
         def _set_device_badge(self, name, kind=None):
@@ -197,3 +198,26 @@ def test_explicit_selection_updates_uuid_and_manual_target_clears_it():
     assert w.cfg["device"] == "192.168.1.100"
     assert w.cfg["device_uuid"] == ""
     assert saves[-1]["device_uuid"] == ""
+
+
+def test_discovered_host_requires_one_current_name_match():
+    w, _ = window(name="Living Room", uuid="")
+    w.devices = [device("Living Room", "uuid-a", "192.168.1.41")]
+    assert w._device_host("Living Room") == "192.168.1.41"
+
+    # An incomplete mDNS refresh must not fall back to a cached address.
+    w.devices = [device("Living Room", "uuid-a", "")]
+    assert w._device_host("Living Room") is None
+
+    # Duplicate friendly names are indistinguishable in the name-based UI.
+    w.devices = [
+        device("Living Room", "uuid-a", "192.168.1.41"),
+        device("Living Room", "uuid-b", "192.168.1.42"),
+    ]
+    assert w._device_host("Living Room") is None
+
+    # A failed refresh invalidates the old address while preserving selection.
+    w.devices = [device("Living Room", "uuid-a", "192.168.1.41")]
+    w._scan_failed("network unavailable")
+    assert w.cfg["device"] == "Living Room"
+    assert w._device_host("Living Room") is None

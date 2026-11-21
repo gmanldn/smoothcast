@@ -30,6 +30,7 @@ import frozen_runtime
 import hw_encoder_state
 import lan_interfaces
 import language_prefs
+import loudness
 import playback_state
 import process_identity
 import process_priority
@@ -52,9 +53,13 @@ HLS_NAME = "movie.m3u8"
 SEGMENT_GLOB = "segment-*.ts"
 HLS_SEGMENT_SECONDS = 4
 HLS_PLAYLIST_SEGMENTS = 12
+# Experimental #246 opt-in. Keep MPEG-TS default until receiver qualification.
+HLS_SEGMENT_TYPE = os.environ.get("SMOOTHCAST_HLS_SEGMENT_TYPE", "mpegts").lower()
+if HLS_SEGMENT_TYPE not in {"mpegts", "fmp4"}:
+    HLS_SEGMENT_TYPE = "mpegts"
 # A half-window margin avoids resuming into deleted live HLS segments.
 HLS_PAUSE_RESTART_AFTER = HLS_SEGMENT_SECONDS * HLS_PLAYLIST_SEGMENTS / 2
-_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})\.m3u8\Z")
+_GENERATION_PLAYLIST = re.compile(r"movie-([0-9a-f]{32})(-fmp4)?\.m3u8\Z")
 
 
 def _hls_names_from_url(url: str) -> tuple[str, str]:
@@ -69,8 +74,34 @@ def _hls_names_from_url(url: str) -> tuple[str, str]:
     match = _GENERATION_PLAYLIST.fullmatch(path.removeprefix("/"))
     if not path.startswith("/") or not match:
         return "", ""
-    token = match.group(1)
-    return f"movie-{token}.m3u8", f"segment-{token}-*.ts"
+    token, fmp4 = match.groups()
+    extension = "m4s" if fmp4 else "ts"
+    suffix = "-fmp4" if fmp4 else ""
+    return f"movie-{token}{suffix}.m3u8", f"segment-{token}-*.{extension}"
+
+
+def _hls_init_from_url(url: str) -> str:
+    """Return the generation-bound fMP4 initialization resource, if any."""
+    match = _GENERATION_PLAYLIST.fullmatch(urlsplit(url).path.removeprefix("/"))
+    return f"init-{match.group(1)}.mp4" if match and match.group(2) else ""
+
+
+def _hls_output(generation: str) -> tuple[str, str, str, list[str]]:
+    """Return private resource names and FFmpeg output args for one generation."""
+    fmp4 = HLS_SEGMENT_TYPE == "fmp4"
+    suffix = "-fmp4" if fmp4 else ""
+    extension = "m4s" if fmp4 else "ts"
+    playlist = f"movie-{generation}{suffix}.m3u8"
+    pattern = f"segment-{generation}-*.{extension}"
+    init = f"init-{generation}.mp4" if fmp4 else ""
+    output_args = []
+    if fmp4:
+        output_args += ["-hls_segment_type", "fmp4",
+                        "-hls_fmp4_init_filename", init]
+    output_args += ["-hls_segment_filename",
+                    str(ROOT / f"segment-{generation}-%05d.{extension}"),
+                    str(ROOT / playlist)]
+    return playlist, pattern, init, output_args
 
 
 VAAPI_PATH = "/dev/dri/renderD128"
@@ -79,6 +110,10 @@ VIDEO_EXTS = {
     ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts",
     ".mpeg", ".mpg", ".wmv", ".flv", ".ogv",
 }
+AUDIO_EXTS = {
+    ".mp3", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aiff", ".aif",
+}
+MEDIA_EXTS = VIDEO_EXTS | AUDIO_EXTS
 DIRECT_EXTS = {".mp4", ".m4v", ".mov"}
 DIRECT_VCODECS = {"h264"}
 DIRECT_ACODECS = {"aac", "mp3"}
@@ -140,19 +175,87 @@ AUDIO_DETAILS = {
 }
 
 
-def audio_filters(profile: str, gain_db: float = 0.0) -> list:
-    """Return the ffmpeg -af chain for a profile, with optional positive or negative gain.
+def audio_filters(profile: str, gain_db: float = 0.0,
+                  loudness_mode: str = loudness.DEFAULT) -> list:
+    """Return the ffmpeg -af chain for a profile, gain and loudness choice.
 
     ``gain_db`` is *prepended* so it feeds the compressor: positive values lift
     quiet dialogue above the compressor threshold, while negative values
     attenuate an over-loud soundtrack before compression. Both signs must be
     applied; dropping attenuation would leave a trimmed track too loud.
-    ``original`` stays untouched and never gets gain.
+    ``original`` stays untouched and never gets gain. An explicit EBU R128
+    loudness choice is appended last (after the limiter) for all profiles.
     """
     filters = list(AUDIO_FILTERS.get(profile) or [])
-    if not filters or gain_db is None or float(gain_db) == 0:
-        return filters
-    return [f"volume={float(gain_db):g}dB"] + filters
+    if filters and gain_db is not None and float(gain_db) != 0:
+        filters = [f"volume={float(gain_db):g}dB"] + filters
+    filters += loudness.filter_args(loudness_mode)
+    return filters
+
+
+def state_loudness(state) -> str:
+    """Loudness mode recorded on a session state, including older states."""
+    if getattr(state, "music_autogain", False):
+        return ("music_autogain_measured" if getattr(
+            state, "music_autogain_measured", False) else "music_autogain")
+    return getattr(state, "audio_loudness", loudness.DEFAULT) if state else loudness.DEFAULT
+
+
+def music_hint_not_applied(hint: str, media, cfg: dict) -> str:
+    enabled = (cfg.get("music_autogain", False)
+               and loudness.normalize(cfg.get("audio_loudness", "off")) == loudness.DEFAULT)
+    return hint + " · Music autogain not applied on this route" if (
+        enabled and getattr(media, "is_audio_only", False)) else hint
+
+
+def schedule_music_analysis(path, media, audio_track, owner, cfg) -> bool:
+    """Schedule bounded analysis for this and the next queued audio track."""
+    if not (cfg.get("music_autogain", False) and media.is_audio_only
+            and loudness.normalize(cfg.get("audio_loudness", "off")) == loudness.DEFAULT):
+        return False
+    selected = preferred_audio_track(media, audio_track)
+    track = selected.index if selected is not None else 0
+    profile = cfg["audio"]
+    filters = tuple(AUDIO_FILTERS.get(profile) or ())
+    downmix = (audio_downmix.downmix_filter(selected.channels, selected.layout, profile)
+               if selected is not None else None)
+    loudness.schedule_analysis(path, track, profile, downmix=downmix, pre_filters=filters)
+    choices = cfg.get("audio_track_by_file") or {}
+    queued = tuple(getattr(owner, "queue", ()) or ())
+    try:
+        upcoming = queued[queued.index(str(path)) + 1:]
+    except ValueError:
+        upcoming = ()
+    for candidate in upcoming:
+        if pathlib.Path(candidate).suffix.lower() not in AUDIO_EXTS:
+            continue
+        choice = choices.get(candidate, -1) if isinstance(choices, dict) else -1
+        next_track = choice if type(choice) is int and choice >= 0 else 0
+        loudness.schedule_analysis(candidate, next_track, profile, pre_filters=filters)
+        break
+    return True
+
+
+def monitor_summary(profile: str, gain_db: float,
+                    loudness_mode: str = loudness.DEFAULT, *,
+                    music_state=None) -> tuple[list, str]:
+    """Metering chain and a concise hint for the current audio settings."""
+    music_mode = loudness_mode in {"music_autogain", "music_autogain_measured"}
+    measured = loudness_mode == "music_autogain_measured"
+    if music_mode:
+        loudness_mode = loudness.DEFAULT
+    chain = audio_filters(profile, gain_db, loudness_mode)
+    hint = AUDIO_LABELS.get(profile, profile)
+    if gain_db > 0:
+        hint += f" · +{gain_db:g} dB"
+    if loudness.normalize(loudness_mode) != loudness.DEFAULT:
+        hint += f" · {loudness.label(loudness_mode)}"
+    if music_mode or getattr(music_state, "music_autogain", False):
+        chain.append(loudness.music_filter(None))
+        hint += " · Music autogain" + (
+            " (measured)" if measured or getattr(music_state, "music_autogain_measured", False)
+            else " (streaming fallback)")
+    return chain, hint
 
 
 def atempo_filters(speed: float) -> list:
@@ -290,18 +393,19 @@ def auto_trim_gain(path: str, profile: str, audio_track_index: int = 0,
 
 
 def effective_chain(path: str, profile: str, manual_gain_db: float = 0.0,
-                    audio_track_index: int = 0) -> list:
-    """Full ffmpeg ``-af`` chain: auto input trim + manual gain + profile filters.
+                    audio_track_index: int = 0,
+                    loudness_mode: str = loudness.DEFAULT) -> list:
+    """Full ffmpeg ``-af`` chain: auto trim, manual gain, profile and loudness.
 
     The auto-trim drives the signal above the compressor threshold so the
     compressor is always working; the manual gain adds on top for extra
-    loudness (positive) or attenuation (negative).  For ``original`` the chain
-    is empty and no measurement runs.
+    loudness (positive) or attenuation (negative). ``original`` normally has
+    no chain and no measurement, but an explicit loudness choice still applies.
     """
     if profile == "original":
-        return []
+        return audio_filters(profile, loudness_mode=loudness_mode)
     trim = auto_trim_gain(path, profile, audio_track_index=audio_track_index)
-    return audio_filters(profile, trim + manual_gain_db)
+    return audio_filters(profile, trim + manual_gain_db, loudness_mode)
 
 
 class StreamError(RuntimeError):
@@ -344,6 +448,29 @@ def preferred_audio_track(media: "MediaInfo", requested: int = -1) -> AudioTrack
     return next((t for t in media.audio_streams if t.default), None) or (
         media.audio_streams[0] if media.audio_streams else None
     )
+
+
+def media_summary(media: "MediaInfo") -> str:
+    """Describe audio-only media without inventing a video resolution."""
+    if media.is_audio_only:
+        return " · ".join(bit for bit in (
+            f"Audio · {media.acodec or 'unknown codec'}",
+            f"{media.channels}ch" if media.channels else "",
+        ) if bit)
+    return " · ".join(bit for bit in (media.resolution, media.vcodec) if bit)
+
+
+def audio_cast_options(media: "MediaInfo", subs_mode: str,
+                       subs_path: pathlib.Path | None, burn: bool,
+                       *, dlna: bool = False) -> tuple[pathlib.Path | None, bool]:
+    """Resolve subtitle settings for audio-only media before receiver changes."""
+    if getattr(media, "is_audio_only", False) is not True:
+        return subs_path, burn
+    if subs_mode in {"pick", "embedded"}:
+        raise StreamError("Audio-only media does not support subtitles; choose Auto or Off")
+    if dlna:
+        raise StreamError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
+    return None, False
 
 
 @dataclass(frozen=True)
@@ -417,10 +544,21 @@ class MediaInfo:
     audio_tracks: int = 0
     audio_streams: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
+    audio_only: bool = False
     size: int = 0
     bitrate: int = 0
     direct_ok: bool = False
     direct_reason: str = ""
+
+    @property
+    def has_video(self) -> bool:
+        """Whether probe found a real motion-video stream (cover art is excluded)."""
+        return bool(self.vcodec)
+
+    @property
+    def is_audio_only(self) -> bool:
+        """Whether the file has audio but no motion-video stream."""
+        return self.audio_only
 
     @property
     def resolution(self) -> str:
@@ -636,6 +774,20 @@ def _duration_seconds(raw: object) -> float:
         return 0.0
 
 
+def _stream_duration(stream: dict) -> float:
+    """Use ffprobe's seconds, Matroska duration tag, or exact time base."""
+    duration = (_duration_seconds(stream.get("duration"))
+                or _duration_seconds((stream.get("tags") or {}).get("DURATION")))
+    if duration:
+        return duration
+    try:
+        duration_ts = int(stream.get("duration_ts") or 0)
+        time_base = Fraction(str(stream.get("time_base") or "0"))
+        return _duration_seconds(float(duration_ts * time_base))
+    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return 0.0
+
+
 def _motion_video_stream(streams: list[dict]) -> dict | None:
     """Choose real motion video, never an attached/still cover image.
 
@@ -676,18 +828,58 @@ def _rotated_dimensions(width: int, height: int, rotation: int) -> tuple[int, in
     return (height, width) if rotation in (90, 270) else (width, height)
 
 
-def ffprobe(path: pathlib.Path) -> MediaInfo:
+def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: float = 30):
+    """Run FFprobe as a killable child for speculative queue metadata reads."""
+    if cancel.is_set():
+        raise StreamError("Next-item prewarm cancelled")
+    try:
+        proc = subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+    except OSError as exc:
+        raise StreamError(f"ffprobe could not be started: {exc}") from exc
+    deadline = time.monotonic() + timeout
+    while True:
+        if cancel.is_set():
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+            try:
+                proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+                proc.communicate()
+            raise StreamError("Next-item prewarm cancelled")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            proc.communicate()
+            raise StreamError("ffprobe timed out while reading this file")
+        try:
+            stdout, stderr = proc.communicate(timeout=min(0.1, remaining))
+            return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> MediaInfo:
     media = MediaInfo(path=path)
     try:
         media.size = path.stat().st_size
     except OSError:
         pass
     try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-print_format", "json",
-             "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, timeout=30,
-        )
+        args = ["ffprobe", "-v", "error", "-print_format", "json",
+                "-show_format", "-show_streams", str(path)]
+        result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
+                  subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
         raise StreamError("ffprobe is not installed or not on PATH") from exc
     except subprocess.TimeoutExpired as exc:
@@ -718,8 +910,6 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
         pass
     streams = data.get("streams") or []
     selected_video = _motion_video_stream(streams)
-    if selected_video is None:
-        raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     subtitle_index = 0
     for stream_position, stream in enumerate(streams):
         kind = stream.get("codec_type")
@@ -736,17 +926,7 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             except (ValueError, ZeroDivisionError, OverflowError):
                 media.fps = 0.0
             if not media.duration:
-                media.duration = (
-                    _duration_seconds(stream.get("duration"))
-                    or _duration_seconds((stream.get("tags") or {}).get("DURATION"))
-                )
-                if not media.duration:
-                    try:
-                        duration_ts = int(stream.get("duration_ts") or 0)
-                        time_base = Fraction(str(stream.get("time_base") or "0"))
-                        media.duration = _duration_seconds(float(duration_ts * time_base))
-                    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
-                        pass
+                media.duration = _stream_duration(stream)
         elif kind == "audio":
             tags = stream.get("tags") or {}
             disposition = stream.get("disposition") or {}
@@ -763,6 +943,8 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
             if not media.acodec:
                 media.acodec = str(stream.get("codec_name") or "")
                 media.channels = int(stream.get("channels") or 0)
+            if not media.duration:
+                media.duration = _stream_duration(stream)
         elif kind == "subtitle":
             tags = stream.get("tags") or {}
             disposition = stream.get("disposition") or {}
@@ -775,12 +957,17 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
                 forced=bool(disposition.get("forced")),
             ))
             subtitle_index += 1
-    if not media.vcodec:
+    media.audio_only = selected_video is None and bool(media.audio_streams)
+    if not media.vcodec and not media.audio_streams:
         raise StreamError("No motion-video stream found (file may contain only cover artwork)")
     media.direct_ok, media.direct_reason = _direct_capable(media)
 
 
 def _direct_capable(media: MediaInfo) -> tuple[bool, str]:
+    if media.is_audio_only:
+        return False, "Audio-only media uses the compatible AAC transcode path"
+    if not media.has_video:
+        return False, "No motion-video stream is available"
     if media.path.suffix.lower() not in DIRECT_EXTS:
         return False, f"{media.path.suffix or 'This format'} plays best through the transcoder"
     if media.vcodec not in DIRECT_VCODECS:
@@ -882,6 +1069,9 @@ class SessionState:
     quality: str = "balanced"
     audio: str = "dialogue"
     audio_gain_db: float = 0.0
+    audio_loudness: str = loudness.DEFAULT
+    music_autogain: bool = False
+    music_autogain_measured: bool = False
     audio_track_index: int = -1
     subs: str = ""
     burn_subs: bool = False
@@ -988,7 +1178,9 @@ class Session:
         self._playlist_name, self._segment_pattern = _hls_names_from_url(
             state.stream_url if state.mode == "transcode" else "",
         )
-        self.audio_chain = audio_filters(state.audio, state.audio_gain_db)
+        self._init_name = _hls_init_from_url(state.stream_url)
+        self.audio_chain = audio_filters(
+            state.audio, state.audio_gain_db, state.audio_loudness)
         def recovered(pid: int, role: str, created_at: float):
             if (type(created_at) not in (int, float)
                     or not math.isfinite(created_at) or created_at <= 0
@@ -1026,6 +1218,7 @@ class Session:
         if not playlist or not pattern:
             return False
         self._playlist_name, self._segment_pattern = playlist, pattern
+        self._init_name = _hls_init_from_url(self.state.stream_url)
         return self._playlist_is_complete(ROOT / playlist) and _server_healthy()
 
     def encoder_finished(self) -> bool:
@@ -1112,7 +1305,8 @@ class Session:
             return ""
         return " ".join(line.strip() for line in content[-lines:] if line.strip())
 
-    def stop(self, device: str, *, send_stop: bool = True) -> None:
+    def stop(self, device: str, *, send_stop: bool = True) -> bool:
+        remote_stopped = False
         self._stop_sampler()
         _terminate(self.caster)
         _terminate(self.ffmpeg)
@@ -1126,7 +1320,8 @@ class Session:
                 if type(created) in (int, float) and math.isfinite(created) and created > 0:
                     _terminate_pid(pid, role, created)
         if send_stop:
-            castctl.stop(device)
+            remote_stopped, _message = castctl.stop(device)
+            remote_stopped = bool(remote_stopped)
         clear_session()
         # Revoke this session's generation so a kept-alive server stops
         # answering for a cast that has ended (#228) -- but only if the policy
@@ -1137,6 +1332,9 @@ class Session:
             (ROOT / hls_server.POLICY_NAME).unlink(missing_ok=True)
         for segment in ROOT.glob(getattr(self, "_segment_pattern", SEGMENT_GLOB)):
             segment.unlink(missing_ok=True)
+        init_name = getattr(self, "_init_name", "")
+        if init_name and re.fullmatch(r"init-[0-9a-f]{32}\.mp4", init_name):
+            (ROOT / init_name).unlink(missing_ok=True)
         playlist = getattr(self, "_playlist_name", HLS_NAME)
         if playlist == HLS_NAME or _GENERATION_PLAYLIST.fullmatch(playlist):
             (ROOT / playlist).unlink(missing_ok=True)
@@ -1147,6 +1345,7 @@ class Session:
         self.ffmpeg = None
         self.server = None
         self.caster = None
+        return remote_stopped
 
     def _start_server(self, bind_ip: str | None = None,
                       receiver_ip: str | None = None, token: str = "") -> None:
@@ -1382,6 +1581,7 @@ class Session:
         burn_subs: bool,
         title: str,
         audio_gain_db: float = 0.0,
+        audio_loudness: str = loudness.DEFAULT,
         device_ip: str | None = None,
         speed: float = 1.0,
         rotation: int = 0,
@@ -1390,6 +1590,7 @@ class Session:
         subtitle_delay_ms: int = 0,
         subtitle_preset: str = subtitle_style.DEFAULT,
         audio_delay_ms: int = 0,
+        music_autogain: bool = False,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
@@ -1405,16 +1606,25 @@ class Session:
         # File names, not just query parameters, identify each encoder
         # generation: stale TV requests cannot read the replacement film.
         generation = secrets.token_hex(16)
-        self._playlist_name = f"movie-{generation}.m3u8"
-        self._segment_pattern = f"segment-{generation}-*.ts"
+        (self._playlist_name, self._segment_pattern, self._init_name,
+         hls_output_args) = _hls_output(generation)
         PROGRESS_FILE.unlink(missing_ok=True)
         for segment in ROOT.glob(SEGMENT_GLOB):
             segment.unlink(missing_ok=True)
+        for segment in ROOT.glob("segment-*.m4s"):
+            if re.fullmatch(r"segment-[0-9a-f]{32}-[0-9]+\.m4s", segment.name):
+                segment.unlink(missing_ok=True)
+        for init in ROOT.glob("init-*.mp4"):
+            if re.fullmatch(r"init-[0-9a-f]{32}\.mp4", init.name):
+                init.unlink(missing_ok=True)
         # Remove only generated HLS playlists, not arbitrary cache content.
         for playlist in ROOT.glob("movie-*.m3u8"):
             if _GENERATION_PLAYLIST.fullmatch(playlist.name):
                 playlist.unlink(missing_ok=True)
         (ROOT / HLS_NAME).unlink(missing_ok=True)
+        audio_only = media.is_audio_only
+        if audio_only and (subs_file is not None or embedded_subtitle_index is not None):
+            raise StreamError("Audio-only media does not support subtitles")
         # Embedded text subtitles must be drawn by libass; the receiver
         # cannot decode Matroska subtitle tracks from a transcoded HLS stream.
         embedded_codec = ""
@@ -1441,19 +1651,25 @@ class Session:
         )
         # The baseline Google Cast H.264 profile is capped at 1080p30; large
         # frames and high bit-depth/4:4:4 sources require a software downscale.
-        video_plan = video_policy.make_plan(
-            str(media.path), media.duration, media.width, media.height,
-            video_stream=media.video_stream_index)
-        out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
-        if (out_w > 1920 or out_h > 1080
-                or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
-            self.used_software_fallback = True
+        video_plan = None
+        if audio_only:
+            # Audio-only HLS has no synthetic video stream and never invokes
+            # VAAPI or the video policy planner.
+            software = True
+        else:
+            video_plan = video_policy.make_plan(
+                str(media.path), media.duration, media.width, media.height,
+                video_stream=media.video_stream_index)
+            out_w, out_h = _rotated_dimensions(*video_plan.output_size(media.width, media.height), rotation)
+            if (out_w > 1920 or out_h > 1080
+                    or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
+                self.used_software_fallback = True
         if bitmap_track is not None:
             self.used_software_fallback = True
-        if not self.used_software_fallback and self._vaapi_known_bad():
+        if not audio_only and not self.used_software_fallback and self._vaapi_known_bad():
             # Skip a hardware start that already stalled on this exact setup.
             self.used_software_fallback = True
-        software = self.used_software_fallback
+        software = True if audio_only else self.used_software_fallback
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-progress", str(PROGRESS_FILE), "-nostats",
@@ -1461,13 +1677,17 @@ class Session:
             # setpts/atempo stream needs 2× input, otherwise the TV starves.
             "-ss", str(max(0.0, offset)), "-readrate", f"{speed:g}",
         ]
-        args += self._hwaccel_args(software)
+        if not audio_only:
+            args += self._hwaccel_args(software)
         args += ["-i", str(media.path)]
-        if bitmap_track is None:
+        if audio_only:
+            args += ["-vn"]
+        elif bitmap_track is None:
             args += ["-map", f"0:{media.video_stream_index}"]
         args += ["-map", audio_map]
-        args += self._codec_args(quality, software)
-        filter_args = self._filter_args(
+        if not audio_only:
+            args += self._codec_args(quality, software)
+        filter_args = [] if audio_only else self._filter_args(
             burn_subs, staged, software, speed, rotation,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
@@ -1485,8 +1705,16 @@ class Session:
             args += ["-map", "[v]"]
         downmix = (audio_downmix.downmix_filter(audio_track.channels, audio_track.layout, audio_profile)
                    if audio_track is not None else None)
-        filters = audio_filters(audio_profile, audio_gain_db)
-        if filters:
+        profile_filters = AUDIO_FILTERS.get(audio_profile) or []
+        music_autogain_active = (
+            bool(music_autogain) and media.is_audio_only
+            and loudness.normalize(audio_loudness) == loudness.DEFAULT
+        )
+        music_analysis = (loudness.get_cached(
+            media.path, audio_track.index if audio_track is not None else 0,
+            audio_profile, downmix=downmix, pre_filters=tuple(profile_filters),
+        ) if music_autogain_active else None)
+        if profile_filters and not music_autogain_active:
             # Auto-trim the selected soundtrack so the compressor always
             # engages, then apply the user's manual gain on top.  Store the
             # total so the monitor and resume paths use the exact same chain.
@@ -1496,11 +1724,15 @@ class Session:
                 downmix=downmix,
             )
             effective_gain = trim + audio_gain_db
-            filters = audio_filters(audio_profile, effective_gain)
-            if downmix:
-                filters = [downmix] + filters  # matrix first, then gain/compressor
         else:
             effective_gain = 0.0
+        if music_autogain_active:
+            filters = list(profile_filters)
+            filters.append(loudness.music_filter(music_analysis))
+        else:
+            filters = audio_filters(audio_profile, effective_gain, audio_loudness)
+        if downmix:
+            filters = [downmix] + filters  # matrix first, then gain/compressor
         if speed != 1.0:
             # Change the playback/transcode rate: video timestamps are scaled
             # and audio is resampled with atempo so A/V stay in sync.
@@ -1510,16 +1742,15 @@ class Session:
         filters = filters + audio_delay.filters(audio_delay_ms)
         if filters:
             args += ["-af", ",".join(filters)]
-        if media.fps > 30.01:
+        if not audio_only and media.fps > 30.01:
             args += ["-r", "30"]
         args += [
             "-c:a", "aac", "-b:a", "192k", "-ac", "2",
             "-f", "hls", "-hls_time", str(HLS_SEGMENT_SECONDS),
             "-hls_list_size", str(HLS_PLAYLIST_SEGMENTS),
             "-hls_flags", "delete_segments+independent_segments",
-            "-hls_segment_filename", str(ROOT / f"segment-{generation}-%05d.ts"),
-            str(ROOT / self._playlist_name),
         ]
+        args += hls_output_args
         with open(FFMPEG_LOG, "w") as log:
             low_priority = process_priority.enabled()
             self.ffmpeg = subprocess.Popen(
@@ -1553,12 +1784,14 @@ class Session:
                     media, offset, device=device, quality=quality,
                     audio_profile=audio_profile, subs_file=subs_file,
                     burn_subs=burn_subs, title=title,
-                    audio_gain_db=audio_gain_db, device_ip=device_ip,
+                    audio_gain_db=audio_gain_db,
+                    audio_loudness=audio_loudness, device_ip=device_ip,
                     speed=speed, rotation=rotation,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
                     subtitle_delay_ms=subtitle_delay_ms,
                     audio_delay_ms=audio_delay_ms,
+                    music_autogain=music_autogain,
                 )
                 return
             raise StreamError("the encoder failed to produce a stream" + (f" — {tail}" if tail else ""))
@@ -1585,6 +1818,9 @@ class Session:
             file=str(media.path), mode="transcode", offset=max(0.0, offset),
             duration=media.duration, device=device, title=title, quality=quality,
             audio=audio_profile, audio_gain_db=effective_gain,
+            audio_loudness=loudness.normalize(audio_loudness),
+            music_autogain=music_autogain_active,
+            music_autogain_measured=music_analysis is not None,
             audio_track_index=audio_track_index,
             subs=str(subs_file or ""), burn_subs=burn_subs,
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
@@ -1676,9 +1912,21 @@ class Session:
                 valid = re.fullmatch(r"segment-[0-9]+\.ts", name) is not None
             else:
                 match = _GENERATION_PLAYLIST.fullmatch(playlist_name)
-                valid = bool(match and re.fullmatch(
-                    rf"segment-{match.group(1)}-[0-9]+\.ts", name,
-                ))
+                if match and match.group(2):
+                    init = f"init-{match.group(1)}.mp4"
+                    if f'#EXT-X-MAP:URI="{init}"' not in text:
+                        return False
+                    try:
+                        init_path = ROOT / init
+                        if not init_path.is_file() or init_path.stat().st_size == 0:
+                            return False
+                    except OSError:
+                        return False
+                    valid = re.fullmatch(rf"segment-{match.group(1)}-[0-9]+\.m4s", name) is not None
+                else:
+                    valid = bool(match and re.fullmatch(
+                        rf"segment-{match.group(1)}-[0-9]+\.ts", name,
+                    ))
             if not valid:
                 return False
             try:

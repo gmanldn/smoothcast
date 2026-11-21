@@ -44,7 +44,7 @@ Current root rules override outdated historical notes below.
 
 ## Project
 SmoothCast is a GTK4/libadwaita Chromecast companion app.
-- Checkout launcher: `./smoothcast` (Linux/macOS) bootstraps a project-local `.venv` and hands off to `setup/launch.py`. On Windows, `python sc.py` delegates to `setup/launch.py` after `setup/winsetup.bat`. Never leave shell-generation commands in the launcher, use unset variables, or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported launcher paths tested.
+- Checkout launcher: `smoothcast` is one Python-only entry point on Linux, macOS and Windows (`./smoothcast` or `python smoothcast`). It bootstraps a project-local `.venv` and hands off to `setup/launch.py`. Do not add a second shell/Python launcher or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported installed and checkout paths tested.
 - **Do not launch the real GUI during normal test cycles.** Never run `./smoothcast`,
   `smoothcast`, `python3 src/cast_control.py`, or `gtk-launch` as a test.
 - **Default tests:** `python3 -m pytest -q tests` and `python3 -m compileall -q src scripts setup tests`;

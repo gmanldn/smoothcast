@@ -19,13 +19,19 @@ for the repository rules; do not add a parallel Markdown feature list.
    git worktree add --detach ../smoothcast-N origin/develop
    ```
 
-3. Test headlessly — never launch the real GUI or control a TV in routine tests:
+3. Check headlessly — never launch the real GUI or control a TV. Patch work
+   uses the fast lane; the full suite is required only for MINOR/MAJOR bumps:
 
    ```sh
-   python3 -m pytest -q tests
    python3 -m compileall -q src scripts setup tests
-   ruff check src scripts setup tests sc.py setup.py
+   python3 -m py_compile smoothcast
+   ruff check src scripts setup tests smoothcast setup.py
+   mypy
+   python3 -m pytest -q tests -n auto   # MINOR/MAJOR only
    ```
+
+   `python3 scripts/ci/test_scope.py --base origin/develop` reports the lane CI
+   will use. Target tests for changed behavior during patch work.
 
 4. Commit small and coherent (`Refs #N`), integrate with
    `git fetch origin && git rebase origin/develop` (your unpushed commits only),
@@ -44,7 +50,8 @@ Fork, branch, and open a pull request **against `develop`**.
 ## Releases
 
 `python3 scripts/ci/bump_version.py` on `develop`, push, and the release
-reaches `main` automatically once CI verifies it. Publishing a GitHub release
+reaches `main` automatically once CI verifies it. Patch bumps use the fast
+lane; MINOR/MAJOR bumps run the full test matrix. Publishing a GitHub release
 is a separate tag step: see [docs/agents/workflow.md](docs/agents/workflow.md).
 
 Security issues: see [SECURITY.md](SECURITY.md).

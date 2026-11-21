@@ -14,18 +14,21 @@ from pathlib import Path
 import shutil
 
 import audio_delay
+import bookmarks
 import cache_policy
 import subtitle_delay
 import accent
 import density
 import subtitle_style
 import language_prefs
+import loudness
 import watch_history
 
 
 _OPTIONS = {
     "quality": frozenset({"high", "balanced", "saver"}),
     "audio": frozenset({"original", "dialogue", "night"}),
+    "audio_loudness": frozenset(loudness.TARGETS),
     "subs": frozenset({"off", "auto", "pick", "embedded"}),
     "color_scheme": frozenset({"default", "force-light", "prefer-dark"}),
     "subtitle_style": frozenset(subtitle_style.PRESETS),
@@ -67,25 +70,9 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             if isinstance(value, str) and value in _OPTIONS[key]:
                 cfg[key] = value
         elif key == "watch_history":
-            if isinstance(value, list):
-                clean = []
-                for item in islice(value, _MAX_ITEMS):
-                    if not isinstance(item, dict):
-                        continue
-                    path = item.get("path")
-                    event = item.get("event")
-                    source = item.get("source")
-                    position = item.get("position")
-                    at = item.get("at")
-                    if (isinstance(path, str) and 0 < len(path) <= _MAX_PATH
-                            and event in watch_history.EVENTS
-                            and source in watch_history.SOURCES
-                            and _number(position) and _number(at)):
-                        clean.append({
-                            "path": path, "event": event, "source": source,
-                            "position": float(position), "at": float(at),
-                        })
-                cfg[key] = clean[:watch_history.LIMIT]
+            cfg[key] = watch_history.clean(value)
+        elif key == "bookmarks":
+            cfg[key] = bookmarks.clean(value)
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (

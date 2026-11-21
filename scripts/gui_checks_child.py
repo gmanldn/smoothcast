@@ -124,6 +124,87 @@ def saved_device(app, window) -> None:
           str(window.device_dropdown.get_selected()))
 
 
+def local_video_runtime(app, window) -> None:
+    """Exercise Gtk.Video decode, pause, seek, EOS and replay on generated media."""
+    if shutil.which("ffmpeg") is None:
+        check("runtime media generator is available", False, "ffmpeg not installed")
+        return
+    folder = Path(tempfile.mkdtemp(prefix="smoothcast-runtime-"))
+    clip = folder / "runtime.mp4"
+    try:
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+            "-i", "testsrc2=size=320x180:rate=15:duration=3", "-f", "lavfi",
+            "-i", "sine=frequency=440:sample_rate=44100:duration=3",
+            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-y", str(clip),
+        ], check=True, capture_output=True, timeout=30)
+        # Keep the generated audio stream silent; this private display must not
+        # make sound on a developer's machine.
+        prepared = window._on_local_prepared
+
+        def muted_prepared(stream, param, path):
+            stream.set_volume(0.0)
+            prepared(stream, param, path)
+
+        window._on_local_prepared = muted_prepared
+        window._preview_path = str(clip)
+        window._preview_position = 0.0
+        window._play_locally()
+        for _ in range(100):
+            pump(0.05)
+            stream = window._local_stream()
+            if stream is not None and (stream.is_prepared() or stream.get_error()):
+                break
+        stream = window._local_stream()
+        error = stream.get_error() if stream is not None else None
+        check("Gtk.Video prepared generated video/audio", bool(stream and stream.is_prepared()),
+              error.message if error else "no prepared media stream")
+        check("media stream reports a duration and seek support",
+              bool(stream and stream.get_duration() >= 2_000_000 and stream.is_seekable()))
+        if stream is None or not stream.is_prepared() or error is not None:
+            return
+        for _ in range(40):
+            pump(0.05)
+            if stream.get_timestamp() >= 250_000:
+                break
+        check("first playback advances decoded media time",
+              stream.get_playing() and stream.get_timestamp() >= 250_000,
+              str(stream.get_timestamp()))
+        window.seek_to(1.5)
+        for _ in range(30):
+            pump(0.05)
+            if stream.get_timestamp() >= 1_300_000:
+                break
+        check("in-window seek reaches the requested position",
+              1_300_000 <= stream.get_timestamp() <= 1_900_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        paused_at = stream.get_timestamp()
+        pump(0.3)
+        check("pause holds the local playback clock",
+              not stream.get_playing() and abs(stream.get_timestamp() - paused_at) < 100_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        check("resume restarts the prepared stream", stream.get_playing())
+        for _ in range(45):
+            pump(0.05)
+            if not stream.get_playing():
+                break
+        check("end of stream stops playback", not stream.get_playing(), str(stream.get_timestamp()))
+        window.seek_to(0.0)
+        window._toggle_local_preview()
+        pump(0.2)
+        check("replay restarts from the beginning",
+              stream.get_playing() and stream.get_timestamp() < 500_000,
+              str(stream.get_timestamp()))
+        window._unload_local_video()
+        check("cleanup releases the local media stream", window._local_stream() is None)
+    finally:
+        window._unload_local_video()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def report_problem(app, window) -> None:
     """Help > Report a problem opens a prefilled bug form and sends nothing itself (#274)."""
     items = menu_items(window.menu_button.get_menu_model())
@@ -439,6 +520,46 @@ def density_junk(app, window) -> None:
           and app._density_provider is None, repr(window.cfg.get("density")))
 
 
+def subtitle_style_choice(app, window) -> None:
+    """The accessible subtitle preset persists and appears selected in Preferences (#34)."""
+    import subtitle_style
+
+    window.action_preferences()
+    pump(0.3)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("subtitle_style")
+    labels = dropdown_names(combo) if combo is not None else []
+    check("Preferences lists every safe subtitle appearance preset",
+          labels == [item[0] for item in subtitle_style.PRESETS.values()], repr(labels))
+    check("the default preset starts selected", combo is not None and combo.get_selected() == 0,
+          str(combo.get_selected() if combo is not None else None))
+    if combo is None:
+        return
+    combo.set_selected(1)
+    pump(0.3)
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+    saved = json.loads(config_file.read_text("utf-8")) if config_file.exists() else {}
+    check("choosing Large updates the shared config and saved file",
+          window.cfg.get("subtitle_style") == "large" and saved.get("subtitle_style") == "large",
+          repr(saved.get("subtitle_style")))
+    check("the Preferences row remains synchronized", combo.get_selected() == 1,
+          str(combo.get_selected()))
+
+
+def subtitle_style_saved(app, window) -> None:
+    window.action_preferences()
+    pump(0.3)
+    combo = window._preferences_window._combos.get("subtitle_style")
+    check("a saved high-contrast style appears selected",
+          combo is not None and combo.get_selected() == 2,
+          str(combo.get_selected() if combo is not None else None))
+
+
+def subtitle_style_junk(app, window) -> None:
+    check("an unknown saved preset falls back safely", window.cfg.get("subtitle_style") == "default",
+          repr(window.cfg.get("subtitle_style")))
+
+
 def text_fit_wide(app, window) -> None:
     """The text-fit pass is narrow-only: a wide window keeps its labels exactly as designed (#136)."""
     import text_fit
@@ -490,12 +611,37 @@ def audio_delay_menu(app, window) -> None:
     check("another film starts with no delay", window.cfg["audio_delay_by_file"].get(window._preview_path) is None)
 
 
+def bookmarks_menu(app, window) -> None:
+    """Named bookmark actions appear in the real menu and clear safely (#117)."""
+    window.cfg["bookmarks"] = [{
+        "fingerprint": "a" * 64, "name": "Favourite scene", "media": "film.mkv",
+        "position": 12.0, "created": 1.0,
+    }]
+    items = menu_items(window._build_menu())
+    check("Bookmarks menu has add and saved jump actions",
+          ("Add bookmark at current position…", "app.bookmark-add") in items
+          and ("Favourite scene — film.mkv (00:12)", "app.bookmark-0") in items,
+          repr([item for item in items if "bookmark" in item[1]]))
+    check("bookmark actions are registered",
+          app.lookup_action("bookmark-add") is not None
+          and app.lookup_action("bookmark-0") is not None
+          and app.lookup_action("clear-bookmarks") is not None)
+    app.lookup_action("clear-bookmarks").activate(None)
+    pump(0.2)
+    check("Clear bookmarks empties the list", window.cfg["bookmarks"] == [])
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+             "local-video-runtime": local_video_runtime,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
              "density-junk": density_junk, "text-fit": text_fit_wide,
-             "audio-delay": audio_delay_menu}
+             "audio-delay": audio_delay_menu,
+             "subtitle-style": subtitle_style_choice,
+             "subtitle-style-saved": subtitle_style_saved,
+             "subtitle-style-junk": subtitle_style_junk,
+             "bookmarks": bookmarks_menu}
 
 
 class CheckApp(cast_control.CastControlApp):

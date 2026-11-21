@@ -1,9 +1,9 @@
 """UPnP AV MediaRenderer control and a private, range-capable media server.
 
 This is an independent DLNA adapter; it never sends catt/Google Cast commands
-to a renderer. Supports progressive MP4 resources, preparing compatible MP4
-output from other containers with FFmpeg before playback where necessary.
-Only one explicit local file is served per session, under an unguessable URL.
+to a renderer. It negotiates progressive MP4 or MPEG-TS resources and prepares
+compatible output from other containers with FFmpeg when necessary. Only one
+explicit local file is served per session, under an unguessable URL.
 """
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ import video_policy
 SSDP_ADDRESS = ("239.255.255.250", 1900)
 DEVICE_TYPE = "urn:schemas-upnp-org:device:MediaRenderer:1"
 SERVICE_PREFIX = "urn:schemas-upnp-org:service:"
+IDEMPOTENT_SOAP_ACTIONS = {"Play", "Pause", "Stop", "Seek", "SetVolume", "SetMute"}
 MAX_DESCRIPTION = 512 * 1024
 MAX_SOAP_RESPONSE = 128 * 1024
 MAX_RENDERERS = 64
@@ -44,6 +45,8 @@ MAX_DISCOVERY_WORKERS = 8
 CHUNK = 128 * 1024
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 MEDIA_TYPE = "video/mp4"
+MPEG_TS_MEDIA_TYPE = "video/mpeg"
+MPEG_TS_TYPES = {MPEG_TS_MEDIA_TYPE, "video/mp2t", "video/vnd.dlna.mpeg-tts"}
 
 _live_encoders: set[subprocess.Popen] = set()
 _encoder_lock = threading.Lock()
@@ -85,6 +88,11 @@ class Renderer:
     model: str = ""
     connection_url: str = ""
     connection_service: str = ""
+
+    @property
+    def supports_rendering_control(self) -> bool:
+        """Whether this renderer advertised its optional volume/mute service."""
+        return bool(self.rendering_url and self.rendering_service)
 
     @property
     def key(self) -> str:
@@ -328,32 +336,38 @@ def _soap(renderer: Renderer, action: str, params: dict[str, str],
         f'<s:Body><u:{action} xmlns:u="{service}">{params_xml}'
         f'</u:{action}></s:Body></s:Envelope>'
     ).encode("utf-8")
-    conn = HTTPConnection(host, port, timeout=5)
-    try:
-        conn.request("POST", target, body=request_xml, headers={
-            "Content-Type": 'text/xml; charset="utf-8"',
-            "SOAPACTION": f'"{service}#{action}"',
-            "Connection": "close",
-        })
-        response = conn.getresponse()
-        data = response.read(MAX_SOAP_RESPONSE + 1)
-        if len(data) > MAX_SOAP_RESPONSE:
-            raise DlnaError("DLNA response exceeds safe size limit")
-        if response.status != 200:
+    attempts = 2 if action in IDEMPOTENT_SOAP_ACTIONS else 1
+    for attempt in range(attempts):
+        conn = HTTPConnection(host, port, timeout=5)
+        try:
+            conn.request("POST", target, body=request_xml, headers={
+                "Content-Type": 'text/xml; charset="utf-8"',
+                "SOAPACTION": f'"{service}#{action}"',
+                "Connection": "close",
+            })
+            response = conn.getresponse()
+            data = response.read(MAX_SOAP_RESPONSE + 1)
+            if len(data) > MAX_SOAP_RESPONSE:
+                raise DlnaError("DLNA response exceeds safe size limit")
+            if response.status != 200:
+                fault = _upnp_fault(data)
+                suffix = f"; {fault}" if fault else ""
+                raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
+            root = ET.fromstring(data)
             fault = _upnp_fault(data)
-            suffix = f"; {fault}" if fault else ""
-            raise DlnaError(f"DLNA {action} failed (HTTP {response.status}{suffix})")
-        root = ET.fromstring(data)
-        fault = _upnp_fault(data)
-        if fault:
-            raise DlnaError(f"DLNA {action} failed ({fault})")
-        return root
-    except ET.ParseError as exc:
-        raise DlnaError(f"DLNA {action} returned invalid XML") from exc
-    except (OSError, HTTPException) as exc:
-        raise DlnaError(f"DLNA {action} failed: {exc}") from exc
-    finally:
-        conn.close()
+            if fault:
+                raise DlnaError(f"DLNA {action} failed ({fault})")
+            return root
+        except ET.ParseError as exc:
+            raise DlnaError(f"DLNA {action} returned invalid XML") from exc
+        except (OSError, HTTPException) as exc:
+            if (attempt + 1 < attempts
+                    and isinstance(exc, (TimeoutError, ConnectionResetError, HTTPException))):
+                continue
+            raise DlnaError(f"DLNA {action} failed: {exc}") from exc
+        finally:
+            conn.close()
+    raise DlnaError(f"DLNA {action} failed")
 
 
 def _value(root: ET.Element, key: str) -> str:
@@ -380,11 +394,15 @@ def advertised_http_formats(renderer: Renderer) -> frozenset[str]:
     return frozenset(formats)
 
 
-def require_mp4_output(renderer: Renderer) -> None:
-    """Check whether the advertised formats include our progressive output."""
+def negotiate_media_type(renderer: Renderer) -> str:
+    """Choose MP4 or MPEG-TS from the receiver's advertised HTTP sink types."""
     formats = advertised_http_formats(renderer)
-    if formats and formats.isdisjoint({MEDIA_TYPE, "video/*", "*"}):
-        raise DlnaError("The receiver does not advertise MP4 playback over HTTP")
+    if not formats or not formats.isdisjoint({MEDIA_TYPE, "video/*", "*"}):
+        return MEDIA_TYPE
+    for media_type in (MPEG_TS_MEDIA_TYPE, "video/mp2t", "video/vnd.dlna.mpeg-tts"):
+        if media_type in formats:
+            return media_type
+    raise DlnaError("The receiver advertises no supported MP4 or MPEG-TS HTTP format")
 
 
 def _seconds(clock: str) -> float:
@@ -402,7 +420,7 @@ def _clock(position: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def info(renderer: Renderer) -> dict | None:
+def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
     try:
         state = _soap(renderer, "GetTransportInfo", {"InstanceID": "0"})
     except DlnaError:
@@ -419,9 +437,19 @@ def info(renderer: Renderer) -> dict | None:
         pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"})
         result["current_time"] = _seconds(_value(pos, "RelTime"))
         result["duration"] = _seconds(_value(pos, "TrackDuration"))
+        metadata = _value(pos, "TrackMetaData")
+        if metadata:
+            try:
+                track = ET.fromstring(metadata)
+                title = next((str(node.text or "").strip() for node in track.iter()
+                              if _local(node.tag) == "title"), "")
+                if title:
+                    result["title"] = title[:160]
+            except ET.ParseError:
+                pass  # Some renderers return partial or non-XML metadata.
     except DlnaError:
         pass
-    if renderer.rendering_url:
+    if include_volume and renderer.rendering_url:
         try:
             volume = _soap(renderer, "GetVolume", {
                 "InstanceID": "0", "Channel": "Master",
@@ -432,7 +460,7 @@ def info(renderer: Renderer) -> dict | None:
     return result
 
 
-def set_uri(renderer: Renderer, url: str, title: str) -> None:
+def set_uri(renderer: Renderer, url: str, title: str, media_type: str = MEDIA_TYPE) -> None:
     # DIDL-Lite metadata is XML-escaped again by the SOAP envelope builder.
     metadata = (
         '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
@@ -441,7 +469,7 @@ def set_uri(renderer: Renderer, url: str, title: str) -> None:
         '<item id="0" parentID="0" restricted="1">'
         f"<dc:title>{escape(title)}</dc:title>"
         "<upnp:class>object.item.videoItem</upnp:class>"
-        f'<res protocolInfo="http-get:*:{MEDIA_TYPE}:*">{escape(url)}</res>'
+        f'<res protocolInfo="http-get:*:{media_type}:*">{escape(url)}</res>'
         "</item></DIDL-Lite>"
     )
     _soap(renderer, "SetAVTransportURI", {
@@ -477,11 +505,15 @@ def set_muted(renderer: Renderer, muted: bool) -> None:
                                 "DesiredMute": "1" if muted else "0"}, rendering=True)
 
 
+class _DLNAMediaHTTPServer(ThreadingHTTPServer):
+    media_type: str
+
+
 class ProgressiveFileServer:
-    """Serve one chosen local MP4 with HTTP byte ranges and an ephemeral URL."""
+    """Serve one receiver-compatible movie with byte ranges and an ephemeral URL."""
 
     def __init__(self, path: Path, *, receiver_ip: str,
-                 bind_ip: str = "127.0.0.1"):
+                 bind_ip: str = "127.0.0.1", media_type: str = MEDIA_TYPE):
         self.path = Path(path)
         if not self.path.is_file() or self.path.stat().st_size < 1:
             raise DlnaError("DLNA file is missing or empty")
@@ -491,6 +523,9 @@ class ProgressiveFileServer:
             raise DlnaError("DLNA listener requires a private LAN IPv4 address")
         self.bind_ip = bind_ip
         self.receiver_ip = receiver_ip
+        if media_type != MEDIA_TYPE and media_type not in MPEG_TS_TYPES:
+            raise DlnaError("Unsupported DLNA media type")
+        self.media_type = media_type
         self.token = secrets.token_urlsafe(24)
         source = self.path
         allowed = {receiver_ip, "127.0.0.1"}
@@ -513,7 +548,7 @@ class ProgressiveFileServer:
                     return self.request_version == "HTTP/1.0"
                 if len(hosts) != 1:
                     return False
-                if not isinstance(self.server, ThreadingHTTPServer):
+                if not isinstance(self.server, _DLNAMediaHTTPServer):
                     return False
                 host = hosts[0].strip()
                 return host in {
@@ -527,6 +562,8 @@ class ProgressiveFileServer:
                 self._serve(True)
 
             def _serve(self, body: bool) -> None:
+                if not isinstance(self.server, _DLNAMediaHTTPServer):
+                    return
                 if self.client_address[0] not in allowed or self.path != resource:
                     self.send_error(404)
                     return
@@ -562,7 +599,7 @@ class ProgressiveFileServer:
                             return
                         partial = True
                     self.send_response(206 if partial else 200)
-                    self.send_header("Content-Type", MEDIA_TYPE)
+                    self.send_header("Content-Type", self.server.media_type)
                     self.send_header("Accept-Ranges", "bytes")
                     self.send_header("Content-Length", str(end - start + 1))
                     if partial:
@@ -591,10 +628,11 @@ class ProgressiveFileServer:
                 self.end_headers()
 
         try:
-            self.httpd = ThreadingHTTPServer((bind_ip, 0), Handler)
+            self.httpd = _DLNAMediaHTTPServer((bind_ip, 0), Handler)
         except OSError as exc:
             raise DlnaError(f"Cannot listen for DLNA on {bind_ip}: {exc}") from exc
         self.httpd.daemon_threads = True
+        self.httpd.media_type = self.media_type
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever,
                                        name="smoothcast-dlna-http", daemon=True)
@@ -634,13 +672,16 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 audio_track: int = 0, subtitle_delay_ms: int = 0,
                 cancel: threading.Event | None = None,
                 scratch_lease_fd: int | None = None,
-                audio_delay_ms: int = 0, audio_profile: str = "original") -> Path:
-    """Prepare a complete progressive MP4; never expose a partially written file.
+                audio_delay_ms: int = 0, audio_profile: str = "original",
+                muxer: str = "mp4") -> Path:
+    """Prepare complete progressive MP4 or MPEG-TS; never expose partial output.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
     overlays or >1080p/30 sources need an offline encode, which can be slow.
     """
     from streamer import Session
+    if muxer not in {"mp4", "mpegts"}:
+        raise DlnaError("Unsupported DLNA output container")
     if cancel is not None and cancel.is_set():
         raise DlnaError("DLNA preparation cancelled")
     source = Path(media.path)
@@ -655,7 +696,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
     output.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(output.parent).free
     if free < max(512 * 1024 * 1024, source.stat().st_size * 2):
-        raise DlnaError("Not enough free space to prepare a DLNA-compatible MP4")
+        raise DlnaError("Not enough free space to prepare DLNA-compatible output")
     blocked = cache_policy.conversion_blocker(
         source.stat().st_size * 2, cache_policy.configured_cap_mb(),
         cache_policy.scratch_in_use(Path(tempfile.gettempdir())) - cache_policy.directory_size(output.parent),
@@ -671,7 +712,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         raise DlnaError("Selected DLNA audio track is no longer available")
     # media.acodec describes a default/first stream; it is *not* necessarily
     # the soundtrack selected from the UI. Copying selected DTS/FLAC into
-    # a TV-oriented MP4 can fail or yield a file without playable dialogue.
+    # a receiver-compatible container can fail or omit the selected dialogue.
     selected_codec = (
         (selected_audio.codec or "").lower() if selected_audio is not None
         else (media.acodec or "").lower()
@@ -729,7 +770,9 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         if filters:
             args += ["-af", ",".join(filters)]
         args += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
-    args += ["-movflags", "+faststart", "-f", "mp4", str(output)]
+    if muxer == "mp4":
+        args += ["-movflags", "+faststart"]
+    args += ["-f", muxer, str(output)]
     # A full-film conversion is slow. Poll the child process so the UI's
     # Cancel/Stop button can abort immediately and no orphan FFmpeg remains.
     with tempfile.TemporaryFile() as error_log:
@@ -775,7 +818,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
             size = error_log.tell()
             error_log.seek(max(0, size - 2048))
             message = error_log.read().decode("utf-8", "replace").strip().splitlines()
-            raise DlnaError((message[-1] if message else "DLNA MP4 preparation failed")[-300:])
+            raise DlnaError((message[-1] if message else "DLNA media preparation failed")[-300:])
     return output
 
 
@@ -810,8 +853,11 @@ class Session:
               embedded_subtitle_index: int | None = None, audio_track: int = 0,
               subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None,
-              audio_delay_ms: int = 0, audio_profile: str = "original") -> None:
+              audio_delay_ms: int = 0, audio_profile: str = "original",
+              media_type: str = MEDIA_TYPE) -> None:
         from streamer import SessionState
+        if media_type != MEDIA_TYPE and media_type not in MPEG_TS_TYPES:
+            raise DlnaError("Unsupported DLNA media type")
         self.tmp = tempfile.TemporaryDirectory(prefix="smoothcast-dlna-")
         self.renderer = renderer
         # Ownership begins only once SetAVTransportURI succeeds, so a failure
@@ -822,7 +868,8 @@ class Session:
             self._scratch_lease = cache_policy.hold_scratch_lease(Path(self.tmp.name))
             path = Path(media.path)
             direct = (
-                path.suffix.lower() in {".mp4", ".m4v"}
+                (path.suffix.lower() in {".mp4", ".m4v"} and media_type == MEDIA_TYPE
+                 or path.suffix.lower() in {".ts", ".m2ts"} and media_type in MPEG_TS_TYPES)
                 and media.vcodec == "h264"
                 and media.acodec in {"", "aac", "mp3"}
                 and media.pix_fmt in {"", "yuv420p", "yuvj420p"}
@@ -833,21 +880,23 @@ class Session:
                 and audio_delay.normalize(audio_delay_ms) == 0
             )
             if not direct:
+                suffix = ".mp4" if media_type == MEDIA_TYPE else ".ts"
                 path = prepare_mp4(
-                    media, Path(self.tmp.name) / "movie.mp4",
+                    media, Path(self.tmp.name) / f"movie{suffix}",
                     subtitle_file=subtitle_file,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track=audio_track, subtitle_delay_ms=subtitle_delay_ms,
                     audio_delay_ms=audio_delay_ms, audio_profile=audio_profile, cancel=cancel,
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
+                    muxer="mp4" if media_type == MEDIA_TYPE else "mpegts",
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
             self.http = ProgressiveFileServer(
-                path, receiver_ip=renderer.host, bind_ip=local_ip,
+                path, receiver_ip=renderer.host, bind_ip=local_ip, media_type=media_type,
             )
-            set_uri(renderer, self.http.url(local_ip), title)
+            set_uri(renderer, self.http.url(local_ip), title, media_type=media_type)
             self._owns_renderer = True
             play(renderer)
             if offset > 0:
@@ -868,12 +917,14 @@ class Session:
             self.stop(renderer.key, send_stop=self._owns_renderer)
             raise
 
-    def stop(self, _device: str, *, send_stop: bool = True) -> None:
+    def stop(self, _device: str, *, send_stop: bool = True) -> bool:
+        remote_stopped = False
         if send_stop and self._owns_renderer and self.renderer is not None:
             try:
                 stop(self.renderer)
+                remote_stopped = True
             except DlnaError:
-                pass
+                remote_stopped = False
         if self.http is not None:
             self.http.close()
             self.http = None
@@ -886,3 +937,4 @@ class Session:
         self.state = None
         self._owns_renderer = False
         self.renderer = None
+        return remote_stopped

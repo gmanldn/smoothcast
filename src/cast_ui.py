@@ -13,7 +13,6 @@ import time
 
 from utils import pretty_title
 import cast_targets
-import watch_history
 
 import responsive_layout
 
@@ -34,7 +33,10 @@ from cast_widgets import (
     BufferHealthGraph,
 )
 import network_route_ui
-class UiMixin:
+from bookmark_ui import BookmarkUiMixin
+
+
+class UiMixin(BookmarkUiMixin):
 
 
     def present(self) -> None:
@@ -91,6 +93,7 @@ class UiMixin:
         self.right_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self.right_column.set_valign(Gtk.Align.START)
         self.right_column.append(self._build_device_card())
+        self.right_column.append(self._build_network_activity_card())
         self.right_column.append(self._build_portal_card())
         self.right_column.append(self._build_settings_card())
         self.right_column.append(self._build_console_card())
@@ -162,6 +165,7 @@ class UiMixin:
         if self.cfg["favourites"]:
             favourites.append("Clear favourites", "app.clear-favourites")
         section.append_submenu("Favourites", favourites)
+        section.append_submenu("Bookmarks", self._build_bookmarks_menu())
         menu.append_section(None, section)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
@@ -345,7 +349,7 @@ class UiMixin:
         action_row = Gtk.Grid(column_spacing=8, row_spacing=8)
         action_row.set_hexpand(True)
         self.action_grid = action_row
-        open_button = Gtk.Button(label="Open video")
+        open_button = Gtk.Button(label="Open media")
         self.open_button = open_button
         open_button.add_css_class("action-control")
         open_button.add_css_class("primary-action")
@@ -409,7 +413,7 @@ class UiMixin:
         card.set_vexpand(False)
         self.console_empty = Gtk.Label(
             label="No activity yet — events appear here when you start a cast.",
-            xalign=0.0, wrap=True,
+            xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
         )
         self.console_empty.add_css_class("console-idle")
         body.append(self.console_empty)
@@ -442,12 +446,13 @@ class UiMixin:
         card.add_css_class("queue-card")
         card.set_vexpand(False)
         toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        add_button = Gtk.Button(label="Add videos")
+        add_button = Gtk.Button(label="Add media")
         add_button.connect("clicked", lambda _b: self.add_files())
         clear_button = self._icon_button(
             "edit-clear-all-symbolic", "Clear queue", "flat", self.clear_queue,
         )
         toolbar.append(add_button)
+        toolbar.append(self._build_music_actions())
         toolbar.append(clear_button)
         toolbar.append(Gtk.Box(hexpand=True))
         auto_label = Gtk.Label(label="Auto-play")
@@ -458,6 +463,7 @@ class UiMixin:
         toolbar.append(auto_label)
         toolbar.append(self.autonext_switch)
         body.append(toolbar)
+        body.append(self._build_music_import_status())
 
         self.queue_search = Gtk.SearchEntry()
         self.queue_search.set_placeholder_text("Search filenames or folders…")
@@ -489,6 +495,7 @@ class UiMixin:
         self.queue_list.connect("row-activated", self._on_queue_activated)
         self.queue_list.connect("row-selected", self._on_queue_selected)
         self.queue_list.set_filter_func(self._queue_row_matches)
+        self._install_queue_drop_target(self.queue_list)
         scroller.set_child(self.queue_list)
         body.append(scroller)
 
@@ -505,7 +512,7 @@ class UiMixin:
         title.add_css_class("empty-title")
         empty.append(title)
         subtitle = Gtk.Label(
-            label="Choose Add videos to build your queue.",
+            label="Choose Add media or Add Music to build your queue.",
             wrap=True,
         )
         subtitle.set_justify(Gtk.Justification.CENTER)
@@ -564,11 +571,17 @@ class UiMixin:
             "clicked", lambda _button: network_route_ui.start(self, Async.run)
         )
         body.append(self.network_check_button)
-        self.network_detail = Gtk.Label(label="", xalign=0.0, wrap=True)
+        self.network_detail = Gtk.Label(
+            label="", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.network_detail.set_selectable(True)  # Copy second-host test URL.
         self.network_detail.add_css_class("section-caption")
         body.append(self.network_detail)
-        self.device_detail = Gtk.Label(label="Searching for Google Cast receivers…", xalign=0.0, wrap=True)
+        self.device_detail = Gtk.Label(
+            label="Searching for Google Cast receivers…", xalign=0.0,
+            wrap=False, ellipsize=Pango.EllipsizeMode.END,
+        )
         self.device_detail.add_css_class("section-caption")
         body.append(self.device_detail)
         return card
@@ -576,32 +589,40 @@ class UiMixin:
 
     def _build_portal_card(self) -> Gtk.Box:
         card, body = self._card(
-            "LAN dashboard", "Open this address on another device on your local network."
+            "Shared room", "Open this address on a phone on your local network to join the queue and control playback."
         )
-        self.portal_status_label = Gtk.Label(label="Starting local portal…", xalign=0.0, wrap=True)
+        self.portal_status_label = Gtk.Label(
+            label="Starting local portal…", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_status_label.add_css_class("section-caption")
         body.append(self.portal_status_label)
-        self.portal_activity_label = Gtk.Label(label="No client activity", xalign=0.0, wrap=True)
+        self.portal_activity_label = Gtk.Label(
+            label="No client activity", xalign=0.0, wrap=False,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_activity_label.add_css_class("section-caption")
         body.append(self.portal_activity_label)
         body.append(Gtk.Label(label="Address", xalign=0.0))
-        self.portal_url_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
+        self.portal_url_label = Gtk.Label(
+            label="—", xalign=0.0, wrap=False, selectable=True,
+            ellipsize=Pango.EllipsizeMode.END,
+        )
         self.portal_url_label.add_css_class("mono")
         body.append(self.portal_url_label)
-        body.append(Gtk.Label(label="Access PIN", xalign=0.0))
+        body.append(Gtk.Label(label="6-digit room PIN", xalign=0.0))
         self.portal_pin_label = Gtk.Label(label="—", xalign=0.0, selectable=True)
         self.portal_pin_label.add_css_class("hero-title")
         self.portal_pin_label.add_css_class("mono")
         body.append(self.portal_pin_label)
         note = Gtk.Label(
-            label="Anyone on your local network with this PIN can control playback. "
+            label="Anyone with this PIN can join the queue, vote and control playback. "
                   "The PIN changes when the portal restarts.",
-            xalign=0.0, wrap=True,
+            xalign=0.0, wrap=False, ellipsize=Pango.EllipsizeMode.END,
         )
         note.add_css_class("dim-label")
         body.append(note)
         return card
-
 
     def _build_details_card(self) -> Gtk.Box:
         card, body = self._card(
@@ -635,8 +656,10 @@ class UiMixin:
                 row_index += 1
             key_label = Gtk.Label(label=label, xalign=0.0)
             key_label.add_css_class("detail-key")
-            value_label = Gtk.Label(label="—", xalign=0.0, wrap=True, selectable=True)
-            value_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            value_label = Gtk.Label(
+                label="—", xalign=0.0, wrap=False, selectable=True,
+                ellipsize=Pango.EllipsizeMode.END,
+            )
             value_label.set_max_width_chars(32)
             value_label.set_width_chars(1)
             value_label.add_css_class("detail-value")
@@ -667,7 +690,10 @@ class UiMixin:
         heading.add_css_class("heading")
         card.append(heading)
         if subtitle:
-            sub = Gtk.Label(label=subtitle, xalign=0.0, wrap=True)
+            sub = Gtk.Label(
+                label=subtitle, xalign=0.0, wrap=False,
+                ellipsize=Pango.EllipsizeMode.END,
+            )
             sub.add_css_class("dim-label")
             sub.add_css_class("caption")
             card.append(sub)
@@ -1015,10 +1041,13 @@ class UiMixin:
         url_text = session.state.stream_url if session and session.state and session.state.stream_url else "—"
         media_text = "—"
         if media:
-            bits = [media.resolution, media.vcodec, media.pix_fmt]
-            if media.size_label:
-                bits.append(media.size_label)
-            media_text = " · ".join(bit for bit in bits if bit)
+            if media.is_audio_only:
+                media_text = "Audio only"
+            else:
+                bits = [media.resolution, media.vcodec, media.pix_fmt]
+                if media.size_label:
+                    bits.append(media.size_label)
+                media_text = " · ".join(bit for bit in bits if bit)
         audio_text = "—"
         if media:
             parts = [media.acodec or "unknown audio"]
@@ -1059,9 +1088,12 @@ class UiMixin:
 
     def _set_now_playing_labels(self, media, session) -> None:
         title = pretty_title(media.path)
-        meta = [media.resolution]
+        meta = ([f"Audio · {media.acodec or 'unknown codec'}"]
+                if media.is_audio_only else [media.resolution])
         if media.duration:
             meta.append(fmt_time(media.duration))
+        if media.is_audio_only and media.channels:
+            meta.append(f"{media.channels}ch")
         if media.vcodec:
             meta.append(media.vcodec)
         if media.size_label:
@@ -1129,9 +1161,7 @@ class UiMixin:
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
         busy = self.busy
-        # FFmpeg may finish producing the HLS playlist while the Chromecast
-        # still plays buffered segments. Keep Stop/Pause/CC enabled until the
-        # *device* reports completion, not merely while the encoder PID lives.
+        # Keep transport enabled until the receiver finishes its buffered HLS.
         active = bool(self.session is not None and self.session.state is not None) or self.external
         ready_to_cast = self.now_playing is not None or (
             self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
@@ -1162,8 +1192,9 @@ class UiMixin:
         index = self.queue.index(self.now_playing) if self.now_playing in self.queue else None
         self.prev_button.set_sensitive(not busy and (has_queue and (index is None or index > 0) or active))
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
-        self.volume_scale.set_sensitive(online)
-        self.mute_button.set_sensitive(online)
+        has_volume = online and self._volume_control_available()
+        for control in (self.volume_scale, self.mute_button):
+            control.set_sensitive(has_volume)
         # Sensitivity is user feedback, not the security/ownership guard:
         # callbacks must independently reject changes during a cast.
         target_locked = bool(self.session is not None or self.busy
@@ -1293,27 +1324,3 @@ class UiMixin:
         self.toast(f"{'Pinned' if pinned else 'Unpinned'} receiver: {device}")
 
 
-    def _record_watch(self, event: str) -> None:
-        """Append a bounded watch-history entry for the current film."""
-        previewing = self.session is None and self._preview_path is not None
-        path = self._preview_path if previewing else self.now_playing
-        if not path:
-            return
-        source = "preview" if previewing else "cast"
-        position = self._preview_position if previewing else (self.tracker.value() or 0.0)
-        history = watch_history.record(
-            self.cfg.get("watch_history"), path, event, position, time.time(),
-            source=source,
-        )
-        if event == "start" and position:
-            history = watch_history.record(
-                history, path, "resumed", position, time.time(), source=source,
-            )
-        self.cfg["watch_history"] = history
-        save_config(self.cfg)
-
-
-    def _clear_watch_history(self) -> None:
-        self.cfg["watch_history"] = watch_history.clear()
-        save_config(self.cfg)
-        self.toast("Watch history cleared")

@@ -71,6 +71,9 @@ class AvMixin:
         value = int(self.volume_scale.get_value())
         device = target
         renderer = self._dlna_renderer(device)
+        if not self._volume_control_available():
+            self._reject_volume("This DLNA receiver does not provide volume control")
+            return False
         if renderer is not None:
             Async.run(lambda: dlna.volume(renderer, value),
                       failed=lambda msg: self._reject_volume(f"DLNA volume: {msg}"), domain="transport")
@@ -103,6 +106,9 @@ class AvMixin:
 
 
     def _nudge_volume(self, delta: int) -> None:
+        if not self._volume_control_available():
+            self.toast("This DLNA receiver does not provide volume control", error=True)
+            return
         self.volume_scale.set_value(max(0, min(100, self.volume_scale.get_value() + delta)))
 
 
@@ -112,6 +118,13 @@ class AvMixin:
         muted = button.get_active()
         self._apply_volume_icon()
         if self.device_state == "OFFLINE":
+            return
+        if not self._volume_control_available():
+            self._syncing = True
+            button.set_active(castctl.volume_muted(self.device_info))
+            self._syncing = False
+            self._apply_volume_icon()
+            self.toast("This DLNA receiver does not provide mute control", error=True)
             return
         device = self._device()
         renderer = self._dlna_renderer(device)
@@ -419,6 +432,9 @@ class AvMixin:
                 self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
 
         media = self.media if self.media is not None and str(self.media.path) == path else None
+        if media is not None and media.is_audio_only:
+            finish()
+            return False
         video_index = media.video_stream_index if media is not None else 0
         Async.run(
             lambda: screenshot.preview_frame(
@@ -489,10 +505,9 @@ class AvMixin:
         """Meter chain and hint for the audio of the locally previewed file."""
         profile = str(self.cfg.get("audio", "dialogue"))
         gain = float(self.cfg.get("audio_gain", 0.0) or 0.0)
-        hint = f"Local preview · {streamer.AUDIO_LABELS.get(profile, profile)}"
-        if gain > 0:
-            hint += f" · +{gain:g} dB"
-        return streamer.audio_filters(profile, gain), hint
+        mode = str(self.cfg.get("audio_loudness", "off"))
+        chain, hint = streamer.monitor_summary(profile, gain, mode)
+        return chain, "Local preview · " + hint
 
 
     def _start_local_meter(self, position: float) -> None:
@@ -570,6 +585,7 @@ class AvMixin:
 
 
     def _unload_local_video(self) -> None:
+        self._cancel_queue_prewarm()
         self._stop_local_meter()
         self._record_watch("stop")
         stream = self._local_stream()
@@ -586,6 +602,7 @@ class AvMixin:
         self._stop_monitor()
         if media_path is None:
             return
+        self._prewarm_queue_media()
         try:
             self._mon_path = pathlib.Path(media_path)
             self._mon_chain = list(chain)

@@ -6,21 +6,21 @@ GNOME dock pins, discover/control the user's TV, or touch real media. Never use
 `python3 src/cast_control.py`, or bare `--self-test` in a test loop.
 Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 
-Headless portable verification from repo root:
+Headless lanes (`scripts/ci/test_scope.py`):
 
 ```sh
-python3 -m pytest -q tests
 python3 -m compileall -q src scripts setup tests
+ruff check src scripts setup tests smoothcast setup.py && mypy
+python3 -m pytest -q tests -n auto  # minor/major only
 ```
 
-Run targeted `python3 -m pytest -q tests/test_affected.py` during iteration,
-then the full suite when appropriate. The test harness strips desktop
+Patch-only changes skip the full suite; use targeted tests. The test harness strips desktop
 display/session handles at collection; CI sets `SMOOTHCAST_TEST_CONTEXT=1`.
 Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
-**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests sc.py
+**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests smoothcast
 setup.py` fails on new violations; the 3.13 job gates `--cov-fail-under=38`
 (raise, never lower). **Types (#251):** `mypy` gates only `[tool.mypy] files`;
 widen by making `mypy src/<module>.py` clean, then listing it. `pip-audit`,
@@ -56,7 +56,6 @@ rejecting unknown/broken/older builds without sending Cast commands.
 (it gates, incl. release promotion). A test that cannot pass is listed by exact id, with a reason, in
 `tests/platform_gaps.py` and skipped on that OS only; fix the cause and delete
 the entry. "PRODUCT BUG" marks a SmoothCast defect, not a test quirk.
-
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
 subtitle/preflight/DLNA media tests after ensuring both `ffmpeg` and
 `ffprobe` are available. `scripts/ci/ensure_ffmpeg.py` first tries signed
@@ -117,11 +116,11 @@ private media paths; preserve existing session data if write/fsync/replace fails
 `tests/test_cache_privacy.py` uses temporary directories and simulated
 failures only; the symlink and foreign-user guards never touch real user files.
 
-**Optional GTK smoke** is a *separate explicit* action:
-`python3 scripts/test_gui_isolated.py`. It requires Xvfb/xauth,
-private runtime/configuration, one-use token and isolated credentials.
-It quits promptly and forcibly terminates its process group on timeout. `scripts/gui_checks.py` runs real-widget behaviour checks the same way.
-Do not call the smoke runner inside pytest or point it at the active desktop.
+**Optional isolated GTK checks:** `python3 scripts/test_gui_isolated.py`
+checks startup; `python3 scripts/gui_checks.py local-video-runtime` exercises
+generated, muted media in `Gtk.Video` (play, seek, pause/resume, EOS, replay).
+They need Xvfb/xauth and private XDG state. Never run inside pytest or on the
+active desktop. Audible output and receiver handoff need device testing.
 
 **Real-device tests:** require an intentionally available receiver and clear
 scope. Never report Chromecast/DLNA, macOS or Windows native playback as

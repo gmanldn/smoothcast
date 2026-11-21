@@ -1,10 +1,4 @@
-"""Searchable, grouped, native libadwaita Preferences window.
-
-Only the GTK main thread creates or edits widgets. Existing in-player controls
-remain the sole behavioural handlers for audio, captions and Cast transitions:
-this window is a view onto the same validated configuration, not a second
-settings engine.
-"""
+"""Searchable libadwaita preferences sharing the in-player controls."""
 from __future__ import annotations
 
 import gi
@@ -108,6 +102,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self._choice(audio, "audio", "Sound profile",
                      "Original preserves the mix; Dialogue boosts speech; Night tames loud passages.")
+        self._switch(audio, "music_autogain", "Music autogain", "Match tracks to -16 LUFS.")
         self.audio_track = Adw.ComboRow(
             title="Film audio track",
             subtitle="Choose language or commentary for the selected film. Changing an active cast restarts it.",
@@ -151,6 +146,11 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.embedded_track.connect("notify::selected", self._change_embedded_track)
         self._switch(captions, "burn_subs", "Burn subtitles into the video",
                      "For receivers that cannot display separate captions; needs encoding.")
+        self._choice(
+            captions, "subtitle_style", "Subtitle appearance",
+            "For plain-text subtitles only; applies on the next cast or encoder restart. "
+            "ASS/SSA keep their authored styling.",
+        )
 
         general = self._page("Appearance", "preferences-desktop-theme-symbolic")
         visual = self._group(
@@ -216,6 +216,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
             save_config(self.owner.cfg)
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
+        elif key == "subtitle_style":
+            self.owner.cfg[key] = str(value)
+            save_config(self.owner.cfg)
         else:
             widgets = {
                 "quality": "quality_dropdown",
@@ -236,6 +239,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             "keep_streaming": "keep_switch",
             "burn_subs": "burn_switch",
             "autonext": "autonext_switch",
+            "music_autogain": "music_autogain_switch",
         }
         toggles = {
             "loop": "_toggle_loop",

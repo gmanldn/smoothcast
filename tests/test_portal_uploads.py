@@ -119,6 +119,7 @@ def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tm
     assert first["ready_to_cast"] is True
     assert first["cast_path"] == str(uploads.root / f"{created['id']}.partial")
     assert first["client"] == "192.168.1.5"
+    assert uploads.status("owner", created["id"])["ready_to_cast"] is True
     # The threshold is crossed only once.
     second = uploads.append("owner", created["id"], "bytes 3-5/6", 3, BytesIO(b"def"))
     assert second["ready_to_cast"] is False
@@ -129,6 +130,17 @@ def test_early_cast_starts_once_for_a_streamable_container_and_keeps_the_path(tm
     # A cast may still be reading the growing file, so the path stays stable.
     assert path == uploads.root / f"{created['id']}.partial"
     assert path.read_bytes() == b"abcdef"
+    uploads.close()
+
+
+def test_queue_only_upload_never_starts_an_early_cast(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "film.mkv", 6, queue_only=True)
+    assert uploads.is_queue_only("owner", created["id"]) is True
+    result = uploads.append("owner", created["id"], "bytes 0-5/6", 6, BytesIO(b"abcdef"))
+    assert result["ready_to_cast"] is False
+    path, name, dispatch = uploads.finalize("owner", created["id"])
+    assert dispatch is True and name == "film.mkv" and path.read_bytes() == b"abcdef"
     uploads.close()
 
 
@@ -174,3 +186,46 @@ def test_format_portal_activity_summarises_phases():
     ])
     assert "192.168.1.5 · film.mkv: casting now (40% received)" in text
     assert "clip.mp4: receiving 10% (5.0 MB/s)" in text
+
+
+def test_chunk_cannot_exceed_declared_file_size(tmp_path):
+    uploads = manager(tmp_path)
+    created = uploads.create("owner", "movie.mp4", 2)
+    with pytest.raises(portal_uploads.UploadError, match="range or size"):
+        uploads.append("owner", created["id"], "bytes 0-2/2", 3, BytesIO(b"abc"))
+    assert uploads.status("owner", created["id"])["received"] == 0
+    uploads.append("owner", created["id"], "bytes 0-1/2", 2, BytesIO(b"ab"))
+    with pytest.raises(portal_uploads.UploadError, match="range or size"):
+        uploads.append("owner", created["id"], "bytes 2-2/2", 1, BytesIO(b"c"))
+    uploads.close()
+
+
+def test_create_reclaims_idle_slots_but_preserves_recent_progress(tmp_path):
+    now = 0
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now,
+        disk_usage=lambda _path: SimpleNamespace(free=10 * 1024**3),
+    )
+    active, *idle = [uploads.create("owner", "movie.mp4", 2)["id"]
+                     for _ in range(portal_uploads.MAX_ACTIVE_UPLOADS)]
+    now = portal_uploads.PARTIAL_TTL_SECONDS - 1
+    uploads.append("owner", active, "bytes 0-0/2", 1, BytesIO(b"a"))
+    now += 1
+    uploads.create("owner", "new.mp4", 2)
+    for upload_id in idle:
+        with pytest.raises(portal_uploads.UploadError, match="Upload not found"):
+            uploads.status("owner", upload_id)
+    assert uploads.status("owner", active)["received"] == 1
+    uploads.close()
+
+
+def test_can_cancel_staged_upload_after_cast_rejection(tmp_path):
+    uploads = manager(tmp_path)
+    created = uploads.create("owner", "movie.mp4", 1)
+    uploads.append("owner", created["id"], "bytes 0-0/1", 1, BytesIO(b"x"))
+    path, _, _ = uploads.finalize("owner", created["id"])
+    with pytest.raises(portal_uploads.UploadError, match="Casting has already been requested"):
+        uploads.cancel("owner", created["id"])
+    uploads.finish_dispatch("owner", created["id"], accepted=False)
+    uploads.cancel("owner", created["id"])
+    assert not path.exists()

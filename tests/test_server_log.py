@@ -116,14 +116,17 @@ class DiagnosticsIntegrationTests(unittest.TestCase):
             log.write_text("\n".join(
                 f"2026-11-19T10:00:00  127.0.0.1 code 404, message /home/alice/film-{i}.mkv"
                 for i in range(diagnostics.MAX_SERVER_LINES + 30)) + "\n")
-            payload = diagnostics.collect(server_log=log, home="/home/alice")
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                payload = diagnostics.collect(server_log=log, home="/home/alice")
         lines = payload["server_log"]
         self.assertEqual(len(lines), diagnostics.MAX_SERVER_LINES)
         self.assertTrue(all("alice" not in line for line in lines))
         self.assertIn("film-129", lines[-1])               # the newest lines are kept
 
     def test_missing_server_log_is_an_empty_list_and_default_path_is_the_cache_dir(self):
-        self.assertEqual(diagnostics.collect(server_log=Path("/nonexistent/server.log"))["server_log"], [])
+        with mock.patch.object(diagnostics, "tool_version", return_value=""):
+            payload = diagnostics.collect(server_log=Path("/nonexistent/server.log"))
+        self.assertEqual(payload["server_log"], [])
         self.assertEqual(diagnostics.default_server_log_path(),
                          Path.home() / ".cache" / "cast-control" / "server.log")
 
@@ -131,8 +134,9 @@ class DiagnosticsIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as work:
             log = Path(work) / "server.log"
             log.write_text("2026-11-19T10:00:00  listening on 127.0.0.1 port 8767\n")
-            bundle = diagnostics.export(destination=Path(work) / "bundle.json",
-                                        error_log=Path(work) / "none.log", server_log=log)
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                bundle = diagnostics.export(destination=Path(work) / "bundle.json",
+                                            error_log=Path(work) / "none.log", server_log=log)
             self.assertIn("listening on", bundle.read_text("utf-8"))
 
 

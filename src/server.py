@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 import threading
 from urllib.parse import urlsplit
@@ -33,7 +34,10 @@ BIND = LOOPBACK
 # segments. Legacy names are read-only compatibility for already saved casts;
 # new sessions never write those names, so stale requests cannot alias them.
 _SEGMENT = re.compile(r"/segment-[0-9]+\.ts\Z")
-_GENERATION = re.compile(r"/(?:movie-[0-9a-f]{32}\.m3u8|segment-[0-9a-f]{32}-[0-9]+\.ts)\Z")
+_GENERATION = re.compile(
+    r"/(?:movie-[0-9a-f]{32}(?:-fmp4)?\.m3u8|"
+    r"segment-[0-9a-f]{32}-[0-9]+\.(?:ts|m4s)|init-[0-9a-f]{32}\.mp4)\Z"
+)
 
 
 def _url_path(url: str) -> str:
@@ -55,10 +59,46 @@ def public_resource(url: str, token: str = "") -> bool:
     # new files under ROOT never become LAN-visible. Query strings don't
     # change the identity of the underlying generation-specific resource.
     if token:
-        return (path == f"/movie-{token}.m3u8"
-                or re.fullmatch(rf"/segment-{token}-[0-9]+\.ts", path) is not None)
+        return (path in {f"/movie-{token}.m3u8", f"/movie-{token}-fmp4.m3u8"}
+                or re.fullmatch(rf"/segment-{token}-[0-9]+\.(?:ts|m4s)", path) is not None
+                or path == f"/init-{token}.mp4")
     return (path == "/movie.m3u8" or _SEGMENT.fullmatch(path) is not None
             or _GENERATION.fullmatch(path) is not None)
+
+
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)\Z")
+
+
+def parse_range(value: str | None, size: int) -> tuple[int, int] | None:
+    """Parse one RFC 7233 byte range; ``None`` means no/ignored range.
+
+    Multiple ranges are deliberately unsupported (the receiver fetches one
+    segment at a time). A syntactically valid but unsatisfiable range raises
+    :class:`ValueError` so the caller can answer 416 with ``bytes */size``.
+    """
+    if not value or size < 0:
+        return None
+    match = _RANGE.fullmatch(value.strip())
+    if match is None:
+        raise ValueError("invalid range")
+    first, last = match.groups()
+    if not first and not last:
+        raise ValueError("empty range")
+    if first:
+        start = int(first)
+        end = int(last) if last else size - 1
+        if start >= size or end < start:
+            raise ValueError("unsatisfiable range")
+        return start, min(end, size - 1)
+    suffix = int(last)
+    if suffix <= 0 or size == 0:
+        raise ValueError("unsatisfiable suffix range")
+    return max(0, size - suffix), size - 1
+
+
+def etag_for(info: os.stat_result) -> str:
+    """A stable strong-looking validator for an immutable HLS generation file."""
+    return f'"{info.st_size:x}-{info.st_mtime_ns:x}"'
 
 
 @dataclass(frozen=True)
@@ -180,6 +220,10 @@ def log_event(message: str, *, exc_info: bool = False) -> None:
 
 
 class H(SimpleHTTPRequestHandler):
+    # Accurate Content-Length on every response lets receivers reuse the
+    # connection instead of reconnecting for every HLS segment.
+    protocol_version = "HTTP/1.1"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -222,6 +266,8 @@ class H(SimpleHTTPRequestHandler):
             return "application/vnd.apple.mpegurl"
         if suffix == ".ts":
             return "video/mp2t"
+        if suffix in {".m4s", ".mp4"}:
+            return "video/mp4"
         return super().guess_type(path)
 
     def end_headers(self):
@@ -248,12 +294,69 @@ class H(SimpleHTTPRequestHandler):
             if not head:
                 self.wfile.write(HEALTH_BODY)
         elif public_resource(self.path, policy.token):
-            if head:
-                super().do_HEAD()
-            else:
-                super().do_GET()
+            self._serve_media(head)
         else:
             self.send_error(404, "Not found")
+
+    def _serve_media(self, head: bool) -> None:
+        """Serve one allow-listed HLS file with ranges and cache validators."""
+        path = _url_path(self.path).lstrip("/")
+        target = ROOT / path
+        try:
+            # Exact allow-listed basenames only; never follow a symlink that
+            # could expose another file under the same name.
+            if target.is_symlink():
+                raise OSError("refusing a symlinked HLS resource")
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(target, flags)
+        except OSError:
+            self.send_error(404, "Not found")
+            return
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                self.send_error(404, "Not found")
+                return
+            size = info.st_size
+            etag = etag_for(info)
+            last_modified = self.date_time_string(info.st_mtime)
+            if_range = self.headers.get("If-Range")
+            range_header = self.headers.get("Range")
+            if if_range and if_range.strip() not in {etag, last_modified}:
+                range_header = None  # validator changed: send the whole file
+            try:
+                requested = parse_range(range_header, size)
+            except ValueError:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+                return
+            start, end = requested if requested is not None else (0, size - 1)
+            length = max(0, end - start + 1)
+            status = 206 if requested is not None else 200
+            self.send_response(status)
+            self.send_header("Content-Type", self.guess_type(target))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("ETag", etag)
+            self.send_header("Last-Modified", last_modified)
+            self.send_header("Content-Length", str(length))
+            if requested is not None:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            if head or length == 0:
+                return
+            os.lseek(fd, start, os.SEEK_SET)
+            remaining = length
+            while remaining > 0:
+                chunk = os.read(fd, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+        finally:
+            os.close(fd)
 
     def do_GET(self):
         self._serve(False)

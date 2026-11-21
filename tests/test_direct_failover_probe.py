@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 import sys
 import textwrap
 from types import SimpleNamespace
@@ -15,9 +16,12 @@ sys.path.insert(0, str(ROOT / "src"))
 import audio_delay
 import direct_probe
 import playback_state
+import queue_metadata
+import reliability_metrics
 import streamer
 import subtitle_delay
 import subtitle_style
+import watch_history
 
 
 def test_direct_status_classifier_is_conservative():
@@ -107,10 +111,13 @@ def cast_worker(status="rejected"):
     second.state = None
     fake_streamer = SimpleNamespace(
         StreamError=streamer.StreamError,
+        audio_cast_options=lambda _media, _mode, path, burn, **_kwargs: (path, burn),
         Session=mock.Mock(side_effect=[first, second]),
         CAST_SUBTITLE_EXTS=streamer.CAST_SUBTITLE_EXTS,
         require_compatible_ffmpeg=mock.Mock(return_value=(7, 0)),
         normalize_rotation=streamer.normalize_rotation,
+        schedule_music_analysis=lambda *_args: False,
+        music_hint_not_applied=lambda hint, *_args: hint,
         ffprobe=mock.Mock(
             return_value=SimpleNamespace(path=Path("/film.mp4"), direct_ok=True)
         ),
@@ -118,6 +125,9 @@ def cast_worker(status="rejected"):
     probe = mock.Mock(return_value=status)
     namespace = {
         "playback_state": playback_state,
+        "watch_history": watch_history,
+        "queue_metadata": queue_metadata,
+        "reliability_metrics": reliability_metrics,
         "audio_delay": audio_delay,
         "subtitle_delay": subtitle_delay,
         "subtitle_style": subtitle_style,
@@ -127,7 +137,7 @@ def cast_worker(status="rejected"):
             ForeignPlayback=direct_probe.ForeignPlayback,
         ),
         "dlna": SimpleNamespace(),
-        "threading": SimpleNamespace(Event=lambda: None),
+        "threading": threading,
         "pathlib": __import__("pathlib"),
         "pretty_title": lambda path: path.stem,
         "DEFAULTS": {"audio_gain": 0.0},
@@ -156,6 +166,8 @@ def cast_worker(status="rejected"):
             self._preview_pending = None
             self._preview_position = 0.0
             self._preflight_ok = set()
+            self._media_cache = {}
+            self._cancel_queue_prewarm = mock.Mock()
             self._finished_handled = False
             self.local_playback = SimpleNamespace(stop=lambda: None)
             self._unload_local_video = lambda: None

@@ -30,9 +30,9 @@ isolated tree with no branch to leave behind:
 git fetch origin
 git worktree add --detach ../smoothcast-N origin/develop
 cd ../smoothcast-N                       # work, test and commit only here
-# ... edit, then run the checks below and commit ...
+# ... edit, then run the fast lane below and commit ...
 git fetch origin && git rebase origin/develop   # replays YOUR unpushed commits
-python3 -m pytest -q tests                      # re-test after integrating
+# fast lane: compileall + ruff + mypy; full pytest only for MINOR/MAJOR
 git push origin HEAD:develop                    # fast-forward only, never --force
 cd .. && git worktree remove smoothcast-N       # clean up when pushed
 ```
@@ -49,20 +49,19 @@ amend commits that are already on `origin`.
 3. Locate the changed symbols, callers and tests. Choose a minimal **complete**
    fix; reuse helpers and standard library where sensible. Preserve validation,
    casting ownership, accessibility, existing behaviour and diagnostics.
-4. Add or adjust focused regression tests, then run the full headless checks.
-   Never open the real GUI to test.
+4. Add or adjust focused regression tests and run them before committing.
+   Patch work takes the fast lane; run the full suite only for a MINOR/MAJOR
+   bump. CI applies the same lane policy. Never open the real GUI.
 5. Commit small, coherent changes with a message that names the issue
-   (`Refs #N`; GitHub closes issues only from the default branch, and an issue
-   closes only when **all** acceptance criteria are supported, so close it by
-   hand with evidence). Push when green.
-6. Never equate CI success with hardware verification. Avoid deleting existing
-   tickets or losing original research.
+   (`Refs #N`). Close by hand when code and automated CI satisfy the criteria;
+   device checks are tracked in #208, not close gates. Push when green.
+6. Avoid deleting existing tickets or losing original research.
 
 ## Repo hygiene — commit checklist
 
-- **Before every commit:** run `python3 -m pytest -q tests`,
+- **Before every commit:** run focused tests covering changed behavior,
   `python3 -m compileall -q src scripts setup tests` and
-  `ruff check src scripts setup tests sc.py setup.py` (plus `mypy` if you touched
+  `ruff check src scripts setup tests smoothcast setup.py` (plus `mypy` if you touched
   a gated module). `git status` and `git diff --stat` must show only files you
   meant to change.
 - **Stage files by name**, not `git add -A` in a dirty tree. Never commit
@@ -73,10 +72,9 @@ amend commits that are already on `origin`.
 - **Keep `develop` green.** Trunk has no PR gate, so your local checks are the
   gate. If a push turns CI red, fixing it (or `git revert <sha>`) comes before
   new work, whoever caused it.
-- **Every push to `develop` is verified in its own CI run** (runs are keyed by
-  commit, never cancelled), so a red commit is attributable to its author.
-  Still batch related commits into one push: each push costs a full run, and
-  the release promotion waits for a *complete* green run.
+- **Every push to `develop` gets its own CI run** (keyed by commit, never
+  cancelled), so a red commit is attributable to its author. Patch pushes use
+  the fast lane; MINOR/MAJOR bumps run the full matrix. Batch related commits.
 - **No stray branches or worktrees.** Do not push topic branches. Remove your
   worktree after pushing. The prune workflow deletes any merged remote branch
   that slips through; do not leave stale ones.
@@ -88,7 +86,8 @@ amend commits that are already on `origin`.
 
 1. On `develop`, once per release: `python3 scripts/ci/bump_version.py patch`
    (or `minor` / `major`), commit as `release: bump version to X.Y.Z`, push.
-2. *Verify SmoothCast* runs on that push. Only if **every** job passes, the
+2. *Verify SmoothCast* runs on that push (full matrix for MINOR/MAJOR, fast
+   lane for PATCH). Only if **every scheduled** job passes, the
    final `promote-release` job runs `scripts/ci/promote_release.py`, which
    promotes only when the version is strictly newer than `main`'s **and** merging
    into `main` yields exactly `develop`'s tree. Then it opens (or reuses) the

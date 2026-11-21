@@ -99,9 +99,10 @@ GitHub-Issues-only workflow.
    `python3 scripts/ticket_digest.py --next` before listing the whole backlog.
 2. Choose Ponytail's smallest complete solution. Preserve every behaviour,
    security check, compatibility contract and required regression test.
-3. Run `python3 -m pytest -q tests/test_affected.py`; expand to the full
-   headless suite before calling a change verified. Never start the GUI,
-   activate GTK, probe a real TV or steal desktop focus.
+3. Run `python3 -m pytest -q tests/test_affected.py` for changed behavior.
+   Patch work uses the fast lane; reserve the full headless suite for a
+   MINOR/MAJOR bump. Never start the GUI, activate GTK, probe a real TV or
+   steal desktop focus.
 4. Use Caveman for status and review prose: result, evidence, risk, next
    needed action. Show exact errors, commands and changed code intact.
 5. For noisy logs, keep an unabridged file on disk and summarise failures

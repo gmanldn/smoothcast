@@ -65,6 +65,11 @@ class LocalPlaybackTests(unittest.TestCase):
         self.assertIn("-loglevel", args)
         self.assertIn("movie.mp4", args)
 
+    def test_start_accepts_audio_only_queue_item(self):
+        self._start("song.flac")
+        args = self._popen_mock.call_args.args[0]
+        self.assertEqual(args[-1], "song.flac")
+
     def test_start_rejects_missing_file(self):
         patcher = mock.patch.object(local_playback.shutil, "which", return_value="/usr/bin/ffplay")
         patcher.start()

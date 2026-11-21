@@ -11,6 +11,7 @@ from gi.repository import Adw, Gtk
 import pathlib
 
 import threading
+import reliability_metrics
 
 import diagnostics
 
@@ -26,6 +27,7 @@ from cast_widgets import APP_NAME, ICON_NAME, save_config, fmt_time, Async
 class LifecycleMixin:
     def _cast_preflight_failed(self, message: str) -> None:
         """A rejected new cast must not tear down its still-owned predecessor."""
+        reliability_metrics.fail_attempt(self, Async.run)
         self._dlna_cancel = None
         prior = self.session
         if (prior is not None and prior.active()
@@ -40,7 +42,13 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
+        reliability_metrics.finish_active(self, "interrupted", Async.run)
+        getattr(self, "_cancel_music_import", lambda: None)()
+        self._cancel_queue_prewarm()
         self._stop_portal()
+        watch = getattr(self, "_cast_status_watch", None)
+        if watch is not None:
+            watch.close()
         if self._dlna_cancel is not None:
             self._dlna_cancel.set()
         if self._cast_starting:

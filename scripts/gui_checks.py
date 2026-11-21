@@ -29,6 +29,7 @@ import test_gui_isolated as isolation  # noqa: E402  (shared isolation helpers)
 MAX_SECONDS = 40
 # scenario -> contents of the seeded config.json (None: no config file at all)
 SCENARIOS: dict[str, str | None] = {
+    "local-video-runtime": None,
     "first-run": None,
     "saved-device": '{"device": "Seeded TV"}\n',
     "report-problem": None,
@@ -39,8 +40,12 @@ SCENARIOS: dict[str, str | None] = {
     "density": None,
     "density-saved": '{"density": "spacious"}\n',
     "density-junk": '{"density": "<huge>"}\n',
+    "subtitle-style": None,
+    "subtitle-style-saved": '{"subtitle_style": "high-contrast"}\n',
+    "subtitle-style-junk": '{"subtitle_style": "<invalid>"}\n',
     "text-fit": None,
     "audio-delay": None,
+    "bookmarks": None,
 }
 
 

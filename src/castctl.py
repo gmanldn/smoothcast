@@ -1,4 +1,4 @@
-"""Chromecast control via the catt CLI."""
+"""Google Cast control boundary with catt and PyChromecast adapters."""
 from __future__ import annotations
 
 import ipaddress
@@ -6,12 +6,13 @@ import json
 import pathlib
 import shutil
 import math
+import os
 import subprocess
 import sys
 
 import frozen_runtime
 from dataclasses import dataclass
-from typing import cast
+from typing import Callable, Protocol, cast, runtime_checkable
 
 from progress_model import ReceiverInfo
 
@@ -54,6 +55,7 @@ CATT = _find_catt()
 # be commanded. The empty string means "nothing chosen yet" (issue #239).
 DEFAULT_DEVICE = ""
 NO_DEVICE_MESSAGE = "No receiver selected. Scan the network and choose one."
+COMMAND_TIMEOUT_MESSAGE = "The device did not respond in time."
 
 
 class CastError(RuntimeError):
@@ -97,7 +99,7 @@ def catt_command(args: list[str]) -> list[str]:
     return frozen_runtime.catt_command(str(CATT), args)
 
 
-def scan(timeout: float = 30) -> list[Device]:
+def _catt_scan(timeout: float = 30) -> list[Device]:
     result = _run(["scan", "-j"], timeout=timeout)
     if result.returncode != 0:
         raise CastError((result.stderr or "device scan failed").strip())
@@ -144,7 +146,13 @@ def uniquely_named_device(uuid: str, devices: list[Device]) -> Device | None:
     return match if sum(d.name == match.name for d in devices) == 1 else None
 
 
-def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
+def unique_discovered_host(name: str, devices: list[Device]) -> str | None:
+    """Resolve a current mDNS host only when the friendly name is unique."""
+    matches = [device for device in devices if device.name == name and device.host]
+    return matches[0].host if len(matches) == 1 else None
+
+
+def _catt_info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Full device/media status. None when offline or unreachable."""
     if not device.strip():
         return None
@@ -163,13 +171,13 @@ def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     return cast(ReceiverInfo, payload)
 
 
-def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if not device.strip():
         return False, NO_DEVICE_MESSAGE
     try:
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
-        return False, "The device did not respond in time."
+        return False, COMMAND_TIMEOUT_MESSAGE
     except OSError as exc:
         return False, str(exc)
     message = (result.stdout or result.stderr or "").strip()
@@ -178,12 +186,191 @@ def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     return True, message
 
 
+@runtime_checkable
+class CastBackend(Protocol):
+    """GTK-free receiver boundary used by the existing Cast control helpers.
+
+    This boundary captures operations SmoothCast exposes through ``castctl``.
+    Push status is opt-in; connection ownership and media loading remain outside
+    this transitional contract.
+    """
+
+    supports_push_status: bool
+
+    def scan(self, timeout: float = 30) -> list[Device]: ...
+
+    def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None: ...
+
+    def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]: ...
+
+    def subscribe(
+        self, device: str, listener: Callable[[ReceiverInfo], None]
+    ) -> Callable[[], None] | None: ...
+
+    def close(self) -> None: ...
+
+
+class CattBackend:
+    """Compatibility adapter for the current catt command implementation."""
+
+    supports_push_status = False
+
+    def scan(self, timeout: float = 30) -> list[Device]:
+        return _catt_scan(timeout)
+
+    def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
+        return _catt_info(device, timeout)
+
+    def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+        return _catt_command(device, *args, timeout=timeout)
+
+    def subscribe(
+        self, _device: str, _listener: Callable[[ReceiverInfo], None]
+    ) -> Callable[[], None]:
+        """catt has no push status stream; return a safe no-op cancellation."""
+        return lambda: None
+
+    def close(self) -> None:
+        return None
+
+
+_backend: CastBackend = CattBackend()
+_catt_backend = _backend
+
+
+def set_backend(backend: CastBackend) -> None:
+    """Select a backend instance. Intended for startup configuration and tests."""
+    global _backend
+    if not isinstance(backend, CastBackend):
+        raise TypeError("Cast backend does not implement the required contract")
+    previous = _backend
+    if previous is not backend:
+        previous.close()
+    _backend = backend
+
+
+def use_catt_backend() -> None:
+    """Select the compatibility backend for one-release fallback/testing."""
+    set_backend(_catt_backend)
+
+
+def use_pychromecast_backend() -> None:
+    """Opt in to the persistent PyChromecast backend while parity is verified."""
+    from pychromecast_backend import PyChromecastBackend
+
+    set_backend(PyChromecastBackend())
+
+
+def configure_backend(name: str | None = None) -> None:
+    """Select the backend with SMOOTHCAST_CAST_BACKEND or an explicit name."""
+    selected = (name or os.environ.get("SMOOTHCAST_CAST_BACKEND", "catt")).strip().lower()
+    if selected == "catt":
+        use_catt_backend()
+    elif selected == "pychromecast":
+        use_pychromecast_backend()
+    else:
+        raise ValueError("SMOOTHCAST_CAST_BACKEND must be 'catt' or 'pychromecast'")
+
+
+def supports_push_status() -> bool:
+    """Whether the selected backend delivers receiver status changes."""
+    return bool(getattr(_backend, "supports_push_status", False))
+
+
+def subscribe(
+    device: str, listener: Callable[[ReceiverInfo], None],
+) -> Callable[[], None] | None:
+    """Subscribe to status changes without exposing backend implementation details."""
+    return _backend.subscribe(device, listener)
+
+
+class CastStatusWatch:
+    """Keep one status subscription aligned with the currently selected Cast target."""
+
+    def __init__(self, listener: Callable[[ReceiverInfo], None]) -> None:
+        self._listener = listener
+        self._target: str | None = None
+        self._unsubscribe: Callable[[], None] | None = None
+
+    def select(self, target: str, enabled: bool) -> bool:
+        if self._target == target and (self._unsubscribe is not None) == enabled:
+            return enabled
+        self.close()
+        if enabled:
+            unsubscribe = subscribe(target, self._listener)
+            if unsubscribe is None:
+                return False
+            self._target = target
+            self._unsubscribe = unsubscribe
+        return enabled
+
+    def close(self) -> None:
+        unsubscribe, self._unsubscribe = self._unsubscribe, None
+        self._target = None
+        if unsubscribe is not None:
+            unsubscribe()
+
+
+def watch_status(owner, target: str, eligible: bool, dispatch, listener) -> bool:
+    """Keep an owner's selected receiver subscription current and dispatch updates."""
+    enabled = eligible and supports_push_status()
+    watch = getattr(owner, "_cast_status_watch", None)
+    if watch is None and enabled:
+        watch = owner._cast_status_watch = CastStatusWatch(
+            lambda info: dispatch(listener, info),
+        )
+    return bool(watch and watch.select(target, enabled))
+
+
+if os.environ.get("SMOOTHCAST_CAST_BACKEND"):
+    configure_backend()
+
+
+def scan(timeout: float = 30) -> list[Device]:
+    """Discover receivers using the active Cast backend."""
+    return _backend.scan(timeout)
+
+
+def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
+    """Return receiver status using the active Cast backend."""
+    return _backend.info(device, timeout)
+
+
+def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
+    """Run a receiver command using the active Cast backend."""
+    return _backend.command(device, *args, timeout=timeout)
+
+
+def _is_idempotent(args: tuple[str, ...]) -> bool:
+    if args in {("play",), ("pause",), ("stop",)}:
+        return True
+    if len(args) != 2:
+        return False
+    operation, value = args
+    if operation == "seek":
+        return value.isdigit()
+    if operation == "volume":
+        return value.isdigit() and 0 <= int(value) <= 100
+    return operation == "volumemute" and value in {"true", "false"}
+
+
+def idempotent_command(device: str, *args: str) -> tuple[bool, str]:
+    """Retry one timed-out absolute transport/volume command exactly once."""
+    if not device.strip():
+        return False, NO_DEVICE_MESSAGE
+    retryable = _is_idempotent(args)
+    result = command(device, *args)
+    if retryable and result == (False, COMMAND_TIMEOUT_MESSAGE):
+        return command(device, *args)
+    return result
+
+
 def play(device: str) -> tuple[bool, str]:
-    return command(device, "play")
+    return idempotent_command(device, "play")
 
 
 def pause(device: str) -> tuple[bool, str]:
-    return command(device, "pause")
+    return idempotent_command(device, "pause")
 
 
 def play_toggle(device: str) -> tuple[bool, str]:
@@ -191,7 +378,7 @@ def play_toggle(device: str) -> tuple[bool, str]:
 
 
 def stop(device: str) -> tuple[bool, str]:
-    return command(device, "stop")
+    return idempotent_command(device, "stop")
 
 
 def seek_seconds(seconds: float) -> int:
@@ -209,16 +396,16 @@ def seek_seconds(seconds: float) -> int:
 
 
 def seek(device: str, seconds: float) -> tuple[bool, str]:
-    return command(device, "seek", str(seek_seconds(seconds)))
+    return idempotent_command(device, "seek", str(seek_seconds(seconds)))
 
 
 def volume(device: str, percent: float) -> tuple[bool, str]:
     level = max(0, min(100, int(round(percent))))
-    return command(device, "volume", str(level))
+    return idempotent_command(device, "volume", str(level))
 
 
 def set_muted(device: str, muted: bool) -> tuple[bool, str]:
-    return command(device, "volumemute", "true" if muted else "false")
+    return idempotent_command(device, "volumemute", "true" if muted else "false")
 
 
 def subs_on(device: str) -> tuple[bool, str]:

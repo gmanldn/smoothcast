@@ -1,16 +1,18 @@
-"""LAN dashboard startup, GTK dispatch and playback snapshot ownership."""
+"""Shared-room portal startup, GTK dispatch and playback snapshot ownership."""
 from __future__ import annotations
 
 import pathlib
 import threading
-import os
-import stat
 import time
 
 import castctl
 import lan_interfaces
 import portal
+import portal_commands
 import portal_uploads
+import network_activity
+from network_activity_ui import NetworkActivityMixin
+from cast_widgets import save_config
 from gi.repository import GLib
 
 # An early portal cast that has not started playing within this many seconds is
@@ -18,7 +20,7 @@ from gi.repository import GLib
 PORTAL_CAST_GRACE_SECONDS = 5.0
 
 
-class PortalMixin:
+class PortalMixin(NetworkActivityMixin):
     def _refresh_portal(self) -> bool:
         """Keep the small authenticated dashboard bound to the current LAN IP."""
         if self._closing:
@@ -32,7 +34,14 @@ class PortalMixin:
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
             return True
         try:
-            self._portal = portal.Portal(address, self._portal_dispatch)
+            fence = getattr(self, "_portal_fence", None)
+            if fence is None:
+                fence = self._portal_fence = portal_commands.CommandFence(
+                    generation=lambda: (self.now_playing, id(self.session)),
+                    owner=self._device)
+            commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
+            self._portal = portal.Portal(address, self._portal_dispatch,
+                                         commands=commands, fence=fence)
         except (OSError, portal.PortalError) as exc:
             self._portal = None
             self._portal_ip = None
@@ -41,9 +50,10 @@ class PortalMixin:
         self._portal_ip = address
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.url)
+        self.portal_url_label.set_text(self._portal.friendly_url)
         self.portal_pin_label.set_text(self._portal.pin)
-        self.portal_status_label.set_text("Available on your local network")
+        self.portal_status_label.set_text(
+            f"Available on your local network · IP {self._portal.url}")
         if getattr(self, "_portal_activity_timer", None) is None:
             self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
         return True
@@ -78,7 +88,10 @@ class PortalMixin:
             activity = uploads.snapshot() if uploads is not None else []
         except Exception:
             activity = []
-        label.set_text(portal_uploads.format_portal_activity(activity))
+        room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
+        count = len(getattr(room, "participants", {}))
+        summary = portal_uploads.format_portal_activity(activity)
+        label.set_text(f"{count} in room · {summary}" if count else summary)
         self._reconcile_portal_casts()
         return True
 
@@ -125,12 +138,28 @@ class PortalMixin:
         self._cast_path(pathlib.Path(path), 0)
         return False
 
-    def _portal_dispatch(self, operation: str, payload: dict) -> dict | str:
+    def _portal_apply_music_autogain(self, value: bool) -> str:
+        self.cfg["music_autogain"] = value
+        save_config(self.cfg)
+        return "Music autogain enabled." if value else "Music autogain disabled."
+
+    def _portal_apply_command(self, envelope: portal_commands.MutationEnvelope):
+        """Reject stale commands before GTK dispatch, then run one mutation."""
+        portal_commands.precheck(self, getattr(self, "_portal_fence", None), envelope)
+        try:
+            return self._portal_dispatch("command", {"envelope": envelope})
+        except portal.PortalRequestError as exc:
+            raise portal_commands.CommandError(exc.status, exc.message) from exc
+
+    def _portal_dispatch(self, operation: str, payload: dict) -> object:
         """Marshal web requests onto GTK's main thread; never read GTK off-thread."""
         completed = threading.Event()
+        cancelled = threading.Event()
         result: list[object] = []
 
-        def run() -> bool:
+        def run():
+            if cancelled.is_set():
+                return False
             try:
                 result.append(self._portal_handle(operation, payload))
             except Exception as exc:
@@ -139,33 +168,61 @@ class PortalMixin:
                 completed.set()
             return False
 
-        GLib.idle_add(run)
+        source_id = GLib.idle_add(run)
         if not completed.wait(4):
+            cancelled.set()
+            try:
+                GLib.source_remove(source_id)
+            except Exception:
+                pass
             raise portal.PortalRequestError(503, "SmoothCast did not respond in time")
         if result and isinstance(result[0], Exception):
             raise result[0]
         return result[0] if result else {}
 
-    def _portal_handle(self, operation: str, payload: dict) -> dict | str:
+    def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+        if operation == "music_autogain":
+            value = payload.get("value")
+            if type(value) is not bool:
+                raise portal.PortalRequestError(400, "Music autogain must be on or off")
+            return self._portal_apply_music_autogain(value)
+        if operation == "command":
+            envelope = payload.get("envelope")
+            fence = getattr(self, "_portal_fence", None)
+            if not isinstance(envelope, portal_commands.MutationEnvelope) or fence is None:
+                raise portal.PortalRequestError(400, "Invalid command envelope")
+            return portal_commands.run_mutation(self, fence, envelope)
         if operation == "status":
             position = self.tracker.value()
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             title = self.np_title.get_text()
             if not title and self.now_playing:
                 title = pathlib.Path(self.now_playing).name
-            queue = [pathlib.Path(path).name for path in self.queue[:100]]
+            queue = self._portal_queue_status()
             volume = castctl.volume_percent(self.device_info)
             active = bool(self.session is not None or self.external)
             can_seek = bool(active and self.session is not None and not self.busy
                             and not self.external and self.tracker.known)
-            return {
+            state = {
                 "title": title, "receiver": self._device(), "state": self.device_state,
                 "position": position, "duration": duration, "volume": volume,
                 "queue": queue, "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
+                "music_autogain": bool(self.cfg.get("music_autogain", False)),
+                "network_activity": network_activity.portal_entries(
+                    getattr(self, "_network_activity_entries", []),
+                    self._device_host(self._device()),
+                ),
             }
+            fence = getattr(self, "_portal_fence", None)
+            if fence is not None:
+                state["session_id"], state["revision"], _owner = fence.snapshot()
+            return state
+        handled = self._portal_queue_action(operation, payload)
+        if handled is not None:
+            return handled
         if operation == "cast_upload":
             upload_id = payload.get("upload_id")
             early = bool(payload.get("early"))
@@ -174,19 +231,7 @@ class PortalMixin:
                 accepted_uploads = self._portal_accepted_uploads = set()
             if upload_id in accepted_uploads:
                 return "Upload received; casting started."
-            portal_instance = getattr(self, "_portal", None)
-            upload_root = getattr(getattr(portal_instance, "server", None), "uploads", None)
-            root = getattr(upload_root, "root", None)
-            if root is None:
-                raise portal.PortalRequestError(503, "Upload storage is unavailable")
-            path = pathlib.Path(payload.get("path", ""))
-            try:
-                info = path.lstat()
-                path.relative_to(root)
-            except (OSError, ValueError):
-                raise portal.PortalRequestError(400, "Uploaded media is unavailable") from None
-            if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
-                raise portal.PortalRequestError(400, "Uploaded media is unavailable")
+            path = self._portal_upload_path(payload)
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             if upload_id:
@@ -208,27 +253,4 @@ class PortalMixin:
             finally:
                 self._portal_early = False
             return "Upload received; casting started."
-        if self.busy:
-            raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
-        if operation == "play_pause":
-            if not self.play_button.get_sensitive():
-                raise portal.PortalRequestError(409, "Playback is not available right now")
-            self.toggle_play()
-            return "Playback command sent; the dashboard will refresh with receiver state."
-        if operation == "stop":
-            if not self.stop_button.get_sensitive():
-                raise portal.PortalRequestError(409, "Nothing SmoothCast can stop right now")
-            self.stop_stream()
-            return "Stop requested; the dashboard will refresh with receiver state."
-        if operation == "seek":
-            if (self.session is None or self.external or not self.tracker.known
-                    or self.busy or not self.tracker.duration):
-                raise portal.PortalRequestError(409, "Seeking is not available for this stream")
-            self.seek_to(payload["value"])
-            return "Seek requested; the dashboard will refresh with receiver state."
-        if operation == "volume":
-            if self.device_state == "OFFLINE" or not self.volume_scale.get_sensitive():
-                raise portal.PortalRequestError(409, "Receiver volume is unavailable")
-            self.volume_scale.set_value(payload["value"])
-            return "Volume change requested; the dashboard will refresh with receiver state."
         raise portal.PortalRequestError(400, "Unsupported action")

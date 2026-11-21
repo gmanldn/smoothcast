@@ -5,7 +5,6 @@ import ast
 import importlib.util
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -110,10 +109,9 @@ class GuiTestSafetyTests(unittest.TestCase):
         self.assertIn("Refusing SmoothCast GUI self-test", result.stderr)
         self.assertNotIn("gi.repository", result.stderr)
 
-    @unittest.skipUnless(shutil.which("bash"), "Bash unavailable")
-    def test_normal_shell_launcher_rejects_gui_test_before_bootstrap(self):
+    def test_normal_launcher_rejects_gui_test_before_bootstrap(self):
         result = subprocess.run(
-            ["bash", str(ROOT / "smoothcast"), "--self-test"], cwd=ROOT,
+            [sys.executable, str(ROOT / "smoothcast"), "--self-test"], cwd=ROOT,
             capture_output=True, text=True, timeout=10,
         )
         self.assertEqual(result.returncode, 2, result.stderr)
@@ -150,6 +148,7 @@ class GuiTestSafetyTests(unittest.TestCase):
                 self.assertTrue(env[name].endswith(("home", "config", "data",
                                                     "cache", "runtime")))
 
+    @unittest.skipIf(os.name == "nt", "POSIX process-group termination contract")
     def test_runner_timeout_terminates_whole_process_group(self):
         process = mock.Mock(pid=12345)
         process.wait.side_effect = [subprocess.TimeoutExpired("xvfb-run", 20), 0]

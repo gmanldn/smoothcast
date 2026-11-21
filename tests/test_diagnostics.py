@@ -7,11 +7,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import diagnostics
+import reliability_metrics
 import version
 
 
@@ -58,7 +60,8 @@ class CollectTests(unittest.TestCase):
             log = Path(directory) / "errors.log"
             lines = [f"error {n} at /home/alice/Movies/film-{n}.mkv 10.0.0.{n}" for n in range(500)]
             log.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            payload = diagnostics.collect(error_log=log, home="/home/alice")
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                payload = diagnostics.collect(error_log=log, home="/home/alice")
         self.assertEqual(len(payload["errors"]), diagnostics.MAX_ERROR_LINES)
         blob = json.dumps(payload)
         self.assertNotIn("/home/alice", blob)
@@ -66,13 +69,31 @@ class CollectTests(unittest.TestCase):
         self.assertIn("[ip]", blob)  # addresses were masked, not left raw
 
     def test_reports_missing_error_log_without_failing(self):
-        payload = diagnostics.collect(error_log=Path("/does/not/exist/errors.log"))
+        with mock.patch.object(diagnostics, "tool_version", return_value=""):
+            payload = diagnostics.collect(error_log=Path("/does/not/exist/errors.log"))
         self.assertEqual(payload["errors"], [])
 
     def test_includes_version_and_tools(self):
         payload = diagnostics.collect()
         self.assertEqual(payload["smoothcast"]["label"], version.label())
         self.assertIn("ffmpeg", payload["tools"])
+
+    def test_includes_only_recent_allowlisted_reliability_summaries(self):
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reliability.json"
+            session = reliability_metrics.SessionMetrics(
+                "cast", wall_time=time.time(),
+            )
+            summary = session.finish("completed")
+            summary["title"] = "Private Film Name"
+            reliability_metrics.append(summary, path)
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                payload = diagnostics.collect(reliability=path)
+        self.assertEqual(len(payload["reliability"]), 1)
+        self.assertNotIn("title", payload["reliability"][0])
+        self.assertNotIn("Private Film Name", json.dumps(payload))
 
 
 class WriteBundleTests(unittest.TestCase):
@@ -95,7 +116,8 @@ class WriteBundleTests(unittest.TestCase):
     def test_export_produces_a_bounded_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "out.json"
-            path = diagnostics.export(destination=destination, error_log=destination)
+            with mock.patch.object(diagnostics, "tool_version", return_value=""):
+                path = diagnostics.export(destination=destination, error_log=destination)
             self.assertTrue(path.is_file())
             self.assertLessEqual(path.stat().st_size, diagnostics.MAX_BUNDLE_BYTES)
             payload = json.loads(path.read_text(encoding="utf-8"))

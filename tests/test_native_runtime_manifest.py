@@ -106,9 +106,13 @@ def test_setup_records_only_after_successful_verification():
              mock.patch.object(bootstrap, "ensure_venv",
                                return_value=venv / "bin" / "python"), \
              mock.patch.object(bootstrap.platform, "system", return_value="Linux"):
-            assert bootstrap.main(["--target", "linux", "--no-shortcuts", "--check"]) == 0
+            assert bootstrap.main([
+                "--target", "linux", "--in-place", "--no-shortcuts", "--check",
+            ]) == 0
             assert not native_runtime.manifest_path(venv).exists()
-            assert bootstrap.main(["--target", "linux", "--no-shortcuts"]) == 0
+            assert bootstrap.main([
+                "--target", "linux", "--in-place", "--no-shortcuts",
+            ]) == 0
         saved = json.loads(native_runtime.manifest_path(venv).read_text())
         assert saved["native_python"] == str(chosen)
         assert saved["target"] == "linux"

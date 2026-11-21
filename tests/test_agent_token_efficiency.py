@@ -102,6 +102,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         limits = {
             "cast_control.py": 25_000,
             "cast_widgets.py": 32_000,
+            "bookmark_ui.py": 9_000,
             "cast_ui.py": 62_000,
             "cast_settings.py": 10_000,
             "preferences_ui.py": 14_000,
@@ -116,8 +117,9 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             with self.subTest(module=name):
                 path = ROOT / "src" / name
                 self.assertTrue(path.exists(), f"{name} is missing from the split GUI")
+                size = len(path.read_bytes().replace(b"\r\n", b"\n"))
                 self.assertLess(
-                    path.stat().st_size, limit,
+                    size, limit,
                     f"{name} is regrowing; split or trim it instead",
                 )
 

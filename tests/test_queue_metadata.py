@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import pathlib
+import tempfile
 import threading
 import textwrap
 from types import SimpleNamespace
@@ -61,9 +62,18 @@ def window(*, durations=None, probe=None):
             self.now_playing = "current-film"
             self.selected_index = 0
             self._closing = False
+            self._media_cache = {}
             self._rebuild_queue = mock.Mock()
             self.toast = mock.Mock()
             self.set_selection = mock.Mock()
+            self._next_queue_item = mock.Mock(return_value=None)
+            self._cancel_queue_prewarm = mock.Mock()
+            self._prewarm_queue_media = mock.Mock()
+            self._queue_duration_paths = mock.Mock(
+                side_effect=lambda paths: tuple(dict.fromkeys(
+                    path for path in paths if path not in self.queue_durations
+                ))
+            )
 
     return Window(), jobs, media_probe
 
@@ -154,3 +164,62 @@ def test_pure_metadata_publish_ignores_removed_and_preserves_known_values():
         cache, ("newer", "active"), {"newer": 10.0, "active": 2.0, "removed": 9.0}
     )
     assert cache == {"newer": 12.0, "active": 2.0}
+
+
+def test_media_metadata_is_fingerprint_checked_and_bounded():
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "film.mkv"
+        path.write_bytes(b"video")
+        fingerprint = queue_metadata.file_fingerprint(path)
+        media = SimpleNamespace(duration=12.5)
+        result = queue_metadata.inspect_media(
+            (str(path),), lambda _path: media,
+        )
+        cache = {}
+        queue_metadata.publish_media(cache, (str(path),), result, max_entries=1)
+        assert queue_metadata.cached_media(cache, path) is media
+
+        path.write_bytes(b"changed video")
+        assert queue_metadata.cached_media(cache, path) is None
+        assert result[str(path)].fingerprint == fingerprint
+        refreshed = SimpleNamespace(duration=14.0)
+        media_used, reused_fingerprint = queue_metadata.media_for_cast(
+            cache[str(path)], path, lambda _path: refreshed,
+        )
+        assert media_used is refreshed and reused_fingerprint is None
+
+        cache[str(path)] = (queue_metadata.file_fingerprint(path), media)
+        media_used, reused_fingerprint = queue_metadata.media_for_cast(
+            cache[str(path)], path, lambda _path: refreshed,
+        )
+        assert media_used is media and reused_fingerprint == cache[str(path)][0]
+
+
+def test_media_probe_discards_results_after_cancellation_or_file_change():
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "film.mkv"
+        path.write_bytes(b"video")
+        cancel = threading.Event()
+
+        def probe(_path):
+            cancel.set()
+            return SimpleNamespace(duration=5.0)
+
+        assert queue_metadata.inspect_media(
+            (str(path),), probe, cancelled=cancel,
+        ) == {}
+
+
+def test_media_publish_only_keeps_queued_current_files_and_respects_bound():
+    with tempfile.TemporaryDirectory() as directory:
+        paths = [pathlib.Path(directory) / f"{index}.mkv" for index in range(3)]
+        for path in paths:
+            path.write_bytes(b"x")
+        results = queue_metadata.inspect_media(
+            map(str, paths), lambda path: SimpleNamespace(path=path),
+        )
+        cache = {}
+        queue_metadata.publish_media(cache, (str(paths[0]), str(paths[1])), results,
+                                     max_entries=1)
+        assert len(cache) == 1
+        assert str(paths[2]) not in cache

@@ -13,7 +13,7 @@ class QualityGateTests(unittest.TestCase):
     def test_ruff_is_configured_and_gated_in_ci(self):
         self.assertIn("[tool.ruff.lint]", read("pyproject.toml"))
         workflow = read(".github/workflows/verify.yml")
-        self.assertIn("ruff check src scripts setup tests sc.py setup.py", workflow)
+        self.assertIn("ruff check src scripts setup tests smoothcast setup.py", workflow)
         self.assertIn("ruff", read("pyproject.toml").split("dev = [", 1)[1].split("]", 1)[0])
 
     def test_coverage_runs_on_primary_python_with_a_threshold(self):
@@ -50,6 +50,16 @@ class DependencyGateTests(unittest.TestCase):
         bound = "catt>=0.12,<0.14"
         self.assertIn(bound, read("pyproject.toml"))
         self.assertIn(bound, read("setup/bootstrap.py"))
+        pychromecast = "PyChromecast>=13.1.0,<15"
+        self.assertIn(pychromecast, read("pyproject.toml"))
+        self.assertIn(pychromecast, read("setup/bootstrap.py"))
+        workflow = read(".github/workflows/verify.yml")
+        for job_name, next_job in (
+            ("  portable-tests:", "  portable-tests-native:"),
+            ("  portable-tests-native:", "  media-integration:"),
+        ):
+            job = workflow.split(job_name, 1)[1].split(next_job, 1)[0]
+            self.assertIn(pychromecast, job)
 
     def test_codeql_and_pip_audit_run_in_ci(self):
         codeql = read(".github/workflows/codeql.yml")
@@ -155,7 +165,8 @@ class NativeOsPortableTests(unittest.TestCase):
     def test_portable_suite_gates_on_macos_and_windows_headless(self):
         workflow = read(".github/workflows/verify.yml")
         job = workflow.split("  portable-tests-native:", 1)[1].split("\n  media-integration:", 1)[0]
-        for needle in ("os: [macos-15, windows-2025]", "python -m pytest -q tests", "psutil"):
+        for needle in ("os: [macos-15, windows-2025]", "python -m pytest -q tests",
+                       "pytest-xdist>=3,<4", "-n auto", "psutil"):
             self.assertIn(needle, job)
         self.assertNotIn("continue-on-error", job)             # it gates; gaps go in platform_gaps.py
         self.assertNotIn("test_gui_isolated", job)             # never a GUI

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.machinery
+import importlib.util
 import io
 import json
 import os
@@ -35,10 +37,9 @@ class SetupContractTests(unittest.TestCase):
                 self.assertIn("bootstrap.py", script)
                 self.assertIn("--target " + target, script)
         if os.name != "nt" and shutil.which("bash"):
-            for filename in ("linuxsetup.sh", "macsetup.sh", "smoothcast"):
+            for filename in ("linuxsetup.sh", "macsetup.sh"):
                 result = subprocess.run(
-                    ["bash", "-n", str(ROOT / ("setup" if filename.endswith(".sh")
-                                              else ".") / filename)],
+                    ["bash", "-n", str(ROOT / "setup" / filename)],
                     capture_output=True, text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -105,32 +106,52 @@ class SetupContractTests(unittest.TestCase):
         source = bootstrap.python_ok.__code__
         self.assertIn("sys.exit", source.co_consts[-1])
         launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
-        self.assertIn("sys.exit(0 if sys.version_info", launcher)
+        self.assertIn("sys.version_info < (3, 10)", launcher)
         self.assertNotIn("assert sys.version_info", launcher)
 
-    def test_catt_prerelease_rejected_even_under_optimized_python(self):
-        for version, accepted in (
-            ("0.11.99", False), ("0.12rc1", False),
-            ("0.12.0rc1", False), ("0.13.dev0", False),
-            ("0.12", True), ("0.12.0", True),
-            ("0.12.post1", True), ("1.0", True),
-        ):
-            with self.subTest(version=version):
-                injection = (
-                    "import importlib.metadata as _m; "
-                    f"_m.version=lambda name:{version!r}; "
-                )
-                for optimize in (False, True):
-                    argv = [sys.executable] + (["-O"] if optimize else [])
-                    result = subprocess.run(
-                        argv + ["-c", injection + bootstrap.CATT_CHECK],
-                        capture_output=True, text=True, timeout=10,
-                    )
-                    self.assertEqual(result.returncode == 0, accepted,
-                                     (version, optimize, result.stderr))
-        launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
-        self.assertNotIn("assert tuple(v)", launcher)
-        self.assertIn("re.fullmatch", launcher)
+    def test_cast_dependency_bounds_rejected_under_optimized_python(self):
+        cases = (
+            ("0.11.99", "13.1.0", False),
+            ("0.12rc1", "13.1.0", False),
+            ("0.12.0rc1", "13.1.0", False),
+            ("0.13.dev0", "13.1.0", False),
+            ("0.12", "13.1.0", True), ("0.12.0", "13.1.0", True),
+            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", True),
+            ("0.12", "13.0.8", False), ("0.12", "15.0.0", False),
+            ("0.12", "13.1.0rc1", False), ("0.12", "14.1.0", True),
+        )
+        # One fresh interpreter per optimization mode exercises the shipped check
+        # for every version, instead of one interpreter per version (16 spawns).
+        script = (
+            "import importlib.metadata as m, json\n"
+            f"cases = {[(catt, pycast) for catt, pycast, _accepted in cases]!r}\n"
+            f"check = {bootstrap.CAST_DEPENDENCIES_CHECK!r}\n"
+            "codes = []\n"
+            "for catt_version, pycast_version in cases:\n"
+            "    m.version = lambda name, c=catt_version, p=pycast_version: c if name == 'catt' else p\n"
+            "    try:\n"
+            "        exec(compile(check, '<cast-check>', 'exec'), {'__name__': '__main__'})\n"
+            "    except SystemExit as exc:\n"
+            "        codes.append(exc.code)\n"
+            "    else:\n"
+            "        codes.append(None)\n"
+            "print(json.dumps(codes))\n"
+        )
+        for optimize in (False, True):
+            argv = [sys.executable] + (["-O"] if optimize else [])
+            result = subprocess.run(
+                argv + ["-c", script], capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            codes = json.loads(result.stdout)
+            self.assertEqual(len(codes), len(cases))
+            for (catt_version, pycast_version, accepted), code in zip(cases, codes):
+                with self.subTest(catt=catt_version, pychromecast=pycast_version,
+                                  optimize=optimize):
+                    self.assertEqual(code == 0, accepted,
+                                     (catt_version, pycast_version, optimize, result.stderr))
+        self.assertNotIn("assert tuple(v)", launch.RUNTIME_CHECK)
+        self.assertIn("re.fullmatch", launch.RUNTIME_CHECK)
 
     def test_ffmpeg_tool_probe_handles_missing_loader_timeout_and_exit(self):
         outcomes = {
@@ -258,26 +279,32 @@ class SetupContractTests(unittest.TestCase):
                 self.assertTrue(path.parent.name.startswith("smoothcast-msys2-"))
                 shutil.rmtree(path.parent)
 
-    def test_missing_catt_recovers_from_project_metadata_not_removed_requirements(self):
+    def test_missing_cast_dependencies_recover_from_project_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "bin" / "python"
             executable.parent.mkdir(parents=True)
             executable.touch()
-            catt_checks = 0
+            dependencies_installed = False
 
             def installed(_python, code, *, env=None):
-                nonlocal catt_checks
+                nonlocal dependencies_installed
                 if code == bootstrap.GUI_CHECK:
                     return True
-                if code == bootstrap.CATT_CHECK:
-                    catt_checks += 1
-                    return catt_checks > 1
+                if code in {
+                    bootstrap.CAST_DEPENDENCIES_CHECK,
+                    bootstrap.PROJECT_DEPENDENCIES_CHECK,
+                }:
+                    return dependencies_installed
                 return False
+
+            def pip_install(_command, **_kwargs):
+                nonlocal dependencies_installed
+                dependencies_installed = True
 
             with mock.patch.object(bootstrap, "venv_python", return_value=executable), \
                  mock.patch.object(bootstrap, "works", side_effect=installed), \
                  mock.patch.object(bootstrap, "check_tools", return_value=[]), \
-                 mock.patch.object(bootstrap, "checked_run") as run:
+                 mock.patch.object(bootstrap, "checked_run", side_effect=pip_install) as run:
                 result = bootstrap.ensure_venv(Path(sys.executable), dict(), check=False)
             self.assertEqual(result, executable)
             run.assert_called_once()
@@ -305,20 +332,20 @@ class SetupContractTests(unittest.TestCase):
                 run.assert_not_called()
 
     def test_no_installer_references_a_missing_requirements_file(self):
-        # `catt` is the only pip dependency and there is deliberately no
+        # `catt` and PyChromecast are the pip dependencies; there is deliberately no
         # requirements.txt; `pip install -r` on a missing file aborts setup.
         source = (ROOT / "setup" / "bootstrap.py").read_text(encoding="utf-8")
         self.assertNotIn("requirements.txt", source)
 
-    def test_venv_installs_catt_without_a_requirements_file(self):
-        state = {"catt": False}
+    def test_venv_installs_cast_dependencies_without_a_requirements_file(self):
+        state = {"dependencies": False}
 
         def fake_works(python, code, *, env=None):
-            return state["catt"] if "m.version" in code else True
+            return state["dependencies"] if "m.version" in code else True
 
         def fake_run(command, **kwargs):
-            if "pip" in command and any("catt" in str(arg) for arg in command):
-                state["catt"] = True
+            if "pip" in command and any("PyChromecast" in str(arg) for arg in command):
+                state["dependencies"] = True
 
         with mock.patch.object(bootstrap, "venv_python",
                                return_value=Path(sys.executable)), \
@@ -329,6 +356,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertEqual(installed, Path(sys.executable))
         command = run.call_args.args[0]
         self.assertIn("catt>=0.12,<0.14", command)
+        self.assertIn("PyChromecast>=13.1.0,<15", command)
         self.assertNotIn("requirements.txt", command)
 
     def test_macos_application_bundle_has_valid_plist_and_executable(self):
@@ -379,11 +407,38 @@ class SetupContractTests(unittest.TestCase):
                                return_value="Linux"):
             self.assertFalse(streamer.Session().used_software_fallback)
 
-    def test_original_launcher_delegates_to_shared_bootstrap(self):
+    def test_canonical_launcher_delegates_to_shared_bootstrap(self):
         script = (ROOT / "smoothcast").read_text()
-        self.assertIn("setup/bootstrap.py", script)
-        self.assertIn("setup/launch.py", script)
-        self.assertIn('exec "$PYTHON" "$DIR/src/version.py"', script)
+        self.assertTrue(script.startswith("#!/usr/bin/env python3\n"))
+        self.assertIn('str(SETUP / "bootstrap.py")', script)
+        self.assertIn("launch.runtime_ready()", script)
+        self.assertIn("launch.main(args)", script)
+        self.assertIn('"install_desktop.py"', script)
+        self.assertNotIn("sc.py", script)
+
+    def test_canonical_launcher_keeps_headless_queries_out_of_bootstrap(self):
+        loader = importlib.machinery.SourceFileLoader(
+            "smoothcast_launcher", str(ROOT / "smoothcast"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        launcher = importlib.util.module_from_spec(spec)
+        loader.exec_module(launcher)
+        old = os.environ.pop("SMOOTHCAST_TEST_CONTEXT", None)
+        try:
+            for argv in (["--version"], ["-V"], ["--diagnostics"],
+                         ["--diagnostics", "/tmp/report"], ["--self-test", "x"]):
+                with self.subTest(argv=argv):
+                    self.assertTrue(launcher._headless(argv))
+            for argv in ([], ["film.mkv"], ["--version", "extra"],
+                         ["--network-check"]):
+                with self.subTest(argv=argv):
+                    self.assertFalse(launcher._headless(argv))
+            os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"
+            self.assertTrue(launcher._headless([]))
+        finally:
+            if old is None:
+                os.environ.pop("SMOOTHCAST_TEST_CONTEXT", None)
+            else:
+                os.environ["SMOOTHCAST_TEST_CONTEXT"] = old
 
 
 if __name__ == "__main__":

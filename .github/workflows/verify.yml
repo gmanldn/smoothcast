@@ -14,14 +14,81 @@ env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
 # Every push to develop or main gets its own run (the group is the commit SHA),
-# so no integration commit is ever cancelled or replaced while queued: each one
-# is verified and the release promotion job can fire. Pull requests share one
-# group per branch and a newer push cancels the superseded run.
+# so no integration commit is cancelled or replaced while queued. The scope job
+# picks the patch fast lane or the minor/major full matrix; release promotion
+# waits for that run. Pull requests share one group per branch and a newer push
+# cancels the superseded run.
 concurrency:
   group: smoothcast-verify-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  scope:
+    name: Test lane
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      lane: ${{ steps.scope.outputs.lane }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Patch fast lane or minor/major full lane?
+        id: scope
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          lane="$(python scripts/ci/test_scope.py --base "$BASE" --head "$GITHUB_SHA")"
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+          echo "Test lane: **$lane**" >> "$GITHUB_STEP_SUMMARY"
+
+  syntax:
+    name: Fast syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Check Python syntax without GTK
+        run: python -m compileall -q src scripts setup tests
+      - name: Check canonical launcher syntax
+        run: python -m py_compile smoothcast
+
+  reliability-benchmark:
+    name: Fake Cast reliability benchmark
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install Cast client
+        run: python -m pip install 'PyChromecast>=13.1.0,<15'
+      - name: Measure loopback CASTV2 dispatch to PLAYING
+        env:
+          SMOOTHCAST_BENCHMARK_RUNNER: ubuntu-24.04-py3.13
+        run: >-
+          python scripts/reliability_benchmark.py
+          --iterations 7
+          --baseline docs/reliability-baseline-ubuntu-24.04.json
+          --output reliability-benchmark.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reliability-benchmark-${{ github.sha }}
+          path: reliability-benchmark.json
+          if-no-files-found: error
+          retention-days: 30
+
   lint:
     name: Ruff lint
     runs-on: ubuntu-24.04
@@ -31,10 +98,14 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Install Ruff
         run: python -m pip install 'ruff==0.16.9'
       - name: Lint (configuration in pyproject.toml)
-        run: ruff check src scripts setup tests sc.py setup.py
+        run: ruff check src scripts setup tests smoothcast setup.py
 
   typecheck:
     name: Type check (mypy)
@@ -45,6 +116,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Install mypy
         run: python -m pip install 'mypy==2.3.1'
       - name: Check the modules listed in pyproject.toml
@@ -59,6 +134,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Audit the resolved runtime dependencies
         # Resolves catt (bounded in pyproject.toml) and its dependencies, then
         # fails on any known vulnerability. Not a lock file: see testing.md.
@@ -70,6 +149,8 @@ jobs:
 
   portable-tests:
     name: Portable regressions (Python ${{ matrix.python-version }})
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
     runs-on: ubuntu-24.04
     # Full Python 3.10 pytest exceeded 12 minutes on loaded shared runners.
     # Do not skip tests or weaken coverage; use a bounded larger allowance.
@@ -86,22 +167,33 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
 
       - name: Check Python syntax without GTK
         run: python -m compileall -q src scripts setup tests
 
+      - name: Check canonical launcher syntax
+        run: python -m py_compile smoothcast
+
       - name: Install portable test dependencies
-        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'hypothesis>=6,<7'
+        run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'PyChromecast>=13.1.0,<15' 'catt>=0.12,<0.14'
 
       - name: Run all portable regression tests
         if: matrix.python-version != '3.13'
-        run: python -m pytest -q tests
+        env:
+          SMOOTHCAST_RUN_CATT_CONTRACT: '1'
+        run: python -m pytest -q tests -n auto
 
       - name: Run all portable regression tests with coverage
         if: matrix.python-version == '3.13'
+        env:
+          SMOOTHCAST_RUN_CATT_CONTRACT: '1'
         # Baseline measured 40% line coverage on 19 Nov 2026; the gate sits
         # just below it and may only be raised.
-        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=38
+        run: python -m pytest -q tests --cov=src --cov-report=term --cov-fail-under=38 -n auto
 
       - name: Prove tests cannot see a simulated active desktop
         env:
@@ -117,6 +209,8 @@ jobs:
   # with a reason in tests/platform_gaps.py; fix the cause and delete the entry.
   portable-tests-native:
     name: Portable regressions (${{ matrix.os }})
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -131,16 +225,23 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
 
       - name: Install portable test dependencies
-        # psutil is a runtime dependency used for native process identity.
-        run: python -m pip install 'pytest>=8,<10' 'hypothesis>=6,<7' 'psutil>=5.9,<8'
+        # PyChromecast drives CASTV2 loopback integration; psutil is used for
+        # native process-identity checks.
+        run: python -m pip install 'pytest>=8,<10' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'psutil>=5.9,<8' 'PyChromecast>=13.1.0,<15'
 
       - name: Run all portable regression tests
-        run: python -m pytest -q tests -p no:cacheprovider --tb=short
+        run: python -m pytest -q tests -p no:cacheprovider --tb=short -n auto
 
   media-integration:
     name: FFmpeg MKV/SRT runtime integration
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -148,6 +249,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Install FFmpeg with bounded signed-mirror failover
         run: |
           # Avoid unbounded downloads from a regionally slow apt mirror;
@@ -172,6 +277,8 @@ jobs:
 
   setup-contract:
     name: Setup contract (${{ matrix.os }})
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -183,6 +290,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Check Python syntax
         run: python -m compileall -q setup
       - name: Exercise Python-only setup contracts without installing packages
@@ -196,6 +307,8 @@ jobs:
 
   installed-artifact:
     name: Installed wheel contract (${{ matrix.os }})
+    needs: [scope]
+    if: needs.scope.outputs.lane == 'full'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -207,19 +320,36 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            .github/workflows/verify.yml
       - name: Install isolated Python artifact build tools
         run: python -m pip install 'build>=1,<2' 'setuptools>=77' 'wheel>=0.45'
       - name: Build sdist, rebuild wheel, then check a fresh installed runtime
         run: python scripts/ci/verify_installed_artifact.py
 
-  # develop -> main, automatically, for verified point releases only. Runs
-  # last and only if every job above passed on this exact push. `main` is
+  # develop -> main, automatically, for verified releases. Patch progress takes
+  # the fast lane; only MINOR/MAJOR bumps run the full test matrix. `main` is
   # release-only and the repository ruleset requires a pull request, so the
   # job opens one and merges it with the head pinned to the verified commit.
   promote-release:
     name: Promote verified release to main
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: [lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact]
+    if: |
+      always() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/develop' &&
+      needs.scope.result == 'success' &&
+      needs.syntax.result == 'success' &&
+      needs.lint.result == 'success' &&
+      needs.typecheck.result == 'success' &&
+      needs.dependency-audit.result == 'success' &&
+      (needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped') &&
+      (needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped') &&
+      (needs.portable-tests-native.result == 'success' || needs.portable-tests-native.result == 'skipped') &&
+      (needs.media-integration.result == 'success' || needs.media-integration.result == 'skipped') &&
+      (needs.setup-contract.result == 'success' || needs.setup-contract.result == 'skipped') &&
+      (needs.installed-artifact.result == 'success' || needs.installed-artifact.result == 'skipped')
+    needs: [scope, syntax, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

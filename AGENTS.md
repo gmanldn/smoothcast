@@ -23,8 +23,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 ## Rules
 
 - **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
-  before work, `Refs #N` in commits, close only when every acceptance criterion
-  (incl. hardware) is verified. [Issues](docs/ISSUES.md).
+  before work, `Refs #N` in commits, close when code and automated CI pass;
+  device checks tracked in #208. [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
 - **Smallest complete fix:** inspect callers, reuse code, keep validation, privacy,
   device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
@@ -34,12 +34,13 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 - **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
   names a development revision; `./smoothcast --version` is GUI-free.
 
-## Testing — no desktop focus
+## Testing — patch fast lane, no desktop focus
 
-**Never launch the real GUI, activate the user's window or control their TV
-during routine tests.** No `gtk-launch`, `./smoothcast` or bare `--self-test`.
-Use `python3 -m pytest -q tests` and
-`python3 -m compileall -q src scripts setup tests`. Optional GUI smoke:
+**Never launch the real GUI** or focus the desktop/control the TV. No
+`gtk-launch`, `./smoothcast` or `--self-test`. PATCH work uses the fast lane
+(`compileall`, `ruff`, `mypy`; no full suite). Run `python3 -m pytest -q tests
+-n auto` only for MINOR/MAJOR bumps; CI picks the lane with
+`scripts/ci/test_scope.py`. Optional GUI smoke:
 `python3 scripts/test_gui_isolated.py` (private Xvfb only).
 [Test safety](docs/agents/testing.md).
 

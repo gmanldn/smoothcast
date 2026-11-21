@@ -162,6 +162,9 @@ class PlayerActionSafetyTests(unittest.TestCase):
         record = self.methods["_record_watch"]
         self.assertIn("watch_history.record(", record)
         self.assertIn('"resumed"', record)
+        self.assertIn("duration=", record)
+        self.assertIn("watch_history.fingerprint(", record)
+        self.assertIn("tracks=", record)
         self.assertIn('self._record_watch("start")', self.methods["_cast_path"])
         self.assertIn('self._record_watch("completed")', self.methods["_on_finished"])
         self.assertIn('self._record_watch("stop")', self.methods["stop_stream"])

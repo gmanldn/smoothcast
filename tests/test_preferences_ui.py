@@ -53,6 +53,10 @@ class PreferenceChoiceTests(unittest.TestCase):
             [v for _label, v in preference_choices.OPTIONS["subs"]],
             ["off", "auto", "pick", "embedded"],
         )
+        self.assertEqual(
+            [value for _label, value in preference_choices.OPTIONS["subtitle_style"]],
+            ["default", "large", "high-contrast", "raised"],
+        )
 
     def test_gtk_module_is_parsable_without_importing_gtk(self):
         ast.parse(source("preferences_ui.py"))
@@ -67,6 +71,7 @@ class PreferenceChoiceTests(unittest.TestCase):
         self.assertIn('preferences_button.connect("clicked", lambda _button: self.action_preferences())', player)
         self.assertIn('inline = Gtk.Expander(label="Show inline playback controls")', player)
         self.assertIn('self.keep_switch = self._switch_row(', player)
+        self.assertIn('_choice(\n            captions, "subtitle_style", "Subtitle appearance"', source("preferences_ui.py"))
         for item in ('"preferences_ui"', '"preference_choices"'):
             self.assertIn(item, package)
 

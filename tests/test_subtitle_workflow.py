@@ -101,7 +101,8 @@ class SubtitleWorkflowTests(unittest.TestCase):
             with mock.patch.object(streamer, "ROOT", path):
                 staged = streamer.Session()._stage_subs(source)
             self.assertEqual(staged.name, "burned_subs.srt")
-            self.assertEqual(staged.read_bytes(), source.read_bytes())
+            self.assertEqual(staged.read_text(encoding="utf-8"),
+                             source.read_text(encoding="utf-8"))
             huge = path / "huge.srt"
             with huge.open("wb") as handle:
                 handle.truncate(16 * 1024 * 1024 + 1)

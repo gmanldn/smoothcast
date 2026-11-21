@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -34,10 +35,11 @@ class ReceiverReportTests(unittest.TestCase):
                          {"protocol": "cast", "model": "", "manufacturer": ""})
 
     def test_bundle_carries_the_receiver_cleaned_bounded_and_redacted(self):
-        payload = diagnostics.collect(receiver={
-            "protocol": "cast", "model": "Model 192.168.1.60 " + "x" * 500,
-            "manufacturer": "  Acme  ", "host": "192.168.1.60", "name": "Kitchen",
-            "secret": "token"})
+        with mock.patch.object(diagnostics, "tool_version", return_value=""):
+            payload = diagnostics.collect(receiver={
+                "protocol": "cast", "model": "Model 192.168.1.60 " + "x" * 500,
+                "manufacturer": "  Acme  ", "host": "192.168.1.60", "name": "Kitchen",
+                "secret": "token"})
         receiver = payload["receiver"]
         self.assertEqual(set(receiver), {"protocol", "model", "manufacturer"})
         self.assertNotIn("192.168.1.60", receiver["model"])
@@ -46,7 +48,8 @@ class ReceiverReportTests(unittest.TestCase):
 
     def test_invalid_receiver_input_never_breaks_the_bundle(self):
         for bad in (None, [], "tv", 5, {"protocol": "airplay", "model": 7}):
-            with self.subTest(bad=bad):
+            with self.subTest(bad=bad), \
+                 mock.patch.object(diagnostics, "tool_version", return_value=""):
                 receiver = diagnostics.collect(receiver=bad)["receiver"]
                 self.assertNotIn("protocol", receiver)      # only cast/dlna accepted
                 self.assertNotIn("model", receiver)

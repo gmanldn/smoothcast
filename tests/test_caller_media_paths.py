@@ -34,7 +34,8 @@ def command_line_method():
 class CallerMediaPathTests(unittest.TestCase):
     def test_argument_translation_precedes_launcher_chdir(self):
         with tempfile.TemporaryDirectory() as folder:
-            base = Path(folder)
+            # macOS temp roots can be symlinks (for example /var -> /private/var).
+            base = Path(folder).resolve()
             caller, checkout = base / "caller", base / "checkout"
             caller.mkdir()
             checkout.mkdir()
@@ -42,25 +43,38 @@ class CallerMediaPathTests(unittest.TestCase):
             (checkout / "film.mkv").write_text("wrong")
             observed = {}
 
-            def execvpe(executable, command, env):
+            def execvpe(_executable, command, _env):
                 observed["args"] = command
                 observed["cwd_at_exec"] = os.getcwd()
+
+            def subprocess_call(command, *, cwd, env):
+                observed["args"] = command
+                observed["cwd_at_exec"] = os.getcwd()
+                observed["child_cwd"] = cwd
+                return 0
 
             with mock.patch.object(launch, "ROOT", checkout), \
                  mock.patch.object(launch, "python_path", return_value=Path("/venv/python")), \
                  mock.patch.object(launch, "runtime_environment", return_value={}), \
                  mock.patch.object(launch.os, "execvpe", side_effect=execvpe), \
+                 mock.patch.object(launch.subprocess, "call",
+                                   side_effect=subprocess_call), \
                  mock.patch.object(launch.os, "chdir") as chdir, \
+                 mock.patch.object(launch, "ensure_single_instance", return_value=None), \
                  mock.patch.object(launch.Path, "cwd", return_value=caller), \
                  mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
                 launch.main(["film.mkv"])
-            self.assertEqual(observed["args"][-1], str(caller / "film.mkv"))
-            chdir.assert_called_once_with(checkout)
-            self.assertNotEqual(observed["args"][-1], str(checkout / "film.mkv"))
+            self.assertEqual(observed["args"][-1], str((caller / "film.mkv").resolve()))
+            if os.name == "nt":
+                self.assertEqual(observed["child_cwd"], checkout)
+                chdir.assert_not_called()
+            else:
+                chdir.assert_called_once_with(checkout)
+            self.assertNotEqual(observed["args"][-1], str((checkout / "film.mkv").resolve()))
 
     def test_missing_caller_media_must_not_fall_back_to_checkout_decoy(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, checkout = root / "caller", root / "checkout"
             caller.mkdir()
             checkout.mkdir()
@@ -71,16 +85,16 @@ class CallerMediaPathTests(unittest.TestCase):
             self.assertEqual(result, [str(caller / "missing.mkv")])
 
     def test_action_option_and_uri_are_preserved(self):
-        cwd = Path("/another directory")
+        cwd = Path(tempfile.gettempdir()).resolve() / "another directory"
         args = ["--action", "stop", "file:///tmp/test.mkv", "--whatever", "film.mp4"]
         got = launch.media_arguments_from_caller(args, cwd)
         self.assertEqual(got[:4], args[:4])
-        self.assertEqual(got[-1], str(cwd / "film.mp4"))
+        self.assertEqual(got[-1], str((cwd / "film.mp4").resolve()))
 
     def test_forwarded_command_line_uses_callers_cwd_not_running_process(self):
         cls = command_line_method()
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, other = root / "called from", root / "already running"
             caller.mkdir()
             other.mkdir()
@@ -104,7 +118,7 @@ class CallerMediaPathTests(unittest.TestCase):
     def test_forwarded_missing_caller_file_does_not_use_decoy(self):
         cls = command_line_method()
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             caller, checkout = root / "caller", root / "checkout"
             caller.mkdir()
             checkout.mkdir()

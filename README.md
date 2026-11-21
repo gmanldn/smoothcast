@@ -9,15 +9,17 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Dialogue-first surround downmix** — with the Dialogue or Night profile, 5.0/5.1/6.1/7.1 and quad tracks are mixed to stereo with the centre channel lifted ~5 dB over FFmpeg's default matrix, surrounds lowered, the LFE dropped and no clipping; the level used for auto-trim is measured on that same mix. Original, stereo/mono and unrecognised layouts keep the plain `-ac 2` downmix
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
-- **PIN-protected LAN dashboard** — view current playback and queue from another device on the local network, with play/pause, stop, seek and volume controls
+- **PIN-protected shared room** — everyone on the local network can join with their name, see who is present, add videos to the shared queue, vote, reorder/remove/play titles, and control play/pause, skip, seek and volume from a phone
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **Desktop notifications** — posts a Gio notification when a cast finishes, fails or the receiver disappears, but never while the window is focused; Preferences > Playback > Notifications turns it off and the choice is stored as `"notifications"` in `config.json`
 - **Fullscreen idle chrome** — hides the header bar after ~2.5 s without input while fullscreen and focused, then restores it on pointer motion, key presses, focus or accessibility changes; leaving fullscreen always restores the chrome
-- **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback; macOS/Windows start with software libx264; selects the LAN source IP routed to the Chromecast
+- **Audio-only queue and casting** — MP3, AAC/M4A, FLAC, Ogg/Opus, WAV and AIFF files are probed and queued with duration and codec details; Google Cast uses an AAC-only HLS transcode path with no placeholder video
+- **HLS transcoding** — Linux VAAPI H.264 encoding with a bounded software fallback for video; macOS/Windows start with software libx264; audio-only sources skip video planning and encoding; selects the LAN source IP routed to the Chromecast
 - **Direct play** — untouched passthrough for compatible files; playback speed/rotation automatically switch to the transcode path
-- **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; invalid URLs and device errors are reported instead of treating the URL as a local file
+- **Remote URL casting** — Open URL validates HTTP(S) addresses and calls catt asynchronously; known site pages (YouTube, Vimeo and similar) are rejected with an actionable "paste a direct media URL" message instead of being claimed as supported, and invalid URLs or device errors are reported instead of treating the URL as a local file
 - **Subtitle support** — load an explicit .srt/.vtt/.ttml file, auto-match sidecars, choose an embedded MKV text track, or burn captions into H.264 video
+- **Loudness normalisation (optional)** — EBU R128 programme (-16 LUFS) or album (-18 LUFS) targets with true-peak limiting (-1.5 dBFS) for transcoded audio; off by default, configurable in the Playback settings card, and never changes system volume
 - **Searchable queue** — Ctrl+F filters filenames and folder paths; selecting or activating a filtered row uses the correct file identity, and reordering/removal preserves selection where possible
 - **Queue / Up Next and repeat-one** — advance or loop when the TV reports completion; old stream cleanup finishes before restarting
 - **Reliable M3U playlists and resume** — atomic save/load, deduplication and missing-file handling; remembered positions never override an explicit rewind
@@ -34,7 +36,7 @@ qualification.
 
 ## Install — Python-first, all three desktops
 
-**The only manual prerequisite is Python 3.10+**. Setup will check and, where necessary, install GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and `catt`. The installer uses the host package manager and may request administrator permission. Internet access is required for missing packages.
+**No preinstalled Python is required.** Each platform script probes for Python 3.10+ and acquires it automatically when missing (Linux distro package manager, macOS Homebrew, or Windows WinGet/verified python.org installer). Setup then installs GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and all declared Python dependencies. Native package provisioning needs Internet access and may require OS administrator or Apple Command Line Tools approval.
 
 | OS | Setup command | Application shortcut |
 |---|---|---|
@@ -42,11 +44,11 @@ qualification.
 | macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
 | Windows 10/11 x64 | Double-click `setup/winsetup.bat` | Windows Start Menu |
 
-The three scripts delegate to the same stdlib-only `setup/bootstrap.py`, which verifies an isolated `.venv` before registering the desktop shortcut. Rerunning setup checks for missing dependencies; `--check` performs read-only health checks. `--no-shortcuts` skips desktop integration. See [setup/README.md](setup/README.md) for platform-specific details and limitations.
+The three scripts delegate to the same stdlib-only `setup/bootstrap.py`. They **ask where to install** the application, defaulting to a per-user program folder (or the last successful choice), copy only application files and provision an isolated `.venv` there. Use `--install-dir "<path>"` for a specific location, `--yes` to skip the prompt, `--check` for read-only diagnostics or `--no-shortcuts` to skip desktop integration. Linux adds an XDG icon/menu entry; macOS registers `~/Applications/SmoothCast.app` with a real ICNS icon; Windows creates a branded Start Menu shortcut. See [setup/README.md](setup/README.md) for dependencies, recovery and limitations.
 
-On Linux/macOS, `python3 sc.py` launches the configured runtime across platforms. Version lookup remains side-effect free: `smoothcast --version` (Unix) or `python src/version.py` (any OS).
+The single `./smoothcast` launcher is a Python script that runs on Linux, macOS and Windows (use `python smoothcast` on Windows). It bootstraps a project-local `.venv` when needed, then hands off to the GTK runtime. Version lookup remains side-effect free: `./smoothcast --version` (Unix), `python smoothcast --version` (Windows), or `python src/version.py` (any OS).
 
-**Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI.
+**Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI. See the dated [platform status matrix](docs/PLATFORM_STATUS.md) for the current CI evidence and unverified native checks.
 
 ### FFmpeg compatibility
 
@@ -202,7 +204,8 @@ next cast or restart. It is applied only to plain-text subtitles (SRT, WebVTT,
 embedded SubRip/mov_text); ASS/SSA keep their own authored styling. Presets are
 checked with real libass renders in `tests/test_subtitle_style.py`. Styling
 presets apply to text subtitles; bitmap captions retain their encoded palette
-and placement. Physical receivers have not been qualified.
+and placement. Choose a preset in **Preferences → Sound & subtitles → Captions**
+or set the config value directly. Physical receivers have not been qualified.
 
 ### Language preferences
 
@@ -345,15 +348,20 @@ Security: every request needs `Authorization: Bearer <token>` (compared in const
 
 Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad request), 401 (token), 403 (cast not allowed or outside the media roots), 404, 405, 413, 422 (media), 502 (receiver refused) or 503 (receiver unreachable). `device` is a receiver name or IPv4, exactly as for the command line; DLNA renderers are not supported yet. Example: `curl -H "Authorization: Bearer $TOKEN" -d '{"device": "Living Room"}' http://127.0.0.1:8800/v1/pause`. A real-receiver check is still pending; the API is covered by portable tests with fake handlers.
 
-## LAN dashboard
+## Shared room
 
-The desktop app starts an authenticated, browser-based dashboard while it is
-running. The main screen shows its private-LAN URL and a fresh six-character
-PIN. A paired browser can view playback state and queue, then use the supported
-playback controls. The portal uses the Python standard library and adds no web
-framework dependency. It stops with the app and restarts with a new PIN if the
-selected LAN interface changes. See the [LAN dashboard guide](docs/LAN_PORTAL.md)
-for pairing, security and verification details.
+The desktop app starts an authenticated, browser-based shared room while it is
+running. The main screen shows a friendly mDNS address such as
+`smoothcast-lounge.local` (with the numeric IP as a fallback) and a fresh
+six-digit PIN. Everyone who joins with that PIN and a display name appears in
+the presence list and can add videos to the shared queue, vote, reorder or
+remove titles, start a film, skip forward/back and use play/pause, seek and
+volume. The queue belongs to the running desktop queue; web actions are
+marshalled onto the GTK thread. The portal uses the Python standard library and
+adds no web framework dependency. It stops with the app and restarts with a new
+PIN if the selected LAN interface changes. See the
+[shared room guide](docs/LAN_PORTAL.md) for pairing, security and verification
+details.
 
 ## Playlists, resume and safe playback transitions
 
@@ -362,6 +370,8 @@ for pairing, security and verification details.
 Opening a previously watched video can resume from its saved position. An intentional jump to **00:00** always goes to the start; automatic Up Next also starts the next film at zero. Direct Chromecast playback seeks to the remembered position, falling back to the transcoder if the receiver cannot seek.
 
 When one film finishes, the UI holds incoming cast commands until the old server and HLS files have been cleaned up, avoiding overlap between sessions. Once the TV reports that a movie ended, cleanup does not send an unnecessary second Stop command that might interrupt other playback.
+
+**Bookmarks** save named positions in the current local film. They survive restarts and file moves because each marker is tied to a SHA-256 content fingerprint rather than the path; opening a bookmark on different media is refused. Use the **Bookmarks** menu to add a marker at the current position, jump to a saved marker, or clear all markers. Bookmark names and positions are bounded and validated when configuration is loaded.
 
 ## Responsive sizing
 
@@ -397,14 +407,18 @@ grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
 The dock must point to the **absolute path to the launcher in this checkout**.
-Running `python3 sc.py` from this directory bypasses any old dock entry.
+Running `./smoothcast` from this directory bypasses any old dock entry.
 A dependency repair now installs from `pyproject.toml`, not a missing
 `requirements.txt`; repair failures print the actual error rather than
 pretending that the same release installed again.
 
-If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `python3 sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
+If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `./smoothcast` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
+
+## Desktop media controls (MPRIS2)
+
+On Linux, SmoothCast publishes an MPRIS2 player (`org.mpris.MediaPlayer2.smoothcast`) on the session bus, so the desktop's media widget and media keys (play/pause, next, previous, seek) control the current cast without focusing the window. Metadata (title and length) and the live position are exposed. Another application's cast is never controlled: when SmoothCast does not own playback the player reports `Stopped` and exposes no controls. MPRIS2 is Linux-only and best-effort — a missing session bus is ignored, and the application runs normally. The mapping is covered by portable tests with a fake bus plus one real private-`dbus-daemon` round trip; a desktop media-widget check is still pending.
 
 ## Streaming reliability and local-network safety
 
@@ -416,7 +430,7 @@ have a 15-second inactivity timeout to prevent idle clients from indefinitely
 occupying a thread. Keep the receiver allowlist and per-generation token as
 separate security controls. Physical Chromecast qualification is still needed.
 
-The HLS server prefers port 8767 (set `"hls_port"` in `config.json` to use another, 1024–65535). If another program holds that port SmoothCast uses the next free one in 8767–8798, passes it to the server, the stream URL and `session.json`, and reuses a kept-alive SmoothCast server wherever it is listening; if every port is taken the cast fails with a clear error. `smoothcast --network-check` probes the port of the active stream. The server listens on its port for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver and the **active stream generation** (a random 128-bit token in the playlist and segment names) are published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It serves only the active generation (`movie-<token>.m3u8`, `segment-<token>-N.ts`): any other token, a previous cast's URL and the old fixed `/movie.m3u8` name get 404, and stopping a cast revokes its token. It exposes only the generated playlist and segment media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. HLS responses omit cross-origin wildcard headers; native receiver playback must be qualified on hardware. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
+The HLS server prefers port 8767 (set `"hls_port"` in `config.json` to use another, 1024–65535). If another program holds that port SmoothCast uses the next free one in 8767–8798, passes it to the server, the stream URL and `session.json`, and reuses a kept-alive SmoothCast server wherever it is listening; if every port is taken the cast fails with a clear error. `smoothcast --network-check` probes the port of the active stream. The server listens on its port for Chromecast access, but **only on loopback plus the single LAN interface chosen for the receiver's route — never `0.0.0.0`** — and answers `403 Forbidden` to every client except the receiver and loopback (loopback keeps `/_smoothcast/health` working). The allowed receiver and the **active stream generation** (a random 128-bit token in the playlist and segment names) are published in `~/.cache/cast-control/server_access.json` before each cast and re-read per request, so a server kept alive by *Keep streaming* follows the new receiver; a kept server bound to a different interface is replaced only after its PID is verified as SmoothCast's own, otherwise the cast is refused with an actionable error. IPv4-mapped IPv6 clients are judged by their IPv4 address, public addresses are never allowed, and when the receiver's address is unknown (a cast selected by name) only private-LAN clients (RFC 1918 / link-local) are accepted. A real Chromecast must still be confirmed to play the stream (device-pending). It serves only the active generation (`movie-<token>.m3u8`, `segment-<token>-N.ts`): any other token, a previous cast's URL and the old fixed `/movie.m3u8` name get 404, and stopping a cast revokes its token. HLS media responses are HTTP/1.1 with `Accept-Ranges`, ETag/Last-Modified validators, single or suffix byte ranges (206 with an exact `Content-Range`) and RFC 7233 `416` + `Content-Range: bytes */len` for invalid or unsatisfiable ranges. It exposes only the generated playlist and segment media. Internal `session.json`, logs, staged subtitles, and directory listings are inaccessible. HLS responses omit cross-origin wildcard headers; native receiver playback must be qualified on hardware. SmoothCast checks a dedicated health endpoint before reusing a server; a port conflict produces an actionable error instead of silently streaming from the wrong process. Failed startup or seek-restart attempts clean up child processes, and restored sessions verify Linux PID ownership before terminating saved processes.
 
 Run `python3 -m unittest discover -s tests -v` for the desktop, HTTP server and streamer regression tests.
 
@@ -480,19 +494,23 @@ Normal regression testing is intentionally **headless**, even if a developer
 has an active Wayland or X11 session:
 
 ```sh
-python3 -m pytest -q tests
 python3 -m compileall -q src scripts setup tests
+ruff check src scripts setup tests smoothcast setup.py
+python3 -m pytest -q tests   # full lane: MINOR/MAJOR bumps only
 ```
 
-These commands do not launch SmoothCast or bring an existing window to the
-foreground. Pytest marks its subprocesses with a GUI refusal flag, and direct
-`--self-test` on the normal launcher is refused before bootstrap.
+Patch progress takes the fast lane; the full portable suite is required only
+for MINOR/MAJOR releases. CI applies the same policy via
+`scripts/ci/test_scope.py`. These commands do not launch SmoothCast or bring an
+existing window to the foreground. Pytest marks its subprocesses with a GUI
+refusal flag, and direct `--self-test` on the normal launcher is refused before
+bootstrap.
 
 Opt-in, outside pytest: `python3 scripts/gui_checks.py` runs real GTK widgets through first-run receiver choice, a saved device and Help > Report a problem inside a private Xvfb session (private XDG directories, no session bus, no LAN scan, no receiver contact, browser launch patched). It needs Linux with `xvfb`, `xauth` and GTK 4/libadwaita, and prints one PASS/FAIL line per check.
 
-**Version coverage:** GitHub Actions runs the **entire** portable pytest suite
-and Python syntax check using both Python **3.10** (the published minimum)
-and Python **3.13** (the primary development interpreter). Unlike bare
+**Version coverage:** On the full lane, GitHub Actions runs the **entire**
+portable pytest suite and Python syntax check using both Python **3.10** (the
+published minimum) and Python **3.13** (the primary development interpreter). Unlike bare
 `unittest discover`, pytest collects both `unittest.TestCase` methods
 and standalone `test_*` functions. The separate cross-platform setup
 matrix intentionally uses

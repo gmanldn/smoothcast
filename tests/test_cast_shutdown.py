@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from gui_source import main_window_methods
+import reliability_metrics
 
 METHODS = main_window_methods()
 
@@ -17,7 +18,10 @@ def lifecycle_type():
     code = "class Lifecycle:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(METHODS[name]), "    ") for name in names
     )
-    namespace = {"threading": threading, "save_config": lambda _: None}
+    namespace = {
+        "threading": threading, "save_config": lambda _: None,
+        "reliability_metrics": reliability_metrics, "Async": mock.Mock(),
+    }
     exec(compile(code, "<lifecycle-test>", "exec"), namespace)
     return namespace["Lifecycle"]
 
@@ -39,6 +43,7 @@ def window(*, keep=False, mode="transcode"):
         def __init__(self):
             self.app = FakeApp()
             self._closing = False
+            self._cancel_queue_prewarm = mock.Mock()
             self._portal = None
             self._closing_hold = False
             self._cast_starting = True

@@ -163,6 +163,7 @@ def _restart_transcode(state: streamer.SessionState, target: float) -> float:
             media, target, device=state.device, quality=state.quality,
             audio_profile=state.audio, subs_file=subs if subs and subs.is_file() else None,
             burn_subs=state.burn_subs, title=state.title, audio_gain_db=state.audio_gain_db,
+            audio_loudness=state.audio_loudness,
             device_ip=_device_ip(state.device), speed=state.speed, rotation=state.rotation,
             embedded_subtitle_index=(None if state.embedded_subtitle_index < 0
                                      else state.embedded_subtitle_index),

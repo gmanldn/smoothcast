@@ -24,18 +24,21 @@ import playback_state
 import cast_targets
 import playlist_control
 import queue_metadata
+import reliability_metrics
+from queue_prewarm_ui import QueuePrewarmMixin
+from music_import_ui import MusicImportMixin
 
 from cast_widgets import save_config, fmt_time, Async
 
 
-class QueueMixin:
+class QueueMixin(MusicImportMixin, QueuePrewarmMixin):
     def add_files(self) -> None:
-        dialog = Gtk.FileDialog(title="Add videos to the queue")
+        dialog = Gtk.FileDialog(title="Add media to the queue")
         store = Gio.ListStore.new(Gtk.FileFilter)
         video_filter = Gtk.FileFilter()
-        video_filter.set_name("Video files")
-        for pattern in ("*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts", "*.mpeg", "*.mpg", "*.wmv"):
-            video_filter.add_pattern(pattern)
+        video_filter.set_name("Video and audio files")
+        for suffix in sorted(streamer.MEDIA_EXTS):
+            video_filter.add_pattern(f"*{suffix}")
         store.append(video_filter)
         all_filter = Gtk.FileFilter()
         all_filter.set_name("All files")
@@ -78,12 +81,12 @@ class QueueMixin:
 
 
     def open_video(self) -> None:
-        dialog = Gtk.FileDialog(title="Choose a video")
+        dialog = Gtk.FileDialog(title="Choose media")
         store = Gio.ListStore.new(Gtk.FileFilter)
         video_filter = Gtk.FileFilter()
-        video_filter.set_name("Video files")
-        for pattern in ("*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts", "*.mpeg", "*.mpg", "*.wmv"):
-            video_filter.add_pattern(pattern)
+        video_filter.set_name("Video and audio files")
+        for suffix in sorted(streamer.MEDIA_EXTS):
+            video_filter.add_pattern(f"*{suffix}")
         store.append(video_filter)
         dialog.set_filters(store)
         dialog.set_default_filter(video_filter)
@@ -145,8 +148,8 @@ class QueueMixin:
                 None, (self.cfg.get("positions") or {}).get(path),
             )
             self.preview_picture.set_visible(False)
-            self.preview.set_video(pretty_title(path), "Reading film duration…")
-            self.np_meta.set_text("Inspect the film and scrub to a starting point, then press Cast.")
+            self.preview.set_video(pretty_title(path), "Reading media duration…")
+            self.np_meta.set_text("Inspect the media and scrub to a starting point, then press Cast.")
             self.seekbar.set_state(0.0, 0.0, 0.0)
 
         generation = self._preview_generation
@@ -157,8 +160,6 @@ class QueueMixin:
             fingerprint = None
         cached = self._media_cache.get(path)
         if cached is not None and cached[0] == fingerprint:
-            # Duration and codec details do not need to be re-probed when a
-            # film is reselected; the stat fingerprint invalidates changed files.
             self.queue_durations[path] = cached[1].duration
             self.media = cached[1]
             self._update_embedded_choices(self.media)
@@ -198,7 +199,7 @@ class QueueMixin:
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
                 self.elapsed_label.set_text(fmt_time(self._preview_position))
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - self._preview_position))}" if duration else "--:--")
-                info = " · ".join(x for x in (media.resolution, media.vcodec, fmt_time(duration)) if x)
+                info = " · ".join(bit for bit in (streamer.media_summary(media), fmt_time(duration)) if bit)
                 self.preview.set_video(pretty_title(path_result), info)
                 self._queue_preview(self._preview_position)
             self._rebuild_queue()
@@ -206,7 +207,7 @@ class QueueMixin:
         def failed(message):
             if (generation == self._preview_generation
                     and self.session is None and self._preview_path == path):
-                self.np_meta.set_text(f"Cannot inspect film: {message}")
+                self.np_meta.set_text(f"Cannot inspect media: {message}")
                 self.preview.set_video(pretty_title(path), "Media inspection failed")
                 self.toast(f"Cannot inspect {pathlib.Path(path).name}: {message}", error=True)
             self._console(f"FFprobe failed for {pathlib.Path(path).name}: {message}")
@@ -214,15 +215,15 @@ class QueueMixin:
         if cached is None or cached[0] != fingerprint:
             Async.run(work, done=done, failed=failed, domain="media")
         else:
-            self.preview.set_video(pretty_title(path), " · ".join(
-                x for x in (self.media.resolution, self.media.vcodec, fmt_time(self.media.duration)) if x
-            ))
+            info = " · ".join(bit for bit in (streamer.media_summary(self.media), fmt_time(self.media.duration)) if bit)
+            self.preview.set_video(pretty_title(path), info)
             self.elapsed_label.set_text(fmt_time(self._preview_position))
             self.remaining_label.set_text(f"-{fmt_time(max(0.0, self.media.duration - self._preview_position))}" if self.media.duration else "--:--")
         self._refresh_controls()
 
 
     def clear_queue(self) -> None:
+        self._cancel_queue_prewarm()
         self.queue.clear()
         self.selected_index = None
         self._retire_unqueued_preview()
@@ -239,22 +240,23 @@ class QueueMixin:
         if not added:
             return
         self._rebuild_queue()
-        self.toast(f"Added {added} video{'s' if added != 1 else ''} to the queue")
+        self.toast(f"Added {added} media item{'s' if added != 1 else ''} to the queue")
         if self.now_playing is None and self.selected_index is None and self.queue:
             self.set_selection(self.queue[0])
 
-        missing = tuple(dict.fromkeys(p for p in paths if p not in self.queue_durations))
+        duration_paths = self._queue_duration_paths(paths)
 
         def probe():
             return queue_metadata.inspect(
-                missing, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
+                duration_paths, lambda path: streamer.ffprobe(pathlib.Path(path)).duration,
             )
 
         def done(durations):
             queue_metadata.publish(self.queue_durations, self.queue, durations)
             self._rebuild_queue()
 
-        Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
+        if duration_paths:
+            Async.run(probe, done=done, domain="media", valid=lambda: not self._closing)
 
 
     def _remove_queue(self, index: int) -> None:
@@ -269,6 +271,7 @@ class QueueMixin:
                 self.now_playing = None
             self._retire_unqueued_preview()
             self._rebuild_queue()
+            self._prewarm_queue_media()
 
 
     def _move_queue(self, index: int, delta: int) -> None:
@@ -279,6 +282,7 @@ class QueueMixin:
             )
             self.queue[index], self.queue[target] = self.queue[target], self.queue[index]
             self._rebuild_queue()
+            self._prewarm_queue_media()
 
 
     def _rebuild_queue(self) -> None:
@@ -315,7 +319,7 @@ class QueueMixin:
             total = sum(self.queue_durations.get(p, 0.0) or 0.0 for p in visible)
             known = all(self.queue_durations.get(p) for p in visible)
             count = len(visible)
-            label = f"{count} video{'s' if count != 1 else ''}"
+            label = f"{count} item{'s' if count != 1 else ''}"
             if query.strip():
                 label += f" of {len(self.queue)} in queue"
             if total > 0:
@@ -363,7 +367,6 @@ class QueueMixin:
 
 
     def _on_queue_search(self, _entry) -> None:
-        # Filtering never changes queue order or the current cast selection.
         self.queue_list.invalidate_filter()
         self._refresh_queue_visibility()
 
@@ -562,18 +565,13 @@ class QueueMixin:
             cast_devices = devices
         self.devices = cast_devices
         self._dlna_by_key = {renderer.key: renderer for renderer in self.dlna_devices}
-        # A receiver's friendly name may change without changing the physical
-        # device. Only follow a stored UUID on an idle window, and only if
-        # both UUID and resulting display name identify exactly one device.
-        # Never retarget a live cast or a pending receiver command.
         saved_uuid = self.cfg.get("device_uuid", "")
         unlocked = not (self.session is not None or self.busy
                         or self._cast_starting or self.external)
         if unlocked and saved_uuid:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
-                # A scheduled volume write and cached status still belong to
-                # the old selection; do not carry either into a renamed target.
+                # Pending volume write targets the old receiver.
                 if self._volume_job is not None:
                     GLib.source_remove(self._volume_job)
                     self._volume_job = None
@@ -623,24 +621,33 @@ class QueueMixin:
                 if cast_devices or self.dlna_devices else "No Cast or DLNA receivers discovered. Check Wi-Fi/VPN or firewall."
             )
             self._set_device_badge("NOT FOUND", "offline")
+        if hasattr(self, "_refresh_network_activity"):
+            self._refresh_network_activity()
 
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
+        # Keep the selected target.
+        self.devices = []
+        self.dlna_devices = []
+        self._dlna_by_key = {}
         self.device_detail.set_text("Scan failed — is the network reachable?")
         self._set_device_badge("SCAN FAILED", "offline")
         self.toast(str(message), error=True)
 
 
     def _poll_device(self) -> bool:
+        device = self._device()
+        renderer = self._dlna_renderer(device)
+        if castctl.watch_status(self, device, renderer is None,
+                                GLib.idle_add, self._poll_done):
+            return True
         if self.poll_busy:
             return True
         self.poll_busy = True
-        device = self._device()
 
         def completed(info):
-            # Ignore an old TV's response if the target changed while the
-            # background catt query was running; immediately query the new TV.
+            # A late response belongs only to the receiver it queried.
             if device != self._device():
                 self.poll_busy = False
                 self._poll_device()
@@ -654,7 +661,6 @@ class QueueMixin:
                 return
             self._poll_failed(message)
 
-        renderer = self._dlna_renderer(device)
         Async.run(
             (lambda: dlna.info(renderer)) if renderer else (lambda: castctl.info(device)),
             done=completed, failed=failed, domain="status",
@@ -674,6 +680,7 @@ class QueueMixin:
             self._set_device_badge("STREAMING", "online")
         else:
             self._set_device_badge("AVAILABLE", "online")
+        reliability_metrics.observe(self, self.device_state)
         self.tracker.set_state(self.device_state in {"PLAYING", "BUFFERING"})
         if self.session and info:
             # Chromecast reports the *new HLS playlist's* current_time from
@@ -821,8 +828,7 @@ class QueueMixin:
         if idle:
             if self.external:
                 self.external = False
-            # The receiver is no longer playing anything we started, so a
-            # remembered URL cast must not be shown as owned or stopped later.
+            # An idle receiver must not leave an old URL cast marked as owned.
             self._url_cast_url = None
             self._url_cast_seen = False
             if not self.session:
@@ -858,10 +864,16 @@ class QueueMixin:
         return self._dlna_by_key.get(device or self._device())
 
 
+    def _volume_control_available(self) -> bool:
+        return not self._device().startswith("DLNA · ") or getattr(
+            self._dlna_renderer(), "supports_rendering_control", False
+        )
+
+
     def _device_host(self, device: str) -> str | None:
         renderer = self._dlna_renderer(device)
         if renderer is not None:
             return renderer.host
         if device in self.cfg.get("cast_targets", []):
             return device
-        return next((d.host for d in self.devices if d.name == device and d.host), None)
+        return castctl.unique_discovered_host(device, self.devices)

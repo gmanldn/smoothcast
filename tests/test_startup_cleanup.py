@@ -104,6 +104,10 @@ class StartupCleanupTests(unittest.TestCase):
         with TemporaryDirectory() as d:
             root = Path(d)
             (root / "segment-00001.ts").write_text("segment")
+            generation = "d" * 32
+            (root / f"segment-{generation}-00001.m4s").write_text("fragment")
+            (root / f"init-{generation}.mp4").write_text("init")
+            (root / "init-user.mp4").write_text("preserve")
             (root / "movie.m3u8").write_text("playlist")
             (root / "ffmpeg.log").write_text("keep logs")
             processes = [process(100, "server"), process(102, "monitor")]
@@ -118,8 +122,9 @@ class StartupCleanupTests(unittest.TestCase):
                 )
             self.assertFalse(report.retained_stream)
             self.assertEqual([p.pid for p in stop.call_args.args[0]], [100, 102])
-            self.assertEqual(report.files_removed, 2)
+            self.assertEqual(report.files_removed, 4)
             self.assertTrue((root / "ffmpeg.log").exists())
+            self.assertTrue((root / "init-user.mp4").exists())
 
     def test_abandoned_staged_captions_cleaned_but_saved_direct_captions_kept(self):
         with TemporaryDirectory() as folder:
@@ -211,18 +216,21 @@ class StartupCleanupTests(unittest.TestCase):
             )
             kill.assert_not_called()
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc process identity and signals")
     def test_verified_stale_process_gets_bounded_sigterm_and_sigkill(self):
         proc = process(100, "encoder")
         report = cleanup.CleanupReport()
-        with mock.patch.object(cleanup, "_same_process", return_value=True), \
-             mock.patch.object(cleanup.os, "kill") as kill:
+        with mock.patch.object(cleanup.platform, "system", return_value="Darwin"), \
+             mock.patch.object(cleanup, "_same_process", return_value=True), \
+             mock.patch.object(cleanup.process_identity, "signal_verified", return_value=True) as signal:
             cleanup._stop_orphans([proc], Path("/proc"), report, 0.0)
         self.assertEqual(report.stopped, [100])
         self.assertEqual(
-            [call.args[1] for call in kill.call_args_list],
-            [cleanup.signal.SIGTERM, cleanup.signal.SIGKILL],
+            [call.kwargs["force"] for call in signal.call_args_list],
+            [False, True],
         )
 
+    @unittest.skipIf(os.name == "nt", "POSIX user-id process ownership")
     def test_other_users_processes_are_never_inspected_or_signalled(self):
         with TemporaryDirectory() as d:
             pid = 55001
@@ -235,6 +243,7 @@ class StartupCleanupTests(unittest.TestCase):
             with mock.patch.object(cleanup.os, "getuid", return_value=-1):
                 self.assertIsNone(cleanup.inspect_process(pid, Path(d)))
 
+    @unittest.skipIf(os.name == "nt", "Linux /proc process start-time parser")
     def test_proc_starttime_with_parentheses_in_command_name(self):
         with TemporaryDirectory() as d:
             root = Path(d)
@@ -254,6 +263,7 @@ class StartupCleanupTests(unittest.TestCase):
             self.assertEqual(found.start_ticks, 7319)
             self.assertEqual(found.kind, "encoder")
 
+    @unittest.skipIf(os.name == "nt", "POSIX user-id process ownership")
     def test_only_owned_orphan_meter_directories_are_removed(self):
         with TemporaryDirectory() as d:
             root = Path(d)

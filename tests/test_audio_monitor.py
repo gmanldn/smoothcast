@@ -175,6 +175,9 @@ class AudioMonitorReadBoundsTests(unittest.TestCase):
                 if len(reader.records) == before:
                     break
             reader.finish()
+            # _Reader owns an open file handle; close it before TemporaryDirectory
+            # cleanup, which is required on Windows.
+            reader._fh.close()
             # The first bounded read cannot consume the whole multi-hour-scale
             # file at once, and repeated polls still recover every record.
             self.assertIsNotNone(first)

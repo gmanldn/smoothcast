@@ -29,6 +29,8 @@ import subtitle_restart
 
 import playback_state
 
+import watch_history
+
 import progress_model
 
 import direct_probe
@@ -38,6 +40,8 @@ import stream_watchdog
 import hls_pause_recovery
 
 import preflight
+import queue_metadata
+import reliability_metrics
 
 import url_control
 
@@ -65,11 +69,9 @@ class SessionMixin:
 
 
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
-        # None resumes saved position; explicit 0 always rewinds.
-        # This prevents seek-to-start from jumping to the previous stop.
+        # None resumes; zero rewinds.
         offset = playback_state.start_offset(
-            offset, (self.cfg.get("positions") or {}).get(str(path)),
-        )
+            offset, watch_history.saved_position(self.cfg, path))
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -87,7 +89,9 @@ class SessionMixin:
         self._finished_handled = False
         device = self._device()
         renderer = self._dlna_renderer(device)
-        self._dlna_cancel = threading.Event() if renderer is not None else None
+        reliability_metrics.start_attempt(self, "dlna" if renderer is not None else "cast")
+        cancel = threading.Event()
+        self._dlna_cancel = cancel
         if renderer is not None:
             self.np_meta.set_text(
                 "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
@@ -100,6 +104,7 @@ class SessionMixin:
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
+        prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
         if subs_mode == "pick" and subs_path is None:
@@ -123,14 +128,21 @@ class SessionMixin:
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
             and not getattr(self, "_portal_early", False)
         )
-
         def work():
-            media = streamer.ffprobe(path)
+            media, prewarm_fingerprint = queue_metadata.media_for_cast(
+                prewarmed_entry, path, streamer.ffprobe,
+            )
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before receiver handoff")
             streamer.require_compatible_ffmpeg()
+            effective_subs_path, effective_burn = streamer.audio_cast_options(
+                media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise streamer.StreamError(
                     "The selected audio track is no longer in this film; choose Auto or another track"
                 )
+            music_enabled = streamer.schedule_music_analysis(
+                path, media, audio_track, self, cfg)
             embedded = None
             if subs_mode == "embedded" or (subs_mode == "auto" and subs_path is None):
                 saved = cfg.get("subtitle_track_by_file") or {}
@@ -143,14 +155,14 @@ class SessionMixin:
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.
                 fingerprint = preflight.fingerprint(
-                    path, audio_track_index=audio_track, subs_file=subs_path,
-                    burn_subs=burn,
+                    path, audio_track_index=audio_track, subs_file=effective_subs_path,
+                    burn_subs=effective_burn,
                     embedded_subtitle_index=embedded.index if embedded else None,
                 )
                 if fingerprint not in self._preflight_ok:
                     preflight.check_media(
                         media, audio_track_index=audio_track,
-                        subs_file=subs_path, burn_subs=burn,
+                        subs_file=effective_subs_path, burn_subs=effective_burn,
                         embedded_subtitle_index=embedded.index if embedded else None,
                     )
                     if len(self._preflight_ok) >= 256:
@@ -161,17 +173,30 @@ class SessionMixin:
                     raise dlna.DlnaError(
                         "DLNA currently supports normal speed and unrotated video; reset these settings"
                     )
-                dlna.require_mp4_output(renderer)
-                if self._dlna_cancel is not None and self._dlna_cancel.is_set():
+                media_type = dlna.negotiate_media_type(renderer)
+                if cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before replacing current playback")
+            if (prewarm_fingerprint is not None and
+                    queue_metadata.file_fingerprint(path) != prewarm_fingerprint):
+                raise streamer.StreamError("The queued film changed after prewarming; retry the cast")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before receiver handoff")
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             session = dlna.Session() if renderer is not None else streamer.Session()
             title = pretty_title(path)
+
+            def stop_if_cancelled_after_start():
+                if cancel.is_set():
+                    session.stop(device, send_stop=True)
+                    raise streamer.StreamError("Cast cancelled during receiver handoff")
+
             try:
                 if renderer is not None:
                     audio_choice = streamer.preferred_audio_track(media, audio_track)
@@ -182,10 +207,12 @@ class SessionMixin:
                         embedded_subtitle_index=embedded.index if embedded else None,
                         audio_track=audio_choice.index if audio_choice else 0,
                         subtitle_delay_ms=delay, audio_delay_ms=adelay,
-                        cancel=self._dlna_cancel, audio_profile=cfg["audio"],
+                        cancel=cancel, audio_profile=cfg["audio"], media_type=media_type,
                     )
+                    stop_if_cancelled_after_start()
                     return session, media
-                if use_direct and media.direct_ok and not burn and embedded is None:
+                if (use_direct and media.direct_ok and not burn and embedded is None
+                        and not music_enabled):
                     try:
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
@@ -194,16 +221,19 @@ class SessionMixin:
                         )
                         if direct_probe.verify_direct_start(device, title) == "rejected":
                             raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
-                        return session, media
                     except streamer.StreamError:
                         # The failed direct attempt can leave a catt subprocess.
                         session.stop(device, send_stop=False)
                         session = streamer.Session()
+                    else:
+                        stop_if_cancelled_after_start()
+                        return session, media
                 session.start_transcode(
                     media, offset, device=device, quality=cfg["quality"],
-                    audio_profile=cfg["audio"], subs_file=subs_path,
-                    burn_subs=burn, title=title,
+                    audio_profile=cfg["audio"], subs_file=effective_subs_path,
+                    burn_subs=effective_burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                    audio_loudness=str(cfg.get("audio_loudness", "off")),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -211,10 +241,12 @@ class SessionMixin:
                     audio_track_index=audio_track,
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
+                    music_autogain=music_enabled,
                 )
+                stop_if_cancelled_after_start()
                 return session, media
             except Exception:
-                # No orphan ffmpeg, catt or HTTP server after failed startup.
+                # Clean up failed startup processes.
                 try:
                     session.stop(device, send_stop=False)
                 except Exception:
@@ -226,11 +258,13 @@ class SessionMixin:
             self._cast_starting = False
             self._dlna_cancel = None
             if self._closing:
-                # Closing after cast completion must respect keep-streaming policy.
                 self.session = session
+                reliability_metrics.accept_attempt(self, session, Async.run)
+                reliability_metrics.finish_active(self, "interrupted", Async.run)
                 self.busy = False
                 self._finish_delayed_close()
                 return
+            reliability_metrics.accept_attempt(self, session, Async.run)
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -244,14 +278,13 @@ class SessionMixin:
             if session.mode == "transcode":
                 profile = cfg["audio"]
                 gain = session.state.audio_gain_db if session.state else 0.0
-                chain = streamer.audio_filters(profile, gain)
-                hint = streamer.AUDIO_LABELS.get(profile, profile)
-                if gain > 0:
-                    hint += f" · +{gain:g} dB"
+                chain, hint = streamer.monitor_summary(
+                    profile, gain, streamer.state_loudness(session.state))
             else:
                 chain = []
                 hint = ("DLNA progressive MP4"
                         if session.mode == "dlna" else "Original audio (direct play)")
+                hint = streamer.music_hint_not_applied(hint, media, cfg)
             self._start_monitor(media.path, started, chain)
             self._set_levels_hint(hint)
             self.tracker.start(
@@ -262,12 +295,11 @@ class SessionMixin:
             self._note_device_used()
             self._record_watch("start")
             self._set_now_playing_labels(media, session)
-            # Update preview screen with video info.
+            # Refresh preview metadata.
             if self.preview is not None and media:
-                bits = [media.resolution, media.vcodec]
+                info = streamer.media_summary(media)
                 if media.size_label:
-                    bits.append(media.size_label)
-                info = " · ".join(bit for bit in bits if bit)
+                    info += f" · {media.size_label}"
                 self.preview.set_video(pretty_title(path), info)
             self.toast(f"Casting {pretty_title(path)} to {device}")
             self._console(f"Casting {pretty_title(path)} to {device} ({session.mode})")
@@ -278,12 +310,12 @@ class SessionMixin:
         def failed(message):
             self._cast_starting = False
             self._dlna_cancel = None
+            reliability_metrics.fail_attempt(self, Async.run)
             if self._closing:
                 self.busy = False
                 self._finish_delayed_close()
                 return
-            # A failed preflight never stopped the previous receiver. Do not
-            # discard its live meter or ownership just because a new MKV fails.
+            # Preserve the prior session on preflight failure.
             if previous is not None and previous is self.session and previous.active():
                 self.busy = False
                 self.toast(f"Cast not started: {message}", error=True)
@@ -304,7 +336,7 @@ class SessionMixin:
         if self.busy:
             if self._dlna_cancel is not None:
                 self._dlna_cancel.set()
-                self.toast("Cancelling DLNA media preparation…")
+                self.toast("Cancelling cast setup before receiver handoff…")
             return
         if self.session is None and not self.external and self._preview_path is not None:
             self._unload_local_video()
@@ -314,9 +346,6 @@ class SessionMixin:
             return
         if (self.session is None and not self.external
                 and self.device_state in {"IDLE", "OFFLINE", "UNKNOWN"}):
-            # Nothing owned and no observed TV playback: an idle Stop (e.g. the
-            # shortcut or action before the first poll) must send no receiver
-            # command, so another app's cast is never disturbed.
             self._refresh_controls()
             return
         self._record_watch("stop")
@@ -333,8 +362,7 @@ class SessionMixin:
                 send_stop = True
                 state = session.state
                 if state is not None and state.mode == "transcode":
-                    # Do not stop unrelated TV content for our own stale
-                    # session; check receiver identity off the GTK thread.
+                    # Verify receiver ownership off the GTK thread before Stop.
                     try:
                         observed = castctl.info(device)
                     except (OSError, ValueError, TypeError):
@@ -342,15 +370,17 @@ class SessionMixin:
                     send_stop = playback_state.hls_session_matches(
                         observed, state.stream_url, state.title,
                     )
-                session.stop(device, send_stop=send_stop)
-                return send_stop
+                return bool(session.stop(device, send_stop=send_stop))
             if renderer is not None:
                 dlna.stop(renderer)
-            else:
-                castctl.stop(device)
-            return True
+                return True
+            ok, _message = castctl.stop(device)
+            return bool(ok)
 
         def done(sent_remote_stop):
+            reliability_metrics.finish_active(
+                self, "stopped" if sent_remote_stop else "interrupted", Async.run,
+            )
             self.busy = False
             self.tracker.clear()
             self.now_playing = None
@@ -358,9 +388,9 @@ class SessionMixin:
             self._stop_monitor()
             self._set_levels_hint("")
             self.toast("Stopped" if sent_remote_stop
-                       else "Local stream stopped; TV content was not verified")
+                       else "Local stream stopped; receiver did not confirm Stop")
             self._console("Stopped casting to TV" if sent_remote_stop
-                          else "Retired local stream without stopping unrelated TV content")
+                          else "Retired local stream without receiver Stop confirmation")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()
@@ -383,7 +413,7 @@ class SessionMixin:
         want_play = self.device_state not in {"PLAYING", "BUFFERING"}
         if hls_pause_recovery.resume_from_long_pause(self, session, device, renderer, want_play):
             return
-        # Serialise transport.
+        # Serialize transport commands.
         self.busy = True
         self._refresh_controls()
 
@@ -430,8 +460,7 @@ class SessionMixin:
 
 
     def seek_to(self, target: float) -> None:
-        # Check the command lock before moving the seekbar. GTK drag signals,
-        # keyboard shortcuts and programmatic actions can race a cast startup.
+        # Guard before optimistic seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -470,8 +499,7 @@ class SessionMixin:
         if session.mode == "dlna" and renderer is None:
             self.toast("DLNA receiver disappeared; rescan devices", error=True)
             return
-        # Optimistic seek is allowed only after all guards pass. If remote seek
-        # fails, the next receiver poll reconciles the displayed film clock.
+        # Receiver polling reconciles failed seeks.
         if self.seekbar is not None:
             self.seekbar.set_state(target, duration, self.seekbar.buffered)
         if session.mode == "dlna" or (
@@ -517,7 +545,6 @@ class SessionMixin:
         self.busy = True
         self._refresh_controls()
         self.toast(f"Restarting stream at {fmt_time(target)}…")
-        # Keep the seekbar at the requested source time during restart.
         self.tracker.device_update(target, duration)
         self._restart_at(session, target)
 
@@ -525,7 +552,7 @@ class SessionMixin:
                     audio_track_override: int | None = None,
                     resume_after_pause: bool = False) -> None:
         if session.mode == "dlna":
-            # DLNA restarts use progressive AVTransport.
+            # DLNA restart.
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
             return
@@ -566,6 +593,7 @@ class SessionMixin:
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
+                    audio_loudness=str(self.cfg.get("audio_loudness", "off")),
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
@@ -574,6 +602,7 @@ class SessionMixin:
                     subtitle_delay_ms=captions.delay_ms,
                     subtitle_preset=subtitle_style.from_config(self.cfg),
                     audio_delay_ms=audio_delay.get(self.cfg, file_path),
+                    music_autogain=bool(self.cfg.get("music_autogain", False)),
                 )
             except Exception:
                 try:
@@ -595,11 +624,9 @@ class SessionMixin:
             self._update_audio_choices(media_result)
             self.busy = False
             gain = _session.state.audio_gain_db if _session.state else 0.0
-            chain = streamer.audio_filters(audio, gain)
+            chain, hint = streamer.monitor_summary(
+                audio, gain, streamer.state_loudness(_session.state))
             self._start_monitor(media_result.path, target, chain)
-            hint = streamer.AUDIO_LABELS.get(audio, audio)
-            if gain > 0:
-                hint += f" · +{gain:g} dB"
             self._set_levels_hint(hint)
             self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
             self._refresh_controls()
@@ -652,8 +679,7 @@ class SessionMixin:
         if self.now_playing in self.queue:
             index = self.queue.index(self.now_playing)
             if index > 0:
-                # Don't change now_playing until _cast_path actually succeeds;
-                # an in-flight command can reject a new cast as busy.
+                # Keep now_playing unchanged until cast acceptance.
                 self._cast_path(pathlib.Path(self.queue[index - 1]), 0.0)
                 return
         if self.now_playing:
@@ -672,8 +698,7 @@ class SessionMixin:
         session = self.session
         if session is not None and session.state is not None:
             if self.busy:
-                # Reject the live change without silently saving it as the
-                # next-cast preference.
+                # Reject live changes without saving them.
                 self.toast("Hold on — finishing the last command")
                 return
             self.cfg["playback_speed"] = speed
@@ -683,8 +708,7 @@ class SessionMixin:
             position = self.tracker.value() or 0.0
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
-            # The seekbar uses source-film time; preserve that position when
-            # changing pace and restart FFmpeg at the *new* requested speed.
+            # Preserve source time when changing playback speed.
             self._restart_at(session, position, speed_override=speed)
             self.toast(f"Speed {speed}x — stream restarted")
         else:
@@ -694,6 +718,7 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        reliability_metrics.finish_active(self, "completed", Async.run)
         self._record_watch("completed")
         self._stop_monitor()
         self._set_levels_hint("")
@@ -716,8 +741,7 @@ class SessionMixin:
             )
 
             def advance(_result=None):
-                # Release the guard only after the old HLS files and server
-                # are gone. The fresh _cast_path acquires it again.
+                # Release the guard only after old stream cleanup.
                 self.busy = False
                 self._cast_path(next_path, 0.0)
 
@@ -746,8 +770,7 @@ class SessionMixin:
                 self.toast(f"Cleanup failed: {message}", error=True)
                 self._refresh_controls()
 
-            # The receiver already reported IDLE. Never send an extra STOP
-            # that could interrupt another app's newly started playback.
+            # Don't stop after confirmed IDLE; another app may have started.
             Async.run(
                 lambda: session.stop(device, send_stop=False),
                 done=cleaned, failed=failed,
@@ -763,9 +786,7 @@ class SessionMixin:
 
 
     def _maybe_finished(self) -> None:
-        # The caster CLI/FFmpeg can finish long before the TV has drained its
-        # buffer; only a confirmed PLAYING/PAUSED -> IDLE device transition ends
-        # a session (direct or HLS).
+        # Device IDLE confirms end; FFmpeg exit does not.
         if self._finished_handled or self.busy or self.session is None:
             return
         self._finished_handled = True
@@ -789,8 +810,7 @@ class SessionMixin:
         buffered = None
         snapshot = progress_model.EMPTY
         if self.session and self.session.mode == "transcode" and self.session.state:
-            # One background snapshot feeds both the seekbar buffer and the
-            # details panel, so the two never disagree within a tick.
+            # Reuse one snapshot for the seekbar and details.
             snapshot = self.session.progress()
             buffered = playback_state.absolute_encoded_position(
                 self.session.state.offset, snapshot.out_time, duration,
@@ -836,19 +856,14 @@ class SessionMixin:
             return False
         session = streamer.Session()
         session.restore(state)
-        # Never attach to a different configured TV or issue status/control
-        # requests for a saved session whose target has since changed.
+        # Match the saved receiver.
         if state.device != self._device():
             return False
-        # A completed encoder is no longer 'active', but its already-served
-        # HLS segments may still be playing. Verify playlist/server and
-        # receiver ownership asynchronously rather than on the GTK thread.
+        # Check HLS/server ownership off-thread.
         if not session.active() and session.mode != "transcode":
             streamer.clear_session()
             return False
-        # This is an *untrusted candidate* until an exact receiver URL/title
-        # match and HLS availability are verified by the background worker.
-        # Publishing it now would enable Stop/seek on unrelated TV content.
+        # Verify stream identity before exposing controls.
         if self.session is not None or getattr(self, "_adopting_session", None) is not None:
             return False
         self._adopting_session = session
@@ -892,16 +907,14 @@ class SessionMixin:
                     info, state.stream_url, state.title,
                 )
             ):
-                # Unreachable receivers are inconclusive: retain saved state
-                # for a later attempt. A definite mismatch is not ours.
+                # Retain state on an unreachable receiver; clear only known mismatches.
                 if info is not None:
                     streamer.clear_session()
                 self.toast("Previous cast could not be verified")
                 self._refresh_controls()
                 self._poll_device()
                 return
-            # Only now publish ownership. No remote controls were exposed
-            # before the receiver verified the saved media identity.
+            # Expose controls only after receiver identity is confirmed.
             self.session = session
             self.external = False
             self.now_playing = state.file
@@ -929,10 +942,8 @@ class SessionMixin:
                     )
             gain = state.audio_gain_db
             if session.mode == "transcode":
-                chain = streamer.audio_filters(state.audio, gain)
-                hint = streamer.AUDIO_LABELS.get(state.audio, state.audio)
-                if gain > 0:
-                    hint += f" · +{gain:g} dB"
+                chain, hint = streamer.monitor_summary(
+                    state.audio, gain, streamer.state_loudness(state))
             else:
                 chain = []
                 hint = "Original audio (direct play)"
@@ -954,9 +965,7 @@ class SessionMixin:
 
 
     def _cast_remote_url(self, value: str) -> None:
-        # The external URL workflow is a catt/Google Cast capability, not a
-        # DLNA AVTransport resource negotiation path. Do not issue catt
-        # commands to a DLNA identifier or discard the current DLNA session.
+        # External URLs use Cast, not DLNA.
         if self._dlna_renderer() is not None:
             self.toast("Open URL currently requires a Google Cast target; choose Cast or open a local film", error=True)
             return
@@ -978,8 +987,7 @@ class SessionMixin:
         def work():
             if previous is not None:
                 previous.stop(device, send_stop=False)
-            # catt casts HTTP(S) URLs directly, resolving supported video
-            # sites. Do not send remote URLs through local-file ffprobe.
+            # Don't send remote URLs through local-file ffprobe.
             return castctl.command(device, "cast", "--no-subs", url, timeout=60)
 
         def done(result):
@@ -989,8 +997,7 @@ class SessionMixin:
                 self._cast_failed(message or "Remote cast failed")
                 return
             self._stop_monitor()
-            # A successful handoff must release the local decoder/player so the
-            # machine's own audio does not keep playing under the TV cast.
+            # Release local playback after handoff to prevent overlapping audio.
             self._unload_local_video()
             self.local_playback.stop()
             self.media = None
@@ -1131,6 +1138,8 @@ class SessionMixin:
 
     def _cast_failed(self, message: str) -> None:
         self._dlna_cancel = None
+        reliability_metrics.fail_attempt(self, Async.run)
+        reliability_metrics.finish_active(self, "failed", Async.run)
         self.busy = False
         self._stop_monitor()
         self._set_levels_hint("")
@@ -1146,8 +1155,9 @@ class SessionMixin:
 
 
     def _skip(self, delta: float) -> None:
-        position = (self._preview_position if self.session is None and self._preview_path is not None
-                    and not self.external else self.tracker.value())
+        preview = (self.session is None and self._preview_path is not None
+                   and not self.external)
+        position = self._preview_position if preview else self.tracker.value()
         if position is None:
             self.toast("Position unknown — nothing to skip in")
             return

@@ -37,7 +37,7 @@ import responsive_layout
 import gui_test_safety
 
 import update_control
-from cast_portal import PortalMixin
+from cast_portal import PortalMixin, PortalQueueMixin
 
 import version
 
@@ -46,6 +46,7 @@ import error_log
 import local_playback
 
 import startup_cleanup
+import mpris
 
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
@@ -59,7 +60,7 @@ from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -148,6 +149,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         if not app.selftest:
             self._refresh_portal()
             GLib.timeout_add_seconds(15, self._refresh_portal)
+            GLib.timeout_add_seconds(15, self._refresh_network_activity)
             # A GUI smoke test builds widgets only: it must not scan LANs,
             # adopt casts, poll receivers or run media/telemetry timers.
             GLib.timeout_add(500, self._tick)
@@ -182,6 +184,8 @@ class CastControlApp(Adw.Application):
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
         self._pending_files: list[str] = []
+        self._mpris = None
+        self._mpris_started = False
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -308,9 +312,11 @@ class CastControlApp(Adw.Application):
         simple("benchmark", lambda *a: self._window().action_benchmark())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("favourite", lambda *a: self._window()._toggle_favourite())
+        simple("bookmark-add", lambda *a: self._window()._add_bookmark())
         simple("pin-receiver", lambda *a: self._window()._toggle_device_favourite())
         simple("clear-history", lambda *a: self._window()._clear_watch_history())
         simple("clear-favourites", lambda *a: self._window()._clear_favourites())
+        simple("clear-bookmarks", lambda *a: self._window()._clear_bookmarks())
         simple("about", lambda *a: self._window().action_about())
         simple("quit", lambda *a: self._window().close())
         for index in range(8):
@@ -320,6 +326,10 @@ class CastControlApp(Adw.Application):
         for index in range(16):
             action = Gio.SimpleAction.new(f"favourite-{index}", None)
             action.connect("activate", lambda _a, _p, i=index: self._window()._open_favourite(i))
+            self.add_action(action)
+        for index in range(64):
+            action = Gio.SimpleAction.new(f"bookmark-{index}", None)
+            action.connect("activate", lambda _a, _p, i=index: self._window()._open_bookmark(i))
             self.add_action(action)
         scheme = Gio.SimpleAction.new_stateful(
             "color-scheme", GLib.VariantType.new("s"), GLib.Variant("s", "prefer-dark")
@@ -357,6 +367,13 @@ class CastControlApp(Adw.Application):
         return window
 
 
+    def _mpris_tick(self) -> bool:
+        """Push a fresh MPRIS2 snapshot; cheap when nothing changed (#266)."""
+        if self._mpris is not None:
+            self._mpris.refresh()
+        return True
+
+
     def _quit_fatal(self) -> bool:
         """End a process whose window failed so the next launch can take over."""
         self.quit()
@@ -366,6 +383,12 @@ class CastControlApp(Adw.Application):
     def do_activate(self) -> None:
         window = self._window()
         window.present()
+        if not self.selftest and not self._mpris_started:
+            # MPRIS2 media widget / media keys (Linux desktop bus, issue #266).
+            self._mpris_started = True
+            self._mpris = mpris.start(window)
+            if self._mpris is not None:
+                GLib.timeout_add_seconds(1, self._mpris_tick)
         if not self._startup_reported:
             self._startup_reported = True
             report = self._startup_report

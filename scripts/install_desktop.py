@@ -26,31 +26,11 @@ def exec_argument(path: Path) -> str:
     return f'"{value}"'
 
 
-def desktop_entry(launcher, *, legacy: bool = False, exec_name: str | None = None) -> bytes:
-    """Build a desktop entry whose Exec is either a bare command name or a path.
-
-    A bare name (e.g. ``smoothcast``) is used once the pip-installed console
-    script is the canonical entry point; it relies on the user's PATH, which
-    always includes ``~/.local/bin`` for GUI sessions after ``pip install``.
-
-    When ``launcher`` is a ``Path``, ``TryExec`` and ``Path`` are added for
-    better desktop integration (startup notification, working directory).
-
-    If ``exec_name`` is provided, it is used for the ``Exec`` field instead of
-    deriving it from ``launcher``. This allows a hybrid entry where ``Exec`` is
-    the bare console-script name (for the installed version) while ``TryExec``
-    and ``Path`` point to the project checkout (for development).
-    """
-    if isinstance(launcher, Path):
-        exec_value = exec_argument(launcher)
-        try_exec = f"TryExec={launcher.resolve()}\n"
-        path_line = f"Path={launcher.resolve().parent}\n"
-    else:
-        exec_value = str(launcher)
-        try_exec = ""
-        path_line = ""
-    if exec_name is not None:
-        exec_value = exec_name
+def desktop_entry(launcher: Path, *, legacy: bool = False) -> bytes:
+    """Build a desktop entry whose Exec is this checkout's absolute launcher."""
+    exec_value = exec_argument(launcher)
+    try_exec = f"TryExec={launcher.resolve()}\n"
+    path_line = f"Path={launcher.resolve().parent}\n"
     body = (
         "[Desktop Entry]\n"
         "Type=Application\n"

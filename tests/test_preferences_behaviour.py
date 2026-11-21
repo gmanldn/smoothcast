@@ -30,6 +30,7 @@ def extracted_preferences(*names):
     )
     namespace = {
         "preference_choices": preference_choices,
+        "save_config": mock.Mock(),
         "GLib": SimpleNamespace(Variant=lambda fmt, value: (fmt, value)),
         "Gtk": SimpleNamespace(StringList=SimpleNamespace(new=list)),
     }
@@ -138,6 +139,12 @@ def test_preferences_choices_delegate_to_existing_owner_callbacks():
     owner.app.scheme_action.activate.assert_called_once_with(
         ("s", preference_choices.selected_value("color_scheme", 1))
     )
+
+    style = preference_choices.selected_index("subtitle_style", "high-contrast")
+    owner.cfg = {"subtitle_style": "default"}
+    prefs._change_choice("subtitle_style", SimpleNamespace(get_selected=lambda: style))
+    assert owner.cfg["subtitle_style"] == "high-contrast"
+    UI._change_choice.__globals__["save_config"].assert_called_once_with(owner.cfg)
 
     prefs._syncing = True
     prefs._change_choice("quality", SimpleNamespace(get_selected=lambda: 0))

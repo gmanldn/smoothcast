@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Order matters only for readability; combined_source() joins them in this order.
 GUI_MODULES = (
     "cast_widgets.py",
+    "bookmark_ui.py",
     "cast_ui.py",
     "cast_settings.py",
     "preferences_ui.py",
@@ -35,6 +36,7 @@ GUI_MODULES = (
     "cast_av.py",
     "cast_subtitle_files.py",
     "cast_lifecycle.py",
+    "cast_portal_queue.py",
     "cast_portal.py",
     "cast_subtitles.py",
     "cast_audio_sync.py",
@@ -42,7 +44,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "PortalMixin", "SubtitleMixin", "AudioSyncMixin")
+MIXIN_CLASSES = ("UiMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "PortalMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:

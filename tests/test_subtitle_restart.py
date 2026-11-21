@@ -98,13 +98,15 @@ def test_rejects_bad_extension_without_reading_user_media(tmp_path):
 
 def test_explicit_embedded_track_is_preserved_even_if_not_preferred(tmp_path):
     different_default = streamer.SubtitleTrack(index=2, codec="subrip", default=True)
-    selected = streamer.SubtitleTrack(index=7, codec="ass", default=False)
+    selected = streamer.SubtitleTrack(index=7, codec="ass", default=False, forced=True)
     result = subtitle_restart.validate_restart(
         state(embedded=7), media(different_default, selected)
     )
     assert result.embedded_index == 7
     assert result.burn is True
     assert result.external is None
+    # FFprobe's forced disposition stays on the selected stream after reprobe.
+    assert "forced" in selected.label
 
 
 @pytest.mark.parametrize("available", [
@@ -253,4 +255,5 @@ def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget
     )
     assert "subs_file=captions.external" in text
     assert "embedded_subtitle_index=captions.embedded_index" in text
-    assert (Path(__file__).resolve().parents[1] / "src/cast_session.py").stat().st_size < 48000
+    source = Path(__file__).resolve().parents[1] / "src/cast_session.py"
+    assert len(source.read_bytes().replace(b"\r\n", b"\n")) < 48000

@@ -139,7 +139,8 @@ class ConfigRecoveryTests(unittest.TestCase):
         defaults = real_defaults()
         raw = {"watch_history": [
             {"path": "/a.mkv", "event": "start", "source": "cast",
-             "position": 1.0, "at": 2.0},
+             "position": 1.0, "at": 2.0, "duration": 10.0,
+             "fingerprint": "9:9", "tracks": {"audio": 1, "subtitle": "English"}},
             {"path": "/b.mkv", "event": "bogus", "source": "cast",
              "position": 1.0, "at": 2.0},
             {"path": "/c.mkv", "event": "stop", "source": "weird",
@@ -148,6 +149,11 @@ class ConfigRecoveryTests(unittest.TestCase):
         ]}
         cfg = config_control.sanitise_config(raw, defaults)
         self.assertEqual([e["path"] for e in cfg["watch_history"]], ["/a.mkv"])
+        entry = cfg["watch_history"][0]
+        self.assertEqual(entry["duration"], 10.0)
+        self.assertEqual(entry["fingerprint"], "9:9")
+        self.assertEqual(entry["tracks"], {"audio": 1, "subtitle": "English"})
+        self.assertAlmostEqual(entry["watched"], 0.1)
 
 
 if __name__ == "__main__":

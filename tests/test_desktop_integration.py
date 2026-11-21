@@ -16,7 +16,8 @@ class DesktopIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name) / 'project with spaces'
+        # macOS temporary-directory paths may traverse /var -> /private/var.
+        self.root = Path(self.tmp.name).resolve() / 'project with spaces'
         (self.root / "data").mkdir(parents=True)
         (self.root / "data/cast-control.png").write_bytes(b"PNG-fixture")
         self.data_home = Path(self.tmp.name) / "xdg"
@@ -28,7 +29,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         entry = (self.data_home / "applications/local.cast-control.desktop").read_text()
         # The dock must start *this checkout*, never a stale pip command.
-        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', entry)
+        self.assertIn("Exec=" + desktop.exec_argument(self.root / "smoothcast") + " %F", entry)
         self.assertNotIn('Exec=smoothcast %F', entry)
         self.assertIn("Icon=local.cast-control\n", entry)
         self.assertIn("StartupWMClass=local.cast-control\n", entry)
@@ -39,7 +40,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
         legacy = (self.data_home / "applications/smoothcast.desktop").read_text()
         self.assertIn("NoDisplay=true\n", legacy)
-        self.assertIn('Exec="' + str(self.root / "smoothcast") + '" %F', legacy)
+        self.assertIn("Exec=" + desktop.exec_argument(self.root / "smoothcast") + " %F", legacy)
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
 
     def test_check_contract_matches_installed_absolute_exec(self):
@@ -57,14 +58,15 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
 
     def test_launcher_recovers_partial_python_environment(self):
-        script = (Path(__file__).resolve().parents[1] / "smoothcast").read_text()
-        self.assertIn('RUNTIME="$DIR/.venv/bin/python"', script)
-        self.assertIn('m.version("catt")', script)
-        self.assertIn('match=re.fullmatch(', script)
-        self.assertIn('sys.exit(0 if match', script)
-        self.assertNotIn('assert tuple(v)', script)
-        self.assertIn('for tool in ffmpeg ffprobe ffplay; do', script)
-        self.assertIn('"$DIR/setup/bootstrap.py" --target "$TARGET"', script)
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "smoothcast").read_text()
+        runtime = (root / "setup/launch.py").read_text()
+        self.assertIn("launch.runtime_ready()", script)
+        self.assertIn('str(SETUP / "bootstrap.py")', script)
+        self.assertIn('"install_desktop.py"', script)
+        self.assertIn("bootstrap.GUI_CHECK", runtime)
+        self.assertIn("bootstrap.CAST_DEPENDENCIES_CHECK", runtime)
+        self.assertIn('for tool in ("ffmpeg", "ffprobe", "ffplay")', runtime)
 
     def test_runtime_launcher_uses_project_root_for_dock_launch(self):
         script = (Path(__file__).resolve().parents[1] / "setup/launch.py").read_text()
@@ -83,6 +85,7 @@ class DesktopIntegrationTests(unittest.TestCase):
             self.assertEqual(desktop.main(), 0)
         install.assert_called_once_with(repair_pins=True, pin=True)
 
+    @unittest.skipIf(os.name == "nt", "Linux freedesktop CLI installer")
     def test_actual_cli_install_twice_then_check_from_spaced_checkout(self):
         # The shipped CLI, not just install(), must be idempotent and agree
         # with --check when launched from a checkout whose path has spaces and

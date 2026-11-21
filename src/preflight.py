@@ -55,6 +55,41 @@ def check_media(
     path = pathlib.Path(media.path)
     if not path.is_file():
         raise PreflightError("The selected movie no longer exists")
+    if media.is_audio_only:
+        if subs_file is not None or embedded_subtitle_index is not None or burn_subs:
+            raise PreflightError("Audio-only media does not support subtitles")
+        tracks = media.audio_streams
+        if audio_track_index >= 0 and not any(t.index == audio_track_index for t in tracks):
+            raise PreflightError("The selected audio track is not in this file")
+        selected = next((t for t in tracks if t.index == audio_track_index), None) if audio_track_index >= 0 else None
+        selected = selected or next((t for t in tracks if t.default), None) or (tracks[0] if tracks else None)
+        if selected is None:
+            raise PreflightError("The selected file has no audio stream")
+        with tempfile.TemporaryDirectory(prefix="smoothcast-preflight-") as folder:
+            output = pathlib.Path(folder) / "sample.mka"
+            args = [
+                "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+                "-i", str(path), "-map", f"0:a:{selected.index}", "-vn", "-t", "0.8",
+                "-c:a", "aac", "-ac", "2", "-f", "matroska", "-y", str(output),
+            ]
+            try:
+                result = subprocess.run(
+                    args, capture_output=True, text=True, timeout=max(2, min(timeout, 60)),
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise PreflightError("Audio decoder check timed out") from exc
+            except OSError as exc:
+                raise PreflightError(f"FFmpeg decoder check could not start: {exc}") from exc
+            if result.returncode != 0:
+                tail = " ".join((result.stderr or "").splitlines()[-3:]).strip()
+                raise PreflightError(f"Audio decoder check failed: {tail[:280] or 'FFmpeg error'}")
+            try:
+                size = output.stat().st_size
+            except OSError:
+                size = 0
+            if size <= 0:
+                raise PreflightError("Audio decoder check produced no media")
+            return PreflightResult(bytes_rendered=size, sample_seconds=0.8)
     if type(media.video_stream_index) is not int or media.video_stream_index < 0:
         raise PreflightError("The selected video stream index is invalid")
     tracks = media.audio_streams

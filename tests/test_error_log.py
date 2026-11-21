@@ -185,6 +185,7 @@ def test_burst_is_append_only_and_compacts_infrequently(tmp_path):
         for index in range(1000):
             logger.add(f"burst {index}: " + "x" * 55)
             assert path.stat().st_size <= 1024
+            assert logger._disk_size == path.stat().st_size
         assert compaction.call_count < 160, "full history rewritten too frequently"
         assert logger.read()[-1].endswith("x" * 55)
         assert len(logger.read()) < 20
@@ -198,6 +199,7 @@ def test_large_multiline_traceback_keeps_beginning_and_final_cause(tmp_path):
     details += "last important cause: RuntimeError: final error"
     logger.add(details)
     assert path.stat().st_size <= error_log.MAX_ENTRY_BYTES + 8
+    assert logger._disk_size == path.stat().st_size
     restored = error_log.ErrorLog(path)
     saved = "\n".join(restored.read())
     assert "first failure context" in saved

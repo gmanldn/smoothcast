@@ -1,48 +1,75 @@
-# SmoothCast setup
+# SmoothCast setup — fresh desktop to registered app
 
-**Initial manual prerequisite: Python 3.10 or newer.** Internet access and
-permission to install operating-system packages are needed for first setup.
-The scripts use Python's standard library and OS-provided Bash/PowerShell,
-not a preinstalled pip environment.
+**No Python needs to be installed first.** Run the platform installer from a
+downloaded SmoothCast source archive or checkout. It probes for Python 3.10+
+and, if missing, acquires it using the OS package manager (Linux), verified
+Homebrew (macOS), or WinGet / a verified Python installer (Windows).
+Internet access and OS-native administrator approval may be necessary.
 
-| Host | Install command | Native dependencies |
-|---|---|---|
-| Debian/Ubuntu, Fedora, Arch Linux | `bash setup/linuxsetup.sh` | Distro packages: GTK4, libadwaita, PyGObject, FFmpeg |
-| macOS (Apple Silicon or Intel) | `bash setup/macsetup.sh` | Homebrew: Python, PyGObject, GTK4, libadwaita, FFmpeg |
-| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | MSYS2 UCRT64: Python, PyGObject, GTK4, libadwaita, FFmpeg |
+| Platform | Run | Default application folder | Runtime provider |
+|---|---|---|---|
+| Debian/Ubuntu/Fedora/Arch | `bash setup/linuxsetup.sh` | `~/.local/opt/SmoothCast` | apt/dnf/pacman |
+| macOS Intel/Apple Silicon | `bash setup/macsetup.sh` | `~/Applications/SmoothCast` | Homebrew |
+| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | `%LOCALAPPDATA%\Programs\SmoothCast` | PowerShell + MSYS2 UCRT64 |
 
-The installer checks the native packages and creates a project-local `.venv`
-with access to the system GTK bindings. It installs `catt` using pip in that
-environment. If a prior `.venv` is unusable, setup moves it to an
-inspectable `.venv-incompatible-*` backup before rebuilding. A failure during
-native venv creation, pip installation or media verification removes only the
-new partial replacement and **restores the prior directory**. Brand-new
-partial installs are cleaned up on failure. Compatible venvs repaired in place,
-native OS packages, shortcuts and uninstall are not yet fully transactional;
-see P0 issue SC-018 (#25). It then verifies that the actual environment can import GTK4 and
-libadwaita, that stable `catt >= 0.12, < 0.14` is installed (prerelease builds
-below that floor are rejected even with `python -O`), and that `ffmpeg`,
-`ffprobe`, and `ffplay` **actually start and return success** from bounded
-`-version` probes; PATH presence alone is not sufficient. It registers a per-user application shortcut:
-Linux desktop entry, macOS `~/Applications/SmoothCast.app`, or the Windows
-Start Menu. Running setup repeatedly is intended to be safe.
+**The installer prompts for an installation folder**, proposing the OS default
+or the last successful destination. Press Enter to accept or type another
+user-writable location. Noninteractive options:
 
-Options:
+- `--install-dir "<full path>"` — select where app files and .venv are installed;
+  paths containing spaces work.
+- `--yes` — accept the default/remembered location without prompting.
+- `--check` — read-only check of an existing installation: no downloads,
+  source copies, native package changes or shortcut updates.
+- `--no-shortcuts` — install runtime without menu registration.
+- `--in-place` — explicitly install the existing checkout (developer mode);
+  this is intentionally not the end-user default.
 
-- `--check`: read-only dependency verification, no installations or shortcuts; on
-  Debian/Ubuntu it performs a disposable temporary `venv`/ensurepip creation
-  and removes it immediately to detect missing `python3-venv`.
-- `--no-shortcuts`: install the runtime but skip desktop registration
+Rerunning setup repairs missing dependencies. Updates replace only app-managed
+source files; a failed source copy, bootstrap or shortcut registration restores
+their prior versions. User files and existing .venv are preserved. A failed
+*new* installation is cleaned up. The copy rollback cannot reverse native OS
+packages or in-place Python package changes already made to an existing .venv.
 
-The original `./smoothcast` launcher on Linux/macOS also bootstraps a fresh
-checkout automatically. After setup, it directly starts the isolated Python
-runtime. `python3 sc.py` works as a launcher on all three operating systems;
-on Windows run the batch setup first. `./smoothcast --version` remains
-side-effect free.
+## Dependency inventory
+
+| Layer | Required |
+|---|---|
+| Interpreter | Python 3.10+; venv/ensurepip |
+| GUI | GTK4, libadwaita, PyGObject/GObject Introspection and Cairo |
+| Media | FFmpeg 5+ with ffmpeg, ffprobe, ffplay; GStreamer base/good/libav and GTK media support |
+| Python runtime in .venv | `catt>=0.12,<0.14`, `PyChromecast>=13.1.0,<15`, `psutil>=5.9,<8`, `zeroconf>=0.132,<1` and editable SmoothCast |
+| Native installation | Linux apt/dnf/pacman; macOS Homebrew; Windows MSYS2 UCRT64 native Python, PyGObject, GTK4, libadwaita and FFmpeg |
+| Optional developers | pytest, ruff, mypy, PyInstaller and Pillow are not needed to launch |
+
+Each script installs native dependencies, creates an isolated environment
+allowing native PyGObject via `--system-site-packages`, verifies GTK
+imports and the installed Python packages, then starts ffmpeg/ffprobe/ffplay
+bounded `-version` probes to confirm they actually execute.
+
+Application registration points at the installed location, never the source
+archive: Linux XDG desktop/icon, a macOS `~/Applications/SmoothCast.app`
+with branded ICNS, and a Windows Start Menu link with branded ICO.
+
+## Platform caveats
+
+- Very old Linux releases whose normal repositories only provide Python older
+  than 3.10 are not supported. The installer stops instead of running it.
+- A virgin Mac may need an Apple-managed Xcode Command Line Tools confirmation
+  when Homebrew is installed. The reviewed Homebrew script has a pinned commit
+  and checksum duplicated in `setup/bootstrap.py` and
+  `setup/macsetup.sh`; update both together.
+- On Windows, the initial Python is only the setup interpreter; the app's
+  actual GTK runtime comes from MSYS2 UCRT64 Python. A pinned fallback Python
+  3.14.10 installer from python.org is verified by SHA-256 **and**
+  Authenticode; no unverifiable download is executed.
+- Windows/macOS native GUI, FFmpeg/codec and receiver paths still require
+  actual machine qualification: see GitHub issue #209. Offline contract tests
+  are not real-device certification.
 
 ## Security and portability
 
-The Windows bootstrap downloads the latest official MSYS2 x64 installer from
+After Python acquisition, the Windows bootstrap downloads the latest official MSYS2 x64 installer from
 the `msys2/msys2-installer` GitHub release and verifies its published SHA-256
 sidecar *before running it*. The official installer is invoked with its
 documented unattended command-line switches; then pacman manages the UCRT64
@@ -122,7 +149,7 @@ desktop shortcut installer.
 
 CI builds only use development packaging tools; these are not extra
 initial prerequisites for the normal setup scripts. They deliberately skip
-installing the external `catt` dependency during wheel inspection, so the
+installing the external Cast dependencies during wheel inspection, so the
 headless artifact contract cannot establish real TV playback or native GTK
 availability. Those require the platform setup process and device smoke tests.
 
@@ -135,7 +162,7 @@ No graphical application is opened.
 The dependency bootstrap, smoke checks and OS shortcut creation are automated,
 but **Windows and macOS playback are not verified on real systems**. MSYS2
 Python has different binary-wheel compatibility from CPython for some
-dependencies, and a `catt` pip install may require additional packaging work.
+dependencies, and Cast dependency installation may require additional packaging work.
 Chromecast discovery/firewall permissions and native GTK window behaviour
 also need testing. On Windows/macOS the encoder starts with software libx264;
 the Linux VAAPI acceleration path is deliberately not attempted.
@@ -148,7 +175,9 @@ sleep/resume and uninstall/reinstall have passed actual-machine smoke tests.
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_setup_bootstrap.py' -v
+python3 -m unittest discover -s tests -p 'test_installer_locations.py' -v
 python3 -m compileall -q setup src tests
+ruff check setup tests
 ```
 
 The `.github/workflows/verify.yml` setup-contract matrix runs those

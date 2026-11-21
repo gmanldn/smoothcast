@@ -23,6 +23,22 @@ class DlnaGuiContracts(unittest.TestCase):
         self.assertIn("dlna.Renderer", METHODS["_dlna_renderer"])
         self.assertIn("renderer.host", METHODS["_device_host"])
 
+    def test_volume_and_mute_follow_optional_renderer_capability(self):
+        refresh = METHODS["_refresh_controls"]
+        self.assertIn("self._volume_control_available()", refresh)
+        self.assertIn('"supports_rendering_control"', METHODS["_volume_control_available"])
+        self.assertIn('self._device().startswith("DLNA · ")', METHODS["_volume_control_available"])
+        self.assertIn("control.set_sensitive(has_volume)", refresh)
+        volume = METHODS["_commit_volume"]
+        mute = METHODS["_on_mute"]
+        self.assertIn("self._volume_control_available()", volume)
+        self.assertIn("self._volume_control_available()", mute)
+        self.assertIn("self._volume_control_available()", METHODS["_nudge_volume"])
+        reset = mute.index("button.set_active(castctl.volume_muted")
+        self.assertGreater(mute.index("self._apply_volume_icon()", reset), reset)
+        self.assertIn("This DLNA receiver does not provide volume control", volume)
+        self.assertIn("This DLNA receiver does not provide mute control", mute)
+
     def test_transport_actions_never_use_catt_on_dlna(self):
         play = METHODS["toggle_play"]
         self.assertIn("dlna.play(renderer)", play)
@@ -37,6 +53,8 @@ class DlnaGuiContracts(unittest.TestCase):
     def test_dlna_session_is_distinct_from_hls_cast(self):
         cast = METHODS["_cast_path"]
         self.assertIn("dlna.Session() if renderer is not None else streamer.Session()", cast)
+        self.assertIn("media_type = dlna.negotiate_media_type(renderer)", cast)
+        self.assertIn("media_type=media_type", cast)
         self.assertIn("session.start(", cast)
         self.assertIn("local_ip=streamer.host_ip(renderer.host)", cast)
         self.assertIn("session.start_transcode(", cast)

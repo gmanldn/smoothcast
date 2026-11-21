@@ -11,6 +11,9 @@ from gui_source import main_window_methods
 import screenshot as screenshot_module
 
 
+FILM = str(Path("/fixtures/film.mkv"))
+
+
 class FakeAsync:
     @staticmethod
     def run(work, done=None, failed=None):
@@ -39,10 +42,10 @@ class CaptureClockTests(unittest.TestCase):
         exec(compile("class Window:\n" + textwrap.indent(code, "    "),
                      "<screenshot-window>", "exec"), namespace)
         win = namespace["Window"]()
-        win.media = SimpleNamespace(path=Path("/fixtures/film.mkv"),
+        win.media = SimpleNamespace(path=Path(FILM),
                                     video_stream_index=3)
         win.cfg = {"screenshot_dir": "/virtual/screens"}
-        win._preview_path = "/fixtures/film.mkv"
+        win._preview_path = FILM
         win._preview_position = 42.0
         win._local_video_path = None
         win._local_stream = lambda: None
@@ -56,23 +59,23 @@ class CaptureClockTests(unittest.TestCase):
     def test_scrubbed_still_uses_local_preview_position_not_tv_tracker(self):
         win, calls, _ = self.make_window()
         win._screenshot()
-        self.assertEqual(calls, [("/fixtures/film.mkv", 42.0, 3)])
+        self.assertEqual(calls, [(str(Path(FILM)), 42.0, 3)])
 
     def test_paused_embedded_player_uses_actual_decoder_timestamp(self):
         win, calls, _ = self.make_window()
-        win._local_video_path = "/fixtures/film.mkv"
+        win._local_video_path = FILM
         win._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: 91_000_000)
         win._screenshot()
-        self.assertEqual(calls, [("/fixtures/film.mkv", 91.0, 3)])
+        self.assertEqual(calls, [(str(Path(FILM)), 91.0, 3)])
 
     def test_owned_cast_uses_receiver_clock_even_if_local_preview_is_stale(self):
         win, calls, _ = self.make_window()
-        win.session = SimpleNamespace(state=SimpleNamespace(file="/fixtures/film.mkv"))
-        win._local_video_path = "/fixtures/film.mkv"
+        win.session = SimpleNamespace(state=SimpleNamespace(file=FILM))
+        win._local_video_path = FILM
         win._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: 91_000_000)
         win.tracker = SimpleNamespace(value=lambda: 25.25)
         win._screenshot()
-        self.assertEqual(calls, [("/fixtures/film.mkv", 25.25, 3)])
+        self.assertEqual(calls, [(str(Path(FILM)), 25.25, 3)])
 
     def test_no_media_or_foreign_tv_cast_cannot_capture_unrelated_content(self):
         win, calls, notices = self.make_window()
@@ -88,10 +91,10 @@ class CaptureClockTests(unittest.TestCase):
 
     def test_unknown_local_decoder_timestamp_falls_back_to_selected_still(self):
         win, calls, _ = self.make_window()
-        win._local_video_path = "/fixtures/film.mkv"
+        win._local_video_path = FILM
         win._local_stream = lambda: SimpleNamespace(get_timestamp=lambda: -1)
         win._screenshot()
-        self.assertEqual(calls, [("/fixtures/film.mkv", 42.0, 3)])
+        self.assertEqual(calls, [(str(Path(FILM)), 42.0, 3)])
 
 
 if __name__ == "__main__":
