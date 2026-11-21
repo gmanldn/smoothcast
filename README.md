@@ -202,7 +202,8 @@ next cast or restart. It is applied only to plain-text subtitles (SRT, WebVTT,
 embedded SubRip/mov_text); ASS/SSA keep their own authored styling. Presets are
 checked with real libass renders in `tests/test_subtitle_style.py`. Styling
 presets apply to text subtitles; bitmap captions retain their encoded palette
-and placement. Physical receivers have not been qualified.
+and placement. Choose a preset in **Preferences → Sound & subtitles → Captions**
+or set the config value directly. Physical receivers have not been qualified.
 
 ### Language preferences
 

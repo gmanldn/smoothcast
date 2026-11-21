@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import accent
 import density
+import subtitle_style
 
 OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),
@@ -16,6 +17,9 @@ OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "color_scheme": (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")),
     "accent": tuple((label, preset_id) for preset_id, label, _hex in accent.PRESETS),
     "density": tuple((label, preset_id) for preset_id, label, _scale in density.PRESETS),
+    "subtitle_style": tuple(
+        (label, preset) for preset, (label, _overrides) in subtitle_style.PRESETS.items()
+    ),
 }
 
 

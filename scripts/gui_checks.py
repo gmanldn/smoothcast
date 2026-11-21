@@ -39,6 +39,9 @@ SCENARIOS: dict[str, str | None] = {
     "density": None,
     "density-saved": '{"density": "spacious"}\n',
     "density-junk": '{"density": "<huge>"}\n',
+    "subtitle-style": None,
+    "subtitle-style-saved": '{"subtitle_style": "high-contrast"}\n',
+    "subtitle-style-junk": '{"subtitle_style": "<invalid>"}\n',
     "text-fit": None,
     "audio-delay": None,
 }

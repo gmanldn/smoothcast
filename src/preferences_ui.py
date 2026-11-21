@@ -151,6 +151,11 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self.embedded_track.connect("notify::selected", self._change_embedded_track)
         self._switch(captions, "burn_subs", "Burn subtitles into the video",
                      "For receivers that cannot display separate captions; needs encoding.")
+        self._choice(
+            captions, "subtitle_style", "Subtitle appearance",
+            "For plain-text subtitles only; applies on the next cast or encoder restart. "
+            "ASS/SSA keep their authored styling.",
+        )
 
         general = self._page("Appearance", "preferences-desktop-theme-symbolic")
         visual = self._group(
@@ -216,6 +221,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
             save_config(self.owner.cfg)
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
+        elif key == "subtitle_style":
+            self.owner.cfg[key] = str(value)
+            save_config(self.owner.cfg)
         else:
             widgets = {
                 "quality": "quality_dropdown",

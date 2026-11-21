@@ -439,6 +439,46 @@ def density_junk(app, window) -> None:
           and app._density_provider is None, repr(window.cfg.get("density")))
 
 
+def subtitle_style_choice(app, window) -> None:
+    """The accessible subtitle preset persists and appears selected in Preferences (#34)."""
+    import subtitle_style
+
+    window.action_preferences()
+    pump(0.3)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("subtitle_style")
+    labels = dropdown_names(combo) if combo is not None else []
+    check("Preferences lists every safe subtitle appearance preset",
+          labels == [item[0] for item in subtitle_style.PRESETS.values()], repr(labels))
+    check("the default preset starts selected", combo is not None and combo.get_selected() == 0,
+          str(combo.get_selected() if combo is not None else None))
+    if combo is None:
+        return
+    combo.set_selected(1)
+    pump(0.3)
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+    saved = json.loads(config_file.read_text("utf-8")) if config_file.exists() else {}
+    check("choosing Large updates the shared config and saved file",
+          window.cfg.get("subtitle_style") == "large" and saved.get("subtitle_style") == "large",
+          repr(saved.get("subtitle_style")))
+    check("the Preferences row remains synchronized", combo.get_selected() == 1,
+          str(combo.get_selected()))
+
+
+def subtitle_style_saved(app, window) -> None:
+    window.action_preferences()
+    pump(0.3)
+    combo = window._preferences_window._combos.get("subtitle_style")
+    check("a saved high-contrast style appears selected",
+          combo is not None and combo.get_selected() == 2,
+          str(combo.get_selected() if combo is not None else None))
+
+
+def subtitle_style_junk(app, window) -> None:
+    check("an unknown saved preset falls back safely", window.cfg.get("subtitle_style") == "default",
+          repr(window.cfg.get("subtitle_style")))
+
+
 def text_fit_wide(app, window) -> None:
     """The text-fit pass is narrow-only: a wide window keeps its labels exactly as designed (#136)."""
     import text_fit
@@ -495,7 +535,10 @@ SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-probl
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
              "density-junk": density_junk, "text-fit": text_fit_wide,
-             "audio-delay": audio_delay_menu}
+             "audio-delay": audio_delay_menu,
+             "subtitle-style": subtitle_style_choice,
+             "subtitle-style-saved": subtitle_style_saved,
+             "subtitle-style-junk": subtitle_style_junk}
 
 
 class CheckApp(cast_control.CastControlApp):
