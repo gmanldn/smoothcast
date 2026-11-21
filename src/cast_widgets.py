@@ -45,7 +45,7 @@ ICON_NAME = APP_ID
 DEFAULTS: dict = {
     "schema_version": 1,  # == config_control.SCHEMA_VERSION (tested).
     "device": castctl.DEFAULT_DEVICE,
-    "device_uuid": "",  # Stable Cast identity; manual IP/DLNA is name-based.
+    "device_uuid": "",  # Stable Cast identity; manual/DLNA: name-based.
     "cast_targets": [],
     "device_favourites": [],
     "device_last_used": {},
@@ -65,12 +65,12 @@ DEFAULTS: dict = {
     "direct": True,
     "autonext": False,
     "auto_shutdown": False,
-    "notifications": True,  # Desktop notifications when the window is unfocused (#267)
+    "notifications": True,  # Notify when the window is unfocused (#267)
     "portal_screens": True,
     "keep_streaming": True,
     "color_scheme": "prefer-dark",
-    "accent": "default",  # Accent colour preset; "default" adds no override (#135).
-    "density": "comfortable",  # compact | comfortable | spacious; comfortable adds no override (#136).
+    "accent": "default",  # Accent preset; "default" = no override (#135).
+    "density": "comfortable",  # compact | comfortable | spacious (#136).
     "auto_theme": False,
     "recents": [],
     "favourites": [],
