@@ -239,7 +239,7 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
     assert writes == []
 
 
-@pytest.mark.parametrize("request,status,start,end,size,valid", [
+@pytest.mark.parametrize("range_header,status,start,end,size,valid", [
     (None, 200, 0, 99, 100, True),
     (None, 206, 0, 99, 100, False),
     ("bytes=0-", 206, 0, 99, 100, True),
@@ -257,8 +257,8 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
     ("bytes=-0", 206, 0, 99, 100, False),
 ])
 def test_proxy_response_must_match_browser_requested_range(
-        request, status, start, end, size, valid):
-    assert mesh_files._matches_request(request, status, start, end, size) is valid
+        range_header, status, start, end, size, valid):
+    assert mesh_files._matches_request(range_header, status, start, end, size) is valid
 
 
 def test_proxy_closes_downstream_when_upstream_exhausts_retry_budget():
