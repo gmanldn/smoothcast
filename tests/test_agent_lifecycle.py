@@ -162,6 +162,16 @@ def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
     assert "untracked.py" in run(work, "show", "--format=", "--name-only", "HEAD")
     a.files = "../danger.py"
     assert agent.commit_private_slice(a) == 2
+    for unsafe in (":(glob)**/*.py", "*.py", "existing.py?", "."):
+        a.files = unsafe
+        assert agent.commit_private_slice(a) == 2
+    (work / "entire_directory").mkdir()
+    (work / "entire_directory" / "untracked.py").write_text("x = 3\n")
+    a.files = "entire_directory"
+    assert agent.commit_private_slice(a) == 2
+    assert not (work / "entire_directory" / "untracked.py").is_symlink()
+    assert "entire_directory/untracked.py" not in run(
+        work, "show", "--format=", "--name-only", "HEAD")
 
 
 def test_dry_run_cannot_create_auto_commit(monkeypatch):
