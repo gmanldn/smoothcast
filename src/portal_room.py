@@ -213,6 +213,8 @@ class PortalRoom:
             self.events.clear()
             self.titles.clear()
             self.votes.clear()
+            self.participants.clear()
+            self._dormant.clear()
             self._activity_keys.clear()
             self.seq += 1
 
