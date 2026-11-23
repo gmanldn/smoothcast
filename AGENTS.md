@@ -48,9 +48,11 @@ rebase **only your own unpushed commits** if another agent advanced `develop`.
 Never force-push or rewrite published commits. Coordinate overlapping files.
 
 **Tests are not a push prerequisite by owner request.** Do not start GTK or
-a receiver to test a change. CI is manual/opt-in, not a gate on routine
-`develop` commits. Do not claim tests or production reliability without
-evidence. Keep user data, secrets, active media and installed versions safe.
+a receiver to test a change. CI is **lazy, not absent**: security checks run
+for risky changes; one nightly headless check batches many commits once the
+owner manually merges that workflow into `main`; full Verify and native
+packaging are on demand. None blocks routine `develop` commits or writes to
+`main`. Never claim unrun tests passed; protect user data and active media.
 
 [Architecture](docs/agents/architecture.md) ·
 [Token efficiency](docs/agents/efficiency.md)
