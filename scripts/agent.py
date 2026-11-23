@@ -285,7 +285,7 @@ def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
     return slices, latest, remaining
 
 
-def cmd_next(a: argparse.Namespace) -> int:
+def ranked_candidates(a: argparse.Namespace) -> tuple[list, list, list, set, str]:
     me, now = agent_id(), utcnow()
     claims = active_claims(parse_events(recent_comments()), now)
     hot = hot_files()
@@ -314,6 +314,11 @@ def cmd_next(a: argparse.Namespace) -> int:
         base, _ = score(issue, files, hot, any(c["issue"] == n and c["agent"] == me for c in claims), 0, wait)
         ranked.append((base, n, issue, files, wait))
     ranked.sort(key=lambda r: (-r[0], r[1]))
+    return ranked, skipped, claims, hot, me
+
+
+def cmd_next(a: argparse.Namespace) -> int:
+    ranked, skipped, claims, hot, me = ranked_candidates(a)
     for _base, n, issue, files, wait in ranked[: a.limit]:
         comments = gh(f"repos/{REPO}/issues/{n}/comments?per_page=100")
         slices, progress, handover = summarize_history(comments if isinstance(comments, list) else [])
@@ -329,6 +334,96 @@ def cmd_next(a: argparse.Namespace) -> int:
         print("nothing free: every candidate is claimed, blocked or excluded")
     for n, reason in skipped[:5]:
         print(f"  skipped #{n}: {reason}")
+    return 0
+
+
+
+def issue_context_packet(number: int, issue: dict, comments: list[dict], base: str) -> str:
+    """Persist a bounded, source-grounded brief outside the tracked checkout."""
+    ordered = sorted((c for c in comments if isinstance(c, dict)),
+                     key=lambda c: int(c.get("id") or 0))
+    handovers = [str(c.get("body") or "") for c in ordered
+                 if re.search(r"(?m)^(?:Progress|Implementation|Handover):", str(c.get("body") or ""))]
+    latest = handovers[-1][:5000] if handovers else "No prior handover; inspect related commits."
+    body = str(issue.get("body") or "")
+    named = sorted(predicted_files(body))
+    return (
+        f"# SmoothCast issue #{number}: {issue.get('title', '')}\n\n"
+        f"Source baseline: {base}\n"
+        "Authority: GitHub issue and latest develop source; refresh before each ship.\n"
+        f"Likely files: {', '.join(named) or 'not specified; inspect issue and source'}\n"
+        "Start here: AGENTS.md then one routed handbook topic.\n\n"
+        f"## Acceptance and background\n{body[:30000]}\n\n"
+        f"## Most recent durable handover\n{latest}\n"
+    )
+
+
+def private_task() -> dict | None:
+    """Return this detached worktree's task marker; never trust a shared checkout."""
+    if not (ROOT / ".git").is_file():
+        return None
+    try:
+        folder = Path(git("rev-parse", "--absolute-git-dir").strip())
+        payload = json.loads((folder / "sc-agent-task.json").read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or type(payload.get("issue")) is not int:
+            return None
+        return payload
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def cmd_start(a: argparse.Namespace) -> int:
+    """Pick or resume a ticket with a fresh private checkout and durable context."""
+    git("fetch", "-q", "origin", "develop")
+    if a.number is None:
+        ranked, _, _, _, _ = ranked_candidates(a)
+        if not ranked:
+            print("no available ticket; inspect agent.py board or supply an issue number")
+            return 3
+        number = ranked[0][1]
+    else:
+        number = a.number
+    issue = load_issue(number)
+    if issue.get("state") == "closed":
+        print(f"issue #{number} is already closed; no claim made")
+        return 3
+    chosen_files = a.files or ",".join(sorted(predicted_files(issue.get("body") or "")))
+    claimed = cmd_claim(argparse.Namespace(number=number, files=chosen_files, ttl=a.ttl))
+    if claimed:
+        return claimed
+    target = ROOT.parent / f"smoothcast-issue-{number}-{uuid.uuid4().hex[:8]}"
+    created = False
+    try:
+        run = subprocess.run(["git", "worktree", "add", "--detach", str(target), "origin/develop"],
+                             cwd=ROOT, capture_output=True, text=True)
+        if run.returncode:
+            raise RuntimeError((run.stderr or run.stdout).strip()[:500])
+        created = True
+        admin = subprocess.run(["git", "-C", str(target), "rev-parse", "--absolute-git-dir"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        folder = Path(admin)
+        folder.joinpath("sc-agent-id").write_text(agent_id() + "\n", encoding="utf-8")
+        head = git("rev-parse", "origin/develop").strip()
+        metadata = {"issue": number, "title": issue.get("title") or "",
+                    "source_head": head, "started_at": utcnow().isoformat()}
+        folder.joinpath("sc-agent-task.json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+        packet = issue_context_packet(number, issue, comments if isinstance(comments, list) else [], head)
+        brief = folder / "sc-agent-brief.md"
+        brief.write_text(packet, encoding="utf-8")
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+        if created:
+            subprocess.run(["git", "worktree", "remove", "--force", str(target)],
+                           cwd=ROOT, capture_output=True)
+        release(number, f"start failed: {type(exc).__name__}")
+        print(f"could not initialise private worktree for #{number}: {exc}")
+        return 4
+    print(f"READY issue #{number}: {issue.get('title', '')}")
+    print(f"  worktree: {target}")
+    print(f"  context: {brief} (read the issue and latest handover)")
+    print(f"  cd {__import__('shlex').quote(str(target))}")
+    print("  python3 scripts/agent.py ship --message 'what changed' [--files src/new.py]")
     return 0
 
 
@@ -616,6 +711,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("board").set_defaults(fn=cmd_board)
+    start = sub.add_parser("start", help="claim ticket, prepare private worktree and scoped context")
+    start.add_argument("number", nargs="?", type=int, help="explicit issue or pick highest unclaimed")
+    start.add_argument("--files", default="", help="comma-separated anticipated source paths")
+    start.add_argument("--ttl", type=int, default=90, help="short-lived lease minutes")
+    start.add_argument("--lane", default="", help="limit automatically chosen tickets to a subsystem")
+    start.add_argument("--later", action="store_true")
+    start.add_argument("--include-skipped", action="store_true")
+    start.add_argument("--limit", type=int, default=1)
+    start.set_defaults(fn=cmd_start)
     n = sub.add_parser("next")
     n.add_argument("--limit", type=int, default=5)
     n.add_argument("--lane", default="", help="only tickets touching this path prefix/substring (e.g. src/portal, mesh)")
