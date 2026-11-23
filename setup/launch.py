@@ -168,6 +168,27 @@ def app_identity() -> tuple[str, str]:
     return app_id, "/" + app_id.replace("-", "_").replace(".", "/")
 
 
+# Interpreter switches which do not consume a following value. Never skip
+# -c, -m, -X, -W or arbitrary options: their operands are not a script path.
+_PYTHON_NO_VALUE_SWITCHES = frozenset({
+    "-B", "-E", "-I", "-O", "-OO", "-P", "-s", "-S", "-u",
+})
+
+
+def is_gui_python_command(argv: list[str], target: str) -> bool:
+    """True only if Python executes target as its actual script argument.
+
+    Bounded parsing avoids treating an arbitrary later file operand as our app.
+    Unknown flags and -c/-m invocations deliberately fail closed.
+    """
+    if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
+        return False
+    index = 1
+    while index < len(argv) and argv[index] in _PYTHON_NO_VALUE_SWITCHES:
+        index += 1
+    return index < len(argv) and argv[index] == target
+
+
 def gui_instances(proc_root: Path = Path("/proc"),
                   exclude: set[int] | None = None) -> list[int]:
     """PIDs of other same-user processes running *this* checkout's GTK app."""
@@ -188,10 +209,7 @@ def gui_instances(proc_root: Path = Path("/proc"),
                     for part in (entry / "cmdline").read_bytes().split(b"\0") if part]
         except OSError:
             continue
-        # The exact checkout script must be the Python entry point, not just
-        # an unrelated Python process argument (such as a lint/test fixture).
-        if len(argv) >= 2 and argv[1] == target \
-                and Path(argv[0]).name.startswith("python"):
+        if is_gui_python_command(argv, target):
             found.append(int(entry.name))
     return found
 
