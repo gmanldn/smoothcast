@@ -6,12 +6,14 @@ who is here, what they voted for, and what happened recently.
 """
 from __future__ import annotations
 
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from typing import Callable
 import secrets
 import threading
 import time
+
+import room_activity
 
 ONLINE_SECONDS = 45.0
 MAX_PARTICIPANTS = 32
@@ -67,6 +69,7 @@ class PortalRoom:
         self._dormant: dict[str, Participant] = {}
         self.votes: dict[str, set[str]] = {}
         self.events: deque[dict] = deque(maxlen=MAX_EVENTS)
+        self._activity_keys: OrderedDict[tuple[str, str], float] = OrderedDict()
         self.titles: dict[str, str] = {}
         self.seq = 0
 
@@ -187,20 +190,37 @@ class PortalRoom:
                     self.votes.pop(item_id, None)
 
     def record(self, participant_id: str, kind: str, data: dict | None = None,
-               now: float | None = None) -> None:
+               now: float | None = None, *, command_id: str | None = None) -> None:
         now = self.clock() if now is None else now
         with self._lock:
-            data = dict(data or {})
-            item = data.get("id") or data.get("item_id")
-            if isinstance(item, str) and item in self.titles:
-                data.setdefault("title", self.titles[item])
-            self._event(kind, participant_id, data, now)
+            key = room_activity.command_key(participant_id, command_id)
+            if key is not None:
+                while self._activity_keys and next(iter(self._activity_keys.values())) <= now:
+                    self._activity_keys.popitem(last=False)
+                if key in self._activity_keys:
+                    return  # Replayed receipt never implies a second action.
+                self._activity_keys[key] = now + 120
+                if len(self._activity_keys) > room_activity.MAX_COMMAND_KEYS:
+                    self._activity_keys.popitem(last=False)
+            self._event(kind, participant_id, data or {}, now)
+
+    def reset_history(self) -> None:
+        """Forget previous room's activity on PIN rotation; do not touch playback."""
+        with self._lock:
+            self.events.clear()
+            self.titles.clear()
+            self.votes.clear()
+            self._activity_keys.clear()
+            self.seq += 1
 
     def snapshot(self, participant_id: str | None = None,
                  now: float | None = None) -> dict:
         now = self.clock() if now is None else now
         with self._lock:
             me = self.participants.get(participant_id or "")
+            expiry = self.wall_clock() - room_activity.MAX_EVENT_AGE
+            while self.events and self.events[0]["at"] < expiry:
+                self.events.popleft()
             return {
                 "seq": self.seq,
                 "me": me.public(now) if me else None,
@@ -209,7 +229,8 @@ class PortalRoom:
                         self.participants.values(),
                         key=lambda p: (p.joined_order, p.name.casefold()))
                 ],
-                "activity": list(self.events)[-20:],
+                "activity": [{**event, "data": dict(event["data"])}
+                             for event in list(self.events)[-20:]],
             }
 
     def _unique_name(self, name: object, *, exclude_id: str = "") -> str:
@@ -227,6 +248,12 @@ class PortalRoom:
         return f"{base} ({secrets.token_hex(2)})"
 
     def _event(self, kind: str, actor: str, data: dict, now: float) -> None:
+        person = self.participants.get(actor) or self._dormant.get(actor)
+        name = person.name if person else data.get("name", "Someone")
+        item = data.get("id") or data.get("item_id")
+        known_title = self.titles.get(item, "") if isinstance(item, str) else ""
+        kind = kind if kind in {"action", "screen", "joined", "left", "renamed", "voted"} else "action"
+        safe = room_activity.event_fields(kind, data, actor_name=name, known_title=known_title)
         self.seq += 1
         self.events.append({"seq": self.seq, "type": kind, "actor": actor,
-                            "at": self.wall_clock(), "data": data})
+                            "at": self.wall_clock(), "data": safe})
