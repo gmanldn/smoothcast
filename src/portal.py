@@ -1650,7 +1650,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
-<div class="room-heading"><h2 id="playbackHeading">Now Playing</h2><span id="state" class="muted">—</span></div>
+<div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
 <p class="section-desc">These controls affect the room's selected TV or speaker.</p>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
@@ -1718,6 +1718,7 @@ function showUpdateNotice(){
   document.getElementById("updateNotice").hidden=false;
   document.getElementById("dashboard").hidden=true;
   document.getElementById("uploadCard").hidden=true;
+  document.getElementById("reloadNow").focus?.({preventScroll:true});
 }
 document.getElementById("reloadNow").addEventListener("click",()=>location.reload());
 function matchingBuild(data){
@@ -1850,8 +1851,10 @@ function expireSession(){
   if(activeUploadController)activeUploadController.abort();
   if(!uploading)resetUploadBatch();
   showError("errorDash","");
-  showError("error","Room access expired. Enter the current PIN to reconnect.");
-  $("pin").focus();
+  showError("error",PIN_REQUIRED
+    ?"Room access expired. Enter the current PIN to reconnect."
+    :"Room access expired. Enter your name to rejoin.");
+  $(PIN_REQUIRED?"pin":"name").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
 function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const rate=s.rate,speed=typeof rate==="number"&&Number.isFinite(rate)&&rate>=0.05&&rate<=4?rate:1;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead*speed;return dur?Math.min(v,dur):v}
@@ -2016,6 +2019,12 @@ function applyAccentPreset(value){
 let roomSnapshotEpoch="",roomSnapshotVersion=-1;
 // A delayed poll or SSE frame must never roll a newer same-run film state back.
 function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
+function showJoinedRoom(){
+  const entering=$("dashboard").hidden;
+  $("dashboard").hidden=false;
+  $("uploadCard").hidden=false;
+  if(entering)$("playbackHeading").focus({preventScroll:true});
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
@@ -2026,7 +2035,7 @@ renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
+document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
   return true;
 }
 async function refresh(){
