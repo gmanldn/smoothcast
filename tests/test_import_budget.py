@@ -112,9 +112,10 @@ def test_startup_timeline_marks_are_first_write_wins_ordered_and_budgeted():
     first = st.snapshot()["marks_ms"]["activate"]
     st.mark("activate")                                   # a second activation does not move it
     assert st.snapshot()["marks_ms"]["activate"] == first
+    st.mark("first_frame")
     st.mark_idle()
     snap = st.snapshot()
-    assert list(snap["marks_ms"]) == ["activate", "window_built", "interactive"]
+    assert list(snap["marks_ms"]) == ["activate", "window_built", "first_frame", "interactive"]
     assert snap["marks_ms"]["window_built"] > first and snap["within_budget"] is True
     st.reset()
 
@@ -134,5 +135,8 @@ def test_gui_entry_records_the_timeline_marks_on_activation():
     text = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
     assert text.index("import startup_timeline") < text.index("import gi")        # its clock starts first
     for needle in ('mark("activate")', 'mark("window_built")', 'mark("presented")',
-                   "GLib.idle_add(startup_timeline.mark_idle)"):
+                   'clock.connect("after-paint", self._after_first_paint, window)',
+                   'mark("first_frame")', "GLib.idle_add(self._after_paint_idle, window)",
+                   "startup_timeline.mark_idle()",
+                   "GLib.idle_add(self._start_optional_services, window, priority=GLib.PRIORITY_LOW)"):
         assert needle in text

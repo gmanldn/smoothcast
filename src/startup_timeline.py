@@ -3,7 +3,7 @@
 Marks are first-write-wins, in milliseconds since this module was first
 imported (the first line of the GUI entry module, so it excludes ~30 ms of
 interpreter boot). ``interactive`` is the first idle main-loop iteration after
-the window is presented. Stdlib only; safe to call from any thread.
+the first GTK paint completes. Stdlib only; safe to call from any thread.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def mark(name: str) -> None:
 
 
 def mark_idle() -> bool:
-    """GLib idle callback: the main loop is idle after the first present."""
+    """GLib idle callback: the main loop is idle after the first paint."""
     mark("interactive")
     return False
 

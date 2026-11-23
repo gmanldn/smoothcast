@@ -13,6 +13,17 @@ import stream_watchdog
 
 
 class UiTimerMixin:
+    def _start_window_timers(self) -> None:
+        self._timers_enabled = True
+        self._refresh_portal()
+        GLib.timeout_add_seconds(15, self._refresh_portal)
+        GLib.timeout_add_seconds(15, self._refresh_network_activity)
+        self._sync_ui_timers()
+        GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
+        GLib.timeout_add(400, self._initial_scan)
+        GLib.timeout_add(600, self._adopt_session)
+        GLib.timeout_add_seconds(600, self._theme_tick)
+
     def _bind_surface_resize(self, *_args) -> None:
         """Listen to real GdkSurface allocations, not a periodic size poll."""
         surface = self.get_surface()

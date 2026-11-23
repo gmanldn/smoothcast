@@ -31,7 +31,8 @@ MAX_MODULES = 460            # measured 394 on 24 Nov 2026
 MAX_MS = 3000.0              # measured 700-1300 ms depending on load; only catches disasters
 # Loaded on first use, not at startup. Third-party first, then our own heavy stacks.
 DENYLIST = ("zeroconf", "ifaddr", "pychromecast", "catt", "PIL", "requests", "numpy",
-            "mesh_library", "library_index_v2", "search_engine", "federated_search",
+            "hypothesis", "update_control", "mesh_library", "library_index_v2",
+            "search_engine", "federated_search",
             "replica_manager", "replica_store", "house_fetch")
 _LINE = re.compile(r"import time:\s+(\d+) \|\s+(\d+) \| (\s*)(\S+)")
 

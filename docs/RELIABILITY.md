@@ -91,6 +91,11 @@ guards keep it that way:
   library stack only once a library folder exists). Add a new heavy dependency
   to the denylist rather than raising the budget.
 - **Timeline** — `startup_timeline` records `activate`, `window_built`,
-  `presented` and `interactive` (first idle iteration after presenting), in
-  milliseconds since SmoothCast code started. `smoothcast --diagnostics` and the
-  diagnostics bundle include it under `startup`, next to the 800 ms budget.
+  `presented`, `first_frame` (GTK's first completed paint), and `interactive`
+  (the next main-loop idle dispatch). Values are elapsed milliseconds from the
+  Python GUI entry before native imports. The desktop diagnostics bundle
+  includes these milestones under `startup` alongside the 800 ms target.
+  The isolated GTK runner prints the milestones for its Xvfb environment.
+- **Deferred startup** — Portal, discovery, receiver timers, MPRIS and the update
+  check start at low idle priority after the first paint and interactive mark.
+  Primary-instance cleanup still runs before window creation and session adoption.

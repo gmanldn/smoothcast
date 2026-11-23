@@ -26,14 +26,12 @@ import audio_monitor
 import ab_repeat
 import responsive_layout
 import gui_test_safety
-import update_control
 from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
 import version
 import error_log
 import local_playback
 import startup_cleanup
-import mpris
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
@@ -147,17 +145,6 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._install_shortcuts()
         self._apply_color_scheme()
         self._refresh_controls()
-        if not app.selftest:
-            self._refresh_portal()
-            GLib.timeout_add_seconds(15, self._refresh_portal)
-            GLib.timeout_add_seconds(15, self._refresh_network_activity)
-            # No GTK/receiver timers in the isolated GUI smoke test.
-            self._timers_enabled = True
-            self._sync_ui_timers()
-            GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
-            GLib.timeout_add(400, self._initial_scan)
-            GLib.timeout_add(600, self._adopt_session)
-            GLib.timeout_add_seconds(600, self._theme_tick)
 
 
 class CastControlApp(Adw.Application):
@@ -177,12 +164,11 @@ class CastControlApp(Adw.Application):
         # Set when the window could not be built: this process must then end
         # instead of holding the application id with nothing on screen.
         self.fatal = False
-        self._update_started = False
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
         self._pending_files: list[str] = []
         self._mpris = None
-        self._mpris_started = False
+        self._paint_handler: int | None = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -362,6 +348,8 @@ class CastControlApp(Adw.Application):
                 GLib.idle_add(self._quit_fatal)
                 raise
             self.window = window
+            window.connect("map", self._watch_first_paint)
+            startup_timeline.mark("window_built")
             self.scheme_action.set_state(GLib.Variant("s", window.cfg["color_scheme"]))
         return window
 
@@ -382,16 +370,8 @@ class CastControlApp(Adw.Application):
     def do_activate(self) -> None:
         startup_timeline.mark("activate")
         window = self._window()
-        startup_timeline.mark("window_built")
         window.present()
         startup_timeline.mark("presented")
-        GLib.idle_add(startup_timeline.mark_idle)
-        if not self.selftest and not self._mpris_started:
-            # MPRIS2 media widget / media keys (Linux desktop bus, issue #266).
-            self._mpris_started = True
-            self._mpris = mpris.start(window)
-            if self._mpris is not None:
-                window._sync_ui_timers()
         if not self._startup_reported:
             self._startup_reported = True
             report = self._startup_report
@@ -409,22 +389,45 @@ class CastControlApp(Adw.Application):
         if self._pending_files:
             window.open_paths(self._pending_files)
             self._pending_files = []
+    def _watch_first_paint(self, window: MainWindow) -> None:
+        clock = window.get_frame_clock()
+        if clock is not None and self._paint_handler is None:
+            self._paint_handler = clock.connect("after-paint", self._after_first_paint, window)
+
+    def _after_first_paint(self, clock, window: MainWindow) -> None:
+        clock.disconnect(self._paint_handler)
+        startup_timeline.mark("first_frame")
+        GLib.idle_add(self._after_paint_idle, window)
+
+    def _after_paint_idle(self, window: MainWindow) -> bool:
+        startup_timeline.mark_idle()
+        GLib.idle_add(self._start_optional_services, window, priority=GLib.PRIORITY_LOW)
+        return False
+
+    def _start_optional_services(self, window: MainWindow) -> bool:
         if self.selftest:
-            # The only permitted self-test display is the disposable Xvfb
-            # session. Exit promptly and avoid persistent user state.
-            GLib.timeout_add(1500, self._selftest_quit)
-        elif not self._update_started and not getattr(sys, "frozen", False):
-            self._update_started = True
-            # Never delay the first window while DNS/network/git is unresponsive.
+            return self._selftest_quit()
+        if window._closing:
+            return False
+        import mpris
+
+        window._start_window_timers()
+        self._mpris = mpris.start(window)
+        if self._mpris is not None:
+            window._sync_ui_timers()
+        if not getattr(sys, "frozen", False):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
                 daemon=False,
             ).start()
+        return False
 
     def _background_update(self) -> None:
         cfg = getattr(self.window, "cfg", None) or {}
-        notice = update_control.refresh_checkout(
+        from update_control import refresh_checkout
+
+        notice = refresh_checkout(
             pathlib.Path(__file__).resolve().parent.parent,
             enabled=bool(cfg.get("auto_update", True)),
             verify=bool(cfg.get("verify_updates", False)),
@@ -445,6 +448,10 @@ class CastControlApp(Adw.Application):
 
     def _selftest_quit(self) -> bool:
         try:
+            marks = startup_timeline.snapshot()["marks_ms"]
+            if not 0 <= marks.get("first_frame", -1) <= marks.get("interactive", -1):
+                raise RuntimeError("No painted, interactive window")
+            print(f"SELFTEST: startup {marks}")
             print("SELFTEST: window built successfully")
         except Exception as exc:  # pragma: no cover - defensive
             self.selftest_failed = True
@@ -457,6 +464,7 @@ class CastControlApp(Adw.Application):
         return False
 
     def do_open(self, files, n_files, _hint) -> None:
+        startup_timeline.mark("activate")
         paths = []
         for index in range(n_files):
             path = files[index].get_path()
@@ -464,6 +472,7 @@ class CastControlApp(Adw.Application):
                 paths.append(path)
         window = self._window()
         window.present()
+        startup_timeline.mark("presented")
         if paths:
             window.open_paths(paths)
 
