@@ -14,9 +14,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume, pump_stream
-
 import lan_guard
+from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume, pump_stream
 import portal_media
 
 KEY = re.compile(r"qh:[0-9a-f]{32}")
