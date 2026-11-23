@@ -1,0 +1,55 @@
+name: Deferred develop health
+
+# Consolidate rapid agent commits into one bounded, headless daily health check.
+# GitHub schedules load this workflow from the default branch (main);
+# the checked-out source is explicitly the *latest develop* revision.
+# It becomes active after the owner manually merges this workflow into main.
+on:
+  schedule:
+    - cron: '37 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoothcast-deferred-develop
+  cancel-in-progress: true
+
+env:
+  SMOOTHCAST_TEST_CONTEXT: '1'
+
+jobs:
+  nightly:
+    name: Latest develop — bounded software smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Record exact develop revision
+        run: |
+          echo "Verified develop SHA: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "This is a deferred diagnostic, never permission to merge main." >> "$GITHUB_STEP_SUMMARY"
+      - name: Install headless diagnostics
+        run: python -m pip install -e '.[dev]'
+      - name: Fast static safeguards
+        run: |
+          python -m compileall -q src scripts setup tests
+          ruff check src scripts setup tests smoothcast setup.py
+      - name: Representative security and reliability regressions
+        run: >-
+          python -m pytest -q
+          tests/test_portal_commands.py
+          tests/test_mesh_file_wire_bounds.py
+          tests/test_chrome_ingress_session.py
+          tests/test_mesh_cast_planner.py
+          tests/test_chrome_mesh_readiness.py
+          tests/test_owner_ci_policy.py
