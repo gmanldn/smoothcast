@@ -4,6 +4,7 @@ from __future__ import annotations
 from gi.repository import Adw, Gtk
 
 import picture_adjustments
+import picture_check
 from cast_widgets import save_config
 
 
