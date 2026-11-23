@@ -1275,6 +1275,10 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _refresh_controls(self) -> None:
+        # Queue rows are retained during playback changes; update the spoken
+        # current/queued state without an O(n) rebuild on every status refresh.
+        if hasattr(self, "queue_list"):
+            self._sync_queue_accessible_states()
         online = self.device_state != "OFFLINE"
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
