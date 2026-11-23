@@ -204,7 +204,7 @@ def test_ship_records_true_multiline_handover_only_once(monkeypatch):
 
 
 def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_path):
-    remote, a, b = seed_git(tmp_path)
+    _remote, a, b = seed_git(tmp_path)
     commit(b, "b.txt", "B\n")
     commit(a, "a.txt", "A\n")
     run(a, "push", "-q", "origin", "HEAD:develop")
@@ -220,7 +220,7 @@ def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_
 
 
 def test_lost_push_ack_is_not_a_failed_or_duplicated_commit(monkeypatch, tmp_path):
-    remote, a, b = seed_git(tmp_path)
+    _remote, _a, b = seed_git(tmp_path)
     commit(b, "b.txt", "B\n")
     monkeypatch.setattr(agent, "ROOT", b)
     monkeypatch.setattr(agent, "private_task", lambda: None)
@@ -241,7 +241,7 @@ def test_lost_push_ack_is_not_a_failed_or_duplicated_commit(monkeypatch, tmp_pat
 
 
 def test_competing_push_retries_and_keeps_both_changes(monkeypatch, tmp_path):
-    remote, a, b = seed_git(tmp_path)
+    _remote, a, b = seed_git(tmp_path)
     commit(a, "a.txt", "A\n")
     commit(b, "b.txt", "B\n")
     monkeypatch.setattr(agent, "ROOT", b)
@@ -264,7 +264,7 @@ def test_competing_push_retries_and_keeps_both_changes(monkeypatch, tmp_path):
 
 
 def test_invalid_version_jump_is_blocked_even_with_skip_checks(monkeypatch, tmp_path):
-    remote, a, b = seed_git(tmp_path)
+    _remote, _a, b = seed_git(tmp_path)
     commit(b, "src/version.py", "MAJOR = 1\nMINOR = 2\nPATCH = 53\n")
     monkeypatch.setattr(agent, "ROOT", b)
     monkeypatch.setattr(agent, "private_task", lambda: None)
@@ -279,7 +279,6 @@ def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp
     monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
     monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "" if args[0] == "status" else "a" * 40)
     monkeypatch.setattr(agent, "ticket_commits", lambda n: ["a" * 40])
-    original_run = subprocess.run
     def fake_subprocess(args, **kwargs):
         if args[:3] == ["git", "merge-base", "--is-ancestor"]:
             return SimpleNamespace(returncode=0)
