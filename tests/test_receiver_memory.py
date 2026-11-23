@@ -180,6 +180,25 @@ class ReceiverMemoryTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), original)
         self.assertFalse(list(self.path.parent.glob("*.tmp")))
 
+    def test_diagnostics_only_export_aggregates_no_identifiers_or_titles(self):
+        import diagnostics
+
+        self.store.record(self.key, self.sig, "direct", False)
+        self.store.record(self.key, self.sig, "hls", True)
+        summary = self.store.summary()
+        self.assertEqual(summary, {
+            "receivers": 1, "codec_signatures": 1, "direct_failures": 1})
+        self.assertEqual(set(summary), {
+            "receivers", "codec_signatures", "direct_failures"})
+        with mock.patch.object(diagnostics, "tool_version", return_value=""):
+            bundle = diagnostics.collect(home=self.temp.name, receiver_learning=self.path)
+        self.assertEqual(bundle["receiver_learning"], summary)
+        text = json.dumps(bundle["receiver_learning"])
+        self.assertNotIn(self.key, text)
+        self.assertNotIn(self.sig, text)
+        self.assertNotIn("192.168.", text)
+        self.assertNotIn("film.mkv", text)
+
     def test_forget_only_one_receiver_and_other_history_survives(self):
         other = memory.receiver_key(host="192.168.1.20", port=8009)
         self.store.record(self.key, self.sig, "direct", False)
