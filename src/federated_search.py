@@ -7,6 +7,7 @@ and their late hits stream in. See docs/MESH_SEARCH.md section 4.
 from __future__ import annotations
 
 import base64
+import binascii
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import time
 from typing import Callable, Iterator
@@ -101,13 +102,13 @@ class FederatedSearch:
         if isinstance(cursor, str) and 0 < len(cursor) <= 16:
             try:
                 raw = base64.b64decode(cursor, altchars=b"-_", validate=True)
-                if (0 < len(raw) <= 5 and raw.isascii() and raw.isdecimal()
+                if (0 < len(raw) <= 5 and raw.isascii() and raw.isdigit()
                         and (raw == b"0" or not raw.startswith(b"0"))
                         and base64.urlsafe_b64encode(raw).decode() == cursor):
                     candidate = int(raw)
                     if candidate <= len(rows):
                         offset = candidate
-            except (ValueError, UnicodeError, base64.binascii.Error):
+            except (ValueError, UnicodeError, binascii.Error):
                 pass
         page = rows[offset:offset + limit]
         more = len(rows) > offset + limit
