@@ -1556,6 +1556,11 @@ function expireSession(){
   $("pin").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
+function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead;return dur?Math.min(v,dur):v}
+let playhead=null,paintedAt=-1;
+function trackPlayhead(s){playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead()}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);if(Math.abs(pos-paintedAt)<0.2)return;paintedAt=pos;const dur=Number(playhead.s.duration)||0;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
+function playheadFrame(){if(!document.hidden)paintPlayhead();requestAnimationFrame(playheadFrame)}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -1686,7 +1691,7 @@ async function refresh(){
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
     const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
@@ -2106,6 +2111,7 @@ $("cancelUpload").addEventListener("click",async()=>{
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
   finally{finishUpload()}
 });
+if(typeof requestAnimationFrame==="function")requestAnimationFrame(playheadFrame);
 document.addEventListener("visibilitychange",()=>{
   void syncRemoteWakeLock();
   if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
