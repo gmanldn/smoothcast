@@ -54,7 +54,7 @@ def test_room_actions_have_touch_help_and_keep_existing_js_contract():
     text = portal._HTML
     assert text.count('class="help"') >= 6
     assert text.count("<summary>") >= 5
-    assert "audio always goes into Up Next" in text.lower()
+    assert "audio always goes into up next" in text.lower()
     assert "without stopping the currently playing item" in text
     assert 'id="uploadQueue" type="checkbox" checked' in text
     assert 'id="seek" type="range"' in text
