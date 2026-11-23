@@ -47,10 +47,16 @@ class ProcScanTests(unittest.TestCase):
             fake_proc(root, "4252", ("/usr/bin/python3", "-m", APP))
             fake_proc(root, "4253", ("/usr/bin/python3", "-X", "dev", APP))
             fake_proc(root, "4254", ("/usr/bin/python3", "-u", "/tmp/check.py", APP))
+            fake_proc(root, "4257", ("/usr/bin/python3", "-W", "ignore", APP))
+            fake_proc(root, "4258", ("/usr/bin/python3", "-Xdev", "-Wignore", APP))
+            fake_proc(root, "4259", ("/usr/bin/python3", "-X", APP))
+            fake_proc(root, "4260", ("/usr/bin/python3", "-W", APP))
+            fake_proc(root, "4261", ("/usr/bin/python3", "-W", "ignore", "/tmp/check.py", APP))
+            fake_proc(root, "4262", ("/usr/bin/python3", "-X", "-c", APP))
             fake_proc(root, "4255", ("/usr/bin/python3", "-c", "print(1)", APP))
             fake_proc(root, "4256", ("/usr/bin/python-foreign", APP))
             (root / "uptime").write_text("1\n")
-            self.assertEqual(sorted(launch.gui_instances(root)), [4242, 4250, 4251])
+            self.assertEqual(sorted(launch.gui_instances(root)), [4242, 4250, 4251, 4253, 4257, 4258])
 
     @unittest.skipIf(os.name == "nt", "POSIX /proc process-table contract")
     def test_exclusions_never_report_own_process(self):
