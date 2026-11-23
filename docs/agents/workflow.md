@@ -15,8 +15,10 @@ The retired root `IMPROVEMENTS.md` is **not** an active backlog.
   carries a newer `src/version.py` than `main`, the *Verify SmoothCast*
   workflow opens a develop→main pull request and merges it (see
   [Releases](#releases-develop--main-automatically)). Nothing else writes to `main`.
-- `src/version.py` is the one release authority; bump it deliberately, once
-  per release, with `python3 scripts/ci/bump_version.py` (default: patch).
+- `src/version.py` is the one release authority. For each **completed ticket**,
+  bump PATCH once with `python3 scripts/ci/bump_version.py patch --issue N
+  --expect X.Y.Z`, in the ticket's coherent final commit. Intermediate commits
+  carry their SHA, not a new version. Rebase then rerun if the version moved.
 - External contributors without push access may open a PR **against
   `develop`**; that is the only PR flow besides the automatic release PR.
 
@@ -105,8 +107,12 @@ conflict in those lists: run it, `git add pyproject.toml`, continue.
 
 ## Releases: develop → main automatically
 
-1. On `develop`, once per release: `python3 scripts/ci/bump_version.py patch`
-   (or `minor` / `major`), commit as `release: bump version to X.Y.Z`, push.
+1. On `develop`, for each **completed GitHub ticket**, run
+   `python3 scripts/ci/bump_version.py patch --issue N --expect X.Y.Z` after
+   focused tests, and commit the bump with the ticket's code (`Refs #N`).
+   Push fast-forward only. If another ticket bumped first, fetch/rebase, rerun
+   with the new version and repeat validation. Never silently reuse a patch.
+   MINOR/MAJOR bumps remain explicit release decisions.
 2. *Verify SmoothCast* eventually validates the **latest `develop` head**
    (full matrix for any MINOR/MAJOR difference against `main`, fast lane
    for patch-only progress). Earlier queued revisions may be cancelled and
@@ -149,9 +155,12 @@ same-repository branches still at their recorded head and unused by open PRs
 (`scripts/ci/prune_merged_branches.py` defaults to dry-run). Never delete
 active branches, worktrees or protected refs.
 
-**Version authority:** `src/version.py` only. Bump semantic versions at an
-intentional release boundary, **not** for each commit. Distinguish loaded
-runtime release, on-disk version and Git SHA in diagnostics.
+**Version authority:** `src/version.py` only. Bump once per completed ticket,
+**not** every transient commit. A `develop` patch is not a published release
+until promotion to `main` actually succeeds. [#518](https://github.com/gmanldn/smoothcast/issues/518)
+currently blocks automatic promotion under MainProtector; only an authorised
+administrator can adjust that policy. Never bypass protection or report an
+unpublished version as released. Distinguish runtime, checkout and Git SHA.
 `./smoothcast --version` is safe: it does not open GTK.
 
 Use `git diff --stat` and targeted file ranges first; avoid whole-repo or log
