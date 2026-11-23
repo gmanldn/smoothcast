@@ -219,7 +219,33 @@ def recent_comments(hours: float = TTL_MAX / 60 + 0.5, pages: int = 6) -> list[d
         if not isinstance(chunk, list) or not chunk:
             break
         out.extend(chunk)
-    return out
+        if len(chunk) < 100:
+            return out
+    raise td.DigestError(
+        f"global claim feed exceeded {100 * pages} recent comments; "
+        "refusing an incomplete conflict check")
+
+
+def issue_comments(number: int, max_pages: int = 10) -> list[dict]:
+    """Read all issue comments needed to arbitrate a lease; never silently truncate.
+
+    GitHub returns oldest-first pages. Claim/release replay is only safe with
+    a complete feed: a newer live claim can be beyond page one.
+    """
+    if number < 1 or max_pages < 1:
+        raise ValueError("invalid issue comment pagination request")
+    all_comments: list[dict] = []
+    for page in range(1, max_pages + 1):
+        suffix = "" if page == 1 else f"&page={page}"
+        batch = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100{suffix}")
+        if not isinstance(batch, list) or any(not isinstance(c, dict) for c in batch):
+            raise td.DigestError(f"cannot read complete comments for issue #{number}")
+        all_comments.extend(dict(c, issue=number) for c in batch)
+        if len(batch) < 100:
+            return all_comments
+    raise td.DigestError(
+        f"issue #{number} has at least {100 * max_pages} comments; "
+        "cannot safely arbitrate an incomplete lease history")
 
 
 def hot_files(minutes: int = HOT_MINUTES) -> set[str]:
@@ -426,7 +452,7 @@ def cmd_start(a: argparse.Namespace) -> int:
                     "source_head": head, "started_at": utcnow().isoformat()}
         folder.joinpath("sc-agent-task.json").write_text(
             json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-        comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+        comments = issue_comments(number)
         packet = issue_context_packet(number, issue, comments if isinstance(comments, list) else [], head)
         brief = folder / "sc-agent-brief.md"
         brief.write_text(packet, encoding="utf-8")
@@ -471,11 +497,12 @@ def cmd_claim(a: argparse.Namespace) -> int:
     # Verify publication before taking an assignment. The global comment feed
     # can lag; consult this issue directly only when our claim is missing.
     recent = recent_comments()
-    if not any(c.get("id") == posted["id"] for c in recent):
-        direct = gh(f"repos/{REPO}/issues/{a.number}/comments?per_page=100")
-        if isinstance(direct, list):
-            seen = {c.get("id") for c in recent}
-            recent.extend(c for c in direct if isinstance(c, dict) and c.get("id") not in seen)
+    # Always merge this issue's entire comment history, even when our new
+    # marker appears in the global feed. The global feed can omit an earlier
+    # active rival under heavy repository activity.
+    direct = issue_comments(a.number)
+    seen = {c.get("id") for c in recent}
+    recent.extend(c for c in direct if c.get("id") not in seen)
     # Optimistic lock: only an earlier published claim can beat our claim.
     events = [e for e in parse_events(recent) if e["id"] <= posted["id"]]
     mine = [e for e in events if e["id"] == posted["id"] and e["kind"] == "claim"]
@@ -504,7 +531,7 @@ def ensure_live_task_claim(task: dict) -> bool:
     number = task["issue"]
     me = agent_id()
     files = set(task.get("files") or [])
-    comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+    comments = issue_comments(number)
     if not isinstance(comments, list):
         raise td.DigestError(f"cannot inspect live claims on #{number}")
     events = parse_events([dict(c, issue=number) for c in comments if isinstance(c, dict)])
@@ -548,7 +575,7 @@ def cmd_progress(a: argparse.Namespace) -> int:
 
 def cmd_heartbeat(a: argparse.Namespace) -> int:
     me = agent_id()
-    comments = gh(f"repos/{REPO}/issues/{a.number}/comments?per_page=100")
+    comments = issue_comments(a.number)
     if not isinstance(comments, list):
         raise td.DigestError(f"cannot inspect claims on #{a.number}")
     live = active_claims(parse_events(comments), utcnow())
@@ -570,7 +597,9 @@ def release(number: int, note: str) -> None:
     me = agent_id()
     gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments", "-f",
        f"body=Released: {me}. {note}\n<!-- sc-release v1 agent={me} -->")
-    left = active_claims(parse_events(recent_comments()), utcnow())
+    # This issue's complete authoritative ledger is more reliable than the
+    # globally bounded recent-comment feed when cleaning advisory labels.
+    left = active_claims(parse_events(issue_comments(number)), utcnow())
     if not any(c["issue"] == number for c in left):
         subprocess.run(["gh", "api", "-X", "DELETE", f"repos/{REPO}/issues/{number}/labels/in-flight"],
                        capture_output=True)
@@ -736,7 +765,7 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
     number = task["issue"]
     marker = f"<!-- sc-ship v1 sha={sha} -->"
     try:
-        comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+        comments = issue_comments(number)
         if isinstance(comments, list) and any(
                 marker in str(c.get("body") or "") for c in comments):
             return
@@ -993,7 +1022,7 @@ def cmd_finish(a: argparse.Namespace) -> int:
         return 2
     latest = refs[0]
     marker = f"<!-- sc-finish v1 issue={number} sha={latest} -->"
-    comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+    comments = issue_comments(number)
     if not isinstance(comments, list):
         raise td.DigestError("cannot verify prior handovers; refusing duplicate")
     if not any(marker in str(c.get("body") or "") for c in comments):
