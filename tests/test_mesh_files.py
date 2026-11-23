@@ -237,3 +237,49 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
                            "http://127.0.0.1/", head=False,
                            write_headers=lambda *args: writes.append(args))
     assert writes == []
+
+
+@pytest.mark.parametrize("request,status,start,end,size,valid", [
+    (None, 200, 0, 99, 100, True),
+    (None, 206, 0, 99, 100, False),
+    ("bytes=0-", 206, 0, 99, 100, True),
+    ("bytes=10-20", 206, 10, 20, 100, True),
+    ("bytes=10-999", 206, 10, 99, 100, True),
+    ("bytes=-15", 206, 85, 99, 100, True),
+    ("bytes=-150", 206, 0, 99, 100, True),
+    ("bytes=0-", 200, 0, 99, 100, False),
+    ("bytes=10-", 206, 0, 89, 100, False),
+    ("bytes=10-", 206, 11, 99, 100, False),
+    ("bytes=-15", 206, 0, 14, 100, False),
+    ("bytes=20-10", 206, 20, 99, 100, False),
+    ("bytes=100-", 206, 100, 100, 101, False),
+    ("bytes=1-2,3-4", 206, 1, 2, 100, False),
+    ("bytes=-0", 206, 0, 99, 100, False),
+])
+def test_proxy_response_must_match_browser_requested_range(
+        request, status, start, end, size, valid):
+    assert mesh_files._matches_request(request, status, start, end, size) is valid
+
+
+def test_proxy_closes_downstream_when_upstream_exhausts_retry_budget():
+    from io import BytesIO
+
+    class FailingReply:
+        def read(self, _size):
+            raise OSError("disconnected")
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Client:
+        close_connection = False
+        wfile = BytesIO()
+
+    client = Client()
+    proxy = mesh_files.MeshFiles(lambda _k: None, lambda _k: [], lambda _k: None)
+    proxy._open = lambda *_args: (_ for _ in ()).throw(OSError("offline"))
+    proxy._pump(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                Connection(), FailingReply(), 0, 128, "128", None)
+    assert client.close_connection is True
+    assert client.wfile.getvalue() == b""
