@@ -161,6 +161,7 @@ py-modules = [
     "peer_protocol",
     "picture_adjustments",
     "picture_check",
+    "preferences_picture_ui",
     "playback_state",
     "playlist_control",
     "portal",

@@ -129,6 +129,19 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
                     f"{name} is regrowing; split or trim it instead",
                 )
 
+
+    def test_preferences_picture_mixin_is_split_and_keeps_handlers(self):
+        """INV-011: remove genuine picture implementation, never relax size gate."""
+        picture = (ROOT / "src" / "preferences_picture_ui.py").read_text("utf-8")
+        prefs = (ROOT / "src" / "preferences_ui.py").read_text("utf-8")
+        self.assertIn("class PicturePreferencesMixin:", picture)
+        for handler in ("_picture_spin", "_picture_changed", "_reset_picture",
+                        "_build_picture_preferences"):
+            self.assertIn("def " + handler + "(", picture)
+        self.assertIn("class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow)", prefs)
+        self.assertIn("self._build_picture_preferences(playback, output)", prefs)
+        self.assertLess(len(prefs.encode("utf-8")), 18_000)
+
     def test_main_window_is_assembled_from_the_mixins(self):
         source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
         window = next(

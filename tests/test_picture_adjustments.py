@@ -1,7 +1,6 @@
 """Pure SC-103 picture-adjustment validation and filter contracts."""
 from __future__ import annotations
 
-import math
 from pathlib import Path
 import sys
 
