@@ -95,3 +95,41 @@ def test_missing_git_metadata_does_not_fabricate_new_version():
          mock.patch.object(version, "read_checkout_revision", return_value=None):
         handler()(app, window)
     assert messages == []
+
+
+def test_update_candidate_does_not_hide_stale_installed_generation():
+    """An available remote release must not mask a mandatory restart."""
+    source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    owner = next(node for node in tree.body
+                 if isinstance(node, ast.ClassDef) and node.name == "CastControlApp")
+    method = next(node for node in owner.body
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == "_present_update_notice")
+    future = ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)
+    module = ast.fix_missing_locations(ast.Module(body=[future, method], type_ignores=[]))
+    namespace = {}
+    exec(compile(module, "<isolated notice presenter>", "exec"), namespace)
+    presenter = namespace["_present_update_notice"]
+    calls = []
+    window = SimpleNamespace(
+        _closing=False, _installed_version_stale=True,
+        update_notice="Installed v2; running v1; restart",
+        _update_header_subtitle=lambda: calls.append("header"),
+        _console=lambda msg: calls.append(("console", msg)),
+        toast=lambda msg: calls.append(("toast", msg)),
+    )
+    assert presenter(SimpleNamespace(window=window), "v3 is available") is False
+    assert window.update_notice == "Installed v2; running v1; restart"
+    assert "header" not in calls
+    assert ("console", "v3 is available") in calls
+
+    window._installed_version_stale = False
+    assert presenter(SimpleNamespace(window=window), "v3 is available") is False
+    assert window.update_notice == "v3 is available"
+    assert "header" in calls
+
+    window._closing = True
+    calls.clear()
+    assert presenter(SimpleNamespace(window=window), "later") is False
+    assert not calls
