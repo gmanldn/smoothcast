@@ -138,6 +138,9 @@ class Flaky(BaseHTTPRequestHandler):
         self.send_response(206 if header else 200)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Type", "video/x-matroska")
+        # Real mesh origins publish a strong generation; legacy fixtures use
+        # a stable strong ETag so a dropped connection can resume byte-safely.
+        self.send_header("ETag", '"fixture-sha-stable"')
         if header:
             self.send_header("Content-Range", f"bytes {start}-{len(DATA) - 1}/{len(DATA)}")
         self.end_headers()
@@ -518,3 +521,61 @@ def test_proxy_never_forwards_unverified_416(requested, response, forward):
     assert (len(emitted) == 1) is forward
     if forward:
         assert emitted == [(416, {"Content-Length": "0", "Content-Range": response})]
+
+
+@pytest.mark.parametrize(("etag", "generation", "valid"), [
+    (None, None, False),
+    ('W/"same"', None, False),
+    ('"same"', None, True),
+    (None, "generation-1", True),
+    ('W/"same"', "generation-1", True),
+])
+def test_resume_without_strong_identity_fails_closed(etag, generation, valid):
+    """A reconnect must not stitch potentially different file bytes together."""
+    reply = _ResumeReply(etag=etag)
+    if generation is not None:
+        reply.values["X-SmoothCast-Generation"] = generation
+    assert mesh_files._valid_resume(reply, 100, 199, "1000",
+                                    etag, generation) is valid
+
+
+def test_missing_validator_on_retry_truncates_instead_of_mixing_bytes():
+    from io import BytesIO
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Reply:
+        status = 206
+
+        def getheader(self, name):
+            return {"Content-Range": "bytes 4-7/8",
+                    "Content-Length": "4"}.get(name)
+
+        def read(self, _amount):
+            return b"WXYZ"
+
+    class First:
+        def __init__(self):
+            self.called = False
+
+        def read(self, _amount):
+            if not self.called:
+                self.called = True
+                return b"ABCD"
+            raise OSError("lost origin")
+
+    class Client:
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    client = Client()
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Connection(), Reply())
+    proxy._pump(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                Connection(), First(), 0, 8, "8", None)
+    assert client.wfile.getvalue() == b"ABCD"
+    assert client.close_connection is True
