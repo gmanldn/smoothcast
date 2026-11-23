@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -61,6 +62,9 @@ def _valid_fps(value: object) -> float | None:
 
 def _record(path: Path, key: str, *, now: float | None = None) -> dict | None:
     try:
+        # A corrupt/hostile cache must never allocate unbounded memory on GTK.
+        if path.stat().st_size > 2048:
+            return None
         data = json.loads(path.read_text(encoding="utf-8"))
         now = time.time() if now is None else now
         if (not isinstance(data, dict) or data.get("schema") != SCHEMA
@@ -177,10 +181,16 @@ def schedule_probe(*, enabled: bool, path: Path | None = None,
     def work() -> None:
         global _running
         try:
-            measured = benchmark.run_probe(
-                seconds=3, height=1080,
-                runner=_priority_runner if runner is None else runner,
-            )
+            try:
+                measured = benchmark.run_probe(
+                    seconds=3, height=1080,
+                    runner=_priority_runner if runner is None else runner,
+                )
+            except Exception as exc:
+                # Never leak a background traceback or re-probe endlessly.
+                logging.getLogger(__name__).warning(
+                    "Low-end capacity probe unavailable (%s)", type(exc).__name__)
+                measured = None
             persist(measured, path=target, identity=key)
         finally:
             with _lock:
