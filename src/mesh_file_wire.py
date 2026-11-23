@@ -8,8 +8,21 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-_CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
-_SINGLE_RANGE = re.compile(r"bytes=(\d*)-(\d*)\Z")
+# Reject huge HTTP integers before conversion: a malicious LAN peer must
+# never turn Python's decimal-digit limit into an unhandled media exception.
+# The 63-bit ceiling matches common signed OS file offsets.
+MAX_MEDIA_BYTES = 2**63 - 1
+_UINT = re.compile(r"[0-9]{1,19}\Z")
+_CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,19})-([0-9]{1,19})/([0-9]{1,19}|\*)\Z")
+_SINGLE_RANGE = re.compile(r"bytes=([0-9]{0,19})-([0-9]{0,19})\Z")
+
+
+def parse_wire_uint(value: str | None) -> int | None:
+    """Parse bounded ASCII decimal from untrusted HTTP headers, or refuse."""
+    if not isinstance(value, str) or _UINT.fullmatch(value) is None:
+        return None
+    number = int(value)
+    return number if number <= MAX_MEDIA_BYTES else None
 
 
 def _valid_resume(reply, start: int, end: int, total: str | None,
@@ -20,14 +33,14 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
     match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
     if match is None or total is None or total == "*":
         return False
-    first, last, size = match.groups()
-    if (int(first) != start or int(last) != end or size != total
-            or int(last) < int(first) or int(last) >= int(size)):
+    first_text, last_text, size_text = match.groups()
+    first, last, size = (parse_wire_uint(v) for v in
+                         (first_text, last_text, size_text))
+    if (first is None or last is None or size is None
+            or first != start or last != end or size_text != total
+            or last < first or last >= size):
         return False
-    try:
-        length = int(reply.getheader("Content-Length") or "")
-    except ValueError:
-        return False
+    length = parse_wire_uint(reply.getheader("Content-Length"))
     if length != end - start + 1:
         return False
     if etag is not None and reply.getheader("ETag") != etag:
@@ -51,14 +64,15 @@ def _matches_request(requested: str | None, status: int, start: int,
         return False
     first, last = match.groups()
     if first:
-        offset = int(first)
-        if offset >= size:
+        offset = parse_wire_uint(first)
+        limit = parse_wire_uint(last) if last else size - 1
+        if offset is None or limit is None or offset >= size or limit < offset:
             return False
-        expected_end = min(int(last), size - 1) if last else size - 1
-        return (not last or int(last) >= offset) and start == offset and end == expected_end
-    if not last or int(last) == 0:
+        return start == offset and end == min(limit, size - 1)
+    suffix = parse_wire_uint(last)
+    if suffix is None or suffix == 0:
         return False
-    return start == max(0, size - int(last)) and end == size - 1
+    return start == max(0, size - suffix) and end == size - 1
 
 
 def pump_stream(
