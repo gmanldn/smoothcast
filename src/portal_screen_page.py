@@ -265,9 +265,9 @@ _PANEL_HTML = r"""
       const none=el("option","","Choose from queue");none.value="";pick.append(none);
       for(const q of items){const o=el("option","",q.title);o.value=q.id;pick.append(o)}
       pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value});
-      const play=el("button","tiny","Play");play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
-      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
-      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
+      const play=el("button","tiny","Play");play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";play.setAttribute("aria-label","Play selected queue item on "+sc.name);play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
+      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name);toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
+      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.setAttribute("aria-label","Stop playback on "+sc.name);stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
       actions.append(pick,play,toggle,stop);li.append(box,actions);rows.push(li)}
     list.replaceChildren(...rows)};
 })();
