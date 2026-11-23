@@ -92,9 +92,35 @@ def _launches_gui(tokens: list[str]) -> bool:
     return False
 
 
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def strip_heredoc_bodies(command: str) -> str:
+    """Drop here-document bodies: they are data (text or a script), not commands.
+
+    A harmless ``python3 - <<'E' ... ./smoothcast --version ... E`` that merely
+    *mentions* the launcher in text used to be refused because every body line
+    was parsed as a command. The line carrying ``<<`` (the real command) and
+    everything after the terminator are kept and still checked. An unterminated
+    here-document hides only the lines after it.
+    """
+    kept: list[str] = []
+    ending = ""
+    for line in command.split("\n"):
+        if ending:
+            if line.strip() == ending:
+                ending = ""
+            continue
+        kept.append(line)
+        match = _HEREDOC.search(line)
+        if match:
+            ending = match.group(2)
+    return "\n".join(kept)
+
+
 def decide(command: str) -> str | None:
     """Return a refusal message for a GUI-launching command, else None."""
-    for segment in _SEPARATORS.split(command):
+    for segment in _SEPARATORS.split(strip_heredoc_bodies(command)):
         if _launches_gui(_words(segment.strip())):
             return MESSAGE
     return None
