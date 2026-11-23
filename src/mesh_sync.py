@@ -26,13 +26,14 @@ Design: docs/MESH_DESIGN.md ("Replication").
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import random
 from typing import Any
 
 import mesh_beacon as mb
 import mesh_membership as mem
 import mesh_model as mm
+import peer_protocol as pp
 from mesh_ports import Clock, TimerHandle
 from mesh_rpc import RpcRouter
 from mesh_state import Accept, MeshState, ViewPublisher
@@ -48,6 +49,7 @@ class SyncConfig:
     request_timeout_s: float = 2.0
     backoff_base_s: float = 0.2
     backoff_max_s: float = 10.0
+    disabled_caps_by_peer: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -61,6 +63,7 @@ class SyncStats:
     malformed: int = 0
     failures: int = 0
     same_hash: int = 0
+    compatibility_refusals: int = 0
 
 
 class _Link:
@@ -106,6 +109,8 @@ class Replicator:
         self._publisher = publisher
         self.config = config or SyncConfig()
         self.stats = SyncStats()
+        self.hello = pp.local_handshake(state.own.version)
+        self.agreements: dict[str, pp.Agreement] = {}
         self._links: dict[str, _Link] = {}
         self._push_timer: TimerHandle | None = None
         self._repair_timer: TimerHandle | None = None
@@ -130,6 +135,7 @@ class Replicator:
             if link.timer is not None:
                 link.timer.cancel()
         self._links.clear()
+        self.agreements.clear()
 
     # -- local changes --------------------------------------------------------
     def update(self, **sections: Any) -> mm.NodeRecord:
@@ -203,6 +209,7 @@ class Replicator:
 
     def _drop_link(self, node_id: str) -> None:
         link = self._links.pop(node_id, None)
+        self.agreements.pop(node_id, None)
         if link is not None and link.timer is not None:
             link.timer.cancel()
 
@@ -283,11 +290,43 @@ class Replicator:
             self._pump(link)
         self._schedule_repair()
 
+    # -- protocol compatibility -----------------------------------------------------------
+    def _agree(self, message: dict[str, Any], *, node_id: str = "") -> pp.Agreement:
+        """Negotiate before interpreting any peer state. Missing hello is v1-only."""
+        raw = message.get("hello")
+        legacy = raw is None
+        remote = pp.legacy_handshake() if legacy else pp.parse_handshake(raw)
+        return pp.negotiate(
+            self.hello, remote, legacy=legacy,
+            disabled=self.config.disabled_caps_by_peer.get(node_id, frozenset()),
+        )
+
+    def _refused(self) -> dict[str, Any]:
+        self.stats.compatibility_refusals += 1
+        return {"error": "incompatible_protocol",
+                "message": "Older version — some features unavailable with this computer.",
+                "hello": self.hello.wire()}
+
+    def _accept_reply(self, link: _Link, value: dict[str, Any]) -> bool:
+        """Fail closed if the peer refuses or proposes an incompatible protocol."""
+        if value.get("error") is not None:
+            self.stats.compatibility_refusals += 1
+            self._failed(link, resync=False)
+            return False
+        try:
+            agreement = self._agree(value, node_id=link.node_id)
+        except pp.PeerCompatibilityError:
+            self.stats.compatibility_refusals += 1
+            self._failed(link, resync=False)
+            return False
+        self.agreements[link.node_id] = agreement
+        return True
+
     # -- requester side ----------------------------------------------------------------
     def _send_sync(self, link: _Link, address: str) -> None:
         link.inflight = True
         self.stats.syncs += 1
-        body = {"hash": self._state.digest_hash(),
+        body = {"hello": self.hello.wire(), "hash": self._state.digest_hash(),
                 "digest": {node: [boot, rev] for node, (boot, rev)
                            in self._state.digest().items()}}
 
@@ -302,6 +341,8 @@ class Replicator:
         self._rpc.call(address, "sync", body, reply, self.config.request_timeout_s)
 
     def _apply_sync_reply(self, link: _Link, address: str, value: dict[str, Any]) -> None:
+        if not self._accept_reply(link, value):
+            return
         if value.get("same") is True:
             self.stats.same_hash += 1
             self._succeeded(link)
@@ -335,12 +376,14 @@ class Replicator:
             if value is None:
                 self._failed(link, resync=True)
                 return
+            if not self._accept_reply(link, value):
+                return
             if rest:
                 self._send_push(link, address, rest)
                 return
             self._succeeded(link)
 
-        self._rpc.call(address, "push", {"records": packed}, reply,
+        self._rpc.call(address, "push", {"hello": self.hello.wire(), "records": packed}, reply,
                        self.config.request_timeout_s)
 
     # -- shared acceptance ---------------------------------------------------------------
@@ -373,22 +416,32 @@ class Replicator:
 
     # -- responder side ------------------------------------------------------------------
     def _on_sync(self, _source: str, body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self._agree(body)
+        except pp.PeerCompatibilityError:
+            return self._refused()
         mine = self._state.digest()
         if body.get("hash") == mm.digest_hash(mine):
-            return {"same": True}
+            return {"same": True, "hello": self.hello.wire()}
         try:
             remote = mm.parse_digest(body.get("digest", {}))
         except mm.MeshModelError:
             self.stats.malformed += 1
-            return {"same": False, "records": [], "digest": _digest_wire(mine)}
+            return {"same": False, "hello": self.hello.wire(),
+                    "records": [], "digest": _digest_wire(mine)}
         wanted = self._state.newer_for(remote)
         packed, more = _wire_records(wanted, MAX_REPLY_BYTES)
-        return {"same": False, "records": packed, "more": more,
+        return {"same": False, "hello": self.hello.wire(),
+                "records": packed, "more": more,
                 "digest": _digest_wire(mine)}
 
     def _on_push(self, _source: str, body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            self._agree(body)
+        except pp.PeerCompatibilityError:
+            return self._refused()
         accepted = self._apply_records(body.get("records"))
-        return {"accepted": accepted}
+        return {"accepted": accepted, "hello": self.hello.wire()}
 
 
 def _digest_wire(digest: dict[str, tuple[str, int]]) -> dict[str, list[Any]]:
