@@ -36,7 +36,7 @@ to `main`. The owner manually decides when (and whether) to merge it.
    previews the latest progress/handover for successors. On a partially
    complete issue, identify exactly which criteria remain. Close only when
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
-   is not proof of functionality. [Claim and handover protocol](coordination.md).
+   is not proof of functionality. [Claim and handover protocol](../COORDINATION.md).
 
 ```sh
 git fetch origin develop
