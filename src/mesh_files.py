@@ -118,7 +118,8 @@ class MeshFiles:
                 return False
             headers["Content-Length"] = str(length)
             start = 0
-            total = None
+            # A full 200 response can still be resumed by an exact 206 Range.
+            total = str(length) if reply.status == 200 else None
             if reply.status == 206:
                 match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
                 if match is None:
