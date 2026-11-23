@@ -228,8 +228,8 @@ _PANEL_HTML = r"""
 #screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
 #screensList .state-error{color:var(--danger)}
 </style>
-<section id="screensPanel" hidden><div class="row"><h2>Screens</h2><span id="screensCount" class="muted"></span></div>
-<p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and pair it with the PIN.</p>
+<section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading">Screens</h2><span id="screensCount" class="muted"></span></div>
+<p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if the host requires it. Tap Start screen once to allow sound.</p>
 <ul id="screensList"><li class="empty">No screens connected</li></ul>
 <p id="screensMsg" class="muted" role="status" aria-live="polite"></p></section>
 <script>
@@ -244,7 +244,7 @@ _PANEL_HTML = r"""
   async function send(id,body){
     try{const r=await fetch(`/api/screens/${id}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},
       body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
-      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");msg.textContent="Sent to the screen.";
+      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");msg.textContent="Screen command received; checking its state.";
     }catch(err){msg.textContent=err.message}}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
   window.scRenderScreens=function(s){
@@ -265,9 +265,9 @@ _PANEL_HTML = r"""
       const none=el("option","","Choose from queue");none.value="";pick.append(none);
       for(const q of items){const o=el("option","",q.title);o.value=q.id;pick.append(o)}
       pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value});
-      const play=el("button","tiny","Play");play.type="button";play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
-      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
-      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
+      const play=el("button","tiny","Play");play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
+      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
+      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
       actions.append(pick,play,toggle,stop);li.append(box,actions);rows.push(li)}
     list.replaceChildren(...rows)};
 })();
