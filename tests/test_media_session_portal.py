@@ -36,8 +36,12 @@ global.MediaMetadata=function(o){Object.assign(this,o)};
 const played=[];
 global.Audio=function(src){this.src=src;this.paused=true;this.setAttribute=()=>{};
   this.play=()=>{this.paused=false;played.push(src);return Promise.resolve()};this.pause=()=>{this.paused=true}};
-global.navigator={mediaSession:{playbackState:"none",metadata:null,position:null,
-  setActionHandler:(n,f)=>{handlers[n]=f},setPositionState:p=>{navigator.mediaSession.position=p}}};
+// Node 22+ has a read-only built-in global.navigator accessor; replace it
+// explicitly rather than relying on an ignored assignment.
+Object.defineProperty(global,"navigator",{configurable:true,value:{mediaSession:{
+  playbackState:"none",metadata:null,position:null,
+  setActionHandler:(n,f)=>{handlers[n]=f},setPositionState:p=>{navigator.mediaSession.position=p}
+}}});
 %s
 %s
 """
@@ -132,7 +136,7 @@ const out={idle,disabledUntouched:navigator.mediaSession.playbackState,title:nav
 
 
 def test_unsupported_browser_is_a_silent_noop():
-    script = HARNESS.replace("global.navigator={", "global.navigatorX={") % (
+    script = HARNESS % (
         media_code().replace('typeof navigator!=="undefined"', "false"),
         "syncMediaSession({state:'PLAYING',title:'T'});console.log(JSON.stringify({ok:true}));")
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=20)
