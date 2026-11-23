@@ -25,6 +25,24 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertRegex(version.__version__, r"^[0-9]+\.[0-9]+\.[0-9]+$")
         self.assertEqual(version.label(), f"v{version.__version__}")
 
+    def test_development_build_identity_preserves_package_semver(self):
+        sha = "abcdef0123456789" + "1" * 24
+        self.assertEqual(version.build_label(sha),
+                         f"v{version.__version__}+g{sha[:12]}")
+        self.assertEqual(version.build_label(None), version.label())
+        self.assertEqual(version.build_label("invalid"), version.label())
+
+    def test_build_id_cli_stays_headless_and_reports_checkout(self):
+        env = dict(os.environ, PYTHONPATH=str(ROOT / "src"),
+                   SMOOTHCAST_TEST_CONTEXT="1")
+        expected = version.build_label(version.read_checkout_revision(ROOT))
+        result = subprocess.run(
+            [sys.executable, "-m", "cli", "--build-id"],
+            env=env, text=True, capture_output=True, timeout=10, check=True,
+        )
+        self.assertEqual(result.stdout.strip(), f"SmoothCast {expected}")
+        self.assertEqual(result.stderr.strip(), "")
+
     def test_package_metadata_matches_the_canonical_release(self):
         metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('dynamic = ["version"]', metadata)
