@@ -85,6 +85,7 @@ py-modules = [
     "config_persistence",
     "control_api",
     "density",
+    "demo_session",
     "design_tokens",
     "desktop_failure_notice",
     "diagnostics",
