@@ -466,3 +466,36 @@ def test_mesh_network_help_defines_target_states_without_cast_permissions():
     assert "Can't be reached</strong> means" in panel
     assert "It does not cast, claim receivers or upload files" in panel
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
+
+
+def test_network_navigation_only_appears_when_mesh_is_available():
+    """Do not send guests from the sticky menu to a hidden mesh section."""
+    import shutil
+    import subprocess
+    import pytest
+    from portal_mesh_panel import panel_html
+
+    page = room_html()
+    assert "meshNavLink" in page.ids and "meshPanel" in page.ids
+    assert "meshPanel" in page.anchors
+    assert '<a id="meshNavLink" href="#meshPanel" hidden>Network</a>' in portal._HTML
+    panel = panel_html()
+    assert 'panel.hidden=false;showNetworkNavigation(true)' in panel
+    assert 'panel.hidden=true;showNetworkNavigation(false)' in panel
+    script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function showNetworkNavigation(visible){")
+    end = script.index("const $=id=>", start)
+    fn = script[start:end]
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for conditional navigation test")
+    harness = r"""
+const assert=require("node:assert/strict");
+let navLink={hidden:true};
+showNetworkNavigation(true);
+assert.equal(navLink.hidden,false);
+showNetworkNavigation(false);
+assert.equal(navLink.hidden,true);
+navLink=null;
+assert.doesNotThrow(()=>showNetworkNavigation(true));
+"""
+    subprocess.run(["node", "-"], input=fn + harness, check=True, text=True, timeout=10)
