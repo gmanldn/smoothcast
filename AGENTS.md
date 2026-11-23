@@ -31,8 +31,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
 - **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
-- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
-  names a development revision; `./smoothcast --version` is GUI-free.
+- **Versions:** bump `src/version.py` patch once per completed ticket with
+  `scripts/ci/bump_version.py --issue N`. Interim commits use their Git SHA.
 
 ## Testing — patch fast lane, no desktop focus
 
