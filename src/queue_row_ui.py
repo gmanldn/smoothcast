@@ -67,8 +67,16 @@ class QueueRowMixin:
         drop = Gtk.DropTarget.new(Gtk.ListBoxRow, Gdk.DragAction.MOVE)
         drop.connect("drop", self._drop_queue_row, row)
         row.add_controller(drop)
-        title = Gtk.Label(label=queue_metadata.display_title(path, self._media_cache), xalign=0.0, hexpand=True, ellipsize=3)
+        display_title = queue_metadata.display_title(path, self._media_cache)
+        title = Gtk.Label(label=display_title, xalign=0.0, hexpand=True, ellipsize=3)
         title.add_css_class("queue-title")
+        # GTK ListBoxRow needs its own accessible name. Do not announce the
+        # tooltip/source path (which may expose the user's private folders).
+        playback_state = "Now playing" if path == self.now_playing else "Queued"
+        row.update_property(
+            [Gtk.AccessibleProperty.LABEL],
+            [f"{display_title}, {index + 1} of {len(self.queue)}, {playback_state}"],
+        )
         duration = self.queue_durations.get(path)
         duration_label = Gtk.Label(label=fmt_time(duration) if duration else "", ellipsize=Pango.EllipsizeMode.END)
         duration_label.add_css_class("dim-label")
