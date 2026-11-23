@@ -80,6 +80,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_head_verdict.py
       - name: Verify GTK dependency bootstrap never bypasses import gate
         run: python -m unittest discover -s tests -p test_gtk_ci_deps.py
+      - name: Validate fail-closed Flatpak packaging inputs
+        run: python -m unittest discover -s tests -p test_flatpak_manifest.py
       - name: Verify bounded agent routing and instruction budgets
         run: |
           python -m unittest discover -s tests -p test_agent_context.py
