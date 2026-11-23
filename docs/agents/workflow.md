@@ -59,19 +59,37 @@ git push origin HEAD:develop # fast-forward only; repeat fetch/rebase if contest
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
 
-## Tests and CI by owner choice
+## Lazy, risk-weighted CI — never a develop merge gate
 
-Routine commits **do not wait for a test gate**. The Verify workflow is
-manual (`workflow_dispatch`), and agents need not run tests before an owner-
-requested rapid `develop` push. Do not silently disable runtime safety,
-signature verification, data protection, singleton enforcement, or update
-rollback to make this faster. Do not open the real GUI or control a TV during
-automated work. If a change is untested, **state that explicitly** and do not
-mark dependent safety-critical tickets as verified/closed.
+**Development never waits for CI.** Push coherent changes immediately to
+`develop`; do not start long global pytest/GTK/native builds for every
+agent patch. A failed or unrun check is *not* a licence to say a ticket passed
+testing. Always describe actual evidence accurately.
 
-The project retains tests and the manual Verify workflow for targeted or
-full checks when the owner requests them. `main` is neither a test baseline
-nor a gate on `develop` work.
+| Event | Work scheduled | Purpose |
+| --- | --- | --- |
+| Ordinary `develop` push | No full Verify, native packaging or CodeQL | Eliminate redundant work from parallel agents |
+| Security-sensitive portal/auth/room/transfer file push | Headless Portal Security suite only | Catch high-consequence auth/ownership regressions |
+| Explicit Verify dispatch | Fast lane by default; full lane on MINOR/MAJOR | Owner-requested software qualification |
+| Explicit Portal Security dispatch or PR into `develop` | Headless suite plus private Xvfb GTK smoke | Deeper qualification, without touching user desktop |
+| Explicit Package dispatch or `v*` tag | Native Linux/macOS/Windows bundles | Avoid three-platform builds per edit |
+| Weekly CodeQL schedule or manual dispatch | Static security analysis | Detect accumulated issues without per-commit scans |
+
+- Portal push paths are intentionally narrow: cosmetic changes, general UI
+  tweaks and most docs/tests should not trigger its heavy integration tests.
+  Coalescing cancels obsolete security runs when a newer relevant revision
+  arrives, so only the latest result matters.
+- Individual agents may run small deterministic local or headless tests for
+  risky code, but they are not a push prerequisite. Avoid re-running checks
+  a different agent or successful containing run has already supplied.
+- **Before an owner-requested manual `develop → main` promotion**, use
+  GitHub Actions' **Run workflow** on `develop` for Verify and any relevant
+  security/packaging workflows. Read actual run results; do not assume success
+  from an older SHA. Manual `main` merging is always the owner's action.
+- A scheduled GitHub workflow executes from the **default branch**; weekly
+  CodeQL schedule modifications in `develop` only take effect after the
+  owner merges that workflow to default `main`. Manual runs on `develop`
+  use the current workflow immediately.
 
 ## Main — manual owner action only
 
