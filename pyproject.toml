@@ -27,6 +27,7 @@ dev = [
     "ruff",
     "mypy",
     "hypothesis",
+    "PyYAML>=6,<7",
 ]
 
 packaging = [
