@@ -11,6 +11,7 @@ import loudness
 import subtitle_style
 
 OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
+    "update_channel": (("Develop — frequent tested builds", "develop"), ("Main — releases", "main")),
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),
     "audio": (("Original", "original"), ("Dialogue auto-fix", "dialogue"), ("Night mode", "night")),
     "rotation": (("No rotation", 0), ("90°", 90), ("180°", 180), ("270°", 270)),
