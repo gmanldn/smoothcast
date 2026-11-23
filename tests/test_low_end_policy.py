@@ -32,6 +32,12 @@ def test_choose_tier_measured_headroom(speed, fps, expected):
     assert low.choose_tier(speed, source(fps)) == expected
 
 
+def test_huge_numeric_measurement_fails_safely():
+    huge = 10 ** 600
+    assert low.choose_tier(huge, source()) == "saver"
+    assert low.persist(huge, path=Path("/unused")) is False
+
+
 def test_invalid_source_rate_is_conservative():
     assert low.choose_tier(38.0, source(math.nan)) == "saver"
     assert low.choose_tier(39.0, source(None)) == "balanced"
