@@ -11,6 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import receiver_memory as memory  # noqa: E402
+import direct_probe  # noqa: E402
 
 
 class Clock:
@@ -64,6 +65,50 @@ class ReceiverMemoryTests(unittest.TestCase):
         self.assertIsNone(self.store.advice(self.key, self.sig))
         self.assertEqual(self.store.explanation(self.key, self.sig),
                          "No reliable receiver playback preference has been learned.")
+
+    def test_two_fake_receiver_rejections_skip_direct_and_keep_hard_guards(self):
+        def rejected(_device):
+            return {"player_state": "IDLE"}
+
+        for attempt in range(2):
+            self.assertTrue(memory.should_try_direct(
+                True, self.store, self.key, self.sig))
+            reply = direct_probe.verify_direct_start(
+                "TV", "Film", get_info=rejected, pause=lambda _n: None,
+                attempts=3, interval=0)
+            self.assertEqual(reply, "rejected")
+            self.store.record(self.key, self.sig, "direct", False)
+        self.assertFalse(memory.should_try_direct(True, self.store, self.key, self.sig))
+        self.assertFalse(memory.should_try_direct(False, self.store, "", ""))
+        other = memory.codec_signature(container="webm", video="vp9", audio="opus")
+        self.assertTrue(memory.should_try_direct(True, self.store, self.key, other))
+        self.assertTrue(memory.should_try_direct(True, self.store, "", ""))
+
+        def accepted(_device):
+            return {"player_state": "PLAYING", "title": "Film"}
+
+        for _ in range(3):
+            reply = direct_probe.verify_direct_start(
+                "TV", "Film", get_info=accepted, pause=lambda _n: None,
+                attempts=3, interval=0)
+            self.assertEqual(reply, "accepted")
+            self.store.record(self.key, self.sig, "direct", True)
+        self.assertTrue(memory.should_try_direct(True, self.store, self.key, self.sig))
+
+    def test_media_signature_contains_only_codec_info(self):
+        from types import SimpleNamespace
+        media = SimpleNamespace(
+            vcodec="h264", vprofile="High 10", pix_fmt="yuv420p10le", acodec="aac",
+            title="/home/private/Secret.mkv")
+        signature = memory.media_signature(
+            media, container="mkv", subtitle_kind="sidecar")
+        self.assertEqual(len(signature), 64)
+        self.assertEqual(signature, memory.media_signature(
+            SimpleNamespace(vcodec=media.vcodec, vprofile=media.vprofile,
+                            pix_fmt=media.pix_fmt, acodec=media.acodec,
+                            title="Different title"), container="mkv", subtitle_kind="sidecar"))
+        with self.assertRaises(ValueError):
+            memory.media_signature(media, container="../../private", subtitle_kind="none")
 
     def test_file_never_contains_raw_ip_uuid_or_media_names(self):
         ip = "192.168.12.123"
