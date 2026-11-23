@@ -11,43 +11,32 @@ GitHub Issues are the authoritative backlog:
 
 ## Maintainers and agents
 
-1. Start with `python3 scripts/agent.py board` and `agent.py next`;
-   choose an available issue using live claims and hot file scopes.
-2. Claim briefly with `python3 scripts/agent.py claim N` (short TTL, not
-   permanent ownership), use a **detached worktree** of `origin/develop`, and
-   commit one small coherent slice with `Refs #N`.
-3. Fetch and rebase **only your own unpublished work**, then fast-forward push
-   to `origin/develop` directly. Never force-push or overwrite another agent's
-   worktree, uncommitted changes or version bump.
-4. Post a durable `agent.py progress N --done "..." --next "..."` handover with
-   the actual SHA and test status; then release the short-lived claim and take
-   the next available task. Future agents inspect this record and `develop`
-   before repeating work. See [coordination](docs/COORDINATION.md).
-   Do not close an issue whose acceptance criteria are unverified.
+1. Use `python3 scripts/agent.py start` to claim the highest-ranked
+   available ticket, or `start N` for a specific one. It refreshes develop,
+   creates a private detached worktree and saves a short issue/handover brief.
+2. In the printed worktree, implement a coherent slice and call
+   `python3 scripts/agent.py ship --message "fix: specific result"`.
+   Tracked edits are committed privately; name new files with `--files`.
+   The command verifies the current lease, rebases only unpublished work,
+   checks version history, fast-forward pushes and posts a SHA handover.
+3. Call `python3 scripts/agent.py finish --done "..." --next "..."`
+   to record what landed, what remains and release the lease. Add explicit
+   real `--verification`, `--checklist`, `--next none` and `--close`
+   only when all acceptance criteria are met.
 
-```sh
-git fetch origin develop
-git worktree add --detach ../smoothcast-N origin/develop
-cd ../smoothcast-N
-# edit, stage named files and commit with Refs #N
-git fetch origin develop && git rebase origin/develop
-git push origin HEAD:develop
-```
-
-**Testing is optional for rapid develop pushes by owner instruction.**
-The Verify workflow runs on explicit manual invocation; do not claim a green
-test result or production guarantee without evidence. Never launch a desktop
-GUI or control a receiver during routine automated work.
+Never force-push or reset another agent's work. Use `--skip-checks` only
+when deliberately leaving a slice unverified; integrity checks are mandatory.
+Relevant tests run selectively; no GUI or real receivers during tests.
 
 External contributors without push access may propose PRs targeting
 `develop`. Maintainers and agents do not open topic branches or PRs.
 
 ## Version and main
 
-`src/version.py` is the sole version authority. Increment PATCH on a
-completed issue or explicit owner request, always refreshing the current
-develop value before committing. Commits are not automatically merged to
-`main`, tagged, published or certified. Main merges/releases are exclusively
-owner-initiated manual operations.
+`src/version.py` is release SemVer, not a per-ticket counter. Routine agent
+shipments retain the version and use the Git commit SHA as the unique build
+identity (`smoothcast --build-id`). `agent.py ship --assign-patch` is a
+strictly explicit, owner-authorised operation, never the default. `main`
+integration, release tags and publication are entirely manual owner actions.
 
 Security issues: [SECURITY.md](SECURITY.md).
