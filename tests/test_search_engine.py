@@ -133,3 +133,20 @@ def test_search_api_requires_session_and_returns_groups(tmp_path):
         assert status == 200
     finally:
         harness.close()
+
+
+def test_artist_and_album_filters_use_fts_phrases_and_combine_with_text(tmp_path):
+    idx = library(tmp_path, [
+        {"title": "So What", "kind": "music", "artist": "Miles Davis", "album": "Kind of Blue"},
+        {"title": "Blue in Green", "kind": "music", "artist": "Miles Davis", "album": "Kind of Blue"},
+        {"title": "Blue Monday", "kind": "music", "artist": "New Order", "album": "Power"},
+        {"title": "Davis Cup", "kind": "video"}])
+    assert titles(idx.search('artist:"miles davis"')) and "Blue Monday" not in titles(
+        idx.search('artist:"miles davis"'))
+    both = titles(idx.search('artist:"miles davis" blue'))   # "blue" also matches the album
+    assert "Blue in Green" in both and "So What" in both and "Blue Monday" not in both
+    assert "So What" in titles(idx.search('album:"kind of blue"'))
+    assert "Blue Monday" not in titles(idx.search('album:"kind of blue"'))
+    assert "Davis Cup" not in titles(idx.search("artist:davis"))          # artist column only
+    idx.search('artist:"; DROP TABLE entries --"')                       # hostile phrase never raises
+    assert idx.count() == 4

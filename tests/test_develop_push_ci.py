@@ -23,6 +23,7 @@ def test_scope_job_selects_patch_fast_lane_and_minor_major_full_lane():
     for job in (
         "reliability-benchmark:", "portable-tests:", "portable-tests-native:",
         "media-integration:", "setup-contract:", "installed-artifact:",
+        "search-performance:",
     ):
         match = re.search(
             rf"^  {re.escape(job)}(.*?)(?=^  [a-z])", workflow, re.MULTILINE | re.DOTALL

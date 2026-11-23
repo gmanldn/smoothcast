@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS origins (
 CREATE TABLE IF NOT EXISTS rentries (
     origin_id TEXT NOT NULL, {', '.join(f + (' INTEGER' if f in ('year','season','episode','disc','track','width','height','size') else ' REAL' if f == 'duration' else ' TEXT') for f in FIELDS)},
     PRIMARY KEY (origin_id, content_key));
+CREATE INDEX IF NOT EXISTS rentries_kind_year ON rentries(kind, year, sort_title);
 PRAGMA recursive_triggers=ON;
 CREATE VIRTUAL TABLE IF NOT EXISTS rentries_fts USING fts5(
     title, show, artist, album, album_artist, genre,

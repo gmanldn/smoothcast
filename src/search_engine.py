@@ -50,10 +50,13 @@ END;
 """
 
 
+INDEXES = "CREATE INDEX IF NOT EXISTS entries_kind_year ON entries(kind, year, sort_title);"
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     fresh = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE name='entries_fts'").fetchone() is None
-    conn.executescript(SCHEMA)
+    conn.executescript(SCHEMA + INDEXES)
     if fresh:
         conn.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
         conn.execute("INSERT INTO entries_tri(entries_tri) VALUES('rebuild')")
@@ -75,11 +78,6 @@ def _filter_sql(filters: dict[str, str]) -> tuple[str, list]:
     if years:
         clauses.append("e.year BETWEEN ? AND ?")
         args += list(years)
-    for column in ("artist", "album"):
-        if filters.get(column):
-            clauses.append(f"e.{column} LIKE ? ESCAPE '\\'")
-            escaped = filters[column].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            args.append(f"%{escaped}%")
     return ("".join(f" AND ({c})" for c in clauses), args)
 
 
@@ -93,18 +91,25 @@ def run(conn: sqlite3.Connection, text: object, limit: int = 50, offset: int = 0
     def _row(values) -> dict:
         return dict(zip(source.cols, values))
     select, table, fts, tri = source.select, source.table, source.fts, source.tri
+    column_terms = []
+    for column in ("artist", "album"):
+        words = search_query.parse(query.filters.get(column, "")).terms
+        if words:
+            column_terms.append(f'{column} : "{" ".join(words)}"')
     stop = clock() + deadline
     conn.set_progress_handler(lambda: 1 if clock() > stop else 0, PROGRESS_OPS)
     rows: list[tuple[float, dict]] = []
     try:
-        if query.terms:
-            match = search_query.fts_expression(query.terms)
+        if query.terms or column_terms:
+            match = " ".join([search_query.fts_expression(query.terms), *column_terms]).strip()
             for r in conn.execute(
                     f"SELECT {select}, bm25({fts},10,6,6,5,4,1) FROM {fts} "
                     f"JOIN {table} e ON e.rowid={fts}.rowid "
                     f"WHERE {fts} MATCH ?{extra} LIMIT 500", [match, *args]):
                 rows.append((r[-1], _row(r[:-1])))
-            if len(rows) < 5 and len(query.text.replace(" ", "")) >= 3:
+            # Typo tolerance only for loose text: an artist:/album: filter means exact intent.
+            if (query.terms and not column_terms and len(rows) < 5
+                    and len(query.text.replace(" ", "")) >= 3):
                 have = {row["content_key"] for _s, row in rows}
                 grams = sorted(search_query.trigrams(query.text))
                 if grams:
