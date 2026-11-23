@@ -113,7 +113,22 @@ gh api -X POST "$R/issues/N/comments" -f body='Claim: <agent>; scope: <files>'
 `python3 scripts/ci/complexity_report.py` prints source size, the largest
 modules and functions, startup imports and the bytes an agent reads first.
 `docs/complexity-baseline.json` is a ratchet: `tests/test_complexity_budget.py`
-fails only on large unexplained growth (total +20%, a module +30%, a new module
+fails only on unexplained growth (total +10%, a module +10%, a new module
 over 1,200 lines). If growth is justified, refresh with `--write-baseline` and
 say why in the commit message. Prefer extending or deleting code over adding a
 module; see the strategy in #511.
+
+## Advisory issue-body budget (#516)
+
+`python3 scripts/ci/issue_body_budget.py --fetch` reports open, non-epic
+GitHub issues whose **body alone** exceeds 6,000 UTF-8 bytes. The job runs in
+the nightly workflow summary with read-only `issues: read` permission; the
+report prints only issue numbers and byte counts, never issue-body text. It is
+**advisory**, not a CI failure or substitute for detailed engineering briefs.
+
+For deterministic offline review/tests, pass `--input export.json` containing
+a JSON array shaped like GitHub's `/issues` response, or `--json` for compact
+machine-readable output. The live fetch requires `GITHUB_TOKEN`; no issue is
+changed, and a fetch failure is reported rather than inventing a clean result.
+Move necessary detail into a short agent brief comment and link design docs;
+do not delete important research merely to reduce byte counts.
