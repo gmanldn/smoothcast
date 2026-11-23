@@ -137,6 +137,7 @@ def cast_worker(status="rejected"):
             ForeignPlayback=direct_probe.ForeignPlayback,
         ),
         "dlna": SimpleNamespace(),
+        "hdr_tonemap": __import__("hdr_tonemap"),
         "threading": threading,
         "pathlib": __import__("pathlib"),
         "pretty_title": lambda path: path.stem,

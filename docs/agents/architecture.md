@@ -34,9 +34,8 @@ or import GTK in ordinary tests.
 The selected Cast receiver has a friendly `device` and optional persisted
 `device_uuid`. An idle scan may recover a renamed receiver only when its UUID
 and new name are unique. Manual IP/DLNA selections clear that UUID. Display
-names alone do not prove ownership; #15 tracks mDNS reconciliation and device
-qualification. Host lookup rejects duplicate/missing current records and
-failed scans, so it cannot reuse an old address.
+names alone do not prove ownership (#15). Host lookup rejects duplicate or
+missing records and failed scans, so it never reuses an old address.
 
 ## HLS stall watchdog (P0 SC-010)
 
@@ -50,15 +49,13 @@ FFmpeg continues (36 s) can trigger **one** automatic HLS restart at the
 source-file playback position. It requires the receiver to report the **exact
 saved stream URL and optional title**, and refuses paused, offline, busy,
 unknown/foreign or completed playback. The one-restart budget survives
-FFmpeg generation changes; a subsequent failure displays an error instead of
-looping forever. A confirmed receiver IDLE/end is handled by the existing
-completion path and never converted into a restart.
+FFmpeg generation changes; a later failure shows an error instead of looping.
+A confirmed receiver IDLE/end uses the completion path, never a restart.
 
-The asynchronous restart goes through `SessionMixin._restart_at`. Do not
-schedule extra background polling or launch GTK to test; deterministic unit
-and UI-wiring checks live in `tests/test_stream_watchdog.py`. Real-device
-buffering and first-frame behavior still require qualification under
-[GitHub issue #17](https://github.com/gmanldn/smoothcast/issues/17).
+The restart goes through `SessionMixin._restart_at`. Add no extra polling and
+never launch GTK to test; checks live in `tests/test_stream_watchdog.py`.
+Real-device behavior is tracked in
+[#17](https://github.com/gmanldn/smoothcast/issues/17).
 
 ## Direct Cast acceptance and safe HLS fallback
 
@@ -118,10 +115,9 @@ URL in `SessionState.stream_url`: watchdog, receiver ownership and recovery
 compare that full URL. Finalised single-segment HLS recovery must verify
 every playlist segment belongs to its saved generation.
 
-`tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
-cross-generation stale requests, narrow allowlists, encoder arguments and
-finalised recovery. All tests use mock encoders/TV and ephemeral local
-servers; do not launch GTK or send commands to a receiver.
+`tests/test_hls_generation_identity.py` covers loopback GET/HEAD, stale
+cross-generation requests, allowlists, encoder arguments and recovery, using
+mocks only (never GTK or a real receiver).
 
 ## Cast diagnostics and workers
 

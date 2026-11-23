@@ -835,7 +835,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
-    assert "_refresh_portal_activity" in methods["_refresh_portal"]
+    assert "_sync_portal_activity_timer" in methods["_refresh_portal"]
     assert "room.snapshot()" in methods["_refresh_portal_activity"]
     assert "In room:" in methods["_refresh_portal_activity"]
     assert "peer_discovery_available" in methods["_refresh_portal_activity"]

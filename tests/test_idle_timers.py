@@ -56,14 +56,17 @@ def test_sleep_fader_restores_after_cancellation():
 
 
 def test_no_unconditional_visual_timers_and_close_cleans_sources():
-    control = (Path(__file__).parents[1] / "src/cast_control.py").read_text()
-    tree = ast.parse(control)
-    methods = {method.name for node in tree.body if isinstance(node, ast.ClassDef)
-               and node.name == "MainWindow" for method in node.body
+    src = Path(__file__).parents[1] / "src"
+    control = (src / "cast_control.py").read_text()
+    timers = (src / "cast_ui_timers.py").read_text()
+    methods = {method.name for node in ast.parse(timers).body if isinstance(node, ast.ClassDef)
+               and node.name == "UiTimerMixin" for method in node.body
                if isinstance(method, ast.FunctionDef)}
     assert {"_sync_ui_timers", "_stop_ui_timers", "_bind_surface_resize"} <= methods
-    assert "GLib.timeout_add(100, self._meter_tick)" not in control
-    assert "GLib.timeout_add(500, self._tick)" not in control
+    assert "UiTimerMixin" in control
+    for text in (control, timers):
+        assert "GLib.timeout_add(100, self._meter_tick)" not in text
+        assert "GLib.timeout_add(500, self._tick)" not in text
     lifecycle = (Path(__file__).parents[1] / "src/cast_lifecycle.py").read_text()
     assert "self._stop_ui_timers()" in lifecycle
 
@@ -119,14 +122,16 @@ def test_real_window_timer_callbacks_under_fake_glib_clock():
             return count
 
     names = ("_set_ui_timer", "_sync_ui_timers", "_ui_playing",
-             "_scheduled_sleep_tick", "_scheduled_fade_tick", "_stop_ui_timers")
+             "_scheduled_sleep_tick", "_scheduled_fade_tick", "_stop_ui_timers",
+             "_hidden_watchdog_tick")
     sources = main_window_methods()
     code = "class Window:\n" + "\n".join(
         textwrap.indent(textwrap.dedent(sources[name]), "    ") + "\n"
         for name in names
     )
     clock = Clock()
-    namespace = {"GLib": clock, "idle_timers": idle_timers, "sleep_fade": sleep_fade}
+    namespace = {"GLib": clock, "idle_timers": idle_timers, "sleep_fade": sleep_fade,
+                 "stream_watchdog": __import__("stream_watchdog")}
     exec(compile(code, "<headless-timers>", "exec"), namespace)  # noqa: S102
     window = namespace["Window"]()
     window._timers_enabled = True

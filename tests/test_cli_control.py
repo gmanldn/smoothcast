@@ -145,7 +145,7 @@ class StatusTests(unittest.TestCase):
             code, out, _ = run("status", "-d", DEVICE)
         self.assertEqual(code, 0)
         self.assertEqual(len(out.strip().splitlines()), 1)
-        self.assertIn("PLAYING", out)
+        self.assertIn("Playing", out)
         self.assertIn("40%", out)
 
     def test_offline_receiver_is_exit_3(self):
