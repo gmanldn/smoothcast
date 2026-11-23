@@ -487,15 +487,17 @@ smoothcast --version
 # or python3 src/version.py
 ```
 
-The **window title** always shows the version of the **running** SmoothCast process; **About** uses exactly the same value. When an asynchronous git pull downloads a new release, the notice explicitly distinguishes the downloaded version from the still-running version, and the header displays a restart reminder. The new version takes effect only after closing and relaunching.
+The **window title** always shows the version of the **running** SmoothCast process; **About** uses exactly the same value. If an external installation or checkout operation changes the on-disk release while SmoothCast remains open, reactivating or focusing the window displays an explicit **installed versus running** notice. Python modules are never hot-reloaded; finish playback, quit and relaunch before relying on the new code.
 
 CI includes `tests/test_version_integrity.py` to check the canonical source, CLI output, UI wiring and documentation; do not maintain a second hardcoded "Current: X.Y.Z" version elsewhere.
 
-## Automatic updates without blocking startup
+## Safe, opt-in update checks
 
-Git checkouts perform one background `git pull --ff-only` after the first window appears, not before GTK starts. Only a **new semantic version** generates a restart notification: ordinary commits to the same version never ask you to restart again. Code already loaded in the running process is never hot-reloaded. Offline, dirty, or non-git release folders continue to launch normally.
+By default **SmoothCast makes no Git update request at startup**. Under **Preferences → Appearance → Updates**, users can opt into **Check for releases on startup**, effective on the next launch. This performs a bounded, read-only Git fetch **after** the first window is interactive and only for clean Git checkouts on the released `main`/`master` branch. Development branches, dirty worktrees, frozen apps and installed non-Git releases are never changed. If an eligible newer semantic release is found, the application displays its candidate version and the running version **without installing it**. It never modifies loaded application files, calls `git pull`, or restarts a cast.
 
-**Controlling updates** (keys in `~/.config/cast-control/config.json`): set `"auto_update": false` to disable the startup pull entirely (no git or network access at all). Set `"verify_updates": true` to fetch first and fast-forward **only** to a commit — or a tag on that commit — whose signature passes `git verify-commit` / `git verify-tag` against *your own* GPG keyring (import the maintainers' key first); if verification fails SmoothCast reports the pending update and leaves the checkout untouched. Local commits, a dirty tree and non-release branches are never updated either way. There is no Preferences toggle for these yet. `--self-test` uses a separate non-unique application instance so it cannot interfere with a running player.
+**Require a trusted signature** is enabled by default for update discovery. Verification uses `git verify-commit` or a matching signed release tag against keys **the user has explicitly imported** into their own GPG keyring. An unverifiable candidate is reported as **untrusted**, not installed. The target SHA comes from an explicitly fetched origin release-branch ref; unrelated fetched tags cannot substitute a different candidate. This is not an automatic update installer: install from your trusted distribution channel when playback has finished, then quit and relaunch. The transactional, signed, one-click install/restart workflow remains tracked in [#138](https://github.com/gmanldn/smoothcast/issues/138).
+
+The equivalent advanced configuration keys are `"auto_update": false` and `"verify_updates": true`. Previously saved preferences may still contain different values; even with `"auto_update": true`, the running app performs **discovery only**, not automatic installation. `--self-test` is isolated and never checks the network.
 
 ## Runtime dependencies
 
