@@ -56,11 +56,12 @@ def test_hostile_retry_framing_fails_closed(headers):
 def test_normal_small_and_high_valid_frame_still_accepted():
     assert _valid_resume(HeaderReply(**{
         "Content-Range": "bytes 4-7/8", "Content-Length": "4",
-    }), 4, 7, "8", None)
+        "ETag": '"stable-bytes"',
+    }), 4, 7, "8", '"stable-bytes"')
     high = MAX_MEDIA_BYTES
     assert _valid_resume(HeaderReply(**{
         "Content-Range": f"bytes {high-3}-{high-1}/{high}",
-        "Content-Length": "3",
-    }), high-3, high-1, str(high), None)
+        "Content-Length": "3", "ETag": '"stable-big-file"',
+    }), high-3, high-1, str(high), '"stable-big-file"')
     assert _matches_request("bytes=10-19", 206, 10, 19, 100)
     assert _matches_request("bytes=-10", 206, 90, 99, 100)
