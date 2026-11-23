@@ -12,7 +12,13 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import media_matrix  # noqa: E402
 import streamer  # noqa: E402
-# Load the dependency-free capability table directly: importing the\n# fakecast package initialises its PyChromecast protocol server, which is\n# intentionally absent from the fast syntax lane.\n_fake_profiles = run_path(str(ROOT / "fakecast" / "profiles.py"))\nPROFILES = _fake_profiles["PROFILES"]\nsupports = _fake_profiles["supports"]\n
+# Load the dependency-free capability table directly: importing the
+# fakecast package initialises its PyChromecast protocol server, which is
+# intentionally absent from the fast syntax lane.
+_fake_profiles = run_path(str(ROOT / "fakecast" / "profiles.py"))
+PROFILES = _fake_profiles["PROFILES"]
+supports = _fake_profiles["supports"]
+
 
 class SourceShapeTests(unittest.TestCase):
     def test_unique_48_cases_cover_containers_codecs_and_subtitles(self):
