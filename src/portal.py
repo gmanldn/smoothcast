@@ -30,6 +30,7 @@ import mesh_files
 import library_replication
 import portal_commands
 import command_trace
+import design_tokens
 import error_log
 import failure_boundary
 import peer_discovery
@@ -1380,29 +1381,29 @@ _HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>SmoothCast</title>
 <style>
-:root{font:16px system-ui,sans-serif;color-scheme:light dark;--bg:#101722;--card:#1c2735;--accent:#4d9de0;--muted:#b7c3d0}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f4f7fb}main{max-width:760px;margin:auto;padding:20px}
+:root{font:16px system-ui,sans-serif;color-scheme:light dark}/*TOKENS*/
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:760px;margin:auto;padding:20px}
 h1{font-size:1.4rem;margin:.2rem 0}h2{font-size:1.05rem;margin:0 0 12px}p{color:var(--muted);margin:.35rem 0}
-section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 8px 26px #0002}
-label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid #718096;padding:8px 12px}
-input{width:100%;color:inherit;background:#121b27}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
+section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 8px 26px var(--shadow)}
+label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid var(--border);padding:8px 12px}
+input{width:100%;color:inherit;background:var(--input)}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
-dialog#shortcutsHelp{background:var(--card);color:#f4f7fb;border:1px solid #718096;border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}
-dialog#shortcutsHelp::backdrop{background:#000b}
+dialog#shortcutsHelp{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}
+dialog#shortcutsHelp::backdrop{background:var(--scrim)}
 #shortcutsList{display:grid;gap:8px}
 #shortcutsList li{display:flex;justify-content:space-between;gap:12px;align-items:center}
-#shortcutsList kbd{border:1px solid #718096;border-radius:6px;padding:4px 7px;white-space:nowrap}
-button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
+#shortcutsList kbd{border:1px solid var(--border);border-radius:6px;padding:4px 7px;white-space:nowrap}
+button.secondary{background:var(--secondary);color:var(--on-secondary)}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
-progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
-.participants{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 0}.person{display:flex;align-items:center;gap:6px;background:#121b27;border:1px solid #ffffff12;border-radius:999px;padding:4px 9px 4px 4px;font-size:.82rem}.person.offline{opacity:.45}.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:750;color:#08101a}
-.queue-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border-top:1px solid #ffffff10;padding:8px 0}.queue-item:first-child{border-top:0}.queue-item strong{display:block;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.queue-item .muted{font-size:.74rem}.queue-actions{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.tiny{min-height:32px;padding:4px 8px;font-size:.76rem;border-radius:8px}.vote{background:#1c3555;border:1px solid #4d9de066;color:#cfe6ff}.vote.on{background:#2e6fae;color:white}.activity{display:grid;gap:4px;font-size:.78rem;color:var(--muted);max-height:160px;overflow:auto}.activity .ev{display:flex;gap:7px}.activity time{color:#8394aa;white-space:nowrap}.empty{color:var(--muted);border:1px dashed #718096;border-radius:10px;padding:12px;text-align:center}
-header{padding:16px 0;border-bottom:1px solid #425264}header h1{font-size:clamp(1.6rem,5vw,2.2rem);letter-spacing:-.04em}
-nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;background:#26364a;color:#e2edff;text-decoration:none}nav a:hover{background:#364b65}
-#login{max-width:30rem;margin:24px auto}#login button{width:100%}#pin{letter-spacing:.25em}button:not(.secondary):not(.vote){color:#081522}
+progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:var(--danger);min-height:1.4em}
+.participants{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 0}.person{display:flex;align-items:center;gap:6px;background:var(--input);border:1px solid var(--chip-line);border-radius:999px;padding:4px 9px 4px 4px;font-size:.82rem}.person.offline{opacity:.45}.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:750;color:var(--avatar-text)}
+.queue-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border-top:1px solid var(--line);padding:8px 0}.queue-item:first-child{border-top:0}.queue-item strong{display:block;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.queue-item .muted{font-size:.74rem}.queue-actions{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.tiny{min-height:32px;padding:4px 8px;font-size:.76rem;border-radius:8px}.vote{background:var(--vote);border:1px solid var(--vote-line);color:var(--on-vote)}.vote.on{background:var(--vote-on);color:white}.activity{display:grid;gap:4px;font-size:.78rem;color:var(--muted);max-height:160px;overflow:auto}.activity .ev{display:flex;gap:7px}.activity time{color:var(--dim);white-space:nowrap}.empty{color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:12px;text-align:center}
+header{padding:16px 0;border-bottom:1px solid var(--header-line)}header h1{font-size:clamp(1.6rem,5vw,2.2rem);letter-spacing:-.04em}
+nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;background:var(--nav);color:var(--on-nav);text-decoration:none}nav a:hover{background:var(--nav-hover)}
+#login{max-width:30rem;margin:24px auto}#login button{width:100%}#pin{letter-spacing:.25em}button:not(.secondary):not(.vote){color:var(--on-accent)}
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-:focus-visible{outline:3px solid #ffd166;outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
 </style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login"><h2>Connect to SmoothCast</h2><p id="loginHint">Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>
@@ -2298,3 +2299,4 @@ function syncMediaSession(s){
   input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
 })();
 </script></body></html>"""
+_HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())
