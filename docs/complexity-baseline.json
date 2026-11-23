@@ -119,7 +119,7 @@
   "portal_join.py": 15,
   "portal_media.py": 235,
   "portal_mesh_http.py": 74,
-  "portal_mesh_panel.py": 145,
+  "portal_mesh_panel.py": 168,
   "portal_room.py": 259,
   "portal_screen_page.py": 347,
   "portal_screens.py": 472,
