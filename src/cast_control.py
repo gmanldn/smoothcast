@@ -490,6 +490,9 @@ class CastControlApp(Adw.Application):
         import mpris
 
         window._start_window_timers()
+        # Benchmark FFmpeg only after first paint, off GTK and at low priority.
+        import low_end_policy
+        low_end_policy.schedule_probe(enabled=bool(window.cfg.get("quality_auto", True)))
         self._mpris = mpris.start(window)
         if self._mpris is not None:
             window._sync_ui_timers()
