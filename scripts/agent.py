@@ -447,7 +447,7 @@ def cmd_start(a: argparse.Namespace) -> int:
     print(f"  worktree: {target}")
     print(f"  context: {brief} (read the issue and latest handover)")
     print(f"  cd {__import__('shlex').quote(str(target))}")
-    print("  python3 scripts/agent.py ship --message 'what changed' [--files src/new.py]")
+    print("  python3 scripts/agent.py ship --message 'fix: concrete outcome'")
     return 0
 
 
@@ -919,6 +919,9 @@ def cmd_finish(a: argparse.Namespace) -> int:
                     or a.next.strip().lower() not in {"none", "complete", "no remaining work"}):
         print("closure requires --verification, --checklist, and --next none")
         return 2
+    if a.close and task is not None and not ensure_live_task_claim(task):
+        print("cannot close a ticket that a successor may currently own")
+        return 3
     if git("status", "--porcelain", "--untracked-files=no").strip():
         print("uncommitted tracked work; ship before finishing")
         return 2
