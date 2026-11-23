@@ -74,6 +74,31 @@ class PanelMixin:
         self.toasts = Adw.ToastOverlay()
         toolbar = Adw.ToolbarView()
         toolbar.add_top_bar(header)
+        # The join link must be visible even when the Room tab is closed.
+        self.room_join_strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.room_join_strip.add_css_class("card")
+        self.room_join_strip.set_margin_start(8)
+        self.room_join_strip.set_margin_end(8)
+        self.room_join_strip.set_margin_top(4)
+        self.room_join_strip.set_margin_bottom(4)
+        join_title = Gtk.Label(label="JOIN ROOM", xalign=0.0)
+        join_title.add_css_class("heading")
+        self.room_join_strip.append(join_title)
+        self.room_join_label = Gtk.Label(
+            label="Starting shared room…", xalign=0.0, selectable=True,
+            ellipsize=Pango.EllipsizeMode.MIDDLE,
+        )
+        self.room_join_label.set_hexpand(True)
+        self.room_join_label.add_css_class("mono")
+        self.room_join_label.set_tooltip_text("Waiting for a room address")
+        self.room_join_strip.append(self.room_join_label)
+        self.room_join_copy_button = Gtk.Button(label="Copy join link", sensitive=False)
+        self.room_join_copy_button.connect("clicked", self._copy_portal_link)
+        self.room_join_copy_button.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Copy shared room join link"]
+        )
+        self.room_join_strip.append(self.room_join_copy_button)
+        toolbar.add_top_bar(self.room_join_strip)
         # One full-height vertical scroller: neither column can disappear below
         # the screen when its natural height exceeds the available allocation.
         # Change this box's orientation at a breakpoint rather than forcing a
@@ -128,6 +153,13 @@ class PanelMixin:
         self.set_content(self.toasts)
         self.header = header
         self._idle_chrome = idle_chrome.IdleChrome(self, header)
+
+
+    def _set_room_join_link(self, url: str | None, status: str = "Room unavailable") -> None:
+        """Present only the active listener URL, never a cached/stale address."""
+        self.room_join_label.set_text(url if url else status)
+        self.room_join_label.set_tooltip_text(url if url else status)
+        self.room_join_copy_button.set_sensitive(bool(url))
 
 
     # ----- side panel ---------------------------------------------------------
