@@ -12,11 +12,12 @@ Never push/merge/promote/tag main. Never reset another agent's work or force-pus
 Use a private detached worktree; one ticket per worktree.
 
 ```sh
-python3 scripts/agent.py start [ISSUE] [--lane mesh]
-# cd into the printed worktree; read the generated private task brief
-python3 scripts/agent.py ship --message "concise change" [--files src/new.py] [--next "remaining item"]
-python3 scripts/agent.py finish --done "actual work" --next "remaining work or none" --verification "actual tests"
-# To close: append --checklist "all acceptance criteria" --close; --next must be none
+python3 scripts/agent.py start              # choose the next available ticket
+python3 scripts/agent.py start 584          # or choose an explicit issue
+# cd into the printed worktree; read its private task brief
+python3 scripts/agent.py ship --message "fix: concrete result"
+python3 scripts/agent.py finish --done "landed implementation" --next "remaining tests" --verification "not run (unverified)"
+# To close: --next none --verification "actual test results" --checklist "all criteria" --close
 ```
 
 `start` atomically claims a short lease, refreshes develop, creates an isolated
