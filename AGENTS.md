@@ -47,7 +47,10 @@ push it promptly, release the claim and take the next distinct issue. Fetch and
 rebase **only your own unpushed commits** if another agent advanced `develop`.
 Never force-push or rewrite published commits. Coordinate overlapping files.
 
-**Tests are not a push prerequisite by owner request.** Do not start GTK or
+**Tests are not a push prerequisite by owner request.** The coordination
+helper supports `python3 scripts/agent.py ship --skip-checks` for an explicit
+unverified push, and `agent.py done` defaults to `not run (unverified)`.
+Do not start GTK or
 a receiver to test a change. CI is **lazy, not absent**: security checks run
 for risky changes; one nightly headless check batches many commits once the
 owner manually merges that workflow into `main`; full Verify and native
