@@ -96,6 +96,8 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
         self._switch(queue, "auto_shutdown", "Close app after the final film",
                      "Close SmoothCast when playback finishes; receiver behaviour follows the keep-casting setting.")
 
+        self._switch(queue, "idle_join_slate", "Show join code on the TV when idle",
+                     "After your last film ends, show a QR code so guests can join. Needs the room link and a Google Cast TV.")
         self._switch(queue, "portal_screens", "Let room browsers play the queue",
                      "Paired phones and TVs can act as screens or speakers.")
         self._switch(queue, "house_pin_enabled", "Require a house PIN to join",
@@ -304,9 +306,7 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
         }
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
-        elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
-                     "house_pin_enabled", "show_cover_art", "check_release_updates",
-                     "release_check_verify", "quality_auto"):
+        elif key in preference_choices.CONFIG_SWITCHES:
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:

@@ -15,6 +15,7 @@ import time
 
 import castctl
 import fingerprint
+import idle_slate
 import state_labels
 
 import dlna
@@ -706,6 +707,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             self._syncing = False
             self._apply_volume_icon()
         self._detect_external()
+        idle_slate.tick(self, Async.run)
         if self.session is None and self._url_cast_url is not None:
             if playback_state.url_cast_matches(info, self._url_cast_url):
                 self._url_cast_seen = True
@@ -809,7 +811,8 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
     def _detect_external(self) -> None:
         info = self.device_info
-        idle = self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
+        idle = (self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
+                or idle_slate.owns(self, info))
         if idle:
             if self.external:
                 self.external = False

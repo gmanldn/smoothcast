@@ -322,3 +322,17 @@ def test_environment_flag_selects_backend_during_fresh_import():
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_status_dict_exposes_receiver_app_facts_for_the_idle_slate():
+    backend, _browser = discovered_backend([])
+    cast_status = SimpleNamespace(
+        app_id="E8C28D3C", is_stand_by=False, is_active_input=True,
+        volume_level=0.5, volume_muted=False,
+    )
+    status = backend._status_dict(None, cast_status)
+    assert status["app_id"] == "E8C28D3C"
+    assert status["is_stand_by"] is False and status["is_active_input"] is True
+    bare = backend._status_dict(None, SimpleNamespace(volume_level=0.5, volume_muted=False))
+    assert "app_id" not in bare and "is_stand_by" not in bare
+    backend.close()

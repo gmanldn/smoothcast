@@ -10,6 +10,9 @@ import density
 import loudness
 import subtitle_style
 
+CONFIG_SWITCHES = frozenset(("auto_crop auto_deinterlace notifications portal_screens house_pin_enabled show_cover_art "
+    "check_release_updates release_check_verify quality_auto idle_join_slate").split())  # saved to config.json (#54, #420)
+
 OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "update_channel": (("Develop — frequent tested builds", "develop"), ("Main — releases", "main")),
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),

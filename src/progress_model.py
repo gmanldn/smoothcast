@@ -26,6 +26,9 @@ class ReceiverInfo(TypedDict, total=False):
     idle_reason: str
     media_session_id: int
     error_code: int
+    app_id: str | None  # running Cast app; None or the backdrop id means none
+    is_stand_by: bool
+    is_active_input: bool
 
 
 def _number(raw: object) -> float | None:

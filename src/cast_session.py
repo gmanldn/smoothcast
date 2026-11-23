@@ -44,6 +44,7 @@ import stream_watchdog
 import hls_pause_recovery
 import fingerprint
 import hdr_tonemap
+import idle_slate
 import picture_adjustments
 
 import preflight
@@ -83,6 +84,7 @@ class SessionMixin:
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
+        idle_slate.clear(self)
         if str(path) == self._local_video_path and self.session is None:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -449,6 +451,7 @@ class SessionMixin:
             self._finished_handled = False
             self._stop_monitor()
             self._set_levels_hint("")
+            idle_slate.arm(self)
             self.toast("Stopped" if sent_remote_stop
                        else "Local stream stopped; receiver did not confirm Stop")
             self._console("Stopped casting to TV" if sent_remote_stop
@@ -903,6 +906,7 @@ class SessionMixin:
             GLib.idle_add(lambda: (self.close(), False)[1])
         self.tracker.clear()
         self.now_playing = None
+        idle_slate.arm(self)
         self.toast("Finished")
         self._notify("finished", item or "")
         self._rebuild_queue()
@@ -1116,6 +1120,7 @@ class SessionMixin:
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
+        idle_slate.clear(self)
         device = self._device()
         previous = self.session
         self.session = None
