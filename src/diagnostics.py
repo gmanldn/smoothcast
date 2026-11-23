@@ -153,15 +153,20 @@ def _clean_receiver(receiver: object, home: str) -> dict:
 
 
 def collect(*, error_log=None, activity=None, config=None, home=None, server_log=None,
-            receiver=None, reliability=None) -> dict:
+            receiver=None, reliability=None, receiver_learning=None) -> dict:
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
     from reliability_metrics import recent as recent_reliability
     import errors
     import shutdown_plan
     import startup_timeline
+    import receiver_memory
 
     home_value = str(home) if home is not None else str(Path.home())
+    config_home = (Path(home_value) / ".config" if home is not None else
+                   Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"))
+    learning_path = (Path(receiver_learning) if receiver_learning is not None else
+                     config_home / "cast-control" / receiver_memory.STATE_NAME)
     payload: dict = {
         "smoothcast": {"version": __version__, "label": label()},
         "generated": int(time.time()),
@@ -178,6 +183,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
                        for line in _tail(server_log, MAX_SERVER_LINES)],
         "config": redact_config(config or {}, home=home_value),
         "receiver": _clean_receiver(receiver, home_value),
+        # Aggregate only; never include UUIDs, addresses, codec hashes or media names.
+        "receiver_learning": receiver_memory.ReceiverMemory(learning_path).summary(),
         "reliability": recent_reliability(reliability),
         # Deliberately excludes paths, media titles, receiver names and payloads.
         "command_traces": command_trace.recent(),
@@ -239,14 +246,16 @@ def default_path(*, directory=None, now: float | None = None) -> Path:
 
 
 def export(*, destination=None, error_log=None, activity=None, config=None,
-           home=None, server_log=None, receiver=None, reliability=None) -> Path:
+           home=None, server_log=None, receiver=None, reliability=None,
+           receiver_learning=None) -> Path:
     """Collect and write a bounded, redacted bundle; return the written path."""
     if error_log is None:
         error_log = default_error_log_path()
     if server_log is None:
         server_log = default_server_log_path()
     payload = collect(error_log=error_log, activity=activity, config=config, home=home,
-                      server_log=server_log, receiver=receiver, reliability=reliability)
+                      server_log=server_log, receiver=receiver, reliability=reliability,
+                      receiver_learning=receiver_learning)
     return write_bundle(destination or default_path(), payload)
 
 
