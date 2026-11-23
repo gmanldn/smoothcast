@@ -7,30 +7,36 @@ There is intentionally **no root `IMPROVEMENTS.md`**.
 
 ## Fast agent path — live claims before work
 
-GitHub Issues remain authoritative. Start with the bounded
-[coordinator](COORDINATION.md), rather than downloading the whole backlog:
+GitHub Issues are authoritative; see the one-screen
+[coordinator guide](COORDINATION.md). Agents should **finish**, not just claim
+tickets. Use the small-ticket/near-complete lanes first after P0 safety issues.
 
-1. `python3 scripts/agent.py board` — see live claim leases, hot files and
-   any known red `develop` head.
-2. `python3 scripts/agent.py next` — choose free P0/P1 work. Read only
-   that issue and its latest implementation/claim comments.
-3. `python3 scripts/agent.py claim N --files src/module.py` — acquire
-   a short verified lease. Exit 3 = another agent won: choose again.
-4. Work in your own detached worktree. Commit small slices with `Refs #N`;
-   `python3 scripts/agent.py ship` runs affected checks and safely pushes
-   to `develop`. Tests are optional by owner request, not a push gate.
-   Never touch `main`, the real GUI or another agent's checkout.
-5. After a coherent slice, `python3 scripts/agent.py progress N --done "..."
-   --next "..." --commit SHA --verification "..." --release` posts a durable
-   handover with completed work and exact remaining tasks. For a fully evidenced
-   issue, `agent.py done N --why "..." --checklist "..." [--close]`
-   also releases the lease. Use `--close` **only** when acceptance passes.
+```sh
+python3 scripts/agent.py board           # short lease + hot-file snapshot
+python3 scripts/agent.py next            # available, prioritised ticket and handover
+python3 scripts/agent.py start N         # claim, private worktree, bounded context
+# cd into printed worktree; implement a complete narrow acceptance slice
+python3 scripts/agent.py ship --message "fix: actual behaviour" --next "none" --skip-checks
+python3 scripts/agent.py finish --done "what landed" --next none \
+    --verification "actual targeted checks" --checklist "acceptance evidence" --close
+```
 
-`python3 scripts/ticket_digest.py --next --label agent-ready` remains a
-read-only fallback. Its assignee-only view cannot detect every concurrent
-comment lease; do not trust its "unclaimed" status for automatic selection.
-REST-backed `agent.py` also works in sessions where `gh issue` GraphQL is
-403-blocked.
+`ship` fetches/rebases only its own unpublished code, guards per-shipment
+PATCH allocation against concurrent agents and fast-forward pushes directly to
+`develop`. A retry drops only the tool-generated **unpublished version-only**
+commit, then reallocates the next number. `--skip-checks` bypasses expensive
+tests, **not** version-integrity checks. Do not close untested, incomplete or
+hardware-pending issues; record precise next actions and release the claim.
+
+`main` is entirely owner-controlled and never automatically promoted. Raw Git
+pushes do **not** auto-bump PATCH and should not be the normal agent workflow;
+the unresolved server-side exactly-once per-ticket gate is #583.
+
+`python3 scripts/ticket_digest.py --next --label agent-ready` is only a read-only
+fallback: it cannot fully detect concurrent structured comment leases.
+The coordinator's current issue labels (`now`, `next`, `later`, `icebox`)
+prioritise finite, unblocked work. `needs-human`, `needs-split` and `epic`
+are not small-agent pickups.
 
 Measured on 18 November 2026 with 113 open issues at that time:
 
