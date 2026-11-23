@@ -124,6 +124,12 @@ jobs:
           tests/test_idle_timers.py
           tests/test_responsive_wiring.py
           tests/test_mpris.py
+      - name: Verify low-end CPU adaptation and real 720p filter contracts
+        run: >-
+          python -m pytest -q
+          tests/test_low_end_policy.py
+          tests/test_low_end_encoding.py
+          tests/test_low_end_probe.py
 
   reliability-benchmark:
     name: Fake Cast reliability benchmark
