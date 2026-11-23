@@ -324,6 +324,9 @@ def cmd_claim(a: argparse.Namespace) -> int:
               "Run: python3 scripts/agent.py next")
         return 3
     gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/labels", "-f", "labels[]=in-flight")
+    login = gh("user")
+    if isinstance(login, dict) and login.get("login"):  # AGENTS.md: claim by assignment + comment
+        gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/assignees", "-f", f"assignees[]={login['login']}")
     print(f"claimed #{a.number} as {me}; lease {ttl} min (heartbeat to extend). Files: {', '.join(sorted(files)) or 'tbd'}")
     if files & PLAN_FIRST:
         print("NOTE: plan-first module; comment a short plan before editing (CLAUDE.md).")
@@ -351,6 +354,10 @@ def release(number: int, note: str) -> None:
     if not any(c["issue"] == number for c in left):
         subprocess.run(["gh", "api", "-X", "DELETE", f"repos/{REPO}/issues/{number}/labels/in-flight"],
                        capture_output=True)
+        me_login = gh("user")
+        if isinstance(me_login, dict) and me_login.get("login"):
+            subprocess.run(["gh", "api", "-X", "DELETE", f"repos/{REPO}/issues/{number}/assignees",
+                            "-f", f"assignees[]={me_login['login']}"], capture_output=True)
 
 
 def cmd_release(a: argparse.Namespace) -> int:
