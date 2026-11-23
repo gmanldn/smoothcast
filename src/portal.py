@@ -2025,6 +2025,19 @@ function applyAccentPreset(value){
 let roomSnapshotEpoch="",roomSnapshotVersion=-1;
 // A delayed poll or SSE frame must never roll a newer same-run film state back.
 function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
+function playbackToggleCopy(state){
+  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the selected room receiver for everyone"];
+  if(state==="PAUSED")return ["Resume","Resume playback on the selected room receiver for everyone"];
+  return ["Play / pause","Toggle playback on the selected room receiver for everyone"];
+}
+function renderPlaybackToggle(state){
+  const button=document.querySelector('[data-action="play_pause"]');
+  if(!button)return;
+  const [label,description]=playbackToggleCopy(state);
+  if(button.textContent!==label)button.textContent=label;
+  button.title=description;
+  button.setAttribute("aria-label",description);
+}
 function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   $("dashboard").hidden=false;
@@ -2034,7 +2047,7 @@ function showJoinedRoom(){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
