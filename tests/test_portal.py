@@ -186,6 +186,7 @@ const document = {
   querySelectorAll(){return []},
 };
 const window = {addEventListener(){}};
+const location = {origin:"http://127.0.0.1:4321"}; // Browser origin for room-share controls.
 let timerId = 0, requests = 0, respond;
 const setTimeout = (callback, delay) => {
   timers.set(++timerId, {callback, delay});
