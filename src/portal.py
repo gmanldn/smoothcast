@@ -58,6 +58,7 @@ ATTEMPT_WINDOW_SECONDS = 60
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
+UPLOAD_CHUNK_TIMEOUT = 30  # Larger chunks from slower Wi-Fi clients.
 EVENT_STREAMS_TOTAL = 64
 EVENT_STREAMS_PER_PARTICIPANT = 4
 EVENT_POLL_SECONDS = 0.25
@@ -1353,6 +1354,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(400, "Invalid upload chunk length")
         if length <= 0 or length > portal_uploads.CHUNK_SIZE:
             return self._error(413, f"Upload chunks must be at most {portal_uploads.CHUNK_SIZE // (1024 * 1024)} MiB")
+        # A valid 8 MiB upload may take longer than an ordinary API request
+        # on congested Wi-Fi; never extend the timeout for unrelated routes.
+        self.connection.settimeout(UPLOAD_CHUNK_TIMEOUT)
         try:
             result = self.server.uploads.append(
                 self._cookie_token() or "", upload_id,
@@ -1366,6 +1370,8 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             self.close_connection = True
             return self._error(507, "Could not store this upload chunk")
+        finally:
+            self.connection.settimeout(REQUEST_TIMEOUT)
 
     def do_DELETE(self) -> None:  # noqa: N802
         if self._path().startswith("/api/uploads") and not self._client_compatible():
