@@ -615,18 +615,18 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     if a.dry_run:
         print("--dry-run cannot be combined with --message (which creates a commit)")
         return 2
-    if a.files:
-        paths = [p.strip() for p in a.files.split(",") if p.strip()]
-        if not paths or any(Path(p).is_absolute() or ".." in Path(p).parts
-                            or p.startswith("-") for p in paths):
-            print("--files requires safe, repository-relative paths")
-            return 2
+    paths = [p.strip() for p in a.files.split(",") if p.strip()]
+    if a.files and (not paths or any(
+            Path(p).is_absolute() or ".." in Path(p).parts
+            or p in {".", "./"} or p.startswith("-") for p in paths)):
+        print("--files requires safe, named repository-relative paths")
+        return 2
+    # Stage ALL tracked edits in this private worktree; --files additionally
+    # includes named new files, never an uncontrolled untracked directory sweep.
+    staged = subprocess.run(["git", "add", "-u"],
+                            cwd=ROOT, capture_output=True, text=True)
+    if staged.returncode == 0 and paths:
         staged = subprocess.run(["git", "add", "-A", "--", *paths],
-                                cwd=ROOT, capture_output=True, text=True)
-    else:
-        # Only tracked modifications are swept by default, and only in the
-        # private worktree; explicitly name new paths with --files.
-        staged = subprocess.run(["git", "add", "-u"],
                                 cwd=ROOT, capture_output=True, text=True)
     if staged.returncode:
         print("staging failed: " + staged.stderr.strip()[:500])
