@@ -121,6 +121,10 @@ name the device, enter your name (and the House PIN if enabled), and press
 room to send it something and keeps itself awake where the browser supports a
 screen wake lock.
 
+`GET /join-slate.png` is a public 1920×1080 PNG (room name, join QR and the
+numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it returns
+503 when the QR/imaging libraries or a numeric address are unavailable.
+
 From the **Screens** card on any paired guest's dashboard, pick an item from the
 shared queue and press **Play**. Screens are independent targets: controlling
 one never stops, replaces or takes over the host's own Cast or DLNA playback.
