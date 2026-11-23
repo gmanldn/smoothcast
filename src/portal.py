@@ -879,8 +879,13 @@ class _Handler(BaseHTTPRequestHandler):
                     if not isinstance(action, str) or action not in {
                             "play_pause", "stop", "seek", "volume", "mute", "music_autogain",
                             "next", "previous", "queue_play", "queue_remove",
-                            "queue_move", "queue_next", "queue_clear", "queue_vote"}:
+                            "queue_move", "queue_next", "queue_clear", "queue_vote",
+                            "queue_add_key"}:
                         return self._error(400, "Unsupported action")
+                    if action == "queue_add_key" and not (
+                            isinstance(body.get("key"), str)
+                            and re.fullmatch(r"qh:[0-9a-f]{32}", body["key"])):
+                        return self._error(400, "That search result is not valid")
                     participant_id = self.server.session_participant(self._cookie_token())
                     if participant_id is None:
                         return self._error(401, "Session expired")
@@ -915,7 +920,7 @@ class _Handler(BaseHTTPRequestHandler):
                             "ok": True, "message": message,
                             "queue_command_id": body.get("queue_command_id"),
                         })
-                    if action in {"next", "previous", "queue_play"}:
+                    if action in {"next", "previous", "queue_play", "queue_add_key"}:
                         try:
                             result = self.server.dispatch(action, {
                                 **body, "_portal_auth_key": self.server._session_key(
@@ -1220,7 +1225,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <form id="loginForm"><label for="name">Your name</label><input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" required>
 <div id="pinRow"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></div>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Connect</button></form></section>
-<div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
+<div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#findPanel">Find</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p><progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
@@ -1229,6 +1234,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
+<section id="findPanel"><h2>Find</h2><label for="findInput" class="muted">Search films, shows and music in every computer</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200"><p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div></section>
 <section id="queuePanel"><div class="row"><h2>Up Next</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue" aria-label="Up Next" tabindex="-1"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
@@ -1738,4 +1744,76 @@ document.addEventListener("visibilitychange",()=>{
   refresh();
 });
 window.addEventListener("online",()=>{statusFailures=0;refresh()});
+
+(()=>{
+  const input=$("findInput"),out=$("findResults"),status=$("findStatus");
+  if(!input||!out||!status)return;
+  let timer=null,source=null,controller=null;
+  const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
+  const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
+  function where(copies){
+    const list=copies||[];if(!list.length)return"";
+    const online=list.filter(c=>c.online),names=c=>c.origin==="local"?"This computer":(c.origin_name||"Another computer");
+    if(!online.length)return names(list[0])+" is offline"+(list[0].last_seen?" - last seen "+new Date(list[0].last_seen*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"");
+    return"On "+online.map(names).join(" - also on ");
+  }
+  function item(it,type){
+    const li=document.createElement("li");li.className="queue-item";
+    const text=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+    title.textContent=it.title||it.name||"Untitled";meta.className="muted";
+    if(type==="artists"||type==="albums"){
+      meta.textContent=(it.artist?it.artist+" - ":"")+it.count+" "+(it.count===1?"song":"songs");
+      text.append(title,meta);li.append(text);
+      const go=document.createElement("button");go.className="tiny secondary";go.type="button";go.textContent="Show";
+      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);run()});
+      const a=document.createElement("div");a.className="queue-actions";a.append(go);li.append(a);return li;
+    }
+    if(type==="shows"){
+      meta.textContent=it.count+" episode"+(it.count===1?"":"s");text.append(title,meta);li.append(text);return li;
+    }
+    const bits=[it.year,it.artist,it.album,it.duration?clock(it.duration):""].filter(Boolean);
+    meta.textContent=bits.join(" - ");
+    const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
+    text.append(title,meta,where_);li.append(text);
+    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
+    const local=(it.copies||[]).some(c=>c.origin==="local");
+    if(!local){add.disabled=true;add.title="Playing from other computers is coming soon"}
+    add.addEventListener("click",async()=>{
+      add.disabled=true;
+      try{const d=await post("/api/action",{action:"queue_add_key",key:it.id});showError("errorDash",d.message||"Added to Up Next");add.textContent="Added"}
+      catch(err){showError("errorDash",err.message);add.disabled=false}
+    });
+    const a=document.createElement("div");a.className="queue-actions";a.append(add);li.append(a);return li;
+  }
+  function render(d){
+    out.replaceChildren();let n=0;
+    for(const g of d.groups||[]){
+      const h=document.createElement("h3");h.textContent=LABELS[g.type]||g.type;
+      const ul=document.createElement("ul");ul.setAttribute("aria-label",h.textContent);ul.className="find-list";
+      for(const it of g.items||[]){ul.append(item(it,g.type));n++}
+      out.append(h,ul);
+    }
+    const pending=(d.pending_origins||[]).length;
+    status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
+      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
+  }
+  function stop(){if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
+  async function run(){
+    stop();const q=input.value.trim();
+    if(!q){out.replaceChildren();status.textContent="";return}
+    const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
+    if(typeof EventSource==="function"){
+      source=new EventSource(url);
+      source.addEventListener("results",e=>render(JSON.parse(e.data)));
+      source.addEventListener("more",e=>render(JSON.parse(e.data)));
+      source.addEventListener("done",()=>stop());
+      source.onerror=()=>stop();
+      return;
+    }
+    controller=new AbortController();
+    try{const r=await fetch(url,{credentials:"same-origin",signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error||"Search failed");render(d)}
+    catch(err){if(err.name!=="AbortError")status.textContent=err.message}
+  }
+  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+})();
 </script></body></html>"""
