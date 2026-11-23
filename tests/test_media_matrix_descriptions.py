@@ -68,7 +68,11 @@ class SourceShapeTests(unittest.TestCase):
             "width": 1920, "height": 1080, "fps": 30,
         }
         self.assertTrue(supports("chromecast-gen2", stream))
-        for level in ("-1.0", "4.-1", "4.10", "4", "bogus", None):
+        for level in (
+            "-1.0", "4.-1", "4.10", "4", "bogus", None,
+            " 4.1", "4.1 ", "+4.1", "4.+1", "04.1", "0.0",
+            "4.01", "4.1\\n", "999.1", float("inf"),
+        ):
             with self.subTest(level=level):
                 self.assertFalse(supports(
                     "chromecast-gen2", {**stream, "level": level},
