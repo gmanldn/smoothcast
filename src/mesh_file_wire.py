@@ -80,6 +80,18 @@ def _matches_request(requested: str | None, status: int, start: int,
 
 
 
+def drop_range_for_if_range(headers) -> None:
+    """Degrade a conditional Range to a full 200 (RFC 9110 13.1.5).
+
+    Mesh responses carry no ETag/Last-Modified a client could echo in
+    ``If-Range``, so no validator can match: answer the whole object rather
+    than splicing a partial body onto a possibly stale client copy.
+    """
+    if headers.get("If-Range") is not None:
+        while "Range" in headers:
+            del headers["Range"]
+
+
 _UNSATISFIED_RANGE = re.compile(r"bytes \*/([0-9]{1,19})\Z")
 
 

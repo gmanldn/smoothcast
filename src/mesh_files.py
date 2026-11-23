@@ -16,7 +16,8 @@ from urllib.parse import urlsplit
 
 import lan_guard
 from mesh_file_wire import (_CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume,
-                            parse_wire_uint, pump_stream, valid_unsatisfied_range)
+                            drop_range_for_if_range, parse_wire_uint, pump_stream,
+                            valid_unsatisfied_range)
 import portal_media
 
 KEY = re.compile(r"qh:[0-9a-f]{32}")
@@ -44,6 +45,7 @@ class MeshFiles:
 
     # -- entry point -------------------------------------------------------
     def serve(self, handler, key: str, *, head: bool, write_headers) -> None:
+        drop_range_for_if_range(handler.headers)
         proxied = handler.headers.get(HOP_HEADER) is not None
         local = self.resolve_local(key)
         if local is not None:
