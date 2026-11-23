@@ -87,6 +87,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._timer_ids: dict[str, int] = {}
         self._timer_periods: dict[str, int | None] = {}
         self._reflow_source: int | None = None
+        self._seek_idle_source: int | None = None
         self.connect("realize", self._bind_surface_resize)
         self.connect("map", self._on_mapping_change)
         self.connect("unmap", self._on_mapping_change)
@@ -380,7 +381,7 @@ class CastControlApp(Adw.Application):
             self._mpris_started = True
             self._mpris = mpris.start(window)
             if self._mpris is not None:
-                GLib.timeout_add_seconds(1, self._mpris_tick)
+                window._sync_ui_timers()
         if not self._startup_reported:
             self._startup_reported = True
             report = self._startup_report

@@ -59,6 +59,9 @@ the GTK window is mapped (500 ms and 100 ms respectively). Actual GdkSurface
 width/height notifications coalesce responsive reflow; there is no 200 ms
 resize polling. Device status checks run every 4 seconds during playback or
 while the active window is in focus, reducing to 30 seconds while idle.
+MPRIS refreshes on playback and control changes. Its fallback refresh
+runs every second in focus or during playback and every 30 seconds while idle
+and hidden.
 The room activity view refreshes every 15 seconds when hidden, instead of
 once per second. Sleep and fade timers run only while armed or awaiting a
 receiver-volume restore. All visual timer sources are removed on window close.

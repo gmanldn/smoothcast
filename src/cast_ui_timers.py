@@ -78,11 +78,26 @@ class UiTimerMixin:
         self._set_ui_timer("seek", schedule.seek_ms, self._tick)
         self._set_ui_timer("meter", schedule.meter_ms, self._meter_tick)
         self._set_ui_timer("poll", schedule.poll_ms, self._poll_device)
+        app = getattr(self, "app", None)
+        if getattr(app, "_mpris", None) is not None:
+            self._set_ui_timer("mpris", schedule.mpris_ms, app._mpris_tick)
         self._set_ui_timer("sleep", schedule.sleep_ms, self._scheduled_sleep_tick)
         self._set_ui_timer("fade", schedule.fade_ms, self._scheduled_fade_tick)
         self._set_ui_timer("watchdog", schedule.watchdog_ms, self._hidden_watchdog_tick)
         if wake_seek:
-            GLib.idle_add(lambda: (self._tick(), False)[1])
+            self._seek_idle_source = GLib.idle_add(self._resume_seek_tick)
+        elif schedule.seek_ms is None:
+            self._cancel_seek_resume()
+
+    def _resume_seek_tick(self) -> bool:
+        self._seek_idle_source = None
+        self._tick()
+        return False
+
+    def _cancel_seek_resume(self) -> None:
+        if self._seek_idle_source is not None:
+            GLib.source_remove(self._seek_idle_source)
+            self._seek_idle_source = None
 
     def _hidden_watchdog_tick(self) -> bool:
         """Preserve HLS stall recovery while seekbar/meter updates are hidden."""
@@ -116,6 +131,7 @@ class UiTimerMixin:
             GLib.source_remove(source)
         self._timer_ids.clear()
         self._timer_periods.clear()
+        self._cancel_seek_resume()
         if self._reflow_source is not None:
             GLib.source_remove(self._reflow_source)
             self._reflow_source = None

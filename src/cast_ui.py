@@ -1324,6 +1324,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             else:
                 self._set_chip("Ready", "idle")
         self._publish_portal_status()
+        app = getattr(self, "app", None)
+        if getattr(app, "_mpris", None) is not None:
+            app._mpris_tick()
         self._sync_ui_timers()
         self._update_panel_badges()
 
