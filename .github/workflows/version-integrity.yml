@@ -1,0 +1,40 @@
+name: Version integrity (develop)
+
+# Cheap, independent guard: checks every commit in a push, not only the tip.
+# This is diagnostic, not a merge gate and never touches main.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - src/version.py
+      - scripts/ci/check_version_history.py
+      - tests/test_version_history.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoothcast-version-integrity-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Validate version history (all pushed commits)
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          if [ -z "$BEFORE" ]; then BEFORE=0000000000000000000000000000000000000000; fi
+          python3 scripts/ci/check_version_history.py --before "$BEFORE" --after "$AFTER"
+      - name: Run focused pure-stdlib regression tests
+        run: python3 -m unittest discover -s tests -p 'test_version_history.py' -v
