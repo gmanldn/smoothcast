@@ -102,7 +102,7 @@ def test_network_errors_leave_direct_cast_uncertain_instead_of_overwriting():
             )
 
 
-def cast_worker(status="rejected"):
+def cast_worker(status="rejected", *, path="/film.mp4", cfg_extra=None):
     source = main_window_methods()["_cast_path"]
     code = "class Handlers:\n" + textwrap.indent(textwrap.dedent(source), "    ")
     jobs = []
@@ -157,6 +157,7 @@ def cast_worker(status="rejected"):
                 "quality": "balanced", "audio": "original", "audio_gain": 0.0,
                 "direct": True, "playback_speed": 1.0, "rotation": 0,
                 "audio_track_by_file": {}, "subtitle_track_by_file": {},
+                **(cfg_extra or {}),
             }
             self.busy = False
             self.session = None
@@ -181,7 +182,7 @@ def cast_worker(status="rejected"):
             self._resolve_subs = lambda path: Path("/captions.srt")
             self.toast = mock.Mock()
     w = Window()
-    w._cast_path(Path("/film.mp4"), 41.25)
+    w._cast_path(Path(path), 41.25)
     assert len(jobs) == 1
     return jobs[0][0], first, second, probe, fake_streamer
 
@@ -222,6 +223,19 @@ def test_foreign_active_stream_blocks_auto_hls_and_never_sends_stop():
     with pytest.raises(direct_probe.ForeignPlayback):
         work()
     first.stop.assert_called_once_with("TV A", send_stop=False)
+    second.start_transcode.assert_not_called()
+    assert fake.Session.call_count == 1
+
+
+def test_unlearnable_media_never_turns_a_working_direct_cast_into_a_failure():
+    """An extensionless file has no codec signature, but the receiver UUID still
+    yields a key. Recording that half-identity used to raise ValueError *after*
+    the receiver had accepted the stream, which stopped the working session."""
+    work, first, second, _, fake = cast_worker(
+        status="accepted", path="/film", cfg_extra={"device_uuid": "abc-123"})
+    selected, _ = work()
+    assert selected is first
+    first.stop.assert_not_called()
     second.start_transcode.assert_not_called()
     assert fake.Session.call_count == 1
 

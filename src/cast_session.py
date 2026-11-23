@@ -247,7 +247,9 @@ class SessionMixin:
                             subtitle_kind=("sidecar" if effective_subs_path else
                                            "embedded" if embedded else "none"))
                     except ValueError:
-                        pass  # No stable identity/codec: retain normal direct decision.
+                        # No stable identity or codec: keep the normal direct decision, and
+                        # drop the half-built key so nothing is recorded under it later.
+                        receiver_key = codec_key = ""
                 direct_eligible = (
                     use_direct and media.direct_ok and not burn
                     and embedded is None and not music_enabled
