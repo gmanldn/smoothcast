@@ -64,6 +64,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self._choice(output, "quality", "Video quality",
                      "High uses more processing; Data saver reduces bandwidth and resolution.")
+        self._switch(output, "quality_auto", "Automatically choose video quality",
+                     "Benchmark this CPU after the window opens, then choose a safe "
+                     "software-encoding tier. Turn off to use the quality selected above.")
         self._choice(output, "rotation", "Video rotation",
                      "Clockwise rotation requires video transcoding.")
         self._choice(output, "aspect_override", "Aspect ratio",
@@ -292,7 +295,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
                      "house_pin_enabled", "show_cover_art", "check_release_updates",
-                     "release_check_verify"):
+                     "release_check_verify", "quality_auto"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
