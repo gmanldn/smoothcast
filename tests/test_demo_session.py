@@ -21,11 +21,13 @@ class DemoSessionTests(unittest.TestCase):
                 self.assertEqual(session.root.parent, parent.resolve())
                 self.assertEqual(session.root, session.root.resolve())
                 self.assertEqual(set(session.environment()), {
-                    "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
-                    "XDG_DATA_HOME", "XDG_RUNTIME_DIR",
+                    "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+                    "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
                 })
                 for key, target in session.environment().items():
                     self.assertEqual(Path(target).parent, session.root, key)
+                self.assertEqual(session.environment()["HOME"], str(session.home))
+                self.assertEqual(session.environment()["XDG_STATE_HOME"], str(session.state_home))
                 cfg = json.loads(session.config_file.read_text(encoding="utf-8"))
                 self.assertEqual(cfg["device"], "")
                 self.assertEqual(cfg["cast_targets"], [])
@@ -55,6 +57,13 @@ class DemoSessionTests(unittest.TestCase):
                 self.assertNotIn(str(real_config.parent.parent),
                                  session.environment().values())
                 self.assertEqual(os.environ, inherited)
+                # Legacy SmoothCast caches and logs use Path.home(); no
+                # inherited shell home may be visible in demo mode.
+                from unittest import mock
+                with mock.patch.dict(os.environ, session.environment()):
+                    self.assertEqual(Path.home(), session.home)
+                    self.assertEqual(Path.home() / ".cache" / "cast-control",
+                                     session.home / ".cache" / "cast-control")
             self.assertEqual(real_config.read_text(encoding="utf-8"),
                              '{"device":"Living Room"}')
 
