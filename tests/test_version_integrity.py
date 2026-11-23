@@ -147,7 +147,8 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertIn('version=version.__version__', source)
         self.assertIn('print(f"{APP_NAME} {version.label()}")', source)
         self.assertIn('window.update_notice = notice', source)
-        self.assertIn('subtitle += " · restart to update"', source)
+        self.assertIn(' · restart to apply', source)
+        self.assertIn(' · update information', source)
 
     def test_no_duplicated_current_release_in_agent_docs(self):
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
