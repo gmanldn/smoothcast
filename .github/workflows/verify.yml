@@ -111,7 +111,7 @@ jobs:
       - name: Verify private queue tooltips and filtered selection
         run: python -m pytest -q tests/test_queue_row_path_privacy.py
       - name: Verify browser upload resumability and bounded chunks
-        run: python -m pytest -q tests/test_portal_uploads.py tests/test_portal_upload_fingerprint.py
+        run: python -m pytest -q tests/test_portal_uploads.py tests/test_portal_upload_fingerprint.py tests/test_portal_upload_retry.py
       - name: Verify bounded federated search cursors
         run: python -m unittest discover -s tests -p test_federated_cursor.py
       - name: Verify bounded local library search cursors
