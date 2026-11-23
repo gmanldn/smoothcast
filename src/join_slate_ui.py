@@ -25,6 +25,7 @@ def add_switch(window, group) -> None:
 class JoinSlateMixin:
     _slate_cast: tuple[str, str] | None = None  # (device, url) we last sent
     _slate_idle_since: float | None = None
+    _slate_armed: str | None = None  # receiver after whose own playback we may show it
     _slate_inflight = False
     _slate_backoff_until = 0.0
 
@@ -62,7 +63,11 @@ class JoinSlateMixin:
 
             Async.run(self._join_slate_clear_now, done=cleared,
                       failed=lambda _m: cleared(None), domain="transport")
-        if not (enabled and mine_idle and free):
+        if not enabled or self._slate_armed not in (None, device):
+            self._slate_armed = None
+        if self.session is not None or self.external:
+            self._slate_armed = device  # only after our own playback: the TV is already on
+        if not (enabled and mine_idle and free and self._slate_armed == device):
             self._slate_idle_since = None
             return
         if self._slate_idle_since is None:
@@ -86,6 +91,7 @@ class JoinSlateMixin:
             ok, message = result
             if ok:
                 self._slate_cast = (device, url)
+                self._slate_armed = None  # shown once per playback; never re-cast on its own
                 self._console(f"Join code shown on {device}")
             else:
                 self._slate_backoff_until = time.monotonic() + join_slate_policy.BACKOFF_SECONDS

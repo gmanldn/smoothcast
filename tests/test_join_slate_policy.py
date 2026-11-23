@@ -49,6 +49,12 @@ def test_other_apps_unknown_apps_and_active_playback_are_never_replaced(info):
     assert show(info=info) is False
 
 
+@pytest.mark.parametrize("flags", [{"is_stand_by": True}, {"is_active_input": False}])
+def test_standby_tv_or_other_input_is_never_woken_or_switched(flags):
+    assert receiver_is_free({**IDLE, **flags}) is False
+    assert receiver_is_free({**IDLE, "is_stand_by": False, "is_active_input": True}) is True
+
+
 def test_already_showing_slate_is_not_cast_again():
     info = {"player_state": "PLAYING", "content_id": URL,
             "app_id": DEFAULT_MEDIA_RECEIVER_APP_ID}

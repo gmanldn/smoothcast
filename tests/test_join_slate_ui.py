@@ -32,6 +32,13 @@ class Host(join_slate_ui.JoinSlateMixin):
         self.lines.append(text)
 
 
+def after_playback(host):
+    """Our own film was playing, then ended: the TV is on and the slate is armed."""
+    host.session = object()
+    host._join_slate_observe({"player_state": "PLAYING", "app_id": DEFAULT_MEDIA_RECEIVER_APP_ID})
+    host.session = None
+
+
 @pytest.fixture
 def rig(monkeypatch):
     calls = []
@@ -62,6 +69,7 @@ def rig(monkeypatch):
 def test_slate_is_cast_once_after_a_minute_of_proven_idle(rig):
     calls, clock, _ = rig
     host = Host()
+    after_playback(host)
     host._join_slate_observe(FREE)          # starts the idle clock
     assert calls == []
     clock[0] += 61
@@ -91,10 +99,50 @@ def test_user_playback_other_apps_and_disabled_setting_never_cast(rig):
     assert calls == []
 
 
+def test_never_wakes_an_unused_tv_at_app_start_or_after_one_slate(rig):
+    calls, clock, _ = rig
+    fresh = Host()                           # idle receiver, but we never played anything
+    fresh._join_slate_observe(FREE)
+    clock[0] += 600
+    fresh._join_slate_observe(FREE)
+    assert calls == []
+    host = Host()
+    after_playback(host)
+    host._join_slate_observe(FREE)
+    clock[0] += 61
+    host._join_slate_observe(FREE)
+    assert len(calls) == 1
+    clock[0] += 600                          # slate ended or timed out: not re-cast alone
+    host._join_slate_observe(FREE)
+    clock[0] += 600
+    host._join_slate_observe(FREE)
+    assert len(calls) == 1
+    host._slate_armed = None
+    other = Host()
+    after_playback(other)
+    other.cfg["device"] = "Kitchen"          # arming belongs to the receiver that played
+    other._join_slate_observe(FREE)
+    clock[0] += 120
+    other._join_slate_observe(FREE)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("flag", [{"is_stand_by": True}, {"is_active_input": False}])
+def test_tv_on_standby_or_another_input_is_left_alone(rig, flag):
+    calls, clock, _ = rig
+    host = Host()
+    after_playback(host)
+    host._join_slate_observe({**FREE, **flag})
+    clock[0] += 120
+    host._join_slate_observe({**FREE, **flag})
+    assert calls == []
+
+
 def test_failure_backs_off_instead_of_retrying_every_poll(rig):
     calls, clock, outcome = rig
     outcome["result"] = (False, "refused")
     host = Host()
+    after_playback(host)
     host._join_slate_observe(FREE)
     clock[0] += 61
     host._join_slate_observe(FREE)

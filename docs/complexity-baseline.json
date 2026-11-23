@@ -116,7 +116,7 @@
   "playlist_control.py": 170,
   "portal.py": 2781,
   "portal_commands.py": 505,
-  "portal_join.py": 59,
+  "portal_join.py": 67,
   "portal_media.py": 235,
   "portal_mesh_http.py": 74,
   "portal_mesh_panel.py": 168,

@@ -383,6 +383,13 @@ class PyChromecastBackend:
             if hasattr(cast_status, "app_id"):
                 app_id = cast_status.app_id
                 status["app_id"] = app_id if isinstance(app_id, str) else ""
+            # A TV in standby or on another input must not be woken or switched.
+            stand_by = getattr(cast_status, "is_stand_by", None)
+            if isinstance(stand_by, bool):
+                status["is_stand_by"] = stand_by
+            active_input = getattr(cast_status, "is_active_input", None)
+            if isinstance(active_input, bool):
+                status["is_active_input"] = active_input
         return status
 
     def _publish(self, identifier: str, status: ReceiverInfo) -> None:

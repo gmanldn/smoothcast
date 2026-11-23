@@ -26,6 +26,8 @@ class ReceiverInfo(TypedDict, total=False):
     idle_reason: str
     media_session_id: int
     error_code: int
+    is_stand_by: bool
+    is_active_input: bool
     app_id: str  # running Cast app; "" = none. Absent = backend cannot tell.
 
 

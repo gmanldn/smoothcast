@@ -48,6 +48,8 @@ def receiver_is_free(info: Mapping[str, object] | None) -> bool:
         return False  # older backend or no status: cannot prove it is free
     if info.get("app_id") not in FREE_APP_IDS:
         return False
+    if info.get("is_stand_by") is True or info.get("is_active_input") is False:
+        return False  # casting would switch the TV on or change its input (HDMI-CEC)
     return str(info.get("player_state") or "").upper() in IDLE_STATES
 
 

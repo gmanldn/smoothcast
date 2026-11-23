@@ -343,3 +343,14 @@ def test_running_app_id_is_reported_and_unknown_stays_absent():
     assert updates[1]["app_id"] == "233637DE"  # someone else's app
     assert "app_id" not in updates[2]          # cannot tell: fail closed
     backend.close()
+
+
+def test_status_dict_exposes_standby_and_input_only_when_the_receiver_reports_them():
+    backend, _browser = discovered_backend([])
+    reported = SimpleNamespace(app_id="", is_stand_by=True, is_active_input=False,
+                               volume_level=0.5, volume_muted=False)
+    status = backend._status_dict(None, reported)
+    assert status["is_stand_by"] is True and status["is_active_input"] is False
+    bare = backend._status_dict(None, SimpleNamespace(app_id="", volume_level=0.5, volume_muted=False))
+    assert "is_stand_by" not in bare and "is_active_input" not in bare
+    backend.close()
