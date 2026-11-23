@@ -25,13 +25,14 @@ class _Anchors(HTMLParser):
 
 def _page():
     parser = _Anchors()
-    parser.feed(portal._HTML)
+    # Check the final served document: Screens and Mesh panels are inserted by _page().
+    parser.feed(portal._page().decode("utf-8"))
     return parser
 
 
 def test_cast_entry_links_to_real_find_and_upload_controls():
     page = _page()
-    assert {"castEntry", "findPanel", "uploadCard"} <= page.ids
+    assert {"castEntry", "findPanel", "uploadCard", "screensPanel"} <= page.ids
     assert any(a.get("href") == "#castEntry" for a in page.links)
     assert any(a.get("href") == "#findPanel" for a in page.links)
     assert any(a.get("href") == "#uploadCard" for a in page.links)
