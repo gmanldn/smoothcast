@@ -144,3 +144,20 @@ def test_write_sync_failure_cleans_private_staging(tmp_path, monkeypatch):
     assert (root / "current").read_text() == "old-verified-generation"
     assert not (root / "releases" / COMMIT).exists()
     assert not list((root / "releases").glob(".staging-*"))
+
+
+def test_failed_publication_directory_sync_removes_new_generation(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+    original = mg._sync_dir
+
+    def fail_publication(path):
+        if path == root / "releases":
+            raise OSError("parent directory fsync failed")
+        return original(path)
+
+    monkeypatch.setattr(mg, "_sync_dir", fail_publication)
+    with pytest.raises(OSError, match="parent directory"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
