@@ -25,9 +25,10 @@ import threading
 import time
 from typing import Callable
 
+import actions
 import command_trace
 
-ACTIONS = frozenset({"play_pause", "stop", "seek", "volume", "mute", "music_autogain"})
+ACTIONS = actions.ENVELOPE_ACTIONS
 CLIENT_ID_MAX = 64
 COMMAND_ID_MAX = 128
 SESSION_HEX_LENGTH = 32

@@ -60,7 +60,13 @@ def _tuple_assignment(path: Path, name: str) -> set[str]:
 
 
 def real_identifiers() -> dict[str, set[str]]:
-    web = _set_literal_with(ROOT / "src/portal.py", "play_pause", "queue_vote") | set(portal_commands.ACTIONS)
+    portal_source = (ROOT / "src/portal.py").read_text(encoding="utf-8")
+    assert "action not in actions.WEB_ACTIONS" in portal_source, "portal must use the registry allowlist"
+    # The page's own buttons are the independent witness of what the room offers.
+    buttons = set(re.findall(r'data-action="([a-z_]+)"', portal_source))
+    assert buttons <= actions.WEB_ACTIONS, sorted(buttons - actions.WEB_ACTIONS)
+    assert set(portal_commands.ACTIONS) <= actions.WEB_ACTIONS
+    web = set(actions.WEB_ACTIONS)
     accels = set(re.findall(r'set_accels_for_action\("app\.([a-z-]+)"',
                             (ROOT / "src/cast_control.py").read_text(encoding="utf-8")))
     desktop = {item.action for item in shortcut_map.SHARED} | accels

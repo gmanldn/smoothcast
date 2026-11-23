@@ -22,6 +22,7 @@ class Action:
     desktop: tuple[str, ...] = ()
     mpris: tuple[str, ...] = ()
     cli: tuple[str, ...] = ()
+    envelope: bool = False  # sent as a fenced command envelope (revision + command id)
 
     def on(self, surface: str) -> tuple[str, ...]:
         return getattr(self, surface)
@@ -29,12 +30,12 @@ class Action:
 
 REGISTRY: tuple[Action, ...] = (
     Action("play_pause", "Play or pause", ("play_pause",), ("play_pause",),
-           ("Play", "Pause", "PlayPause"), ("pause", "resume")),
-    Action("stop", "Stop", ("stop",), ("stop-stream",), ("Stop",), ("stop",)),
+           ("Play", "Pause", "PlayPause"), ("pause", "resume"), envelope=True),
+    Action("stop", "Stop", ("stop",), ("stop-stream",), ("Stop",), ("stop",), envelope=True),
     Action("seek", "Seek", ("seek",), ("seek_back", "seek_forward"),
-           ("Seek", "SetPosition"), ("seek",)),
-    Action("volume", "Volume", ("volume",), ("volume_up", "volume_down")),
-    Action("mute", "Mute", ("mute",), ("mute",)),
+           ("Seek", "SetPosition"), ("seek",), envelope=True),
+    Action("volume", "Volume", ("volume",), ("volume_up", "volume_down"), envelope=True),
+    Action("mute", "Mute", ("mute",), ("mute",), envelope=True),
     Action("next", "Next in queue", ("next",), ("next",), ("Next",)),
     Action("previous", "Previous in queue", ("previous",), ("previous",), ("Previous",)),
     Action("queue_play", "Play a queue item now", ("queue_play",)),
@@ -44,10 +45,14 @@ REGISTRY: tuple[Action, ...] = (
     Action("queue_clear", "Clear the queue", ("queue_clear",)),
     Action("queue_vote", "Vote for a queue item", ("queue_vote",)),
     Action("queue_add_key", "Add a search result to Up Next", ("queue_add_key",)),
-    Action("music_autogain", "Normalise audio-only tracks", ("music_autogain",)),
+    Action("music_autogain", "Normalise audio-only tracks", ("music_autogain",), envelope=True),
 )
 
 BY_ID = {action.id: action for action in REGISTRY}
+
+# What the room API accepts: derived, never hand-listed in portal code (#458).
+WEB_ACTIONS = frozenset(i for a in REGISTRY for i in a.web)
+ENVELOPE_ACTIONS = frozenset(i for a in REGISTRY if a.envelope for i in a.web)
 
 
 def gaps() -> list[tuple[str, str]]:

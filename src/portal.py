@@ -24,6 +24,7 @@ import time
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import actions
 import api_spec
 import lan_guard
 import mesh_files
@@ -1050,11 +1051,7 @@ class _Handler(BaseHTTPRequestHandler):
                 if participant_id is None:
                     return self._error(401, "Session expired")
                 if envelope is None:
-                    if not isinstance(action, str) or action not in {
-                            "play_pause", "stop", "seek", "volume", "mute", "music_autogain",
-                            "next", "previous", "queue_play", "queue_remove",
-                            "queue_move", "queue_next", "queue_clear", "queue_vote",
-                            "queue_add_key"}:
+                    if not isinstance(action, str) or action not in actions.WEB_ACTIONS:
                         return self._error(400, "Unsupported action")
                     if action == "queue_add_key" and not (
                             isinstance(body.get("key"), str)
