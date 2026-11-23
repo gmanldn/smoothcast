@@ -40,7 +40,8 @@ def test_compare_tolerates_small_growth_and_flags_big_jumps():
         "src_lines": total, "modules": {"a.py": a, "tiny.py": tiny, **(extra or {})}}
     assert cr.compare(cur(1100, 438), base) == []
     assert any("over baseline" in p for p in cr.compare(cur(1300, 450), base))
-    assert any("a.py grew" in p for p in cr.compare(cur(1100, 441), base))\n    assert any("a.py grew" in p for p in cr.compare(cur(1100, 600), base))
+    assert any("a.py grew" in p for p in cr.compare(cur(1100, 441), base))
+    assert any("a.py grew" in p for p in cr.compare(cur(1100, 600), base))
     assert any("tiny.py grew" in p for p in cr.compare(cur(1100, 438, tiny=200), base))
     assert any("new module" in p for p in cr.compare(cur(1100, 438, extra={"huge.py": 1500}), base))
 
