@@ -66,6 +66,36 @@ def test_projection_handles_non_finite_without_throwing():
         "projectPosition({},0,0),projectPosition({state:'PLAYING',position:3},NaN,NaN)]));"
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True, timeout=8)
     assert json.loads(result.stdout) == [0, 0, 0, 3]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+def test_room_snapshot_version_fences_delayed_status_messages():
+    # Only the pure browser helper: no GTK, network or real browser.
+    source = portal._HTML
+    initial = next(line for line in source.splitlines()
+                   if line.startswith('let roomSnapshotEpoch='))
+    function = next(line for line in source.splitlines()
+                    if line.startswith('function acceptRoomSnapshot('))
+    scenario = """
+    const assert=require('node:assert/strict');
+    const frame=(epoch,ver)=>({stream_epoch:epoch,state:{snapshot_version:ver}});
+    assert.equal(acceptRoomSnapshot(frame('a',5)),true);
+    assert.equal(acceptRoomSnapshot(frame('a',5)),true);  // age refresh
+    assert.equal(acceptRoomSnapshot(frame('a',4)),false); // stale poll
+    assert.equal(acceptRoomSnapshot(frame('a',6)),true);
+    assert.equal(acceptRoomSnapshot(frame('a',3)),false);
+    assert.equal(acceptRoomSnapshot(frame('b',1)),true); // portal restart
+    assert.equal(acceptRoomSnapshot(frame('b',0)),false);
+    assert.equal(acceptRoomSnapshot(frame('b',2)),true);
+    assert.equal(acceptRoomSnapshot({state:{snapshot_version:3}}),true); // legacy
+    assert.equal(acceptRoomSnapshot(frame('b',1)),false); // missing metadata cannot reset fence
+    assert.equal(acceptRoomSnapshot(frame('c',NaN)),true);
+    assert.equal(acceptRoomSnapshot(frame('b',1)),false);
+    """
+    result = subprocess.run(["node", "-"], input=initial+"\n"+function+"\n"+scenario,
+                            capture_output=True, text=True, timeout=8)
+    assert result.returncode == 0, result.stderr
+
  
 
 def test_server_snapshot_uses_tracked_source_playback_rate():
