@@ -99,7 +99,8 @@ class RepoCase(unittest.TestCase):
         return git(repo or self.local, "rev-parse", "HEAD")
 
     def refresh(self, **kwargs):
-        return update_control.refresh_checkout(self.local, timeout=30, **kwargs)
+        return update_control.refresh_checkout(self.local, timeout=30,
+                                               enabled=True, **kwargs)
 
 
 class OptOutTests(RepoCase):
