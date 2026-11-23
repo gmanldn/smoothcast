@@ -11,8 +11,8 @@ GitHub Issues are the authoritative backlog:
 
 ## Maintainers and agents
 
-1. Pick the highest-value unclaimed P0/P1 issue or an independent small fix;
-   consult claims/comments and partition overlapping work by file.
+1. Start with `python3 scripts/agent.py board` and `agent.py next`;
+   choose an available issue using live claims and hot file scopes.
 2. Claim briefly, use your own **detached worktree** of `origin/develop`, and
    commit one small coherent slice with `Refs #N`.
 3. Fetch and rebase **only your own unpublished work**, then fast-forward push
