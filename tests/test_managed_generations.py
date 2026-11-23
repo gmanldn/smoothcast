@@ -12,6 +12,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "setup"))
 import managed_generations as mg
 
+# Native Win32 reparse-point-safe open is a separate #580 requirement.
+pytestmark = pytest.mark.skipif(
+    not hasattr(os, "O_NOFOLLOW"), reason="No race-safe source file open",
+)
 
 COMMIT = "a" * 40
 
