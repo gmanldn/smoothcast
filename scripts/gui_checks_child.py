@@ -1,0 +1,886 @@
+#!/usr/bin/env python3
+"""In-process GTK behaviour checks; run only by scripts/gui_checks.py.
+
+Executes inside the isolated Xvfb session (private XDG dirs, no desktop display,
+no session bus). Builds the real MainWindow in --self-test mode (no LAN scan,
+no timers) and, at the moment the self-test would quit, runs one scenario's
+checks against the live widgets, then prints one ``CHECK|scenario|name|PASS|FAIL|detail``
+line per check. The browser launcher is patched, so nothing external ever opens.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import traceback
+from urllib.parse import parse_qs, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+import accent  # noqa: E402
+import cast_targets  # noqa: E402
+import castctl  # noqa: E402
+import cast_control  # noqa: E402
+import streamer  # noqa: E402
+import version  # noqa: E402
+import video_policy  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+
+SCENARIO = sys.argv[1] if len(sys.argv) > 1 else ""
+RESULTS: list[tuple[str, bool, str]] = []
+
+
+def check(name: str, condition: bool, detail: str = "") -> None:
+    RESULTS.append((name, bool(condition), detail))
+
+
+def pump(seconds: float) -> None:
+    """Let queued GTK idle callbacks and background workers deliver their results."""
+    context = GLib.MainContext.default()
+    end = GLib.get_monotonic_time() + int(seconds * 1_000_000)
+    while GLib.get_monotonic_time() < end:
+        while context.pending():
+            context.iteration(False)
+        GLib.usleep(10_000)
+
+
+def menu_items(model) -> list[tuple[str, str]]:
+    """Every (label, action) in a Gio.MenuModel, descending into sections and submenus."""
+    found: list[tuple[str, str]] = []
+    for index in range(model.get_n_items()):
+        label = model.get_item_attribute_value(index, "label", None)
+        action = model.get_item_attribute_value(index, "action", None)
+        if action is not None:
+            found.append((label.get_string() if label else "", action.get_string()))
+        for link in ("section", "submenu"):
+            child = model.get_item_link(index, link)
+            if child is not None:
+                found.extend(menu_items(child))
+    return found
+
+
+def dropdown_names(dropdown) -> list[str]:
+    model = dropdown.get_model()
+    return [model.get_string(i) for i in range(model.get_n_items())] if model is not None else []
+
+
+# --- scenarios ------------------------------------------------------------------
+
+def first_run(app, window) -> None:
+    """No saved receiver: nothing selected, nothing commanded, user is asked to choose (#239)."""
+    for button, label in ((window.open_button, "Open video"), (window.cast_button, "Cast to TV"),
+                          (window.stop_tv_button, "Stop TV")):
+        check(f"player action displays {label}", button.get_label() == label)
+
+    calls: list[list[str]] = []
+
+    def record(args, timeout=10):  # a catt subprocess would be spawned through this
+        calls.append(list(args))
+        raise OSError("no receiver should be contacted on first run")
+
+    castctl._run = record
+    check("config has no device", window.cfg.get("device") == "", repr(window.cfg.get("device")))
+    check("_device() is empty", window._device() == "")
+    check("dropdown starts with the placeholder only",
+          dropdown_names(window.device_dropdown) == [cast_targets.CHOOSE_RECEIVER],
+          repr(dropdown_names(window.device_dropdown)))
+    window._poll_device()
+    window.volume_scale.set_value(30)
+    pump(1.0)
+    check("polling and volume never run catt without a receiver", calls == [], repr(calls))
+
+    kitchen = castctl.Device(name="Kitchen", host="192.168.1.60", uuid="uuid-kitchen")
+    window._scan_done(([kitchen], []))
+    pump(0.3)
+    check("scan lists the receiver after the placeholder",
+          dropdown_names(window.device_dropdown) == [cast_targets.CHOOSE_RECEIVER, "Kitchen"],
+          repr(dropdown_names(window.device_dropdown)))
+    check("scan does not choose one for the user: the placeholder stays selected, nothing is saved",
+          window.device_dropdown.get_selected() == 0 and window.cfg.get("device") == "",
+          f"selected={window.device_dropdown.get_selected()} device={window.cfg.get('device')!r}")
+    text = window.device_detail.get_text()
+    check("the user is asked to choose a receiver", "choose" in text.lower(), repr(text))
+    check("still no catt command after the scan", calls == [], repr(calls))
+
+    window.device_dropdown.set_selected(1)                      # the user picks Kitchen
+    pump(0.5)
+    check("picking a receiver saves it", window.cfg.get("device") == "Kitchen", repr(window.cfg.get("device")))
+    check("only now is the chosen receiver contacted",
+          any("Kitchen" in call for call in calls) and all("Kitchen" in " ".join(c) for c in calls if "-d" in c),
+          repr(calls))
+
+
+def saved_device(app, window) -> None:
+    """An existing user's saved receiver is untouched by the first-run change (#239)."""
+    check("saved device is kept", window.cfg.get("device") == "Seeded TV", repr(window.cfg.get("device")))
+    check("dropdown shows the saved device", dropdown_names(window.device_dropdown) == ["Seeded TV"],
+          repr(dropdown_names(window.device_dropdown)))
+    check("saved device is selected", window.device_dropdown.get_selected() == 0,
+          str(window.device_dropdown.get_selected()))
+
+
+def local_video_runtime(app, window) -> None:
+    """Exercise Gtk.Video decode, pause, seek, EOS and replay on generated media."""
+    if shutil.which("ffmpeg") is None:
+        check("runtime media generator is available", False, "ffmpeg not installed")
+        return
+    folder = Path(tempfile.mkdtemp(prefix="smoothcast-runtime-"))
+    clip = folder / "runtime.mp4"
+    try:
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+            "-i", "testsrc2=size=320x180:rate=15:duration=3", "-f", "lavfi",
+            "-i", "sine=frequency=440:sample_rate=44100:duration=3",
+            "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-y", str(clip),
+        ], check=True, capture_output=True, timeout=30)
+        # Keep the generated audio stream silent; this private display must not
+        # make sound on a developer's machine.
+        prepared = window._on_local_prepared
+
+        def muted_prepared(stream, param, path):
+            stream.set_volume(0.0)
+            prepared(stream, param, path)
+
+        window._on_local_prepared = muted_prepared
+        window._preview_path = str(clip)
+        window._preview_position = 0.0
+        window._play_locally()
+        for _ in range(100):
+            pump(0.05)
+            stream = window._local_stream()
+            if stream is not None and (stream.is_prepared() or stream.get_error()):
+                break
+        stream = window._local_stream()
+        error = stream.get_error() if stream is not None else None
+        check("Gtk.Video prepared generated video/audio", bool(stream and stream.is_prepared()),
+              error.message if error else "no prepared media stream")
+        check("media stream reports a duration and seek support",
+              bool(stream and stream.get_duration() >= 2_000_000 and stream.is_seekable()))
+        if stream is None or not stream.is_prepared() or error is not None:
+            return
+        for _ in range(40):
+            pump(0.05)
+            if stream.get_timestamp() >= 250_000:
+                break
+        check("first playback advances decoded media time",
+              stream.get_playing() and stream.get_timestamp() >= 250_000,
+              str(stream.get_timestamp()))
+        window.seek_to(1.5)
+        for _ in range(30):
+            pump(0.05)
+            if stream.get_timestamp() >= 1_300_000:
+                break
+        check("in-window seek reaches the requested position",
+              1_300_000 <= stream.get_timestamp() <= 1_900_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        paused_at = stream.get_timestamp()
+        pump(0.3)
+        check("pause holds the local playback clock",
+              not stream.get_playing() and abs(stream.get_timestamp() - paused_at) < 100_000,
+              str(stream.get_timestamp()))
+        window._toggle_local_preview()
+        check("resume restarts the prepared stream", stream.get_playing())
+        for _ in range(45):
+            pump(0.05)
+            if not stream.get_playing():
+                break
+        check("end of stream stops playback", not stream.get_playing(), str(stream.get_timestamp()))
+        window.seek_to(0.0)
+        window._toggle_local_preview()
+        pump(0.2)
+        check("replay restarts from the beginning",
+              stream.get_playing() and stream.get_timestamp() < 500_000,
+              str(stream.get_timestamp()))
+        window._unload_local_video()
+        check("cleanup releases the local media stream", window._local_stream() is None)
+    finally:
+        window._unload_local_video()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def report_problem(app, window) -> None:
+    """Help > Report a problem opens a prefilled bug form and sends nothing itself (#274)."""
+    items = menu_items(window.menu_button.get_menu_model())
+    check("menu has the entry", ("Report a problem…", "app.report-problem") in items,
+          repr([i for i in items if "problem" in i[0].lower()]))
+    action = app.lookup_action("report-problem")
+    check("the app action is registered", action is not None)
+    opened: list[str] = []
+    toasts: list[tuple[str, bool]] = []
+    window.toast = lambda message, *, error=False: toasts.append((message, error))
+
+    def fake_launch(uri, context=None):
+        opened.append(uri)
+
+    Gio.AppInfo.launch_default_for_uri = staticmethod(fake_launch)
+    action.activate(None)
+    pump(0.3)
+    check("exactly one URL is opened", len(opened) == 1, repr(opened))
+    if opened:
+        parts = urlsplit(opened[0])
+        query = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        check("it targets the project's issue form",
+              (parts.scheme, parts.netloc, parts.path) == ("https", "github.com", "/gmanldn/smoothcast/issues/new")
+              and query.get("template") == "bug-report.yml", opened[0])
+        check("the version is prefilled", query.get("version") == version.label(), repr(query.get("version")))
+        check("the OS label has no paths or addresses",
+              bool(query.get("platform")) and "/" not in query["platform"] and "192.168" not in query["platform"],
+              repr(query.get("platform")))
+    check("the user is told to attach the diagnostics file",
+          any("diagnostics" in m.lower() and not err for m, err in toasts), repr(toasts))
+
+    def failing_launch(uri, context=None):
+        raise GLib.Error.new_literal(Gio.io_error_quark(), "no browser available", Gio.IOErrorEnum.FAILED)
+
+    Gio.AppInfo.launch_default_for_uri = staticmethod(failing_launch)
+    toasts.clear()
+    action.activate(None)
+    pump(0.3)
+    check("a missing browser is reported as an error toast",
+          any("Could not open the browser" in m and err for m, err in toasts), repr(toasts))
+
+
+def picture_options(app, window) -> None:
+    """Preferences > Picture: crop/deinterlace switches persist and the film preview works (#54)."""
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    check("the preferences window opens with both switches",
+          prefs is not None and {"auto_crop", "auto_deinterlace"} <= set(prefs._switches))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    check("both options start off", video_policy.load_flags() == (False, False), repr(video_policy.load_flags()))
+    prefs._switches["auto_crop"].set_active(True)
+    pump(0.3)
+    check("turning crop on saves it and the transcoder reads it",
+          saved().get("auto_crop") is True and video_policy.load_flags() == (True, False),
+          f"{saved().get('auto_crop')!r} {video_policy.load_flags()}")
+    prefs._switches["auto_deinterlace"].set_active(True)
+    pump(0.3)
+    check("turning deinterlace on saves it too", video_policy.load_flags() == (True, True), repr(video_policy.load_flags()))
+    prefs._switches["auto_crop"].set_active(False)
+    pump(0.3)
+    check("turning crop off is reversible", video_policy.load_flags() == (False, True)
+          and saved().get("auto_crop") is False, repr(saved()))
+
+    window.media = None
+    prefs.picture.button.emit("clicked")
+    check("checking with no film selected says so and changes nothing",
+          prefs.picture.row.get_subtitle() == "Select a film first." and prefs.picture.button.get_sensitive(),
+          repr(prefs.picture.row.get_subtitle()))
+
+    if shutil.which("ffmpeg") is None:
+        check("film preview (skipped: ffmpeg is not installed)", True)
+        return
+    folder = Path(tempfile.mkdtemp(prefix="smoothcast-picture-"))
+    clip = folder / "letterbox.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "testsrc2=size=640x480:rate=25:duration=6,drawbox=x=0:y=0:w=640:h=60:color=black:t=fill,"
+                    "drawbox=x=0:y=420:w=640:h=60:color=black:t=fill",
+                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-y", str(clip)],
+                   check=True, capture_output=True, timeout=60)
+    window.media = streamer.MediaInfo(path=clip, duration=6.0, width=640, height=480)
+    prefs.sync_from_owner()
+    prefs.picture.button.emit("clicked")
+    check("the check shows progress and locks the button while it runs",
+          prefs.picture.row.get_subtitle().startswith("Checking") and not prefs.picture.button.get_sensitive())
+    for _ in range(300):
+        pump(0.1)
+        if prefs.picture.button.get_sensitive():
+            break
+    text = prefs.picture.row.get_subtitle()
+    check("the preview reports the black bars that would be cropped",
+          text.startswith("Black bars: crop to 640\u00d7360") and "removes 25%" in text, repr(text))
+    check("the preview reports the film as progressive", "Progressive" in text, repr(text))
+    check("the button is usable again", prefs.picture.button.get_sensitive())
+
+    prefs.picture.button.emit("clicked")
+    window.media = None                                         # the user picks another film mid-check
+    for _ in range(300):
+        pump(0.1)
+        if prefs.picture.button.get_sensitive():
+            break
+    check("changing film during a check never leaves the row stuck",
+          prefs.picture.button.get_sensitive() and "Checking" not in prefs.picture.row.get_subtitle(),
+          repr(prefs.picture.row.get_subtitle()))
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+def accent_choice(app, window) -> None:
+    """Preferences > Appearance > Accent colour: bounded presets, live, reversible, no theme edits (#135)."""
+    errors: list[str] = []
+    for preset_id, _label, _hex in accent.PRESETS:
+        provider = Gtk.CssProvider()
+        provider.connect("parsing-error", lambda _p, _section, error: errors.append(error.message))
+        provider.load_from_data(accent.css_for(preset_id) or "window { }")
+    check("every preset's CSS parses in real GTK without errors", errors == [], repr(errors))
+
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("accent")
+    check("the Accent colour choice exists with one entry per preset",
+          combo is not None and combo.get_model().get_n_items() == len(accent.PRESETS))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    # A probe label that takes the accent through the stylesheet: .queue-row.current .queue-title
+    probe_window = Gtk.Window()
+    row = Gtk.Box()
+    row.add_css_class("queue-row")
+    row.add_css_class("current")
+    label = Gtk.Label(label="probe")
+    label.add_css_class("queue-title")
+    row.append(label)
+    probe_window.set_child(row)
+    probe_window.present()
+    pump(0.4)
+
+    def colour() -> tuple[int, int, int]:
+        c = label.get_color()
+        return round(c.red * 255), round(c.green * 255), round(c.blue * 255)
+
+    def expected(preset_id: str) -> tuple[int, int, int]:
+        hover = accent.mix(accent.accent_hex(preset_id), accent.LIGHT_TEXT, 0.18)
+        return int(hover[1:3], 16), int(hover[3:5], 16), int(hover[5:7], 16)
+
+    original = colour()   # whatever the stylesheet's own colour is today (it has changed before)
+    check("default: no override is installed and Default is selected",
+          app._accent_provider is None and combo.get_selected() == 0, f"{original}")
+    check("an accent is detectable: the default differs from every preset's colour",
+          all(expected(p) != original for p, _l, _h in accent.PRESETS if p != accent.DEFAULT_ID), f"{original}")
+    for preset_id in ("amber", "violet", "teal"):
+        index = [p for p, _l, _h in accent.PRESETS].index(preset_id)
+        combo.set_selected(index)
+        pump(0.5)
+        check(f"{preset_id}: applied live through the stylesheet", colour() == expected(preset_id),
+              f"{colour()} != {expected(preset_id)}")
+        check(f"{preset_id}: saved to config.json", window.cfg["accent"] == preset_id
+              and saved().get("accent") == preset_id, repr(saved().get("accent")))
+    check("switching presets replaces the override instead of stacking providers",
+          app._accent_provider is not None and colour() == expected("teal"))
+    combo.set_selected(0)
+    pump(0.5)
+    check("Default removes the override and restores the original colour",
+          app._accent_provider is None and colour() == original, f"{colour()}")
+    check("Default is saved too", saved().get("accent") == "default", repr(saved().get("accent")))
+    check("the GTK theme setting is untouched",
+          "theme" not in json.dumps(saved()).lower().replace("auto_theme", ""))
+    probe_window.destroy()
+
+
+def accent_saved(app, window) -> None:
+    """An accent saved in an earlier session is applied at startup, and junk values are ignored (#135)."""
+    probe_window = Gtk.Window()
+    row = Gtk.Box()
+    row.add_css_class("queue-row")
+    row.add_css_class("current")
+    label = Gtk.Label(label="probe")
+    label.add_css_class("queue-title")
+    row.append(label)
+    probe_window.set_child(row)
+    probe_window.present()
+    pump(0.4)
+    c = label.get_color()
+    hover = accent.mix(accent.accent_hex("violet"), accent.LIGHT_TEXT, 0.18)
+    want = (int(hover[1:3], 16), int(hover[3:5], 16), int(hover[5:7], 16))
+    got = (round(c.red * 255), round(c.green * 255), round(c.blue * 255))
+    check("the saved accent is applied at startup", app._accent_provider is not None and got == want,
+          f"{got} != {want}")
+    check("the window's setting matches", window.cfg.get("accent") == "violet", repr(window.cfg.get("accent")))
+    window.action_preferences()
+    pump(0.4)
+    check("Preferences shows the saved accent as selected",
+          window._preferences_window._combos["accent"].get_selected()
+          == [p for p, _l, _h in accent.PRESETS].index("violet"),
+          str(window._preferences_window._combos["accent"].get_selected()))
+    probe_window.destroy()
+
+
+def accent_junk(app, window) -> None:
+    """A corrupt accent value in config.json is ignored: default look, no crash (#135)."""
+    check("a junk accent falls back to the default", window.cfg.get("accent") == "default"
+          and app._accent_provider is None, repr(window.cfg.get("accent")))
+
+
+def _narrow_helpers(window):
+    """Helpers that put the window's layout logic into a real 360 px state and measure it."""
+    window.get_width = lambda: 360          # exactly what the reflow code reads in a 360 px window
+    window.get_height = lambda: 800
+
+    def settle() -> None:
+        for _ in range(4):                  # the 200 ms reflow timer does not run in self-test mode
+            window._refresh_responsive_layout()
+            pump(0.4)
+
+    def minwidth() -> int:
+        return window.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+
+    def find(css_class: str):
+        stack = [window]
+        while stack:
+            widget = stack.pop()
+            if css_class in widget.get_css_classes():
+                return widget
+            child = widget.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        return None
+
+    return settle, minwidth, find
+
+
+def density_choice(app, window) -> None:
+    """Interface density: live, saved, scales spacing/controls, never clips at 360 px or large fonts (#136)."""
+    import density
+    window.action_preferences()
+    pump(0.5)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("density")
+    check("the Interface density choice has one entry per preset",
+          combo is not None and combo.get_model().get_n_items() == len(density.PRESETS))
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()) if config_file.exists() else {}
+
+    settle, minwidth, find = _narrow_helpers(window)
+    settle()
+    ids = [p for p, _l, _s in density.PRESETS]
+    measured: dict[str, dict[str, int]] = {}
+    for name in ("compact", "comfortable", "spacious"):
+        combo.set_selected(ids.index(name))
+        pump(0.4)
+        settle()
+        big_play, card = find("big-play"), find("hero-card")
+        measured[name] = {
+            "margin": window.page.get_margin_start(),
+            "big_play": big_play.measure(Gtk.Orientation.HORIZONTAL, -1)[0],
+            "card_height": card.measure(Gtk.Orientation.VERTICAL, 340)[0],
+        }
+        check(f"{name}: saved to config.json and applied",
+              window.cfg["density"] == name and saved().get("density") == name
+              and (app._density_provider is None) == (name == "comfortable"), repr(saved().get("density")))
+        check(f"{name}: the 360 px layout is not wider than 360 px", minwidth() <= 360, f"min={minwidth()}")
+    for key in ("margin", "big_play", "card_height"):
+        a, b, c = (measured[n][key] for n in ("compact", "comfortable", "spacious"))
+        check(f"spacing scales with density: {key} compact < comfortable < spacious", a < b < c,
+              f"{a} / {b} / {c}")
+    check("the big-play control matches the scaled stylesheet value",
+          measured["spacious"]["big_play"] == density.px(density.BASE_COMPACT["big_play"], 1.25)
+          and measured["compact"]["big_play"] == density.px(density.BASE_COMPACT["big_play"], 0.85),
+          repr({k: v["big_play"] for k, v in measured.items()}))
+
+    settings = Gtk.Settings.get_default()
+    for font in ("Sans 14", "Sans 18", "Sans 22"):
+        settings.set_property("gtk-font-name", font)
+        for name in ("compact", "comfortable", "spacious"):
+            combo.set_selected(ids.index(name))
+            pump(0.3)
+            settle()
+            check(f"{font} / {name}: still not wider than 360 px", minwidth() <= 360, f"min={minwidth()}")
+    combo.set_selected(ids.index("comfortable"))
+    pump(0.4)
+    check("back to comfortable: the override is gone and it is saved",
+          app._density_provider is None and saved().get("density") == "comfortable")
+
+
+def density_saved(app, window) -> None:
+    """A saved density applies at startup and shows as selected (#136)."""
+    import density
+    settle, _minwidth, _find = _narrow_helpers(window)
+    settle()
+    check("the saved density is applied at startup", app._density_provider is not None
+          and window.cfg.get("density") == "spacious", repr(window.cfg.get("density")))
+    check("the layout uses the spacious scale", window.page.get_margin_start() == density.px(8, 1.25, 4),
+          str(window.page.get_margin_start()))
+    window.action_preferences()
+    pump(0.4)
+    check("Preferences shows it as selected",
+          window._preferences_window._combos["density"].get_selected() == 2,
+          str(window._preferences_window._combos["density"].get_selected()))
+
+
+def density_junk(app, window) -> None:
+    """A corrupt density value is ignored: normal look, no crash (#136)."""
+    check("a junk density falls back to comfortable", window.cfg.get("density") == "comfortable"
+          and app._density_provider is None, repr(window.cfg.get("density")))
+
+
+def subtitle_style_choice(app, window) -> None:
+    """The accessible subtitle preset persists and appears selected in Preferences (#34)."""
+    import subtitle_style
+
+    window.action_preferences()
+    pump(0.3)
+    prefs = window._preferences_window
+    combo = prefs._combos.get("subtitle_style")
+    labels = dropdown_names(combo) if combo is not None else []
+    check("Preferences lists every safe subtitle appearance preset",
+          labels == [item[0] for item in subtitle_style.PRESETS.values()], repr(labels))
+    check("the default preset starts selected", combo is not None and combo.get_selected() == 0,
+          str(combo.get_selected() if combo is not None else None))
+    if combo is None:
+        return
+    combo.set_selected(1)
+    pump(0.3)
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+    saved = json.loads(config_file.read_text("utf-8")) if config_file.exists() else {}
+    check("choosing Large updates the shared config and saved file",
+          window.cfg.get("subtitle_style") == "large" and saved.get("subtitle_style") == "large",
+          repr(saved.get("subtitle_style")))
+    check("the Preferences row remains synchronized", combo.get_selected() == 1,
+          str(combo.get_selected()))
+
+
+def subtitle_style_saved(app, window) -> None:
+    window.action_preferences()
+    pump(0.3)
+    combo = window._preferences_window._combos.get("subtitle_style")
+    check("a saved high-contrast style appears selected",
+          combo is not None and combo.get_selected() == 2,
+          str(combo.get_selected() if combo is not None else None))
+
+
+def subtitle_style_junk(app, window) -> None:
+    check("an unknown saved preset falls back safely", window.cfg.get("subtitle_style") == "default",
+          repr(window.cfg.get("subtitle_style")))
+
+
+def text_fit_wide(app, window) -> None:
+    """The text-fit pass is narrow-only: a wide window keeps its labels exactly as designed (#136)."""
+    import text_fit
+    window.get_width = lambda: text_fit.NARROW_WIDTH + 200      # a wide window, from the very first reflow
+    window.get_height = lambda: 900
+    for _ in range(3):
+        window._refresh_responsive_layout()
+        pump(0.3)
+    changed = text_fit.fit_labels(window)
+    check("a wide window's reflow left every label as designed (there is still work for the pass to do)",
+          changed > 0, str(changed))
+    check("fitting is idempotent", text_fit.fit_labels(window) == 0)
+    window.get_width = lambda: 360                              # now narrow: nothing new to change, and it stays that way
+    window._refresh_responsive_layout()
+    pump(0.3)
+    check("a narrow reflow afterwards changes nothing more", text_fit.fit_labels(window) == 0)
+
+
+def audio_delay_menu(app, window) -> None:
+    """The real app actions move, save and reset a per-film audio delay (#113)."""
+    config_file = Path(os.environ["XDG_CONFIG_HOME"]) / "cast-control" / "config.json"
+
+    def saved() -> dict:
+        return json.loads(config_file.read_text()).get("audio_delay_by_file", {}) if config_file.exists() else {}
+
+    def press(name: str) -> None:
+        action = app.lookup_action(name)
+        action.activate(None)
+        pump(0.2)
+
+    actions = ("audio-earlier", "audio-later", "audio-reset")
+    check("the three audio-delay actions exist and are enabled",
+          all(app.lookup_action(n) is not None and app.lookup_action(n).get_enabled() for n in actions))
+    press("audio-later")
+    check("with no film open nothing is saved", saved() == {} and window.cfg.get("audio_delay_by_file", {}) == {})
+    film = "/tmp/smoothcast-gui-check-film.mkv"
+    window._preview_path = film
+    press("audio-later")
+    press("audio-later")
+    check("two presses of 'later' save +100 ms for that film only", saved() == {film: 100}, repr(saved()))
+    press("audio-earlier")
+    check("'earlier' moves it back by 50 ms", saved() == {film: 50}, repr(saved()))
+    press("audio-reset")
+    check("reset clears the saved delay", saved() == {}, repr(saved()))
+    for _ in range(3):
+        press("audio-earlier")
+    check("earlier goes negative and is saved", saved() == {film: -150}, repr(saved()))
+    window._preview_path = "/tmp/another-film.mkv"
+    check("another film starts with no delay", window.cfg["audio_delay_by_file"].get(window._preview_path) is None)
+
+
+def bookmarks_menu(app, window) -> None:
+    """Named bookmark actions appear in the real menu and clear safely (#117)."""
+    window.cfg["bookmarks"] = [{
+        "fingerprint": "a" * 64, "name": "Favourite scene", "media": "film.mkv",
+        "position": 12.0, "created": 1.0,
+    }]
+    items = menu_items(window._build_menu())
+    check("Bookmarks menu has add and saved jump actions",
+          ("Add bookmark at current position…", "app.bookmark-add") in items
+          and ("Favourite scene — film.mkv (00:12)", "app.bookmark-0") in items,
+          repr([item for item in items if "bookmark" in item[1]]))
+    check("bookmark actions are registered",
+          app.lookup_action("bookmark-add") is not None
+          and app.lookup_action("bookmark-0") is not None
+          and app.lookup_action("clear-bookmarks") is not None)
+    app.lookup_action("clear-bookmarks").activate(None)
+    pump(0.2)
+    check("Clear bookmarks empties the list", window.cfg["bookmarks"] == [])
+
+
+def side_panel(app, window) -> None:
+    """Player beside a tabbed side panel: tabs, badges, sizes, nothing clipped or trapped."""
+    import panel_ui
+    import responsive_layout
+
+    keys = [key for key, _title, _icon in panel_ui.PANEL_TABS]
+    check("there is one tab per panel page", list(window.panel_tabs) == keys, repr(list(window.panel_tabs)))
+    check("the Queue tab is showing first", window.panel_stack.get_visible_child_name() == "queue")
+    for position, key in enumerate(keys, start=1):
+        window._show_panel_tab_number(position)
+        pump(0.1)
+        check(f"tab {position} ({key}) shows its page",
+              window.panel_stack.get_visible_child_name() == key
+              and window.panel_tabs[key][0].get_active(), window.panel_stack.get_visible_child_name())
+    window._show_panel_tab_number(99)
+    check("an out-of-range tab number is ignored", window.panel_stack.get_visible_child_name() == keys[-1])
+    window._focus_queue_search()
+    check("Ctrl+F brings the Queue tab forward", window.panel_stack.get_visible_child_name() == "queue")
+
+    badge = window.panel_tabs["queue"][1]
+    check("an empty queue shows no count", not badge.get_visible())
+    window.queue = ["/films/a.mkv", "/films/b.mkv"]
+    window._update_panel_badges()
+    check("the Queue tab counts its items", badge.get_visible() and badge.get_text() == "2", badge.get_text())
+    window.queue = []
+    window._update_panel_badges()
+    check("clearing the queue hides the count", not badge.get_visible())
+    check("no receiver chosen: the Devices tab asks for attention",
+          window.panel_tabs["devices"][1].get_visible())
+
+    check("the receiver picker is in the player card, not hidden in a tab",
+          window.device_dropdown.is_ancestor(window.player_card)
+          and not window.device_dropdown.is_ancestor(window.side_panel))
+    check("every Devices-tab control lives in the side panel",
+          all(w.is_ancestor(window.side_panel) for w in
+              (window.cast_ip_entry, window.add_ip_button, window.network_check_button)))
+
+    settle, minwidth, _find = _narrow_helpers(window)
+    settle()
+    check("at 360 px the panel is stacked under the player and the window fits",
+          window._layout_state.stacked and minwidth() <= 360, f"min={minwidth()}")
+    check("stacked: the tab strip drops its text labels", window._layout_state.tabs_icon_only)
+
+    # Wide windows: the panel sits beside the player. A layout whose minimum
+    # width exceeds the width it is chosen at would trap the window (it could
+    # never be shrunk far enough to stack), so every width must fit its own state.
+    window.get_height = lambda: 800
+    for width in (responsive_layout.STACK_BELOW, 1000, 1100, 1280, 1920):
+        window.get_width = lambda w=width: w
+        for _ in range(4):
+            window._refresh_responsive_layout()
+            pump(0.4)
+        check(f"{width} px wide: the layout's minimum width fits inside it (no trapped window)",
+              minwidth() <= width, f"min={minwidth()}")
+    check("at 1920 px the panel sits beside the player", not window._layout_state.stacked)
+    for size in ((1000, 700), (1280, 800)):
+        window.get_width, window.get_height = (lambda w=size[0]: w), (lambda h=size[1]: h)
+        window.set_default_size(*size)
+        for _ in range(5):
+            window._refresh_responsive_layout()
+            pump(0.4)
+        ok, bounds = window.cast_button.compute_bounds(window.page_scroller)
+        bottom = bounds.get_y() + bounds.get_height() if ok else 10 ** 6
+        check(f"{size[0]}x{size[1]}: the Cast button is on screen without scrolling",
+              ok and bottom <= window.page_scroller.get_height() + 1,
+              f"bottom={bottom} viewport={window.page_scroller.get_height()}")
+
+
+def network_view(app, window) -> None:
+    """The Network popover tracks a mesh view in place, with text states (#403)."""
+    import mesh_model as mm
+    import mesh_state
+    import mesh_ui
+    import mesh_view_model as vm
+    popover = window._mesh_ui
+    check("the Network button exists and is hidden while no mesh runs",
+          popover.button.get_parent() is not None and not popover.button.get_visible())
+
+    def rec(node, name, **kw):
+        return mm.NodeRecord(node_id=node, boot_id="c" * 32, name=name, version="1.2.0", **kw)
+
+    me, other = "1" * 32, "a" * 32
+    tv = mm.TargetObservation("tv1", "cast", "Lounge TV", model="Chromecast")
+    first = vm.build_model(mesh_state.MeshView(1, me, (
+        rec(me, "This PC", targets=(tv,)), rec(other, "Study", targets=(tv,)))), primary_id=other)
+    popover.show(first)
+    check("a running mesh shows the button", popover.button.get_visible())
+    check("devices list has both rows with text state",
+          set(popover.sections["nodes"].rows) == {f"node:{me}", f"node:{other}"}
+          and popover.sections["nodes"].rows[f"node:{other}"][1]["state"].get_text() == "Online")
+    check("primary badge is spelled out in text",
+          "Primary" in popover.sections["nodes"].rows[f"node:{other}"][1]["title"].get_text())
+    check("summary is readable", popover.summary.get_text() == first.summary, popover.summary.get_text())
+    row_before = popover.sections["targets"].rows["target:tv1"][0]
+    second = vm.build_model(mesh_state.MeshView(2, me, (
+        rec(me, "This PC", targets=(mm.TargetObservation("tv1", "cast", "Lounge TV", state="busy"),)),
+        rec(other, "Study", targets=(mm.TargetObservation("tv1", "cast", "Lounge TV", state="busy"),)))))
+    popover.show(second)
+    row_after = popover.sections["targets"].rows["target:tv1"][0]
+    check("a state change updates the row in place (same widget, no rebuild)", row_before is row_after)
+    check("the busy target explains itself",
+          popover.sections["targets"].rows["target:tv1"][1]["why"].get_visible())
+    popover.show(vm.build_model(mesh_state.MeshView(3, me, (rec(me, "This PC"),))))
+    check("a departed target row is removed", not popover.sections["targets"].rows)
+    check("lonely mesh shows the searching hint", popover.hint.get_visible(), popover.hint.get_text())
+    popover.show(None)
+    check("stopping the mesh hides the button again", not popover.button.get_visible())
+    mesh_ui.refresh(window)
+    check("refresh with no service is a harmless no-op", not popover.button.get_visible())
+
+
+def thumbnail_strip(_app, window) -> None:
+    """Exercise the real thumbnail widgets and local seek path inside Xvfb."""
+    from gi.repository import GdkPixbuf
+    from screenshot import SparseFrameCache
+
+    path = Path(os.environ["XDG_CACHE_HOME"]) / "test-film.mkv"
+    window.media = streamer.MediaInfo(path, duration=90.0)
+    window._preview_path = str(path)
+    window.queue_durations[str(path)] = 90.0
+    window.seekbar.set_state(0.0, 90.0, 0.0)
+    window._timed_subtitle_preview = lambda _position: None
+    preview_requests = []
+    window._queue_preview = lambda position, *, sparse=False: preview_requests.append((position, sparse))
+    cache = window._sparse_frame_cache = SparseFrameCache()
+    pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 16, 9)
+    for index in range(5):
+        pixbuf.fill(0x223355FF + index * 0x11000000)
+        ok, jpeg = pixbuf.save_to_bufferv("jpeg", [], [])
+        if not ok:
+            raise RuntimeError("Could not generate a synthetic thumbnail")
+        cache.put(cache.key(str(path), window._preview_generation, 0, index * 10), jpeg)
+
+    window._on_hover(True, 24.0)
+    window._on_hover(False, 24.0)
+    pump(0.2)
+    strip = window.thumbnail_strip
+    check("five cached tiles stay visible when the pointer leaves the seekbar",
+          strip.get_mapped() and strip.get_height() > 0
+          and all(button.get_visible() for button in window.thumbnail_buttons))
+    check("all timestamps label distinct textures",
+          [label.get_text() for label in window.thumbnail_times]
+          == ["0:00", "0:10", "0:20", "0:30", "0:40"]
+          and all(picture.get_paintable() is not None for picture in window.thumbnail_pictures))
+    check("the horizontally scrollable strip does not widen a narrow player",
+          strip.measure(Gtk.Orientation.HORIZONTAL, -1)[0] <= 360)
+    tile = window.thumbnail_buttons[2]
+    check("tile describes its seek action", tile.get_tooltip_text() == "Seek to 0:20")
+    tile.activate()
+    pump(0.4)
+    check("activating the third tile seeks to its exact source time",
+          window._preview_position == 20.0 and preview_requests == [(24.0, True), (20.0, False)])
+
+    # Simulate a cast acquiring the receiver before a previously queued click arrives.
+    window.session = object()
+    try:
+        tile.emit("clicked")
+        check("a stale local tile cannot seek the receiver",
+              not strip.get_visible() and preview_requests == [(24.0, True), (20.0, False)]
+              and all(picture.get_paintable() is None for picture in window.thumbnail_pictures))
+    finally:
+        window.session = None
+
+
+def room_recovery(app, window) -> None:
+    """Restore a private synthetic checkpoint through the real GTK prompt."""
+    import room_checkpoint
+
+    directory = Path(os.environ["XDG_CACHE_HOME"])
+    files = [directory / f"queued-{index}.mkv" for index in range(10)]
+    for file in files:
+        file.write_bytes(b"synthetic fixture")
+    checkpoint = window._room_checkpoint_file = directory / "room.json"
+    room_checkpoint.write_checkpoint(checkpoint, map(str, reversed(files)))
+    # Only opt into opening this dialog. The app was started in self-test mode
+    # and remains isolated from network, configuration and playback timers.
+    app.selftest = False
+    try:
+        window._offer_room_recovery()
+    finally:
+        app.selftest = True
+    pump(0.2)
+    dialog = window.get_visible_dialog()
+    valid = isinstance(dialog, Adw.AlertDialog) and dialog.get_heading() == "Recover previous room?"
+    check("a real recovery dialog asks before restoring the queue", valid and window.queue == [])
+    if not valid:
+        return
+    dialog.emit("response", "recover")
+    check("recovery restores ten items in saved order", window.queue == list(map(str, reversed(files))))
+    check("recovery leaves playback and room access stopped",
+          window.session is None and window.now_playing is None and window._portal is None)
+
+
+def aspect_override_preferences(_app, window) -> None:
+    """Use the real aspect selector and verify reversible scrub preview requests."""
+    window.action_preferences()
+    pump(0.4)
+    prefs = window._preferences_window
+    row = prefs._combos["aspect_override"]
+    names = [row.get_model().get_string(i) for i in range(row.get_model().get_n_items())]
+    check("all six modes and the stretch warning are visible",
+          len(names) == 6 and "may distort" in names[1] and "distort" in row.get_subtitle())
+    generation = window._preview_generation
+    window._preview_position = 12.5
+    requested = []
+    window._queue_preview = lambda position: requested.append((position, window.cfg["aspect_override"]))
+    row.set_selected(2)
+    row.set_selected(0)
+    check("aspect and Original request a new preview at the same source time",
+          requested == [(12.5, "4:3"), (12.5, "original")]
+          and window._preview_generation == generation + 2)
+    check("restoring Original preserves local state without starting a cast",
+          window.cfg["aspect_override"] == "original" and window.session is None)
+
+
+SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+             "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
+             "room-recovery": room_recovery,
+             "picture-options": picture_options, "aspect-override": aspect_override_preferences, "accent": accent_choice,
+             "accent-saved": accent_saved, "accent-junk": accent_junk,
+             "density": density_choice, "density-saved": density_saved,
+             "density-junk": density_junk, "text-fit": text_fit_wide,
+             "audio-delay": audio_delay_menu, "side-panel": side_panel,
+             "subtitle-style": subtitle_style_choice,
+             "subtitle-style-saved": subtitle_style_saved,
+             "subtitle-style-junk": subtitle_style_junk,
+             "bookmarks": bookmarks_menu}
+
+
+class CheckApp(cast_control.CastControlApp):
+    def _selftest_quit(self) -> bool:
+        try:
+            SCENARIOS[SCENARIO](self, self.window)
+        except Exception:
+            check("scenario ran without an exception", False, traceback.format_exc().strip().splitlines()[-1])
+        for name, ok, detail in RESULTS:
+            print(f"CHECK|{SCENARIO}|{name}|{'PASS' if ok else 'FAIL'}|{detail}", flush=True)
+        self.selftest_failed = not all(ok for _n, ok, _d in RESULTS) or not RESULTS
+        self.quit()
+        return False
+
+
+def main() -> int:
+    if SCENARIO not in SCENARIOS:
+        print(f"unknown scenario {SCENARIO!r}", file=sys.stderr)
+        return 2
+    app = CheckApp(selftest=True)
+    app.run([sys.argv[0]])
+    return 1 if app.selftest_failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

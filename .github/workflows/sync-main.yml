@@ -1,0 +1,78 @@
+name: Sync main into develop
+
+# `main` is release-only. GitHub's "Automatically delete head branches"
+# also deletes `develop` when the automated develop->main PR merges (#518).
+# Never checkout a potentially deleted develop ref. Recreate it from a
+# release merge only when the ref is absent; otherwise merge main into develop
+# without force or history loss. This job NEVER writes main.
+#
+# Listen for both merge-related events: the PR-closed event can recover the
+# ref even if the main push event ran before automatic head-branch deletion.
+# Repo owners should also turn OFF automatic head-branch deletion; that is
+# an administrative setting and not changed by this workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: smoothcast-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    name: Reconcile or restore develop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Reconcile main into develop without deleting or rewriting history
+        run: |
+          git config user.name "smoothcast-sync[bot]"
+          git config user.email "smoothcast-sync@users.noreply.github.com"
+          git fetch origin main
+          # ls-remote returns 0 for a missing ref; distinguish empty output
+          # from transport/auth failures before making any branch mutations.
+          remote_develop="$(git ls-remote --heads origin develop)" || {
+            echo "::error::Cannot query develop; refusing blind branch creation."
+            exit 1
+          }
+          if [ -z "$remote_develop" ]; then
+            # After an automated release merge, main contains the verified
+            # develop history. Creation is non-forced and races safely with
+            # another agent restoring develop at the same time.
+            git push origin origin/main:refs/heads/develop || {
+              echo "::error::Cannot recreate missing develop. Check permissions or a concurrent branch creation; never force-push."
+              exit 1
+            }
+            echo "Restored develop from main after release PR deleted its head."
+            exit 0
+          fi
+          git fetch origin develop
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main; nothing to do."
+            exit 0
+          fi
+          git checkout --detach origin/develop
+          if git merge-base --is-ancestor origin/develop origin/main; then
+            git merge --ff-only origin/main
+          elif ! git merge --no-ff --no-edit -m "Merge main into develop (keep the release branch reconciled)" origin/main; then
+            echo "::error title=main cannot be merged into develop automatically::Conflicting files: $(git diff --name-only --diff-filter=U | tr '\n' ' '). Merge origin/main into develop by hand (docs/agents/workflow.md)."
+            git merge --abort || true
+            exit 1
+          fi
+          git push origin HEAD:develop || {
+            echo "::error::develop moved or branch rules denied a non-force update. Refetch and reconcile; never force-push."
+            exit 1
+          }

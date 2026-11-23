@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SmoothCast real-device qualification record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "model", "protocol", "firmware", "smoothcast_version", "os", "date", "tester", "scenarios", "notes"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "model": {"type": "string", "minLength": 1},
+    "protocol": {"enum": ["cast", "dlna", "airplay", "roku"]},
+    "firmware": {"type": "string"},
+    "smoothcast_version": {"type": "string", "minLength": 1},
+    "os": {"type": "string", "minLength": 1},
+    "date": {"type": "string", "format": "date"},
+    "tester": {"type": "string", "minLength": 1},
+    "scenarios": {"type": "object", "minProperties": 1, "additionalProperties": {"enum": ["passed", "failed", "not_tested"]}},
+    "notes": {"type": "string"},
+    "issue": {"type": "integer", "minimum": 1}
+  }
+}

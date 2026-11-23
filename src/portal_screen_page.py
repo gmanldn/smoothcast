@@ -1,0 +1,266 @@
+"""Self-hosted HTML for room screens: the ``/screen`` page and the dashboard panel.
+
+No external assets, fonts or CDNs: both pages are served by the room itself.
+Text reaches the DOM only through ``textContent``/attributes, never ``innerHTML``.
+"""
+from __future__ import annotations
+
+import design_tokens
+
+KNOWN_MIMES_JS = (
+    '["video/mp4","video/webm","video/x-matroska","video/ogg","audio/mpeg",'
+    '"audio/mp4","audio/aac","audio/flac","audio/ogg","audio/wav"]'
+)
+
+
+def screen_page() -> bytes:
+    return (_SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS)
+            .replace("/*TOKENS*/", design_tokens.css())).encode("utf-8")
+
+
+def panel_html() -> str:
+    """Dashboard section + script, inserted just before ``</main>``."""
+    return _PANEL_HTML
+
+
+_SCREEN_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
+<title>SmoothCast Screen</title>
+<style>/*TOKENS*/
+:root{font:16px system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);overflow:hidden;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+.stage{position:fixed;inset:0;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.card{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--vote-on));display:grid;place-items:center;font-weight:800;color:var(--on-accent);font-size:1.25rem}
+h1{font-size:1.35rem;margin:0;letter-spacing:-.02em}p{color:var(--muted);line-height:1.5;margin:.5rem 0}
+label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--muted)}
+input{width:100%;min-height:52px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--border);border-radius:14px;padding:10px 14px}
+#pin{letter-spacing:.3em;font-size:1.3rem;text-align:center}
+button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:var(--on-accent);background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
+button.ghost{background:var(--nav);color:var(--text);width:auto;margin:0;min-height:44px;padding:0 16px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
+.big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
+.slate{text-align:center;max-width:44rem}
+.dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent);animation:pulse 2.4s infinite}
+.dot.bad{background:var(--danger);animation:none}.dot.warn{background:var(--focus);animation:none}
+@keyframes pulse{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+#player{position:fixed;inset:0;background:rgb(0,0,0)}
+video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
+#audioArt{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:18px;background:radial-gradient(circle at 50% 35%,var(--vote),var(--bg) 70%);padding:24px;text-align:center}
+.bars{display:flex;gap:7px;align-items:flex-end;height:64px}.bars i{width:9px;border-radius:5px;background:var(--accent);height:20%;animation:eq 1.1s ease-in-out infinite}
+.bars i:nth-child(2){animation-delay:.15s}.bars i:nth-child(3){animation-delay:.3s}.bars i:nth-child(4){animation-delay:.45s}.bars i:nth-child(5){animation-delay:.6s}
+.paused .bars i{animation-play-state:paused}
+@keyframes eq{50%{height:100%}}
+@media(prefers-reduced-motion:reduce){.bars i,.dot{animation:none}}
+#hud{position:absolute;left:0;right:0;bottom:0;padding:44px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:linear-gradient(transparent,rgba(0,0,0,.8));transition:opacity .3s}
+#hud.hide{opacity:0;pointer-events:none}
+#hud .title{font-size:1.15rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.9rem;margin-top:6px}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:10px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent)}
+#banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--scrim);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
+#tools{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;transition:opacity .3s}
+#tools.hide{opacity:0;pointer-events:none}
+</style></head><body>
+<div class="stage" id="loginView" hidden><form class="card" id="loginForm" autocomplete="off">
+<div class="brand"><div class="logo" aria-hidden="true">S</div><h1>Make this a SmoothCast screen</h1></div>
+<p>Play movies and music from the room on this device. Nothing to install.</p>
+<label for="name">Name this screen</label><input id="name" maxlength="32" placeholder="Living room TV" required>
+<label for="pin">Room PIN shown on the host</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+<p class="err" id="loginError" role="alert"></p><button type="submit">Join the room</button></form></div>
+
+<div class="stage" id="startView" hidden><div class="card">
+<div class="brand"><div class="logo" aria-hidden="true">S</div><h1 id="startName">Screen</h1></div>
+<p>One tap lets this browser play sound and video when the room sends it something. You can leave it running; it reconnects by itself.</p>
+<button id="startButton" type="button">Start screen</button></div></div>
+
+<div class="stage" id="slate" hidden><div class="slate">
+<p class="big"><span class="dot" id="dot"></span><span id="slateName">Screen</span></p>
+<p id="slateText" role="status" aria-live="polite">Ready. Pick something in the room to play it here.</p>
+<p><button class="ghost" id="fsSlate" type="button">Full screen</button></p></div></div>
+
+<div id="player" hidden><video id="video" playsinline preload="auto"></video>
+<div id="audioArt" hidden><div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><p class="big" id="audioTitle"></p></div>
+<div id="banner" role="status" aria-live="polite" hidden></div>
+<div id="tools"><button class="ghost" id="fsButton" type="button">Full screen</button><button class="ghost" id="pipButton" type="button" hidden>Picture in picture</button></div>
+<div id="hud"><div class="title" id="hudTitle"></div><div class="bar"><i id="hudBar"></i></div>
+<div class="meta"><span id="hudState"></span><span id="hudTime"></span></div></div></div>
+
+<script>
+const MIMES=__MIMES__;
+const READY="Ready. Pick something in the room to play it here.";
+const $=id=>document.getElementById(id);
+let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
+let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false,recoverAt=0,stallTimer=null;
+const video=$("video");
+const safe=(fn)=>{try{return fn()}catch(_){return undefined}};
+const store={get:k=>safe(()=>localStorage.getItem(k))||"",set:(k,v)=>safe(()=>localStorage.setItem(k,v))};
+function show(...ids){for(const id of["loginView","startView","slate","player"])$(id).hidden=!ids.includes(id)}
+function clock(s){s=Math.max(0,Math.floor(Number(s)||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")}
+function capabilities(){return MIMES.filter(m=>{const el=m.startsWith("video")?video:document.createElement("audio");return !!safe(()=>el.canPlayType(m))})}
+async function api(method,path,body,signal){
+  const headers={};if(body!==undefined)headers["Content-Type"]="application/json";if(method!=="GET")headers["X-CSRF-Token"]=csrf;
+  const r=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body),signal});
+  let d={};try{d=await r.json()}catch(_){}
+  if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
+  return d}
+async function login(e){
+  e.preventDefault();$("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
+  try{const r=await fetch("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
+    const d=await r.json();if(!r.ok)throw Error(d.error||"Could not join");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
+  catch(err){$("loginError").textContent=err.message}}
+async function enter(name){
+  $("startName").textContent=name;$("slateName").textContent=name;show("startView");
+  if(started)await begin();}
+async function register(){
+  const name=$("slateName").textContent||"Screen";
+  const d=await api("POST","/api/screens",{name,capabilities:capabilities(),claim:safe(()=>sessionStorage.getItem("sc_screen_id"))||undefined});
+  screenId=d.screen.id;seq=d.screen.seq;playSeq=d.screen.play_seq;$("slateName").textContent=d.screen.name;
+  safe(()=>sessionStorage.setItem("sc_screen_id",screenId))}
+async function begin(){
+  started=true;stopped=false;try{await register()}catch(err){if(err.status===401||err.status===403){return relogin()}throw err}
+  show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
+function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
+function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
+const DIM_HINT="Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.";
+function dimHint(){if(store.get("sc_dim_hint"))return;store.set("sc_dim_hint","1");banner(DIM_HINT);setTimeout(()=>{if($("banner").textContent===DIM_HINT)banner("")},9000)}
+async function keepAwake(){if(!("wakeLock"in navigator)){dimHint();return}try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(_){dimHint()}}
+if(safe(()=>document.pictureInPictureEnabled&&video.requestPictureInPicture)){$("pipButton").hidden=false;$("pipButton").addEventListener("click",e=>{e.stopPropagation();safe(()=>document.pictureInPictureElement?document.exitPictureInPicture():video.requestPictureInPicture())})}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&started&&!wakeLock)keepAwake()});
+async function loop(){
+  if(polling)return;polling=true;
+  while(started&&!stopped){
+    try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`);
+      if(failures){failures=0;banner("");if(!current)setSlate(READY,"ok")}
+      for(const o of d.orders){if(o.seq>seq){seq=o.seq;apply(o)}}
+    }catch(err){
+      if(err.status===401||err.status===403){polling=false;return relogin()}
+      if(err.status===404){try{await register();continue}catch(_){}}
+      failures++;if(failures>1){banner("Reconnecting to the room…");if(!current)setSlate("Reconnecting to the room…","warn")}
+      await new Promise(r=>setTimeout(r,Math.min(10000,500*2**Math.min(failures,5))))}}
+  polling=false}
+function banner(text){const b=$("banner");b.textContent=text;b.hidden=!text}
+function apply(o){
+  if(o.kind==="play"){playSeq=o.seq;current={...o,fell:false};fallbackTried=false;load(o.url,o.start||0,o.route&&o.route.mode==="transcode");
+    $("hudTitle").textContent=o.title;$("audioTitle").textContent=o.title;
+    const audio=o.route&&o.route.kind==="audio";video.style.visibility=audio?"hidden":"visible";$("audioArt").hidden=!audio;
+    show("player");banner("");wake()}
+  else if(o.kind==="pause"){video.pause()}
+  else if(o.kind==="resume"){tryPlay()}
+  else if(o.kind==="seek"&&current){seekTo(o.value)}
+  else if(o.kind==="volume"){video.volume=o.value/100}
+  else if(o.kind==="stop"){playSeq=o.seq;stopPlayback()}
+  report(true,o.seq)}
+let transcoded=false,baseStart=0;
+function load(url,start,convert){
+  transcoded=!!convert;baseStart=start||0;clearTimeout(stallTimer);
+  const src=convert?url+(url.includes("?")?"&":"?")+"start="+encodeURIComponent(baseStart):url;
+  video.src=src;video.load();
+  if(!convert&&baseStart){video.addEventListener("loadedmetadata",()=>{safe(()=>{video.currentTime=baseStart})},{once:true})}
+  tryPlay()}
+async function tryPlay(){try{await video.play()}catch(err){if(err&&err.name==="NotAllowedError"){banner("Tap the screen to start playback")}}}
+function position(){return transcoded?baseStart+(video.currentTime||0):(video.currentTime||0)}
+function seekTo(t){t=Math.max(0,Number(t)||0);if(transcoded){load(current.url,t,true)}else{safe(()=>{video.currentTime=t})}}
+function stopPlayback(){current=null;clearTimeout(stallTimer);video.pause();video.removeAttribute("src");video.load();show("slate");setSlate(READY,"ok")}
+document.addEventListener("click",()=>{if(current&&video.paused&&!$("banner").hidden)tryPlay();wake()});
+function state(){
+  if(!current)return"idle";if(video.error)return"error";if(video.ended)return"ended";
+  if(video.paused)return video.readyState<3&&video.currentTime===0?"loading":"paused";
+  return video.readyState<3?"buffering":"playing"}
+async function report(force,ack){
+  if(!screenId||!csrf)return;const s=state(),now=Date.now();
+  if(!force&&s===lastState&&now-lastReport<2000)return;lastReport=now;lastState=s;
+  const body={state:s,position:position(),duration:(current&&current.duration)||(isFinite(video.duration)&&!transcoded?video.duration:0),volume:Math.round(video.volume*100),play_seq:playSeq};
+  if(ack!==undefined)body.ack=ack;
+  if(s==="error")body.error=errorText();
+  try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(err.status===401||err.status===403)relogin()}}
+function errorText(){const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
+let beat=null;function heartbeat(){if(!beat)beat=setInterval(()=>{if(started)report(false);hud()},1000)}
+function hud(){
+  if(!current)return;const dur=current.duration||(isFinite(video.duration)&&!transcoded?video.duration:0),pos=position();
+  $("hudBar").style.width=dur?Math.min(100,pos/dur*100)+"%":"0";
+  $("hudTime").textContent=clock(pos)+(dur?" / "+clock(dur):"");
+  const s=state();$("hudState").textContent=s==="playing"?"Playing":s==="paused"?"Paused":s==="buffering"||s==="loading"?"Loading…":s==="ended"?"Finished":"";
+  $("audioArt").classList.toggle("paused",s!=="playing")}
+video.addEventListener("playing",()=>{banner("");clearTimeout(stallTimer);report(true)});
+video.addEventListener("pause",()=>report(true));
+video.addEventListener("ended",()=>{report(true)});
+video.addEventListener("waiting",()=>{report(true);if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
+video.addEventListener("stalled",()=>{if(transcoded){clearTimeout(stallTimer);stallTimer=setTimeout(recover,15000)}});
+video.addEventListener("error",()=>{
+  if(!current)return;
+  // Direct play failed on codecs the browser could not decode: let the host convert.
+  if(!transcoded&&current.fallback&&!fallbackTried){fallbackTried=true;banner("Converting for this screen…");load(current.fallback,position(),true);return}
+  // A converted stream can drop while paused or buffering: resume where we were.
+  if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
+  report(true)});
+function recover(){if(!current||!transcoded)return;recoverAt=Date.now();const at=position();load(current.url,at,true)}
+function wake(){const hud=$("hud"),tools=$("tools");hud.classList.remove("hide");tools.classList.remove("hide");clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{if(!video.paused){hud.classList.add("hide");tools.classList.add("hide")}},3500)}
+document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(e.key==="f"||e.key==="F")fullscreen()});
+function fullscreen(){const el=document.documentElement;if(document.fullscreenElement){document.exitFullscreen()}else if(el.requestFullscreen){el.requestFullscreen().catch(()=>{})}}
+$("fsButton").addEventListener("click",e=>{e.stopPropagation();fullscreen()});$("fsSlate").addEventListener("click",fullscreen);
+$("startButton").addEventListener("click",()=>{begin().catch(err=>{setSlate(err.message,"bad");show("slate")})});
+$("loginForm").addEventListener("submit",login);
+window.addEventListener("pagehide",()=>{if(screenId&&csrf)safe(()=>fetch(`/api/screens/${screenId}`,{method:"DELETE",credentials:"same-origin",keepalive:true,headers:{"X-CSRF-Token":csrf}}))});
+$("name").value=store.get("sc_screen_name");show("loginView");
+</script></body></html>
+"""
+
+_PANEL_HTML = r"""
+<style>
+#screensList .queue-actions{width:100%}
+#screensList select{flex:1 1 100%;min-height:44px;max-width:100%;font:inherit;color:inherit;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:0 10px}
+#screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
+#screensList .state-error{color:var(--danger)}
+</style>
+<section id="screensPanel" hidden><div class="row"><h2>Screens</h2><span id="screensCount" class="muted"></span></div>
+<p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and pair it with the PIN.</p>
+<ul id="screensList"><li class="empty">No screens connected</li></ul>
+<p id="screensMsg" class="muted" role="status" aria-live="polite"></p></section>
+<script>
+(function(){
+  const list=document.getElementById("screensList"),count=document.getElementById("screensCount"),msg=document.getElementById("screensMsg");
+  if(!list)return;
+  const panel=document.getElementById("screensPanel"),dash=document.getElementById("dashboard");
+  setInterval(()=>{if(dash&&dash.hidden)panel.hidden=true},1000);
+  let items=[],seq=0;const choice={};
+  const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
+  const clock=s=>{s=Math.max(0,Math.floor(Number(s)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+  async function send(id,body){
+    try{const r=await fetch(`/api/screens/${id}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},
+      body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
+      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");msg.textContent="Sent to the screen.";
+    }catch(err){msg.textContent=err.message}}
+  const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
+  window.scRenderScreens=function(s){
+    const queuePanel=document.getElementById("queuePanel");
+    if(queuePanel&&panel.previousElementSibling!==queuePanel)queuePanel.after(panel);
+    panel.hidden=false;const screens=Array.isArray(s.screens)?s.screens:[];items=Array.isArray(s.queue)?s.queue:[];
+    count.textContent=screens.length?`${screens.length} connected`:"";
+    if(!screens.length){const li=el("li","empty","No screens connected");list.replaceChildren(li);return}
+    if(list.contains(document.activeElement)&&document.activeElement.tagName==="SELECT")return;
+    const rows=[];
+    for(const sc of screens){
+      const li=el("li","queue-item"),box=el("div");
+      const head=el("strong","",sc.name+(sc.video?" · screen":" · speaker"));
+      const info=el("div","muted"+(sc.state==="error"?" state-error":""),!sc.ready?"Not responding":(label[sc.state]||sc.state)+(sc.title?" — "+sc.title:"")+(sc.duration?" ("+clock(sc.position)+" / "+clock(sc.duration)+")":"")+(sc.mode==="transcode"?" · converted by host":"")+(sc.state==="error"&&sc.error?" · "+sc.error:""));
+      box.append(head,info);
+      const actions=el("div","queue-actions");
+      const pick=el("select");pick.setAttribute("aria-label","Choose what to play on "+sc.name);
+      const none=el("option","","Choose from queue");none.value="";pick.append(none);
+      for(const q of items){const o=el("option","",q.title);o.value=q.id;pick.append(o)}
+      pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value});
+      const play=el("button","tiny","Play");play.type="button";play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
+      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
+      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
+      actions.append(pick,play,toggle,stop);li.append(box,actions);rows.push(li)}
+    list.replaceChildren(...rows)};
+})();
+</script>
+"""

@@ -1,0 +1,158 @@
+name: Portal Security Regressions
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'src/portal.py'
+      - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
+      - 'tests/test_playhead_projection.py'
+      - 'tests/test_screen_page_theme.py'
+      - 'tests/test_room_accent.py'
+      - 'src/async_jobs.py'
+      - 'tests/test_async_jobs.py'
+      - 'src/castctl.py'
+      - 'src/command_trace.py'
+      - 'src/dlna.py'
+      - 'tests/test_command_trace*.py'
+      - 'src/pychromecast_backend.py'
+      - 'src/portal_join.py'
+      - 'src/mesh_transport.py'
+      - 'tests/test_mesh_transport.py'
+      - 'src/portal_room.py'
+      - 'src/room_checkpoint.py'
+      - 'src/room_checkpoint_ui.py'
+      - 'tests/test_room_checkpoint*.py'
+      - 'src/portal_status.py'
+      - 'src/portal_commands.py'
+      - 'src/portal_uploads.py'
+      - 'src/cast_portal.py'
+      - 'src/cast_ui.py'
+      - 'src/cast_av.py'
+      - 'src/aspect_override.py'
+      - 'src/preferences_ui.py'
+      - 'tests/test_sparse_thumbnail_cache.py'
+      - 'tests/test_portal*.py'
+      - 'src/room_event_replay.py'
+      - 'tests/test_room_event*.py'
+      - '.github/workflows/portal-security.yml'
+  pull_request:
+    # Do not duplicate tests for the long-lived develop -> main release PR.
+    branches: [develop]
+    paths:
+      - 'src/portal.py'
+      - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
+      - 'tests/test_playhead_projection.py'
+      - 'tests/test_screen_page_theme.py'
+      - 'tests/test_room_accent.py'
+      - 'src/async_jobs.py'
+      - 'tests/test_async_jobs.py'
+      - 'src/castctl.py'
+      - 'src/command_trace.py'
+      - 'src/dlna.py'
+      - 'tests/test_command_trace*.py'
+      - 'src/pychromecast_backend.py'
+      - 'src/portal_join.py'
+      - 'src/mesh_transport.py'
+      - 'tests/test_mesh_transport.py'
+      - 'src/portal_room.py'
+      - 'src/room_checkpoint.py'
+      - 'src/room_checkpoint_ui.py'
+      - 'tests/test_room_checkpoint*.py'
+      - 'src/portal_status.py'
+      - 'src/portal_commands.py'
+      - 'src/portal_uploads.py'
+      - 'src/cast_portal.py'
+      - 'src/cast_ui.py'
+      - 'src/cast_av.py'
+      - 'src/aspect_override.py'
+      - 'src/preferences_ui.py'
+      - 'tests/test_sparse_thumbnail_cache.py'
+      - 'tests/test_portal*.py'
+      - 'src/room_event_replay.py'
+      - 'tests/test_room_event*.py'
+      - '.github/workflows/portal-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One active, latest pending per ref; never starve this security suite.
+concurrency:
+  group: smoothcast-portal-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SMOOTHCAST_TEST_CONTEXT: '1'
+
+jobs:
+  portal-security:
+    name: Auth, uploads and room control (headless)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install the application and test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Test loopback room authentication, revocation and uploads
+        run: >-
+          python -m pytest -q
+          tests/test_portal.py
+          tests/test_portal_join.py
+          tests/test_mesh_transport.py
+          tests/test_portal_room.py
+          tests/test_room_checkpoint.py
+          tests/test_room_checkpoint_ui.py
+          tests/test_portal_status.py
+          tests/test_room_event_replay.py
+          tests/test_room_events.py
+          tests/test_room_events_client.py
+          tests/test_async_jobs.py
+          tests/test_castctl_seek.py
+          tests/test_command_trace.py
+          tests/test_command_trace_integration.py
+          tests/test_command_trace_receiver.py
+          tests/test_pychromecast_backend.py
+          tests/test_portal_activity.py::test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread
+          tests/test_portal_screens.py
+          tests/test_screen_page_theme.py
+          tests/test_room_accent.py
+          tests/test_design_tokens.py
+          tests/test_playhead_projection.py
+          tests/test_portal_screens_http.py
+          tests/test_portal_commands.py
+          tests/test_portal_error_codes.py
+          tests/test_portal_uploads.py
+          tests/test_portal_queue.py
+          tests/test_room_conformance.py
+
+  gtk-portal-smoke:
+    name: Isolated GTK host-control smoke (Xvfb)
+    needs: [portal-security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK and private virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth python3-gi python3-venv gir1.2-gtk-4.0 gir1.2-adw-1
+      - name: Install SmoothCast in a native-PyGI environment
+        run: |
+          /usr/bin/python3 -m venv --system-site-packages .portal-gtk-venv
+          .portal-gtk-venv/bin/python -m pip install -e .
+      - name: Smoke GTK widget construction on a private Xvfb display
+        env:
+          SMOOTHCAST_TEST_CONTEXT: '0'
+        run: |
+          .portal-gtk-venv/bin/python scripts/test_gui_isolated.py
+          .portal-gtk-venv/bin/python scripts/gui_checks.py thumbnail-strip room-recovery aspect-override

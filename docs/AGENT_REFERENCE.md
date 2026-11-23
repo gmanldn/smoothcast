@@ -1,0 +1,211 @@
+# SmoothCast agent reference — full instructions before token optimisation
+
+This is an **unabridged** snapshot of the former root `AGENTS.md`, retained for
+task-specific retrieval. New sessions read the small root `AGENTS.md` first,
+then consult this file only for relevant implementation history or edge cases.
+Current root rules override outdated historical notes below.
+
+> **Historical archive notice (18 November 2026):** This unabridged source
+> documents the *former* `IMPROVEMENTS.md` workflow, which was migrated to
+> [GitHub Issues](https://github.com/gmanldn/smoothcast/issues). The live
+> backlog and agent issue-claiming rules now live in [ISSUES.md](ISSUES.md).
+> Any instruction below to append to or preserve the old root backlog is
+> superseded. Do **not** recreate that file; the historical text remains here
+> only to preserve its original context and the user's research.
+
+---
+
+# AGENTS.md — SmoothCast
+
+## Critical rules (read first)
+- **Commit after every meaningful change.** User loses work if not committed. Run `git add -A && git commit -m "..."` frequently.
+- **Commit at least every ~10,000 lines of code or so**, even if the change is small, so work is never lost.
+- Never ask the user for confirmation to commit — just do it.
+- **Version authority:** `src/version.py` alone defines MAJOR/MINOR/PATCH and `__version__`. Bump the semantic release once when publishing a coherent release; use the Git commit SHA to identify individual intermediate commits. Never duplicate a hardcoded *current* version in documentation, the launcher, GTK labels, or tests.
+- Keep responses short and technical. No preamble, no postamble.
+
+## Improvement backlog preservation (mandatory)
+
+- `IMPROVEMENTS.md` is an accumulating, numbered backlog. **Never replace
+  the entire file with a fresh 50-item list.** New ideas go after the current
+  highest number, with their provenance and acceptance conditions. If merging
+  branches, reconcile both sets before committing, even where themes overlap.
+- The original researched 50 items plus historical done markers are preserved
+  verbatim in `docs/IMPROVEMENTS_ORIGINAL_50_20261118.md` (Git source
+  `7b8bd62c8a06`). The later 100 compatibility and audit items remain in the
+  canonical file, followed by recovered original-only items 101–132.
+- A historical checkmark does **not** qualify a present implementation; code,
+  portable tests, native GUI smoke tests and actual device tests are distinct.
+- Never claim an uncommitted GPT Astra batch has been restored without the
+  source file, stash or backup as evidence. Preserve suspected local work before
+  pulling or merging; do not silently overwrite it.
+- `tests/test_backlog_regressions.py` is a preservation and playback-safety
+  guard. Maintain it when intentionally extending the backlog.
+
+## Project
+SmoothCast is a GTK4/libadwaita Chromecast companion app.
+- Checkout launcher: `smoothcast` is one Python-only entry point on Linux, macOS and Windows (`./smoothcast` or `python smoothcast`). It bootstraps a project-local `.venv` and hands off to `setup/launch.py`. Do not add a second shell/Python launcher or require a POSIX shell on Windows. Alternatively, `pip install -e .` provides console commands via GTK-free `cli:main`. Keep both supported installed and checkout paths tested.
+- **Do not launch the real GUI during normal test cycles.** Never run `./smoothcast`,
+  `smoothcast`, `python3 src/cast_control.py`, or `gtk-launch` as a test.
+- **Default tests:** `python3 -m pytest -q tests` and `python3 -m compileall -q src scripts setup tests`;
+  these are headless and must never open, focus, or activate the user's window.
+
+## Display / screenshots
+- **Explicit opt-in GTK smoke only:** `python3 scripts/test_gui_isolated.py`.
+  Requires `Xvfb`, `xvfb-run` and `xauth`; missing dependencies cause
+  a safe refusal (no fallback to the user's `DISPLAY`).
+- The runner creates an isolated X server, Xauthority, HOME/XDG data and
+  config directories, disconnects Wayland/session DBus, uses a non-unique
+  GTK instance and terminates the entire process group after a bounded run.
+- Never use a user's active `DISPLAY` or `WAYLAND_DISPLAY` for UI tests.
+  Bare `--self-test` is deliberately refused without the isolated runner.
+  Do not repeatedly run the smoke test as a proxy for ordinary regressions.
+- For screenshots, create an **additional isolated virtual-display workflow**
+  with its own Xauthority; never use `xdotool` or screenshot commands targeting
+  the active user desktop. Do not change the real dock, window focus or casting
+  state as part of tests.
+
+## Key files
+- `src/cast_control.py` — main GTK app, LevelMeter widget, MainWindow, version import
+- `src/audio_monitor.py` — fast ffmpeg analysis of input/output levels
+- `src/streamer.py` — HLS transcode, direct play, ffmpeg chains, audio filters
+- `src/castctl.py` — catt CLI wrapper
+- `src/server.py` — HLS static file server / allowlisted HLS HTTP server (playlist, TS segments, health probe only; never serve session.json or logs)
+- `src/error_log.py` — ring-buffer error log (errors.log, 10k lines, gitignored)
+- `src/position_tracker.py` — playback position estimation (no GTK dep)
+- `src/responsive_layout.py` — GTK-free screen bounds and responsive breakpoints
+- `src/ui_theme.py` — contrast-conscious GTK4 colour/typography/design tokens and stylesheet
+- `src/utils.py` — pure text helpers (pretty_title)
+- `src/version.py` — version counter (MAJOR.MINOR.PATCH)
+- `src/cli.py` — GTK-free console entry point; reports --version before importing the GUI
+- `src/subtitle_encoding.py` — bounded, strict SRT encoding detection (UTF-8, UTF-16, cp1252) and atomic private UTF-8 staging
+- `src/preflight.py` — bounded MKV software decoder dry-run, validated 0.8 s sample, no receiver commands
+- `src/url_control.py` — HTTP(S) URL validation for remote casting
+- `src/screenshot.py` — bounded, collision-safe FFmpeg capture worker
+- `src/playback_state.py` — testable queue, timing and sleep-deadline decisions
+- `src/startup_cleanup.py` — primary-instance pre-window cleanup of orphaned SmoothCast subprocesses and scratch data
+- `setup/bootstrap.py` — standard-library dependency detection and native installation for supported OSes
+- `setup/{winsetup.bat,macsetup.sh,linuxsetup.sh}` — requested platform-specific setup entry points
+- `setup/launch.py` and `setup/shortcuts.py` — portable app launcher and user-local OS shortcuts
+- `setup/README.md` — install contract, safety and known portability gaps
+- `src/position_tracker.py` — authoritative source-time tracker with rate-aware pause/resume
+- `tests/` — pytest suite (runs without GTK/display)
+- `pytest.ini` — pytest config (testpaths, pythonpath=src)
+
+## Architecture
+- GTK4 + libadwaita UI runs on the main thread via `Adw.Application`.
+- All blocking I/O (castctl, ffmpeg, network) runs in background threads via `Async.run()` and is marshalled back to the main thread with `GLib.idle_add()`. The main thread never blocks — the UI stays responsive at all times.
+- The compressor (`acompressor` + `alimiter`) lives in `streamer.py:AUDIO_FILTERS` and is applied **only** in the ffmpeg transcode chain that produces the HLS stream sent to the Chromecast. It does **not** affect local machine audio, the original file, or any other application.
+- The audio monitor (`audio_monitor.py`) runs a separate read-only ffmpeg pass for metering; it never touches playback.
+- Audio track identity is relative to audio streams: `0:a:N`. `MediaInfo.audio_streams` records languages, titles, codecs, layouts; `SessionState.audio_track_index` carries an explicit per-file selection through HLS restart and VAAPI fallback. When explicitly chosen, do not use direct Cast passthrough; select the same track for the read-only audio meter.
+- UI responsiveness: The `_tick` method runs every 500ms and does only lightweight UI updates (seekbar, labels, details). The `_meter_tick` runs every 100ms and does only lightweight meter drawing. No blocking work runs on the main thread.
+- Auto-update on launch: `src/update_control.py` runs `git pull --ff-only` once in a background thread after the first GTK window is visible. It skips release archives and self-tests. Updated code takes effect on the next launch; a toast asks for restart **only when the downloaded semantic release differs from the running release**. Do not repeatedly prompt to restart for same-version commits. The network must never delay startup.
+- Single-instance activation is handled by GApplication/D-Bus: a second dock launch forwards activation to the existing window and presents it. Never reintroduce a PID/file lock before `app.run()`.
+- On a **new primary application startup only**, `startup_cleanup.cleanup_before_window()` runs synchronously with a bounded SIGTERM grace period **before** MainWindow creates session, meter and polling workers. It must be skipped for `--self-test`, existing-instance activation, and non-Linux process discovery. Never indiscriminately `pkill ffmpeg` or `pkill python`: match same-user `/proc` argv plus starttime to prevent PID reuse accidents. Preserve a verified stream when `keep_streaming` is enabled, and never send a startup stop command to the TV.
+- Graceful error handling: `main()` wraps `app.run()` in try/except.
+
+## Testing (portable, GTK-free)
+- Run: `python3 -m pytest` (from repo root) — no display needed.
+- Logic modules (`position_tracker`, `utils`, `castctl`, `audio_monitor`, `streamer`, `error_log`) import without GTK — safe on CI.
+- GTK wiring is checked without starting the app. Optional GUI smoke testing must run via `python3 scripts/test_gui_isolated.py` and only on an isolated Xvfb display; never call `--self-test` directly from pytest or a developer's desktop.
+- All modules must `compileall` clean; self-test must print `SELFTEST OK`.
+- Installer contract: `python3 -m unittest discover -s tests -p 'test_setup_bootstrap.py' -v`; matrix must pass on Ubuntu, macOS and Windows without installing native GUI dependencies.
+
+## Error log
+- Uncaught exceptions (main + background threads) and `Async.run` failures are appended to `errors.log` (ring buffer, max 10,000 lines, gitignored).
+- Path: `~/.config/cast-control/errors.log`.
+
+## Version — canonical source and release discipline
+- **Single authority:** `src/version.py` defines `MAJOR`, `MINOR`, `PATCH`, derived `__version__`, and the prefixed `version.label()`. Do not introduce a second version variable or manually copy a current version into AGENTS/README.
+- **Distinct identities:** a release is `MAJOR.MINOR.PATCH`; a Git commit SHA identifies a precise development revision. A version bump is an intentional release step, not a per-commit tick that can disagree after a multi-commit fix.
+- **User-visible:** `smoothcast --version`, `sc --version`, and `python3 src/version.py` print the canonical running version; these do not need GTK or a prepared venv. The window title and About dialog derive their version from that same imported module.
+- **Update behaviour:** an asynchronous git pull does not hot-reload Python code. The header keeps the *running* version and requests restart **only when a newer release version was downloaded**, never for changes within the same version.
+- **Release tags:** tag `v<MAJOR>.<MINOR>.<PATCH>` only when it matches `src/version.py`; check `python3 -m unittest tests.test_version_integrity -v` before publishing. No hardcoded `Current: X.Y.Z` line in docs.
+
+## Packaging
+- `pyproject.toml` + `setup.py` shim are the canonical Python entry points. `pip install -e .` installs all `src/*.py` modules as top-level modules and exposes `smoothcast`, `sc`, `smoothcast-gui` console scripts through `cli:main`. This GTK-free gate handles `--version` before importing PyGObject and lazy-loads `cast_control:main` for the GUI.
+- Native GTK is installed through apt/dnf/pacman, Homebrew or MSYS2, never assumed pip-installable. The `setup/` scripts handle platform-specific bootstrap.
+- Python 3.10+ is the only manual prerequisite, but installing OS packages still needs network access and potentially administrator approval. Never report a supported platform ready until GUI imports, FFmpeg tools and catt all verify successfully.
+- Windows UCRT64 uses its **own Python and PyGObject**, not regular Windows CPython binary extensions. On Windows/macOS use software libx264 by default: no VAAPI, and Linux-only `/proc` orphan cleanup must be bypassed. Native UI/Chromecast smoke tests are still necessary.
+- Every module under `src/` is listed in `pyproject.toml` `[tool.setuptools] py-modules`; new modules must be added there.
+- `src/version.py` is the sole version authority; `[project] dynamic = ["version"]` and `[tool.setuptools.dynamic] version = {attr = "version.__version__"}` are required. The `cli:main` entry point exposes the running version without GTK.
+
+## UI features
+- Preview screen above scrubbing bar: `PreviewScreen` widget shows video title/info as a colored placeholder.
+- Scrubbing knob moves immediately on seek/jump: `seek_to()` updates the seekbar directly, and `tracker.device_update()` is called immediately for both direct and transcode modes so `_tick()` doesn't override the knob while the cast catches up.
+- Casting status in details card: Buffer Health (ahead/behind time) and Segments (HLS segment count) rows show exact cast status.
+- Error handling: `main()` wraps `app.run()` in try/except; GApplication handles repeat activation.
+- Modern CSS styling: explicit dark slate theme (#0e0e10 bg, #4f8cff accent) with refined cards, hover states on all buttons, larger transport controls (80px play button), improved seekbar with accent-colored knob, better typography hierarchy with uppercase headings, generous margins and card spacing.
+- Responsive layout: paned split resizes both children, right panel is scrollable and flexible, minimum window 1200x800 with default 1400x900, no fixed widths preventing scaling.
+- Version number is prominent in the window **title**, e.g. `SmoothCast vX.Y.Z`; the subtitle shows current device/state and a restart reminder only when updated files have been downloaded.
+
+## Completed work
+1. Compressor only affects playback (verified by code inspection).
+2. Bouncing master line meter added to `LevelMeter` — shows post-compressor output level vs 0 dBFS with attack/release easing, color-coded green/yellow/red, 0 dBFS ceiling notch, -6 dB warning notch, numeric readout.
+3. Canonical version: `src/version.py` controls runtime/CLI/About strings; a separate Git SHA identifies the precise commit, and the release version is advanced at release cutover.
+4. Preview screen above scrubbing bar: `PreviewScreen` widget with video title/info.
+5. Casting status in details card: Buffer Health and Segments rows.
+6. Scrubbing knob moves immediately on seek/jump.
+7. UI responsiveness: all blocking I/O in background threads; main thread never blocks.
+8. Single-instance GTK/GApplication activation: second launch presents the existing window.
+9. Graceful error handling: `main()` wraps `app.run()` in try/except.
+10. GUI modernization: refined CSS with better cards, buttons, transport controls, seekbar; larger margins/spacing; larger preview screen; better typography hierarchy; cleaner color scheme; version on front page.
+11. A non-blocking background `git pull --ff-only` runs after the first window is visible; a restart applies new Python code.
+12. Startup stale-state flush: `_flush_stale_state()` runs in `MainWindow.__init__` after `_build_ui()` to stop any lingering audio analysis, clear session/media/tracker state, and reset all UI widgets to a clean 'nothing playing' state so changes kick in smoothly on restart.
+13. Dock: `scripts/install_desktop.py` must parse `--quiet` and `--pin` with valid `argparse` actions; the GUI launcher invokes `--quiet` on every startup. Its canonical dock Exec must resolve to the *absolute checkout launcher*, never a bare PATH command or stale pip installation. The installer registers the canonical `local.cast-control.desktop` launcher and matching hicolor icon under `$XDG_DATA_HOME`; `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, with a fixed working directory. Never assume `~/.local/bin` is on the desktop session PATH. A hidden `smoothcast.desktop` alias maintains old pins; GNOME favourites referencing the old ID migrate without losing their positions. The installer is idempotent and uses no sudo. Tests: `python3 -m unittest discover -s tests -v`.
+14. Server security and reliability: only `movie.m3u8`, `segment-*.ts` and `/_smoothcast/health` are available over HTTP. Port 8767 must pass the SmoothCast-specific health probe before reuse. Stale saved PIDs are checked against Linux `/proc/<pid>/cmdline` before signalling. Failed cast or seek-restart starts clean up spawned subprocesses. Unit tests: `python3 -m unittest discover -s tests -v`.
+15. Playback transitions: FFmpeg `-progress` timestamps begin at zero after `-ss` and must be converted to absolute time by `playback_state.absolute_encoded_position`. Queue progression is triggered by a real device PLAYING/PAUSED→IDLE transition, not an encoder/catt exit. Previous-session cleanup must finish before starting Up Next. Pure regression tests live in `tests/test_playback_state.py`.
+16. Long-film meter performance: `AudioMonitor._pair` consumes and discards already-converted per-frame FFmpeg metadata dictionaries to keep memory bounded; the compact arrays remain available for seek lookups. `MainWindow._stop_monitor` must retire old FFmpeg analysis off the GTK main thread. Tests: `tests/test_audio_monitor.py`.
+17. Chromecast LAN selection: `host_ip(device_host)` picks the outbound interface using a no-packet UDP route to the discovered TV IP, with safe fallbacks. Never advertise loopback, link-local or multicast addresses as HLS URLs. Propagate the selected device IP through normal starts and software-encoder fallback/seek restarts. Regression cases are in `tests/test_streamer_reliability.py`.
+18. Startup responsiveness: automatic git updates must run once in a worker **after** GTK window presentation, never before `app.run()`. `--self-test` runs `Gio.ApplicationFlags.NON_UNIQUE` so it cannot activate a live user instance. `app.quit` actions close the window to preserve the normal keep-streaming and configuration lifecycle. Tests: `tests/test_update_control.py`.
+19. Encoder fallback: hardware VAAPI is allowed 15s to generate HLS media; software libx264 gets 30s. A stalled but live hardware FFmpeg process must be terminated before one software retry. No infinite fallback loops. `test_stalled_vaapi_encoder_falls_back_even_if_process_is_alive` validates the failure mode.
+20. GTK4 action integrity: use `window.fullscreen()/unfullscreen()`, never GTK3-only `set_fullscreen()/set_keep_above()`. Window stacking is compositor-controlled; do not advertise an unsupported always-on-top action. Every `Gio.Menu` entry must correspond to a registered `Gio.SimpleAction`, including `app.clear-recents`.
+21. Screenshot capture: `src/screenshot.py` runs FFmpeg only in a background worker with a bounded timeout, no stdin, and a unique non-overwriting output path. Never reintroduce synchronous `subprocess.run` in `MainWindow._screenshot`. Regression tests: `tests/test_screenshot.py`.
+22. Real Loop and Sleep timer: `playback_state.next_media` repeats one item before `autonext`; cleanup completes before restarting the same track or auto-shutting down. The sleep timer stores a persisted wall-clock `sleep_timer_deadline` and polls every five seconds, stopping the SmoothCast-owned session. The GTK application must be running for the deadline to fire. Tests: `tests/test_playback_controls.py`.
+
+23. Remote URL casting: `MainWindow._cast_remote_url` validates HTTP(S) addresses with `url_control.validate_media_url`, then calls `catt -d DEVICE cast --no-subs URL` in an `Async.run` worker. Never send network URLs to `streamer.ffprobe(Path(...))`. Tests: `tests/test_url_control.py`.
+
+25. Responsive GTK4 layout: `src/responsive_layout.py` clamps startup size to monitor geometry; `MainWindow._refresh_responsive_layout` checks allocated width/height every 200 ms and reflows cards from a two-column desktop page to a single-column layout below 1180 logical pixels. One outer `Gtk.ScrolledWindow` gives vertical access to every card on short screens. Transport/action controls reattach to compact GTK grids; long metadata wraps and preview text ellipsises. Never restore forced large window minima or GTK3 window-position APIs. See `tests/test_responsive_layout.py` and `tests/test_responsive_wiring.py`.
+
+28. Playback and lifecycle reliability (v1.0.42): the GUI seekbar always measures **source-film seconds**, including at non-1× speed. FFmpeg uses `-readrate speed`, `setpts=PTS/speed` and `atempo`; convert relative HLS and encoder times via `playback_state.absolute_encoded_position(offset, elapsed, duration, speed)`. `PositionTracker` extrapolates by `rate`, with pause/resume rebasing. `_restart_at(..., speed_override=...)` must apply live speed changes (including transitions from direct mode), and HLS software fallback MUST preserve both speed and rotation. Never allow native direct play for speed or rotation transforms. Tests: `tests/test_playback_rate.py`, `tests/test_playback_state.py`, `tests/test_streamer_reliability.py`.
+
+29. Device ownership and reconnection: `catt cast` may exit after starting TV playback; direct session ownership lasts until explicit stop or confirmed device completion. The transcoder may exit before buffered TV playback ends: do not disable Stop/Pause because the FFmpeg PID finished. Ignore stale responses for a previously selected TV; prohibit switching outputs while an owned session is live. Saved direct casts must pass `playback_state.direct_session_matches` before presenting them as reconnected. Portable CI syntax/tests: `.github/workflows/verify.yml`.
+
+30. Local playback and capture test reliability (v1.0.43): `tests/test_local_playback.py` must keep the **started** Popen mock (returned by `patcher.start()`) and stop all active `unittest.mock.patch` instances in teardown; never leak a global `Path.is_file` monkeypatch into later screenshot tests. `src/screenshot.py` checks `Path.stat()` for real regular source files and non-empty output even when FFmpeg exits successfully; it must not trust `Path.is_file()` under test mocks. GTK4 nested queue/activity `Gtk.ScrolledWindow` instances have bounded visible heights and **do not** propagate the changing child natural height into the outer page; retain outer vertical scrolling. Regression tests: `tests/test_local_playback.py`, `tests/test_screenshot.py`, `tests/test_responsive_wiring.py`. Investigate any remaining `GtkBox min > natural` warnings only through an explicitly isolated virtual-display workflow; never open the user's desktop during test cycles.
+
+31. Clean startup recovery (v1.0.45): `CastControlApp.do_startup()` scans only the current user's verified old SmoothCast FFmpeg (HLS encoder and audio analysis), ffplay preview and HLS server commands before constructing a window. Recheck PID **start ticks and full argv** before signalling with bounded SIGTERM/SIGKILL. Remove stale playlist, segments, progress and orphaned `cast-mon-*` scratch directories without disturbing logs or user media. If `keep_streaming` is enabled, preserve saved live direct casts and verified HLS server/encoder processes for `_adopt_session()`. Single-instance repeat activation and self-tests MUST NEVER run cleanup. Tests: `tests/test_startup_cleanup.py`.
+
+32. Playlist and control integrity (v1.0.47): `src/playlist_control.py` handles bounded local M3U files, relative entries, duplicates, missing media and atomic saves. The Load playlist action calls `_enqueue`; it must never call nonexistent `queue_draw()` on `MainWindow` or modify Loop. The `app.loop` action has its own `_toggle_loop()`. In `_cast_path`, `offset=None` means saved resume, while **explicit `0.0` means rewind**; playlist auto-next and manual Next/Previous start at zero. Direct-play resume must send an actual Chromecast seek or fall back to transcoding. Never set `now_playing` before a cast is accepted. After TV completion, mark the UI busy until old HLS server/file teardown finishes, and do not issue another STOP to a receiver already IDLE. Treat an existing HLS session as owned while TV drains encoded media even after FFmpeg exits. Regression tests: `tests/test_playlist_control.py`, `tests/test_playback_state.py`, `tests/test_player_action_safety.py`, `tests/test_streamer_reliability.py`.
+
+33. Python-first native setup (planned cross-platform beta): `setup/linuxsetup.sh`, `setup/macsetup.sh` and `setup/winsetup.bat` delegate to standard-library `setup/bootstrap.py`. Verify native GTK4/libadwaita, PyGObject, ffmpeg/ffprobe/ffplay, venv and catt >=0.12. Linux apt/dnf/pacman; macOS Homebrew (installed if absent); Windows official MSYS2 UCRT64 (verify SHA-256 of downloaded installer before execution). Preserve stale venvs rather than silently destroy them. `--check` must be read-only. Native per-user app shortcuts via `setup/shortcuts.py`. Test with `tests/test_setup_bootstrap.py` and the 3-OS CI setup-contract matrix. **Do not claim Windows/macOS feature parity until end-to-end GTK and Chromecast tests pass on real systems.**
+
+## New media and receiver compatibility contracts
+
+- `src/castctl.py` speaks **Google Cast via catt**, including compatible built-in TVs, Google TV, Android TV Cast receivers and smart displays. Manual receiver IPv4 is for Cast devices when mDNS fails, **not** general DLNA/AirPlay.
+- `src/streamer.py` normalises incompatible MKV/HEVC/VP9/AV1 sources to receiver-safe H.264/AAC. Respect capability limits; the fallback software encoder outputs 8-bit yuv420p and downscales 4K to 1080p.
+- External `.srt/.vtt/.ttml` may be passed to catt or burned by FFmpeg; `.ass/.ssa` require burn-in.
+- Never call receiver stop/cast when preflighting an unverified MKV. `preflight.check_media` must produce and verify actual frames from a short private H.264/AAC render, retain media/subtitle selections and always remove its temporary files; only after success may `_cast_path` call `previous.stop`. Cache by media and subtitle fingerprints, preserving a currently playing TV if preflight fails.
+- Always route external `.srt` through `subtitle_encoding.stage_srt` before either Cast receiver subtitles or FFmpeg burn-in. Strict UTF-8/UTF-16/CP1252 detection, 16 MiB input/output limits, timestamp/control validation and private atomic mode-0600 output apply; never rewrite a user's subtitle. `Session.stop` and primary startup cleanup remove stale staged files, except for a deliberately retained live cast. Embedded MKV **text** tracks are selectable and burned by the libass subtitle filter; **PGS/VobSub/DVB bitmap streams are not yet supported**. Do not silently mark them as available.
+- Preserve embedded subtitle index in `SessionState` and across restart/seek; do not send duplicate sidecar tracks when captions are burned into the video. Resolve user-picked paths only if valid; bound temporary staging.
+- In-window Play/Pause uses `Gtk.Video`, not a separate ffplay window. Local playhead and cached duration are independent of Cast session time. Cast explicitly hands off at the local timestamp.
+- `IMPROVEMENTS.md` is the prioritised improvement backlog. Never present backlog proposals as shipping features; require tests and real-device verification for protocol claims.
+
+## User's requests (pending)
+1. ~~Verify compressor only affects playback, not whole machine.~~ Done: compressor lives only in `streamer.py:AUDIO_FILTERS`, applied only in the ffmpeg HLS transcode chain. Local playback uses plain `ffplay` with no filters. The audio monitor is a separate read-only pass.
+2. ~~Add a bouncing line level meter for master so user can see how close to 0 the signal is.~~ Done: `LevelMeter._draw_master` draws a single vertical line whose height is the eased `out_rms` (post-compressor output), with 0 dBFS and -6 dB notches, colour-coded green/yellow/red, and a tip glow when within -3 dB.
+3. Local playback device: `src/local_playback.py` manages an `ffplay` subprocess. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts.
+
+## Pending work
+- Run a real-device smoke test for start, URL cast, seek, loop, stop, auto-shutdown, sleep expiry, VAAPI fallback and keep-streaming (requires a Chromecast on the LAN).
+- `GtkBox min > natural` warning on `GtkBox 0x...` (reported min height 1637, natural 1539) was reported previously; do not run self-tests on the active desktop. The outer page scroller should be re-examined so the left column's natural height never exceeds its min height request.
+
+## Completed work
+24. Playback speed presets (0.5x–2.0x + custom) now change the actual transcode rate: `setpts=PTS/speed` for video and chained `atempo` for audio are added to the ffmpeg HLS chain; `_set_speed` restarts an active transcode at the current position, and the saved speed is restored across seeks and sessions. Covered by `tests/test_core.py`.
+
+25. Dock artwork: new SmoothCast icon (dark slate squircle, gradient cast glyph with signal arcs, play cutout, glow halo) regenerated offline by `scripts/make_icon.py` and committed at `data/cast-control.png`; `scripts/install_desktop.py --pin` pins SmoothCast to the GNOME dock without reordering existing favorites. Tests: `tests/test_desktop_integration.py`.
+
+26. Media-console visual redesign (v1.0.40): all application CSS belongs in `src/ui_theme.py`, not a second hard-coded stylesheet in `cast_control.py`. Keep contrast-safe `PALETTE` tokens; `tests/test_visual_design.py` checks them and the callback/layout invariants. `PreviewScreen` is intentionally a *drawn metadata slate*, never a fabricated film frame; its title must ellipsise at any width. The Now Playing hero starts with Open video as the primary action; when a local video is selected, Cast to TV becomes primary while Open remains available. Empty queue/activity states must collapse their scrollers (no large vacant panels). Device status badges come from `castctl.info`; never claim a connection from scan results alone. Group playback options and stream diagnostics. Preserve native GTK4 widget semantics, responsive reflow, keyboard shortcuts, all cast callbacks and activity logging.
+
+27. Video rotation (0/90/180/270): `streamer.rotation_filters` builds ffmpeg `transpose` chains for the HLS transcode; `Session.start_transcode` accepts `rotation`, forces a VAAPI download/upload round trip when rotating on the GPU path, and stores it in session state; the settings card exposes a rotation dropdown. Pure regression tests: `tests/test_rotation.py`.
+
+28. Local playback: `src/local_playback.py` manages an ffplay subprocess so a selected file can be played on this machine (in its own window) before deciding to cast. `cast_control.py` adds a "Play locally" action/menu item and hero button, shows a "Playing locally" chip, and stops local playback whenever a cast starts. Tests: `tests/test_local_playback.py`.
