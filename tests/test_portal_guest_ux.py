@@ -323,3 +323,46 @@ def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
     assert "House PIN only if the host requires it" in panel
     assert "Stop this screen without stopping the host TV" in panel
     assert "Screen command received; checking its state." in panel
+
+
+def test_play_pause_button_explains_actual_state_without_replacing_dom():
+    """Headless browser test: shared playback action is always unambiguous."""
+    import shutil
+    import subprocess
+    import pytest
+
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function playbackToggleCopy(state){")
+    end = script.index("function showJoinedRoom(){", start)
+    controls = script[start:end]
+    assert 'renderPlaybackToggle(s.state)' in script
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for playback button regression")
+    harness = r"""
+const assert=require("node:assert/strict");
+let labels=[];
+const button={
+  textContent:"Play / pause",title:"",
+  setAttribute(key,value){assert.equal(key,"aria-label");this.ariaLabel=value;labels.push(value)}
+};
+const document={querySelector(selector){
+  assert.equal(selector,'[data-action="play_pause"]');
+  return button;
+}};
+"""
+    checks = r"""
+renderPlaybackToggle("PLAYING");
+assert.equal(button.textContent,"Pause");
+assert.match(button.ariaLabel,/Pause playback.*for everyone/);
+renderPlaybackToggle("BUFFERING");
+assert.equal(button.textContent,"Pause");
+renderPlaybackToggle("PAUSED");
+assert.equal(button.textContent,"Resume");
+assert.match(button.title,/Resume playback.*for everyone/);
+renderPlaybackToggle("IDLE");
+assert.equal(button.textContent,"Play / pause");
+assert.match(button.ariaLabel,/Toggle playback/);
+assert.equal(labels.length,4);
+"""
+    subprocess.run(["node", "-"], input=harness + controls + checks,
+                   check=True, text=True, timeout=10)
