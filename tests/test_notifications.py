@@ -16,15 +16,6 @@ def source(name: str) -> str:
     return (ROOT / "src" / name).read_text(encoding="utf-8")
 
 
-class _Notification:
-    def __init__(self, title):
-        self.title = title
-        self.body = ""
-
-    def set_body(self, body):
-        self.body = body
-
-
 def extracted_ui_method(name: str):
     text = source("cast_ui.py")
     tree = ast.parse(text)
@@ -36,7 +27,6 @@ def extracted_ui_method(name: str):
     namespace = {
         "notifications": notifications,
         "pathlib": SimpleNamespace(Path=Path),
-        "Gio": SimpleNamespace(Notification=SimpleNamespace(new=_Notification)),
     }
     exec(compile("class Methods:\n" + textwrap.indent(textwrap.dedent(segment), "    "),
                  "<notify-method>", "exec"), namespace)
@@ -66,44 +56,61 @@ def test_finished_error_and_device_lost_are_wired():
     assert 'self._notify("error", message)' in session
     assert "self._notify(notifications.DEVICE_LOST, self._device())" in ui
     assert "notifications.should_notify(self.cfg, event, window_active=active)" in ui
-    assert "self.app.send_notification(None, notification)" in ui
+    assert "self.toast(body, error=event != notifications.FINISHED)" in ui
+    assert "self.app.send_notification(" not in ui
+    assert "Gio.Notification.new(" not in ui
     assert 'self._switch(alerts, "notifications"' in prefs
     assert '"notifications": True' in widgets
     assert '"notifications"' in package
 
 
-def test_notify_respects_disabled_focus_and_event_payloads():
-    Methods, namespace = extracted_ui_method("_notify")
+def test_in_app_alerts_do_not_create_shell_notifications_or_reveal_directories():
+    Methods, _namespace = extracted_ui_method("_notify")
     app = SimpleNamespace(send_notification=mock.Mock())
     console = mock.Mock()
+    toast = mock.Mock()
     method = Methods()
     method.cfg = {"notifications": True}
     method.app = app
     method._console = console
+    method.toast = toast
     method.is_active = lambda: False
 
-    method._notify(notifications.FINISHED, "/media/Film.mkv")
-    app.send_notification.assert_called_once()
-    sent = app.send_notification.call_args.args[1]
-    assert sent.title == "Playback finished"
-    assert sent.body == "Film.mkv finished playing."
-
-    app.send_notification.reset_mock()
-    method._notify(notifications.ERROR, "Receiver rejected the cast")
-    assert app.send_notification.call_count == 1
-    assert app.send_notification.call_args.args[1].title == "Playback error"
-
-    app.send_notification.reset_mock()
-    method.cfg["notifications"] = False
-    method._notify(notifications.ERROR, "disabled")
+    method._notify(notifications.FINISHED, "/private/movies/Film.mkv")
+    toast.assert_called_once_with("Film.mkv finished playing.", error=False)
+    console.assert_called_once_with("Playback finished: Film.mkv finished playing.")
+    assert "/private/" not in str(console.call_args)
+    assert "/private/" not in str(toast.call_args)
     app.send_notification.assert_not_called()
 
+    for event, detail, expected in (
+        (notifications.ERROR, "Receiver rejected the cast", "Receiver rejected the cast"),
+        (notifications.DEVICE_LOST, "Lounge TV", "Lounge TV stopped responding."),
+    ):
+        toast.reset_mock()
+        method._notify(event, detail)
+        toast.assert_called_once_with(expected, error=True)
+        app.send_notification.assert_not_called()
+
+    toast.reset_mock()
+    method.cfg["notifications"] = False
+    method._notify(notifications.ERROR, "disabled")
+    toast.assert_not_called()
     method.cfg["notifications"] = True
     method.is_active = lambda: True
     method._notify(notifications.ERROR, "focused")
-    app.send_notification.assert_not_called()
+    toast.assert_not_called()
 
     method.is_active = lambda: False
-    app.send_notification.side_effect = RuntimeError("no daemon")
+    toast.side_effect = RuntimeError("toast overlay closed")
     method._notify(notifications.ERROR, "boom")
-    console.assert_called_once()
+    assert "In-app playback alert unavailable:" in console.call_args.args[0]
+    app.send_notification.assert_not_called()
+
+
+def test_prefs_explicitly_explain_no_dock_badges():
+    ui = source("cast_ui.py")
+    prefs = source("preferences_ui.py")
+    assert "Ubuntu Dock counted them" in ui
+    assert "never add a counter to the OS dock" in prefs
+    assert "Show in-app playback alerts" in prefs

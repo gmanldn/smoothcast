@@ -112,14 +112,15 @@ class PreferencesWindow(Adw.PreferencesWindow):
         queue.add(room_port_row)
 
         alerts = self._group(
-            playback, "Notifications",
-            "Desktop notifications are suppressed while SmoothCast is focused.",
+            playback, "Playback alerts",
+            "Alerts stay inside SmoothCast and never add a counter to the OS dock.",
         )
         art = self._group(playback, "Artwork", "Shown in the preview above the scrubber.")
         self._switch(art, "show_cover_art", "Show cover art",
                      "Use a track's embedded artwork; turn off to keep the plain slate.")
-        self._switch(alerts, "notifications", "Show desktop notifications",
-                     "Notify when a cast finishes, fails or the receiver disappears.")
+        self._switch(alerts, "notifications", "Show in-app playback alerts",
+                     "Keep finished, error and receiver-offline notices in the activity console "
+                     "and show a short in-app toast while the window is unfocused.")
 
         sound = self._page("Sound & subtitles", "audio-speakers-symbolic")
         audio = self._group(
