@@ -13,14 +13,17 @@ GitHub Issues are the authoritative backlog:
 
 1. Start with `python3 scripts/agent.py board` and `agent.py next`;
    choose an available issue using live claims and hot file scopes.
-2. Claim briefly, use your own **detached worktree** of `origin/develop`, and
+2. Claim briefly with `python3 scripts/agent.py claim N` (short TTL, not
+   permanent ownership), use a **detached worktree** of `origin/develop`, and
    commit one small coherent slice with `Refs #N`.
 3. Fetch and rebase **only your own unpublished work**, then fast-forward push
    to `origin/develop` directly. Never force-push or overwrite another agent's
    worktree, uncommitted changes or version bump.
-4. Release the claim, document the exact SHA and test status, and take the next
-   available task. Do not close an issue whose actual acceptance criteria are
-   unverified.
+4. Post a durable `agent.py progress N --done "..." --next "..."` handover with
+   the actual SHA and test status; then release the short-lived claim and take
+   the next available task. Future agents inspect this record and `develop`
+   before repeating work. See [coordination](docs/agents/coordination.md).
+   Do not close an issue whose acceptance criteria are unverified.
 
 ```sh
 git fetch origin develop
