@@ -15,34 +15,42 @@ checkout; push straight to `develop`, never with `--force`:
     git fetch origin && git rebase origin/develop   # own unpushed commits only
     git push origin HEAD:develop
 
-No feature branches, no agent PRs. **Never commit or push to `main`:** it is
-release-only and updated by an automatic develop→main PR when
-`src/version.py` is bumped (`scripts/ci/bump_version.py`). A red `develop` is
-everyone's top priority. See [workflow](docs/agents/workflow.md).
+No feature branches or agent PRs. **Never commit, push, merge, open a
+release PR against, or automatically promote `main`.** Only the owner may
+explicitly merge `develop` into `main`. A push to `develop` is independent
+of the state of `main`. See [workflow](docs/agents/workflow.md).
 
 ## Rules
 
-- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next --label agent-ready`, claim
-  before work, `Refs #N` in commits, close when code and automated CI pass;
-  device checks tracked in #208. [Issues](docs/ISSUES.md).
+- **GitHub Issues are authoritative:** use `python3 scripts/ticket_digest.py --next --label agent-ready`.
+  Pick unclaimed P0/P1 issues and self-contained older fixes; claim by assignment
+  and a short comment before editing, avoiding another agent's file scope.
+  Push each coherent change directly to `develop` with `Refs #N`; report
+  evidence honestly and close only when the issue's actual criteria are met.
+  [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
 - **Smallest complete fix:** inspect callers, reuse code, keep validation, privacy,
   device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
 - **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
-- **Versions:** `src/version.py` per ticket via `scripts/ci/bump_version.py --issue N`.
-  Git commit SHA tracks interim work; `./smoothcast --version` is GUI-free.
+- **Versions:** only `src/version.py` is canonical. Bump PATCH on a
+  completed ticket or explicit owner version request; refresh its current value
+  before editing so parallel agents cannot overwrite one another.
+  Git commit SHA identifies interim work.
 
-## Testing — patch fast lane, no desktop focus
+## Parallel agents — fast, independent commits
 
-**Never launch the real GUI** or focus the desktop/control the TV. No
-`gtk-launch`, `./smoothcast` or `--self-test`. PATCH work uses the fast lane
-(`compileall`, `ruff`, `mypy`; no full suite). Run `python3 -m pytest -q tests
--n auto` only for MINOR/MAJOR bumps; CI picks the lane with
-`scripts/ci/test_scope.py`. Optional GUI smoke:
-`python3 scripts/test_gui_isolated.py` (private Xvfb only).
-[Test safety](docs/agents/testing.md).
+**Do not hold a shared checkout, the index or a file-wide lock.** Use one
+detached worktree per task. Claims are short-lived; take a bounded issue slice,
+push it promptly, release the claim and take the next distinct issue. Fetch and
+rebase **only your own unpushed commits** if another agent advanced `develop`.
+Never force-push or rewrite published commits. Coordinate overlapping files.
+
+**Tests are not a push prerequisite by owner request.** Do not start GTK or
+a receiver to test a change. CI is manual/opt-in, not a gate on routine
+`develop` commits. Do not claim tests or production reliability without
+evidence. Keep user data, secrets, active media and installed versions safe.
 
 [Architecture](docs/agents/architecture.md) ·
 [Token efficiency](docs/agents/efficiency.md)
