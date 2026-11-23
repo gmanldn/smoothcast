@@ -458,6 +458,19 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             return False
 
 
+def _silent_wav(seconds: int = 1, rate: int = 8000) -> bytes:
+    """One second of silence: the audio element phones need for lock-screen controls."""
+    import struct
+    data = bytes([128]) * (rate * seconds)
+    header = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+              + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate, 1, 8)
+              + b"data" + struct.pack("<I", len(data)))
+    return header + data
+
+
+SILENT_WAV = _silent_wav()
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: _PortalHTTPServer
     protocol_version = "HTTP/1.1"
@@ -684,6 +697,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if path == "/silence.wav":
+            return self._send(200, SILENT_WAV, content_type="audio/wav")
         if path in {"/", "/index.html"}:
             page = _page().replace(
                 b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
@@ -1259,6 +1274,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button><button class="secondary" data-action="previous">Previous</button><button class="secondary" data-action="next">Next</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
+<section><h2>Phone</h2><label><input id="lockControls" type="checkbox" checked> Lock-screen controls</label><p>Play, pause, skip and seek from your phone's lock screen or headphones while this page is open.</p></section>
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
@@ -1480,7 +1496,7 @@ async function refresh(){
     if(r.status===429){const seconds=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+seconds*1000;throw Error("Room updates are busy. Retrying shortly…")}
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
-    const s=d.state||{};shortcutState=s;$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
@@ -1772,6 +1788,49 @@ document.addEventListener("visibilitychange",()=>{
   refresh();
 });
 window.addEventListener("online",()=>{statusFailures=0;refresh()});
+
+const MEDIA={audio:null,bound:false};
+function lockControlsOn(){try{return localStorage.getItem("sc_lockscreen")!=="0"}catch(_){return true}}
+function mediaSupported(){return typeof navigator!=="undefined"&&"mediaSession" in navigator&&typeof MediaMetadata==="function"}
+function bindMediaSession(){
+  if(MEDIA.bound)return;MEDIA.bound=true;
+  const ms=navigator.mediaSession,state=()=>shortcutState||{};
+  const set=(name,fn)=>{try{ms.setActionHandler(name,fn)}catch(_){}};
+  set("play",()=>{if(state().state!=="PLAYING")act("play_pause")});
+  set("pause",()=>{if(state().state==="PLAYING")act("play_pause")});
+  set("nexttrack",()=>act("next"));
+  set("previoustrack",()=>act("previous"));
+  set("seekto",d=>{if(d&&Number.isFinite(d.seekTime))act("seek",Math.max(0,d.seekTime))});
+  set("seekbackward",d=>act("seek",Math.max(0,(Number(state().position)||0)-((d&&d.seekOffset)||10))));
+  set("seekforward",d=>act("seek",(Number(state().position)||0)+((d&&d.seekOffset)||10)));
+}
+function mediaAudio(){
+  if(!MEDIA.audio){const a=new Audio("/silence.wav");a.loop=true;a.volume=0.0001;a.setAttribute("aria-hidden","true");MEDIA.audio=a}
+  return MEDIA.audio;
+}
+function syncMediaSession(s){
+  if(!mediaSupported()||!lockControlsOn()||!s)return;
+  const ms=navigator.mediaSession,playing=s.state==="PLAYING"||s.state==="BUFFERING";
+  if(!s.title||!(playing||s.state==="PAUSED")){
+    ms.playbackState="none";if(MEDIA.audio)MEDIA.audio.pause();return;
+  }
+  bindMediaSession();
+  const a=mediaAudio();
+  if(a.paused){const p=a.play();if(p&&p.catch)p.catch(()=>{})}
+  try{ms.metadata=new MediaMetadata({title:String(s.title),artist:String(s.artist||""),album:s.receiver?"SmoothCast - "+s.receiver:"SmoothCast"})}catch(_){}
+  ms.playbackState=playing?"playing":"paused";
+  const duration=Number(s.duration)||0,position=Number(s.position)||0;
+  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:Number(s.speed)||1})}catch(_){}}
+}
+(()=>{
+  const box=$("lockControls");if(!box)return;
+  box.checked=lockControlsOn();
+  box.addEventListener("change",()=>{
+    try{localStorage.setItem("sc_lockscreen",box.checked?"1":"0")}catch(_){}
+    if(!box.checked){if(MEDIA.audio)MEDIA.audio.pause();if(mediaSupported())navigator.mediaSession.playbackState="none"}
+    else syncMediaSession(shortcutState);
+  });
+})();
 
 (()=>{
   const input=$("findInput"),out=$("findResults"),status=$("findStatus");
