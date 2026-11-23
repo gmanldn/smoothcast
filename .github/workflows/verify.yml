@@ -394,6 +394,7 @@ jobs:
       always() &&
       github.event_name == 'push' && github.ref == 'refs/heads/develop' &&
       needs.scope.result == 'success' &&
+      needs.mesh-protocol-contract.result == 'success' &&
       needs.syntax.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.typecheck.result == 'success' &&
@@ -405,7 +406,7 @@ jobs:
       (needs.media-integration.result == 'success' || needs.media-integration.result == 'skipped') &&
       (needs.setup-contract.result == 'success' || needs.setup-contract.result == 'skipped') &&
       (needs.installed-artifact.result == 'success' || needs.installed-artifact.result == 'skipped')
-    needs: [scope, syntax, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance]
+    needs: [scope, syntax, mesh-protocol-contract, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
