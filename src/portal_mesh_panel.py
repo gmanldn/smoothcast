@@ -53,6 +53,7 @@ _PANEL = r"""
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
+  let bootRequest=null,bootEpoch=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const TEXT={self:"This device",alive:"Online",ready:"Ready",busy:"In use",stale:"Not seen lately",unreachable:"Can't be reached"};
   const RANK={ready:0,busy:1,stale:2,unreachable:3};
@@ -133,22 +134,35 @@ _PANEL = r"""
   function close(){if(es){es.close();es=null}}
   function cancelMeshRetry(){if(retry!==null){clearTimeout(retry);retry=null}}
   function schedule(){cancelMeshRetry();retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
+  function cancelMeshBoot(){
+    bootEpoch++;
+    if(bootRequest){bootRequest.abort();bootRequest=null}
+  }
   async function boot(){
-    if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return schedule();
+    if(bootRequest)return;
+    if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return;
+    cancelMeshRetry();
+    const session=csrf,request=new AbortController(),epoch=++bootEpoch;
+    bootRequest=request;
+    const current=()=>epoch===bootEpoch&&!request.signal.aborted&&csrf===session&&!document.hidden&&!dash.hidden;
     try{
-      const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store"});
+      const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!current())return;
       if(r.status===503||r.status===404){panel.hidden=true;showNetworkNavigation(false);return schedule()}
       if(!r.ok)return schedule();
-      const d=await r.json();nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
+      const d=await r.json();
+      if(!current())return;
+      nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
       panel.hidden=false;showNetworkNavigation(true);started=true;backoff=3000;render();open();
-    }catch(_){schedule()}
+    }catch(_){if(current())schedule()}
+    finally{if(bootRequest===request)bootRequest=null}
   }
   document.addEventListener("visibilitychange",()=>{
-    if(document.hidden){hiddenTimer=setTimeout(()=>{close()},30000)}
+    if(document.hidden){cancelMeshBoot();cancelMeshRetry();hiddenTimer=setTimeout(()=>{close()},30000)}
     else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshRetry();backoff=3000;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshBoot();cancelMeshRetry();backoff=3000;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """
