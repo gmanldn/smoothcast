@@ -193,6 +193,76 @@ def test_claim_post_confirmation_rechecks_issue_even_when_global_feed_has_self(m
     assert removed == [f"repos/{agent.REPO}/issues/comments/10"]
 
 
+def test_confirmed_claim_survives_advisory_label_failure(monkeypatch):
+    """GitHub metadata 403 must not convert a real claim into a false failure."""
+    mine = marker_comment(50, 584, 0, "ours", ["src/a.py"])
+    calls = []
+
+    def fake_recent():
+        calls.append("recent")
+        return [] if len(calls) == 1 else [mine]
+
+    def fake_gh(*args):
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            return {"id": 50}
+        if args[0].endswith("/comments?per_page=100"):
+            return [mine]
+        if args[:2] == ("-X", "POST") and args[2].endswith("/labels"):
+            raise agent.td.DigestError("advisory labels 403")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "recent_comments", fake_recent)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    monkeypatch.setattr(agent, "load_issue", lambda n: {"body": "edit src/a.py"})
+    assert agent.cmd_claim(agent.build_parser().parse_args(["claim", "584"])) == 0
+
+
+def test_release_confirmation_prevents_false_advisory_cleanup(monkeypatch):
+    """When GitHub's comment read lags, keep advisory labels until visible."""
+    posted = []
+
+    def fake_gh(*args):
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            posted.append(args)
+            return {"id": 87}
+        if args[0].endswith("/comments?per_page=100"):
+            return [marker_comment(23, 584, 1, "ours", ["src/a.py"])]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    monkeypatch.setattr(agent.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("must never delete labels before release is visible")))
+    agent.release(584, "finish.")
+    assert len(posted) == 1
+
+    monkeypatch.setattr(agent, "gh", lambda *args: {})
+    import pytest
+    with pytest.raises(agent.td.DigestError, match="did not confirm release"):
+        agent.release(584, "finish.")
+
+
+def test_heartbeat_requires_server_confirmation(monkeypatch):
+    claim = marker_comment(10, 584, 1, "ours", ["src/a.py"])
+
+    def fake_gh(*args):
+        if args[0].endswith("/comments?per_page=100"):
+            return [claim]
+        if args[:2] == ("-X", "PATCH"):
+            return {}  # Unknown server outcome must not be accepted as refreshed.
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    import pytest
+    with pytest.raises(agent.td.DigestError, match="did not confirm heartbeat"):
+        agent.cmd_heartbeat(agent.build_parser().parse_args(["heartbeat", "584"]))
+
+
 def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
     monkeypatch.setattr(agent, "mypy_gated", lambda: {"src/gated.py"})
     (agent.ROOT / "src").mkdir(exist_ok=True)
