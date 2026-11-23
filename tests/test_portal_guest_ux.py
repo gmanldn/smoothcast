@@ -584,3 +584,41 @@ assert.equal(scheduled.get(retry).ms,3000,"rejoining starts with short retry del
 """
     subprocess.run(["node", "-"], input=functions + harness,
                    check=True, text=True, timeout=10)
+
+
+def test_open_join_shows_authoritative_identity_and_change_name_link():
+    """Joined identity comes from server responses, never unsaved name input."""
+    import shutil
+    import subprocess
+    import pytest
+
+    page = room_html()
+    assert "joinedAs" in page.ids
+    assert "nameForm" in page.ids and "nameForm" in page.anchors
+    assert '<a href="#nameForm">Change name</a>' in portal._HTML
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    assert 'showJoinedName(d.participant.name);' in script
+    assert 'showJoinedName(data.participant.name);' in script
+    assert 'showJoinedName(d.participant.name);showError("errorDash","Display name updated")' in script
+    start = script.index("function showJoinedName(value){")
+    end = script.index("function configureOpenJoin(){", start)
+    helper = script[start:end]
+    if not shutil.which("node"):
+        pytest.skip("Node.js required to verify the joined-name rendering")
+    harness = r"""
+const assert=require("node:assert/strict");
+const joinedAs={textContent:"",set innerHTML(_){throw Error("must not inject markup")}};
+const $=id=>{assert.equal(id,"joinedAs");return joinedAs};
+"""
+    scenarios = r"""
+showJoinedName("Sam");
+assert.equal(joinedAs.textContent,"Joined as Sam");
+showJoinedName("  Alice  ");
+assert.equal(joinedAs.textContent,"Joined as Alice");
+showJoinedName("");
+assert.equal(joinedAs.textContent,"Joined as Guest");
+showJoinedName("<img src=x onerror=alert(1)>");
+assert.equal(joinedAs.textContent,"Joined as <img src=x onerror=alert(1)>");
+"""
+    subprocess.run(["node", "-"], input=harness + helper + scenarios,
+                   check=True, text=True, timeout=10)
