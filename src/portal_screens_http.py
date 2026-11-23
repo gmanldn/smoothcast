@@ -173,7 +173,21 @@ def _poll(handler, screen_id: str) -> None:
     since = _int_arg(handler, "since", 0, 2**31)
     wait = _int_arg(handler, "wait", 0, int(portal_screens.POLL_WAIT_MAX))
     result = handler.server.screens.poll(screen_id, _key(handler), since, float(wait))
-    handler._send(200, {"ok": True, **result})
+    handler._send(200, {"ok": True, **result, **_queue_hint(handler)})
+
+
+def _queue_hint(handler) -> dict:
+    """``queue_empty`` from the cached status snapshot; never blocks on the GTK thread.
+
+    Omitted when unknown so the screen keeps its default layout (#420).
+    """
+    snapshot = handler.server.status_snapshot
+    try:
+        state = snapshot() if snapshot is not None else None
+    except Exception:
+        return {}
+    queue = state.get("queue") if isinstance(state, dict) else None
+    return {"queue_empty": not queue} if isinstance(queue, list) else {}
 
 
 def _report(handler, screen_id: str) -> None:

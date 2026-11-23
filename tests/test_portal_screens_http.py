@@ -650,3 +650,38 @@ def test_join_slate_invalid_binding_fails_closed(rig, monkeypatch):
     status, data, _headers = rig.request("GET", "/join-slate.png")
     assert status == 503
     assert b"invalid internal address" not in data
+
+
+def _polled(rig):
+    cookie, csrf = rig.login("TV")
+    screen = rig.register(cookie, csrf)
+    return rig.json("GET", f"/api/screens/{screen['id']}/poll?since=0", cookie=cookie)[1]
+
+
+def test_screen_poll_reports_whether_the_shared_queue_is_empty(tmp_path):
+    queue = []
+    snapshot = {"title": "x", "state": "IDLE", "queue": queue}
+    rig = Rig(tmp_path, status_snapshot=lambda: snapshot)
+    try:
+        assert _polled(rig)["queue_empty"] is True
+        queue.append({"id": "abcd1234", "title": "Film"})
+        assert _polled(rig)["queue_empty"] is False
+        # The hint comes from the cached snapshot, never a GTK dispatch.
+        assert not any(call[0] == "status" for call in rig.calls)
+    finally:
+        rig.close()
+
+
+@pytest.mark.parametrize("snapshot", [None, "broken", {"queue": "x"}, {}])
+def test_screen_poll_omits_queue_hint_when_unknown_or_snapshot_fails(tmp_path, snapshot):
+    def read():
+        if snapshot == "broken":
+            raise RuntimeError("not ready")
+        return snapshot
+
+    rig = Rig(tmp_path, status_snapshot=read)
+    try:
+        polled = _polled(rig)
+        assert polled["ok"] is True and "queue_empty" not in polled
+    finally:
+        rig.close()

@@ -50,6 +50,13 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .join-qr{margin:24px auto 0;max-width:min(26rem,90vw);display:grid;justify-items:center;gap:4px}
 .join-qr img{display:block;width:min(180px,36vw);height:auto;aspect-ratio:1;background:var(--qr-paper);border:8px solid var(--qr-paper);border-radius:10px}
 .join-qr strong{color:var(--text);overflow-wrap:anywhere}
+/* Idle with items still queued: small corner code. Queue empty: large centred code (#420). */
+#slate.corner .join-qr{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));margin:0;max-width:11rem;font-size:.8rem;text-align:center}
+#slate.corner .join-qr img{width:min(96px,24vw);border-width:5px}
+#slate.corner .join-qr p{margin:0}
+#slate.empty .join-qr{max-width:min(40rem,94vw)}
+#slate.empty .join-qr img{width:min(320px,42vh,70vw)}
+#slate.empty .join-qr p{font-size:clamp(1.1rem,2.4vw,1.6rem)}
 .dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent);animation:pulse 2.4s infinite}
 .dot.bad{background:var(--danger);animation:none}.dot.warn{background:var(--focus);animation:none}
 @keyframes pulse{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
@@ -135,6 +142,7 @@ async function begin(){
   started=true;stopped=false;try{await register()}catch(err){if(err.status===401||err.status===403){return relogin()}throw err}
   show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
 function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
+function slateLayout(queueEmpty){$("slate").classList.toggle("corner",queueEmpty===false);$("slate").classList.toggle("empty",queueEmpty===true)}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
 const DIM_HINT="Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.";
 function dimHint(){if(store.get("sc_dim_hint"))return;store.set("sc_dim_hint","1");banner(DIM_HINT);setTimeout(()=>{if($("banner").textContent===DIM_HINT)banner("")},9000)}
@@ -147,6 +155,7 @@ async function loop(){
     try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`);
       if(failures){failures=0;banner("");if(!current)setSlate(READY,"ok")}
       for(const o of d.orders){if(o.seq>seq){seq=o.seq;apply(o)}}
+      slateLayout(d.queue_empty)
     }catch(err){
       if(err.status===401||err.status===403){polling=false;return relogin()}
       if(err.status===404){try{await register();continue}catch(_){}}

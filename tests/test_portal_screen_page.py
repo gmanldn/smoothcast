@@ -77,3 +77,15 @@ def test_idle_screen_shows_self_hosted_join_qr_and_safe_short_address():
     # Playing view and login remain independent from the idle QR slate.
     assert '<div id="player" hidden>' in html
     assert 'id="loginView" hidden' in html
+
+
+def test_idle_join_code_is_a_corner_badge_when_queued_and_large_when_queue_empty():
+    html = portal_screen_page.screen_page().decode()
+    assert "#slate.corner .join-qr{position:fixed" in html
+    assert "#slate.empty .join-qr img{width:min(320px" in html
+    assert "function slateLayout(queueEmpty)" in html
+    # False => something is queued (corner); true => nothing queued (large);
+    # absent => keep the default centred layout.
+    assert 'toggle("corner",queueEmpty===false)' in html
+    assert 'toggle("empty",queueEmpty===true)' in html
+    assert "slateLayout(d.queue_empty)" in html
