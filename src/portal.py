@@ -1543,6 +1543,7 @@ const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortc
 let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
+  roomEvents.stop();
   void syncRemoteWakeLock();
   document.getElementById("updateNotice").hidden=false;
   document.getElementById("dashboard").hidden=true;
@@ -1646,6 +1647,7 @@ $("loginForm").addEventListener("submit",async e=>{
 })();
 function expireSession(){
   csrf="";
+  roomEvents.stop();
   void syncRemoteWakeLock();
   shortcutState=null;
   pendingControls.clear();
@@ -1777,9 +1779,44 @@ function renderQueue(items){
 let statusRequest=null,statusTimer=null,statusFailures=0;
 function scheduleRefresh(){
   clearTimeout(statusTimer);
-  if(!csrf||stalePage||document.hidden)return;
+  if(!csrf||stalePage||document.hidden||roomEvents.healthy())return;
   const delay=statusFailures?Math.min(30000,2000*2**statusFailures+Math.random()*500):2000;
   statusTimer=setTimeout(refresh,Math.max(delay,rateDelayUntil-Date.now()));
+}
+function makeRoomEvents(env){
+  let source=null,retry=null,watch=null,failures=0,last=0,healthy=false;
+  const delays=[1000,2000,4000,8000,15000];
+  function stop(){env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;if(source){source.close();source=null}healthy=false}
+  function fail(){stop();if(!env.canRun())return;env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)])}
+  function start(){
+    if(!env.EventSource||source||!env.canRun())return;
+    const es=new env.EventSource("/api/events");source=es;last=env.now();
+    es.addEventListener("state",e=>{let d;try{d=JSON.parse(e.data)}catch(x){return}last=env.now();healthy=true;failures=0;env.apply(d)});
+    es.onerror=fail;
+    watch=env.setInterval(()=>{if(env.now()-last>30000)fail()},5000);
+  }
+  return {start,stop,healthy:()=>healthy};
+}
+const roomEvents=makeRoomEvents({
+  EventSource:typeof EventSource==="function"?EventSource:null,
+  apply:d=>{if(!busy)applyStatus(d)},
+  canRun:()=>!!csrf&&!stalePage&&!document.hidden,
+  fallback:()=>scheduleRefresh(),
+  setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
+  setInterval:(f,ms)=>setInterval(f,ms),clearInterval:id=>clearInterval(id),
+  now:()=>Date.now()
+});
+function applyStatus(d){
+  if(!matchingBuild(d))return false;
+    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+$("musicAutogain").checked=!!s.music_autogain;
+renderQueue(s.queue);
+$("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);
+const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
+  return true;
 }
 async function refresh(){
   clearTimeout(statusTimer);
@@ -1794,15 +1831,8 @@ async function refresh(){
     if(r.status===401){expireSession();return}
     if(r.status===429){const seconds=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+seconds*1000;throw Error("Room updates are busy. Retrying shortly…")}
     if(!r.ok)throw Error(d.error||"Connection lost");
-    if(!matchingBuild(d))return;
-    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
-$("musicAutogain").checked=!!s.music_autogain;
-renderQueue(s.queue);
-$("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
-renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);
-const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
+    if(applyStatus(d)===false)return;
+    roomEvents.start();
   }catch(err){
     if(!busy&&!document.hidden&&controller.signal.reason!=="superseded"){
       statusFailures=Math.min(statusFailures+1,4);
@@ -2221,7 +2251,7 @@ $("cancelUpload").addEventListener("click",async()=>{
 if(typeof requestAnimationFrame==="function")requestAnimationFrame(playheadFrame);
 document.addEventListener("visibilitychange",()=>{
   void syncRemoteWakeLock();
-  if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
+  if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");roomEvents.stop();return}
   statusFailures=0;
   refresh();
 });
