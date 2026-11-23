@@ -23,5 +23,5 @@ or stale `in-flight` label as a permanent lock.
 5. Close only with adequate evidence for all acceptance criteria. Future
    agents read the latest progress/handover and source history before rewriting.
 
-[Canonical coordination](../../docs/agents/coordination.md) ·
+[Canonical coordination](../../docs/COORDINATION.md) ·
 [Issue policy](../../docs/ISSUES.md)
