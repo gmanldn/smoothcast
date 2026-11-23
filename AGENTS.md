@@ -31,8 +31,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
 - **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
-- **Versions:** patch `src/version.py` per completed ticket via
-  `scripts/ci/bump_version.py --issue N`; `./smoothcast --version` is GUI-free.
+- **Versions:** `src/version.py` per ticket via `scripts/ci/bump_version.py --issue N`.
+  Git commit SHA tracks interim work; `./smoothcast --version` is GUI-free.
 
 ## Testing — patch fast lane, no desktop focus
 
