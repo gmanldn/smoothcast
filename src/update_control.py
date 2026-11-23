@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import sys
 
 import version
 
@@ -117,7 +118,8 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     probe is not reported as an installed update. Frozen/installed packages do
     not attempt source checkout updates.
     """
-    if not enabled or not (repo / ".git").exists():
+    if (not enabled or getattr(sys, "frozen", False)
+            or not (repo / ".git").exists()):
         return None
     branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
     if branch not in ELIGIBLE_BRANCHES:
@@ -157,9 +159,13 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
             "when playback is finished.")
 
 
-def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = True,
+def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = False,
                      verify: bool = False) -> str | None:
-    """Pull a clean git checkout from a worker after the first window is visible.
+    """Legacy explicit source-checkout fast-forward; NEVER call from live GTK.
+
+    This mutates on-disk code and is kept only for explicit, offline/controlled
+    maintenance. It defaults disabled and the running desktop uses the
+    non-mutating ``check_release`` instead.
 
     Running Python modules remain loaded; new checkout code takes effect on the
     next launch. Extracted release archives do not use git auto-updates, and a
