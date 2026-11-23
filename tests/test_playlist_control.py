@@ -131,7 +131,9 @@ class PlaylistTests(unittest.TestCase):
         source = combined_source()
         self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
         self.assertIn("self.queue_list.invalidate_filter()", source)
-        self.assertIn("row.set_tooltip_text(path)", source)
+        self.assertIn("row.source_path = path", source)
+        self.assertIn("row.set_tooltip_text(display_title)", source)
+        self.assertNotIn("row.set_tooltip_text(path)", source)
         self.assertIn('add("<Control>f", self._focus_queue_search)', source)
         self.assertIn("self.queue_search.grab_focus()", source)
 
@@ -189,8 +191,8 @@ class PlaylistTests(unittest.TestCase):
         methods = main_window_methods()
         activated = methods["_on_queue_activated"]
         selected = methods["_on_queue_selected"]
-        self.assertIn("row.get_tooltip_text()", activated)
-        self.assertIn("row.get_tooltip_text()", selected)
+        self.assertIn('getattr(row, "source_path", None)', activated)
+        self.assertIn('getattr(row, "source_path", None)', selected)
         self.assertNotIn("row.get_index()", activated)
         self.assertNotIn("row.get_index()", selected)
         self.assertIn("playlist_control.selection_after_move(", methods["_move_queue"])
