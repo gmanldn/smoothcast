@@ -252,7 +252,7 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
     ("bytes=10-", 206, 11, 99, 100, False),
     ("bytes=-15", 206, 0, 14, 100, False),
     ("bytes=20-10", 206, 20, 99, 100, False),
-    ("bytes=100-", 206, 100, 100, 101, False),
+    ("bytes=100-", 206, 100, 100, 100, False),
     ("bytes=1-2,3-4", 206, 1, 2, 100, False),
     ("bytes=-0", 206, 0, 99, 100, False),
 ])
