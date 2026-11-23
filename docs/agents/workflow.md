@@ -8,10 +8,10 @@ to `main`. The owner manually decides when (and whether) to merge it.
 
 ## Many agents, one trunk
 
-1. `python3 scripts/ticket_digest.py --next --label agent-ready` or select
-   a high-priority unclaimed P0/P1 issue; prioritise high-impact fixes, then
-   older small independent tickets. Inspect the latest issue comments before
-   touching code. Avoid claiming a ticket or file set another agent owns.
+1. Start with `python3 scripts/agent.py board` and `agent.py next`.
+   These inspect live comment claims and hot files before choosing a P0/P1
+   issue or small fix. Read current issue comments before changing code;
+   `ticket_digest.py` alone cannot see every structured claim.
 2. Claim using `python3 scripts/agent.py claim N --files src/file.py`
    (structured comment with a bounded TTL, not an assignee-only claim).
    Agents commonly share one GitHub user identity, so assignees alone do not
