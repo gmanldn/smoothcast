@@ -46,12 +46,13 @@ class CommandError(Exception):
     """A safe command rejection carrying the current fence position."""
 
     def __init__(self, status: int, message: str, *, revision: int | None = None,
-                 session_id: str | None = None) -> None:
+                 session_id: str | None = None, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
         self.revision = revision
         self.session_id = session_id
+        self.code = code
 
 
 @dataclass(frozen=True)
