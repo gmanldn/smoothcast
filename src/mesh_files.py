@@ -15,7 +15,8 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 import lan_guard
-from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume, parse_wire_uint, pump_stream
+from mesh_file_wire import (_CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume,
+                            parse_wire_uint, pump_stream, valid_unsatisfied_range)
 import portal_media
 
 KEY = re.compile(r"qh:[0-9a-f]{32}")
@@ -87,8 +88,11 @@ class MeshFiles:
         try:
             if reply.status not in (200, 206):
                 if reply.status == 416:
+                    content_range = reply.getheader("Content-Range")
+                    if not valid_unsatisfied_range(range_header, content_range):
+                        return False
                     write_headers(416, {"Content-Length": "0",
-                                        "Content-Range": reply.getheader("Content-Range") or "bytes */0"})
+                                        "Content-Range": content_range})
                     return True
                 return False
             headers = {"Content-Type": reply.getheader("Content-Type") or "application/octet-stream",
