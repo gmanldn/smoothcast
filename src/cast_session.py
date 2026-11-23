@@ -44,6 +44,7 @@ import stream_watchdog
 import hls_pause_recovery
 import fingerprint
 import hdr_tonemap
+import picture_adjustments
 
 import preflight
 import queue_metadata
@@ -135,6 +136,7 @@ class SessionMixin:
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
+            and not picture_adjustments.active(cfg)
             and not getattr(self, "_portal_early", False)
         )
         def work():
@@ -288,6 +290,7 @@ class SessionMixin:
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
                     music_autogain=music_enabled,
+                    picture_config=cfg,
                 )
                 # start_transcode returned only after verifying our HLS URL on
                 # the receiver; a successful FFmpeg/catt launch alone is not proof.
@@ -674,6 +677,7 @@ class SessionMixin:
                     subtitle_preset=subtitle_style.from_config(self.cfg),
                     audio_delay_ms=audio_delay.get(self.cfg, file_path),
                     music_autogain=bool(self.cfg.get("music_autogain", False)),
+                    picture_config=cfg,
                 )
             except Exception:
                 try:
