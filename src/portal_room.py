@@ -19,6 +19,8 @@ MAX_DORMANT_PARTICIPANTS = 128
 PRESENCE_RETENTION_SECONDS = 8 * 60 * 60
 MAX_NAME = 40
 MAX_EVENTS = 200
+MAX_TITLE = 60
+MAX_TITLES = 300
 COLORS = ("#6aa9ff", "#f2a65a", "#7ed6a5", "#d99cff", "#ff8d8d",
           "#72d6df", "#f4d35e", "#b8b8ff")
 
@@ -65,6 +67,7 @@ class PortalRoom:
         self._dormant: dict[str, Participant] = {}
         self.votes: dict[str, set[str]] = {}
         self.events: deque[dict] = deque(maxlen=MAX_EVENTS)
+        self.titles: dict[str, str] = {}
         self.seq = 0
 
     def join(self, name: object, now: float | None = None) -> Participant:
@@ -153,9 +156,29 @@ class PortalRoom:
                 voters.add(participant_id)
             else:
                 voters.discard(participant_id)
-            self._event("voted", participant.id,
-                        {"item_id": item_id, "votes": len(voters)}, now)
+            vote_data = {"item_id": item_id, "votes": len(voters), "voted": value}
+            if item_id in self.titles:
+                vote_data["title"] = self.titles[item_id]
+            self._event("voted", participant.id, vote_data, now)
             return {"item_id": item_id, "votes": len(voters), "voted": value}
+
+    def remember(self, titles: dict[str, str]) -> None:
+        """Remember display titles of queue items (already visible to everyone in the room).
+
+        Kept after an item leaves the queue so "removed X" can still name it;
+        bounded, oldest forgotten first. Never stores paths.
+        """
+        with self._lock:
+            for item_id, title in titles.items():
+                clean = " ".join(str(title or "").split())
+                clean = "".join(ch for ch in clean if ch.isprintable())[:MAX_TITLE]
+                if not clean or clean.startswith(("/", "~", "\\")) or clean[1:3] == ":\\":
+                    self.titles.pop(item_id, None)
+                    continue
+                self.titles.pop(item_id, None)
+                self.titles[item_id] = clean
+            while len(self.titles) > MAX_TITLES:
+                self.titles.pop(next(iter(self.titles)))
 
     def prune(self, live_item_ids: set[str]) -> None:
         with self._lock:
@@ -167,7 +190,11 @@ class PortalRoom:
                now: float | None = None) -> None:
         now = self.clock() if now is None else now
         with self._lock:
-            self._event(kind, participant_id, data or {}, now)
+            data = dict(data or {})
+            item = data.get("id") or data.get("item_id")
+            if isinstance(item, str) and item in self.titles:
+                data.setdefault("title", self.titles[item])
+            self._event(kind, participant_id, data, now)
 
     def snapshot(self, participant_id: str | None = None,
                  now: float | None = None) -> dict:
