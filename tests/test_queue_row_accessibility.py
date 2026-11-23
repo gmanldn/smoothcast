@@ -36,6 +36,8 @@ def test_queue_row_label_stays_in_step_with_rebuilt_position_and_playback():
                   and node.name == "_queue_row")
     source = ast.unparse(method)
     assert 'path == self.now_playing' in source
-    assert '"Now playing"' in source
-    assert '"Queued"' in source
+    literals = {node.value for node in ast.walk(method)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    assert "Now playing" in literals
+    assert "Queued" in literals
     assert "queue_metadata.display_title(path, self._media_cache)" in source
