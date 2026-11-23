@@ -16,6 +16,7 @@ from urllib.parse import urlencode, urlsplit
 
 import federated_search
 import lan_guard
+import mesh_files
 import replica_manager
 import replica_store
 import search_engine
@@ -36,6 +37,10 @@ class PeerFetcher:
             self._urls = {p["id"]: p["url"] for p in peers
                           if isinstance(p, dict) and p.get("compatible", True)
                           and isinstance(p.get("id"), str) and isinstance(p.get("url"), str)}
+
+    def url_of(self, origin_id: str) -> str | None:
+        with self._lock:
+            return self._urls.get(origin_id)
 
     def __call__(self, origin_id: str, path: str, params: dict) -> tuple[int, dict]:
         with self._lock:
@@ -77,6 +82,7 @@ class MeshLibrary:
             self.store, self.fetcher, clock=clock, busy=busy)
         self.search_service = federated_search.FederatedSearch(
             self._local_rows, self._replica_rows, self._origins, self.fetcher)
+        self.files = mesh_files.MeshFiles(indexer.resolve_path, self._peers_with, self.fetcher.url_of)
         self._poll_times: dict[str, float] = {}
         self._clock = clock
         self._lock = threading.Lock()
@@ -96,6 +102,15 @@ class MeshLibrary:
     def _origins(self) -> dict[str, dict]:
         with self._lock:
             return {o["origin_id"]: o for o in self.store.origins()}
+
+    def _peers_with(self, key: str) -> list[str]:
+        """Online peers whose replica holds this content key, best first."""
+        with self._lock:
+            rows = self.store.conn.execute(
+                "SELECT r.origin_id FROM rentries r JOIN origins o ON o.origin_id=r.origin_id "
+                "WHERE r.content_key=? AND o.state IN ('fresh','stale') "
+                "ORDER BY o.last_seen_at DESC", (key,)).fetchall()
+        return [r[0] for r in rows]
 
     # -- peers ------------------------------------------------------------
     def observe_peers(self, peers: list[dict]) -> None:

@@ -25,11 +25,13 @@ from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 import lan_guard
+import mesh_files
 import library_replication
 import portal_commands
 import peer_discovery
 import portal_room
 import portal_screen_page
+import portal_media
 import portal_mesh_http
 import portal_screens_http
 import portal_uploads
@@ -175,6 +177,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.library_search: Callable | None = None
         self.library_search_stream: Callable | None = None
         self.library_replication = None
+        self.mesh_files = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -530,6 +533,27 @@ class _Handler(BaseHTTPRequestHandler):
             payload, "gzip" in self.headers.get("Accept-Encoding", ""))
         return self._send(status, body, extra_headers={**extra, **headers})
 
+    def _mesh_file(self, path: str, *, head: bool) -> None:
+        """Ranged media bytes by content key, served locally or proxied (#422)."""
+        files = getattr(self.server, "mesh_files", None)
+        key = mesh_files.key_from_path(path)
+        if files is None or key is None:
+            return self._error(404, "That media is not available right now")
+
+        def write_headers(status: int, headers: dict) -> None:
+            self.send_response(status)
+            for name, value in headers.items():
+                self.send_header(name, value)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+
+        try:
+            files.serve(self, key, head=head, write_headers=write_headers)
+        except portal_media.MediaError as exc:
+            return self._error(exc.status, exc.message)
+        self.close_connection = True
+
     def _search_stream(self) -> None:
         """Server-sent events: cached results at once, late origins as they answer."""
         if not self._authenticated():
@@ -674,6 +698,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._search()
         if path.startswith("/mesh/library/"):
             return self._mesh_library(path)
+        if path.startswith("/mesh/file/"):
+            return self._mesh_file(path, head=False)
         if path == "/api/config":
             return self._send(200, {"pin_required": self.server.pin_required,
                                     "name": self.server.hostname_label})
@@ -1064,6 +1090,8 @@ class _Handler(BaseHTTPRequestHandler):
         # Only authenticated media may answer HEAD; every other path stays 405.
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if self._path().startswith("/mesh/file/"):
+            return self._mesh_file(self._path(), head=True)
         if not portal_screens_http.route(self, "HEAD", self._path()):
             self._not_allowed()
 

@@ -46,6 +46,7 @@ class PortalHostMixin:
             mesh.start()
         current.server.library_search = mesh.search_service.search
         current.server.library_search_stream = mesh.search_service.stream
+        current.server.mesh_files = mesh.files
 
     def on_library_folders_changed(self, folders) -> None:
         self._ensure_library_indexer(folders)
