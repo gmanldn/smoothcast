@@ -75,10 +75,26 @@ class UpdateControlTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_default_legacy_update_is_inert_even_in_eligible_git_checkout(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            with mock.patch.object(update_control.subprocess, "run",
+                                   side_effect=AssertionError("no git, no network")):
+                self.assertIsNone(update_control.refresh_checkout(repo))
+
+    def test_read_only_probe_is_inert_by_default_and_when_frozen(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            with mock.patch.object(update_control.subprocess, "run",
+                                   side_effect=AssertionError("no git")), \
+                 mock.patch.object(update_control.sys, "frozen", True, create=True):
+                self.assertIsNone(update_control.check_release(repo, enabled=True))
+                self.assertIsNone(update_control.check_release(repo, enabled=False))
+
     def test_release_archive_skips_git(self):
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.object(update_control.subprocess, "run") as run:
-                self.assertIsNone(update_control.refresh_checkout(Path(d)))
+                self.assertIsNone(update_control.refresh_checkout(Path(d), enabled=True))
                 run.assert_not_called()
 
     def test_clean_eligible_checkout_is_pulled_with_bounded_timeout(self):
@@ -86,7 +102,7 @@ class UpdateControlTests(unittest.TestCase):
             repo = self._repo(d)
             fake = FakeGit()
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             cmd, kwargs = fake.pull_call
             self.assertEqual(cmd, ["git", "pull", "--ff-only"])
             self.assertEqual(kwargs["cwd"], repo)
@@ -97,7 +113,7 @@ class UpdateControlTests(unittest.TestCase):
             repo = self._repo(d)
             fake = FakeGit(dirty=" M AGENTS.md\n")
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             self.assertIsNone(fake.pull_call[0])
 
     def test_detached_head_is_never_pulled(self):
@@ -105,7 +121,7 @@ class UpdateControlTests(unittest.TestCase):
             repo = self._repo(d)
             fake = FakeGit(branch="HEAD")
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             self.assertIsNone(fake.pull_call[0])
 
     def test_developer_branch_is_never_pulled(self):
@@ -113,7 +129,7 @@ class UpdateControlTests(unittest.TestCase):
             repo = self._repo(d)
             fake = FakeGit(branch="fix/issue-109")
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             self.assertIsNone(fake.pull_call[0])
 
     def test_locale_independent_head_change_returns_release_notice(self):
@@ -123,7 +139,7 @@ class UpdateControlTests(unittest.TestCase):
             # A localised or atypically quiet git prints nothing on the pull.
             fake = FakeGit(heads=("aaa", "bbb"))
             with self._patch(fake):
-                notice = update_control.refresh_checkout(repo)
+                notice = update_control.refresh_checkout(repo, enabled=True)
             self.assertIn(
                 f"v{version.MAJOR}.{version.MINOR}.{version.PATCH + 1} downloaded",
                 notice,
@@ -137,7 +153,7 @@ class UpdateControlTests(unittest.TestCase):
             self._write_version(repo, version.PATCH)
             fake = FakeGit(heads=("aaa", "bbb"))
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
 
     def test_unchanged_head_is_silent_even_when_pull_succeeds(self):
         with tempfile.TemporaryDirectory() as d:
@@ -145,21 +161,21 @@ class UpdateControlTests(unittest.TestCase):
             self._write_version(repo, version.PATCH + 1)
             fake = FakeGit(heads=("same", "same"))
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
 
     def test_failed_pull_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
             repo = self._repo(d)
             fake = FakeGit(pull_rc=1)
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
 
     def test_unreadable_head_is_silent(self):
         with tempfile.TemporaryDirectory() as d:
             repo = self._repo(d)
             fake = FakeGit(revparse_fails=True)
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             self.assertIsNone(fake.pull_call[0])
 
     def test_unreadable_status_is_silent(self):
@@ -167,7 +183,7 @@ class UpdateControlTests(unittest.TestCase):
             repo = self._repo(d)
             fake = FakeGit(status_fails=True)
             with self._patch(fake):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
             self.assertIsNone(fake.pull_call[0])
 
     def test_offline_timeout_is_silent(self):
@@ -177,7 +193,7 @@ class UpdateControlTests(unittest.TestCase):
                 update_control.subprocess, "run",
                 side_effect=subprocess.TimeoutExpired("git", 8),
             ):
-                self.assertIsNone(update_control.refresh_checkout(repo))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
 
 
 if __name__ == "__main__":
