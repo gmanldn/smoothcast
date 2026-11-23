@@ -36,6 +36,7 @@ import error_log
 import failure_boundary
 import peer_discovery
 import portal_room
+import room_event_replay
 import portal_screen_page
 import portal_media
 import portal_mesh_http
@@ -196,6 +197,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.stopping = threading.Event()
         self._event_lock = threading.Lock()
         self._event_streams: dict[str, int] = {}
+        self.room_events = room_event_replay.RoomEventLedger()
         self.library_search: Callable | None = None
         self.library_search_stream: Callable | None = None
         self.library_browser = None
@@ -296,6 +298,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             if session.expiry <= now:
                 self._sessions.pop(key, None)
                 self.room.leave(session.participant_id)
+                self.room_events.forget(session.participant_id)
 
     def login(self, client: str, pin: str,
               name: object = "Guest") -> tuple[str, str, portal_room.Participant]:
@@ -317,6 +320,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self._sessions.pop(key, None)
             if keys:
                 self.room.leave(participant_id)
+                self.room_events.forget(participant_id)
                 for key in list(self._queue_command_cache):
                     if key[0] == participant_id:
                         self._queue_command_cache.pop(key, None)
@@ -336,6 +340,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             owner_keys = set(self._sessions)
             participants = {session.participant_id for session in self._sessions.values()}
             self._sessions.clear()
+            self.room_events.clear()
             for participant_id in participants:
                 self.room.leave(participant_id)
             self._queue_command_cache.clear()
@@ -363,6 +368,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             while len(self._sessions) >= MAX_SESSIONS:
                 key, session = self._sessions.popitem(last=False)
                 self.room.leave(session.participant_id)
+                self.room_events.forget(session.participant_id)
             # Move stale clients to the dormant roster before checking capacity.
             self.room.expire_inactive(now)
             participant = self.room.join(name, now=now)
@@ -751,7 +757,8 @@ class _Handler(BaseHTTPRequestHandler):
         state["screens"] = self.server.screens.snapshot()
         state["peers"] = directory.snapshot() if directory is not None else []
         state["peer_discovery_available"] = directory is not None
-        return {"ok": True, "state": state, "build": page_build(), "client_schema": CLIENT_SCHEMA}
+        return {"ok": True, "state": state, "build": page_build(),
+                "client_schema": CLIENT_SCHEMA, "stream_epoch": self.server.room_events.epoch}
 
     def _event_key(self) -> tuple | None:
         """Cheap change detector over the published snapshot; ignores the moving playhead."""
@@ -781,6 +788,11 @@ class _Handler(BaseHTTPRequestHandler):
         except PortalRequestError as exc:
             self.server.release_event_stream(participant_id)
             return self._error(exc.status, exc.message)
+        # Last-Event-ID is an untrusted hint; authentication has already passed.
+        # Replay is scoped to the participant, then a full current snapshot
+        # reconciles any changes made during the disconnected interval.
+        replay, resync = self.server.room_events.replay(
+            participant_id, self.headers.get("Last-Event-ID"))
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
@@ -789,14 +801,19 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         clock, server = self.server.clock, self.server
-        event_id, key = 0, self._event_key()
+        key = self._event_key()
         last_write = last_state = clock()
         payload = first
         try:
+            for frame in replay:
+                self.wfile.write(frame)
+            if replay:
+                self.wfile.flush()
             while True:
                 if payload is not None:
-                    event_id += 1
-                    self.wfile.write(f"id: {event_id}\nevent: state\ndata: {json.dumps(payload)}\n\n".encode("utf-8"))
+                    self.wfile.write(server.room_events.publish(
+                        participant_id, payload, resync=resync))
+                    resync = None
                     self.wfile.flush()
                     last_write = last_state = clock()
                     payload = None

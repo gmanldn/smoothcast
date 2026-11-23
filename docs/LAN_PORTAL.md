@@ -290,3 +290,15 @@ Turning `mesh_enabled` off restores the exact previous behaviour: no sockets and
 threads. Paired browsers can read the live view at `/api/mesh` and `/api/mesh/events`
 (Server-Sent Events). The mesh runs on its own thread and its failures never affect
 playback or the portal; `mesh_service.MeshService.diagnostics()` reports redacted health.
+
+## Room event reconnects
+
+Authenticated `/api/events` streams expose a random per-server `stream_epoch`
+and monotonically increasing `epoch:sequence` SSE IDs. On reconnect, clients
+may supply the standard `Last-Event-ID` header. SmoothCast replays available
+events **for the authenticated participant only**, then always sends a complete
+current snapshot. Missing, invalid, expired or previous-server IDs never block
+reconnection; the fresh snapshot includes `stream_resync: gap`, `invalid` or
+`restarted` when appropriate. The cache retains at most 128 state frames of
+at most 64 KiB each globally; revoked and expired guests lose their history.
+The existing `/api/status` polling fallback remains available.

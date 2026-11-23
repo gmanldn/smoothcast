@@ -29,6 +29,8 @@ on:
       - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
+      - 'src/room_event_replay.py'
+      - 'tests/test_room_event*.py'
       - '.github/workflows/portal-security.yml'
   pull_request:
     # Do not duplicate tests for the long-lived develop -> main release PR.
@@ -59,6 +61,8 @@ on:
       - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
+      - 'src/room_event_replay.py'
+      - 'tests/test_room_event*.py'
       - '.github/workflows/portal-security.yml'
   workflow_dispatch:
 
@@ -95,6 +99,9 @@ jobs:
           tests/test_room_checkpoint.py
           tests/test_room_checkpoint_ui.py
           tests/test_portal_status.py
+          tests/test_room_event_replay.py
+          tests/test_room_events.py
+          tests/test_room_events_client.py
           tests/test_async_jobs.py
           tests/test_castctl_seek.py
           tests/test_command_trace.py

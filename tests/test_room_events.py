@@ -46,9 +46,10 @@ class Rig:
         conn.close()
         return cookie
 
-    def stream(self, cookie, path="/api/events"):
+    def stream(self, cookie, path="/api/events", *, last_event_id=None):
         sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
-        sock.sendall(f"GET {path} HTTP/1.1\r\nHost: {self.host}\r\nCookie: {cookie}\r\n\r\n".encode())
+        resume = f"Last-Event-ID: {last_event_id}\r\n" if last_event_id is not None else ""
+        sock.sendall(f"GET {path} HTTP/1.1\r\nHost: {self.host}\r\nCookie: {cookie}\r\n{resume}\r\n".encode())
         return Stream(sock)
 
     def close(self):
@@ -110,8 +111,9 @@ def test_first_event_is_the_full_status_document(rig):
     stream = rig.stream(rig.login("Sam"))
     assert stream.status == 200 and "text/event-stream" in stream.headers and "no-store" in stream.headers
     _raw, fields = stream.event()
-    assert fields["id"] == "1" and fields["event"] == "state"
+    assert fields["event"] == "state"
     document = json.loads(fields["data"])
+    assert fields["id"] == f'{document["stream_epoch"]}:1'
     assert document["ok"] is True and document["state"]["title"] == "Film A"
     assert document["state"]["room"]["me"]["name"] == "Sam"
     stream.close()
@@ -124,10 +126,10 @@ def test_pushes_only_changes_and_ignores_the_moving_playhead(rig):
     assert stream.silent_for(0.4), "position-only changes must not be pushed"
     rig.update(title="Film B")
     _raw, fields = stream.event()
-    assert fields["id"] == "2" and json.loads(fields["data"])["state"]["title"] == "Film B"
+    assert fields["id"].endswith(":2") and json.loads(fields["data"])["state"]["title"] == "Film B"
     rig.update(queue=[{"id": "q1", "title": "Song 1"}, {"id": "q2", "title": "Song 2"}])
     _raw, fields = stream.event()
-    assert fields["id"] == "3" and len(json.loads(fields["data"])["state"]["queue"]) == 2
+    assert fields["id"].endswith(":3") and len(json.loads(fields["data"])["state"]["queue"]) == 2
     assert stream.silent_for(0.3)
     stream.close()
 
@@ -196,3 +198,58 @@ def test_server_close_ends_open_streams(rig):
     with pytest.raises((EOFError, ConnectionError)):
         stream._until(b"never-appears", timeout=2.0)
     stream.close()
+
+def test_reconnect_replays_history_then_converges_on_fresh_snapshot(rig):
+    cookie = rig.login("Sam")
+    first = rig.stream(cookie)
+    _, initial = first.event()
+    rig.update(title="Film B")
+    _, changed = first.event()
+    first.close()
+    rig.update(title="Film C")
+    resumed = rig.stream(cookie, last_event_id=initial["id"])
+    _, replayed = resumed.event()
+    _, fresh = resumed.event()
+    assert replayed["id"] == changed["id"]
+    assert json.loads(replayed["data"])["state"]["title"] == "Film B"
+    assert json.loads(fresh["data"])["state"]["title"] == "Film C"
+    assert int(fresh["id"].split(":")[1]) > int(replayed["id"].split(":")[1])
+    resumed.close()
+
+
+def test_missing_history_and_restarted_epoch_get_current_state(rig):
+    cookie = rig.login("Sam")
+    first = rig.stream(cookie)
+    _, initial = first.event()
+    first.close()
+    epoch = json.loads(initial["data"])["stream_epoch"]
+    rig.update(title="Recovered film")
+    missing = rig.stream(cookie, last_event_id=f"{epoch}:999999")
+    _, gap = missing.event()
+    assert json.loads(gap["data"])["stream_resync"] == "gap"
+    assert json.loads(gap["data"])["state"]["title"] == "Recovered film"
+    missing.close()
+    restarted = rig.stream(cookie, last_event_id="0000000000000000:4")
+    _, event = restarted.event()
+    assert json.loads(event["data"])["stream_resync"] == "restarted"
+    assert json.loads(event["data"])["stream_epoch"] == epoch
+    restarted.close()
+
+
+def test_replay_never_crosses_participants_and_revocation_clears_events(rig):
+    sam = rig.login("Sam")
+    first = rig.stream(sam)
+    _, initial = first.event()
+    first.close()
+    lee = rig.login("Lee")
+    foreign = rig.stream(lee, last_event_id=initial["id"])
+    _, event = foreign.event()
+    assert json.loads(event["data"])["stream_resync"] == "gap"
+    assert json.loads(event["data"])["state"]["room"]["me"]["name"] == "Lee"
+    foreign.close()
+    owner = rig.server.session_participant(sam.split("=", 1)[1])
+    assert owner is not None
+    rig.server.revoke_participant(owner)
+    refused = rig.stream(sam, last_event_id=initial["id"])
+    assert refused.status == 401
+    refused.close()
