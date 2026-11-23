@@ -470,7 +470,7 @@ class AvMixin:
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
         # Snapshot settings for asynchronous decodes; do not read a changing GTK config
         # from the worker after a user moves a colour control.
-        aspect_options["picture_config"] = dict(self.cfg)
+        picture_config = dict(self.cfg)
         if sparse:
             cache = getattr(self, "_sparse_frame_cache", None)
             if cache is None:
@@ -487,7 +487,7 @@ class AvMixin:
                 finish(frame)
             Async.run(
                 lambda: screenshot.preview_frame(
-                    pathlib.Path(path), sample, video_stream_index=video_index, **aspect_options,
+                    pathlib.Path(path), sample, video_stream_index=video_index, picture_config=picture_config, **aspect_options,
                 ),
                 done=ready, failed=lambda _error: finish(), domain="media",
             )
@@ -495,7 +495,7 @@ class AvMixin:
         # An explicit seek or frame step must not be approximated by a hover bin.
         Async.run(
             lambda: screenshot.preview_frame(
-                pathlib.Path(path), position, video_stream_index=video_index, **aspect_options,
+                pathlib.Path(path), position, video_stream_index=video_index, picture_config=picture_config, **aspect_options,
             ),
             done=finish, failed=lambda _error: finish(), domain="media",
         )
