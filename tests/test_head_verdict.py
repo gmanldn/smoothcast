@@ -146,6 +146,76 @@ class VerdictTests(unittest.TestCase):
         with self.assertRaises(verdict.VerdictError):
             verdict.inspect(repository="../../elsewhere", api=_api())
 
+    def test_newest_workflow_id_beats_older_high_attempt_retry(self):
+        older = _verify()
+        older["id"] = 122
+        older["run_attempt"] = 12
+        newer = _verify()
+        newer["id"] = 123
+        newer["run_attempt"] = 1
+        result = verdict.inspect(api=_api(runs=[older, newer]))
+        self.assertEqual(result["run"], 123)
+        self.assertTrue(result["software_qualified"])
+
+    def test_software_only_qualifies_release_policy_failure_not_publication(self):
+        result = verdict.inspect(api=_api(
+            runs=[_verify(conclusion="failure"), _external("CodeQL")],
+            jobs=_jobs("failure"),
+        ))
+        self.assertEqual(result["verdict"], "failed")
+        self.assertEqual(result["release"], "blocked")
+        self.assertTrue(result["software_qualified"])
+        with patch.object(verdict, "inspect", return_value=result):
+            with redirect_stdout(StringIO()):
+                self.assertEqual(verdict.main(["--software-only"]), 0)
+                self.assertEqual(verdict.main([]), 1)
+
+    def test_software_only_rejects_failed_or_missing_required_gates(self):
+        for jobs in (_jobs()[:-2], _jobs("failure")):
+            if jobs[-1]["name"] == verdict.PROMOTION:
+                jobs[0]["conclusion"] = "failure"
+            result = verdict.inspect(api=_api(
+                runs=[_verify(conclusion="failure")], jobs=jobs,
+            ))
+            self.assertFalse(result["software_qualified"])
+            with patch.object(verdict, "inspect", return_value=result):
+                with redirect_stdout(StringIO()):
+                    self.assertNotEqual(verdict.main(["--software-only"]), 0)
+
+    def test_software_only_rejects_pending_and_security_scan_failure(self):
+        queued = verdict.inspect(api=_api(runs=[
+            _verify(status="in_progress", conclusion=None),
+            _external("CodeQL", status="in_progress", conclusion=None),
+        ]))
+        failed_scan = verdict.inspect(api=_api(runs=[
+            _verify(conclusion="failure"), _external("CodeQL", conclusion="failure")
+        ], jobs=_jobs("failure")))
+        for result in (queued, failed_scan):
+            self.assertFalse(result["software_qualified"])
+            with patch.object(verdict, "inspect", return_value=result):
+                with redirect_stdout(StringIO()):
+                    self.assertNotEqual(verdict.main(["--software-only"]), 0)
+
+    def test_software_only_rejects_stale_and_unexplained_failed_run(self):
+        stale = verdict.inspect(api=_api(changed=True))
+        unexplained = verdict.inspect(api=_api(
+            runs=[_verify(conclusion="failure")],
+            jobs=_jobs("skipped"),
+        ))
+        for result in (stale, unexplained):
+            self.assertFalse(result["software_qualified"])
+            with patch.object(verdict, "inspect", return_value=result):
+                with redirect_stdout(StringIO()):
+                    self.assertNotEqual(verdict.main(["--software-only"]), 0)
+
+    def test_software_only_requires_completed_verify_run_even_if_jobs_done(self):
+        queued = verdict.inspect(api=_api(
+            runs=[_verify(status="in_progress", conclusion=None)],
+            jobs=_jobs("skipped"),
+        ))
+        self.assertFalse(queued["software_qualified"])
+        self.assertEqual(queued["verdict"], "pending")
+
     def test_cli_exit_status_and_compact_json(self):
         data = verdict.inspect(api=_api())
         out, err = StringIO(), StringIO()
@@ -153,6 +223,7 @@ class VerdictTests(unittest.TestCase):
             with redirect_stdout(out), redirect_stderr(err):
                 self.assertEqual(verdict.main(["--json"]), 0)
         self.assertIn('"verdict":"green"', out.getvalue())
+        self.assertIn('"software_qualified":true', out.getvalue())
         self.assertEqual(err.getvalue(), "")
         data["verdict"] = "failed"
         with patch.object(verdict, "inspect", return_value=data):

@@ -89,7 +89,7 @@ conflict in those lists: run it, `git add pyproject.toml`, continue.
   Do not treat a superseded/cancelled SHA as green, or close its issue merely
   because a newer run was queued. A confirmed failure on the current head
   still blocks further work until fixed. For a bounded exact-head summary use
-  `python3 scripts/ci/head_verdict.py --json` ([contract](../CI_HEAD_VERDICT.md)).
+  `python3 scripts/ci/head_verdict.py --software-only --json` ([contract](../CI_HEAD_VERDICT.md)).
 - **Patch fast/full policy:** `develop` compares its version to the last
   released `main`, not the immediately prior push. This prevents a cancelled
   intermediate MINOR/MAJOR bump from silently losing the required full matrix.

@@ -66,7 +66,7 @@ def _head(payload: dict[str, Any]) -> str:
 
 def _run_number(run: dict[str, Any]) -> tuple[int, int]:
     try:
-        return int(run.get("run_attempt") or 1), int(run["id"])
+        return int(run["id"]), int(run.get("run_attempt") or 1)
     except (KeyError, TypeError, ValueError) as exc:
         raise VerdictError("malformed GitHub Actions run identity") from exc
 
@@ -92,6 +92,7 @@ def inspect(
     result: dict[str, Any] = {
         "repository": repository, "head": current, "run": None, "url": None,
         "software": "unknown", "release": "unknown", "verdict": "unknown",
+        "software_qualified": False,
         "checks": {}, "blockers": [],
     }
     if expected_sha is not None and expected_sha != current:
@@ -216,6 +217,25 @@ def inspect(
     if latest != current:
         result["verdict"] = "stale"
         result["blockers"] = [f"develop moved to {latest}; recheck current head"]
+    else:
+        # A protected-main policy refusal is not a failure of the validated
+        # software. Never infer success from a partial run or missing checks.
+        release_only_failure = (
+            verify.get("conclusion") == "failure"
+            and promote is not None
+            and promote.get("status") == "completed"
+            and promote.get("conclusion") == "failure"
+            and result["release"] == "blocked"
+        )
+        fully_verified = (
+            verify.get("conclusion") == "success"
+            and result["release"] in ("passed", "not_required")
+        )
+        result["software_qualified"] = bool(
+            result["software"] == "passed"
+            and verify.get("status") == "completed"
+            and (fully_verified or release_only_failure)
+        )
     return result
 
 
@@ -224,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=REPOSITORY)
     parser.add_argument("--head", help="expected exact develop commit SHA")
     parser.add_argument("--json", action="store_true", help="compact machine output")
+    parser.add_argument("--software-only", action="store_true",
+                        help="exit zero for qualified software even if release promotion was blocked")
     args = parser.parse_args(argv)
     try:
         result = inspect(args.repo, args.head)
@@ -236,12 +258,18 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"develop {result['head'][:12]} "
             f"software={result['software']} release={result['release']} "
-            f"verdict={result['verdict']} run={result['run'] or '-'}"
+            f"verdict={result['verdict']} "
+            f"software_qualified={str(result['software_qualified']).lower()} "
+            f"run={result['run'] or '-'}"
         )
         if result["url"]:
             print(result["url"])
         for blocker in result["blockers"]:
             print(f"  - {blocker}")
+    if args.software_only:
+        if result["software_qualified"]:
+            return 0
+        return 1 if result["software"] == "failed" or result["verdict"] == "failed" else 2
     return 0 if result["verdict"] == "green" else (
         1 if result["verdict"] == "failed" else 2
     )
