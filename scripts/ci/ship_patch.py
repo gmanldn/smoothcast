@@ -13,7 +13,7 @@ import subprocess
 
 VERSION_PATH = "src/version.py"
 MARKER = "[sc-auto-patch]"
-PART = re.compile(r"^(MAJOR|MINOR|PATCH)(\\s*=\\s*)(\\d+)(\\s*)$", re.MULTILINE)
+PART = re.compile(r"^(MAJOR|MINOR|PATCH)(\s*=\s*)(\d+)(\s*)$", re.MULTILINE)
 
 
 class PatchAllocationError(RuntimeError):
