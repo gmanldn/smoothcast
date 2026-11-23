@@ -1,57 +1,50 @@
 # Contributing to SmoothCast
 
-**`develop` is the only branch anyone commits to.** `main` is release-only: it
-is updated automatically by a develop→main pull request when a verified
-`develop` commit bumps `src/version.py`. Never commit or push to `main`.
+**Develop-only working policy.** `develop` is the sole development branch.
+`main` is untouched by agents, CI and automatic workflows. Only the project
+owner may manually integrate `develop` into `main`; version bumps do not
+trigger automatic promotion or publication.
 
-**GitHub Issues are the only backlog.** Read [docs/ISSUES.md](docs/ISSUES.md)
-for the claim → implement → validate → close workflow and
-[AGENTS.md](AGENTS.md) / [docs/agents/workflow.md](docs/agents/workflow.md)
-for the repository rules; do not add a parallel Markdown feature list.
+GitHub Issues are the authoritative backlog:
+[docs/ISSUES.md](docs/ISSUES.md). The short canonical operating rules are
+[AGENTS.md](AGENTS.md) and [docs/agents/workflow.md](docs/agents/workflow.md).
 
-## Maintainers and agents (push access)
+## Maintainers and agents
 
-1. Claim an issue with a comment before starting.
-2. Work in a detached worktree of `origin/develop`, never the shared checkout:
+1. Pick the highest-value unclaimed P0/P1 issue or an independent small fix;
+   consult claims/comments and partition overlapping work by file.
+2. Claim briefly, use your own **detached worktree** of `origin/develop`, and
+   commit one small coherent slice with `Refs #N`.
+3. Fetch and rebase **only your own unpublished work**, then fast-forward push
+   to `origin/develop` directly. Never force-push or overwrite another agent's
+   worktree, uncommitted changes or version bump.
+4. Release the claim, document the exact SHA and test status, and take the next
+   available task. Do not close an issue whose actual acceptance criteria are
+   unverified.
 
-   ```sh
-   git fetch origin
-   git worktree add --detach ../smoothcast-N origin/develop
-   ```
+```sh
+git fetch origin develop
+git worktree add --detach ../smoothcast-N origin/develop
+cd ../smoothcast-N
+# edit, stage named files and commit with Refs #N
+git fetch origin develop && git rebase origin/develop
+git push origin HEAD:develop
+```
 
-3. Check headlessly — never launch the real GUI or control a TV. Patch work
-   uses the fast lane; the full suite is required only for MINOR/MAJOR bumps:
+**Testing is optional for rapid develop pushes by owner instruction.**
+The Verify workflow runs on explicit manual invocation; do not claim a green
+test result or production guarantee without evidence. Never launch a desktop
+GUI or control a receiver during routine automated work.
 
-   ```sh
-   python3 -m compileall -q src scripts setup tests
-   python3 -m py_compile smoothcast
-   ruff check src scripts setup tests smoothcast setup.py
-   mypy
-   python3 -m pytest -q tests -n auto   # MINOR/MAJOR only
-   ```
+External contributors without push access may propose PRs targeting
+`develop`. Maintainers and agents do not open topic branches or PRs.
 
-   `python3 scripts/ci/test_scope.py --base origin/develop` reports the lane CI
-   will use. Target tests for changed behavior during patch work.
+## Version and main
 
-4. Commit small and coherent (`Refs #N`), integrate with
-   `git fetch origin && git rebase origin/develop` (your unpushed commits only),
-   re-test, and `git push origin HEAD:develop`. Never force-push.
-5. Keep `develop` green: if CI goes red, fix it or `git revert` it first.
-6. Remove the worktree when done. Close an issue only when every acceptance
-   item passes; use `Refs #N` if real-device verification is pending.
+`src/version.py` is the sole version authority. Increment PATCH on a
+completed issue or explicit owner request, always refreshing the current
+develop value before committing. Commits are not automatically merged to
+`main`, tagged, published or certified. Main merges/releases are exclusively
+owner-initiated manual operations.
 
-Optional local guard: `pip install pre-commit && pre-commit install` (Ruff,
-compileall, and a hook that refuses commits on `main`).
-
-## External contributors (no push access)
-
-Fork, branch, and open a pull request **against `develop`**.
-
-## Releases
-
-`python3 scripts/ci/bump_version.py` on `develop`, push, and the release
-reaches `main` automatically once CI verifies it. Patch bumps use the fast
-lane; MINOR/MAJOR bumps run the full test matrix. Publishing a GitHub release
-is a separate tag step: see [docs/agents/workflow.md](docs/agents/workflow.md).
-
-Security issues: see [SECURITY.md](SECURITY.md).
+Security issues: [SECURITY.md](SECURITY.md).
