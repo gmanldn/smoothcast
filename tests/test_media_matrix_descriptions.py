@@ -71,7 +71,7 @@ class SourceShapeTests(unittest.TestCase):
         for level in (
             "-1.0", "4.-1", "4.10", "4", "bogus", None,
             " 4.1", "4.1 ", "+4.1", "4.+1", "04.1", "0.0",
-            "4.01", "4.1\\n", "999.1", float("inf"),
+            "4.01", "4.1\n", "999.1", float("inf"),
         ):
             with self.subTest(level=level):
                 self.assertFalse(supports(
