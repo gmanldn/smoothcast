@@ -21,16 +21,18 @@ python3 scripts/agent.py finish --done "what landed" --next none \
     --verification "actual targeted checks" --checklist "acceptance evidence" --close
 ```
 
-`ship` fetches/rebases only its own unpublished code, guards per-shipment
-PATCH allocation against concurrent agents and fast-forward pushes directly to
-`develop`. A retry drops only the tool-generated **unpublished version-only**
-commit, then reallocates the next number. `--skip-checks` bypasses expensive
-tests, **not** version-integrity checks. Do not close untested, incomplete or
-hardware-pending issues; record precise next actions and release the claim.
+`ship` fetches/rebases only unpublished code, checks current issue/lease
+state, runs mandatory lightweight version-integrity checks and fast-forward
+pushes to `develop`. `--skip-checks` bypasses costly focused tests, **not**
+integrity checks. It posts a durable SHA handover. Do not close untested,
+incomplete or hardware-pending issues.
 
-`main` is entirely owner-controlled and never automatically promoted. Raw Git
-pushes do **not** auto-bump PATCH and should not be the normal agent workflow;
-the unresolved server-side exactly-once per-ticket gate is #583.
+Normal agent ships **do not change the semantic release version**. The exact
+development identity is the Git SHA (`smoothcast --build-id`); explicitly
+owner-authorised version allocation is opt-in with `--assign-patch`.
+`main` remains entirely owner-controlled. Raw pushes bypass the local
+preflight, so use the coordinator whenever possible. Enforceable exactly-once
+release assignment remains tracked in #583.
 
 `python3 scripts/ticket_digest.py --next --label agent-ready` is only a read-only
 fallback: it cannot fully detect concurrent structured comment leases.
