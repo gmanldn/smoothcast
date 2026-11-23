@@ -53,6 +53,10 @@ def _main() -> int:
         # Bounded, redacted support bundle; never needs GTK or a display.
         import diagnostics
         return diagnostics.main(sys.argv[2:])
+    if sys.argv[1:2] == ["--forget-receiver"]:
+        # Explicit, local-only privacy reset. No GI, display or receiver activity.
+        import receiver_memory
+        return receiver_memory.main(sys.argv[2:])
     if sys.argv[1:2] == ["--network-check"]:
         # Explicit diagnostic command; does not import GTK or start a cast.
         import network_routes
