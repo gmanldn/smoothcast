@@ -90,11 +90,24 @@ class FederatedSearch:
 
     def _page(self, rows: list[dict], limit: int, cursor: str | None, pending: list[str],
               partial: bool, text: str) -> dict:
-        limit = max(1, min(int(limit), 100))
         try:
-            offset = int(base64.urlsafe_b64decode((cursor or "").encode()).decode()) if cursor else 0
-        except (ValueError, UnicodeError):
-            offset = 0
+            limit = max(1, min(int(limit), 100))
+        except (TypeError, ValueError, OverflowError):
+            limit = 50
+        # The cursor is an untrusted HTTP parameter. Reject negative indices,
+        # noncanonical encodings, arbitrarily long integers and offsets beyond
+        # the current result set; Python's negative slices repeat old items.
+        offset = 0
+        if isinstance(cursor, str) and 0 < len(cursor) <= 16:
+            try:
+                raw = base64.b64decode(cursor, altchars=b"-_", validate=True)
+                if (0 < len(raw) <= 5 and raw.isascii() and raw.isdecimal()
+                        and base64.urlsafe_b64encode(raw).decode() == cursor):
+                    candidate = int(raw)
+                    if candidate <= len(rows):
+                        offset = candidate
+            except (ValueError, UnicodeError, base64.binascii.Error):
+                pass
         page = rows[offset:offset + limit]
         more = len(rows) > offset + limit
         nxt = base64.urlsafe_b64encode(str(offset + limit).encode()).decode() if more else None
