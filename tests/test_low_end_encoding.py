@@ -43,8 +43,8 @@ def test_bitmap_overlay_keeps_subtitles_and_caps_software_output():
 
 
 def test_hardware_and_high_quality_maintain_original_paths():
-    assert SCALE_720 not in filters(quality="saver", software=False)[-1]
-    assert SCALE_720 not in filters(quality="high", software=True)[-1]
+    assert SCALE_720 not in "".join(filters(quality="saver", software=False))
+    assert SCALE_720 not in "".join(filters(quality="high", software=True))
 
 
 def test_software_encoder_preserves_fast_preset_and_lower_priority_implementation():
