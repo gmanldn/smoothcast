@@ -462,3 +462,59 @@ def test_mesh_proxy_stream_limit_rejects_before_success_headers(monkeypatch):
                         head=False, write_headers=lambda *args: sent_headers.append(args))
     assert sent_headers[0][0] == 200
     assert client.wfile.getvalue() == b"abc"
+
+
+@pytest.mark.parametrize(("requested", "response", "valid"), [
+    ("bytes=100-", "bytes */100", True),
+    ("bytes=100-150", "bytes */100", True),
+    ("bytes=0-", "bytes */0", True),
+    ("bytes=-20", "bytes */0", True),
+    ("bytes=-0", "bytes */100", True),
+    ("bytes=0-", "bytes */100", False),
+    ("bytes=99-", "bytes */100", False),
+    ("bytes=-20", "bytes */100", False),
+    ("bytes=101-100", "bytes */100", False),
+    ("bytes=0-", "bytes */garbage", False),
+    ("bytes=0-", "bytes */" + "9" * 1000, False),
+    ("bytes=0-", "bytes */9223372036854775808", False),
+    ("bytes=0-", "bytes */100\\r\\nX-Injected: 1", False),
+    ("bytes=0-1,3-4", "bytes */100", False),
+    (None, "bytes */100", False),
+])
+def test_peer_unsatisfied_range_416_is_strict(requested, response, valid):
+    from mesh_file_wire import valid_unsatisfied_range
+    assert valid_unsatisfied_range(requested, response) is valid
+
+
+@pytest.mark.parametrize(("requested", "response", "forward"), [
+    ("bytes=100-", "bytes */100", True),
+    (None, "bytes */100", False),
+    ("bytes=0-", "bytes */100", False),
+    ("bytes=100-", None, False),
+    ("bytes=100-", "bytes */100\\r\\nX-Forged: 1", False),
+])
+def test_proxy_never_forwards_unverified_416(requested, response, forward):
+    class Upstream:
+        status = 416
+
+        def getheader(self, key):
+            return response if key == "Content-Range" else None
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Client:
+        headers = {"Range": requested} if requested is not None else {}
+
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Connection(), Upstream())
+    emitted = []
+    accepted = proxy._proxy(
+        Client(), "qh:" + "a" * 32, "http://127.0.0.1/",
+        head=False, write_headers=lambda *args: emitted.append(args),
+    )
+    assert accepted is forward
+    assert (len(emitted) == 1) is forward
+    if forward:
+        assert emitted == [(416, {"Content-Length": "0", "Content-Range": response})]
