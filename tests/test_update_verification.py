@@ -122,13 +122,15 @@ class OptOutTests(RepoCase):
 
     def test_settings_exist_with_the_documented_defaults_and_reach_the_updater(self):
         source = (ROOT / "src" / "cast_widgets.py").read_text("utf-8")
-        self.assertIn('"auto_update": False', source)
+        self.assertIn('"check_release_updates": False', source)
         self.assertIn('"verify_updates": True', source)
         control = (ROOT / "src" / "cast_control.py").read_text("utf-8")
-        self.assertIn('enabled=bool(cfg.get("auto_update", False))', control)
+        self.assertIn('enabled=bool(cfg.get("check_release_updates", False))', control)
         self.assertIn('verify=bool(cfg.get("verify_updates", True))', control)
         self.assertIn("from update_control import check_release", control)
         self.assertNotIn("from update_control import refresh_checkout", control)
+        self.assertNotIn('cfg.get("auto_update", True)', control)
+        self.assertNotIn('cfg.get("auto_update", False)', control)
 
 
     def test_read_only_candidate_check_never_changes_running_checkout(self):
