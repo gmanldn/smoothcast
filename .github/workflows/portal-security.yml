@@ -95,7 +95,8 @@ jobs:
           tests/test_command_trace_receiver.py
           tests/test_pychromecast_backend.py
           tests/test_portal_activity.py::test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread
-          tests/test_portal_screens_http.py::test_status_http_reads_snapshot_while_gtk_dispatcher_is_blocked
+          tests/test_portal_screens.py
+          tests/test_portal_screens_http.py
           tests/test_portal_commands.py
           tests/test_portal_error_codes.py
           tests/test_portal_uploads.py
