@@ -76,6 +76,10 @@ jobs:
         run: python -m unittest discover -s tests -p test_ticket_efficiency.py
       - name: Verify stale-safe per-ticket version bumps
         run: python -m unittest discover -s tests -p test_ticket_versioning.py
+      - name: Verify bounded agent routing and instruction budgets
+        run: |
+          python -m unittest discover -s tests -p test_agent_context.py
+          python -m unittest discover -s tests -p test_agent_token_efficiency.py
       - name: Lint user-facing UX copy
         run: python scripts/ci/ux_copy_lint.py
       - name: Enforce safety invariant evidence links
