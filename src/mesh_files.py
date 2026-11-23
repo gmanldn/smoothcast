@@ -25,6 +25,29 @@ HOP_HEADER = "X-SmoothCast-Hop"
 _CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
 
 
+def _valid_resume(reply, start: int, end: int, total: str | None,
+                  etag: str | None) -> bool:
+    """Only append bytes that continue the original range and object."""
+    if reply.status != 206:
+        return False
+    match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
+    if match is None or total is None or total == "*":
+        return False
+    first, last, size = match.groups()
+    if (int(first) != start or int(last) != end or size != total
+            or int(last) < int(first) or int(last) >= int(size)):
+        return False
+    try:
+        length = int(reply.getheader("Content-Length") or "")
+    except ValueError:
+        return False
+    if length != end - start + 1:
+        return False
+    if etag is not None and reply.getheader("ETag") != etag:
+        return False
+    return True
+
+
 def key_from_path(path: str) -> str | None:
     prefix = "/mesh/file/"
     if not path.startswith(prefix):
@@ -87,7 +110,12 @@ class MeshFiles:
                 return False
             headers = {"Content-Type": reply.getheader("Content-Type") or "application/octet-stream",
                        "Accept-Ranges": "bytes"}
-            length = int(reply.getheader("Content-Length") or 0)
+            try:
+                length = int(reply.getheader("Content-Length") or "")
+            except ValueError:
+                return False
+            if length < 0:
+                return False
             headers["Content-Length"] = str(length)
             start = 0
             total = None
@@ -95,41 +123,51 @@ class MeshFiles:
                 match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
                 if match is None:
                     return False
-                start = int(match.group(1))
+                first, last, size = match.groups()
+                start = int(first)
+                if (size == "*" or int(last) < start or int(last) >= int(size)
+                        or length != int(last) - start + 1):
+                    return False
                 headers["Content-Range"] = reply.getheader("Content-Range") or ""
-                total = match.group(3)
+                total = size
             write_headers(reply.status, headers)
             if head or length == 0:
                 return True
             with portal_media.stream_slot():
-                self._pump(handler, key, url, conn, reply, start, length, total)
+                self._pump(handler, key, url, conn, reply, start, length, total,
+                           reply.getheader("ETag"))
             return True
         finally:
             conn.close()
 
     def _pump(self, handler, key: str, url: str, conn, reply, start: int, length: int,
-              total: str | None) -> None:
+              total: str | None, etag: str | None) -> None:
         sent, retries = 0, 0
-        while sent < length:
-            try:
-                chunk = reply.read(min(CHUNK, length - sent))
-                if not chunk:
-                    raise OSError("upstream ended early")
-            except OSError:
-                retries += 1
-                if retries > MAX_RETRIES:
-                    return
-                conn.close()
-                last = start + length - 1
+        try:
+            while sent < length:
                 try:
-                    conn, reply = self._open(url, key, f"bytes={start + sent}-{last}", False)
+                    chunk = reply.read(min(CHUNK, length - sent))
+                    if not chunk:
+                        raise OSError("upstream ended early")
                 except OSError:
+                    retries += 1
+                    if retries > MAX_RETRIES:
+                        return
+                    conn.close()
+                    last = start + length - 1
+                    try:
+                        conn, reply = self._open(
+                            url, key, f"bytes={start + sent}-{last}", False)
+                    except OSError:
+                        continue
+                    if not _valid_resume(reply, start + sent, last, total, etag):
+                        return
                     continue
-                if reply.status != 206:
+                try:
+                    handler.wfile.write(chunk)
+                except OSError:
                     return
-                continue
-            try:
-                handler.wfile.write(chunk)
-            except OSError:
-                return
-            sent += len(chunk)
+                sent += len(chunk)
+        finally:
+            # A retry may have replaced the original connection. Always close it.
+            conn.close()
