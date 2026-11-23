@@ -114,3 +114,41 @@ def test_cross_context_wiring_and_desktop_handler_boundaries_are_explicit():
     assert '@command_trace.traced("desktop", "mute")' in files["cast_av.py"]
     assert 'command_trace.scope("cli", args.command)' in files["cli_control.py"]
     assert 'command_trace.scope("control_api", command)' in files["control_api.py"]
+
+
+def test_legacy_queue_request_and_replay_share_one_privacy_safe_trace():
+    import portal
+
+    calls = []
+    def dispatch(action, payload):
+        calls.append(action)
+        return "Queued"
+
+    server = portal._PortalHTTPServer(
+        ("127.0.0.1", 0), "234567", dispatch,
+    )
+    try:
+        participant = server.room.join("Guest")
+        body = {"action": "queue_clear", "queue_revision": 0,
+                "queue_command_id": "opaque-command-7"}
+        assert server.execute_queue_command(participant.id, body) == (202, "Queued")
+        assert server.execute_queue_command(participant.id, body) == (202, "Queued")
+        altered = {**body, "queue_revision": 1}
+        assert server.execute_queue_command(participant.id, altered)[0] == 409
+        assert calls == ["queue_clear"]
+        rows = [row for row in command_trace.recent()
+                if row["action"] == "queue_clear" and row["source"] == "portal"]
+        assert len(rows) == 1
+        stages = [entry["stage"] for entry in rows[0]["stages"]]
+        assert "received" in stages and "dispatched" in stages
+        assert "replayed" in stages and "rejected" in stages
+        assert all(participant.id not in str(row) for row in rows)
+    finally:
+        server.server_close()
+
+
+def test_legacy_room_actions_inherit_trace_on_host_dispatch():
+    portal_source = (ROOT / "src" / "portal.py").read_text(encoding="utf-8")
+    assert 'command_trace.scope("portal", "queue_vote")' in portal_source
+    assert 'command_trace.scope("portal", action)' in portal_source
+    assert "command_trace.scope(\"portal\", str(action or \"queue\")" in portal_source

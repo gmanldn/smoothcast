@@ -29,6 +29,7 @@ import lan_guard
 import mesh_files
 import library_replication
 import portal_commands
+import command_trace
 import peer_discovery
 import portal_room
 import portal_screen_page
@@ -418,23 +419,31 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     self._queue_command_cache.pop(old_key, None)
             cached = self._queue_command_cache.get(key)
             if cached is not None:
-                self._queue_command_cache.move_to_end(key)
-                if cached[1] != fingerprint:
-                    return 409, "Queue command ID was already used with different data"
-                return cached[2], cached[3]
+                with command_trace.scope("portal", str(body.get("action") or "queue"),
+                                         command_id=command_id, client_id=participant_id):
+                    self._queue_command_cache.move_to_end(key)
+                    if cached[1] != fingerprint:
+                        command_trace.stage("rejected", code=409)
+                        return 409, "Queue command ID was already used with different data"
+                    return cached[2], cached[3]
             action = body.get("action")
-            try:
-                payload = ({**body, "_portal_auth_key": session_key}
-                           if session_key is not None else body)
-                message = self.dispatch(action, payload)
-                self.room.record(participant_id, "action", {
-                    "action": action, "id": body.get("id"),
-                })
-                status, result = 202, str(message or "Queue updated")
-            except PortalRequestError as exc:
-                status, result = exc.status, exc.message
-            except Exception:
-                status, result = 503, "SmoothCast could not accept that queue edit"
+            with command_trace.scope("portal", str(action or "queue"),
+                                     command_id=command_id, client_id=participant_id):
+                command_trace.stage("dispatched")
+                try:
+                    payload = ({**body, "_portal_auth_key": session_key}
+                               if session_key is not None else body)
+                    message = self.dispatch(action, payload)
+                    self.room.record(participant_id, "action", {
+                        "action": action, "id": body.get("id"),
+                    })
+                    status, result = 202, str(message or "Queue updated")
+                except PortalRequestError as exc:
+                    status, result = exc.status, exc.message
+                except Exception:
+                    status, result = 503, "SmoothCast could not accept that queue edit"
+                if status >= 400:
+                    command_trace.stage("rejected", code=status)
             self._queue_command_cache[key] = (
                 now + QUEUE_COMMAND_TTL, fingerprint, status, result,
             )
@@ -983,7 +992,9 @@ class _Handler(BaseHTTPRequestHandler):
                         if not isinstance(value, bool):
                             return self._error(400, "Vote must be true or false")
                         try:
-                            result = self.server.room.vote(participant_id, body["id"], value)
+                            with command_trace.scope("portal", "queue_vote"):
+                                command_trace.stage("dispatched")
+                                result = self.server.room.vote(participant_id, body["id"], value)
                         except portal_room.RoomError as exc:
                             return self._error(exc.status, exc.message)
                         return self._send(202, {"ok": True, "message": "Vote saved",
@@ -1003,10 +1014,12 @@ class _Handler(BaseHTTPRequestHandler):
                         })
                     if action in {"next", "previous", "queue_play", "queue_add_key"}:
                         try:
-                            result = self.server.dispatch(action, {
-                                **body, "_portal_auth_key": self.server._session_key(
-                                    self._cookie_token() or ""),
-                            })
+                            with command_trace.scope("portal", action):
+                                command_trace.stage("dispatched")
+                                result = self.server.dispatch(action, {
+                                    **body, "_portal_auth_key": self.server._session_key(
+                                        self._cookie_token() or ""),
+                                })
                         except PortalRequestError as exc:
                             return self._error(exc.status, exc.message)
                         except Exception:
