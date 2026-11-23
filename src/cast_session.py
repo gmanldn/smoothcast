@@ -245,11 +245,12 @@ class SessionMixin:
                                            "embedded" if embedded else "none"))
                     except ValueError:
                         pass  # No stable identity/codec: retain normal direct decision.
-                learned_hls = bool(receiver_key and codec_key and
-                                   learned.advice(receiver_key, codec_key) == "hls")
-                if (use_direct and media.direct_ok and not learned_hls
-                        and not burn and embedded is None and not music_enabled
-                        and (aspect_mode == "original" or getattr(media, "is_audio_only", False))):
+                direct_eligible = (
+                    use_direct and media.direct_ok and not burn
+                    and embedded is None and not music_enabled
+                    and (aspect_mode == "original" or getattr(media, "is_audio_only", False)))
+                if receiver_memory.should_try_direct(
+                        direct_eligible, learned, receiver_key, codec_key):
                     try:
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
