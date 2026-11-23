@@ -24,7 +24,7 @@ class RoomHTML(HTMLParser):
 
 def room_html():
     parser = RoomHTML()
-    parser.feed(portal._HTML)
+    parser.feed(portal._page().decode("utf-8"))
     return parser
 
 
@@ -33,7 +33,7 @@ def test_guest_navigation_has_unique_ids_and_real_targets():
     assert len(page.ids) == len(set(page.ids)), "Duplicate IDs break DOM event binding"
     assert set(page.anchors) <= set(page.ids)
     assert {"playback", "findPanel", "uploadCard", "queuePanel", "peoplePanel",
-            "advancedPanel"} <= set(page.anchors)
+            "advancedPanel", "screensPanel"} <= set(page.anchors)
 
 
 def test_join_explains_shared_controls_and_optional_house_pin():
@@ -305,3 +305,21 @@ def test_mesh_panel_uses_shared_semantic_theme_instead_of_dark_literals():
         assert f"var({token})" in css
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
     assert 'id="meshTargets" aria-label="Playback targets"' in panel
+
+
+def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
+    """Assembled room markup includes the screen panel, not only the base HTML."""
+    from portal_screen_page import panel_html
+
+    page = room_html()
+    assert "screensPanel" in page.ids
+    assert "screensPanel" in page.anchors
+    assert '#dashboard>#screensPanel' in portal._HTML
+    assert '#dashboard>#meshPanel' in portal._HTML
+    assert '#dashboard>#castEntry' in portal._HTML
+
+    panel = panel_html()
+    assert 'aria-labelledby="screensPanelHeading"' in panel
+    assert "House PIN only if the host requires it" in panel
+    assert "Stop this screen without stopping the host TV" in panel
+    assert "Screen command received; checking its state." in panel
