@@ -119,7 +119,7 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     probe is not reported as an installed update. Frozen/installed packages do
     not attempt source checkout updates.
     """
-    if (not enabled or channel not in UPDATE_CHANNELS
+    if (not enabled or not isinstance(channel, str) or channel not in UPDATE_CHANNELS
             or getattr(sys, "frozen", False) or not (repo / ".git").exists()):
         return None
     branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
