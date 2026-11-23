@@ -24,12 +24,26 @@ reconfigured automatically.
 
 Tests: `python3 -m pytest -q tests/test_picture_adjustments.py`.
 
+## Local preview parity (23 Nov 2026)
+
+Local pre-cast JPEG frames now use the same validated `eq`/`hue`
+filter builder as the cast transcode path, before the preview scaling
+filter. Asynchronous frames capture a snapshot of the colour settings;
+changing a control or resetting the picture invalidates the old
+preview generation and requests a fresh frame without touching an
+owned receiver. Both sparse/hover previews and exact-position frames
+are covered by a headless regression.
+
+This is a **preview of the chosen filter values**, not a claim of
+display-calibrated colour: colour management, HDR tone mapping, decoder
+differences and the final receiver display can still differ.
+
+Tests: `python3 -m pytest -q tests/test_picture_adjustments.py tests/test_picture_adjustments_preview.py`.
+
 ## Remaining acceptance — do not close #112 yet
 
-The current controls are **global preferences**, not per-film or
-per-receiver presets. Local video preview has not yet been adjusted to
-represent the encoded output; existing screenshot/thumbnail behaviour
-must not be advertised as accurate colour preview. DLNA conversion
-and dynamic direct-to-HLS transitions require separate validation.
-Finish preview, preset-scoped persistence, lifecycle and device tests
-before marking #112 complete.
+The controls remain **global preferences**, not per-film or
+per-receiver presets. DLNA conversion, dynamic direct-to-HLS transitions,
+real GTK previews on Linux/macOS/Windows and a physical-device colour
+comparison still need qualification. Do not mark #112 complete until
+preset-scoped persistence, lifecycle and device checks are verified.
