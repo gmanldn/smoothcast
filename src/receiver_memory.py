@@ -24,7 +24,7 @@ MAX_AGE_SECONDS = 90 * 24 * 3600
 MAX_RECEIVERS = 200
 MAX_SIGNATURES = 50
 MAX_OUTCOMES = 8
-MAX_FILE_BYTES = 4 * 1024 * 1024
+MAX_FILE_BYTES = 8 * 1024 * 1024  # 200 receivers × 50 codecs × 8 results at maximum
 STATE_NAME = "receiver_memory.json"
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _CODEC_PART = re.compile(r"[A-Za-z0-9_.+-]{1,48}\Z")
@@ -114,6 +114,12 @@ def _trim(store: Store, now: float) -> Store:
         reverse=True,
     )
     return {key: cleaned[key] for key in ranked_receivers[:MAX_RECEIVERS]}
+
+
+def should_try_direct(eligible: bool, memory: "ReceiverMemory",
+                      key: str, signature: str) -> bool:
+    """Use learning only to skip an otherwise eligible speculative direct cast."""
+    return bool(eligible and (not key or memory.advice(key, signature) != "hls"))
 
 
 class ReceiverMemory:
