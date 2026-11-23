@@ -38,11 +38,11 @@ def test_compare_tolerates_small_growth_and_flags_big_jumps():
     base = {"src_lines": 1000, "modules": {"a.py": 400, "tiny.py": 50}}
     cur = lambda total, a, tiny=50, extra=None: {  # noqa: E731
         "src_lines": total, "modules": {"a.py": a, "tiny.py": tiny, **(extra or {})}}
-    assert cr.compare(cur(1100, 450), base) == []
+    assert cr.compare(cur(1100, 438), base) == []
     assert any("over baseline" in p for p in cr.compare(cur(1300, 450), base))
-    assert any("a.py grew" in p for p in cr.compare(cur(1100, 600), base))
-    assert cr.compare(cur(1100, 450, tiny=200), base) == []  # tiny modules are exempt
-    assert any("new module" in p for p in cr.compare(cur(1100, 450, extra={"huge.py": 1500}), base))
+    assert any("a.py grew" in p for p in cr.compare(cur(1100, 441), base))\n    assert any("a.py grew" in p for p in cr.compare(cur(1100, 600), base))
+    assert cr.compare(cur(1100, 438, tiny=200), base) == []  # tiny modules are exempt
+    assert any("new module" in p for p in cr.compare(cur(1100, 438, extra={"huge.py": 1500}), base))
 
 
 def test_repository_stays_within_the_committed_baseline():
