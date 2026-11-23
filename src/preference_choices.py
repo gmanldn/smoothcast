@@ -14,6 +14,12 @@ OPTIONS: dict[str, tuple[tuple[str, str | int], ...]] = {
     "quality": (("High", "high"), ("Balanced", "balanced"), ("Data saver", "saver")),
     "audio": (("Original", "original"), ("Dialogue auto-fix", "dialogue"), ("Night mode", "night")),
     "rotation": (("No rotation", 0), ("90°", 90), ("180°", 180), ("270°", 270)),
+    "aspect_override": (
+        ("Original", "original"),
+        ("16:9 · stretch (may distort)", "16:9"),
+        ("4:3 · stretch (may distort)", "4:3"),
+        ("Fit in 16:9", "fit"), ("Fill 16:9", "fill"), ("Crop to 16:9", "crop"),
+    ),
     "audio_loudness": tuple(loudness.choices()),
     "subs": (("Off", "off"), ("Automatic", "auto"), ("Choose a file…", "pick"), ("Embedded text", "embedded")),
     "color_scheme": (("Follow system", "default"), ("Light", "force-light"), ("Dark", "prefer-dark")),

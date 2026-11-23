@@ -18,6 +18,7 @@ import time
 
 import castctl
 import command_trace
+import aspect_override
 
 import dlna
 
@@ -124,13 +125,15 @@ class SessionMixin:
         )
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
+        aspect_mode = aspect_override.normalize(cfg.get("aspect_override", "original"))
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
-            and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
+            and speed == 1.0 and rotation == 0 and aspect_mode == "original"
+            and audio_track < 0 and not adelay
             and not getattr(self, "_portal_early", False)
         )
         def work():
@@ -179,6 +182,10 @@ class SessionMixin:
                         self._preflight_ok.clear()
                     self._preflight_ok.add(fingerprint)
             if renderer is not None:
+                if aspect_mode != "original":
+                    raise UserFacingError(
+                        "Aspect overrides currently require a Google Cast transcode. Choose Original for this DLNA receiver."
+                    )
                 if speed != 1.0 or rotation != 0:
                     raise UserFacingError(
                         "This receiver needs normal speed and unrotated video. Reset those settings and try again."
@@ -252,6 +259,7 @@ class SessionMixin:
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    aspect_mode=aspect_mode,
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=delay, subtitle_preset=preset,
@@ -602,6 +610,7 @@ class SessionMixin:
             else float(self.cfg.get("playback_speed", 1.0))
         )
         rotation = int(self.cfg.get("rotation", 0))
+        aspect_mode = aspect_override.normalize(self.cfg.get("aspect_override", "original"))
         audio_track = (
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
@@ -630,6 +639,7 @@ class SessionMixin:
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    aspect_mode=aspect_mode,
                     embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=captions.delay_ms,

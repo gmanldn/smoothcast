@@ -72,6 +72,7 @@ DEFAULTS: dict = {
     "shuffle_seed": 1,
     "playback_speed": 1.0,
     "rotation": 0,
+    "aspect_override": "original",
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).

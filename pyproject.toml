@@ -48,6 +48,7 @@ py-modules = [
     "ab_repeat",
     "accent",
     "api_spec",
+    "aspect_override",
     "async_jobs",
     "audio_delay",
     "audio_downmix",

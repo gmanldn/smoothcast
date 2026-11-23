@@ -66,6 +66,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
                      "High uses more processing; Data saver reduces bandwidth and resolution.")
         self._choice(output, "rotation", "Video rotation",
                      "Clockwise rotation requires video transcoding.")
+        self._choice(output, "aspect_override", "Aspect ratio",
+                     "Google Cast transcodes only. Stretch modes may distort; Fit, Fill and Crop use a 16:9 frame.")
         self._switch(output, "direct", "Direct play when supported",
                      "Send a compatible file unchanged; sound filters and rotation may require conversion.")
         self._switch(output, "keep_streaming", "Keep casting after closing",
@@ -238,6 +240,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
         elif key == "subtitle_style":
+            self.owner.cfg[key] = str(value)
+            save_config(self.owner.cfg)
+        elif key == "aspect_override":
             self.owner.cfg[key] = str(value)
             save_config(self.owner.cfg)
         else:
