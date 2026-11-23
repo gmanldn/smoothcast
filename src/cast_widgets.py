@@ -81,7 +81,7 @@ DEFAULTS: dict = {
     "window_x": -1,
     "window_y": -1,
     "check_release_updates": False,  # New opt-in; legacy auto_update is ignored (#138).
-    "verify_updates": True,  # Require trusted signature before announcing an actionable release.
+    "release_check_verify": True,  # Fresh consent; legacy verify_updates is ignored (#138).
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
     "portal_port": 0,  # Choose one random high room port and persist it (#456).
     "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).
