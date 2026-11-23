@@ -34,6 +34,7 @@ import portal_room
 import portal_screen_page
 import portal_media
 import portal_mesh_http
+import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
 import shortcut_map
@@ -138,13 +139,15 @@ def valid_friendly_name(value: str) -> bool:
 def page_build() -> str:
     """Version plus the served page's hash, never a duplicated release constant."""
     return version.__version__ + "-" + hashlib.sha256(
-        (_HTML + portal_screen_page.panel_html() + shortcut_map.browser_json()).encode("utf-8")
+        (_HTML + portal_screen_page.panel_html() + portal_mesh_panel.panel_html()
+         + shortcut_map.browser_json()).encode("utf-8")
     ).hexdigest()[:12]
 
 
 def _page() -> bytes:
     # Replace just the main closing tag; the Screens panel is part of the build.
-    markup = _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1)
+    markup = _HTML.replace("</main>", portal_screen_page.panel_html()
+                           + portal_mesh_panel.panel_html() + "</main>", 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())).encode("utf-8")

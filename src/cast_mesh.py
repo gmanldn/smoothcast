@@ -67,8 +67,18 @@ def stop(window: object) -> None:
         return
 
 
+def refresh_view(window: object) -> None:
+    """Refresh the Network popover (GTK thread); never raises."""
+    try:
+        import mesh_ui
+        mesh_ui.refresh(window)
+    except Exception:
+        return
+
+
 def push_clients(window: object) -> None:
     """Publish the room roster and ready screens when they change; never raises."""
+    refresh_view(window)
     service = getattr(window, "_mesh", None)
     portal = getattr(window, "_portal", None)
     if service is None or portal is None or service.state != "running":

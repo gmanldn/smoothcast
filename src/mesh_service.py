@@ -183,7 +183,7 @@ class MeshService:
             prober=cfg.prober)
         self.cache = mesh_cache.MeshCache(cfg.cache_path or cfg.state_dir / "mesh_cache.sqlite")
         self.cache.open()
-        self.feed = mesh_clients.MeshFeed(self.publisher)
+        self.feed = mesh_clients.MeshFeed(self.publisher, primary=lambda: self.roles.primary)
         self.started_at = time.monotonic()
         loop.start()
         loop.call_soon_threadsafe(self._start_components)
