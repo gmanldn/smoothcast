@@ -19,6 +19,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 import aspect_override
+import picture_adjustments
 
 import audio_delay
 import bookmarks
@@ -82,6 +83,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
         if key in _OPTIONS:
             if isinstance(value, str) and value in _OPTIONS[key]:
                 cfg[key] = value
+        elif key in picture_adjustments.DEFAULTS:
+            cfg[key] = picture_adjustments.validated(key, value)
         elif key == "watch_history":
             cfg[key] = watch_history.clean(value)
         elif key == "bookmarks":
