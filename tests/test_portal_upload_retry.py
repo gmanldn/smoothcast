@@ -112,3 +112,44 @@ if(validSavedUpload({...base,id:"bad"})||validSavedUpload({...base,size:0}))
         ["node", "-e", js], capture_output=True, text=True, timeout=10, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _recovery_order_js() -> str:
+    start = '    const records=await uploadStorage("readonly",store=>store.getAll());'
+    end = "    for(const record of candidates){"
+    assert SOURCE.count(start) == 1 and SOURCE.count(end) == 1
+    return start + SOURCE.split(start, 1)[1].split(end, 1)[0]
+
+
+def test_restoration_filters_before_sorting():
+    js = _recovery_order_js()
+    assert "records.filter(validSavedUpload)" in js
+    assert "candidates.sort((a,b)=>started(b)-started(a))" in js
+    assert "Number.isSafeInteger(record.started)" in js
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_actual_restoration_js_skips_corrupt_records_and_sorts_valid_uploads():
+    js = _upload_validation_js() + r"""
+async function run(records){
+  const uploadStorage=async()=>records;
+""" + _recovery_order_js() + r"""
+  return candidates.map(item=>item.id);
+}
+(async()=>{
+  const base={name:"film.mkv",chunkSize:2*1024*1024,size:100,received:0};
+  const old={...base,id:"a".repeat(32),started:10};
+  const newer={...base,id:"b".repeat(32),started:30};
+  const badTime={...base,id:"c".repeat(32),started:"corrupt"};
+  const corrupt={...base,id:"d".repeat(32),chunkSize:0,started:999};
+  const result=await run([null,corrupt,badTime,old,undefined,newer]);
+  if(result.join(",")!==[newer.id,old.id,badTime.id].join(","))
+    throw Error("invalid records crash or bias the order");
+  if((await run(null)).length!==0||(await run({not:"array"})).length!==0)
+    throw Error("malformed storage response should be empty");
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", js], capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stderr
