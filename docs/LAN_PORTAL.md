@@ -355,6 +355,22 @@ tokens. The web room remains entirely self-hosted and uses the existing
 session, CSRF and command protocols.
 
 
+## Upload resumption file-recognition safeguard
+
+Browsers store only upload-session metadata in IndexedDB, not the selected
+media bytes. When a visitor reselects a file after reconnecting, the browser
+compares its name, size, modification time and a bounded file fingerprint before
+continuing. New v3 fingerprints sample the first, middle and last 64 KiB (at
+most 192 KiB read), keeping the browser responsive even for enormous media.
+Previously stored v1/v2 fingerprints are still recognised. Older v1 calculations
+have an 8 MiB maximum even if browser storage contains malformed metadata.
+
+This is **accidental-substitution detection**, not cryptographic whole-file
+verification. A file with changes only outside these samples may still match;
+end-to-end SHA-256 checking for copies/transfers belongs to the transfer
+integrity protocol (#569/#357). The server's sequential offset, ownership,
+root containment and durable-write checks remain authoritative.
+
 ## Browser file-transfer throughput contract (issue #568, first slice)
 
 - The room advertises an **8 MiB maximum chunk** in the upload-creation
