@@ -212,7 +212,7 @@ def test_history_preview_is_id_ordered_and_does_not_reuse_stale_handover():
     comments = [
         comment(4, 42, 2, "Implementation: abc5678. Why: final fix."),
         comment(1, 42, 30, "Implementation: abc1234. Why: first slice."),
-        comment(3, 42, 10, "Progress: source tests passed\\nHandover: fix cleanup"),
+        comment(3, 42, 10, "Progress: source tests passed\nHandover: fix cleanup"),
     ]
     slices, progress, handover = agent.summarize_history(comments)
     assert slices == 2
@@ -222,9 +222,9 @@ def test_history_preview_is_id_ordered_and_does_not_reuse_stale_handover():
 
 def test_history_preview_preserves_latest_progress_and_remaining_work():
     comments = [
-        comment(1, 42, 20, "Progress: basic transport landed\\nHandover: untested cancellation"),
+        comment(1, 42, 20, "Progress: basic transport landed\nHandover: untested cancellation"),
         comment(2, 42, 10, "Claim released."),
-        comment(3, 42, 3, "Progress: cancellation handling landed\\nHandover: test receiver restart"),
+        comment(3, 42, 3, "Progress: cancellation handling landed\nHandover: test receiver restart"),
     ]
     assert agent.summarize_history(comments) == (
         0, "cancellation handling landed", "test receiver restart"
