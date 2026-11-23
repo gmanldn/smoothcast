@@ -340,3 +340,22 @@ to discover the main journey. The layout is one column on phones and a
 two-column workspace on larger screens, using the existing light/dark colour
 tokens. The web room remains entirely self-hosted and uses the existing
 session, CSRF and command protocols.
+
+
+## Browser file-transfer throughput contract (issue #568, first slice)
+
+- The room advertises an **8 MiB maximum chunk** in the upload-creation
+  response. The browser uses that negotiated size and sends sequential
+  `Content-Range` chunks. Existing 2 MiB clients remain supported.
+- The server reads and writes chunks through a **64 KiB buffer**; it does not
+  retain an 8 MiB upload body in memory.
+- A successful PUT is acknowledged only after **`fsync`** has completed for
+  its chunk. Increasing chunk size reduces request and sync frequency for large
+  files but does **not** implement crash-persistent upload sessions, coalesced
+  durable checkpoints or guaranteed recovery after the host process restarts.
+- Validated upload PUTs have a bounded **30-second socket read timeout** for
+  slower Wi-Fi; ordinary room requests retain their shorter timeout. A failed
+  or interrupted chunk is rolled back to its last acknowledged offset.
+- Speed-up depends on the storage device, RTT and Wi-Fi link. No throughput
+  improvement is claimed without measured benchmarks (#573). Adaptive chunk
+  negotiation and cross-restart durable offsets remain tracked in #568.
