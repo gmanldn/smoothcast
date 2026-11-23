@@ -1,4 +1,8 @@
-"""Best-effort asynchronous checkout refresh; the running UI never blocks."""
+"""Read-only update discovery for the running app; explicit legacy checkout apply.
+
+Never mutate loaded Python code from the GTK worker. The optional discovery
+fetch updates Git metadata only and validates a pinned origin branch candidate.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,12 +58,11 @@ def _signature_ok(repo: Path, sha: str, timeout: int) -> bool:
 
 def _verified_update(repo: Path, branch: str, before: str, timeout: int) -> str | None:
     """Fetch, authenticate and only then fast-forward; never pull blindly."""
-    if _git(repo, ["fetch", "--quiet", "origin", branch], timeout) is None:
+    target = _fetch_branch(repo, branch, timeout)
+    if not target:
         return None
-    # Signed release tags are not fetched with the branch. Best effort: a tag
-    # that clashes with a local one must not block an otherwise valid update.
+    # Tags are verified only for the pinned branch SHA, never FETCH_HEAD.
     _git(repo, ["fetch", "--quiet", "--tags", "origin"], timeout)
-    target = _git(repo, ["rev-parse", "FETCH_HEAD^{commit}"], timeout)
     if not target or target == before:
         return None
     if _git(repo, ["merge-base", "--is-ancestor", before, target], timeout) is None:
@@ -76,6 +79,82 @@ def _verified_update(repo: Path, branch: str, before: str, timeout: int) -> str 
     if after is None or after == before:
         return None
     return _downloaded_notice(repo)
+
+
+def _semver(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    parts = value.split(".")
+    if len(parts) != 3 or any(not p.isdecimal() for p in parts):
+        return None
+    return tuple(int(p) for p in parts)  # type: ignore[return-value]
+
+
+def _fetch_branch(repo: Path, branch: str, timeout: int) -> str | None:
+    """Fetch one release branch and return an immutable, explicitly named SHA.
+
+    Never rely on FETCH_HEAD after a tag fetch: that pseudo-ref may have been
+    replaced by another fetch. A refspec pins the intended origin branch.
+    """
+    if branch not in ELIGIBLE_BRANCHES:
+        return None
+    ref = f"refs/remotes/origin/{branch}"
+    if _git(repo, ["fetch", "--quiet", "--no-tags", "origin",
+                   f"+refs/heads/{branch}:{ref}"], timeout) is None:
+        return None
+    sha = _git(repo, ["rev-parse", "--verify", f"{ref}^{{commit}}"], timeout)
+    if not sha or len(sha) not in (40, 64) or any(c not in "0123456789abcdef" for c in sha):
+        return None
+    return sha
+
+
+def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
+                  verify: bool = True) -> str | None:
+    """Opt-in read-only update check. Never merges/pulls/restarts the running app.
+
+    The only network operation is a bounded fetch of one release branch (and
+    tags only when signature verification is requested). A failed or malformed
+    probe is not reported as an installed update. Frozen/installed packages do
+    not attempt source checkout updates.
+    """
+    if not enabled or not (repo / ".git").exists():
+        return None
+    branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
+    if branch not in ELIGIBLE_BRANCHES:
+        return None
+    status = _git(repo, ["status", "--porcelain"], timeout)
+    if status is None or status:
+        return None
+    before = _git(repo, ["rev-parse", "HEAD"], timeout)
+    if not before:
+        return None
+    candidate = _fetch_branch(repo, branch, timeout)
+    if not candidate or candidate == before:
+        return None
+    if _git(repo, ["merge-base", "--is-ancestor", before, candidate], timeout) is None:
+        return None
+    # Never read arbitrary candidate Python using import/exec; bound the blob
+    # before asking git to emit it into memory.
+    size = _git(repo, ["cat-file", "-s", f"{candidate}:src/version.py"], timeout)
+    if size is None or not size.isdecimal() or int(size) > 65536:
+        return None
+    source = _git(repo, ["show", f"{candidate}:src/version.py"], timeout)
+    release = version.parse_version_text(source) if source is not None else None
+    if not release or _semver(release) is None:
+        return None
+    if _semver(release) <= _semver(version.__version__):
+        return None
+    if verify:
+        # Tag signatures are checked against the pinned candidate SHA, never a
+        # mutable FETCH_HEAD or a tag that targets a different commit.
+        _git(repo, ["fetch", "--quiet", "--tags", "origin"], timeout)
+        if not _signature_ok(repo, candidate, timeout):
+            return (f"SmoothCast v{release} may be available, but its signature "
+                    "could not be verified. No files were changed. Use a trusted "
+                    "installer or review your update-signing keys.")
+    return (f"SmoothCast v{release} is available; running v{version.__version__}. "
+            "No files were changed. Update from your trusted release source "
+            "when playback is finished.")
 
 
 def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = True,
