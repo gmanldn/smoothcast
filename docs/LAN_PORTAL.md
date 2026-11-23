@@ -313,8 +313,10 @@ The room is designed for **first-time guests**. Open the link shown on the
 SmoothCast desktop host while connected to the same local Wi-Fi. You do not
 need a separate account or app. Enter a display name and, **only if the host
 has enabled it**, the six-digit House PIN. With an open room, the PIN field
-disappears. Room controls affect the shared selected receiver and queue, not
-just the browser on your phone.
+disappears. After joining, the dashboard shows **Joined as your name** with a
+**Change name** link to the room's name editor. This identity is returned by
+the host, rather than taken from unsubmitted text in the browser. Room controls
+affect the shared selected receiver and queue, not just the browser on your phone.
 
 The dashboard is organised in the order a new guest needs it:
 
