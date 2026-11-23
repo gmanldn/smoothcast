@@ -69,9 +69,9 @@ def event_fields(kind: str, raw: dict | None, *, actor_name: str,
         else:
             result["action"] = "control"
         outcome = data.get("outcome")
-        result["outcome"] = outcome if outcome in OUTCOMES else "accepted"
+        result["outcome"] = outcome if isinstance(outcome, str) and outcome in OUTCOMES else "accepted"
         reason = data.get("reason")
-        if result["outcome"] in {"rejected", "uncertain"} and reason in REASONS:
+        if result["outcome"] in {"rejected", "uncertain"} and isinstance(reason, str) and reason in REASONS:
             result["reason"] = reason
     title = safe_title(known_title)
     if title and kind in {"action", "voted"}:
