@@ -83,7 +83,7 @@ def _upload_validation_js() -> str:
 
 
 def test_upload_validation_guards_creation_restore_and_send_paths():
-    assert "if(!validSavedUpload(record))continue;" in SOURCE
+    assert "records.filter(validSavedUpload)" in SOURCE
     assert "validUploadChunkSize(chunkSize)" in SOURCE
     assert "validUploadProgress(state.received,file.size)" in SOURCE
 
@@ -131,8 +131,8 @@ def test_restoration_filters_before_sorting():
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
 def test_actual_restoration_js_skips_corrupt_records_and_sorts_valid_uploads():
     js = _upload_validation_js() + r"""
-async function run(records){
-  const uploadStorage=async()=>records;
+async function run(storedRecords){
+  const uploadStorage=async()=>storedRecords;
 """ + _recovery_order_js() + r"""
   return candidates.map(item=>item.id);
 }
