@@ -9,6 +9,9 @@ unless you pass `--close`. Its `done` report defaults to **unverified**;
 pass explicit evidence when checks have actually been run.
 
 ```sh
+python3 scripts/agent.py start [N] [--lane mesh] # fresh ticket, lease, worktree + scoped brief
+python3 scripts/agent.py ship --message "change" # private auto-commit + safe push + durable progress
+python3 scripts/agent.py finish --done "…" --next "…" --verification "…"
 python3 scripts/agent.py board                 # claims, hot files, optional CI summary
 python3 scripts/agent.py next [--lane src/portal] [--later]   # best free ticket
 python3 scripts/agent.py claim 207             # atomic claim; exit 3 = pick another
@@ -38,9 +41,9 @@ ran before pushing.
 | Same files, different tickets | Each claim records the files it will edit (predicted from the ticket text, or `--files`). Another claim on any of them blocks `claim` and hides the ticket from `next`. Shared merge-friendly files (`pyproject.toml`, baselines, `verify.yml`, docs, tests) never block. |
 | Dead agents hold tickets | Leases expire: 90 min default (30–180), refreshed by `heartbeat`. Legacy free-text `Claim:` comments count too (45 min) and end on "Claim released". |
 | Choosing work | `next` scores each open ticket: tier (`now` 300, `next` 200, `later` 100) + priority (P0 150 … P3 0) + `agent-ready` + "already has shipped slices: finish it", minus recent churn (files changed on `develop` in the last 45 min), minus unmet prose dependencies, minus stale `in-flight` labels. Your own live claim always ranks first. `epic`, `icebox`, `needs-human` and `needs-split` are skipped. |
-| Fast direct commits | `ship --skip-checks` rebases and pushes directly without running tests. Plain `ship` retains optional focused checks. An unverified push must be reported as such, never as successful testing. |
+| Fast direct commits | `ship --message "..."` commits tracked edits only in a private coordinator-created worktree; add `--files` for new paths. Version integrity always runs; `--skip-checks` skips only targeted tests, with truthful unverified evidence. |
 | Push races | `ship` fetches, rebases only your unpushed commits onto `origin/develop`, re-runs the checks, pushes `HEAD:develop`, and on rejection repeats up to 3 times. A rebase conflict aborts cleanly (exit 4); resolve by hand. |
-| Durable handover | `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
+| Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
 | Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
 
 ## Tiers
