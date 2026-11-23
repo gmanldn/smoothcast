@@ -57,6 +57,19 @@ class OwnerCIPolicyTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^    if: github.event_name != 'push'$")
         self.assertIn("  cancel-in-progress: true", text)
 
+    def test_deferred_checks_batch_develop_without_writing_main(self):
+        text = workflow("deferred-health.yml")
+        events = triggers(text)
+        self.assertIn("  schedule:", events)
+        self.assertIn("  workflow_dispatch:", events)
+        self.assertNotIn("  push:", events)
+        self.assertIn("          ref: develop", text)
+        self.assertIn("  contents: read", text)
+        self.assertIn("  SMOOTHCAST_TEST_CONTEXT: '1'", text)
+        self.assertIn("  cancel-in-progress: true", text)
+        self.assertNotIn("gh pr merge", text)
+        self.assertNotIn("promote_release.py", text)
+
     def test_no_scheduled_release_or_automatic_main_sync(self):
         text = triggers(workflow("sync-main.yml"))
         self.assertIn("  workflow_dispatch:", text)
