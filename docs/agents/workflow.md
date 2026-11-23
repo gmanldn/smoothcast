@@ -14,9 +14,11 @@ to `main`. The owner manually decides when (and whether) to merge it.
    `ticket_digest.py` alone cannot see every structured claim.
 2. Claim using `python3 scripts/agent.py claim N --files src/file.py`
    (structured comment with a bounded TTL, not an assignee-only claim).
-   Agents commonly share one GitHub user identity, so assignees alone do not
-   prevent collisions. The earliest active structured claim wins; on exit 3,
-   choose another issue. Release via `agent.py release N` when done/blocked.
+   Agents commonly share one GitHub user identity, so assignees and stale
+   `in-flight` labels are **not** locks. The earliest active structured claim
+   wins; on exit 3, choose another issue. The default lease is 90 minutes
+   (configurable 30–180); renew only during real work with `agent.py heartbeat N`.
+   Release via `agent.py progress N ... --release` or `agent.py release N`.
    Split large issues into separate file-level scopes for concurrency.
 3. Work in one independent detached worktree per task (never the user's
    checkout), stage **named files only**, and make small cohesive commits with
@@ -27,10 +29,14 @@ to `main`. The owner manually decides when (and whether) to merge it.
    On push rejection, fetch and rebase only YOUR unpublished commits.
    Never force-push, reset away user changes, rewrite published history, or
    delete other agents' worktrees/stashes.
-5. Report the exact SHA and any limitations in the issue. Close only when
+5. **Record permanent progress before relinquishing temporary ownership:**
+   `python3 scripts/agent.py progress N --done "landed ..." --next "remaining ..."
+   --commit <actual-SHA> --verification "actual results" --release`. This
+   posts searchable durable evidence and ends the lease; `agent.py next`
+   previews the latest progress/handover for successors. On a partially
+   complete issue, identify exactly which criteria remain. Close only when
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
-   is not proof of functionality. Release the claim before selecting the next
-   independent issue.
+   is not proof of functionality. [Claim and handover protocol](coordination.md).
 
 ```sh
 git fetch origin develop
