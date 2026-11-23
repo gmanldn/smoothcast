@@ -14,6 +14,7 @@ python3 scripts/agent.py next [--lane src/portal] [--later]   # best free ticket
 python3 scripts/agent.py claim 207             # atomic claim; exit 3 = pick another
 python3 scripts/agent.py ship --skip-checks    # rebase + push quickly, UNVERIFIED
 python3 scripts/agent.py ship                  # optional affected checks + push
+python3 scripts/agent.py progress 207 --done "landed …" --next "remaining …" --commit SHA --verification "actual result" --release
 python3 scripts/agent.py done 207 --why "…" --checklist "…" [--close]
 python3 scripts/agent.py heartbeat 207         # extend the lease on long work
 python3 scripts/agent.py release 207 --note "…"
@@ -38,7 +39,7 @@ ran before pushing.
 | Choosing work | `next` scores each open ticket: tier (`now` 300, `next` 200, `later` 100) + priority (P0 150 … P3 0) + `agent-ready` + "already has shipped slices: finish it", minus recent churn (files changed on `develop` in the last 45 min), minus unmet prose dependencies, minus stale `in-flight` labels. Your own live claim always ranks first. `epic`, `icebox`, `needs-human` and `needs-split` are skipped. |
 | Fast direct commits | `ship --skip-checks` rebases and pushes directly without running tests. Plain `ship` retains optional focused checks. An unverified push must be reported as such, never as successful testing. |
 | Push races | `ship` fetches, rebases only your unpushed commits onto `origin/develop`, re-runs the checks, pushes `HEAD:develop`, and on rejection repeats up to 3 times. A rebase conflict aborts cleanly (exit 4); resolve by hand. |
-| Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
+| Durable handover | `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |\n| Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
 
 ## Tiers
 
@@ -51,13 +52,15 @@ mesh transfer behind #567/#568) stay `later`/`next` until the gate clears.
 ## Rules of the road
 
 1. Start with `board` for current claims and hot files. CI is manual and must not be mistaken for a required develop push gate.
-2. `next` → `claim` → work in a detached worktree → `ship` → `done`.
+2. `next` → inspect earlier `Progress:`/`Implementation:`/`Handover:` comments
+   **and shipped source** → `claim` → detached worktree → `ship` →
+   `progress --release` (or `done` when all criteria are evidenced).
    Exit code 3 from `claim` is normal: take the next suggestion, don't argue.
 3. One agent per module family. `--lane src/portal` or `--lane mesh` lets
    several agents work in parallel lanes without fighting.
 4. `src/cast_session.py`, `streamer.py`, `startup_cleanup.py` and `dlna.py`
    are plan-first: `claim` reminds you; comment a short plan before editing.
-5. Hand back early: `release N --note "blocked by …"` is a success, not a failure.
+5. Hand back early: `progress N --done "what landed or not pushed" --next "specific remaining work" --verification "actual checks or not run" --release` is a success, not a failure. A claim is a **90-minute default lease** (30–180 configurable), not ownership. `heartbeat` only when work actively continues. An expired lease does not erase prior comments or commits; review both before taking over. An assignee or stale `in-flight` label is not a lock.
 6. If a regression is discovered, prioritise a corrective commit or safe revert. Untested changes must not be described as verified.
 
 Tests: `tests/test_agent_coordination.py` (pure core, no network).
