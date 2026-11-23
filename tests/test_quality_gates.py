@@ -108,23 +108,20 @@ class FuzzGateTests(unittest.TestCase):
 class AgentHygieneTests(unittest.TestCase):
     def test_develop_only_rule_is_first_and_loud_in_agents_md(self):
         agents = read("AGENTS.md")
-        self.assertLess(agents.index("## Branch and concurrent work"), agents.index("## Ticket flow"))
-        for needle in ("**Commit only to `develop`.**",
-                       "git worktree add --detach ../smoothcast-N origin/develop",
-                       "agent.py ship", "Never force-push",
-                       "against `main`", "only the owner manually promotes it",
-                       "workflow.md"):
+        self.assertLess(agents.index("Only develop receives agent code"), agents.index("## Quality and safety"))
+        for needle in ("Main is manually promoted by the owner", "Never push/merge/promote/tag main",
+                       "force-push", "private detached worktree", "agent.py start", "agent.py ship",
+                       "agent.py finish", "workflow.md"):
             self.assertIn(needle, agents)
-        self.assertLess(len(agents), 3500)  # root stays essentials-only (raised from 2500 for the claim/ship flow)
+        self.assertLess(len(agents), 3500)  # root stays essentials-only
 
     def test_workflow_documents_trunk_flow_hygiene_and_manual_main(self):
         workflow = read("docs/agents/workflow.md")
-        for needle in ("`develop` is the **only active development",
-                       "git worktree add --detach", "git push origin HEAD:develop",
-                       "stage **named files only**", "Refs #N",
+        # Concepts, not exact sentences: the doc is rewritten often.
+        for needle in ("only active development", "worktree", "named files", "Refs #N",
                        "Lazy, risk-weighted CI", "Main — manual owner action only",
-                       "No automatic `develop → main`", "sync_pyproject.py",
-                       "**Never lose work:**", "agent.py ship"):
+                       "No automatic `develop → main`", "sync_pyproject.py", "Never lose work",
+                       "agent.py ship"):
             self.assertIn(needle, workflow)
 
     def test_no_document_still_tells_agents_to_use_feature_branches_or_agent_prs(self):

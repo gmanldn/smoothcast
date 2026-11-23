@@ -31,6 +31,8 @@ pushes non-force and posts a durable handover. On conflicts, preserve the
 worktree and reconcile intentionally. Never claim unrun checks passed.
 `finish` records actual outcomes and releases the lease. Follow
 [coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
+GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
+`scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
 
 ## Quality and safety
 

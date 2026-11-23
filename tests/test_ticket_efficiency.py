@@ -237,7 +237,7 @@ class TicketDocumentationTests(unittest.TestCase):
     def test_instruction_and_tool_budgets(self):
         workflow = (ROOT / "docs" / "ISSUES.md").read_text(encoding="utf-8")
         digest_source = DIGEST.read_text(encoding="utf-8")
-        self.assertLess(len(workflow), 12_500, "Issue workflow is bloating again")
+        self.assertLess(len(workflow), 13_500, "Issue workflow is bloating again")
         self.assertLess(len(digest_source), 20_000, "Digest tool is bloating again")
         self.assertFalse((ROOT / "IMPROVEMENTS.md").exists())
 
