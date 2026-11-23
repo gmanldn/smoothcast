@@ -428,7 +428,10 @@ def test_browser_screen_help_and_available_controls_for_touch_guests():
     assert "until it reconnects" in panel
     assert 'toggle.disabled=!sc.item||!sc.ready' in panel
     assert 'stop.disabled=!sc.item||!sc.ready' in panel
-    assert 'pick.addEventListener("change",()=>{choice[sc.id]=pick.value;updateScreenPlayButton(play,pick,sc.ready)})' in panel
+    assert 'choice[key]=pick.value;' in panel
+    assert 'updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready)' in panel
+    assert 'function makeScreenRow(sc)' in panel
+    assert 'function updateScreenRow(li,sc)' in panel
 
     script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
     start = script.index("function updateScreenPlayButton(")
