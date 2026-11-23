@@ -32,7 +32,7 @@ def make_window():
         "pathlib": pathlib,
         "screenshot": SimpleNamespace(
             capture_frame=capture, owned_frame_time=screenshot_module.owned_frame_time,
-            CaptureError=screenshot_module.CaptureError,
+            FramePositionError=screenshot_module.FramePositionError,
         ),
         "Async": SimpleNamespace(
             run=lambda work, done=None, failed=None: jobs.append((work, done, failed))
@@ -193,7 +193,18 @@ def test_preview_source_timestamp_is_used_and_unrelated_preview_rejected():
     assert "Select and preview" in w.toast.call_args.args[0]
 
 
+def test_screenshot_worker_failure_shows_recovery_copy_without_private_path():
+    w, jobs, _capture = make_window()
+    w._screenshot()
+    _work, _done, failed = jobs.pop()
+    failed("FFmpeg could not open /private/media/clip.mkv")
+    w.toast.assert_called_with(
+        "Could not save the screenshot. Check the file and screenshot folder, then try again.",
+        error=True,
+    )
+
+
 def test_film_screenshot_source_check_executes_before_any_async_work():
     src = main_window_methods()["_screenshot"]
     assert src.index("screenshot.owned_frame_time(") < src.index("Async.run(")
-    assert "except screenshot.CaptureError" in src
+    assert "except screenshot.FramePositionError" in src

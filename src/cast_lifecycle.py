@@ -366,8 +366,8 @@ class LifecycleMixin:
                 preview_path=self._preview_path,
                 preview_position=self._preview_position,
             )
-        except screenshot.CaptureError as exc:
-            self.toast(str(exc) or "Couldn't take the screenshot.", error=True)
+        except screenshot.FramePositionError as exc:
+            self.toast(exc.message, error=True)
             return
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
@@ -379,7 +379,10 @@ class LifecycleMixin:
                 source, position, output_dir, video_stream_index=video_index,
             ),
             done=lambda out: self.toast(f"Screenshot saved: {out.name}"),
-            failed=lambda message: self.toast(f"Screenshot failed: {message}", error=True),
+            failed=lambda _message: self.toast(
+                "Could not save the screenshot. Check the file and screenshot folder, then try again.",
+                error=True,
+            ),
         )
 
 

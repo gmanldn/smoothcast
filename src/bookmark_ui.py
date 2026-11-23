@@ -41,7 +41,9 @@ class BookmarkUiMixin:
         Async.run(
             lambda: bookmarks.fingerprint(path),
             done=lambda digest: self._prompt_bookmark_name(path, media, position, digest),
-            failed=lambda message: self.toast(f"Could not identify media: {message}", error=True),
+            failed=lambda _message: self.toast(
+                "Could not read this media file. Check that it is still available.", error=True,
+            ),
         )
 
     def _prompt_bookmark_name(
@@ -70,8 +72,8 @@ class BookmarkUiMixin:
                     self.cfg.get("bookmarks"), digest, entry.get_text(), media,
                     position, time.time(),
                 )
-            except ValueError as exc:
-                self.toast(str(exc) or "Couldn't save that bookmark.", error=True)
+            except ValueError:
+                self.toast("Enter a bookmark name and use a valid playback position.", error=True)
                 return
             save_config(self.cfg)
             self.menu_button.set_menu_model(self._build_menu())

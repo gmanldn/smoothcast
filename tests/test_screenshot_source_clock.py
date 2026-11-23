@@ -36,7 +36,7 @@ class CaptureClockTests(unittest.TestCase):
         namespace = {"Async": FakeAsync, "pathlib": pathlib, "screenshot": SimpleNamespace(
             capture_frame=screenshot.capture_frame,
             owned_frame_time=screenshot_module.owned_frame_time,
-            CaptureError=screenshot_module.CaptureError,
+            FramePositionError=screenshot_module.FramePositionError,
         )}
         code = main_window_methods()["_screenshot"]
         exec(compile("class Window:\n" + textwrap.indent(code, "    "),

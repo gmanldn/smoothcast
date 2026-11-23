@@ -51,10 +51,12 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
                                          preferred_port=int(self.cfg.get("portal_port", 0)))
-        except (OSError, portal.PortalError) as exc:
+        except (OSError, portal.PortalError):
             self._portal = None
             self._portal_ip = None
-            self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
+            self.portal_status_label.set_text(
+                "Could not start the shared room. Check the network connection and room settings."
+            )
             return True
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.

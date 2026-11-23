@@ -53,9 +53,11 @@ Numbers, units and elapsed times follow the shared display conventions.
 User-facing text is a literal or f-string at its call site, not assembled by
 concatenating translated fragments. For future gettext (#219), preserve named
 placeholders for dynamic fields and provide context for ambiguous terms.
-The new stdlib AST gate scans error-class constructors, GTK toast/status/title
-calls and title keyword arguments. It checks banned phrases, excessive static
-length, final full stops on literal titles and direct raw-exception toasts.
-Run `python3 scripts/ci/ux_copy_lint.py` before opening a PR. The checker
-runs in Verify's headless syntax lane. Nonliteral dynamic values require
-review; they are not automatically assumed safe.
+Write complete message templates so translators can reorder named fields. For
+example, `_("Playing {title}").format(title=title)` keeps a static message ID.
+The stdlib AST gate checks room errors, GTK toast, status and label calls, and
+dialog or button titles. It checks each static conditional or fallback message
+and reads gettext-wrapped templates. Use explicit user-facing reasons from
+typed errors. Keep unexpected exception details out of the displayed message.
+Run `python3 scripts/ci/ux_copy_lint.py` before committing. The checker runs in
+Verify's headless syntax lane. Dynamic messages still require review.
