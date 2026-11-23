@@ -58,6 +58,8 @@ jobs:
         run: python -m compileall -q src scripts setup tests
       - name: Check canonical launcher syntax
         run: python -m py_compile smoothcast
+      - name: Verify release promotion race safety
+        run: python -m unittest discover -s tests -p test_release_automation.py
       - name: Lint user-facing UX copy
         run: python scripts/ci/ux_copy_lint.py
       - name: Enforce safety invariant evidence links
@@ -443,16 +445,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.decide.outputs.tag }}
         run: |
+          git fetch origin develop
+          if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+            echo "::notice::develop advanced after release verification; a newer verified run will promote."
+            exit 0
+          fi
           number="$(gh pr list --head develop --base main --state open --json number --jq '.[0].number // empty')"
           if [ -z "$number" ]; then
             url="$(gh pr create --head develop --base main --title "Release $TAG" \
               --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")" || {
+              git fetch origin develop || {
+                echo "::error::Cannot recheck develop after PR creation failure; release promotion refused."
+                exit 1
+              }
+              if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+                echo "::notice::develop advanced during release PR creation; a newer verified run will promote."
+                exit 0
+              fi
               echo "::error title=Release promotion needs a repository setting::Every verification job passed and $TAG is a new release, but GitHub refused to open the develop->main pull request. A repository admin must enable Settings > Actions > General > Workflow permissions > 'Allow GitHub Actions to create and approve pull requests'. This is configuration, not a code failure."
               exit 1
             }
             number="${url##*/}"
           fi
           gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
-            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA. Either develop moved, or the MainProtector ruleset blocked it: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
+            git fetch origin develop || {
+              echo "::error::Cannot recheck develop after PR merge failure; release promotion refused."
+              exit 1
+            }
+            if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+              echo "::notice::develop advanced during release PR merge; a newer verified run will promote."
+              exit 0
+            fi
+            echo "::error title=Release promotion could not merge::The verified develop head did not change, but release PR #$number could not be merged at $GITHUB_SHA. Check the MainProtector ruleset: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
             exit 1
           }
