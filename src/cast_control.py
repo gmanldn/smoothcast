@@ -489,7 +489,7 @@ class CastControlApp(Adw.Application):
         notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
             enabled=bool(cfg.get("check_release_updates", False)),
-            verify=bool(cfg.get("verify_updates", True)),
+            verify=bool(cfg.get("release_check_verify", True)),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
