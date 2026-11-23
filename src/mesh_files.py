@@ -15,7 +15,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 import lan_guard
-from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume, pump_stream
+from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume, parse_wire_uint, pump_stream
 import portal_media
 
 KEY = re.compile(r"qh:[0-9a-f]{32}")
@@ -97,11 +97,8 @@ class MeshFiles:
             if generation is not None:
                 # Internal generation only; do not expose origin filesystem identity.
                 headers["X-SmoothCast-Generation"] = generation
-            try:
-                length = int(reply.getheader("Content-Length") or "")
-            except ValueError:
-                return False
-            if length < 0:
+            length = parse_wire_uint(reply.getheader("Content-Length"))
+            if length is None:
                 return False
             headers["Content-Length"] = str(length)
             start = 0
@@ -114,14 +111,14 @@ class MeshFiles:
                 match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
                 if match is None:
                     return False
-                first, last, size = match.groups()
-                start = int(first)
-                if (size == "*" or int(last) < start or int(last) >= int(size)
-                        or length != int(last) - start + 1):
+                first, last, size = (parse_wire_uint(v) for v in match.groups())
+                if (first is None or last is None or size is None
+                        or last < first or last >= size or length != last - first + 1):
                     return False
+                start = first
                 headers["Content-Range"] = reply.getheader("Content-Range") or ""
-                total = size
-                if not _matches_request(range_header, 206, start, int(last), int(size)):
+                total = str(size)
+                if not _matches_request(range_header, 206, start, last, size):
                     return False
             write_headers(reply.status, headers)
             if head or length == 0:
