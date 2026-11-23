@@ -80,7 +80,7 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
-    "auto_update": False,  # Opt-in, read-only release check after first frame (#138).
+    "check_release_updates": False,  # New opt-in; legacy auto_update is ignored (#138).
     "verify_updates": True,  # Require trusted signature before announcing an actionable release.
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
     "portal_port": 0,  # Choose one random high room port and persist it (#456).
