@@ -94,6 +94,25 @@ class AudioOnlyMediaTests(unittest.TestCase):
             with self.assertRaisesRegex(streamer.StreamError, "ffprobe could not read"):
                 streamer.ffprobe(path)
 
+    def test_audio_only_subtitle_choices_and_unqualified_dlna_fail_closed(self):
+        media = streamer.MediaInfo(Path("track.mp3"), audio_only=True)
+        subtitle = Path("captions.srt")
+        self.assertEqual(
+            streamer.audio_cast_options(media, "auto", subtitle, False),
+            (None, False),
+        )
+        self.assertEqual(
+            streamer.audio_cast_options(media, "off", subtitle, False),
+            (None, False),
+        )
+        for mode in ("pick", "embedded"):
+            with self.subTest(mode=mode), self.assertRaisesRegex(
+                streamer.StreamError, "does not support subtitles",
+            ):
+                streamer.audio_cast_options(media, mode, subtitle, False)
+        with self.assertRaisesRegex(streamer.StreamError, "DLNA receiver profile"):
+            streamer.audio_cast_options(media, "auto", None, False, dlna=True)
+
     def test_audio_preflight_decodes_selected_track_without_video(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "track.flac"
