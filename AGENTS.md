@@ -63,6 +63,6 @@ read-only and **not claim-aware**; never assume its result is unclaimed.
   resolve a conflict without reconciling history. `agent.py ship` always
   runs `scripts/ci/check_version_history.py`, even under `--skip-checks`.
   Use `agent.py ship` rather than raw `git push` so every outgoing commit
-  is checked for regression, duplicate bumps and skipped versions. A GitHub
+  is checked for regression and skipped version numbers. A GitHub
   workflow independently reports version-integrity violations. Interim work
   is identified by commit SHA. Packaging authority: `packaging/SmoothCast.spec`.
