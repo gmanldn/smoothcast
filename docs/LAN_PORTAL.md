@@ -345,6 +345,11 @@ targets they can reach. The expandable help explains Ready, In use, Not seen
 lately and Can't be reached; the panel is read-only and does not start or
 stop a cast. The **Screens** section has its own touch-accessible help and
 only enables Play when a queued item is selected and the target responds.
+Its controls and keyboard focus survive normal status polling, even when a
+screen changes between Playing and Paused. Each command reads the latest screen
+state, and a selection disappears safely if its queue item is removed. If a
+screen disconnects while its controls have focus, focus returns to the Screens
+heading instead of being lost.
 
 Help is available **next to the relevant action** using touch-, mouse- and
 keyboard-operable disclosure controls, with additional desktop hover titles.
