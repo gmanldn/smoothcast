@@ -280,8 +280,13 @@ def test_two_clients_converge_across_play_pause_seek_loss_and_queue_edits(rig):
             current = [json.loads(s.event()[1]["data"])["state"] for s in clients]
             for state in current:
                 for key in ("state", "revision", "position", "session_id",
-                            "queue_revision", "queue", "receiver"):
+                            "queue_revision", "receiver"):
                     assert state.get(key) == rig.state.get(key), (key, change)
+                # The room augments each queue row with viewer-specific vote
+                # metadata, so compare the authoritative item identity/order.
+                assert [(q["id"], q["title"]) for q in state["queue"]] == [
+                    (q["id"], q["title"]) for q in rig.state["queue"]
+                ], change
             assert current[0]["revision"] == current[1]["revision"]
             assert current[0]["queue_revision"] == current[1]["queue_revision"]
     finally:
@@ -300,7 +305,9 @@ def test_late_subscriber_receives_current_full_snapshot(rig):
         assert (state["title"], state["state"], state["position"]) == (
             "New Film", "PAUSED", 73.25)
         assert (state["revision"], state["queue_revision"]) == (18, 2)
-        assert state["queue"] == [{"id": "q9", "title": "Latest"}]
+        assert [(q["id"], q["title"]) for q in state["queue"]] == [
+            ("q9", "Latest")
+        ]
         assert state["room"]["me"]["name"] == "Later"
     finally:
         stream.close()
