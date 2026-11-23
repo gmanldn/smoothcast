@@ -173,6 +173,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
         self.library_search: Callable | None = None
+        self.library_search_stream: Callable | None = None
         self.library_replication = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
@@ -529,6 +530,30 @@ class _Handler(BaseHTTPRequestHandler):
             payload, "gzip" in self.headers.get("Accept-Encoding", ""))
         return self._send(status, body, extra_headers={**extra, **headers})
 
+    def _search_stream(self) -> None:
+        """Server-sent events: cached results at once, late origins as they answer."""
+        if not self._authenticated():
+            return self._error(401, "Session expired")
+        stream = getattr(self.server, "library_search_stream", None)
+        text = (parse_qs(urlsplit(self.path).query).get("q") or [""])[0]
+        if not text.strip():
+            return self._error(400, "Type something to search.")
+        if stream is None:
+            return self._error(404, "House search is not enabled")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            for event, payload in stream(text, 50):
+                self.wfile.write(f"event: {event}\ndata: {json.dumps(payload)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (OSError, ValueError):
+            pass
+        self.close_connection = True
+
     def _search(self) -> None:
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
         if not self._authenticated():
@@ -643,6 +668,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if portal_mesh_http.route(self, "GET", path):
             return
+        if path == "/api/search/stream":
+            return self._search_stream()
         if path == "/api/search":
             return self._search()
         if path.startswith("/mesh/library/"):

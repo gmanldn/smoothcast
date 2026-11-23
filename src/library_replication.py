@@ -154,6 +154,10 @@ class Replication:
                     self.indexer, params.get("cursor"), params.get("limit", MAX_PAGE))
             finally:
                 self._snapshots.release()
+        elif path == "/mesh/library/search":
+            rows = self.indexer.search_rows(params.get("q", ""), _clamp(params.get("limit", 50)))
+            status, payload = 200, {"entries": [to_wire(
+                {**r, "rel_path": ""}, self.indexer.folder_label(r["folder_id"])) for r in rows]}
         else:
             return 404, {"error": "not found"}, {}
         return status, payload, {}
