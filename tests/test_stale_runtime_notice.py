@@ -179,3 +179,25 @@ def test_returning_to_running_version_clears_stale_notice_without_git_metadata()
     assert len(messages) == 1
     assert window._installed_version_stale is False
     assert window.update_notice is None
+
+
+
+def test_new_window_repeats_restart_warning_without_spamming_existing_window():
+    """Replacement GTK windows must not inherit a vanished window's notice."""
+    app = SimpleNamespace(_run_revision="a" * 40, _noticed_runtime_key=None)
+    first, first_messages = fake_window()
+    replacement, replacement_messages = fake_window()
+    with mock.patch.object(version, "read_checkout_version",
+                           return_value=version.__version__), \
+         mock.patch.object(version, "read_checkout_revision",
+                           return_value="b" * 40):
+        fn = handler()
+        fn(app, first)
+        fn(app, first)
+        fn(app, replacement)
+        fn(app, replacement)
+    assert len(first_messages) == 1
+    assert len(replacement_messages) == 1
+    assert first._installed_version_stale is True
+    assert replacement._installed_version_stale is True
+    assert "bbbbbbbb" in replacement.update_notice
