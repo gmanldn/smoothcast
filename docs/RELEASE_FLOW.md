@@ -5,6 +5,12 @@ agent ticket workflow remains short in [workflow](agents/workflow.md).
 Do not bypass protected `main` or report unpromoted `develop` versions
 as releases. GitHub issue #518 tracks the administrator policy blocker.
 
+**Current blocker:** the `MainProtector` ruleset on `main` rejects automatic
+release-PR merges even when the code is verified. Only a repository administrator
+can authorise the verified GitHub Actions actor for the protected merge or
+choose a manually reviewed-PR release route. Do not force-merge, disable
+protection, or mistake an unmerged `develop` version for a published release.
+
 ## Releases: develop → main automatically
 
 1. On `develop`, for each **completed GitHub ticket**, run
