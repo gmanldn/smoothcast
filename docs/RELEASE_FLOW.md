@@ -8,18 +8,23 @@ automatic release PR or dependency on main's version or CI verdict.
 ## Day-to-day versioning
 
 - Canonical source: `src/version.py`.
-- Routine ticket work **never** changes `src/version.py`. Every development
-  revision is uniquely identified by its Git commit SHA (headless
-  `smoothcast --build-id`); semantic version numbers are *release intent*.
-- Owner explicitly requests/version-bumps a release candidate when appropriate,
-  then reviews and manually integrates it to `main`. Never auto-promote.
-- Agents commit and fast-forward push quickly to `develop` without touching
-  the version file. The history guard rejects regressions or skipped release
-  numbers when a release bump does occur.
-- Ticket closure is not the same as release creation.
-- Source checkout, installed build and actively running Python process may
-  report different versions. Do not describe a changed file as an activated
-  update.
+- Each coherent private-worktree `agent.py ship` allocates the next **PATCH**
+  number on the newest `origin/develop` and appends an isolated version-only
+  commit to the change. A losing parallel push discards only that generated,
+  **unpublished** version commit, rebases its code, reallocates and retries a
+  normal fast-forward push; nothing rewrites already-published commits.
+- A successful develop push and its PATCH are **development identifiers**, not
+  an automatic publication. The Git SHA (`smoothcast --build-id`) remains
+  authoritative for exact source identity, including intermediate commits.
+- Explicit valid existing SemVer bumps are not incremented a second time.
+  `scripts/ci/check_version_history.py` rejects jumps and regressions.
+  Raw `git push` bypasses the local allocator: prefer `agent.py ship`. The
+  stronger server-enforced exactly-once **per-ticket** requirement is still
+  tracked by #583, not falsely claimed as complete.
+- The owner exclusively decides when to merge `develop` to `main`, tag or
+  publish a release. Ticket closure is distinct from release publication.
+- Source checkout, installed build and running process may show different
+  versions; don't describe a changed file as an activated update.
 
 ## Owner-controlled integration and publishing
 
