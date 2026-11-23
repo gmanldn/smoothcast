@@ -324,8 +324,12 @@ The dashboard is organised in the order a new guest needs it:
    Audio is always queued. Unticking the option for video may start it early.
 4. **Up Next** — vote, play an item now, make it next, move it up/down or remove
    it. Clearing this waiting list does not stop the current cast.
-5. **People** — view participants and recent activity, or change your name.
-6. **More settings and network information** — optional lock-screen controls,
+5. **Screens** — open the room's screen page on a TV, tablet or laptop to
+   make that browser a separate playback target. Give the screen a name,
+   enter the House PIN only if required, and tap **Start screen** to allow
+   audio. Screen playback is independent of the host's TV or speaker.
+6. **People** — view participants and recent activity, or change your name.
+7. **More settings and network information** — optional lock-screen controls,
    wake lock, audio normalisation, other hosts and read-only receiver activity.
 
 The connected dashboard also shows a copyable room link near the top. It
