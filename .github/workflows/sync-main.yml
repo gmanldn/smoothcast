@@ -6,6 +6,11 @@ name: Sync main into develop
 # main moves, so the next verified release promotes without anyone noticing.
 # It only ever writes to develop, never to main. A real conflict fails the job
 # with the files to resolve.
+#
+# Requires the same repository setting as release promotion: the MainProtector
+# ruleset restricts updates to main AND develop to its bypass list, so the
+# GitHub Actions app must be added there (Settings > Rules > Rulesets >
+# MainProtector > Bypass list, mode: always) or the push below is rejected.
 
 on:
   push:
@@ -43,4 +48,7 @@ jobs:
             git merge --abort || true
             exit 1
           fi
-          git push origin HEAD:develop
+          git push origin HEAD:develop || {
+            echo "::error title=develop rejected the push::The MainProtector ruleset only lets its bypass actors update develop. Add the GitHub Actions app to the ruleset bypass list (Settings > Rules > Rulesets > MainProtector), or merge origin/main into develop by hand."
+            exit 1
+          }

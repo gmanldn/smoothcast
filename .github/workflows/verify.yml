@@ -423,6 +423,6 @@ jobs:
             number="${url##*/}"
           fi
           gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
-            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA (develop may have moved, or main's rules blocked it). See the log above."
+            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA. Either develop moved, or the MainProtector ruleset blocked it: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
             exit 1
           }
