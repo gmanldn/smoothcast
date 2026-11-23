@@ -14,6 +14,7 @@ from utils import pretty_title
 import time
 
 import castctl
+import fingerprint
 import state_labels
 
 import dlna
@@ -246,6 +247,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             if path not in self.queue:
                 self.queue.append(path)
                 added += 1
+                fingerprint.KEYS.get(path)         # warm the content key in the background
         if not added:
             return
         self._rebuild_queue()

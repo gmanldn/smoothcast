@@ -7,6 +7,7 @@ import time
 from gi.repository import Adw, Gio, GLib, Gtk
 
 import bookmarks
+import fingerprint
 import watch_history
 from cast_widgets import Async, fmt_time, save_config
 
@@ -158,14 +159,16 @@ class BookmarkUiMixin:
             "subtitle": (self.cfg.get("subtitle_track_by_file") or {}).get(path),
         }
         stamp = watch_history.fingerprint(path)
+        content_key = fingerprint.KEYS.get(path)   # non-blocking; None until hashed
         history = watch_history.record(
             self.cfg.get("watch_history"), path, event, position, time.time(),
             source=source, duration=duration, fingerprint=stamp, tracks=tracks,
+            content_key=content_key,
         )
         if event == "start" and position:
             history = watch_history.record(
                 history, path, "resumed", position, time.time(), source=source,
-                duration=duration, fingerprint=stamp, tracks=tracks,
+                duration=duration, fingerprint=stamp, tracks=tracks, content_key=content_key,
             )
         self.cfg["watch_history"] = history
         save_config(self.cfg)

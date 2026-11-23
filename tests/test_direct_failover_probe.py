@@ -138,6 +138,7 @@ def cast_worker(status="rejected"):
         ),
         "dlna": SimpleNamespace(),
         "hdr_tonemap": __import__("hdr_tonemap"),
+        "fingerprint": __import__("fingerprint"),
         "threading": threading,
         "pathlib": __import__("pathlib"),
         "pretty_title": lambda path: path.stem,

@@ -40,6 +40,7 @@ import direct_probe
 import stream_watchdog
 
 import hls_pause_recovery
+import fingerprint
 import hdr_tonemap
 
 import preflight
@@ -74,7 +75,8 @@ class SessionMixin:
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
         # None resumes; zero rewinds.
         offset = playback_state.start_offset(
-            offset, watch_history.saved_position(self.cfg, path))
+            offset, watch_history.saved_position(
+                self.cfg, path, fingerprint.KEYS.get(path)))
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
