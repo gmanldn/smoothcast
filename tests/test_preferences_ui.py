@@ -58,6 +58,21 @@ class PreferenceChoiceTests(unittest.TestCase):
             ["default", "large", "high-contrast", "raised"],
         )
 
+    def test_update_channel_is_explicit_and_defaults_to_develop(self):
+        choices = preference_choices.OPTIONS["update_channel"]
+        self.assertEqual([value for _label, value in choices], ["develop", "main"])
+        self.assertEqual(preference_choices.selected_index("update_channel", "develop"), 0)
+        self.assertEqual(preference_choices.selected_index("update_channel", "invalid"), 0)
+        self.assertEqual(preference_choices.selected_value("update_channel", 1), "main")
+        widgets = source("cast_widgets.py")
+        prefs = source("preferences_ui.py")
+        self.assertIn('"update_channel": "develop"', widgets)
+        self.assertIn('self._choice(updates, "update_channel", "Update channel"', prefs)
+        self.assertIn('self.owner.cfg["update_channel"] = str(value)', prefs)
+        self.assertIn('save_config(self.owner.cfg)', prefs)
+        self.assertIn('channel=cfg.get("update_channel", "develop")',
+                      source("cast_control.py"))
+
     def test_gtk_module_is_parsable_without_importing_gtk(self):
         ast.parse(source("preferences_ui.py"))
 

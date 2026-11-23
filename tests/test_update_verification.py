@@ -136,6 +136,38 @@ class OptOutTests(RepoCase):
         self.assertNotIn('cfg.get("verify_updates", True)', control)
 
 
+    def test_channel_develop_discovery_is_read_only_even_without_version_bump(self):
+        git(self.dev, "checkout", "-q", "-b", "develop")
+        (self.dev / "README.md").write_text("develop changed without version bump")
+        git(self.dev, "add", "-A")
+        git(self.dev, "commit", "-q", "-m", "dev snapshot")
+        target = git(self.dev, "rev-parse", "HEAD")
+        git(self.dev, "push", "-q", "origin", "develop")
+        old_head = self.head()
+        notice = update_control.check_release(
+            self.local, enabled=True, verify=False, channel="develop", timeout=30,
+        )
+        self.assertIn("available on develop", notice)
+        self.assertIn(target[:12], notice)
+        self.assertEqual(self.head(), old_head)
+        self.assertFalse(git(self.local, "status", "--porcelain"))
+
+    def test_channel_main_does_not_fall_back_to_develop(self):
+        git(self.dev, "checkout", "-q", "-b", "develop")
+        self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "develop")
+        self.assertIsNone(update_control.check_release(
+            self.local, enabled=True, verify=False, channel="main", timeout=30,
+        ))
+
+    def test_invalid_channels_are_rejected_without_git_or_network(self):
+        with mock.patch.object(update_control.subprocess, "run",
+                               side_effect=AssertionError("untrusted channel reached Git")):
+            for value in ("feature/x", "", "MAIN", "../../main", None, [], {}):
+                self.assertIsNone(update_control.check_release(
+                    self.local, enabled=True, verify=False, channel=value,
+                ))
+
     def test_read_only_candidate_check_never_changes_running_checkout(self):
         target = self.commit(self.dev, 2)
         git(self.dev, "push", "-q", "origin", "main")

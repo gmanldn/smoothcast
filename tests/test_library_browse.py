@@ -140,10 +140,10 @@ def test_http_routes_require_a_session_and_map_errors(world):
 def test_find_page_has_accessible_chips_and_the_libraries_browser():
     import portal
     html = portal._page().decode()
-    assert 'id="findChips" role="group" aria-label="Filter results"' in html
+    assert 'id="findChips" role="group" aria-label="Filter search results"' in html
     for label in ("Films", "Shows", "Music", "Videos", "Available now"):
         assert f">{label}</button>" in html
     assert html.count('aria-pressed="false"') >= 5
-    assert '<details id="libraries"><summary>Libraries on the network</summary>' in html
+    assert '<details id="libraries" class="help"><summary>Browse libraries on the network</summary>' in html
     find_js = html[html.index('const input=$("findInput")'):]
     assert "innerHTML" not in find_js and "/api/libraries/" in find_js

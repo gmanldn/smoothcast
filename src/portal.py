@@ -58,6 +58,7 @@ ATTEMPT_WINDOW_SECONDS = 60
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
+UPLOAD_CHUNK_TIMEOUT = 30  # Larger chunks from slower Wi-Fi clients.
 EVENT_STREAMS_TOTAL = 64
 EVENT_STREAMS_PER_PARTICIPANT = 4
 EVENT_POLL_SECONDS = 0.25
@@ -158,9 +159,11 @@ def page_build() -> str:
 
 
 def _page() -> bytes:
-    # Replace just the main closing tag; the Screens panel is part of the build.
-    markup = _HTML.replace("</main>", portal_screen_page.panel_html()
-                           + portal_mesh_panel.panel_html() + "</main>", 1)
+    # Keep optional panels inside #dashboard: their grid placement and login
+    # visibility must follow the rest of the authenticated room controls.
+    dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
+    markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
+                           + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
@@ -260,9 +263,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self._event_streams.pop(participant_id, None)
 
     def server_close(self) -> None:
-        self.stopping.set()
+        # TCPServer.__init__ calls this when the bind fails, before the fields
+        # below exist. Guard them all, or the AttributeError replaces the
+        # EADDRINUSE that bind_room_server needs to fall back to a free port.
+        stopping = getattr(self, "stopping", None)
+        if stopping is not None:
+            stopping.set()
         try:
-            screens = getattr(self, "screens", None)  # absent if bind failed in __init__
+            screens = getattr(self, "screens", None)
             if screens is not None:
                 screens.close()
             commands = getattr(self, "commands", None)
@@ -1352,7 +1360,10 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             return self._error(400, "Invalid upload chunk length")
         if length <= 0 or length > portal_uploads.CHUNK_SIZE:
-            return self._error(413, "Upload chunks must be at most 2 MiB")
+            return self._error(413, f"Upload chunks must be at most {portal_uploads.CHUNK_SIZE // (1024 * 1024)} MiB")
+        # A valid 8 MiB upload may take longer than an ordinary API request
+        # on congested Wi-Fi; never extend the timeout for unrelated routes.
+        self.connection.settimeout(UPLOAD_CHUNK_TIMEOUT)
         try:
             result = self.server.uploads.append(
                 self._cookie_token() or "", upload_id,
@@ -1366,6 +1377,8 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:
             self.close_connection = True
             return self._error(507, "Could not store this upload chunk")
+        finally:
+            self.connection.settimeout(REQUEST_TIMEOUT)
 
     def do_DELETE(self) -> None:  # noqa: N802
         if self._path().startswith("/api/uploads") and not self._client_compatible():
@@ -1572,7 +1585,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .field-hint{margin:6px 0}
 #dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 #dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
-#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel{grid-column:1/-1}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
 #dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
 #dashboard nav a{white-space:nowrap;flex:none}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
@@ -1580,6 +1593,12 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .quick-links a{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);text-decoration:none;color:var(--text);background:var(--input);font-weight:650}
 .quick-links a:hover{background:var(--nav-hover)}
+.room-link{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
+.room-link label{grid-column:1/-1;margin:0;font-weight:650}
+.room-link input{min-width:0;margin:0;background:var(--input)}
+.room-link button{white-space:nowrap;min-height:44px}
+.room-link #roomLinkStatus{grid-column:1/-1;margin:0;min-height:1.2em}
+@media(max-width:350px){.room-link{grid-template-columns:minmax(0,1fr)}.room-link button{width:100%}}
 .room-heading{display:flex;gap:10px;justify-content:space-between;align-items:baseline;flex-wrap:wrap}
 .room-heading h2{margin:0 0 9px}
 #dashboard section{scroll-margin-top:78px}
@@ -1610,7 +1629,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #uploadCard #videoFile{max-width:100%}
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
-  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel{grid-column:1/-1}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
   #findPanel,#queuePanel{grid-column:2}
   #peoplePanel{grid-column:1/-1}
@@ -1639,11 +1658,12 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
 </section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
+<nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Network</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
+<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
-<div class="room-heading"><h2 id="playbackHeading">Now Playing</h2><span id="state" class="muted">—</span></div>
+<div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
 <p class="section-desc">These controls affect the room's selected TV or speaker.</p>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
@@ -1666,9 +1686,10 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
+<p id="uploadSelectionHint" class="field-hint">Choose a file to enable uploading. Select multiple files to send them in order.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
+<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
@@ -1681,7 +1702,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
 <div id="people" class="participants"></div>
 <form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form>
-<h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div>
+<h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
 <details id="advancedPanel"><summary>More settings and network information</summary><p>Optional controls for phones, music and other devices. Most guests will not need to change these.</p>
@@ -1710,6 +1731,7 @@ function showUpdateNotice(){
   document.getElementById("updateNotice").hidden=false;
   document.getElementById("dashboard").hidden=true;
   document.getElementById("uploadCard").hidden=true;
+  document.getElementById("reloadNow").focus?.({preventScroll:true});
 }
 document.getElementById("reloadNow").addEventListener("click",()=>location.reload());
 function matchingBuild(data){
@@ -1720,6 +1742,21 @@ const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-Smoot
 let rateDelayUntil=0;
 const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+
+const roomInviteLink=location.origin+"/";
+$("roomLinkText").value=roomInviteLink;
+$("roomLinkCopy").addEventListener("click",async()=>{
+  try{
+    if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");
+    await navigator.clipboard.writeText(roomInviteLink);
+    $("roomLinkStatus").textContent="Room link copied. Share it with someone on the same Wi-Fi.";
+  }catch(_){
+    $("roomLinkText").focus();
+    $("roomLinkText").select();
+    $("roomLinkStatus").textContent="Link selected. Copy it manually and share it on the same Wi-Fi.";
+  }
+});
+
 async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const keepScreenOn=$("keepScreenOn");
 let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
@@ -1761,6 +1798,15 @@ keepScreenOn.addEventListener("change",()=>{
 });
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
+function configureOpenJoin(){
+  // This is presentation only; the host still decides whether a PIN is required.
+  $("pinRow").hidden=true;
+  $("pin").required=false;
+  $("pin").value="";
+  $("loginHint").textContent="Enter your name to join the house.";
+  loginButton.textContent="Join";
+}
+if(!PIN_REQUIRED)configureOpenJoin();
 $("loginForm").addEventListener("submit",async e=>{
   e.preventDefault();
   if(loginButton.disabled)return;
@@ -1800,9 +1846,6 @@ $("loginForm").addEventListener("submit",async e=>{
   }
   restoreSession().then(restored=>{
     if(restored||PIN_REQUIRED)return;
-    $("pinRow").hidden=true;$("pin").required=false;$("pin").value="";
-    $("loginHint").textContent="Enter your name to join the house.";
-    loginButton.textContent="Join";
     let saved="";try{saved=localStorage.getItem("sc_name")||""}catch(_){}
     if(saved){$("name").value=saved;loginButton.click()}
   });
@@ -1821,8 +1864,10 @@ function expireSession(){
   if(activeUploadController)activeUploadController.abort();
   if(!uploading)resetUploadBatch();
   showError("errorDash","");
-  showError("error","Room access expired. Enter the current PIN to reconnect.");
-  $("pin").focus();
+  showError("error",PIN_REQUIRED
+    ?"Room access expired. Enter the current PIN to reconnect."
+    :"Room access expired. Enter your name to rejoin.");
+  $(PIN_REQUIRED?"pin":"name").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
 function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const rate=s.rate,speed=typeof rate==="number"&&Number.isFinite(rate)&&rate>=0.05&&rate<=4?rate:1;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead*speed;return dur?Math.min(v,dur):v}
@@ -1987,17 +2032,36 @@ function applyAccentPreset(value){
 let roomSnapshotEpoch="",roomSnapshotVersion=-1;
 // A delayed poll or SSE frame must never roll a newer same-run film state back.
 function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
+function playbackToggleCopy(state){
+  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the selected room receiver for everyone"];
+  if(state==="PAUSED")return ["Resume","Resume playback on the selected room receiver for everyone"];
+  return ["Play / pause","Toggle playback on the selected room receiver for everyone"];
+}
+function renderPlaybackToggle(state){
+  const button=document.querySelector('[data-action="play_pause"]');
+  if(!button)return;
+  const [label,description]=playbackToggleCopy(state);
+  if(button.textContent!==label)button.textContent=label;
+  button.title=description;
+  button.setAttribute("aria-label",description);
+}
+function showJoinedRoom(){
+  const entering=$("dashboard").hidden;
+  $("dashboard").hidden=false;
+  $("uploadCard").hidden=false;
+  if(entering)$("playbackHeading").focus({preventScroll:true});
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;$("dashboard").hidden=false;$("uploadCard").hidden=false;showError("errorDash","");
+document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
   return true;
 }
 async function refresh(){
@@ -2028,7 +2092,8 @@ async function refresh(){
 }
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
-function renderRoom(room){const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");if(room&&room.activity){const events=[...room.activity].slice(-12),keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
+let lastRoom=null;function renderRoom(room){lastRoom=room;const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
+$("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
 function renderPeers(peers,available){
   const list=$("peers");
   const entries=available&&Array.isArray(peers)?peers:[];
@@ -2079,6 +2144,7 @@ function renderPeers(peers,available){
     focused.focus({preventScroll:true});
   }
 }
+function activityMatches(event,filter){const d=(event&&event.data)||{},type=event&&event.type;if(!filter||filter==="all")return true;if(filter==="problems")return type==="action"&&(d.outcome==="rejected"||d.outcome==="uncertain");const a=String(d.action||"");if(filter==="queue")return type==="voted"||(type==="action"&&a.startsWith("queue_"));if(filter==="playback")return type==="action"&&!a.startsWith("queue_");if(filter==="people")return ["joined","left","renamed","screen"].includes(type);return false}
 function describe(event){const d=event.data||{},name=d.name||"Someone",q=d.title?" \u201c"+d.title+"\u201d":"";switch(event.type){case "joined":return name+(d.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+(d.voted===false?" removed a vote from":" voted for")+(q||" an item");case "action":{const a=d.action||"";const words={queue_play:"played"+q+" now",queue_remove:"removed"+q,queue_move:"moved"+q,queue_next:"queued"+q+" next",queue_add_key:"added"+q,queue_clear:"cleared Up Next",play_pause:"paused or resumed playback",stop:"stopped playback",seek:"changed the playback position",volume:"changed the volume",mute:"toggled mute",next:"skipped to the next item",previous:"went back to the previous item",music_autogain:"changed music normalisation"};const sentence=name+" "+(words[a]||"used "+(a||"a control").replaceAll("_"," "));const result={accepted:"request accepted; confirmation pending",rejected:"request refused",uncertain:"receiver confirmation unavailable",confirmed:"confirmed"}[d.outcome];return result?sentence+" \u00b7 "+result:sentence}case "screen":return name+" used a browser screen";default:return name+" updated the room"}}
 function ago(at){const s=Math.max(0,Date.now()/1000-Number(at));if(!Number.isFinite(s))return "";if(s<45)return "just now";if(s<3600)return Math.max(1,Math.round(s/60))+" min ago";return new Date(at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
 function showShortcutHelp(){
@@ -2173,7 +2239,14 @@ async function act(action,value,extra={}){
     }else refresh();
   }
 }
-$("clearQueue").addEventListener("click",()=>act("queue_clear"));
+function confirmClearQueue(){
+  const count=queueState.length;
+  if(!count)return false;
+  return window.confirm(`Clear ${count} waiting item${count===1?"":"s"} from Up Next for everyone? This does not stop what is currently playing.`);
+}
+$("clearQueue").addEventListener("click",()=>{
+  if(confirmClearQueue())void act("queue_clear");
+});
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 for(const id of ["seek","volume"]){
   const control=$(id);
@@ -2260,8 +2333,15 @@ async function sendChunk(path,file,offset,end){
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
-      try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
-      catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
+      try{
+        const state=await uploadRequest("GET",path);
+        if(state.received===end)return state;
+        if(state.received!==offset){
+          throw Object.assign(Error("Upload position changed. Choose the file again to resume safely."),{status:409,offsetMismatch:true});
+        }
+      }catch(statusError){
+        if(statusError.offsetMismatch||statusError.status===404||statusError.status===401||statusError.status===403)throw statusError;
+      }
     }
   }
 }
@@ -2284,16 +2364,69 @@ async function uploadStorage(mode, operation){
     }finally{db.close()}
   }catch(_){return undefined}
 }
-async function firstChunkHash(file,chunkSize){
-  // FNV-1a 64 works on plain HTTP LAN pages, where SubtleCrypto is unavailable.
-  const bytes=new Uint8Array(await file.slice(0,chunkSize).arrayBuffer());
+const UPLOAD_FINGERPRINT_BYTES=64*1024;
+async function firstChunkHash(file,chunkSize,version=3){
+  // Recognition only, NOT a content digest. v3 samples first, middle and last
+  // blocks to reject most accidental file substitutions without an 8 MiB hash
+  // on the browser main thread; bytes read are bounded to 192 KiB.
+  if(version===3){
+    const width=Math.min(file.size,UPLOAD_FINGERPRINT_BYTES);
+    const offsets=[0,Math.floor((file.size-width)/2),file.size-width];
+    let a=0x811c9dc5,b=0x9e3779b9;
+    for(const offset of [...new Set(offsets)]){
+      // Include sample position so moving blocks cannot alias each other.
+      for(let n=offset;n>0;n=Math.floor(n/256)){
+        const byte=n%256;
+        a=Math.imul(a^byte,0x01000193);
+        b=Math.imul(b^byte,0x85ebca6b);
+      }
+      const bytes=new Uint8Array(await file.slice(offset,offset+width).arrayBuffer());
+      for(const byte of bytes){
+        a=Math.imul(a^byte,0x01000193);
+        b=Math.imul(b^byte,0x85ebca6b);
+      }
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
+  }
+  if(version===2){
+    // Existing v2 IndexedDB records used only the first 64 KiB.
+    const bytes=new Uint8Array(await file.slice(0,Math.min(file.size,UPLOAD_FINGERPRINT_BYTES)).arrayBuffer());
+    let a=0x811c9dc5,b=0x9e3779b9;
+    for(const byte of bytes){
+      a=Math.imul(a^byte,0x01000193);
+      b=Math.imul(b^byte,0x85ebca6b);
+    }
+    return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
+  }
+  // Legacy v1 FNV-1a 64 over the full negotiated chunk. Yield for UI health.
+  // Corrupt/stale IndexedDB records must never trigger an unbounded legacy hash.
+  const count=Math.min(file.size,chunkSize,8*1024*1024);
   let hash=0xcbf29ce484222325n;
-  for(const byte of bytes)hash=BigInt.asUintN(64,(hash^BigInt(byte))*0x100000001b3n);
+  for(let offset=0;offset<count;offset+=16*1024){
+    const bytes=new Uint8Array(await file.slice(offset,Math.min(count,offset+16*1024)).arrayBuffer());
+    for(const byte of bytes)hash=BigInt.asUintN(64,(hash^BigInt(byte))*0x100000001b3n);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
   return hash.toString(16).padStart(16,"0");
 }
 async function matchesPendingFile(file,upload){
   return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
-    &&await firstChunkHash(file,upload.chunkSize)===upload.hash;
+    &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion||1)===upload.hash;
+}
+const MAX_UPLOAD_CHUNK_BYTES=8*1024*1024;
+function validUploadChunkSize(size){
+  return Number.isSafeInteger(size)&&size>0&&size<=MAX_UPLOAD_CHUNK_BYTES;
+}
+function validUploadProgress(value,size){
+  return Number.isSafeInteger(size)&&size>0&&size<=2**40
+    &&Number.isSafeInteger(value)&&value>=0&&value<=size;
+}
+function validSavedUpload(record){
+  return record&&typeof record.id==="string"&&/^[A-Za-z0-9_-]{32}$/.test(record.id)
+    &&typeof record.name==="string"&&record.name.length>0
+    &&validUploadChunkSize(record.chunkSize)
+    &&validUploadProgress(record.received,record.size);
 }
 async function clearPendingUpload(){
   const id=pendingUpload?.id;
@@ -2306,12 +2439,21 @@ async function restoreUpload(){
   uploading=true;
   updateUploadControls();
   try{
-    const records=await uploadStorage("readonly",store=>store.getAll())||[];
-    for(const record of records.sort((a,b)=>b.started-a.started)){
-      if(!/^[A-Za-z0-9_-]{32}$/.test(record.id)||csrf!==session)continue;
+    const records=await uploadStorage("readonly",store=>store.getAll());
+    // IndexedDB is client-controlled and may contain stale/malformed entries.
+    // Validate *before* sorting; a null entry must never crash room restoration.
+    const candidates=Array.isArray(records)?records.filter(validSavedUpload):[];
+    const started=record=>Number.isSafeInteger(record.started)&&record.started>=0?record.started:0;
+    candidates.sort((a,b)=>started(b)-started(a));
+    for(const record of candidates){
+      if(csrf!==session)return;
       try{
         const state=await uploadRequest("GET","/api/uploads/"+record.id);
         if(csrf!==session)return;
+        if(!validUploadProgress(state.received,record.size)){
+          showError("uploadStatus","Saved upload progress is invalid. Reload to check it again.");
+          return;
+        }
         pendingUpload={...record,received:state.received};
         $("uploadProgress").max=record.size;
         $("uploadProgress").value=state.received;
@@ -2331,7 +2473,7 @@ function updateUploadControls(){
   const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
   if(audio)$("uploadQueue").checked=true;
   const resumeLabel=pendingUpload&&`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`;
-  $("uploadButton").disabled=uploading||!!pendingUpload&&!file;
+  $("uploadButton").disabled=uploading||!file;
   $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
@@ -2400,11 +2542,15 @@ $("uploadButton").addEventListener("click",async()=>{
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
+        if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
+          throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
-        const record={...pendingUpload,hash:await firstChunkHash(file,chunkSize)};
+        const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
       }
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
+      if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
+        throw Error("Upload progress is invalid. Reload and choose the file again.");
       casting=!!state.ready_to_cast;
       $("uploadProgress").max=file.size;
       $("uploadProgress").value=state.received;
@@ -2484,8 +2630,9 @@ function mediaAudio(){
 }
 function syncMediaSession(s){
   if(!mediaSupported()||!lockControlsOn()||!s)return;
-  const ms=navigator.mediaSession,playing=s.state==="PLAYING"||s.state==="BUFFERING";
-  if(!s.title||!(playing||s.state==="PAUSED")){
+  const ms=navigator.mediaSession,playing=s.state==="PLAYING";
+  const active=playing||s.state==="PAUSED"||s.state==="BUFFERING";
+  if(!s.title||!active){
     ms.playbackState="none";if(MEDIA.audio)MEDIA.audio.pause();return;
   }
   bindMediaSession();
@@ -2493,8 +2640,9 @@ function syncMediaSession(s){
   if(a.paused){const p=a.play();if(p&&p.catch)p.catch(()=>{})}
   try{ms.metadata=new MediaMetadata({title:String(s.title),artist:String(s.artist||""),album:s.receiver?"SmoothCast - "+s.receiver:"SmoothCast"})}catch(_){}
   ms.playbackState=playing?"playing":"paused";
-  const duration=Number(s.duration)||0,position=Number(s.position)||0;
-  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:Number(s.speed)||1})}catch(_){}}
+  const duration=Number(s.duration)||0,position=projectPosition(s,s.snapshot_age_ms,0);
+  const rate=typeof s.rate==="number"&&Number.isFinite(s.rate)&&s.rate>=0.05&&s.rate<=4?s.rate:1;
+  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:rate})}catch(_){}}
 }
 (()=>{
   const box=$("lockControls");if(!box)return;

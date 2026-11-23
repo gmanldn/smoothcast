@@ -40,7 +40,7 @@ class QueueRowMixin:
 
     def _queue_row(self, index: int, path: str) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.set_tooltip_text(path)  # Stable source path for GTK filtering.
+        row.source_path = path  # Private identity; never put a filesystem path in a tooltip.
         row.add_css_class("queue-row")
         if path == self.now_playing:
             row.add_css_class("current")
@@ -68,6 +68,7 @@ class QueueRowMixin:
         drop.connect("drop", self._drop_queue_row, row)
         row.add_controller(drop)
         display_title = queue_metadata.display_title(path, self._media_cache)
+        row.set_tooltip_text(display_title)
         title = Gtk.Label(label=display_title, xalign=0.0, hexpand=True, ellipsize=3)
         title.add_css_class("queue-title")
         # GTK ListBoxRow needs its own accessible name. Do not announce the
@@ -118,5 +119,5 @@ class QueueRowMixin:
 
     def _queue_row_matches(self, row) -> bool:
         return playlist_control.matches_query(
-            row.get_tooltip_text() or "", self.queue_search.get_text()
+            getattr(row, "source_path", "") or "", self.queue_search.get_text()
         )

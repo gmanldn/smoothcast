@@ -33,13 +33,26 @@ LIGHT = {
 SCHEMES = {"dark": DARK, "light": LIGHT}
 # Overrides applied on top of the active scheme for prefers-contrast: more.
 HIGH_CONTRAST = {"muted": "text", "dim": "text", "border": "text", "header_line": "text"}
+# forced-colors: active (Windows contrast themes) hands colour choice to the user's
+# palette, so every surface/text pair maps to a CSS system colour pair that the OS
+# guarantees readable. QR paper, scrim, shadow and avatar text stay literal.
+FORCED = {
+    "bg": "Canvas", "card": "Canvas", "text": "CanvasText", "muted": "CanvasText",
+    "dim": "CanvasText", "accent": "Highlight", "on_accent": "HighlightText",
+    "input": "Field", "border": "ButtonBorder", "line": "ButtonBorder",
+    "chip_line": "ButtonBorder", "header_line": "ButtonBorder",
+    "secondary": "ButtonFace", "on_secondary": "ButtonText", "danger": "CanvasText",
+    "focus": "Highlight", "vote": "Canvas", "vote_line": "ButtonBorder",
+    "on_vote": "CanvasText", "vote_on": "Highlight", "nav": "ButtonFace",
+    "nav_hover": "ButtonFace", "on_nav": "ButtonText",
+}
 
 
-def _vars(values: dict[str, str], scheme: str) -> str:
+def _vars(values: dict[str, str], scheme: str | None) -> str:
     result = []
     for name, value in values.items():
         css_name = name.replace("_", "-")
-        if name in {"accent", "on_accent"}:
+        if scheme and name in {"accent", "on_accent"}:
             value = f"var(--sc-user-{css_name}-{scheme}, {value})"
         result.append(f"--{css_name}:{value};")
     return "".join(result)
@@ -75,7 +88,8 @@ def css() -> str:
     return (":root{" + _vars(DARK, "dark") + "}"
             "@media(prefers-color-scheme:light){:root{" + _vars(LIGHT, "light") + "}}"
             "@media(prefers-contrast:more){:root{" + _vars(high_dark, "dark") + "}}"
-            "@media(prefers-contrast:more) and (prefers-color-scheme:light){:root{" + _vars(high_light, "light") + "}}")
+            "@media(prefers-contrast:more) and (prefers-color-scheme:light){:root{" + _vars(high_light, "light") + "}}"
+            "@media(forced-colors:active){:root{" + _vars(FORCED, None) + "}}")
 
 
 def _channel(value: int) -> float:

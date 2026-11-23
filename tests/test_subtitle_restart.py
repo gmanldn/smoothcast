@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 
 import castctl
 import streamer
@@ -155,6 +155,7 @@ def restart_window(session):
         "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:
                                  jobs.append((work, done, failed))),
     }
+    namespace.update(handler_globals())
     exec(compile(code, "<subtitle-restart-worker>", "exec"), namespace)
 
     class Window(namespace["Extracted"]):

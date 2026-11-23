@@ -4,6 +4,8 @@
 `main` receives release merges only. Keep the runtime version authority in
 `src/version.py` and do not publish directly from an unqualified feature PR.
 
+**Flatpak (experimental):** The source tree contains a fail-closed GNOME Flatpak recipe and offline structural CI test under `packaging/flatpak/`. It is **not a qualified installable release**; [Flatpak prerequisites, build procedure and blockers](FLATPAK.md) document what is missing (bundled FFmpeg and Debian/Fedora install qualification). Do not list it as a supported package until #263 is validated.
+
 **Use PyInstaller for distributed applications.** A Python wheel is still
 validated for library/install contract tests; it is not the end-user release
 format. The existing `setup/linuxsetup.sh`, `setup/macsetup.sh` and

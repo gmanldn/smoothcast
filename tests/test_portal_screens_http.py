@@ -620,3 +620,33 @@ def test_join_qr_invalid_binding_fails_closed_without_secret(rig, monkeypatch):
     assert status == 503
     assert PIN.encode() not in data
     assert b"invalid internal address" not in data
+
+
+def test_join_slate_is_public_full_hd_png_without_pin(rig, monkeypatch):
+    import struct
+
+    seen = []
+    actual = portal_join.render_join_slate
+
+    def capture(url, name):
+        seen.append(url)
+        return actual(url, name)
+
+    monkeypatch.setattr(portal_join, "render_join_slate", capture)
+    status, data, headers = rig.request("GET", "/join-slate.png")
+    assert status == 200
+    assert headers["Content-Type"] == "image/png"
+    assert struct.unpack(">II", data[16:24]) == (1920, 1080)
+    assert seen == [f"http://127.0.0.1:{rig.port}/"]
+    assert PIN not in seen[0]
+    assert rig.request("GET", "/join-slate.png", host="evil.example")[0] == 400
+
+
+def test_join_slate_invalid_binding_fails_closed(rig, monkeypatch):
+    def invalid(_url, _name):
+        raise ValueError("invalid internal address")
+
+    monkeypatch.setattr(portal_join, "render_join_slate", invalid)
+    status, data, _headers = rig.request("GET", "/join-slate.png")
+    assert status == 503
+    assert b"invalid internal address" not in data

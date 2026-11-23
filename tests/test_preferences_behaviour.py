@@ -12,6 +12,7 @@ import textwrap
 from types import SimpleNamespace
 from unittest import mock
 
+import picture_adjustments
 import preference_choices
 from gui_source import main_window_methods
 
@@ -19,17 +20,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def extracted_preferences(*names):
-    source = (ROOT / "src" / "preferences_ui.py").read_text("utf-8")
-    syntax = ast.parse(source)
-    owner = next(node for node in syntax.body
-                 if isinstance(node, ast.ClassDef) and node.name == "PreferencesWindow")
-    found = {node.name: ast.get_source_segment(source, node) for node in owner.body
-             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    found = {}
+    # PreferencesWindow inherits PicturePreferencesMixin, so both contribute methods.
+    for module, class_name in (("preferences_picture_ui.py", "PicturePreferencesMixin"),
+                               ("preferences_ui.py", "PreferencesWindow")):
+        source = (ROOT / "src" / module).read_text("utf-8")
+        owner = next(node for node in ast.parse(source).body
+                     if isinstance(node, ast.ClassDef) and node.name == class_name)
+        found.update({node.name: ast.get_source_segment(source, node) for node in owner.body
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))})
     statements = "\n\n".join(
         textwrap.indent(textwrap.dedent(found[name]), "    ") for name in names
     )
     namespace = {
         "preference_choices": preference_choices,
+        "picture_adjustments": picture_adjustments,
         "save_config": mock.Mock(),
         "GLib": SimpleNamespace(Variant=lambda fmt, value: (fmt, value)),
         "Gtk": SimpleNamespace(StringList=SimpleNamespace(new=list)),
@@ -80,13 +85,15 @@ def test_reopening_reads_latest_config_and_updates_on_main_context():
     prefs.embedded_track = mock.Mock()
     prefs.subtitle_file = mock.Mock()
     prefs.gain = mock.Mock()
+    prefs.portal_port_spin = mock.Mock()
+    prefs._picture_spins = {"picture_brightness": mock.Mock()}
     prefs._combos = {"quality": mock.Mock(), "color_scheme": mock.Mock()}
     prefs._switches = {"direct": mock.Mock(), "auto_theme": mock.Mock()}
     owner = SimpleNamespace(
         cfg={
             "quality": "balanced", "color_scheme": "prefer-dark",
             "direct": True, "auto_theme": False,
-            "audio_gain": 3.0, "subs": "off",
+            "audio_gain": 3.0, "subs": "off", "picture_brightness": 0.25,
         },
         media=None,
         audio_track_dropdown=SimpleNamespace(get_selected=lambda: 0),
@@ -103,6 +110,8 @@ def test_reopening_reads_latest_config_and_updates_on_main_context():
     prefs._combos["quality"].set_selected.assert_called_with(1)
     prefs._switches["direct"].set_active.assert_called_with(True)
     prefs.gain.set_value.assert_called_with(3.0)
+    prefs._picture_spins["picture_brightness"].set_value.assert_called_with(
+        picture_adjustments.validated("picture_brightness", 0.25))
     prefs.audio_track.set_sensitive.assert_called_with(False)
     prefs.subtitle_file.set_subtitle.assert_called_with("No caption file")
     owner.cfg.update(quality="high", direct=False, audio_gain=12.0)

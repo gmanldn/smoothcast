@@ -14,6 +14,7 @@ import castctl
 import config_control
 import config_persistence
 import idle_chrome
+import slider_accessibility
 
 import audio_monitor
 import ui_theme
@@ -85,6 +86,7 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
+    "update_channel": "develop",  # Source update channel; available choices: develop / main (#579).
     "check_release_updates": False,  # New opt-in; legacy auto_update is ignored (#138).
     "release_check_verify": True,  # Fresh consent; legacy verify_updates is ignored (#138).
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
@@ -147,7 +149,10 @@ class Async:
 
 class SeekBar(Gtk.DrawingArea):
     def __init__(self, on_seek, on_hover) -> None:
-        super().__init__()
+        # The role is construct-only; without it assistive tech sees a canvas.
+        super().__init__(accessible_role=Gtk.AccessibleRole.SLIDER)
+        self.update_property([Gtk.AccessibleProperty.LABEL], ["Playback position"])
+        slider_accessibility.sync_position(self, Gtk, 0.0, 0.0)
         self.position = 0.0
         self.duration = 0.0
         self.buffered = 0.0
@@ -162,6 +167,8 @@ class SeekBar(Gtk.DrawingArea):
         self.set_size_request(-1, 30)
         self.set_draw_func(self._draw)
         self.add_css_class("seekbar")
+        # A Tab stop; arrows, Home and digits reach the window shortcuts.
+        self.set_focusable(True)
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", self._drag_begin)
         drag.connect("drag-update", self._drag_update)
@@ -176,6 +183,7 @@ class SeekBar(Gtk.DrawingArea):
         self.position = position or 0.0
         self.duration = duration or 0.0
         self.buffered = buffered or 0.0
+        slider_accessibility.sync_position(self, Gtk, self.position, self.duration)
         self.queue_draw()
 
     def _x_to_value(self, x: float) -> float:

@@ -138,6 +138,9 @@ class Flaky(BaseHTTPRequestHandler):
         self.send_response(206 if header else 200)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Content-Type", "video/x-matroska")
+        # Real mesh origins publish a strong generation; legacy fixtures use
+        # a stable strong ETag so a dropped connection can resume byte-safely.
+        self.send_header("ETag", '"fixture-sha-stable"')
         if header:
             self.send_header("Content-Range", f"bytes {start}-{len(DATA) - 1}/{len(DATA)}")
         self.end_headers()
@@ -239,7 +242,7 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
     assert writes == []
 
 
-@pytest.mark.parametrize("request,status,start,end,size,valid", [
+@pytest.mark.parametrize("range_header,status,start,end,size,valid", [
     (None, 200, 0, 99, 100, True),
     (None, 206, 0, 99, 100, False),
     ("bytes=0-", 206, 0, 99, 100, True),
@@ -257,8 +260,8 @@ def test_proxy_initial_range_rejects_invalid_upstream_response():
     ("bytes=-0", 206, 0, 99, 100, False),
 ])
 def test_proxy_response_must_match_browser_requested_range(
-        request, status, start, end, size, valid):
-    assert mesh_files._matches_request(request, status, start, end, size) is valid
+        range_header, status, start, end, size, valid):
+    assert mesh_files._matches_request(range_header, status, start, end, size) is valid
 
 
 def test_proxy_closes_downstream_when_upstream_exhausts_retry_budget():
@@ -307,3 +310,272 @@ def test_mesh_upstream_connection_closed_on_handshake_error(phase):
     with pytest.raises(OSError):
         proxy._open("http://127.0.0.1:8080", "qh:" + "b" * 32, None, False)
     assert closed == [True]
+
+
+def test_mesh_origin_generation_changes_on_same_size_replacement(origin):
+    """The validator tracks the open file, not just its byte count."""
+    harness, idx, key = origin
+    path = idx.resolve_path(key)
+    assert path is not None
+    status, headers, body = get(harness, f"/mesh/file/{key}")
+    assert status == 200 and body == DATA
+    generation = headers["X-SmoothCast-Generation"]
+    assert len(generation) == 64
+    replacement = path.with_name("new-media.tmp")
+    replacement.write_bytes(b"X" * len(DATA))
+    os.replace(replacement, path)
+    status, headers, body = get(harness, f"/mesh/file/{key}")
+    assert status == 200 and body == b"X" * len(DATA)
+    assert headers["X-SmoothCast-Generation"] != generation
+
+
+def test_proxy_retry_rejects_changed_generation_even_if_size_is_identical():
+    first = _ResumeReply()
+    first.values["X-SmoothCast-Generation"] = "old-generation"
+    assert mesh_files._valid_resume(first, 100, 199, "1000",
+                                    '"same"', "old-generation")
+    first.values["X-SmoothCast-Generation"] = "new-generation"
+    assert not mesh_files._valid_resume(first, 100, 199, "1000",
+                                        '"same"', "old-generation")
+    first.values.pop("X-SmoothCast-Generation")
+    assert not mesh_files._valid_resume(first, 100, 199, "1000",
+                                        '"same"', "old-generation")
+    # Legacy peers without the new header remain compatible; their identity
+    # cannot be guaranteed through this mechanism.
+    assert mesh_files._valid_resume(first, 100, 199, "1000", '"same"')
+
+
+def test_proxy_exposes_mesh_generation_for_later_range_requests(origin):
+    home, _idx, key = origin
+    proxy = RoomHarness(count=1)
+    try:
+        origin_port = home.server.server_address[1]
+        proxy.server.mesh_files = mesh_files.MeshFiles(
+            lambda _key: None, lambda _key: ["home"],
+            lambda _origin: f"http://127.0.0.1:{origin_port}/")
+        status, headers, body = get(proxy, f"/mesh/file/{key}",
+                                    {"Range": "bytes=0-1023"})
+        assert status == 206 and body == DATA[:1024]
+        assert len(headers["X-SmoothCast-Generation"]) == 64
+    finally:
+        proxy.close()
+
+
+def test_mesh_stream_stops_instead_of_mixing_replaced_file_bytes():
+    """A same-length replacement after an upstream drop must truncate safely."""
+    from io import BytesIO
+
+    class Reply:
+        def __init__(self, payload, generation, *, broken=False):
+            self.status = 206
+            self.payload = payload
+            self.generation = generation
+            self.broken = broken
+
+        def getheader(self, name):
+            return {
+                "Content-Range": "bytes 4-7/8",
+                "Content-Length": "4",
+                "X-SmoothCast-Generation": self.generation,
+            }.get(name)
+
+        def read(self, _n):
+            if self.broken:
+                raise OSError("origin disconnected")
+            self.broken = True
+            return self.payload
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Client:
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    client = Client()
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    retried = []
+    def reopen(_url, _key, requested_range, _head):
+        retried.append(requested_range)
+        return Connection(), Reply(b"WXYZ", "new-generation")
+    proxy._open = reopen
+    class Initial:
+        def __init__(self):
+            self.called = False
+
+        def read(self, _n):
+            if not self.called:
+                self.called = True
+                return b"ABCD"
+            raise OSError("upstream vanished")
+
+    proxy._pump(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                Connection(), Initial(), 0, 8, "8", None, "old-generation")
+    assert retried == ["bytes=4-7"]
+    assert client.wfile.getvalue() == b"ABCD"
+    assert client.close_connection is True
+
+
+def test_mesh_proxy_stream_limit_rejects_before_success_headers(monkeypatch):
+    """Busy mesh forwarding must be a clean 503, never a committed empty 200."""
+    from io import BytesIO
+    import portal_media
+
+    class Reply:
+        status = 200
+
+        def getheader(self, name):
+            return {"Content-Length": "3", "Content-Type": "video/mp4"}.get(name)
+
+        def read(self, _size):
+            return b"abc"
+
+    class Conn:
+        def close(self):
+            pass
+
+    class Client:
+        headers = {}
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Conn(), Reply())
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(portal_media, "_streams", slots)
+    assert slots.acquire(blocking=False)
+    sent_headers = []
+    client = Client()
+    try:
+        with pytest.raises(portal_media.MediaError) as exc:
+            proxy._proxy(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                         head=False, write_headers=lambda *args: sent_headers.append(args))
+        assert exc.value.status == 503
+        assert sent_headers == []
+        assert client.wfile.getvalue() == b""
+    finally:
+        slots.release()
+
+    assert proxy._proxy(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                        head=False, write_headers=lambda *args: sent_headers.append(args))
+    assert sent_headers[0][0] == 200
+    assert client.wfile.getvalue() == b"abc"
+
+
+@pytest.mark.parametrize(("requested", "response", "valid"), [
+    ("bytes=100-", "bytes */100", True),
+    ("bytes=100-150", "bytes */100", True),
+    ("bytes=0-", "bytes */0", True),
+    ("bytes=-20", "bytes */0", True),
+    ("bytes=-0", "bytes */100", True),
+    ("bytes=0-", "bytes */100", False),
+    ("bytes=99-", "bytes */100", False),
+    ("bytes=-20", "bytes */100", False),
+    ("bytes=101-100", "bytes */100", False),
+    ("bytes=0-", "bytes */garbage", False),
+    ("bytes=0-", "bytes */" + "9" * 1000, False),
+    ("bytes=0-", "bytes */9223372036854775808", False),
+    ("bytes=0-", "bytes */100\\r\\nX-Injected: 1", False),
+    ("bytes=0-1,3-4", "bytes */100", False),
+    (None, "bytes */100", False),
+])
+def test_peer_unsatisfied_range_416_is_strict(requested, response, valid):
+    from mesh_file_wire import valid_unsatisfied_range
+    assert valid_unsatisfied_range(requested, response) is valid
+
+
+@pytest.mark.parametrize(("requested", "response", "forward"), [
+    ("bytes=100-", "bytes */100", True),
+    (None, "bytes */100", False),
+    ("bytes=0-", "bytes */100", False),
+    ("bytes=100-", None, False),
+    ("bytes=100-", "bytes */100\\r\\nX-Forged: 1", False),
+])
+def test_proxy_never_forwards_unverified_416(requested, response, forward):
+    class Upstream:
+        status = 416
+
+        def getheader(self, key):
+            return response if key == "Content-Range" else None
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Client:
+        headers = {"Range": requested} if requested is not None else {}
+
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Connection(), Upstream())
+    emitted = []
+    accepted = proxy._proxy(
+        Client(), "qh:" + "a" * 32, "http://127.0.0.1/",
+        head=False, write_headers=lambda *args: emitted.append(args),
+    )
+    assert accepted is forward
+    assert (len(emitted) == 1) is forward
+    if forward:
+        assert emitted == [(416, {"Content-Length": "0", "Content-Range": response})]
+
+
+@pytest.mark.parametrize(("etag", "generation", "valid"), [
+    (None, None, False),
+    ('W/"same"', None, False),
+    ('"same"', None, True),
+    (None, "generation-1", True),
+    ('W/"same"', "generation-1", True),
+])
+def test_resume_without_strong_identity_fails_closed(etag, generation, valid):
+    """A reconnect must not stitch potentially different file bytes together."""
+    reply = _ResumeReply(etag=etag)
+    if generation is not None:
+        reply.values["X-SmoothCast-Generation"] = generation
+    assert mesh_files._valid_resume(reply, 100, 199, "1000",
+                                    etag, generation) is valid
+
+
+def test_missing_validator_on_retry_truncates_instead_of_mixing_bytes():
+    from io import BytesIO
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Reply:
+        status = 206
+
+        def getheader(self, name):
+            return {"Content-Range": "bytes 4-7/8",
+                    "Content-Length": "4"}.get(name)
+
+        def read(self, _amount):
+            return b"WXYZ"
+
+    class First:
+        def __init__(self):
+            self.called = False
+
+        def read(self, _amount):
+            if not self.called:
+                self.called = True
+                return b"ABCD"
+            raise OSError("lost origin")
+
+    class Client:
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    client = Client()
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Connection(), Reply())
+    proxy._pump(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                Connection(), First(), 0, 8, "8", None)
+    assert client.wfile.getvalue() == b"ABCD"
+    assert client.close_connection is True

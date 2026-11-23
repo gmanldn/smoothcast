@@ -284,7 +284,9 @@ def test_preview_runs_both_detectors_regardless_of_the_flags_and_never_caches(tm
 
 
 def test_preferences_expose_the_switches_and_the_film_check():
-    prefs = (ROOT / "src" / "preferences_ui.py").read_text(encoding="utf-8")
+    # The film-check card lives in PicturePreferencesMixin (preferences_picture_ui).
+    prefs = "\n".join((ROOT / "src" / name).read_text(encoding="utf-8")
+                      for name in ("preferences_ui.py", "preferences_picture_ui.py"))
     assert '"auto_crop"' in prefs and '"auto_deinterlace"' in prefs
     assert "picture_check.PictureCheck(self.owner)" in prefs and "save_config(owner.cfg)" in prefs
     check = (ROOT / "src" / "picture_check.py").read_text(encoding="utf-8")

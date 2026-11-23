@@ -86,3 +86,32 @@ def test_sentences_and_relative_times_in_node():
         "Ana voted for \u201cHeat\u201d", "Ana removed a vote from an item", "Bo joined",
         "Someone updated the room", "Someone used a control"]
     assert got[8:] == ["just now", "5 min ago", ""]
+
+
+def test_page_offers_a_category_filter_for_the_activity_feed():
+    html = portal._HTML
+    assert 'id="activityFilter"' in html and 'aria-controls="activity"' in html
+    for value in ("all", "playback", "queue", "people", "problems"):
+        assert f'<option value="{value}">' in html
+    assert 'id="activityEmpty"' in html
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+def test_activity_filter_categories_in_node():
+    script = (_line("function activityMatches(event,filter){") + "\n"
+              "const ev=(type,data)=>({type,data});"
+              "const events={pause:ev('action',{action:'play_pause',outcome:'confirmed'}),"
+              "add:ev('action',{action:'queue_add_key'}),vote:ev('voted',{voted:true}),"
+              "join:ev('joined',{}),refused:ev('action',{action:'seek',outcome:'rejected'}),"
+              "timeout:ev('action',{action:'queue_play',outcome:'uncertain'}),odd:ev('mystery',{})};"
+              "const out={};for(const f of ['all','playback','queue','people','problems','bogus'])"
+              "out[f]=Object.keys(events).filter(k=>activityMatches(events[k],f));"
+              "out.noFilter=activityMatches(events.odd);console.log(JSON.stringify(out));")
+    got = json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True,
+                                    text=True, timeout=8).stdout)
+    assert got["all"] == ["pause", "add", "vote", "join", "refused", "timeout", "odd"]
+    assert got["playback"] == ["pause", "refused"]
+    assert got["queue"] == ["add", "vote", "timeout"]
+    assert got["people"] == ["join"]
+    assert got["problems"] == ["refused", "timeout"]
+    assert got["bogus"] == [] and got["noFilter"] is True

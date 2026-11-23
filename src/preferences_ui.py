@@ -199,6 +199,9 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
             "Nothing is downloaded or installed automatically. These options "
             "apply on the next app launch, not during playback.",
         )
+        self._choice(updates, "update_channel", "Update channel",
+                     "Develop (default) receives frequent tested builds; Main follows releases. "
+                     "Only read-only checks work so far; installing safely in the background is pending.")
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
@@ -260,6 +263,9 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
             save_config(self.owner.cfg)
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
+        elif key == "update_channel":
+            self.owner.cfg["update_channel"] = str(value)
+            save_config(self.owner.cfg)
         elif key in {"subtitle_style", "aspect_override"}:
             owner = self.owner
             owner.cfg[key] = str(value)

@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import slider_accessibility
 import command_trace
 import benchmark
 
@@ -35,6 +36,7 @@ class AvMixin:
     def _on_volume_changed(self, scale) -> None:
         value = int(scale.get_value())
         self.volume_label.set_text(f"{value}%")
+        slider_accessibility.sync_percent(scale, Gtk, value)
         self._apply_volume_icon()
         if self._syncing:
             return
@@ -466,6 +468,9 @@ class AvMixin:
         video_index = media.video_stream_index if media is not None else 0
         aspect_mode = self.cfg.get("aspect_override", "original")
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
+        # Snapshot settings for asynchronous decodes; do not read a changing GTK config
+        # from the worker after a user moves a colour control.
+        picture_config = dict(self.cfg)
         if sparse:
             cache = getattr(self, "_sparse_frame_cache", None)
             if cache is None:
@@ -482,7 +487,7 @@ class AvMixin:
                 finish(frame)
             Async.run(
                 lambda: screenshot.preview_frame(
-                    pathlib.Path(path), sample, video_stream_index=video_index, **aspect_options,
+                    pathlib.Path(path), sample, video_stream_index=video_index, picture_config=picture_config, **aspect_options,
                 ),
                 done=ready, failed=lambda _error: finish(), domain="media",
             )
@@ -490,7 +495,7 @@ class AvMixin:
         # An explicit seek or frame step must not be approximated by a hover bin.
         Async.run(
             lambda: screenshot.preview_frame(
-                pathlib.Path(path), position, video_stream_index=video_index, **aspect_options,
+                pathlib.Path(path), position, video_stream_index=video_index, picture_config=picture_config, **aspect_options,
             ),
             done=finish, failed=lambda _error: finish(), domain="media",
         )

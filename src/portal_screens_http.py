@@ -71,6 +71,16 @@ def route(handler, method: str, path: str) -> bool:
         else:
             handler._send(200, png, content_type="image/png")
         return True
+    if path == "/join-slate.png" and method == "GET":
+        # Same numeric endpoint rule as the QR; the TV idle slate must never carry a PIN.
+        ip, port = handler.server.server_address[:2]
+        try:
+            png = portal_join.render_join_slate(f"http://{ip}:{port}/", "SmoothCast")
+        except (ValueError, ImportError):
+            handler._error(503, "Room join slate unavailable on this network")
+        else:
+            handler._send(200, png, content_type="image/png")
+        return True
     if path == "/screen" and method == "GET":
         handler._send(200, portal_screen_page.screen_page(),
                       content_type="text/html; charset=utf-8")

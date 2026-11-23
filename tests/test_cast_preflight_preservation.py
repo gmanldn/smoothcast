@@ -13,7 +13,7 @@ import threading
 from types import SimpleNamespace
 from unittest import mock
 
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 import dlna
 import playback_state
 import queue_metadata
@@ -36,6 +36,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
           "hdr_tonemap": __import__("hdr_tonemap"),
           "fingerprint": __import__("fingerprint"),
           "Async": SimpleNamespace(run=lambda _work, **_kwargs: None)}
+    ns.update(handler_globals())
     ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)
     previous = SimpleNamespace(

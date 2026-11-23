@@ -357,7 +357,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
     def _on_queue_selected(self, _list, row) -> None:
         if row is None and self.queue_search.get_text().strip():
             return  # A hidden row must not change playback selection.
-        selected_path = row.get_tooltip_text() if row is not None else None
+        selected_path = getattr(row, "source_path", None) if row is not None else None
         self.selected_index = (
             self.queue.index(selected_path) if selected_path in self.queue else None
         )
@@ -372,7 +372,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
 
     def _on_queue_activated(self, _list, row) -> None:
-        path = row.get_tooltip_text() if row is not None else None
+        path = getattr(row, "source_path", None) if row is not None else None
         if path in self.queue:
             # GTK filtering can change visual row positions. Cast by stable
             # file identity, never by a potentially filtered row index.

@@ -80,6 +80,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_head_verdict.py
       - name: Verify GTK dependency bootstrap never bypasses import gate
         run: python -m unittest discover -s tests -p test_gtk_ci_deps.py
+      - name: Validate fail-closed Flatpak packaging inputs
+        run: python -m unittest discover -s tests -p test_flatpak_manifest.py
       - name: Verify bounded agent routing and instruction budgets
         run: |
           python -m unittest discover -s tests -p test_agent_context.py
@@ -101,10 +103,21 @@ jobs:
       - name: Verify code and issue-body budget contracts
         run: |
           python -m pip install 'pytest>=8,<10'
+          python -m pytest -q tests/test_chrome_ingress_session.py tests/test_mesh_cast_planner.py tests/test_chrome_mesh_readiness.py
           python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py tests/test_notifications.py tests/test_panel_ui.py
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
+          python -m pytest -q tests/test_preferences_ui.py tests/test_config_control.py tests/test_update_verification.py::OptOutTests::test_channel_develop_discovery_is_read_only_even_without_version_bump tests/test_update_verification.py::OptOutTests::test_channel_main_does_not_fall_back_to_develop tests/test_update_verification.py::OptOutTests::test_invalid_channels_are_rejected_without_git_or_network
+          python -m pytest -q tests/test_managed_generations.py
+      - name: Verify colour-adjusted local previews are bounded and stale-safe
+        run: python -m pytest -q tests/test_picture_adjustments_preview.py
       - name: Verify mesh Range resume integrity
-        run: python -m pytest -q tests/test_mesh_files.py
+        run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py
+      - name: Verify source-second playheads and lock-screen controls
+        run: python -m pytest -q tests/test_playhead_projection.py tests/test_media_session_portal.py
+      - name: Verify private queue tooltips and filtered selection
+        run: python -m pytest -q tests/test_queue_row_path_privacy.py
+      - name: Verify browser upload resumability and bounded chunks
+        run: python -m pytest -q tests/test_portal_uploads.py tests/test_portal_upload_fingerprint.py tests/test_portal_upload_retry.py
       - name: Verify bounded federated search cursors
         run: python -m unittest discover -s tests -p test_federated_cursor.py
       - name: Verify bounded local library search cursors

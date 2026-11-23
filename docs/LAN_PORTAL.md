@@ -121,6 +121,10 @@ name the device, enter your name (and the House PIN if enabled), and press
 room to send it something and keeps itself awake where the browser supports a
 screen wake lock.
 
+`GET /join-slate.png` is a public 1920×1080 PNG (room name, join QR and the
+numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it returns
+503 when the QR/imaging libraries or a numeric address are unavailable.
+
 From the **Screens** card on any paired guest's dashboard, pick an item from the
 shared queue and press **Play**. Screens are independent targets: controlling
 one never stops, replaces or takes over the host's own Cast or DLNA playback.
@@ -323,10 +327,41 @@ The dashboard is organised in the order a new guest needs it:
    is checked by default and leaves the current playback uninterrupted.
    Audio is always queued. Unticking the option for video may start it early.
 4. **Up Next** — vote, play an item now, make it next, move it up/down or remove
-   it. Clearing this waiting list does not stop the current cast.
-5. **People** — view participants and recent activity, or change your name.
-6. **More settings and network information** — optional lock-screen controls,
+   it. Clearing the entire shared waiting list requires confirmation; it does
+   not stop the current cast.
+5. **Screens** — open the room's screen page on a TV, tablet or laptop to
+   make that browser a separate playback target. Give the screen a name,
+   enter the House PIN only if required, and tap **Start screen** to allow
+   audio. Screen playback is independent of the host's TV or speaker.
+6. **People** — view participants and recent activity, or change your name.
+7. **More settings and network information** — optional lock-screen controls,
    wake lock, audio normalisation, other hosts and read-only receiver activity.
+
+The connected dashboard also shows a copyable room link near the top. It
+contains only the local address, never a PIN or session credential. When a
+browser cannot use the clipboard on local HTTP, the link is selected for
+manual copying instead of silently failing.
+
+When a mesh is running, the section navigation adds **Network**. It is
+hidden when mesh discovery is unavailable, rather than linking to an empty
+panel. Network shows cooperating SmoothCast computers and the TV/speaker
+targets they can reach. The expandable help explains Ready, In use, Not seen
+lately and Can't be reached; the panel is read-only and does not start or
+stop a cast. The **Screens** section has its own touch-accessible help and
+only enables Play when a queued item is selected and the target responds.
+Its controls and keyboard focus survive normal status polling, even when a
+screen changes between Playing and Paused. Each command reads the latest screen
+state, and a selection disappears safely if its queue item is removed. If a
+screen disconnects while its controls have focus, focus returns to the Screens
+heading instead of being lost. Rapid repeated taps are coalesced **per
+screen** while a command is awaiting acknowledgement; other screens can still
+receive commands independently. In-flight buttons remain focusable with an
+accessible busy state. Replies from an expired session do not overwrite
+messages for a newly joined room.
+
+Mesh discovery runs one snapshot request at a time and cancels pending
+requests when the guest leaves or backgrounds the tab. Late responses cannot
+reopen the Network panel or event stream after room access changes.
 
 Help is available **next to the relevant action** using touch-, mouse- and
 keyboard-operable disclosure controls, with additional desktop hover titles.
@@ -335,3 +370,38 @@ to discover the main journey. The layout is one column on phones and a
 two-column workspace on larger screens, using the existing light/dark colour
 tokens. The web room remains entirely self-hosted and uses the existing
 session, CSRF and command protocols.
+
+
+## Upload resumption file-recognition safeguard
+
+Browsers store only upload-session metadata in IndexedDB, not the selected
+media bytes. When a visitor reselects a file after reconnecting, the browser
+compares its name, size, modification time and a bounded file fingerprint before
+continuing. New v3 fingerprints sample the first, middle and last 64 KiB (at
+most 192 KiB read), keeping the browser responsive even for enormous media.
+Previously stored v1/v2 fingerprints are still recognised. Older v1 calculations
+have an 8 MiB maximum even if browser storage contains malformed metadata.
+
+This is **accidental-substitution detection**, not cryptographic whole-file
+verification. A file with changes only outside these samples may still match;
+end-to-end SHA-256 checking for copies/transfers belongs to the transfer
+integrity protocol (#569/#357). The server's sequential offset, ownership,
+root containment and durable-write checks remain authoritative.
+
+## Browser file-transfer throughput contract (issue #568, first slice)
+
+- The room advertises an **8 MiB maximum chunk** in the upload-creation
+  response. The browser uses that negotiated size and sends sequential
+  `Content-Range` chunks. Existing 2 MiB clients remain supported.
+- The server reads and writes chunks through a **64 KiB buffer**; it does not
+  retain an 8 MiB upload body in memory.
+- A successful PUT is acknowledged only after **`fsync`** has completed for
+  its chunk. Increasing chunk size reduces request and sync frequency for large
+  files but does **not** implement crash-persistent upload sessions, coalesced
+  durable checkpoints or guaranteed recovery after the host process restarts.
+- Validated upload PUTs have a bounded **30-second socket read timeout** for
+  slower Wi-Fi; ordinary room requests retain their shorter timeout. A failed
+  or interrupted chunk is rolled back to its last acknowledged offset.
+- Speed-up depends on the storage device, RTT and Wi-Fi link. No throughput
+  improvement is claimed without measured benchmarks (#573). Adaptive chunk
+  negotiation and cross-restart durable offsets remain tracked in #568.

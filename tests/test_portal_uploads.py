@@ -248,3 +248,47 @@ def test_can_cancel_staged_upload_after_cast_rejection(tmp_path):
     uploads.finish_dispatch("owner", created["id"], accepted=False)
     uploads.cancel("owner", created["id"])
     assert not path.exists()
+
+
+def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
+    """One 8 MiB chunk replaces four 2 MiB requests without weakening ACK."""
+    uploads = manager(tmp_path)
+    size = portal_uploads.CHUNK_SIZE
+    assert size == 8 * 1024 * 1024
+    created = uploads.create("owner", "large.mkv", size)
+    assert created["chunk_size"] == size
+
+    class MeasuredSource:
+        def __init__(self):
+            self.reads = []
+
+        def read(self, amount):
+            assert 0 < amount <= portal_uploads.READ_SIZE
+            self.reads.append(amount)
+            return b"x" * amount
+
+    source = MeasuredSource()
+    with patch("portal_uploads.os.fsync", wraps=os.fsync) as synced:
+        result = uploads.append("owner", created["id"], f"bytes 0-{size - 1}/{size}",
+                                size, source)
+    assert result["received"] == size
+    assert len(source.reads) == size // portal_uploads.READ_SIZE
+    assert synced.call_count == 1
+    uploads.close()
+
+
+def test_small_legacy_chunks_resume_and_oversized_chunk_is_rejected(tmp_path):
+    uploads = manager(tmp_path)
+    size = portal_uploads.CHUNK_SIZE
+    legacy = 2 * 1024 * 1024
+    total = legacy + size + 1  # Oversized second chunk fits file but exceeds cap.
+    created = uploads.create("owner", "movie.mkv", total)
+    uploads.append("owner", created["id"], f"bytes 0-{legacy - 1}/{total}",
+                   legacy, BytesIO(b"a" * legacy))
+    assert uploads.status("owner", created["id"])["received"] == legacy
+    with pytest.raises(portal_uploads.UploadError, match="range or size"):
+        uploads.append("owner", created["id"],
+                       f"bytes {legacy}-{legacy + size}/{total}",
+                       size + 1, BytesIO(b""))
+    assert uploads.status("owner", created["id"])["received"] == legacy
+    uploads.close()

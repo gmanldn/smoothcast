@@ -1,6 +1,15 @@
 # SmoothCast release updates and single-instance lifecycle
 
-Status: **safety baseline implemented on `develop`**; transactional one-click installer, native restart and cross-platform health acknowledgement are **not yet implemented**. Owner tickets: #138 (updates), #540 (stale GUI), #350 (source installations), #533 (Windows MSI), #426 (playback handoff). Reviewed 23 November 2026.
+> **P0 lifecycle contract — #579 (23 November 2026).** Users have requested a
+> continuously running managed installation, with rolling background staging
+> from a selectable channel (default **develop**, alternative **main**).
+> **Channel selection and read-only candidate discovery are implemented first.**
+> Background *installation*, atomic generation switching, health acknowledgement
+> and rollback are **not implemented yet**; do not advertise a zero-downtime
+> updater until all of #579's acceptance gates are green.
+
+
+Status: **S0 safety baseline plus P0 channel selection on `develop`**; no live source mutations. Transactional staged install, native restart and health acknowledgement are **not yet implemented**. Owner P0: #579; related #138 (update UI), #540 (stale GUI), #350 (source installations), #533 (Windows MSI), #426 (playback handoff). Reviewed 23 November 2026.
 
 ## Non-negotiable contracts
 
@@ -10,6 +19,47 @@ Status: **safety baseline implemented on `develop`**; transactional one-click in
 4. **Immutable target.** The updater pins a candidate SHA from `refs/remotes/origin/main` or the corresponding `master` ref, not `FETCH_HEAD` after tag retrieval. It enforces fast-forward ancestry, a strictly increasing semantic release parsed without execution, bounded blob size and, by default, a signature verified with an explicitly trusted key. Frozen/installed apps must never source-update.
 5. **One primary per user.** GTK GApplication performs normal session-bus activation. A failed activation does NOT authorise termination by a stale PID or a competing primary. Treat stale/unreachable primary as a recoverable user-visible error, not as proof of ownership. A secondary launch should check before dependency/bootstrap work. Forward media args to the existing primary when healthy.
 6. **Privacy and rollback.** Settings, queues, history, user credentials and receiver identity live outside versioned program directories. Never upload them. The old verified program generation remains available until a replacement completes its health checks. A failed attempt leaves previous executable and user data intact.
+
+
+
+### P0 offline generation staging (#580, first slice)
+
+`setup/managed_generations.py:stage_local_snapshot` is an **offline primitive**.
+Given a caller-authenticated manifest of relative paths, SHA-256 digests and
+byte sizes plus an immutable commit ID, it writes a private new generation
+under `releases/<commit>`. It enforces bounded file/total sizes, checks every
+file digest, rejects symlinks, path escapes, special files and portable-case
+collisions, and fsyncs content before publishing the final directory name.
+A failed validation or disk write cleans up the private temporary generation.
+It never reads or replaces `current`, `previous`, the user profile or
+running Python/GTK modules.
+
+**This does NOT yet fetch or authenticate manifests, construct a complete
+independent native GTK/Python environment, atomically activate a generation,
+or roll back a failed new primary.** Never call it automatically on an untrusted
+Git checkout or present the staged directory as ready to launch. Those
+remaining security and operational gates are tracked in #580–#582.
+
+### P0 channel policy (#579, slice A)
+
+The validated persisted `update_channel` setting is `develop` by default,
+or `main` when explicitly selected in Preferences → Appearance → Updates.
+Read-only checks fetch the exact selected remote ref and pin the candidate SHA,
+report the selected channel, and never modify the running checkout. Develop
+may report a changed commit even if the semantic version has not advanced.
+Signature verification remains on by default, and check-on-startup remains
+opt-in until an immutable, independently health-checked staging transaction
+exists. Do not mistake the channel preference for automatic install consent.
+
+**High-priority installer hazard:** the existing `setup/install_location.py`
+`installed_sources` context manager renames and copies source directories at
+the installed path. Its rollback protects from many setup failures but does
+NOT guarantee uninterrupted running application code, nor safe concurrent
+reinstall. **Do not invoke it as a live updater.** The P0 implementation must
+introduce immutable fully staged releases, a stable launcher, separate venv
+per generation, activation/rollback journal and exact new-generation health
+acknowledgement before enabling background installation. Native MSI/package
+installs follow their own signed installer mechanisms.
 
 ## Current S0 implementation (already on develop)
 

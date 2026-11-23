@@ -14,7 +14,7 @@ from unittest import mock
 
 import pytest
 
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 import audio_delay
 import castctl
 import playback_state
@@ -47,6 +47,7 @@ def extracted(*names, async_runs, saves):
                                  async_runs.append((work, done, failed))),
         "save_config": lambda cfg: saves.append(dict(cfg)),
     }
+    namespace.update(handler_globals())
     exec(compile(code, "<restart-handlers>", "exec"), namespace)
     return namespace["Methods"]
 
@@ -65,7 +66,7 @@ def window(*names, playing=True):
 
     class Window(Methods):
         def __init__(self):
-            self.cfg = {"quality": "high", "audio": "night", "rotation": 90,
+            self.cfg = {"quality": "high", "quality_auto": False, "audio": "night", "rotation": 90,
                         "audio_gain": 6.0, "playback_speed": 1.0}
             self.session = None
             self.media = None

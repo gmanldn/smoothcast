@@ -94,6 +94,7 @@ button.action-control { min-width: 84px; min-height: 44px; font-weight: 600; }
 .volume-row button.flat { min-width: 38px; min-height: 38px; }
 .actions-strip flowboxchild { padding: 0; }
 .actions-strip flowboxchild:focus { outline: none; }
+.seekbar:focus-visible { outline: 2px solid @accent_color; outline-offset: 2px; border-radius: 8px; }
 .receiver-row { margin-top: 2px; }
 dropdown.receiver-online > button { box-shadow: inset 3px 0 @success_color; }
 dropdown.receiver-offline > button { box-shadow: inset 3px 0 @error_color; }

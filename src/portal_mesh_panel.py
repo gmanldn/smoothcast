@@ -18,18 +18,18 @@ _PANEL = r"""
 <style>
 #meshPanel .mesh-sum{font-weight:650;margin:.2rem 0 .6rem}
 #meshPanel ul{margin:0 0 10px;padding:0;list-style:none}
-#meshPanel li.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;border-top:1px solid #ffffff10;padding:9px 0;min-height:44px}
+#meshPanel li.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;border-top:1px solid var(--line);padding:9px 0;min-height:44px}
 #meshPanel li.row:first-child{border-top:0}
-#meshPanel .dot{width:12px;height:12px;border-radius:50%;background:#7e8a99;display:inline-block}
-#meshPanel .dot.ready,#meshPanel .dot.self,#meshPanel .dot.alive{background:#5fd3a0}
-#meshPanel .dot.busy{background:#ffd166}#meshPanel .dot.stale{background:#b0a07a}#meshPanel .dot.unreachable{background:#ff8a7a}
+#meshPanel .dot{width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block}
+#meshPanel .dot.ready,#meshPanel .dot.self,#meshPanel .dot.alive{background:var(--accent)}
+#meshPanel .dot.busy{background:var(--focus)}#meshPanel .dot.stale{background:var(--muted)}#meshPanel .dot.unreachable{background:var(--danger)}
 #meshPanel .t{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#meshPanel .s{font-size:.8rem;color:#b7c3d0;grid-column:2}
+#meshPanel .s{font-size:.8rem;color:var(--muted);grid-column:2}
 #meshPanel .st{font-size:.8rem;grid-column:3;grid-row:1;text-align:right}
-#meshPanel .why{font-size:.78rem;color:#ffd7a8;grid-column:2 / 4}
-#meshPanel .badge{font-size:.68rem;border:1px solid #ffffff40;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
-#meshPanel h3{font-size:.9rem;margin:12px 0 2px;color:#b7c3d0}
-#meshPanel .conn{font-size:.8rem;color:#ffd7a8;min-height:1.2em}
+#meshPanel .why{font-size:.78rem;color:var(--danger);grid-column:2 / 4}
+#meshPanel .badge{font-size:.68rem;border:1px solid var(--border);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+#meshPanel h3{font-size:.9rem;margin:12px 0 2px;color:var(--muted)}
+#meshPanel .conn{font-size:.8rem;color:var(--danger);min-height:1.2em}
 @media(prefers-reduced-motion:no-preference){#meshPanel li.row{animation:meshin .2s ease-out}}
 @keyframes meshin{from{opacity:0}to{opacity:1}}
 </style>
@@ -38,13 +38,22 @@ _PANEL = r"""
 <p id="meshHint" class="muted"></p>
 <h3>Devices</h3><ul id="meshNodes" aria-label="Devices"></ul>
 <h3>Targets</h3><ul id="meshTargets" aria-label="Playback targets"></ul>
+
+<details class="help"><summary>What do the network devices and target states mean?</summary><div class="help-body">
+<p><strong>Devices</strong> are SmoothCast computers cooperating on your local network. <strong>Targets</strong> are the TVs, speakers and browser screens they can reach. <strong>This device</strong> identifies this host; <strong>Primary</strong> is the node coordinating the mesh, not the receiver currently playing.</p>
+<p><strong>Ready</strong> means the receiver is currently reachable, <strong>In use</strong> means another room has it, <strong>Not seen lately</strong> means discovery is out of date, and <strong>Can't be reached</strong> means no node can currently contact it.</p>
+<p>This panel is a read-only view of local network activity. It does not cast, claim receivers or upload files; use Now Playing, Find or Add files for room actions. Reconnecting indicates that updates have temporarily stopped, not that your current cast has ended.</p>
+</div></details>
 <div id="meshLive" class="sr-only" aria-live="polite" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div></section>
 <script>
 (function(){
   const panel=document.getElementById("meshPanel");if(!panel)return;
+  const navLink=document.getElementById("meshNavLink");
+  function showNetworkNavigation(visible){if(navLink)navLink.hidden=!visible}
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
+  let bootRequest=null,bootEpoch=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const TEXT={self:"This device",alive:"Online",ready:"Ready",busy:"In use",stale:"Not seen lately",unreachable:"Can't be reached"};
   const RANK={ready:0,busy:1,stale:2,unreachable:3};
@@ -123,23 +132,37 @@ _PANEL = r"""
     es.onerror=()=>{conn("Reconnecting to the room…");if(es&&es.readyState===2){close();schedule()}};
   }
   function close(){if(es){es.close();es=null}}
-  function schedule(){clearTimeout(retry);retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
+  function cancelMeshRetry(){if(retry!==null){clearTimeout(retry);retry=null}}
+  function schedule(){cancelMeshRetry();retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
+  function cancelMeshBoot(){
+    bootEpoch++;
+    if(bootRequest){bootRequest.abort();bootRequest=null}
+  }
   async function boot(){
-    if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return schedule();
+    if(bootRequest)return;
+    if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return;
+    cancelMeshRetry();
+    const session=csrf,request=new AbortController(),epoch=++bootEpoch;
+    bootRequest=request;
+    const current=()=>epoch===bootEpoch&&!request.signal.aborted&&csrf===session&&!document.hidden&&!dash.hidden;
     try{
-      const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store"});
-      if(r.status===503||r.status===404){panel.hidden=true;return schedule()}
+      const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store",signal:request.signal});
+      if(!current())return;
+      if(r.status===503||r.status===404){panel.hidden=true;showNetworkNavigation(false);return schedule()}
       if(!r.ok)return schedule();
-      const d=await r.json();nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
-      panel.hidden=false;started=true;backoff=3000;render();open();
-    }catch(_){schedule()}
+      const d=await r.json();
+      if(!current())return;
+      nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
+      panel.hidden=false;showNetworkNavigation(true);started=true;backoff=3000;render();open();
+    }catch(_){if(current())schedule()}
+    finally{if(bootRequest===request)bootRequest=null}
   }
   document.addEventListener("visibilitychange",()=>{
-    if(document.hidden){hiddenTimer=setTimeout(()=>{close()},30000)}
-    else{clearTimeout(hiddenTimer);if(started&&!es)boot()}
+    if(document.hidden){cancelMeshBoot();cancelMeshRetry();hiddenTimer=setTimeout(()=>{close()},30000)}
+    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshBoot();cancelMeshRetry();backoff=3000;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """

@@ -15,6 +15,8 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 import lan_guard
+from mesh_file_wire import (_CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume,
+                            parse_wire_uint, pump_stream, valid_unsatisfied_range)
 import portal_media
 
 KEY = re.compile(r"qh:[0-9a-f]{32}")
@@ -22,57 +24,6 @@ CHUNK = 1024 * 1024
 MAX_RETRIES = 3
 TIMEOUT = 5.0
 HOP_HEADER = "X-SmoothCast-Hop"
-_CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
-
-
-def _valid_resume(reply, start: int, end: int, total: str | None,
-                  etag: str | None) -> bool:
-    """Only append bytes that continue the original range and object."""
-    if reply.status != 206:
-        return False
-    match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
-    if match is None or total is None or total == "*":
-        return False
-    first, last, size = match.groups()
-    if (int(first) != start or int(last) != end or size != total
-            or int(last) < int(first) or int(last) >= int(size)):
-        return False
-    try:
-        length = int(reply.getheader("Content-Length") or "")
-    except ValueError:
-        return False
-    if length != end - start + 1:
-        return False
-    if etag is not None and reply.getheader("ETag") != etag:
-        return False
-    return True
-
-
-_SINGLE_RANGE = re.compile(r"bytes=(\d*)-(\d*)\Z")
-
-
-def _matches_request(requested: str | None, status: int, start: int,
-                     end: int, size: int) -> bool:
-    """Never substitute a different byte span for a browser's Range."""
-    if not 0 <= start <= end < size:
-        return False
-    if requested is None:
-        return status == 200 and start == 0
-    if status != 206:
-        return False
-    match = _SINGLE_RANGE.fullmatch(requested)
-    if match is None:
-        return False
-    first, last = match.groups()
-    if first:
-        offset = int(first)
-        if offset >= size:
-            return False
-        expected_end = min(int(last), size - 1) if last else size - 1
-        return (not last or int(last) >= offset) and start == offset and end == expected_end
-    if not last or int(last) == 0:
-        return False
-    return start == max(0, size - int(last)) and end == size - 1
 
 
 def key_from_path(path: str) -> str | None:
@@ -99,6 +50,7 @@ class MeshFiles:
             mime = mimetypes.guess_type(str(local))[0] or "application/octet-stream"
             with portal_media.stream_slot():
                 portal_media.serve_direct(handler, local, mime, head=head,
+                                          mesh_generation=True,
                                           write_headers=write_headers)
             return
         if proxied:  # a proxied request is never proxied again (no loops)
@@ -136,17 +88,21 @@ class MeshFiles:
         try:
             if reply.status not in (200, 206):
                 if reply.status == 416:
+                    content_range = reply.getheader("Content-Range")
+                    if not valid_unsatisfied_range(range_header, content_range):
+                        return False
                     write_headers(416, {"Content-Length": "0",
-                                        "Content-Range": reply.getheader("Content-Range") or "bytes */0"})
+                                        "Content-Range": content_range})
                     return True
                 return False
             headers = {"Content-Type": reply.getheader("Content-Type") or "application/octet-stream",
                        "Accept-Ranges": "bytes"}
-            try:
-                length = int(reply.getheader("Content-Length") or "")
-            except ValueError:
-                return False
-            if length < 0:
+            generation = reply.getheader("X-SmoothCast-Generation")
+            if generation is not None:
+                # Internal generation only; do not expose origin filesystem identity.
+                headers["X-SmoothCast-Generation"] = generation
+            length = parse_wire_uint(reply.getheader("Content-Length"))
+            if length is None:
                 return False
             headers["Content-Length"] = str(length)
             start = 0
@@ -159,58 +115,32 @@ class MeshFiles:
                 match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
                 if match is None:
                     return False
-                first, last, size = match.groups()
-                start = int(first)
-                if (size == "*" or int(last) < start or int(last) >= int(size)
-                        or length != int(last) - start + 1):
+                first, last, size = (parse_wire_uint(v) for v in match.groups())
+                if (first is None or last is None or size is None
+                        or last < first or last >= size or length != last - first + 1):
                     return False
+                start = first
                 headers["Content-Range"] = reply.getheader("Content-Range") or ""
-                total = size
-                if not _matches_request(range_header, 206, start, int(last), int(size)):
+                total = str(size)
+                if not _matches_request(range_header, 206, start, last, size):
                     return False
-            write_headers(reply.status, headers)
             if head or length == 0:
+                write_headers(reply.status, headers)
                 return True
+            # Acquire capacity BEFORE sending HTTP success. A full stream pool
+            # must produce a real 503, not corrupt an already committed 200/206.
             with portal_media.stream_slot():
+                write_headers(reply.status, headers)
                 self._pump(handler, key, url, conn, reply, start, length, total,
-                           reply.getheader("ETag"))
+                           reply.getheader("ETag"), generation)
             return True
         finally:
             conn.close()
 
     def _pump(self, handler, key: str, url: str, conn, reply, start: int, length: int,
-              total: str | None, etag: str | None) -> None:
-        sent, retries = 0, 0
-        try:
-            while sent < length:
-                try:
-                    chunk = reply.read(min(CHUNK, length - sent))
-                    if not chunk:
-                        raise OSError("upstream ended early")
-                except OSError:
-                    retries += 1
-                    if retries > MAX_RETRIES:
-                        return
-                    conn.close()
-                    last = start + length - 1
-                    try:
-                        conn, reply = self._open(
-                            url, key, f"bytes={start + sent}-{last}", False)
-                    except OSError:
-                        continue
-                    if not _valid_resume(reply, start + sent, last, total, etag):
-                        return
-                    continue
-                try:
-                    handler.wfile.write(chunk)
-                except OSError:
-                    return
-                sent += len(chunk)
-        finally:
-            # Headers already announced Content-Length. On an unrecoverable
-            # upstream failure terminate the downstream socket: do not permit
-            # keep-alive or let a client treat a truncated body as complete.
-            if sent < length:
-                handler.close_connection = True
-            # A retry may have replaced the original connection. Always close it.
-            conn.close()
+              total: str | None, etag: str | None,
+              generation: str | None = None) -> None:
+        # Preserve the public test/runtime method while keeping wire logic small.
+        pump_stream(self._open, handler, key, url, conn, reply, start, length,
+                    total, etag, generation, chunk_size=CHUNK,
+                    max_retries=MAX_RETRIES)

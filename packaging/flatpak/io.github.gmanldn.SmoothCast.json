@@ -1,0 +1,36 @@
+{
+  "id": "io.github.gmanldn.SmoothCast",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "smoothcast",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--socket=pulseaudio",
+    "--device=dri",
+    "--filesystem=home:ro"
+  ],
+  "modules": [
+    {
+      "name": "smoothcast",
+      "buildsystem": "simple",
+      "build-commands": [
+        "test -d packaging/flatpak/wheelhouse && test -n \"$(find packaging/flatpak/wheelhouse -maxdepth 1 -name '*.whl' -print -quit)\"",
+        "python3 -m pip install --no-index --no-build-isolation --prefix=/app --find-links=packaging/flatpak/wheelhouse .",
+        "install -Dm644 packaging/flatpak/io.github.gmanldn.SmoothCast.desktop /app/share/applications/io.github.gmanldn.SmoothCast.desktop",
+        "install -Dm644 data/cast-control.png /app/share/icons/hicolor/128x128/apps/io.github.gmanldn.SmoothCast.png",
+        "python3 -c 'import sys; sys.path.insert(0, \"/app/lib/python\" + str(sys.version_info.major) + \".\" + str(sys.version_info.minor) + \"/site-packages\"); import cli, gi; gi.require_version(\"Gtk\", \"4.0\"); gi.require_version(\"Adw\", \"1\"); from gi.repository import Gtk, Adw'",
+        "command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null && command -v ffplay >/dev/null"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../.."
+        }
+      ]
+    }
+  ]
+}
