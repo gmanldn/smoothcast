@@ -18,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import command_trace
 import portal_commands
 import peer_discovery_ui
 import portal_uploads
@@ -59,6 +60,7 @@ def _build_window(tmp_path, *, idle_add=None):
     idle: list = []
     namespace = {
         "portal": SimpleNamespace(PortalRequestError=_PortalRequestError),
+        "command_trace": command_trace,
         "portal_commands": portal_commands,
         "portal_uploads": portal_uploads,
         "save_config": lambda cfg: saved.append(dict(cfg)),
