@@ -139,6 +139,10 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
     The manifest/signature trust decision belongs to the future downloader.
     The returned path is a checksum-verified, non-activated release directory.
     """
+    # Do not silently weaken race-resistant source handles on Windows.
+    # Win32 FILE_FLAG_OPEN_REPARSE_POINT verification is a later #580 gate.
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise StageError("Secure source staging requires no-follow file handles")
     if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
         raise StageError("Candidate commit must be an immutable lowercase SHA")
     planned = _manifest(entries)  # Reject unsafe names before any source I/O.
