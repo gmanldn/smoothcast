@@ -63,8 +63,8 @@ class DependencyGateTests(unittest.TestCase):
 
     def test_codeql_and_pip_audit_run_in_ci(self):
         codeql = read(".github/workflows/codeql.yml")
-        for needle in ("languages: python", "pull_request:", "security-events: write"):
-            self.assertIn(needle, codeql)
+        for needle in ("languages: python", "schedule:", "workflow_dispatch:", "security-events: write"):
+            self.assertIn(needle, codeql)  # weekly/manual by owner policy (#511); never per push
         self.assertIn("pip_audit", read(".github/workflows/verify.yml"))
 
 
@@ -108,27 +108,24 @@ class FuzzGateTests(unittest.TestCase):
 class AgentHygieneTests(unittest.TestCase):
     def test_develop_only_rule_is_first_and_loud_in_agents_md(self):
         agents = read("AGENTS.md")
-        self.assertLess(agents.index("Branch rule"), agents.index("## Rules"))
-        for needle in ("`develop` is the only branch anyone commits to",
+        self.assertLess(agents.index("## Branch and concurrent work"), agents.index("## Ticket flow"))
+        for needle in ("**Commit only to `develop`.**",
                        "git worktree add --detach ../smoothcast-N origin/develop",
-                       "git push origin HEAD:develop", "never with `--force`",
-                       "Never commit or push to `main`", "bump_version.py",
+                       "git push origin HEAD:develop", "Never force-push",
+                       "against `main`", "only the owner manually promotes it",
                        "workflow.md"):
             self.assertIn(needle, agents)
-        self.assertLess(len(agents), 2500)
+        self.assertLess(len(agents), 3000)  # root stays essentials-only (raised from 2500 for the claim flow)
 
-    def test_workflow_documents_trunk_flow_hygiene_and_automatic_release(self):
+    def test_workflow_documents_trunk_flow_hygiene_and_manual_main(self):
         workflow = read("docs/agents/workflow.md")
-        for needle in ("Everyone — humans and agents — commits to `develop`",
-                       "git worktree add --detach", "git worktree remove",
-                       "git push origin HEAD:develop", "Keep `develop` green",
-                       "Stage files by name", "coalesced", "bump_version.py"):
+        for needle in ("`develop` is the **only active development",
+                       "git worktree add --detach", "git push origin HEAD:develop",
+                       "stage **named files only**", "Refs #N",
+                       "Lazy, risk-weighted CI", "Main — manual owner action only",
+                       "No automatic `develop → main`", "sync_pyproject.py",
+                       "**Never lose work:**", "agent.py ship"):
             self.assertIn(needle, workflow)
-        # Release promotion details moved to docs/RELEASE_FLOW.md when workflow.md was trimmed (#542).
-        release = read("docs/RELEASE_FLOW.md")
-        for needle in ("promote_release.py", "head pinned to the verified commit",
-                       "Allow GitHub Actions to create and approve pull"):
-            self.assertIn(needle, release)
 
     def test_no_document_still_tells_agents_to_use_feature_branches_or_agent_prs(self):
         for name in ("AGENTS.md", "CONTRIBUTING.md", "docs/ISSUES.md", "docs/agents/workflow.md"):
@@ -168,9 +165,7 @@ class NativeOsPortableTests(unittest.TestCase):
             self.assertIn(needle, job)
         self.assertNotIn("continue-on-error", job)             # it gates; gaps go in platform_gaps.py
         self.assertNotIn("test_gui_isolated", job)             # never a GUI
-        promote = workflow.split("  promote-release:", 1)[1]
-        needs = promote.split("needs: [", 1)[1].split("]", 1)[0]
-        self.assertIn("portable-tests-native", needs)          # and it gates release promotion
+        self.assertNotIn("promote-release", workflow)           # no promotion job to gate (#579)
 
 
 if __name__ == "__main__":

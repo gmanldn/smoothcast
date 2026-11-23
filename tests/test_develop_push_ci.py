@@ -26,7 +26,7 @@ def test_scope_job_selects_patch_fast_lane_and_minor_major_full_lane():
         "search-performance:",
     ):
         match = re.search(
-            rf"^  {re.escape(job)}(.*?)(?=^  [a-z])", workflow, re.MULTILINE | re.DOTALL
+            rf"^  {re.escape(job)}(.*?)(?=^  [a-z]|\Z)", workflow, re.MULTILINE | re.DOTALL
         )
         assert match is not None
         block = match.group(1)
@@ -34,15 +34,12 @@ def test_scope_job_selects_patch_fast_lane_and_minor_major_full_lane():
         assert "needs.scope.outputs.lane == 'full'" in block
 
 
-def test_promotion_accepts_a_skipped_patch_lane_but_not_a_failure():
+def test_manual_verify_has_no_promotion_job_whose_gates_could_hide_a_skipped_lane():
+    """The old promotion gate (skipped patch lane ok, failure not) died with the job (#579)."""
     workflow = (ROOT / ".github/workflows/verify.yml").read_text("utf-8")
-    promote = workflow.split("  promote-release:", 1)[1]
-    assert "(needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped')" in promote
-    assert "needs.lint.result == 'success'" in promote
-    assert "needs.syntax.result == 'success'" in promote
-    needs = promote.split("needs: [", 1)[1].split("]", 1)[0].replace(" ", "").split(",")
-    assert {"scope", "syntax", "reliability-benchmark", "lint", "typecheck"} <= set(needs)
-    assert "(needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped')" in promote
+    assert "promote-release" not in workflow
+    jobs = re.findall(r"^  ([a-z-]+):$", workflow.split("\njobs:\n", 1)[1], re.MULTILINE)
+    assert "scope" in jobs and "syntax" in jobs and "lint" in jobs and "typecheck" in jobs
 
 
 def test_classifier_is_fast_for_patches_and_full_for_minor_or_major():

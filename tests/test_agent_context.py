@@ -62,7 +62,7 @@ class AgentContextTests(unittest.TestCase):
             self.assertEqual(router.main(["route", "audio", "subtitles"]), 0)
         self.assertIn("architecture.md", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
-        with mock.patch.object(Path, "read_text", return_value="x" * 9000):
+        with mock.patch.object(Path, "read_text", return_value="x" * (router.MAX_READ_CHARS + 500)):
             stdout, stderr = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 self.assertEqual(router.main(["read", "testing"]), 2)
@@ -89,19 +89,19 @@ class AgentContextTests(unittest.TestCase):
     def test_root_sends_agents_to_agent_ready_issues_without_large_context(self):
         root = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("scripts/ticket_digest.py --next --label agent-ready", root)
-        self.assertLess(len(root), 2500)
+        self.assertLess(len(root), 3000)
 
     def test_workflow_stays_readable_while_release_details_remain_available(self):
         guide = (ROOT / "docs/agents/workflow.md").read_text(encoding="utf-8")
         detail = (ROOT / "docs/RELEASE_FLOW.md").read_text(encoding="utf-8")
         self.assertLess(len(guide), router.MAX_READ_CHARS - 100)
-        self.assertIn("../RELEASE_FLOW.md", guide)
-        self.assertIn("promote-release", detail)
-        self.assertIn("MainProtector", detail)
+        self.assertIn("../COORDINATION.md", guide)   # claim and handover protocol
+        self.assertIn("promote_release.py", detail)  # historical helper stays documented
+        self.assertIn("owner", detail)               # and main stays an owner-only action
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             self.assertEqual(router.main(["read", "workflow"]), 0)
-        self.assertIn("Releases: develop", stdout.getvalue())
+        self.assertIn("Main — manual owner action only", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
     def test_no_network_child_process_or_ui_imports(self):

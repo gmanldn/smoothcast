@@ -45,7 +45,7 @@ TOPICS = {
     ),
 }
 MAX_HINT_CHARS = 1500
-MAX_READ_CHARS = 8000
+MAX_READ_CHARS = 9000
 
 
 _PATH_MARKERS = {"src/", "setup/", "cast_", ".py"}

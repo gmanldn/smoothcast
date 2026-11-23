@@ -165,38 +165,16 @@ class GuardTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    """CI never promotes main (owner decision, #579); manual sync is the only main flow."""
+
     def setUp(self):
         self.workflow = (ROOT / ".github/workflows/verify.yml").read_text("utf-8")
-        self.job = self.workflow.split("  promote-release:", 1)[1]
 
-    def test_promotion_runs_last_only_on_develop_and_needs_every_other_job(self):
-        import re
-        section = self.workflow.split("\njobs:\n", 1)[1]
-        jobs = re.findall(r"^  ([a-z-]+):$", section, re.MULTILINE)
-        self.assertEqual(jobs[-1], "promote-release")
-        needs = self.job.split("needs: [", 1)[1].split("]", 1)[0].replace(" ", "").split(",")
-        # Informational jobs (continue-on-error) may not gate a release; any other
-        # job must. Name each exception here so adding one is a conscious decision.
-        informational: set[str] = set()   # name any continue-on-error job here
-        self.assertEqual(sorted(needs), sorted(set(jobs[:-1]) - informational))
-        self.assertIn("github.ref == 'refs/heads/develop'", self.job)
-        self.assertIn("github.event_name == 'push'", self.job)
-
-    def test_merge_is_pinned_to_the_verified_commit_with_minimal_permissions(self):
-        self.assertIn('--match-head-commit "$GITHUB_SHA"', self.job)
-        self.assertIn("--merge", self.job)
-        self.assertNotIn("--auto", self.job)       # repo auto-merge is disabled
-        self.assertNotIn("--admin", self.job)      # never bypass the ruleset
-        self.assertIn("contents: write", self.job)
-        self.assertIn("pull-requests: write", self.job)
-        self.assertIn("promote_release.py check", self.job)
-
-    def test_setup_prerequisite_failure_explains_itself(self):
-        # Seen on GitHub: "GitHub Actions is not permitted to create or approve
-        # pull requests". The log must say which setting to enable.
-        self.assertIn("::error title=Release promotion needs a repository setting::", self.job)
-        self.assertIn("Allow GitHub Actions to create and approve pull requests", self.job)
-        self.assertIn("::error title=Release promotion could not merge::", self.job)
+    def test_verify_never_promotes_or_opens_release_prs(self):
+        self.assertNotIn("promote-release", self.workflow)
+        self.assertNotIn("promote_release.py", self.workflow)
+        for forbidden in ("gh pr create", "gh pr merge", "--match-head-commit", "pull-requests: write"):
+            self.assertNotIn(forbidden, self.workflow, forbidden)
 
     def test_nothing_else_in_ci_writes_to_main(self):
         for name in ("verify.yml", "codeql.yml", "release.yml", "prune-merged-branches.yml"):
@@ -204,12 +182,13 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn("push origin main", text, name)
             self.assertNotIn("git push origin HEAD:main", text, name)
 
-    def test_sync_main_workflow_only_writes_develop_and_explains_conflicts(self):
+    def test_sync_main_is_manual_only_writes_develop_and_explains_conflicts(self):
         text = (ROOT / ".github/workflows/sync-main.yml").read_text("utf-8")
-        self.assertIn("branches: [main]", text)
+        triggers = text.split("\npermissions:", 1)[0]
+        self.assertIn("workflow_dispatch:", triggers)
+        for automatic in ("schedule:", "push:", "pull_request:", "workflow_run:"):
+            self.assertNotIn(automatic, triggers, automatic)
         self.assertIn("ref: main", text)
-        self.assertIn("types: [closed]", text)
-        self.assertIn("github.event.pull_request.merged == true", text)
         self.assertIn("git ls-remote --heads origin develop", text)
         self.assertIn("git push origin origin/main:refs/heads/develop", text)
         self.assertIn("git checkout --detach origin/develop", text)
@@ -227,122 +206,6 @@ class WorkflowContractTests(unittest.TestCase):
     def test_precommit_guard_is_wired(self):
         config = (ROOT / ".pre-commit-config.yaml").read_text("utf-8")
         self.assertIn("scripts/ci/guard_branch.py", config)
-
-
-class ReleasePromotionRaceTests(unittest.TestCase):
-    """Execute the real CI merge step with fake git/gh; never touch any remote."""
-
-    @staticmethod
-    def _script() -> str:
-        lines = (ROOT / ".github/workflows/verify.yml").read_text("utf-8").splitlines()
-        marker = lines.index("      - name: Open and merge the release pull request")
-        start = lines.index("        run: |", marker) + 1
-        body = []
-        for line in lines[start:]:
-            if line and not line.startswith("          "):
-                break
-            body.append(line[10:] if line else "")
-        return "\n".join(body)
-
-    def _run(self, *, phase: str = "stable", result: str = "ok",
-             create: bool = False, fetch_fails: bool = False):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            bin_dir = root / "bin"
-            bin_dir.mkdir()
-            fetches = root / "fetches"
-            calls = root / "gh-calls"
-            fetches.write_text("0")
-            calls.write_text("")
-            git_stub = """#!/bin/sh
-if [ "$1" = fetch ]; then
-    if [ "$FETCH_FAILS" = 1 ]; then exit 3; fi
-    count="$(cat "$TEST_FETCHES")"
-    echo "$((count + 1))" > "$TEST_FETCHES"
-elif [ "$1" = rev-parse ] && [ "$2" = origin/develop ]; then
-    count="$(cat "$TEST_FETCHES")"
-    if { [ "$HEAD_PHASE" = before ] && [ "$count" -ge 1 ]; } ||
-       { [ "$HEAD_PHASE" = during ] && [ "$count" -ge 2 ]; }; then
-        echo newer-verified-commit
-    else
-        echo "$GITHUB_SHA"
-    fi
-else
-    exit 4
-fi
-"""
-            gh_stub = """#!/bin/sh
-echo "$*" >> "$TEST_GH_CALLS"
-if [ "$1" = pr ] && [ "$2" = list ]; then
-    if [ "$CREATE_FAIL" = 1 ]; then echo ""; else echo 509; fi
-elif [ "$1" = pr ] && [ "$2" = create ]; then
-    if [ "$CREATE_FAIL" = 1 ]; then exit 5; fi
-    echo https://github.com/example/repo/pull/509
-elif [ "$1" = pr ] && [ "$2" = merge ]; then
-    if [ "$MERGE_RESULT" != ok ]; then exit 6; fi
-else
-    exit 7
-fi
-"""
-            for name, source in (("git", git_stub), ("gh", gh_stub)):
-                executable = bin_dir / name
-                executable.write_text(source)
-                executable.chmod(0o755)
-            env = {
-                **os.environ,
-                "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
-                "GITHUB_SHA": "verified-commit",
-                "TAG": "v1.2.16",
-                "TEST_FETCHES": str(fetches),
-                "TEST_GH_CALLS": str(calls),
-                "HEAD_PHASE": phase,
-                "MERGE_RESULT": result,
-                "CREATE_FAIL": "1" if create else "0",
-                "FETCH_FAILS": "1" if fetch_fails else "0",
-            }
-            run = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", self._script()],
-                                 env=env, capture_output=True, text=True, timeout=10)
-            return run, calls.read_text()
-
-    def test_verified_head_merges_only_at_exact_sha(self):
-        run, calls = self._run()
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
-        self.assertNotIn("--admin", calls)
-        self.assertNotIn("--force", calls)
-
-    def test_head_advanced_before_pr_is_clean_skip(self):
-        run, calls = self._run(phase="before")
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(calls, "")
-        self.assertIn("newer verified run", run.stdout)
-
-    def test_head_advanced_during_failed_merge_is_clean_skip(self):
-        run, calls = self._run(phase="during", result="fail")
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
-        self.assertIn("newer verified run", run.stdout)
-
-    def test_unmoved_head_merge_failure_is_not_masked(self):
-        run, calls = self._run(result="fail")
-        self.assertEqual(run.returncode, 1, run.stdout)
-        self.assertIn("MainProtector", run.stdout)
-        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
-
-    def test_pr_creation_failure_only_skipped_when_head_moves(self):
-        moved, _ = self._run(phase="during", create=True)
-        blocked, _ = self._run(create=True)
-        self.assertEqual(moved.returncode, 0, moved.stderr)
-        self.assertIn("newer verified run", moved.stdout)
-        self.assertEqual(blocked.returncode, 1, blocked.stdout)
-        self.assertIn("Allow GitHub Actions to create and approve pull requests",
-                      blocked.stdout)
-
-    def test_failed_head_refresh_never_allows_promotion(self):
-        run, calls = self._run(fetch_fails=True)
-        self.assertNotEqual(run.returncode, 0)
-        self.assertEqual(calls, "")
-
 
 
 class MainSyncRecoveryTests(unittest.TestCase):
