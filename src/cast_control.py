@@ -31,6 +31,7 @@ from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
 import version
 import error_log
+import desktop_failure_notice
 import local_playback
 import startup_cleanup
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
@@ -170,6 +171,7 @@ class CastControlApp(Adw.Application):
         self._pending_files: list[str] = []
         self._mpris = None
         self._paint_handler: int | None = None
+        self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -207,6 +209,13 @@ class CastControlApp(Adw.Application):
         except Exception:
             pass
         error_log.install_excepthook()
+        # Preserve the private error log hooks, then schedule civil desktop
+        # failures on the GTK main context. Never touch widgets from workers.
+        self._failure_bridge = desktop_failure_notice.DesktopFailureBridge(
+            schedule=GLib.idle_add, present=self._present_unexpected_failure,
+            alive=self._failure_notice_available, log_glib=error_log.log,
+        )
+        self._failure_bridge.install_hooks()
         # Stop accepting queued work and discard callbacks after GTK exits.
         self.connect("shutdown", lambda _app: Async.shutdown())
         provider = Gtk.CssProvider()
@@ -336,6 +345,31 @@ class CastControlApp(Adw.Application):
             save_config(window.cfg)
             window._apply_color_scheme()
 
+    def _failure_notice_available(self) -> bool:
+        window = self.window
+        return bool(window is not None and not window._closing and not self.fatal
+                    and hasattr(window, "toasts"))
+
+    def _present_unexpected_failure(self, failure) -> None:
+        window = self.window
+        if not self._failure_notice_available() or window is None:
+            return
+        toast = Adw.Toast.new(failure.message)
+        toast.set_timeout(8)
+        toast.set_priority(Adw.ToastPriority.HIGH)
+        toast.set_button_label("Copy details")
+        toast.connect(
+            "button-clicked",
+            lambda *_: window.get_clipboard().set(
+                desktop_failure_notice.copy_details(failure)
+            ),
+        )
+        window.toasts.add_toast(toast)
+
+    def _guard_glib(self, callback):
+        bridge = self._failure_bridge
+        return bridge.guard_glib(callback) if bridge is not None else callback
+
     def _window(self) -> MainWindow:
         window = self.window
         if window is None:
@@ -399,11 +433,12 @@ class CastControlApp(Adw.Application):
     def _after_first_paint(self, clock, window: MainWindow) -> None:
         clock.disconnect(self._paint_handler)
         startup_timeline.mark("first_frame")
-        GLib.idle_add(self._after_paint_idle, window)
+        GLib.idle_add(self._guard_glib(self._after_paint_idle), window)
 
     def _after_paint_idle(self, window: MainWindow) -> bool:
         startup_timeline.mark_idle()
-        GLib.idle_add(self._start_optional_services, window, priority=GLib.PRIORITY_LOW)
+        GLib.idle_add(self._guard_glib(self._start_optional_services), window,
+                      priority=GLib.PRIORITY_LOW)
         return False
 
     def _start_optional_services(self, window: MainWindow) -> bool:
@@ -437,7 +472,7 @@ class CastControlApp(Adw.Application):
         if notice:
             # All GTK work stays on the main loop; the version displayed in
             # the title remains the imported *running* release until restart.
-            GLib.idle_add(self._present_update_notice, notice)
+            GLib.idle_add(self._guard_glib(self._present_update_notice), notice)
 
     def _present_update_notice(self, notice: str) -> bool:
         window = self.window
@@ -517,7 +552,9 @@ class CastControlApp(Adw.Application):
         if paths:
             window.open_paths(paths)
         if action:
-            GLib.timeout_add(250, lambda: (window.perform_action(action), False)[1])
+            GLib.timeout_add(250, self._guard_glib(
+                lambda: (window.perform_action(action), False)[1]
+            ))
         return 0
 
 
