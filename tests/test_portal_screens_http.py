@@ -603,7 +603,7 @@ def test_join_qr_is_public_png_for_bound_ip_and_never_contains_pin(rig, monkeypa
     assert status == 200
     assert headers["Content-Type"] == "image/png"
     assert headers["Cache-Control"] == "no-store"
-    assert data.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+    assert data[:8] == bytes.fromhex("89504e470d0a1a0a")
     width, height = struct.unpack(">II", data[16:24])
     assert width == height and width >= 100
     assert seen == [f"http://127.0.0.1:{rig.port}/"]
