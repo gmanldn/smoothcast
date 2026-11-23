@@ -239,15 +239,14 @@ class PreferencesWindow(Adw.PreferencesWindow):
             save_config(self.owner.cfg)
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
-        elif key == "subtitle_style":
-            self.owner.cfg[key] = str(value)
-            save_config(self.owner.cfg)
-        elif key == "aspect_override":
-            self.owner.cfg[key] = str(value)
-            save_config(self.owner.cfg)
-            self.owner._preview_generation += 1
-            self.owner._refresh_thumbnail_strip(0.0, visible=False)
-            self.owner._queue_preview(self.owner._preview_position)
+        elif key in {"subtitle_style", "aspect_override"}:
+            owner = self.owner
+            owner.cfg[key] = str(value)
+            save_config(owner.cfg)
+            if key == "aspect_override":
+                owner._preview_generation += 1
+                owner._refresh_thumbnail_strip(0.0, visible=False)
+                owner._queue_preview(owner._preview_position)
         else:
             widgets = {
                 "quality": "quality_dropdown",
