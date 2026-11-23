@@ -48,7 +48,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
 .slate{text-align:center;max-width:44rem}
 .join-qr{margin:24px auto 0;max-width:min(26rem,90vw);display:grid;justify-items:center;gap:4px}
-.join-qr img{display:block;width:min(180px,36vw);height:auto;aspect-ratio:1;background:#fff;border:8px solid #fff;border-radius:10px}
+.join-qr img{display:block;width:min(180px,36vw);height:auto;aspect-ratio:1;background:var(--qr-paper);border:8px solid var(--qr-paper);border-radius:10px}
 .join-qr strong{color:var(--text);overflow-wrap:anywhere}
 .dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent);animation:pulse 2.4s infinite}
 .dot.bad{background:var(--danger);animation:none}.dot.warn{background:var(--focus);animation:none}

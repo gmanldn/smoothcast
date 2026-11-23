@@ -17,6 +17,7 @@ DARK = {
     "secondary": "#36475d", "on_secondary": "#ffffff", "danger": "#ffb4a9", "focus": "#ffd166",
     "vote": "#1c3555", "vote_line": "#4d9de066", "on_vote": "#cfe6ff", "vote_on": "#2e6fae",
     "nav": "#26364a", "nav_hover": "#364b65", "on_nav": "#e2edff",
+    "qr_paper": "#ffffff",
     "scrim": "#000b", "shadow": "#0002", "avatar_text": "#08101a",
 }
 LIGHT = {
@@ -26,6 +27,7 @@ LIGHT = {
     "secondary": "#e2e8f0", "on_secondary": "#1e293b", "danger": "#b42318", "focus": "#b45309",
     "vote": "#dbeafe", "vote_line": "#1d6fb866", "on_vote": "#1e3a8a", "vote_on": "#1d6fb8",
     "nav": "#e2e8f0", "nav_hover": "#cbd5e1", "on_nav": "#1e293b",
+    "qr_paper": "#ffffff",
     "scrim": "#000b", "shadow": "#0f172a1a", "avatar_text": "#08101a",
 }
 SCHEMES = {"dark": DARK, "light": LIGHT}

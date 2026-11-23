@@ -37,6 +37,8 @@ def test_screen_css_has_no_independent_literal_palette():
     body = css[css.index("}}", token_end) + 2:]
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", body)
     assert "var(--accent)" in body and "var(--text)" in body
+    assert "var(--qr-paper)" in body
+    assert "--qr-paper:#ffffff" in css
     assert "--ink:" not in body and "--mut:" not in body
 
 
