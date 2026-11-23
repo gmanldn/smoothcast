@@ -90,6 +90,55 @@ def test_start_rolls_back_lease_if_worktree_creation_fails(monkeypatch, tmp_path
     assert released == [584]
 
 
+def test_start_creates_distinct_agent_ids_and_scoped_briefs(monkeypatch, tmp_path):
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: 0)
+    monkeypatch.setattr(agent, "load_issue", lambda n: {
+        "title": "Ticket for both", "body": "Edit src/cli.py", "state": "open"})
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    cmd = agent.build_parser().parse_args(["start", "584"])
+    assert agent.cmd_start(cmd) == 0
+    assert agent.cmd_start(cmd) == 0
+    folders = sorted(tmp_path.glob("smoothcast-issue-584-*"))
+    assert len(folders) == 2
+    ids = []
+    for worktree in folders:
+        admin = Path(run(worktree, "rev-parse", "--absolute-git-dir"))
+        ids.append((admin / "sc-agent-id").read_text().strip())
+        packet = (admin / "sc-agent-brief.md").read_text()
+        assert "Ticket for both" in packet
+        assert "Context route:" in packet
+        assert "src/cli.py" in packet
+    assert ids[0] != ids[1]
+
+
+def test_claim_freshness_rejects_rival_and_reclaims_expired(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(agent, "utcnow", lambda: now)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    def event(who, minutes_ago):
+        when = now - timedelta(minutes=minutes_ago)
+        return {"id": 19, "created_at": when.isoformat(),
+                "body": agent.claim_marker(who, ["src/a.py"], 90, when.timestamp())}
+    monkeypatch.setattr(agent, "gh", lambda *args: [event("rival", 5)])
+    task = {"issue": 584, "files": ["src/a.py"]}
+    assert agent.ensure_live_task_claim(task) is False
+    reclaimed = []
+    monkeypatch.setattr(agent, "gh", lambda *args: [event("rival", 120)])
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: reclaimed.append(args.number) or 0)
+    assert agent.ensure_live_task_claim(task) is True
+    assert reclaimed == [584]
+
+
+def test_ship_patch_assignment_is_explicitly_opt_in():
+    default = agent.build_parser().parse_args(["ship"])
+    requested = agent.build_parser().parse_args(["ship", "--assign-patch"])
+    assert default.assign_patch is False
+    assert requested.assign_patch is True
+
+
 def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
     work = tmp_path / "work"
     work.mkdir()
