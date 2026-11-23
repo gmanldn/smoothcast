@@ -67,6 +67,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_ticket_efficiency.py
       - name: Verify stale-safe per-ticket version bumps
         run: python -m unittest discover -s tests -p test_ticket_versioning.py
+      - name: Verify parallel PATCH assignment and retry safety
+        run: python -m unittest discover -s tests -p test_ship_patch.py
       - name: Verify exact-head CI verdict does not trust stale checks
         run: python -m unittest discover -s tests -p test_head_verdict.py
       - name: Verify GTK dependency bootstrap never bypasses import gate
