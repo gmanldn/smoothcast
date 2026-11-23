@@ -6,7 +6,6 @@ not evidence that a real receiver can play the original files.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import product
 
 
 @dataclass(frozen=True)
