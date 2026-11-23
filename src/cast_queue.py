@@ -141,6 +141,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         if self.session is None and not self.external:
             if self._preview_path == path:
                 return  # A row re-selection must not reset the local playhead.
+            self._reset_ab_repeat()
             self._unload_local_video()
             self.media = None
             self._update_audio_choices(None)
@@ -379,6 +380,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self._preview_path is None or self._preview_path in self.queue):
             return
         self._preview_generation += 1
+        self._reset_ab_repeat()
         self._preview_pending = None
         self._unload_local_video()
         self._preview_path = None

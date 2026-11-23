@@ -21,6 +21,7 @@ import streamer
 import smoothcast_assets
 import stream_watchdog
 import audio_monitor
+import ab_repeat
 import responsive_layout
 import gui_test_safety
 import update_control
@@ -74,6 +75,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
+        self.ab_repeat = ab_repeat.ABRepeat()
         self._stream_watchdog = stream_watchdog.StreamWatchdog()
         self._volume_job: int | None = None
         self._volume_target: str | None = None

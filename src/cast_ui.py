@@ -333,6 +333,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         for index, widget in enumerate(self.transport_controls):
             transport.attach(widget, index, 0, 1, 1)
         body.append(transport)
+        repeat_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        repeat_row.set_halign(Gtk.Align.CENTER)
+        self.mark_a_button = self._text_button("Mark A", "Set A–B loop start", self._mark_ab_start)
+        self.mark_b_button = self._text_button("Mark B", "Set A–B loop end", self._mark_ab_end)
+        self.clear_ab_button = self._text_button("Clear A–B", "Clear A–B loop", self._clear_ab_repeat)
+        for button in (self.mark_a_button, self.mark_b_button, self.clear_ab_button):
+            repeat_row.append(button)
+        body.append(repeat_row)
 
         volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         volume_row.add_css_class("volume-row")

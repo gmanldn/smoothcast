@@ -45,6 +45,7 @@ smoothcast-gui = "cli:main"
 [tool.setuptools]
 packages = ["smoothcast_assets"]
 py-modules = [
+    "ab_repeat",
     "accent",
     "api_spec",
     "async_jobs",
@@ -144,8 +145,8 @@ py-modules = [
     "notifications",
     "panel_ui",
     "peer_discovery",
-    "peer_protocol",
     "peer_discovery_ui",
+    "peer_protocol",
     "picture_check",
     "playback_state",
     "playlist_control",

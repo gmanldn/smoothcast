@@ -278,6 +278,9 @@ class SessionMixin:
                 self._finish_delayed_close()
                 return
             reliability_metrics.accept_attempt(self, session, Async.run)
+            if (getattr(self, "_preview_path", None) != str(path)
+                    and hasattr(self, "_reset_ab_repeat")):
+                self._reset_ab_repeat()
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
@@ -344,6 +347,8 @@ class SessionMixin:
 
     @command_trace.traced("desktop", "stop")
     def stop_stream(self) -> None:
+        if hasattr(self, "_reset_ab_repeat"):
+            self._reset_ab_repeat()
         pos = self.tracker.value()
         if self.media is not None and pos is not None:
             self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
@@ -476,7 +481,8 @@ class SessionMixin:
 
 
     @command_trace.traced("desktop", "seek")
-    def seek_to(self, target: float, *, feedback_label: str | None = None) -> None:
+    def seek_to(self, target: float, *, feedback_label: str | None = None,
+                exact_source_time: bool = False) -> None:
         # Guard before seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
@@ -489,7 +495,11 @@ class SessionMixin:
         if self._preview_path and self.session is None and not self.external:
             duration = self.queue_durations.get(self._preview_path, duration)
         if duration:
-            target = min(target, max(0.0, duration - 1.0))
+            target = min(target, max(0.0, duration if exact_source_time
+                                     else duration - 1.0))
+        repeat = getattr(self, "ab_repeat", None)
+        if repeat is not None:
+            repeat.manual_seek(target)
         session = self.session
         if session is None and self._preview_path is not None:
             if self.seekbar is not None:
@@ -674,6 +684,46 @@ class SessionMixin:
         self._frame_step(-1)
 
 
+    def _ab_current_position(self) -> tuple[float | None, float]:
+        preview = self.session is None and self._preview_path is not None and not self.external
+        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        return (self._preview_position if preview else self.tracker.value(), duration)
+
+
+    def _mark_ab_start(self) -> None:
+        position, duration = self._ab_current_position()
+        if position is None or not self.ab_repeat.mark_start(position, duration):
+            self.toast("Move to a valid point before the end, then mark A", error=True)
+            return
+        self.mark_a_button.set_label(f"A · {fmt_time(position)}")
+        self.mark_b_button.set_label("Mark B")
+        self.toast(f"A–B loop starts at {fmt_time(position)}")
+
+
+    def _mark_ab_end(self) -> None:
+        position, duration = self._ab_current_position()
+        if position is None or not self.ab_repeat.mark_end(position, duration):
+            self.toast("Mark B after A and before the end of the file", error=True)
+            return
+        self.mark_b_button.set_label(f"B · {fmt_time(position)}")
+        start = self.ab_repeat.start
+        self.toast(f"A–B repeat set to {fmt_time(start if start is not None else 0.0)}–{fmt_time(position)}")
+
+
+    def _clear_ab_repeat(self) -> None:
+        self._reset_ab_repeat()
+        self.toast("A–B repeat cleared")
+
+
+    def _reset_ab_repeat(self) -> None:
+        repeat = getattr(self, "ab_repeat", None)
+        if repeat is not None:
+            repeat.clear()
+        if getattr(self, "mark_a_button", None) is not None:
+            self.mark_a_button.set_label("Mark A")
+            self.mark_b_button.set_label("Mark B")
+
+
     def _skip_back10(self) -> None:
         self._skip(-10)
 
@@ -744,6 +794,8 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        if hasattr(self, "_reset_ab_repeat"):
+            self._reset_ab_repeat()
         reliability_metrics.finish_active(self, "completed", Async.run)
         self._record_watch("completed")
         self._stop_monitor()
@@ -845,6 +897,16 @@ class SessionMixin:
         # Pure watchdog: no blocking I/O on the GTK tick.
         stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
+        if position is not None:
+            local_stream = self._local_stream() if previewing else None
+            playing = (bool(local_stream and local_stream.get_playing())
+                       if previewing else self.tracker.playing)
+            playing = playing and not self.busy and not self.external
+            target = self.ab_repeat.boundary_target(position, playing=playing)
+            if target is not None:
+                self.seek_to(target, feedback_label="A–B repeat", exact_source_time=True)
+            elif previewing and duration and position >= duration:
+                self._reset_ab_repeat()
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
                 self.elapsed_label.set_text(fmt_time(position))
