@@ -37,6 +37,12 @@ class PublishedStatus:
             self._current = current
             return current.version
 
+    def peek(self) -> tuple[int, dict] | None:
+        """(version, state) WITHOUT copying. Read-only: callers must not mutate the tree."""
+        with self._lock:
+            current = self._current
+        return None if current is None else (current.version, current.state)
+
     def read(self) -> dict | None:
         with self._lock:
             current = self._current

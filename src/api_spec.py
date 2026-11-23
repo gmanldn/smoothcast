@@ -54,6 +54,10 @@ PATHS: dict[str, dict] = {
     "/api/search/stream": {"get": _op(
         "Same search as server-sent events: results, more, done", params=[_p("q", required=True)],
         content="text/event-stream", tag="search")},
+    "/api/events": {"get": _op(
+        "Room state as server-sent events: one `state` event now and one per change (the playhead "
+        "is not pushed; clients project it). `GET /api/status` remains the polling fallback.",
+        content="text/event-stream", tag="room")},
     "/api/libraries": {"get": _op("Computers and their shared library folders", tag="search")},
     "/api/libraries/{origin}/{folder}": {"get": _op(
         "One level of a shared folder: sub-folders and files (relative paths only)",

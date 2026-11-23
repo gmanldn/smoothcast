@@ -202,6 +202,37 @@
         ]
       }
     },
+    "/api/events": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Room state as server-sent events: one `state` event now and one per change (the playhead is not pushed; clients project it). `GET /api/status` remains the polling fallback.",
+        "tags": [
+          "room"
+        ]
+      }
+    },
     "/api/libraries": {
       "get": {
         "responses": {

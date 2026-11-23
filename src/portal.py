@@ -56,6 +56,11 @@ ATTEMPT_WINDOW_SECONDS = 60
 MAX_ATTEMPTS = 5
 LOCKOUT_SECONDS = 60
 REQUEST_TIMEOUT = 5
+EVENT_STREAMS_TOTAL = 64
+EVENT_STREAMS_PER_PARTICIPANT = 4
+EVENT_POLL_SECONDS = 0.25
+EVENT_PING_SECONDS = 15.0
+EVENT_RESEND_SECONDS = 10.0
 QUEUE_COMMAND_TTL = 120.0
 QUEUE_COMMAND_CAPACITY = 512
 CLIENT_SCHEMA = 1
@@ -187,6 +192,10 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
         self.status_snapshot = status_snapshot
+        self.status_peek: Callable[[], tuple[int, dict] | None] | None = None
+        self.stopping = threading.Event()
+        self._event_lock = threading.Lock()
+        self._event_streams: dict[str, int] = {}
         self.library_search: Callable | None = None
         self.library_search_stream: Callable | None = None
         self.library_browser = None
@@ -228,7 +237,25 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         return portal_commands.CommandReceipt(
             envelope.command_id, session_id, revision, result or "Command received; checking receiver state.")
 
+    def acquire_event_stream(self, participant_id: str) -> bool:
+        """Admit one more room event stream: at most 64 in total and 4 per participant."""
+        with self._event_lock:
+            if (sum(self._event_streams.values()) >= EVENT_STREAMS_TOTAL
+                    or self._event_streams.get(participant_id, 0) >= EVENT_STREAMS_PER_PARTICIPANT):
+                return False
+            self._event_streams[participant_id] = self._event_streams.get(participant_id, 0) + 1
+            return True
+
+    def release_event_stream(self, participant_id: str) -> None:
+        with self._event_lock:
+            left = self._event_streams.get(participant_id, 0) - 1
+            if left > 0:
+                self._event_streams[participant_id] = left
+            else:
+                self._event_streams.pop(participant_id, None)
+
     def server_close(self) -> None:
+        self.stopping.set()
         try:
             screens = getattr(self, "screens", None)  # absent if bind failed in __init__
             if screens is not None:
@@ -689,6 +716,111 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(404, "That library isn't available right now.")
         return self._send(200, result)
 
+    def _room_payload(self, participant_id: str) -> dict:
+        """The authenticated status document shared by /api/status and /api/events."""
+        try:
+            if self.server.status_snapshot is None:
+                state = self.server.dispatch("status", {})
+            else:
+                state = self.server.status_snapshot()
+                if state is None:
+                    raise PortalRequestError(503, "Status snapshot is not ready")
+        except Exception as exc:
+            raise PortalRequestError(503, "SmoothCast is not ready to report playback state") from exc
+        queue = state.get("queue") if isinstance(state.get("queue"), list) else []
+        live_ids: set[str] = set()
+        merged = []
+        for entry in queue:
+            if not isinstance(entry, dict):
+                continue
+            item_id = entry.get("id")
+            if not isinstance(item_id, str) or not item_id:
+                continue
+            live_ids.add(item_id)
+            item = dict(entry)
+            voters = self.server.room.votes.get(item_id, set())
+            item["votes"] = len(voters)
+            item["voted"] = participant_id in voters
+            merged.append(item)
+        self.server.queue_ids = live_ids
+        self.server.room.remember({m["id"]: m.get("title") for m in merged})
+        self.server.room.prune(live_ids)
+        state["queue"] = merged
+        state["room"] = self.server.room.snapshot(participant_id)
+        directory = self.server.peer_directory
+        state["screens"] = self.server.screens.snapshot()
+        state["peers"] = directory.snapshot() if directory is not None else []
+        state["peer_discovery_available"] = directory is not None
+        return {"ok": True, "state": state, "build": page_build(), "client_schema": CLIENT_SCHEMA}
+
+    def _event_key(self) -> tuple | None:
+        """Cheap change detector over the published snapshot; ignores the moving playhead."""
+        peeked = self.server.status_peek() if self.server.status_peek is not None else None
+        if peeked is None:
+            return None
+        state = peeked[1]
+        queue = state.get("queue") if isinstance(state.get("queue"), list) else []
+        items = tuple((q.get("id"), q.get("title")) for q in queue if isinstance(q, dict))
+        fields = tuple(state.get(k) for k in (
+            "title", "state", "receiver", "duration", "volume", "can_seek", "active", "busy",
+            "session_id", "revision", "queue_revision", "music_autogain"))
+        return fields, items, self.server.room.seq
+
+    def _events(self) -> None:
+        """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
+        if not self._authenticated():
+            return self._error(401, "Session expired")
+        participant_id = self.server.session_participant(self._cookie_token())
+        if participant_id is None:
+            return self._error(401, "Session expired")
+        if not self.server.acquire_event_stream(participant_id):
+            return self._send(429, {"ok": False, "error": "Too many room streams are open. Close one and retry.",
+                                    "code": "room.rate_limited"}, extra_headers={"Retry-After": "5"})
+        try:
+            first = self._room_payload(participant_id)
+        except PortalRequestError as exc:
+            self.server.release_event_stream(participant_id)
+            return self._error(exc.status, exc.message)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        clock, server = self.server.clock, self.server
+        event_id, key = 0, self._event_key()
+        last_write = last_state = clock()
+        payload = first
+        try:
+            while True:
+                if payload is not None:
+                    event_id += 1
+                    self.wfile.write(f"id: {event_id}\nevent: state\ndata: {json.dumps(payload)}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                    last_write = last_state = clock()
+                    payload = None
+                if server.stopping.wait(EVENT_POLL_SECONDS):
+                    return
+                if server.session_participant(self._cookie_token()) is None:
+                    return
+                now = clock()
+                current = self._event_key()
+                if current != key or now - last_state >= EVENT_RESEND_SECONDS:
+                    try:
+                        payload = self._room_payload(participant_id)
+                        key = current
+                    except PortalRequestError:
+                        pass
+                elif now - last_write >= EVENT_PING_SECONDS:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    last_write = now
+        except (OSError, ValueError):
+            pass
+        finally:
+            server.release_event_stream(participant_id)
+
     def _search_stream(self) -> None:
         """Server-sent events: cached results at once, late origins as they answer."""
         if not self._authenticated():
@@ -859,6 +991,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "participant": participant.public(self.server.clock()),
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             })
+        if path == "/api/events":
+            return self._events()
         if path == "/api/status":
             if not self._authenticated():
                 return self._error(401, "Enter the PIN shown in SmoothCast")
@@ -868,40 +1002,10 @@ class _Handler(BaseHTTPRequestHandler):
             if participant_id is None:
                 return self._error(401, "Session expired")
             try:
-                if self.server.status_snapshot is None:
-                    state = self.server.dispatch("status", {})
-                else:
-                    state = self.server.status_snapshot()
-                    if state is None:
-                        raise PortalRequestError(503, "Status snapshot is not ready")
-            except Exception:
-                return self._error(503, "SmoothCast is not ready to report playback state")
-            queue = state.get("queue") if isinstance(state.get("queue"), list) else []
-            live_ids: set[str] = set()
-            merged = []
-            for entry in queue:
-                if not isinstance(entry, dict):
-                    continue
-                item_id = entry.get("id")
-                if not isinstance(item_id, str) or not item_id:
-                    continue
-                live_ids.add(item_id)
-                item = dict(entry)
-                voters = self.server.room.votes.get(item_id, set())
-                item["votes"] = len(voters)
-                item["voted"] = participant_id in voters
-                merged.append(item)
-            self.server.queue_ids = live_ids
-            self.server.room.remember({m["id"]: m.get("title") for m in merged})
-            self.server.room.prune(live_ids)
-            state["queue"] = merged
-            state["room"] = self.server.room.snapshot(participant_id)
-            directory = self.server.peer_directory
-            state["screens"] = self.server.screens.snapshot()
-            state["peers"] = directory.snapshot() if directory is not None else []
-            state["peer_discovery_available"] = directory is not None
-            return self._send(200, {"ok": True, "state": state,
-                                    "build": page_build(), "client_schema": CLIENT_SCHEMA})
+                payload = self._room_payload(participant_id)
+            except PortalRequestError as exc:
+                return self._error(exc.status, exc.message)
+            return self._send(200, payload)
         upload_id = self._upload_route(path)
         if upload_id and self._authenticated():
             if self._throttle("upload"):
@@ -1257,6 +1361,7 @@ class Portal:
     def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
                  status_snapshot: Callable[[], dict | None] | None = None,
+                 status_peek: Callable[[], tuple[int, dict] | None] | None = None,
                  name: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
@@ -1291,6 +1396,7 @@ class Portal:
             room=self.room, pin_required=pin_required,
         )
         self.port = int(self.server.server_address[1])
+        self.server.status_peek = status_peek
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
         self._zeroconf = None

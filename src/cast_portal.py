@@ -49,6 +49,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
                                          status_snapshot=snapshot.read,
+                                         status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
                                          preferred_port=int(self.cfg.get("portal_port", 0)))
