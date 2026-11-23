@@ -51,3 +51,28 @@ def test_repository_stays_within_the_committed_baseline():
     assert not problems, "\n".join(problems) + (
         "\nIf justified, run python3 scripts/ci/complexity_report.py --write-baseline "
         "and say why in the commit message.")
+
+
+def test_ticket_digest_bytes_measured_only_with_explicit_opt_in(tmp_path, monkeypatch):
+    root = _tree(tmp_path, {"a.py": "pass\n"})
+    (root / "scripts").mkdir()
+    (root / "scripts" / "ticket_digest.py").write_text("pass\n", encoding="utf-8")
+    called = []
+
+    def fake_run(args, **kwargs):
+        called.append((args, kwargs))
+        return type("Result", (), {"returncode": 0, "stdout": b"issue #42\n"})()
+
+    monkeypatch.setattr(cr.subprocess, "run", fake_run)
+    assert cr.measure(root, with_git=False)["ticket_digest_next_bytes"] is None
+    assert called == []  # routine tests never query GitHub
+    result = cr.measure(root, with_git=False, with_issue_digest=True)
+    assert result["ticket_digest_next_bytes"] == len(b"issue #42\n")
+    assert called[0][0][-1] == "--next"
+    assert called[0][1]["timeout"] == 30
+
+    monkeypatch.setattr(
+        cr.subprocess, "run",
+        lambda *args, **kwargs: type("Result", (), {"returncode": 1, "stdout": b""})(),
+    )
+    assert cr.measure(root, with_git=False, with_issue_digest=True)["ticket_digest_next_bytes"] is None
