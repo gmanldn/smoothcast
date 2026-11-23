@@ -30,11 +30,11 @@ def test_screen_page_serves_shared_dark_light_and_high_contrast_tokens():
 def test_screen_css_has_no_independent_literal_palette():
     html = portal_screen_page.screen_page().decode("utf-8")
     css = html.split("<style>", 1)[1].split("</style>", 1)[0]
-    assert css.startswith("\\n:root{--bg:") or ":root{--bg:" in css
+    assert ":root{--bg:" in css
     # The only literal colour values are inside design_tokens.css().
     token_end = css.index("@media(prefers-contrast:more) and (prefers-color-scheme:light)")
     body = css[css.index("}}", token_end) + 2:]
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\\b", body)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", body)
     assert "var(--accent)" in body and "var(--text)" in body
     assert "--ink:" not in body and "--mut:" not in body
 
@@ -44,7 +44,7 @@ def test_screen_dashboard_panel_reuses_host_room_tokens():
     assert "background:var(--input)" in panel
     assert "border:1px solid var(--border)" in panel
     assert "color:var(--danger)" in panel
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\\b", panel.split("</style>", 1)[0])
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", panel.split("</style>", 1)[0])
 
 
 def test_screen_palette_has_no_credential_or_network_side_effects():
