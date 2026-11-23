@@ -49,14 +49,14 @@ to `main`. The owner manually decides when (and whether) to merge it.
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
    is not proof of functionality. [Claim and handover protocol](../COORDINATION.md).
 
-**Preferred complete loop (claims, isolated worktree, PATCH allocation and durable handover):**
+**Preferred complete loop (claims, isolated worktrees, SHA identity and handover):**
 
 ```sh
-python3 scripts/agent.py start        # or start ISSUE: claim and create worktree
+python3 scripts/agent.py start              # auto-select or: start 584
 cd /path/printed/by/start
-# implement the narrow issue slice
-python3 scripts/agent.py ship --message "fix: completed behaviour" --next "none" --skip-checks
-# supply real targeted evidence when available, then close only if complete:
+# implement and review the narrow acceptance slice
+python3 scripts/agent.py ship --message "fix: completed behaviour" --next "remaining"
+# give real evidence; close only when every acceptance criterion passes
 python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
 
@@ -71,12 +71,12 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
 - Prefer completing small independent tickets rather than keeping many broad
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
-- A successful private-worktree `agent.py ship` appends one guarded PATCH
-  increment after its code changes, never before the latest remote rebase.
-  The normal Git SHA identifies every intermediate code revision; `main` and
-  release tags remain owner-controlled. **Raw `git push` skips the patch
-  allocator**: use `agent.py ship`, and don't manually compete for the shared
-  version file. Stronger server-side per-ticket once-only enforcement is #583.
+- Every coherent `agent.py ship` has an immutable Git commit SHA. Normal
+  ticket work never increments `src/version.py`: concurrent source commits
+  therefore do not contend over a shared patch number. `--assign-patch` is
+  reserved for explicit owner-authorised version intent. The version-history
+  guard runs regardless of `--skip-checks`, and `main` promotion is manual.
+  Server-side raw-push enforcement/exactly-once attribution remains #583.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
