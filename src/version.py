@@ -1,9 +1,10 @@
 """SmoothCast's single authoritative semantic version.
 
-Owner policy: normal agent commits never bump semantic versions. Commit SHA
-identifies each develop revision; the owner explicitly assigns release numbers
-and manually integrates selected revisions into main. A running process keeps its imported version until
-restart, even if asynchronous updates change the checkout.
+Owner policy: each coherent private-worktree agent ship assigns a new
+monotonic develop PATCH after rebasing, then pushes with normal Git CAS. The
+Git SHA identifies exact source revision. Only the owner may integrate develop
+into main and publish release tags. A running process keeps its imported
+version until restart, even if the checkout changes asynchronously.
 """
 from __future__ import annotations
 
