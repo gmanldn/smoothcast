@@ -70,6 +70,8 @@ jobs:
         run: python -m py_compile smoothcast
       - name: Verify release promotion race safety
         run: python -m unittest discover -s tests -p test_release_automation.py
+      - name: Enforce bounded CI queue and exact-release contracts
+        run: python -m unittest discover -s tests -p test_ci_burst_policy.py
       - name: Verify ticket digest selection and fallback
         run: python -m unittest discover -s tests -p test_ticket_efficiency.py
       - name: Lint user-facing UX copy
