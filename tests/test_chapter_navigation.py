@@ -58,7 +58,7 @@ def test_chapter_jump_cannot_seek_other_film_or_foreign_stream():
     w.media, w.session, w.external = info, None, False
     w._preview_path, w.seek_to, w.toast = "/film.mkv", Mock(), Mock()
     w._jump_to_chapter(0)
-    w.seek_to.assert_called_once_with(2.5)
+    w.seek_to.assert_called_once_with(2.5, feedback_label="Chapter: Scene")
     w._preview_path = "/different.mkv"
     w._jump_to_chapter(0)
     assert w.seek_to.call_count == 1

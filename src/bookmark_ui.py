@@ -52,7 +52,7 @@ class BookmarkUiMixin:
         if type(index) is not int or index < 0 or index >= len(chapters):
             self.toast("Chapter is unavailable for the current film", error=True)
             return
-        self.seek_to(chapters[index].start)
+        self.seek_to(chapters[index].start, feedback_label=f"Chapter: {chapters[index].title}")
 
     def _bookmark_current(self) -> tuple[str | None, float | None]:
         previewing = self.session is None and self._preview_path is not None

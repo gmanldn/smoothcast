@@ -466,7 +466,7 @@ class SessionMixin:
         Async.run(work, done=done, failed=failed, domain="transport")
 
 
-    def seek_to(self, target: float) -> None:
+    def seek_to(self, target: float, *, feedback_label: str | None = None) -> None:
         # Guard before seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
@@ -493,6 +493,8 @@ class SessionMixin:
                     self._local_start_pending = target
             else:
                 self._queue_preview(target)
+            if feedback_label:
+                self.toast(f"{feedback_label} — {fmt_time(target)} (local preview)")
             return
         if session is None or session.state is None:
             if self.now_playing:
@@ -532,7 +534,8 @@ class SessionMixin:
                 self.busy = False
                 ok, message = result
                 if ok:
-                    self.toast(f"Jumped to {fmt_time(target)}")
+                    self.toast(f"{feedback_label} — {fmt_time(target)}" if feedback_label
+                               else f"Jumped to {fmt_time(target)}")
                 else:
                     self.toast(message or "Seek failed", error=True)
                 self._refresh_controls()
@@ -551,13 +554,15 @@ class SessionMixin:
 
         self.busy = True
         self._refresh_controls()
-        self.toast(f"Restarting stream at {fmt_time(target)}…")
+        self.toast(f"{feedback_label} — seeking…" if feedback_label
+                   else f"Restarting stream at {fmt_time(target)}…")
         self.tracker.device_update(target, duration)
-        self._restart_at(session, target)
+        self._restart_at(session, target, feedback_label=feedback_label)
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None,
-                    resume_after_pause: bool = False) -> None:
+                    resume_after_pause: bool = False,
+                    feedback_label: str | None = None) -> None:
         if session.mode == "dlna":
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
@@ -635,6 +640,11 @@ class SessionMixin:
             self._start_monitor(media_result.path, target, chain)
             self._set_levels_hint(hint)
             self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
+            if self.session is _session and not self._closing:
+                if feedback_label:
+                    self.toast(f"{feedback_label} — {fmt_time(target)}")
+                elif speed_override is not None:
+                    self.toast(f"Speed {speed:g}x applied")
             self._refresh_controls()
             self._poll_device()
 
@@ -715,8 +725,8 @@ class SessionMixin:
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
             # Preserve source time when changing playback speed.
+            self.toast(f"Applying speed {speed:g}x…")
             self._restart_at(session, position, speed_override=speed)
-            self.toast(f"Speed {speed}x — stream restarted")
         else:
             self.cfg["playback_speed"] = speed
             save_config(self.cfg)
