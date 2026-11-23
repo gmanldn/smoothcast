@@ -41,25 +41,21 @@ ran before pushing.
 | Same files, different tickets | Each claim records the files it will edit (predicted from the ticket text, or `--files`). Another claim on any of them blocks `claim` and hides the ticket from `next`. Shared merge-friendly files (`pyproject.toml`, baselines, `verify.yml`, docs, tests) never block. |
 | Dead agents hold tickets | Leases expire: 90 min default (30–180), refreshed by `heartbeat`. Legacy free-text `Claim:` comments count too (45 min) and end on "Claim released". |
 | Choosing work | `next` scores each open ticket: tier (`now` 300, `next` 200, `later` 100) + priority (P0 150 … P3 0) + `agent-ready` + "already has shipped slices: finish it", minus recent churn (files changed on `develop` in the last 45 min), minus unmet prose dependencies, minus stale `in-flight` labels. Your own live claim always ranks first. `epic`, `icebox`, `needs-human` and `needs-split` are skipped. |
-| Fast direct commits | `ship --message "..."` commits tracked edits in a private worktree, allocates the next PATCH in an isolated version-only commit, and fast-forward pushes. Use `--files` for new paths. `--skip-checks` skips targeted tests only: version integrity is mandatory. |
-| Push races | On rejection, `ship` verifies and removes **only its own unpublished PATCH commit**, fetches/rebases the original code, reallocates the next number and retries up to five attempts; never force-pushes or changes main. A real code conflict stops safely for handover. |
+| Fast direct commits | `ship --message "..."` commits tracked edits privately and fast-forward pushes. Use `--files` for new paths. Version history is mandatory; `--skip-checks` skips only optional focused tests. No default version bump. |
+| Push races | On rejection, `ship` verifies actual remote ancestry, fetches/rebases unpublished code and retries up to five times; never force-pushes or touches main. Only explicitly generated, unpublished version-only commits may be discarded during recovery. Real code conflicts stop for handover. |
 | Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
 | Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
 
-## Per-shipment PATCH identity and its limits
+## Build identity and release-number policy
 
-Every successful `agent.py ship` from an agent-owned worktree assigns one
-monotonically increasing develop PATCH **per shipped slice**, even with
-`--skip-checks`. The exact code SHA remains available and the pushed version
-commit contains `[sc-auto-patch]` and the issue number. A retry cannot
-reassign a published version: the tool first checks ancestry and may remove
-only its own unpublished, version-only tail commit after a contested push.
-
-**Limits:** a raw `git push`, a direct GitHub Contents API edit or agents that
-avoid the coordinator can bypass the allocator. Multiple independent ships
-for one issue receive multiple PATCH values. The stronger atomic
-**exactly-once per issue** guarantee requires server-side enforcement (#583).
-Do not claim it exists. `main` remains exclusively owner-controlled.
+Development changes are identified by immutable Git SHAs. Ordinary private
+worktree `ship` calls leave `src/version.py` unchanged, preventing all
+routine patch-number contention. An explicit owner-authorised
+`ship --assign-patch` can allocate a guarded PATCH in a separate unpublished
+commit; this is **not** the normal development path. Even then, raw pushes
+and shared GitHub identities prevent true server-enforced exactly-once
+per-ticket attribution. See #583; do not claim the stronger guarantee exists.
+`main` remains exclusively owner-controlled.
 
 ## Tiers
 
