@@ -1,12 +1,9 @@
 name: Verify SmoothCast
 
+# CI is an opt-in diagnostic tool. Frequent agent pushes to develop
+# are never blocked by tests or used to promote main.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    # Contributor PRs into develop only. The long-lived release PR targets main;
-    # its head is the very same develop SHA, already checked by the push lane.
-    branches: [develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,11 +13,7 @@ permissions:
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
-# Busy develop has one running verification plus its newest pending commit.
-# Do NOT cancel the running one: ongoing pushes must not starve validation.
-# GitHub replaces an older pending run with the latest; any release promotion
-# still requires all gates to pass for the EXACT tested SHA and checks HEAD.
-# Distinct refs (main and contributor PRs) do not cancel each other.
+# Manual diagnostic runs are coalesced by ref; they never gate development.
 concurrency:
   group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -44,12 +37,10 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          # Pending develop runs can be superseded. Compare against the last
-          # released main instead of the immediately previous push; otherwise
-          # a MINOR/MAJOR bump in a cancelled run could skip the full matrix.
-          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/develop" ]; then
-            git fetch origin main
-            BASE="$(git rev-parse origin/main)"
+          # Manual diagnostics compare against the preceding develop revision.
+          # Do not read main or use it as a development baseline.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse "$GITHUB_SHA^" 2>/dev/null || echo "$GITHUB_SHA")"
           fi
           lane="$(python scripts/ci/test_scope.py --base "$BASE" --head "$GITHUB_SHA")"
           echo "lane=$lane" >> "$GITHUB_OUTPUT"
@@ -473,101 +464,3 @@ jobs:
         run: python -m pip install 'build>=1,<2' 'setuptools>=77' 'wheel>=0.45'
       - name: Build sdist, rebuild wheel, then check a fresh installed runtime
         run: python scripts/ci/verify_installed_artifact.py
-
-  # develop -> main, automatically, for verified releases. Patch progress takes
-  # the fast lane; only MINOR/MAJOR bumps run the full test matrix. `main` is
-  # release-only and the repository ruleset requires a pull request, so the
-  # job opens one and merges it with the head pinned to the verified commit.
-  promote-release:
-    name: Promote verified release to main
-    if: |
-      always() &&
-      github.event_name == 'push' && github.ref == 'refs/heads/develop' &&
-      needs.scope.result == 'success' &&
-      needs.mesh-protocol-contract.result == 'success' &&
-      needs.syntax.result == 'success' &&
-      needs.lint.result == 'success' &&
-      needs.typecheck.result == 'success' &&
-      needs.dependency-audit.result == 'success' &&
-      needs.import-budget.result == 'success' &&
-      (needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped') &&
-      (needs.search-performance.result == 'success' || needs.search-performance.result == 'skipped') &&
-      (needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped') &&
-      (needs.portable-tests-native.result == 'success' || needs.portable-tests-native.result == 'skipped') &&
-      (needs.media-integration.result == 'success' || needs.media-integration.result == 'skipped') &&
-      (needs.setup-contract.result == 'success' || needs.setup-contract.result == 'skipped') &&
-      (needs.installed-artifact.result == 'success' || needs.installed-artifact.result == 'skipped')
-    needs: [scope, syntax, mesh-protocol-contract, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance, import-budget]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      pull-requests: write
-    concurrency:
-      group: smoothcast-promote-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.13'
-      - name: Is this verified commit a new release?
-        id: decide
-        run: |
-          git fetch origin develop main
-          if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
-            echo "::notice::develop has moved past this commit; the newer verified commit will promote."
-            echo "promote=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          code=0
-          tag="$(python scripts/ci/promote_release.py check "$GITHUB_SHA")" || code=$?
-          if [ "$code" -eq 10 ]; then
-            echo "promote=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          [ "$code" -eq 0 ] || exit "$code"
-          echo "promote=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Open and merge the release pull request
-        if: steps.decide.outputs.promote == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.decide.outputs.tag }}
-        run: |
-          git fetch origin develop
-          if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
-            echo "::notice::develop advanced after release verification; a newer verified run will promote."
-            exit 0
-          fi
-          number="$(gh pr list --head develop --base main --state open --json number --jq '.[0].number // empty')"
-          if [ -z "$number" ]; then
-            url="$(gh pr create --head develop --base main --title "Release $TAG" \
-              --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")" || {
-              git fetch origin develop || {
-                echo "::error::Cannot recheck develop after PR creation failure; release promotion refused."
-                exit 1
-              }
-              if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
-                echo "::notice::develop advanced during release PR creation; a newer verified run will promote."
-                exit 0
-              fi
-              echo "::error title=Release promotion needs a repository setting::Every verification job passed and $TAG is a new release, but GitHub refused to open the develop->main pull request. A repository admin must enable Settings > Actions > General > Workflow permissions > 'Allow GitHub Actions to create and approve pull requests'. This is configuration, not a code failure."
-              exit 1
-            }
-            number="${url##*/}"
-          fi
-          gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
-            git fetch origin develop || {
-              echo "::error::Cannot recheck develop after PR merge failure; release promotion refused."
-              exit 1
-            }
-            if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
-              echo "::notice::develop advanced during release PR merge; a newer verified run will promote."
-              exit 0
-            fi
-            echo "::error title=Release promotion could not merge::The verified develop head did not change, but release PR #$number could not be merged at $GITHUB_SHA. Check the MainProtector ruleset: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
-            exit 1
-          }
