@@ -112,6 +112,11 @@ gh api -X POST "$R/issues/N/comments" -f body='Claim: <agent>; scope: <files>'
 
 `python3 scripts/ci/complexity_report.py` prints source size, the largest
 modules and functions, startup imports and the bytes an agent reads first.
+Run `--with-issue-digest` to additionally measure actual UTF-8 output bytes
+from `python3 scripts/ticket_digest.py --next` with a bounded authenticated
+GitHub read; otherwise that network-dependent field is `None`. The nightly
+workflow supplies a read-only token for this optional measurement. A failed
+fetch is reported as unmeasured, not zero bytes.
 `docs/complexity-baseline.json` is a ratchet: `tests/test_complexity_budget.py`
 fails only on unexplained growth (total +10%, a module +10%, a new module
 over 1,200 lines). If growth is justified, refresh with `--write-baseline` and
