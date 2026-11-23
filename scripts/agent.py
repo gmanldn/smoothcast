@@ -501,6 +501,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
     if git("status", "--porcelain", "--untracked-files=no").strip():
         print("tracked files are uncommitted: commit them first (stage by name).")
         return 2
+    checked_base = ""  # origin/develop at the moment our checks last passed
     for attempt in range(1, 4):
         git("fetch", "-q", "origin")
         before = git("rev-parse", "HEAD").strip()
@@ -528,7 +529,13 @@ def cmd_ship(a: argparse.Namespace) -> int:
             print("VERSION INTEGRITY FAILED; not pushing develop.")
             print((version_guard.stdout + version_guard.stderr)[-1500:])
             return 6
-        if not a.skip_checks:
+        recheck = True
+        if checked_base:  # a contended push: re-test only if the newcomers touched our files
+            incoming = set(git("diff", "--name-only", checked_base, "origin/develop").split())
+            recheck = bool(incoming & (set(changed) | SHARED))
+            if not recheck:
+                print(f"  {len(incoming)} incoming file(s) do not touch yours; reusing the earlier checks")
+        if not a.skip_checks and recheck:
             tests = {str(p.relative_to(ROOT)): p.read_text(errors="replace")
                      for p in (ROOT / "tests").glob("test_*.py")}
             for label, cmd in plan_checks(changed, tests):
@@ -546,7 +553,8 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         return 1
                     print(f"  NOT yours: {len(ids)} test(s) already fail on "
                           f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
-        else:
+            checked_base = git("rev-parse", "origin/develop").strip()
+        elif a.skip_checks:
             print("  checks skipped by request; this push is UNVERIFIED")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
