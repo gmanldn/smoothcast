@@ -499,3 +499,41 @@ navLink=null;
 assert.doesNotThrow(()=>showNetworkNavigation(true));
 """
     subprocess.run(["node", "-"], input=fn + harness, check=True, text=True, timeout=10)
+
+
+def test_optional_panels_are_dashboard_children_and_not_login_siblings():
+    """The actual served page must place dynamic sections inside the room grid."""
+    from html.parser import HTMLParser
+
+    class Parents(HTMLParser):
+        void = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+                "link", "meta", "param", "source", "track", "wbr"}
+
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+            self.parents = {}
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            element_id = attrs.get("id")
+            if element_id:
+                self.parents[element_id] = self.stack[-1][1] if self.stack else None
+            if tag not in self.void:
+                self.stack.append((tag, element_id))
+
+        def handle_endtag(self, tag):
+            for index in range(len(self.stack) - 1, -1, -1):
+                if self.stack[index][0] == tag:
+                    del self.stack[index:]
+                    break
+
+    document = Parents()
+    document.feed(portal._page().decode("utf-8"))
+    assert document.parents["screensPanel"] == "dashboard"
+    assert document.parents["meshPanel"] == "dashboard"
+    assert document.parents["shortcutsHelp"] is None
+    assert document.parents["uploadCard"] == "dashboard"
+    assert document.parents["login"] == "main"
+    assert '#dashboard>#screensPanel' in portal._HTML
+    assert '#dashboard>#meshPanel' in portal._HTML
