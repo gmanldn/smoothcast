@@ -18,7 +18,7 @@ GTK-free. Design: docs/MESH_DESIGN.md ("Web clients").
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import hashlib
 import json
 import secrets
@@ -80,8 +80,9 @@ def screen_targets(screens: Iterable[dict[str, Any]]) -> tuple[mm.TargetObservat
     return tuple(sorted(targets, key=lambda t: t.id))[:mm.MAX_TARGETS]
 
 
-def guest_snapshot(view: MeshView) -> dict[str, Any]:
+def guest_snapshot(view: MeshView, primary: str | None = None) -> dict[str, Any]:
     return {"generation": view.generation, "local": view.local_id,
+            "primary": primary or "",
             "nodes": [mm.guest_tier(record) for record in view.nodes]}
 
 
@@ -131,8 +132,10 @@ class Stream:
 
 class MeshFeed:
     def __init__(self, publisher: ViewPublisher, *, generation: str | None = None,
-                 history: int = RING, max_streams: int = MAX_STREAMS) -> None:
+                 history: int = RING, max_streams: int = MAX_STREAMS,
+                 primary: Callable[[], str | None] = lambda: None) -> None:
         self._publisher = publisher
+        self._primary = primary
         self.generation = generation or secrets.token_hex(4)
         self._cond = threading.Condition(threading.RLock())
         self._ring: deque[tuple[int, bytes]] = deque(maxlen=max(2, history))
@@ -149,7 +152,9 @@ class MeshFeed:
         with self._cond:
             for item in self._sub.poll():
                 if isinstance(item, Delta):
-                    self._append("delta", _delta_wire(item, self._publisher.view))
+                    body = _delta_wire(item, self._publisher.view)
+                    body["primary"] = self._primary() or ""
+                    self._append("delta", body)
                 else:
                     self._n += 0            # a snapshot request is served on demand
             self._cond.notify_all()
@@ -161,7 +166,8 @@ class MeshFeed:
         self._ring.append((self._n, frame))
 
     def _snapshot_frame(self) -> bytes:
-        data = json.dumps({"type": "snapshot", **guest_snapshot(self._publisher.view)},
+        data = json.dumps({"type": "snapshot",
+                           **guest_snapshot(self._publisher.view, self._primary())},
                           separators=(",", ":"))
         return (f"id: {self.generation}:{self._n}\nevent: mesh\ndata: {data}\n\n").encode()
 

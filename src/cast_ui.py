@@ -669,6 +669,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         body.append(address_row)
         self.portal_qr_button = Gtk.MenuButton(label="Show QR code", sensitive=False)
         address_row.append(self.portal_qr_button)
+        import mesh_ui
+        address_row.append(mesh_ui.build_button(self))
         popover = Gtk.Popover()
         self.portal_qr_button.set_popover(popover)
         qr_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)

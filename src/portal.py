@@ -34,6 +34,7 @@ import portal_room
 import portal_screen_page
 import portal_media
 import portal_mesh_http
+import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
 import shortcut_map
@@ -138,13 +139,15 @@ def valid_friendly_name(value: str) -> bool:
 def page_build() -> str:
     """Version plus the served page's hash, never a duplicated release constant."""
     return version.__version__ + "-" + hashlib.sha256(
-        (_HTML + portal_screen_page.panel_html() + shortcut_map.browser_json()).encode("utf-8")
+        (_HTML + portal_screen_page.panel_html() + portal_mesh_panel.panel_html()
+         + shortcut_map.browser_json()).encode("utf-8")
     ).hexdigest()[:12]
 
 
 def _page() -> bytes:
     # Replace just the main closing tag; the Screens panel is part of the build.
-    markup = _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1)
+    markup = _HTML.replace("</main>", portal_screen_page.panel_html()
+                           + portal_mesh_panel.panel_html() + "</main>", 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())).encode("utf-8")
@@ -182,6 +185,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.library_search_stream: Callable | None = None
         self.library_replication = None
         self.mesh_files = None
+        self.nodes_provider: Callable | None = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -236,7 +240,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.room.expire_inactive(self.clock())
 
     def host_allowed(self, host: str) -> bool:
-        return bool(host) and host.lower() in self._allowed_hosts
+        return bool(host) and (host.lower() in self._allowed_hosts or lan_guard.is_entry_host(host))
 
     def origin_allowed(self, origin: str, host: str) -> bool:
         try:
@@ -554,6 +558,25 @@ class _Handler(BaseHTTPRequestHandler):
             payload, "gzip" in self.headers.get("Accept-Encoding", ""))
         return self._send(status, body, extra_headers={**extra, **headers})
 
+    def _nodes_page(self) -> None:
+        """Fallback entry page: live SmoothCast computers, for networks without mDNS."""
+        import html
+        provider = getattr(self.server, "nodes_provider", None)
+        try:
+            nodes = list(provider()) if provider else []
+        except Exception:
+            nodes = []
+        rows = "".join(
+            f'<li><a href="{html.escape(str(n.get("url", "")), quote=True)}">'
+            f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
+            for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
+        mine = html.escape(self.server.hostname_label or "This computer")
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,"
+                "initial-scale=1'><title>SmoothCast computers</title><h1>SmoothCast in this house</h1>"
+                "<p>Open any computer to join the room.</p><ul><li><a href='/'>" + mine
+                + " (this one)</a></li>" + rows + "</ul>")
+        return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
+
     def _mesh_file(self, path: str, *, head: bool) -> None:
         """Ranged media bytes by content key, served locally or proxied (#422)."""
         files = getattr(self.server, "mesh_files", None)
@@ -705,6 +728,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if path == "/nodes":
+            return self._nodes_page()
         if path == "/api/openapi.json":
             return self._send(200, api_spec.spec())
         if path == "/silence.wav":

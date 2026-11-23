@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 
+import entry_name
 import mesh_service
 from version import __version__
 
@@ -27,6 +28,10 @@ def start(window: object, address: str) -> None:
             version=__version__, room_port=getattr(portal, "port", None),
             strict=settings["strict"], seeds=settings["seeds"])
         service = mesh_service.MeshService(config)
+        entry = entry_name.EntryName(address, int(getattr(portal, "port", 0) or 0))
+        window._entry_name = entry                   # type: ignore[attr-defined]
+        service.primary_listeners.append(
+            lambda change: entry.apply(change.new == service.node_id))
         window._mesh = service                       # type: ignore[attr-defined]
         window._mesh_sig = None                      # type: ignore[attr-defined]
 
@@ -47,6 +52,10 @@ def stop(window: object) -> None:
     try:
         service = getattr(window, "_mesh", None)
         window._mesh = None                          # type: ignore[attr-defined]
+        entry = getattr(window, "_entry_name", None)
+        window._entry_name = None                    # type: ignore[attr-defined]
+        if entry is not None:
+            threading.Thread(target=entry.close, name="smoothcast-entry-stop", daemon=True).start()
         if service is None:
             return
         portal = getattr(window, "_portal", None)
@@ -58,8 +67,18 @@ def stop(window: object) -> None:
         return
 
 
+def refresh_view(window: object) -> None:
+    """Refresh the Network popover (GTK thread); never raises."""
+    try:
+        import mesh_ui
+        mesh_ui.refresh(window)
+    except Exception:
+        return
+
+
 def push_clients(window: object) -> None:
     """Publish the room roster and ready screens when they change; never raises."""
+    refresh_view(window)
     service = getattr(window, "_mesh", None)
     portal = getattr(window, "_portal", None)
     if service is None or portal is None or service.state != "running":

@@ -112,6 +112,7 @@ class MeshService:
         self.state = "stopped"          # stopped | running | disabled | unavailable
         self.error = ""
         self.errors = 0
+        self.primary_listeners: list = []   # called with each PrimaryChanged (#419)
         self.started_at = 0.0
         self.first_peer_after: float | None = None
         self._screens: list[dict[str, Any]] = []
@@ -182,7 +183,7 @@ class MeshService:
             prober=cfg.prober)
         self.cache = mesh_cache.MeshCache(cfg.cache_path or cfg.state_dir / "mesh_cache.sqlite")
         self.cache.open()
-        self.feed = mesh_clients.MeshFeed(self.publisher)
+        self.feed = mesh_clients.MeshFeed(self.publisher, primary=lambda: self.roles.primary)
         self.started_at = time.monotonic()
         loop.start()
         loop.call_soon_threadsafe(self._start_components)
@@ -283,6 +284,11 @@ class MeshService:
         self.publisher.changed()
 
     def _on_primary(self, change: mesh_roles.PrimaryChanged) -> None:
+        for listener in list(getattr(self, "primary_listeners", [])):
+            try:
+                listener(change)
+            except Exception:
+                self.errors += 1
         if self.cache is not None and change.new:
             try:
                 self.cache.set_last_primary(change.new)

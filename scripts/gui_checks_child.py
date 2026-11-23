@@ -699,7 +699,50 @@ def side_panel(app, window) -> None:
               f"bottom={bottom} viewport={window.page_scroller.get_height()}")
 
 
-SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
+def network_view(app, window) -> None:
+    """The Network popover tracks a mesh view in place, with text states (#403)."""
+    import mesh_model as mm
+    import mesh_state
+    import mesh_ui
+    import mesh_view_model as vm
+    popover = window._mesh_ui
+    check("the Network button exists and is hidden while no mesh runs",
+          popover.button.get_parent() is not None and not popover.button.get_visible())
+
+    def rec(node, name, **kw):
+        return mm.NodeRecord(node_id=node, boot_id="c" * 32, name=name, version="1.2.0", **kw)
+
+    me, other = "1" * 32, "a" * 32
+    tv = mm.TargetObservation("tv1", "cast", "Lounge TV", model="Chromecast")
+    first = vm.build_model(mesh_state.MeshView(1, me, (
+        rec(me, "This PC", targets=(tv,)), rec(other, "Study", targets=(tv,)))), primary_id=other)
+    popover.show(first)
+    check("a running mesh shows the button", popover.button.get_visible())
+    check("devices list has both rows with text state",
+          set(popover.sections["nodes"].rows) == {f"node:{me}", f"node:{other}"}
+          and popover.sections["nodes"].rows[f"node:{other}"][1]["state"].get_text() == "Online")
+    check("primary badge is spelled out in text",
+          "Primary" in popover.sections["nodes"].rows[f"node:{other}"][1]["title"].get_text())
+    check("summary is readable", popover.summary.get_text() == first.summary, popover.summary.get_text())
+    row_before = popover.sections["targets"].rows["target:tv1"][0]
+    second = vm.build_model(mesh_state.MeshView(2, me, (
+        rec(me, "This PC", targets=(mm.TargetObservation("tv1", "cast", "Lounge TV", state="busy"),)),
+        rec(other, "Study", targets=(mm.TargetObservation("tv1", "cast", "Lounge TV", state="busy"),)))))
+    popover.show(second)
+    row_after = popover.sections["targets"].rows["target:tv1"][0]
+    check("a state change updates the row in place (same widget, no rebuild)", row_before is row_after)
+    check("the busy target explains itself",
+          popover.sections["targets"].rows["target:tv1"][1]["why"].get_visible())
+    popover.show(vm.build_model(mesh_state.MeshView(3, me, (rec(me, "This PC"),))))
+    check("a departed target row is removed", not popover.sections["targets"].rows)
+    check("lonely mesh shows the searching hint", popover.hint.get_visible(), popover.hint.get_text())
+    popover.show(None)
+    check("stopping the mesh hides the button again", not popover.button.get_visible())
+    mesh_ui.refresh(window)
+    check("refresh with no service is a harmless no-op", not popover.button.get_visible())
+
+
+SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,

@@ -26,7 +26,7 @@ def route(handler, method: str, path: str) -> bool:
         return True
     if path == "/api/mesh":
         view = feed._publisher.view
-        handler._send(200, {"ok": True, "mesh": mesh_clients.guest_snapshot(view),
+        handler._send(200, {"ok": True, "mesh": mesh_clients.guest_snapshot(view, feed._primary()),
                             "event": f"{feed.generation}:{feed.last_event}"})
         return True
     key = handler.server._session_key(handler._cookie_token() or "")

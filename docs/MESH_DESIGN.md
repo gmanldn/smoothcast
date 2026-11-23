@@ -25,7 +25,7 @@ ticket disagree, the ticket's acceptance criteria win; update both.
 | Cache, web clients and live feed | `src/mesh_cache.py`, `src/mesh_clients.py`, `src/portal_mesh_http.py` | done (#401, #402) |
 | Abuse resistance | `src/mesh_policy.py`, `docs/MESH_SECURITY.md` | done (#404) |
 | Runtime, HTTP request channel, app hook | `src/mesh_service.py`, `src/mesh_http.py`, `src/cast_mesh.py` | done (#405), **off by default** |
-| Network UI (desktop + browser) | M10 | planned (#403) |
+| Network UI (desktop popover + browser card) | `src/mesh_view_model.py`, `src/mesh_ui.py`, `src/portal_mesh_panel.py` | done (#403) |
 
 Deviations from the sketch below, decided while implementing: indirect probes are
 *witness* probes (a helper vouches from beats it heard first-hand, because the

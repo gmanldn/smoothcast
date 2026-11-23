@@ -35,3 +35,9 @@ def allowed_hosts(bind_ips: list[str], port: int, names: list[str] | tuple[str, 
             hosts.add(f"{label}:{port}")
             hosts.add(label)
     return hosts
+
+
+def is_entry_host(host: str) -> bool:
+    """``smoothcast.local`` and its numbered fallbacks (``smoothcast-2.local``), with optional port."""
+    import re
+    return re.fullmatch(r"smoothcast(?:-[2-9])?\.local(?::\d{1,5})?", str(host).lower().rstrip(".")) is not None
