@@ -10,6 +10,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 import pathlib
 
+from async_jobs import UserFacingError
 from utils import pretty_title
 import threading
 
@@ -144,8 +145,8 @@ class SessionMixin:
             effective_subs_path, effective_burn = streamer.audio_cast_options(
                 media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
-                raise streamer.StreamError(
-                    "The selected audio track is no longer in this film; choose Auto or another track"
+                raise UserFacingError(
+                    "The selected audio track is no longer in this film. Choose Auto or another track."
                 )
             music_enabled = streamer.schedule_music_analysis(
                 path, media, audio_track, self, cfg)
@@ -155,8 +156,8 @@ class SessionMixin:
                 requested = saved.get(str(path), -1) if isinstance(saved, dict) and subs_mode == "embedded" else -1
                 embedded = streamer.preferred_embedded_subtitle(media, requested)
                 if subs_mode == "embedded" and embedded is None:
-                    raise streamer.StreamError(
-                        "Selected embedded subtitle track is unavailable or unsupported"
+                    raise UserFacingError(
+                        "The selected subtitle track is unavailable. Choose another track or turn subtitles off."
                     )
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.
@@ -176,10 +177,15 @@ class SessionMixin:
                     self._preflight_ok.add(fingerprint)
             if renderer is not None:
                 if speed != 1.0 or rotation != 0:
-                    raise dlna.DlnaError(
-                        "DLNA currently supports normal speed and unrotated video; reset these settings"
+                    raise UserFacingError(
+                        "This receiver needs normal speed and unrotated video. Reset those settings and try again."
                     )
-                media_type = dlna.negotiate_media_type(renderer)
+                try:
+                    media_type = dlna.negotiate_media_type(renderer)
+                except dlna.DlnaError as exc:
+                    raise UserFacingError(
+                        "The receiver advertises no supported MP4 or MPEG-TS format. Choose another receiver."
+                    ) from exc
                 if cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
@@ -188,7 +194,7 @@ class SessionMixin:
                 raise streamer.StreamError("Cast cancelled before replacing current playback")
             if (prewarm_fingerprint is not None and
                     queue_metadata.file_fingerprint(path) != prewarm_fingerprint):
-                raise streamer.StreamError("The queued film changed after prewarming; retry the cast")
+                raise UserFacingError("The queued film changed. Try casting it again.")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
             if cancel.is_set():

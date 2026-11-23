@@ -21,6 +21,8 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+from async_jobs import UserFacingError
+
 import audio_downmix
 import cache_policy
 import cache_privacy
@@ -414,6 +416,10 @@ class StreamError(RuntimeError):
     pass
 
 
+class StreamPreparationError(StreamError, UserFacingError):
+    """An expected playback preparation failure with copy safe to display."""
+
+
 @dataclass(frozen=True)
 class AudioTrack:
     """One audio stream, indexed relative to other audio tracks (0:a:N)."""
@@ -469,9 +475,9 @@ def audio_cast_options(media: "MediaInfo", subs_mode: str,
     if getattr(media, "is_audio_only", False) is not True:
         return subs_path, burn
     if subs_mode in {"pick", "embedded"}:
-        raise StreamError("Audio-only media does not support subtitles; choose Auto or Off")
+        raise StreamPreparationError("Audio-only media does not support subtitles; choose Auto or Off")
     if dlna:
-        raise StreamError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
+        raise StreamPreparationError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
     return None, False
 
 
@@ -928,7 +934,7 @@ def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: floa
             except OSError:
                 pass
             proc.communicate()
-            raise StreamError("ffprobe timed out while reading this file")
+            raise StreamPreparationError("ffprobe timed out while reading this file")
         try:
             stdout, stderr = proc.communicate(timeout=min(0.1, remaining))
             return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
@@ -948,13 +954,13 @@ def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> Med
         result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
                   subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
-        raise StreamError("ffprobe is not installed or not on PATH") from exc
+        raise StreamPreparationError("ffprobe is not installed or not on PATH") from exc
     except subprocess.TimeoutExpired as exc:
-        raise StreamError("ffprobe timed out while reading this file") from exc
+        raise StreamPreparationError("ffprobe timed out while reading this file") from exc
     except OSError as exc:
         raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
-        raise StreamError("ffprobe could not read this file")
+        raise StreamPreparationError("ffprobe could not read this file")
     try:
         data = json.loads(result.stdout or "{}")
         if not isinstance(data, dict):
@@ -1735,7 +1741,7 @@ class Session:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
             if track is None or not track.is_supported:
-                raise StreamError("Selected embedded subtitle track is unavailable or unsupported")
+                raise StreamPreparationError("Selected embedded subtitle track is unavailable or unsupported")
             bitmap_track = track if track.is_bitmap else None
             embedded_codec = track.codec if track.is_text else ""
             burn_subs = True

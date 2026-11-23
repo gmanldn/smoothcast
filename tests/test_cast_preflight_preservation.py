@@ -6,6 +6,8 @@ No receiver/network commands or live desktop are launched.
 from __future__ import annotations
 
 import pathlib
+
+from async_jobs import UserFacingError
 import textwrap
 import threading
 from types import SimpleNamespace
@@ -129,9 +131,9 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     def run(work, *, done=None, failed=None, domain):
         try:
             result = work()
-        except dlna.DlnaError as exc:
+        except UserFacingError as exc:
             if failed is not None:
-                failed(str(exc))
+                failed(exc.user_message)
         else:
             if done is not None:
                 done(result)
@@ -141,6 +143,7 @@ def test_incompatible_dlna_formats_preserve_previous_cast(monkeypatch):
     w, previous = window(device="DLNA · Living Room · 192.168.1.41", subs="off",
                          dependencies={
                              "Async": SimpleNamespace(run=run), "dlna": dlna,
+                             "UserFacingError": UserFacingError,
                              "streamer": streamer, "subtitle_style": subtitle_style,
                              "audio_delay": audio_delay, "subtitle_delay": subtitle_delay,
                          })

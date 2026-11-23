@@ -61,3 +61,8 @@ and reads gettext-wrapped templates. Use explicit user-facing reasons from
 typed errors. Keep unexpected exception details out of the displayed message.
 Run `python3 scripts/ci/ux_copy_lint.py` before committing. The checker runs in
 Verify's headless syntax lane. Dynamic messages still require review.
+
+Background jobs deliver a recovery message to the interface and send the
+exception to the private error log. For an expected failure with an audited
+message, raise `UserFacingError` with the copy to display. Put diagnostic
+details in its `detail` argument or chain the original exception.

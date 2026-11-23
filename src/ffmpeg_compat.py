@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 import subprocess
 
+from async_jobs import UserFacingError
+
 
 MINIMUM = (5, 0)
 _HEADER = re.compile(
@@ -20,7 +22,7 @@ _HEADER = re.compile(
 )
 
 
-class FFmpegVersionError(RuntimeError):
+class FFmpegVersionError(UserFacingError):
     """FFmpeg is missing, too old or reports an unrecognised build version."""
 
 

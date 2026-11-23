@@ -21,6 +21,13 @@ DEFAULT_LIMITS = {
     "background": (2, 8),
 }
 _STOP = object()
+_FAILURE_MESSAGES = {
+    "transport": "Check that the receiver is connected, then try again.",
+    "status": "Could not check the receiver. Check its power and network connection.",
+    "discovery": "Could not scan for receivers. Check your network and scan again.",
+    "media": "Check that the media file is available and try again.",
+}
+_DEFAULT_FAILURE = "SmoothCast could not complete the action. Try again."
 
 
 @dataclass(frozen=True)
@@ -35,11 +42,21 @@ class WorkRejected(RuntimeError):
     """A bounded domain cannot accept another task right now."""
 
 
+class UserFacingError(RuntimeError):
+    """An expected failure with copy reviewed for display and optional private detail."""
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message if not detail else f"{message} {detail}")
+        self.user_message = message
+
+
 class WorkDomains:
     """Lazily start bounded, named daemon workers per independent I/O domain.
 
     `dispatch(callback)` must enqueue onto the GTK main context in production.
     `valid()` is evaluated *on that context*, immediately before delivery.
+    Failure callbacks receive display-safe copy. Private exception details are
+    available to the error logger.
     Shutdown cancels queued jobs and discards late results, without blocking
     on media/receiver subprocesses that may still be running.
     """
@@ -107,7 +124,10 @@ class WorkDomains:
                     value = job.work()
                 except Exception as exc:
                     self._log(f"Async {domain} work failed", exc_info=True)
-                    self._schedule(job.failed, str(exc), job.valid)
+                    expected = exc if isinstance(exc, UserFacingError) else exc.__cause__
+                    message = (expected.user_message if isinstance(expected, UserFacingError)
+                               else _FAILURE_MESSAGES.get(domain, _DEFAULT_FAILURE))
+                    self._schedule(job.failed, message, job.valid)
                 else:
                     self._schedule(job.done, value, job.valid)
             finally:

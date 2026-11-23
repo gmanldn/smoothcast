@@ -178,6 +178,21 @@ def test_status_commands_and_direct_media_use_the_persistent_cast():
     backend.close()
 
 
+def test_receiver_exception_details_stay_out_of_command_results():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    try:
+        with mock.patch("pychromecast_backend.log_backend_failure") as log:
+            cast.media_controller.pause = mock.Mock(side_effect=OSError("/private/media/film.mkv"))
+            assert backend.command("Living Room", "pause") == (
+                False, "The receiver command failed. Check the receiver connection and try again.",
+            )
+            log.assert_called_once_with("Google Cast receiver command failed", exc_info=True)
+    finally:
+        backend.close()
+
+
 def test_fmp4_hls_cast_declares_segment_formats_to_receiver():
     cast = FakeCast()
     backend, _browser = discovered_backend([cast])

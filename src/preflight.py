@@ -13,13 +13,15 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
+from async_jobs import UserFacingError
+
 import subtitle_encoding
 
 if TYPE_CHECKING:
     import streamer
 
 
-class PreflightError(RuntimeError):
+class PreflightError(UserFacingError):
     """Cannot safely decode the requested source/transforms."""
 
 
@@ -79,10 +81,13 @@ def check_media(
             except subprocess.TimeoutExpired as exc:
                 raise PreflightError("Audio decoder check timed out") from exc
             except OSError as exc:
-                raise PreflightError(f"FFmpeg decoder check could not start: {exc}") from exc
+                raise PreflightError("Could not start the decoder. Check that FFmpeg is installed.") from exc
             if result.returncode != 0:
                 tail = " ".join((result.stderr or "").splitlines()[-3:]).strip()
-                raise PreflightError(f"Audio decoder check failed: {tail[:280] or 'FFmpeg error'}")
+                raise PreflightError(
+                    "Could not decode the audio in this file. Choose a different track or file.",
+                    detail=tail[:280],
+                )
             try:
                 size = output.stat().st_size
             except OSError:
@@ -122,7 +127,10 @@ def check_media(
                         subs_file, scratch / "preflight-subs.srt",
                     )
                 except subtitle_encoding.SubtitleEncodingError as exc:
-                    raise PreflightError(f"Subtitle decoder: {exc}") from exc
+                    raise PreflightError(
+                        "Could not read the subtitles. Choose a valid subtitle file.",
+                        detail=str(exc),
+                    ) from exc
         bitmap_subtitle = bool(embedded_track and embedded_track.is_bitmap)
         if embedded_subtitle_index is not None and not bitmap_subtitle:
             video_filters.append(
@@ -162,11 +170,14 @@ def check_media(
         except subprocess.TimeoutExpired as exc:
             raise PreflightError("MKV decoder check timed out") from exc
         except OSError as exc:
-            raise PreflightError(f"FFmpeg decoder check could not start: {exc}") from exc
+            raise PreflightError("Could not start the decoder. Check that FFmpeg is installed.") from exc
         if result.returncode != 0:
-            # Show only a bounded diagnostic tail, not a huge FFmpeg dump.
+            # Retain a bounded FFmpeg tail for diagnostics.
             tail = " ".join((result.stderr or "").splitlines()[-3:]).strip()
-            raise PreflightError(f"MKV decoder check failed: {tail[:280] or 'FFmpeg error'}")
+            raise PreflightError(
+                "Could not decode the video in this file. Choose a different track or file.",
+                detail=tail[:280],
+            )
         try:
             size = output.stat().st_size
         except OSError:

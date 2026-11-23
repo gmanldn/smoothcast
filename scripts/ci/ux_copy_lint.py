@@ -79,7 +79,8 @@ def _messages(call: ast.Call) -> Iterator[tuple[str, ast.AST]]:
     name = func.id if isinstance(func, ast.Name) else (
         func.attr if isinstance(func, ast.Attribute) else "")
     keywords = {kw.arg: kw.value for kw in call.keywords}
-    if name == "FramePositionError" and call.args:
+    if name in {"FramePositionError", "UserFacingError", "PreflightError",
+                "FFmpegVersionError", "StreamPreparationError", "TonemapUnavailable"} and call.args:
         yield "error", call.args[0]
         return
     if name in ERROR_TYPES:

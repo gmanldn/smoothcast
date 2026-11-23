@@ -9,6 +9,8 @@ from functools import lru_cache
 import re
 import subprocess
 
+from async_jobs import UserFacingError
+
 # Linearise the PQ signal before Hable tone mapping, then convert gamut,
 # transfer and matrix to BT.709. Preserve the existing 8-bit 4:2:0 baseline.
 SDR_FILTER = (
@@ -18,7 +20,7 @@ SDR_FILTER = (
 )
 
 
-class TonemapUnavailable(RuntimeError):
+class TonemapUnavailable(UserFacingError):
     """FFmpeg cannot provide a safe SDR conversion for known HDR10 media."""
 
 
