@@ -41,10 +41,25 @@ ran before pushing.
 | Same files, different tickets | Each claim records the files it will edit (predicted from the ticket text, or `--files`). Another claim on any of them blocks `claim` and hides the ticket from `next`. Shared merge-friendly files (`pyproject.toml`, baselines, `verify.yml`, docs, tests) never block. |
 | Dead agents hold tickets | Leases expire: 90 min default (30–180), refreshed by `heartbeat`. Legacy free-text `Claim:` comments count too (45 min) and end on "Claim released". |
 | Choosing work | `next` scores each open ticket: tier (`now` 300, `next` 200, `later` 100) + priority (P0 150 … P3 0) + `agent-ready` + "already has shipped slices: finish it", minus recent churn (files changed on `develop` in the last 45 min), minus unmet prose dependencies, minus stale `in-flight` labels. Your own live claim always ranks first. `epic`, `icebox`, `needs-human` and `needs-split` are skipped. |
-| Fast direct commits | `ship --message "..."` commits tracked edits only in a private coordinator-created worktree; add `--files` for new paths. Version integrity always runs; `--skip-checks` skips only targeted tests, with truthful unverified evidence. |
-| Push races | `ship` fetches, rebases only your unpushed commits onto `origin/develop`, re-runs the checks, pushes `HEAD:develop`, and on rejection repeats up to 3 times. A rebase conflict aborts cleanly (exit 4); resolve by hand. |
+| Fast direct commits | `ship --message "..."` commits tracked edits in a private worktree, allocates the next PATCH in an isolated version-only commit, and fast-forward pushes. Use `--files` for new paths. `--skip-checks` skips targeted tests only: version integrity is mandatory. |
+| Push races | On rejection, `ship` verifies and removes **only its own unpublished PATCH commit**, fetches/rebases the original code, reallocates the next number and retries up to five attempts; never force-pushes or changes main. A real code conflict stops safely for handover. |
 | Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
 | Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
+
+## Per-shipment PATCH identity and its limits
+
+Every successful `agent.py ship` from an agent-owned worktree assigns one
+monotonically increasing develop PATCH **per shipped slice**, even with
+`--skip-checks`. The exact code SHA remains available and the pushed version
+commit contains `[sc-auto-patch]` and the issue number. A retry cannot
+reassign a published version: the tool first checks ancestry and may remove
+only its own unpublished, version-only tail commit after a contested push.
+
+**Limits:** a raw `git push`, a direct GitHub Contents API edit or agents that
+avoid the coordinator can bypass the allocator. Multiple independent ships
+for one issue receive multiple PATCH values. The stronger atomic
+**exactly-once per issue** guarantee requires server-side enforcement (#583).
+Do not claim it exists. `main` remains exclusively owner-controlled.
 
 ## Tiers
 
