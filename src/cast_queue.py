@@ -719,6 +719,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             has_session=self.session is not None, busy=self.busy,
         ):
             self._maybe_finished()
+        self._join_slate_observe(info)
         self._refresh_controls()
         self._update_header_subtitle()
 
@@ -809,7 +810,8 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
     def _detect_external(self) -> None:
         info = self.device_info
-        idle = self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
+        idle = (self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
+                or self._join_slate_showing(info))  # our own idle slate is not user playback (#420)
         if idle:
             if self.external:
                 self.external = False

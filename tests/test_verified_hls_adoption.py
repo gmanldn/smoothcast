@@ -95,6 +95,7 @@ def window(*names):
                          "_console", "toast", "_cast_failed", "_record_watch"):
                 setattr(self, name, mock.Mock())
             self._finished_handled = False
+            self._join_slate_showing = lambda _info: False  # idle slate is not user playback (#420)
 
         def _device(self):
             return self.cfg["device"]

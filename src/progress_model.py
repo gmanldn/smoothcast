@@ -26,6 +26,7 @@ class ReceiverInfo(TypedDict, total=False):
     idle_reason: str
     media_session_id: int
     error_code: int
+    app_id: str  # running Cast app; "" = none. Absent = backend cannot tell.
 
 
 def _number(raw: object) -> float | None:

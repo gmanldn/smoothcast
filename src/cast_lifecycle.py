@@ -48,6 +48,7 @@ class LifecycleMixin:
         plan.run("metrics", lambda: reliability_metrics.finish_active(self, "interrupted", Async.run))
         plan.run("background_work", lambda: (
             getattr(self, "_cancel_music_import", lambda: None)(), self._cancel_queue_prewarm()))
+        plan.run("join_slate", getattr(self, "_join_slate_clear_now", bool), deadline=0.4, threaded=True)
         plan.run("portal", self._stop_portal)
         plan.run("house_services", self._stop_house_services, deadline=0.4, threaded=True)
 

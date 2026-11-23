@@ -37,7 +37,11 @@ class _MediaStatusListener:
         self.identifier = identifier
 
     def new_media_status(self, status: Any) -> None:
-        self.backend._publish(self.identifier, self.backend._status_dict(status))
+        with self.backend._lock:
+            cast = self.backend._casts.get(self.identifier)
+        # Keep the running app id on media-status publishes too (#420).
+        cast_status = getattr(cast, "status", None) if cast is not None else None
+        self.backend._publish(self.identifier, self.backend._status_dict(status, cast_status))
 
     def load_media_failed(self, _queue_item_id: int, error_code: int) -> None:
         self.backend._publish(
@@ -374,6 +378,11 @@ class PyChromecastBackend:
                 status["volume_level"] = level
             if muted is not None:
                 status["volume_muted"] = bool(muted)
+            # Real CastStatus always has app_id (None = no app). A status without
+            # the attribute stays "unknown" so idle-slate checks fail closed (#420).
+            if hasattr(cast_status, "app_id"):
+                app_id = cast_status.app_id
+                status["app_id"] = app_id if isinstance(app_id, str) else ""
         return status
 
     def _publish(self, identifier: str, status: ReceiverInfo) -> None:

@@ -29,6 +29,7 @@ import responsive_layout
 import gui_test_safety
 from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
+from join_slate_ui import JoinSlateMixin
 import version
 import error_log
 import desktop_failure_notice
@@ -49,7 +50,7 @@ from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app

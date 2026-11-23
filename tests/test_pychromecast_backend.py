@@ -322,3 +322,24 @@ def test_environment_flag_selects_backend_during_fresh_import():
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_running_app_id_is_reported_and_unknown_stays_absent():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    updates = []
+    backend.subscribe("Living Room", updates.append)
+    media = SimpleNamespace(player_state="IDLE", content_id=None, idle_reason=None)
+
+    cast.status = SimpleNamespace(volume_level=0.6, volume_muted=False, app_id=None)
+    cast.media_controller.listener.new_media_status(media)
+    cast.status = SimpleNamespace(volume_level=0.6, volume_muted=False, app_id="233637DE")
+    cast.status_listener.new_cast_status(cast.status)
+    cast.status = SimpleNamespace(volume_level=0.6, volume_muted=False)
+    cast.media_controller.listener.new_media_status(media)
+
+    assert updates[0]["app_id"] == ""          # no app running
+    assert updates[1]["app_id"] == "233637DE"  # someone else's app
+    assert "app_id" not in updates[2]          # cannot tell: fail closed
+    backend.close()
