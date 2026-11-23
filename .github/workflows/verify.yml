@@ -101,6 +101,8 @@ jobs:
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
       - name: Verify synthetic media source corpus
         run: python -m pytest -q tests/test_media_matrix_descriptions.py
+      - name: Verify Cast HLS frame-rate compatibility
+        run: python -m pytest -q tests/test_transcode_fps_cap.py
       - name: Verify bounded room activity privacy and command receipts
         run: python -m pytest -q tests/test_room_activity.py tests/test_room_activity_safety.py
 
