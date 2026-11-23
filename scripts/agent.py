@@ -592,15 +592,105 @@ def failing_on_develop(ids: list[str]) -> set[str]:
             subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=ROOT, capture_output=True)
 
 
+def commit_private_slice(a: argparse.Namespace) -> int:
+    """Optional atomic commit in an agent-owned worktree; never sweep user files."""
+    if not a.message:
+        return 0
+    task = private_task()
+    if task is None:
+        print("automatic commits require a private worktree created by agent.py start")
+        return 2
+    if a.dry_run:
+        print("--dry-run cannot be combined with --message (which creates a commit)")
+        return 2
+    if a.files:
+        paths = [p.strip() for p in a.files.split(",") if p.strip()]
+        if not paths or any(Path(p).is_absolute() or ".." in Path(p).parts
+                            or p.startswith("-") for p in paths):
+            print("--files requires safe, repository-relative paths")
+            return 2
+        staged = subprocess.run(["git", "add", "-A", "--", *paths],
+                                cwd=ROOT, capture_output=True, text=True)
+    else:
+        # Only tracked modifications are swept by default, and only in the
+        # private worktree; explicitly name new paths with --files.
+        staged = subprocess.run(["git", "add", "-u"],
+                                cwd=ROOT, capture_output=True, text=True)
+    if staged.returncode:
+        print("staging failed: " + staged.stderr.strip()[:500])
+        return 2
+    diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
+    if diff.returncode == 0:
+        print("no changes to commit; shipping any existing unpublished commits")
+        return 0
+    if diff.returncode != 1:
+        print("cannot determine staged changes; refusing to commit")
+        return 2
+    number = task["issue"]
+    message = a.message.strip()
+    if not message:
+        print("--message must be nonempty")
+        return 2
+    if not re.search(rf"(?<!\\d)#{number}(?!\\d)", message):
+        message += f" (Refs #{number})"
+    committed = subprocess.run(["git", "commit", "-m", message], cwd=ROOT,
+                               capture_output=True, text=True)
+    if committed.returncode:
+        print("commit failed: " + (committed.stderr or committed.stdout).strip()[:500])
+        return 2
+    print(f"committed private slice for #{number}")
+    return 0
+
+
+def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
+                          verification: str, next_action: str) -> None:
+    """Best-effort, idempotent evidence; never reinterpret a failed push as success."""
+    if task is None:
+        return
+    number = task["issue"]
+    marker = f"<!-- sc-ship v1 sha={sha} -->"
+    try:
+        comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+        if isinstance(comments, list) and any(
+                marker in str(c.get("body") or "") for c in comments):
+            return
+        body = (f"Progress: pushed a coherent develop slice at {sha[:12]}\\n"
+                f"Handover: {next_action or 'Review remaining issue acceptance criteria against develop'}\\n"
+                f"Commit: {sha}\\nVerification: {verification}\\n"
+                f"Files: {', '.join(changed[:20]) or 'see commit'}\\n{marker}")
+        posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments",
+                    "-f", f"body={body}")
+        if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+            raise td.DigestError("GitHub did not confirm ship handover")
+    except td.DigestError as exc:
+        print(f"WARNING: develop commit {sha[:12]} landed, but issue handover failed: {exc}")
+
+
 def cmd_ship(a: argparse.Namespace) -> int:
+    result = commit_private_slice(a)
+    if result:
+        return result
+    task = private_task()
     if git("status", "--porcelain", "--untracked-files=no").strip():
         print("tracked files are uncommitted: commit them first (stage by name).")
         return 2
     checked_base = ""  # origin/develop at the moment our checks last passed
-    for attempt in range(1, 4):
-        git("fetch", "-q", "origin")
+    checks_run: list[str] = []
+    for attempt in range(1, 6):
+        git("fetch", "-q", "origin", "develop")
+        remote_before = git("rev-parse", "origin/develop").strip()
+        if task is not None:
+            # Fast feedback when an issue was closed while the agent worked.
+            try:
+                state = gh(f"repos/{REPO}/issues/{task['issue']}")
+            except td.DigestError as exc:
+                print(f"ticket freshness check failed: {exc}; refusing unreviewed push")
+                return 3
+            if not isinstance(state, dict) or state.get("state") != "open":
+                print(f"issue #{task['issue']} is no longer open; review latest state before shipping")
+                return 3
         before = git("rev-parse", "HEAD").strip()
-        r = subprocess.run(["git", "rebase", "origin/develop"], cwd=ROOT, capture_output=True, text=True)
+        r = subprocess.run(["git", "-c", "rebase.autoStash=false", "rebase", "origin/develop"], cwd=ROOT, capture_output=True, text=True)
         if r.returncode:
             conflicted = git("diff", "--name-only", "--diff-filter=U", check=False).split()
             git("rebase", "--abort", check=False)
@@ -648,20 +738,42 @@ def cmd_ship(a: argparse.Namespace) -> int:
                         return 1
                     print(f"  NOT yours: {len(ids)} test(s) already fail on "
                           f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
+                else:
+                    checks_run.append(label)
             checked_base = git("rev-parse", "origin/develop").strip()
         elif a.skip_checks:
             print("  checks skipped by request; this push is UNVERIFIED")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
-        push = subprocess.run(["git", "push", "origin", "HEAD:develop"], cwd=ROOT, capture_output=True, text=True)
-        if push.returncode == 0:
-            sha = git("rev-parse", "--short", "HEAD").strip()
-            print(f"pushed {sha} to develop (attempt {attempt}). Next: agent.py done N --why ... "
-                  "| CI is coalesced; do not poll, check `agent.py board` later.")
-            return 0
-        print(f"push rejected (someone pushed first); rebasing again [{attempt}/3]")
-    print("could not push after 3 attempts; inspect `git fetch && git log HEAD..origin/develop`.")
+        push = subprocess.run(["git", "push", "origin", "HEAD:develop"],
+                              cwd=ROOT, capture_output=True, text=True)
+        sha = git("rev-parse", "HEAD").strip()
+        if push.returncode:
+            # A lost acknowledgement after a successful remote push is not a
+            # reason to replay commits. Fetch and inspect ancestry first.
+            fetch = subprocess.run(["git", "fetch", "-q", "origin", "develop"],
+                                   cwd=ROOT, capture_output=True, text=True)
+            if fetch.returncode:
+                print("push outcome uncertain; remote fetch failed. Do not reset or retry blindly.")
+                print((push.stderr + fetch.stderr)[-700:])
+                return 5
+            remote_now = git("rev-parse", "origin/develop").strip()
+            contains = subprocess.run(["git", "merge-base", "--is-ancestor", sha, remote_now],
+                                      cwd=ROOT, capture_output=True).returncode == 0
+            if not contains and remote_now == remote_before:
+                print("push failed without a competing change: " + push.stderr.strip()[-800:])
+                return 5
+            if not contains:
+                print(f"remote advanced; safely retrying [{attempt}/5]")
+                continue
+            print("remote contains the commit: treating failed push acknowledgement as success")
+        verification = ("not run (unverified)" if a.skip_checks else
+                        (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
+        publish_ship_handover(task, sha, changed, verification, a.next)
+        print(f"pushed {sha[:12]} to develop (attempt {attempt}); {verification}")
+        return 0
+    print("could not push after 5 contested attempts; preserve worktree and inspect origin/develop")
     return 5
 
 
@@ -749,6 +861,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(fn=cmd_release)
     s = sub.add_parser("ship")
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--message", default="", help="commit tracked edits in a private worktree with this message")
+    s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
+    s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)
