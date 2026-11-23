@@ -22,7 +22,7 @@ import socket
 import threading
 import time
 from typing import Callable
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import api_spec
 import lan_guard
@@ -184,6 +184,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.status_snapshot = status_snapshot
         self.library_search: Callable | None = None
         self.library_search_stream: Callable | None = None
+        self.library_browser = None
         self.library_replication = None
         self.mesh_files = None
         self.nodes_provider: Callable | None = None
@@ -607,6 +608,29 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(exc.status, exc.message)
         self.close_connection = True
 
+    def _libraries(self) -> None:
+        """Libraries on the network: nodes and their shared folders, browsable by path (#413)."""
+        if not self._authenticated():
+            return self._error(401, "Session expired")
+        browser = getattr(self.server, "library_browser", None)
+        if browser is None:
+            return self._send(200, {"origins": []})
+        parts = urlsplit(self.path)
+        rest = parts.path[len("/api/libraries"):].strip("/")
+        if not rest:
+            return self._send(200, browser.libraries())
+        origin, _, folder = rest.partition("/")
+        query = parse_qs(parts.query)
+        try:
+            result = browser.browse(unquote(origin), unquote(folder),
+                                    (query.get("path") or [""])[0],
+                                    (query.get("cursor") or [None])[0])
+        except ValueError:
+            return self._error(400, "That folder path is not valid.")
+        if result is None:
+            return self._error(404, "That library isn't available right now.")
+        return self._send(200, result)
+
     def _search_stream(self) -> None:
         """Server-sent events: cached results at once, late origins as they answer."""
         if not self._authenticated():
@@ -751,6 +775,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if portal_mesh_http.route(self, "GET", path):
             return
+        if path == "/api/libraries" or path.startswith("/api/libraries/"):
+            return self._libraries()
         if path == "/api/search/stream":
             return self._search_stream()
         if path == "/api/search":
@@ -1335,7 +1361,9 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
-<section id="findPanel"><h2>Find</h2><label for="findInput" class="muted">Search films, shows and music in every computer</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200"><p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div></section>
+<section id="findPanel"><h2>Find</h2><label for="findInput" class="muted">Search films, shows and music in every computer</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200"><div id="findChips" role="group" aria-label="Filter results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
+<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div>
+<details id="libraries"><summary>Libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details></section>
 <section id="queuePanel"><div class="row"><h2>Up Next</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue" aria-label="Up Next" tabindex="-1"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
@@ -2113,7 +2141,9 @@ function syncMediaSession(s){
     for(const g of d.groups||[]){
       const h=document.createElement("h3");h.textContent=LABELS[g.type]||g.type;
       const ul=document.createElement("ul");ul.setAttribute("aria-label",h.textContent);ul.className="find-list";
-      for(const it of g.items||[]){ul.append(item(it,g.type));n++}
+      for(const it of g.items||[]){
+        if(availableOnly&&g.type!=="artists"&&g.type!=="albums"&&g.type!=="shows"&&!(it.copies||[]).some(c=>c.online))continue;
+        ul.append(item(it,g.type));n++}
       out.append(h,ul);
     }
     const pending=(d.pending_origins||[]).length;
@@ -2122,8 +2152,9 @@ function syncMediaSession(s){
   }
   function stop(){if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
   async function run(){
-    stop();const q=input.value.trim();
-    if(!q){out.replaceChildren();status.textContent="";return}
+    stop();const typed=input.value.trim();
+    if(!typed&&!kind){out.replaceChildren();status.textContent="";return}
+    const q=(typed+(kind?" kind:"+kind:"")).trim();
     const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
     if(typeof EventSource==="function"){
       source=new EventSource(url);
@@ -2137,6 +2168,67 @@ function syncMediaSession(s){
     try{const r=await fetch(url,{credentials:"same-origin",signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error||"Search failed");render(d)}
     catch(err){if(err.name!=="AbortError")status.textContent=err.message}
   }
+
+  let kind="",availableOnly=false;
+  for(const chip of document.querySelectorAll("#findChips button")){
+    chip.addEventListener("click",()=>{
+      if(chip.dataset.available){availableOnly=!availableOnly;chip.setAttribute("aria-pressed",String(availableOnly))}
+      else{const on=kind!==chip.dataset.kind;kind=on?chip.dataset.kind:"";
+        for(const other of document.querySelectorAll("#findChips button[data-kind]"))other.setAttribute("aria-pressed",String(other.dataset.kind===kind))}
+      run();
+    });
+  }
+  const lib=$("libraries"),body=$("libBody");
+  let libLoaded=false;
+  const crumb=(parts)=>{const p=document.createElement("p");p.className="muted";p.textContent=parts.join(" / ");return p};
+  async function getJSON(url){const r=await fetch(url,{credentials:"same-origin"});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
+  function showOrigins(d){
+    body.replaceChildren();
+    if(!(d.origins||[]).some(o=>(o.folders||[]).length)){body.textContent="No computers are sharing a library yet. Add one in SmoothCast, Preferences, Library.";return}
+    for(const o of d.origins){
+      if(!(o.folders||[]).length)continue;
+      const h=document.createElement("h3");h.textContent=o.name+(o.online?"":" (offline)");body.append(h);
+      const ul=document.createElement("ul");ul.className="find-list";
+      for(const f of o.folders){
+        const li=document.createElement("li");li.className="queue-item";
+        const t=document.createElement("div"),s=document.createElement("strong"),m=document.createElement("div");
+        s.textContent=f.label;m.className="muted";m.textContent=f.count+(f.count===1?" item":" items");t.append(s,m);
+        const a=document.createElement("div");a.className="queue-actions";
+        const b=document.createElement("button");b.type="button";b.className="tiny";b.textContent="Browse";
+        b.addEventListener("click",()=>browse(o.id,o.name,f.label,""));a.append(b);li.append(t,a);ul.append(li);
+      }
+      body.append(ul);
+    }
+  }
+  async function browse(origin,name,folder,path,cursor){
+    try{
+      const url="/api/libraries/"+encodeURIComponent(origin)+"/"+encodeURIComponent(folder)+"?path="+encodeURIComponent(path)+(cursor?"&cursor="+encodeURIComponent(cursor):"");
+      const d=await getJSON(url);
+      if(!cursor)body.replaceChildren();
+      else{const old=body.querySelector(".more");if(old)old.remove()}
+      if(!cursor){
+        const back=document.createElement("button");back.type="button";back.className="tiny secondary";
+        back.textContent=path?"Up":"All libraries";
+        back.addEventListener("click",()=>{if(!path)showAll();else browse(origin,name,folder,path.split("/").slice(0,-1).join("/"))});
+        body.append(back,crumb([name,folder,...(path?path.split("/"):[])]));
+      }
+      const ul=document.createElement("ul");ul.className="find-list";
+      for(const dir of d.dirs||[]){
+        const li=document.createElement("li");li.className="queue-item";
+        const t=document.createElement("div"),s=document.createElement("strong"),m=document.createElement("div");
+        s.textContent=dir.name;m.className="muted";m.textContent=dir.count+(dir.count===1?" item":" items");t.append(s,m);
+        const a=document.createElement("div");a.className="queue-actions";
+        const b=document.createElement("button");b.type="button";b.className="tiny secondary";b.textContent="Open";
+        b.addEventListener("click",()=>browse(origin,name,folder,(path?path+"/":"")+dir.name));a.append(b);li.append(t,a);ul.append(li);
+      }
+      for(const it of d.items||[])ul.append(item(it,"songs"));
+      body.append(ul);
+      if(d.next){const more=document.createElement("button");more.type="button";more.className="tiny more";more.textContent="Load more";
+        more.addEventListener("click",()=>browse(origin,name,folder,path,d.next));body.append(more)}
+    }catch(err){body.textContent=err.message}
+  }
+  async function showAll(){try{showOrigins(await getJSON("/api/libraries"))}catch(err){body.textContent=err.message}}
+  lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded){libLoaded=true;showAll()}});
   input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
 })();
 </script></body></html>"""

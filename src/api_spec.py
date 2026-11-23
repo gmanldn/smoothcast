@@ -54,6 +54,10 @@ PATHS: dict[str, dict] = {
     "/api/search/stream": {"get": _op(
         "Same search as server-sent events: results, more, done", params=[_p("q", required=True)],
         content="text/event-stream", tag="search")},
+    "/api/libraries": {"get": _op("Computers and their shared library folders", tag="search")},
+    "/api/libraries/{origin}/{folder}": {"get": _op(
+        "One level of a shared folder: sub-folders and files (relative paths only)",
+        params=[_p("origin", "path"), _p("folder", "path"), _p("path"), _p("cursor")], tag="search")},
     "/api/mesh": {"get": _op("Snapshot of the live mesh (nodes, targets, clients)", tag="mesh")},
     "/api/mesh/events": {"get": _op("Live mesh updates (server-sent events)",
                                     content="text/event-stream", tag="mesh")},

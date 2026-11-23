@@ -18,11 +18,13 @@ from urllib.parse import urlencode, urlsplit
 
 import federated_search
 import house_fetch
+import library_browse
 import lan_guard
 import mesh_files
 import replica_manager
 import replica_store
 import search_engine
+import base64
 
 TIMEOUT = 2.0
 MAX_BODY = 16 * 1024 * 1024
@@ -105,6 +107,55 @@ class MeshLibrary:
     def _origins(self) -> dict[str, dict]:
         with self._lock:
             return {o["origin_id"]: o for o in self.store.origins()}
+
+    # -- browsing "Libraries on the network" ------------------------------
+    def libraries(self) -> dict:
+        shared = [f for f in self.indexer._folders if f.shared]
+        with self.indexer._lock:
+            counts = dict(self.indexer._conn.execute(
+                "SELECT folder_id, COUNT(*) FROM entries GROUP BY folder_id").fetchall())
+        origins = [{"id": "local", "name": "This computer", "online": True,
+                    "folders": [{"label": f.label, "kind": f.kind, "count": counts.get(f.id, 0)}
+                                for f in shared]}]
+        with self._lock:
+            for origin in self.store.origins():
+                folders = library_browse.folder_summaries(
+                    self.store.conn, "rentries", "origin_id = ?", [origin["origin_id"]], "folder_label")
+                origins.append({"id": origin["origin_id"], "name": origin["name"] or "Another computer",
+                                "online": origin["state"] in ("fresh", "stale"), "folders": folders})
+        return {"origins": origins}
+
+    def browse(self, origin: str, folder: str, path: str = "", cursor: str | None = None,
+               limit: int = library_browse.PAGE) -> dict | None:
+        """One level of a shared folder, or None if the origin/folder is unknown."""
+        limit = max(1, min(int(limit), library_browse.PAGE))
+        try:
+            offset = int(base64.urlsafe_b64decode((cursor or "").encode()).decode()) if cursor else 0
+        except (ValueError, UnicodeError):
+            offset = 0
+        if origin == "local":
+            match = next((f for f in self.indexer._folders if f.shared and f.label == folder), None)
+            if match is None:
+                return None
+            conn, lock = self.indexer._conn, self.indexer._lock
+            table, scope, args = "entries", "folder_id = ?", [match.id]
+            source = search_engine.LOCAL
+            copies = [{"origin": "local", "origin_name": "This computer", "online": True}]
+        else:
+            info = self._origins().get(origin)
+            if info is None:
+                return None
+            conn, lock = self.store.conn, self._lock
+            table, scope, args = "rentries", "origin_id = ? AND folder_label = ?", [origin, folder]
+            source = search_engine.REPLICA
+            copies = [federated_search._copy(origin, info)]
+        with lock:
+            dirs, keys, more = library_browse.listing(conn, table, scope, args, path, offset, limit)
+            rows = library_browse.rows_for(conn, source, scope, args, keys)
+        items = [search_engine._item({**row, "copies": copies}) for row in rows]
+        nxt = base64.urlsafe_b64encode(str(offset + limit).encode()).decode() if more else None
+        return {"origin": origin, "folder": folder, "path": library_browse.clean_path(path).rstrip("/"),
+                "dirs": dirs, "items": items, "next": nxt}
 
     @property
     def cache_dir(self) -> Path:
