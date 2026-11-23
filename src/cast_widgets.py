@@ -36,6 +36,7 @@ DEFAULTS: dict = {
     "device_favourites": [],
     "device_last_used": {},
     "quality": "balanced",
+    "quality_auto": True,  # benchmark-derived software tier; explicit quality wins (#515)
     "audio": "dialogue",
     "audio_gain": 6.0,
     "audio_loudness": "off",  # EBU R128 programme/album (#139)
