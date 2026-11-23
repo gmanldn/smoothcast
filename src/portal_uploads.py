@@ -18,7 +18,9 @@ from typing import BinaryIO
 
 import cache_privacy
 
-CHUNK_SIZE = 2 * 1024 * 1024
+# Larger HTTP chunks amortise request and sync costs while 64 KiB reads keep RAM bounded.
+# Every acknowledged chunk still completes fsync; no volatile offset is promised.
+CHUNK_SIZE = 8 * 1024 * 1024
 READ_SIZE = 64 * 1024
 MAX_UPLOAD_BYTES = 1 << 40  # 1 TiB; available disk space is the practical limit.
 MAX_AUDIO_UPLOAD_BYTES = 512 * 1024 * 1024
