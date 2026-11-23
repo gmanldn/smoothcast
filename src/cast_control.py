@@ -490,13 +490,39 @@ class CastControlApp(Adw.Application):
                 raise RuntimeError("No painted, interactive window")
             print(f"SELFTEST: startup {marks}")
             print("SELFTEST: window built successfully")
+            # Only the private Xvfb self-test reaches here. Prove the real
+            # Adw.Toast creation works, and repeated faults do not flood it.
+            bridge = self._failure_bridge
+            if bridge is None:
+                raise RuntimeError("desktop failure bridge not installed")
+            observed = []
+            original_present = bridge._present
+
+            def checked_present(failure):
+                original_present(failure)
+                observed.append(failure)
+
+            bridge._present = checked_present
+            injected = RuntimeError("private /home/agent/secret.mkv")
+            if not bridge.report(injected) or bridge.report(injected):
+                raise RuntimeError("failure notification was not rate limited")
+            GLib.idle_add(self._finish_selftest_failures, observed)
         except Exception as exc:  # pragma: no cover - defensive
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
+            self.quit()
+        return False
+
+    def _finish_selftest_failures(self, observed) -> bool:
+        try:
+            if len(observed) != 1 or "private" in observed[0].message:
+                raise RuntimeError("expected one civil desktop failure toast")
+            print("SELFTEST: desktop failure toast was civil and rate limited")
+        except Exception as exc:
+            self.selftest_failed = True
+            print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
         finally:
-            # A broken completion probe must never hang --self-test: always
-            # leave the main loop so the runner's deadline is not the only
-            # thing that can end it.
+            # Even a broken probe must exit under the isolated runner's bound.
             self.quit()
         return False
 
