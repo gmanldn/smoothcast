@@ -101,6 +101,18 @@ def test_replayed_receipt_has_only_one_activity_and_bounded_keys():
     assert len(room._activity_keys) == 1
 
 
+def test_trusted_system_event_updates_activity_without_reviving_guest():
+    room = portal_room.PortalRoom()
+    room.record("someone", "action", {"action": "stop",
+                                       "outcome": "uncertain", "reason": "unavailable"})
+    assert room.snapshot()["activity"][-1]["data"] == {
+        "name": "Someone", "action": "stop", "outcome": "uncertain",
+        "reason": "unavailable",
+    }
+    room.record("ab" * 16, "action", {"action": "stop"})
+    assert len(room.events) == 1  # forged/stale user identity cannot publish
+
+
 def test_room_snapshot_detaches_log_and_prunes_old_entries():
     wall = [100_000.0]
     room = portal_room.PortalRoom(wall_clock=lambda: wall[0])
