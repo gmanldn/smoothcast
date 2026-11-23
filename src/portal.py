@@ -1316,7 +1316,9 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button><button class="secondary" data-action="previous">Previous</button><button class="secondary" data-action="next">Next</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
-<section><h2>Phone</h2><label><input id="lockControls" type="checkbox" checked> Lock-screen controls</label><p>Play, pause, skip and seek from your phone's lock screen or headphones while this page is open.</p></section>
+<section><h2>Phone</h2><label><input id="lockControls" type="checkbox" checked> Lock-screen controls</label><p>Play, pause, skip and seek from your phone's lock screen or headphones while this page is open.</p>
+<label><input id="keepScreenOn" type="checkbox"> Keep screen on</label>
+<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p></section>
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
@@ -1335,6 +1337,7 @@ const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortc
 let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
+  void syncRemoteWakeLock();
   document.getElementById("updateNotice").hidden=false;
   document.getElementById("dashboard").hidden=true;
   document.getElementById("uploadCard").hidden=true;
@@ -1349,6 +1352,44 @@ let rateDelayUntil=0;
 const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
+const keepScreenOn=$("keepScreenOn");
+let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
+try{
+  keepScreenOn.checked=localStorage.getItem("sc_keep_screen_on")==="1";
+  remoteDimHintSeen=localStorage.getItem("sc_remote_dim_hint")==="1";
+}catch(_){}
+function wantsRemoteWakeLock(){
+  return keepScreenOn.checked&&!!csrf&&!stalePage&&!document.hidden;
+}
+async function syncRemoteWakeLock(){
+  if(!wantsRemoteWakeLock()){
+    const lock=remoteWakeLock;
+    remoteWakeLock=null;
+    if(lock&&!lock.released){try{await lock.release()}catch(_){}}
+    return;
+  }
+  if(requestingWakeLock||(remoteWakeLock&&!remoteWakeLock.released))return;
+  requestingWakeLock=true;
+  try{
+    const lock=await navigator.wakeLock.request("screen");
+    if(!wantsRemoteWakeLock()){await lock.release();return}
+    remoteWakeLock=lock;
+    lock.addEventListener("release",()=>{
+      if(remoteWakeLock===lock)remoteWakeLock=null;
+    });
+  }catch(_){
+    if(wantsRemoteWakeLock()&&!remoteDimHintSeen){
+      remoteDimHintSeen=true;
+      $("remoteDimHint").hidden=false;
+      try{localStorage.setItem("sc_remote_dim_hint","1")}catch(_){}
+    }
+  }finally{requestingWakeLock=false}
+}
+keepScreenOn.addEventListener("change",()=>{
+  try{localStorage.setItem("sc_keep_screen_on",keepScreenOn.checked?"1":"0")}catch(_){}
+  if(!keepScreenOn.checked)$("remoteDimHint").hidden=true;
+  return syncRemoteWakeLock();
+});
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
@@ -1364,6 +1405,7 @@ $("loginForm").addEventListener("submit",async e=>{
     try{localStorage.setItem("sc_name",d.participant.name)}catch(_){}
     $("displayName").value=d.participant.name;
     $("login").hidden=true;
+    void syncRemoteWakeLock();
     void restoreUpload();
     refresh();
   }catch(err){showError("error",err.message)}
@@ -1381,6 +1423,7 @@ $("loginForm").addEventListener("submit",async e=>{
       try{localStorage.setItem("sc_name",data.participant.name)}catch(_){}
       $("displayName").value=data.participant.name;
       $("login").hidden=true;
+      void syncRemoteWakeLock();
       void restoreUpload();
       refresh();
       return true;
@@ -1397,6 +1440,7 @@ $("loginForm").addEventListener("submit",async e=>{
 })();
 function expireSession(){
   csrf="";
+  void syncRemoteWakeLock();
   shortcutState=null;
   pendingControls.clear();
   statusFailures=0;
@@ -1962,6 +2006,7 @@ $("cancelUpload").addEventListener("click",async()=>{
   finally{finishUpload()}
 });
 document.addEventListener("visibilitychange",()=>{
+  void syncRemoteWakeLock();
   if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
   statusFailures=0;
   refresh();

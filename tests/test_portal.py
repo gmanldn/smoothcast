@@ -250,6 +250,65 @@ const fetch = (_url, {signal}) => {
                    text=True, check=True, timeout=10)
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_remote_wake_lock_persists_and_reacquires_only_while_visible():
+    start = portal._HTML.index('const keepScreenOn=')
+    end = portal._HTML.index('const PIN_REQUIRED=', start)
+    script = portal._HTML[start:end]
+    harness = """
+const assert = require("node:assert/strict");
+const storage = new Map([["sc_keep_screen_on", "1"]]);
+const localStorage = {getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)};
+const checkbox = {checked:false,addEventListener(_event,handler){this.change=handler}};
+const hint = {hidden:true};
+const $ = id => id==="keepScreenOn"?checkbox:hint;
+const document = {hidden:false};
+const navigator = {wakeLock:{request}};
+let csrf="",stalePage=false,requests=0,releases=0;
+function request(type){
+  assert.equal(type,"screen");
+  requests++;
+  return Promise.resolve({
+    released:false,
+    addEventListener(event,handler){assert.equal(event,"release");this.onrelease=handler},
+    async release(){this.released=true;releases++;this.onrelease?.()},
+  });
+}
+"""
+    scenario = """
+(async()=>{
+  assert.equal(checkbox.checked,true);
+  await syncRemoteWakeLock();
+  assert.equal(requests,0,"a saved preference does not acquire before authentication");
+  csrf="paired";
+  await Promise.all([syncRemoteWakeLock(),syncRemoteWakeLock()]);
+  assert.equal(requests,1,"only one request is in flight");
+  document.hidden=true;
+  await syncRemoteWakeLock();
+  assert.equal(releases,1);
+  document.hidden=false;
+  await syncRemoteWakeLock();
+  assert.equal(requests,2,"a visible tab reacquires the lock");
+  checkbox.checked=false;
+  await checkbox.change();
+  assert.equal(storage.get("sc_keep_screen_on"),"0");
+  assert.equal(releases,2);
+  delete navigator.wakeLock;
+  checkbox.checked=true;
+  await checkbox.change();
+  assert.equal(storage.get("sc_keep_screen_on"),"1");
+  assert.equal(hint.hidden,false,"unsupported browsers show the dim hint");
+  checkbox.checked=false;
+  await checkbox.change();
+  checkbox.checked=true;
+  await checkbox.change();
+  assert.equal(hint.hidden,true,"the hint is shown only once");
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
 def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     status, body, headers = rig.request("GET", "/")
     assert status == 200
@@ -257,6 +316,8 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "fetch(\"/api/status\"" in page
     assert "https://" not in page and "http://" not in page
     assert PIN not in page
+    assert 'id="keepScreenOn" type="checkbox"> Keep screen on' in page
+    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>controller.abort(),60000)" in page
