@@ -478,7 +478,7 @@ class CastControlApp(Adw.Application):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
-                daemon=False,
+                daemon=True,  # read-only probe must never delay GUI shutdown
             ).start()
         return False
 
