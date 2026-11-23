@@ -228,7 +228,7 @@ _PANEL_HTML = r"""
 #screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
 #screensList .state-error{color:var(--danger)}
 </style>
-<section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading">Screens</h2><span id="screensCount" class="muted"></span></div>
+<section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading" tabindex="-1">Screens</h2><span id="screensCount" class="muted"></span></div>
 <p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if the host requires it. Tap Start screen once to allow sound.</p>
 <ul id="screensList"><li class="empty">No screens connected</li></ul>
 <details class="help"><summary>How to use and control browser screens</summary><div class="help-body"><p><strong>Set up a screen:</strong> open the screen page on the device that will play sound or video, join with a name and the House PIN if required, then choose Start screen on that device.</p><p><strong>Choose from queue</strong> selects an item already in Up Next. <strong>Play</strong> starts it on that individual screen, not the main room TV. Pause, Resume and Stop affect only the named screen.</p><p>If a screen is not responding, controls remain unavailable until it reconnects. Add new media using the room's Find or Add files sections first.</p></div></details>
@@ -239,7 +239,7 @@ _PANEL_HTML = r"""
   if(!list)return;
   const panel=document.getElementById("screensPanel"),dash=document.getElementById("dashboard");
   setInterval(()=>{if(dash&&dash.hidden)panel.hidden=true},1000);
-  let items=[],seq=0;const choice={};
+  let items=[],seq=0,queueOptionsKey="";const choice=Object.create(null);
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const clock=s=>{s=Math.max(0,Math.floor(Number(s)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
   async function send(id,body){
@@ -249,29 +249,99 @@ _PANEL_HTML = r"""
     }catch(err){msg.textContent=err.message}}
   function updateScreenPlayButton(play,pick,ready){play.disabled=!ready||!pick.value}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
+  const screenById=new Map();
+  function makeScreenRow(sc){
+    const key=String(sc.id),li=el("li","queue-item"),box=el("div");
+    li.dataset.screenId=key;
+    box.append(el("strong"),el("div","muted"));
+    const actions=el("div","queue-actions"),pick=el("select");
+    const play=el("button","tiny","Play"),toggle=el("button","secondary tiny","Pause"),stop=el("button","secondary tiny","Stop");
+    pick.addEventListener("change",()=>{
+      choice[key]=pick.value;
+      updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready);
+    });
+    play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";
+    play.addEventListener("click",()=>{
+      const current=screenById.get(key);
+      if(!current?.ready){msg.textContent="Screen is not responding.";return}
+      if(pick.value&&items.some(q=>String(q.id)===pick.value))void send(key,{action:"play",item:pick.value,follow:true});
+      else msg.textContent="Pick something from the queue first.";
+    });
+    toggle.type="button";toggle.title="Pause or resume playback on this screen only";
+    toggle.addEventListener("click",()=>{
+      const current=screenById.get(key);
+      if(current?.ready&&current.item)void send(key,{action:current.state==="paused"?"resume":"pause"});
+    });
+    stop.type="button";stop.title="Stop this screen without stopping the host TV";
+    stop.addEventListener("click",()=>{
+      const current=screenById.get(key);
+      if(current?.ready&&current.item)void send(key,{action:"stop"});
+    });
+    actions.append(pick,play,toggle,stop);li.append(box,actions);
+    return li;
+  }
+  function updateScreenRow(li,sc){
+    const key=String(sc.id),[box,actions]=li.children,[head,info]=box.children,[pick,play,toggle,stop]=actions.children;
+    head.textContent=sc.name+(sc.video?" · screen":" · speaker");
+    info.className="muted"+(sc.state==="error"?" state-error":"");
+    info.textContent=!sc.ready?"Not responding":(label[sc.state]||sc.state)+(sc.title?" — "+sc.title:"")+
+      (sc.duration?" ("+clock(sc.position)+" / "+clock(sc.duration)+")":"")+
+      (sc.mode==="transcode"?" · converted by host":"")+
+      (sc.state==="error"&&sc.error?" · "+sc.error:"");
+    if(li.dataset.optionsKey!==queueOptionsKey){
+      li.dataset.optionsKey=queueOptionsKey;
+      const none=el("option","","Choose from queue");none.value="";
+      const options=[none];
+      for(const q of items){const o=el("option","",q.title);o.value=String(q.id);options.push(o)}
+      pick.replaceChildren(...options);
+    }
+    const selection=String(choice[key]||"");
+    const selected=items.some(q=>String(q.id)===selection)?selection:"";
+    if(!selected)choice[key]="";
+    if(pick.value!==selected)pick.value=selected;
+    pick.setAttribute("aria-label","Choose what to play on "+sc.name);
+    play.setAttribute("aria-label","Play selected queue item on "+sc.name);
+    updateScreenPlayButton(play,pick,!!sc.ready);
+    toggle.textContent=sc.state==="paused"?"Resume":"Pause";
+    toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name);
+    toggle.disabled=!sc.item||!sc.ready;
+    stop.setAttribute("aria-label","Stop playback on "+sc.name);
+    stop.disabled=!sc.item||!sc.ready;
+  }
   window.scRenderScreens=function(s){
     const queuePanel=document.getElementById("queuePanel");
     if(queuePanel&&panel.previousElementSibling!==queuePanel)queuePanel.after(panel);
-    panel.hidden=false;const screens=Array.isArray(s.screens)?s.screens:[];items=Array.isArray(s.queue)?s.queue:[];
-    count.textContent=screens.length?`${screens.length} connected`:"";
-    if(!screens.length){const li=el("li","empty","No screens connected");list.replaceChildren(li);return}
-    if(list.contains(document.activeElement)&&document.activeElement.tagName==="SELECT")return;
+    panel.hidden=false;
+    const screens=Array.isArray(s.screens)?s.screens:[];items=Array.isArray(s.queue)?s.queue:[];
+    queueOptionsKey=JSON.stringify(items.map(q=>[q.id,q.title]));
+    screenById.clear();for(const sc of screens)screenById.set(String(sc.id),sc);
+    count.textContent=screens.length?screens.length+" connected":"";
+    const focused=list.contains(document.activeElement)?document.activeElement:null;
+    if(!screens.length){
+      if(list.children.length!==1||list.firstElementChild?.className!=="empty")list.replaceChildren(el("li","empty","No screens connected"));
+      if(focused)document.getElementById("screensPanelHeading").focus({preventScroll:true});
+      for(const key of Object.keys(choice))delete choice[key];
+      return;
+    }
+    const existing=new Map(Array.from(list.children).filter(li=>li.dataset?.screenId)
+      .map(li=>[li.dataset.screenId,li]));
     const rows=[];
     for(const sc of screens){
-      const li=el("li","queue-item"),box=el("div");
-      const head=el("strong","",sc.name+(sc.video?" · screen":" · speaker"));
-      const info=el("div","muted"+(sc.state==="error"?" state-error":""),!sc.ready?"Not responding":(label[sc.state]||sc.state)+(sc.title?" — "+sc.title:"")+(sc.duration?" ("+clock(sc.position)+" / "+clock(sc.duration)+")":"")+(sc.mode==="transcode"?" · converted by host":"")+(sc.state==="error"&&sc.error?" · "+sc.error:""));
-      box.append(head,info);
-      const actions=el("div","queue-actions");
-      const pick=el("select");pick.setAttribute("aria-label","Choose what to play on "+sc.name);
-      const none=el("option","","Choose from queue");none.value="";pick.append(none);
-      for(const q of items){const o=el("option","",q.title);o.value=q.id;pick.append(o)}
-      pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value;updateScreenPlayButton(play,pick,sc.ready)});
-      const play=el("button","tiny","Play");play.type="button";updateScreenPlayButton(play,pick,sc.ready);play.title="Play the selected shared-queue item on this screen, not the room TV";play.setAttribute("aria-label","Play selected queue item on "+sc.name);play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
-      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name);toggle.disabled=!sc.item||!sc.ready;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
-      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.setAttribute("aria-label","Stop playback on "+sc.name);stop.disabled=!sc.item||!sc.ready;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
-      actions.append(pick,play,toggle,stop);li.append(box,actions);rows.push(li)}
-    list.replaceChildren(...rows)};
+      const key=String(sc.id),li=existing.get(key)||makeScreenRow(sc);
+      updateScreenRow(li,sc);rows.push(li);
+    }
+    if(list.firstElementChild?.className==="empty")list.replaceChildren(...rows);
+    else{
+      rows.forEach((row,index)=>{
+        const current=list.children[index]||null;
+        if(current!==row)list.insertBefore(row,current);
+      });
+      for(const child of Array.from(list.children))if(!rows.includes(child))child.remove();
+    }
+    for(const key of Object.keys(choice))if(!screenById.has(key))delete choice[key];
+    if(focused&&!list.contains(focused))document.getElementById("screensPanelHeading").focus({preventScroll:true});
+  };
+
 })();
 </script>
 """
