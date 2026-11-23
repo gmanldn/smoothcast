@@ -104,7 +104,7 @@ def test_replayed_receipt_has_only_one_activity_and_bounded_keys():
 def test_room_snapshot_detaches_log_and_prunes_old_entries():
     wall = [100_000.0]
     room = portal_room.PortalRoom(wall_clock=lambda: wall[0])
-    sam = room.join("Sam")
+    room.join("Sam")
     snap = room.snapshot()
     snap["activity"][0]["data"]["name"] = "ATTACK"
     assert room.snapshot()["activity"][0]["data"]["name"] == "Sam"
