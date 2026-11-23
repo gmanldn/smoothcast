@@ -21,6 +21,8 @@ import streamer
 import fake_receivers
 from fake_receivers import FakeCast, FakeDlnaRenderer, allow_loopback
 
+RECEIVER_FAILED = "The receiver command failed. Check the receiver connection and try again."
+
 MEDIA = "http://192.168.1.2:9000/media/token"
 
 
@@ -378,16 +380,18 @@ class FakeCastTests(unittest.TestCase):
         self.assertEqual(castctl.player_state(castctl.info("Living Room")), "IDLE")
 
     def test_receiver_refusals_come_back_as_the_commands_error_text(self):
+        # #461: a refusal reaches the user as one civil sentence, never the raw
+        # receiver text, so the fake's wording must not leak through.
         ok, message = castctl.pause("Living Room")                     # nothing playing
-        self.assertEqual((ok, message), (False, "Nothing is playing."))
+        self.assertEqual((ok, message), (False, RECEIVER_FAILED))
         ok, message = castctl.seek("Living Room", 10)                  # not seekable
-        self.assertFalse(ok)
-        self.assertIn("not seekable", message)
+        self.assertEqual((ok, message), (False, RECEIVER_FAILED))
+        self.assertNotIn("seekable", message)
 
     def test_scripted_failures_and_offline_receivers(self):
         self.cast.update("Living Room", player_state="PLAYING", duration=100)
         self.cast.fail("pause", "Failed to connect", times=1)
-        self.assertEqual(castctl.pause("Living Room"), (False, "Failed to connect"))
+        self.assertEqual(castctl.pause("Living Room"), (False, RECEIVER_FAILED))
         self.assertTrue(castctl.pause("Living Room")[0])               # one-shot
         self.cast.go_offline("Living Room")
         self.assertIsNone(castctl.info("Living Room"))
@@ -602,7 +606,7 @@ class CliAgainstFakeCastTests(unittest.TestCase):
     def test_exit_codes_follow_the_receivers_behaviour(self):
         self.cast.fail("pause", "Failed to connect")
         code, payload = self.run_cli("pause")
-        self.assertEqual((code, payload["error"], payload["message"]), (1, "failed", "Failed to connect"))
+        self.assertEqual((code, payload["error"], payload["message"]), (1, "failed", RECEIVER_FAILED))
         self.cast.go_offline("Living Room")
         self.assertEqual(self.run_cli("status")[0], 3)                       # unreachable
         code, _ = self.run_cli("seek", "bad")

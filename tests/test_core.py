@@ -19,6 +19,8 @@ import server
 import streamer
 import version
 
+RECEIVER_FAILED = "The receiver command failed. Check the receiver connection and try again."
+
 
 class CastctlTests(unittest.TestCase):
     def test_find_catt_prefers_the_running_runtime(self):
@@ -290,13 +292,15 @@ class CastctlSubprocessTests(unittest.TestCase):
         with self._patched_run(returncode=1, stderr="device busy"):
             ok, msg = castctl.command("TV", "stop")
         self.assertFalse(ok)
-        self.assertEqual(msg, "device busy")
+        self.assertEqual(msg, RECEIVER_FAILED)
+        self.assertNotIn("device busy", msg)  # #461: no raw helper output
 
     def test_command_failure_uses_stdout_when_no_stderr(self):
         with self._patched_run(returncode=1, stdout="failed"):
             ok, msg = castctl.command("TV", "pause")
         self.assertFalse(ok)
-        self.assertEqual(msg, "failed")
+        self.assertEqual(msg, RECEIVER_FAILED)
+        self.assertNotEqual(msg, "failed")  # #461: no raw helper output
 
     def test_command_timeout(self):
         with self._patched_run(exc=subprocess.TimeoutExpired("catt", 12)):
@@ -308,7 +312,9 @@ class CastctlSubprocessTests(unittest.TestCase):
         with self._patched_run(exc=OSError("no such file")):
             ok, msg = castctl.command("TV", "play")
         self.assertFalse(ok)
-        self.assertEqual(msg, "no such file")
+        self.assertEqual(
+            msg, "Could not start the Cast helper. Check the SmoothCast installation.")
+        self.assertNotIn("no such file", msg)  # #461: no raw exception text
 
     def test_play_pause_stop_toggle(self):
         with self._patched_run(returncode=0, stdout="done"):
