@@ -72,8 +72,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
-      - name: Install pytest
-        run: python -m pip install 'pytest>=8,<10'
+      - name: Install pytest and mesh simulation dependencies
+        run: python -m pip install 'pytest>=8,<10' 'hypothesis>=6,<7'
       - name: Verify v1 handshakes, schema safety and simulated mixed-version nodes
         run: >-
           python -m pytest -q
