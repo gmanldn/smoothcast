@@ -131,3 +131,25 @@ def test_budget_is_informational_not_a_performance_claim():
     assert scenario["minimum_software_encode_x"] == 1.3
     assert scenario["first_frame_p95_ms"] == 4000
     assert "informational" in scenario["measurement"]
+
+
+def test_oversized_cache_is_rejected_before_json_is_loaded(tmp_path):
+    cache = tmp_path / "state.json"
+    cache.write_text('{"schema":1,"machine":"M","fps":50,"at":5000,"padding":"' +
+                     "x" * 5000 + '"}', encoding="utf-8")
+    with mock.patch.object(low.json, "loads", side_effect=AssertionError("oversized read")):
+        assert low.cached_speed(cache, identity="M", now=5001) is None
+
+
+def test_unexpected_worker_exception_is_logged_and_singleflight_released(tmp_path, caplog):
+    cache = tmp_path / "state.json"
+    with mock.patch.object(low.benchmark, "run_probe", side_effect=RuntimeError("private failure")):
+        assert low.schedule_probe(enabled=True, path=cache, identity="M")
+        deadline = time.monotonic() + 3
+        while low._running and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert not low._running
+    assert low._record(cache, "M") is not None
+    assert low.cached_speed(cache, identity="M") is None
+    assert any("Low-end capacity probe unavailable" in r.message for r in caplog.records)
+    assert all("private failure" not in r.message for r in caplog.records)
