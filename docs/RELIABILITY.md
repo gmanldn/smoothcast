@@ -131,3 +131,26 @@ on an SLO breach or a p95 more than 20% over the baseline (never tighter than
 +25 ms, which is timer noise). Run it with
 `python3 scripts/control_latency_benchmark.py --check docs/control-latency-baseline.json`;
 refresh the baseline after an intended change with `--write-baseline`.
+
+## Soak (#464)
+
+`scripts/soak.py` runs the real portal on loopback with a fake receiver, 31
+polling phones (the room caps at 32 with one visitor seat), a 500-item queue and
+a fake clock that advances 30 s per cycle, so 2,000 cycles are about 17 simulated
+hours. Each cycle polls, seeks, votes, edits the queue, sometimes uploads a tiny
+file, and has a visitor join and leave. Every 10 cycles it samples threads, open
+FDs, RSS, scratch files and the size of every bounded map.
+
+The verdict is deliberately not flaky: after a 20% warm-up **threads and FDs may
+not grow at all** and **every bounded map must stay under its designed cap**
+(sessions 128, participants 32, dormant 128, events 200, command cache 512,
+limiter 512, ...). RSS growth and upload retention only warn. A thread, FD or
+unbounded-map leak injected on purpose is caught by `tests/test_soak_smoke.py`.
+
+```sh
+python3 scripts/soak.py --cycles 150                       # ~15 s: smoke
+python3 scripts/soak.py --cycles 2000 --report soak-report.json   # nightly size
+```
+
+The *Soak nightly* workflow runs the long version daily and uploads
+`soak-report.json` (the full time series and summary) as an artifact.

@@ -1,0 +1,45 @@
+name: Soak nightly
+
+# Long-run resource stability (#464): 31 polling phones, a 500-item queue, thousands
+# of seeks, joins/leaves and uploads against the real portal with a fake receiver
+# and an accelerated clock (~17 simulated hours). Threads and FDs must not grow and
+# every bounded map must stay under its cap. Not part of the fast lane.
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: "Soak cycles (30 simulated seconds each)"
+        default: "2000"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Install runtime
+        run: |
+          python -m pip install -e .
+          python -m pip install "pytest>=8,<10" "PyChromecast>=13.1,<15"
+      - name: Run the soak
+        env:
+          SMOOTHCAST_TEST_CONTEXT: "1"
+          SOAK_CYCLES: ${{ github.event.inputs.cycles || '2000' }}
+        run: python scripts/soak.py --cycles "$SOAK_CYCLES" --report soak-report.json
+      - name: Keep the time series and summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-report-${{ github.run_id }}
+          path: soak-report.json
+          if-no-files-found: warn
+          retention-days: 30
