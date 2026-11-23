@@ -38,6 +38,7 @@ class _Job:
     done: Callable | None
     failed: Callable | None
     valid: Callable[[], bool] | None
+    trace_id: str | None = None
 
 
 class WorkRejected(RuntimeError):
@@ -125,7 +126,8 @@ class WorkDomains:
                 try:
                     value = job.work()
                 except Exception as exc:
-                    self._log(f"Async {domain} work failed", exc_info=True)
+                    suffix = f" [command:{job.trace_id}]" if job.trace_id else ""
+                    self._log(f"Async {domain} work failed{suffix}", exc_info=True)
                     expected = exc if isinstance(exc, UserFacingError) else exc.__cause__
                     message = (expected.user_message if isinstance(expected, UserFacingError)
                                else _FAILURE_MESSAGES.get(domain, _DEFAULT_FAILURE))
@@ -164,6 +166,7 @@ class WorkDomains:
                     command_trace.propagate(done),
                     command_trace.propagate(failed),
                     valid,
+                    command_trace.current_id(),
                 ))
                 command_trace.stage("worker_queued")
             except Full:

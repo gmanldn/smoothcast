@@ -152,3 +152,25 @@ def test_legacy_room_actions_inherit_trace_on_host_dispatch():
     assert 'command_trace.scope("portal", "queue_vote")' in portal_source
     assert 'command_trace.scope("portal", action)' in portal_source
     assert "command_trace.scope(\"portal\", str(action or \"queue\")" in portal_source
+
+
+def test_worker_failure_log_carries_original_command_trace_id():
+    failures = []
+    callbacks = Queue()
+    domain = async_jobs.WorkDomains(
+        lambda callback: callbacks.put(callback),
+        on_error=lambda message, *, exc_info=False: failures.append(message),
+        limits={"transport": (1, 2)},
+    )
+    try:
+        with command_trace.scope("desktop", "play_pause") as trace:
+            def work():
+                raise OSError("Private filename should not appear")
+
+            assert domain.submit(work, failed=lambda _message: None,
+                                 domain="transport")
+        callbacks.get(timeout=2)()
+        assert any(f"[command:{trace.id}]" in item for item in failures)
+        assert not any("Private filename" in item for item in failures)
+    finally:
+        domain.shutdown()
