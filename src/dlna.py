@@ -34,6 +34,7 @@ import cache_policy
 import process_priority
 import video_policy
 import hdr_tonemap
+import aspect_override
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -693,7 +694,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 cancel: threading.Event | None = None,
                 scratch_lease_fd: int | None = None,
                 audio_delay_ms: int = 0, audio_profile: str = "original",
-                muxer: str = "mp4") -> Path:
+                muxer: str = "mp4", aspect_mode: str = "original") -> Path:
     """Prepare complete progressive MP4 or MPEG-TS; never expose partial output.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -751,6 +752,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         and media.width <= 1920 and media.height <= 1080
         and media.fps <= 30.01
         and not hdr_tonemap.filter_for(media)
+        and aspect_override.normalize(aspect_mode) == "original"
         and subtitle_file is None and embedded_subtitle_index is None
     )
     try:
@@ -772,6 +774,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                  "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.1"]
         vf = Session()._filter_args(
             subtitle_file is not None, subtitle_file, True, 1.0,
+            aspect_mode=aspect_mode,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
             embedded_bitmap=bitmap_track is not None,
@@ -880,7 +883,7 @@ class Session:
               subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None,
               audio_delay_ms: int = 0, audio_profile: str = "original",
-              media_type: str = MEDIA_TYPE) -> None:
+              media_type: str = MEDIA_TYPE, aspect_mode: str = "original") -> None:
         from streamer import SessionState
         if media_type != MEDIA_TYPE and media_type not in MPEG_TS_TYPES:
             raise DlnaError("Unsupported DLNA media type")
@@ -904,6 +907,7 @@ class Session:
                 and audio_track == 0
                 and _downmix(_selected_audio(media, audio_track), audio_profile) is None
                 and audio_delay.normalize(audio_delay_ms) == 0
+                and aspect_override.normalize(aspect_mode) == "original"
             )
             if not direct:
                 suffix = ".mp4" if media_type == MEDIA_TYPE else ".ts"
@@ -916,6 +920,7 @@ class Session:
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
                     muxer="mp4" if media_type == MEDIA_TYPE else "mpegts",
+                    **({"aspect_mode": aspect_mode} if aspect_mode != "original" else {}),
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
@@ -931,6 +936,7 @@ class Session:
                 file=str(media.path), mode="dlna", offset=max(0.0, offset),
                 duration=media.duration, device=renderer.key, title=title,
                 audio=audio_profile, audio_track_index=audio_track,
+                aspect_mode=aspect_override.normalize(aspect_mode),
                 subs=str(subtitle_file or ""),
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(

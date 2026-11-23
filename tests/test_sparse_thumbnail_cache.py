@@ -100,6 +100,12 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
     assert decode.call_count == 2
     assert decode.call_args.args[1] == 19
 
+    window.cfg["aspect_override"] = "4:3"
+    window._preview_generation += 1
+    window._preview_pending, window._preview_sparse = ("film.mkv", 19, 2), True
+    window._start_preview()
+    decode.assert_called_with(pathlib.Path("film.mkv"), 10, video_stream_index=0, aspect_mode="4:3")
+
 
 def test_hover_is_approximate_only_while_exact_frame_step_remains_precise():
     methods = main_window_methods()

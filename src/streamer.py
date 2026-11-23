@@ -1185,6 +1185,7 @@ class SessionState:
     stream_url: str = ""
     subtitle_delay_ms: int = 0
     audio_delay_ms: int = 0
+    aspect_mode: str = "original"
 
 
 def load_session() -> SessionState | None:
@@ -1225,6 +1226,8 @@ def _checked_state(known: dict) -> SessionState | None:
             clean[name] = known[name]
         elif required:
             return None
+    if "aspect_mode" in clean:
+        clean["aspect_mode"] = aspect_override.normalize(clean["aspect_mode"])
     try:
         return SessionState(**clean)
     except TypeError:
@@ -1598,6 +1601,7 @@ class Session:
 
     def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None) -> list[str]:
         chain: list[str] = []
+        aspect_filters = aspect_override.filters(aspect_mode)
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
         plan_filters = video_plan.filters() if video_plan is not None else []
@@ -1615,8 +1619,8 @@ class Session:
             if speed != 1.0:
                 post_overlay.append(f"setpts=PTS/{speed:g}")
             post_overlay.extend(rotation_filters(rotation))
-            post_overlay.extend(aspect_override.filters(aspect_mode))
-            if video_size:
+            post_overlay.extend(aspect_filters)
+            if video_size and not aspect_filters:
                 out_w, out_h = _rotated_dimensions(*video_size, rotation)
                 if out_w > 1920 or out_h > 1080:
                     post_overlay.append(
@@ -1652,12 +1656,11 @@ class Session:
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
-        aspect_filters = aspect_override.filters(aspect_mode)
         chain.extend(aspect_filters)
         # Scale the *transposed* picture. A 1920x1080 source rotated 90°
         # becomes 1080x1920; looking at input bounds alone missed this.
         # Both x264/yuv420p and h264_vaapi need even output dimensions.
-        if video_size and (software or rotation in (90, 270, 180)):
+        if video_size and not aspect_filters and (software or rotation in (90, 270, 180)):
             out_w, out_h = _rotated_dimensions(*video_size, rotation)
             if out_w > 1920 or out_h > 1080:
                 chain.append(
@@ -1952,6 +1955,7 @@ class Session:
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
             speed=speed,
             rotation=rotation,
+            aspect_mode=aspect_mode,
             subtitle_delay_ms=subtitle_delay_ms,
             audio_delay_ms=audio_delay_ms,
             started_at=time.time(),

@@ -67,7 +67,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._choice(output, "rotation", "Video rotation",
                      "Clockwise rotation requires video transcoding.")
         self._choice(output, "aspect_override", "Aspect ratio",
-                     "Google Cast transcodes only. Stretch modes may distort; Fit, Fill and Crop use a 16:9 frame.")
+                     "Stretch can distort the picture. Changes appear in the scrub preview and apply to the next cast.")
         self._switch(output, "direct", "Direct play when supported",
                      "Send a compatible file unchanged; sound filters and rotation may require conversion.")
         self._switch(output, "keep_streaming", "Keep casting after closing",
@@ -245,6 +245,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
         elif key == "aspect_override":
             self.owner.cfg[key] = str(value)
             save_config(self.owner.cfg)
+            self.owner._preview_generation += 1
+            self.owner._refresh_thumbnail_strip(0.0, visible=False)
+            self.owner._queue_preview(self.owner._preview_position)
         else:
             widgets = {
                 "quality": "quality_dropdown",

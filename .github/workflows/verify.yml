@@ -91,6 +91,7 @@ jobs:
           tests/test_chapter_navigation.py
           tests/test_transport_feedback.py
           tests/test_sparse_thumbnail_cache.py
+          tests/test_aspect_override.py
           tests/test_idle_timers.py
           tests/test_responsive_wiring.py
           tests/test_mpris.py

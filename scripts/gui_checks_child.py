@@ -824,10 +824,32 @@ def room_recovery(app, window) -> None:
           window.session is None and window.now_playing is None and window._portal is None)
 
 
+def aspect_override_preferences(_app, window) -> None:
+    """Use the real aspect selector and verify reversible scrub preview requests."""
+    window.action_preferences()
+    pump(0.4)
+    prefs = window._preferences_window
+    row = prefs._combos["aspect_override"]
+    names = [row.get_model().get_string(i) for i in range(row.get_model().get_n_items())]
+    check("all six modes and the stretch warning are visible",
+          len(names) == 6 and "may distort" in names[1] and "distort" in row.get_subtitle())
+    generation = window._preview_generation
+    window._preview_position = 12.5
+    requested = []
+    window._queue_preview = lambda position: requested.append((position, window.cfg["aspect_override"]))
+    row.set_selected(2)
+    row.set_selected(0)
+    check("aspect and Original request a new preview at the same source time",
+          requested == [(12.5, "4:3"), (12.5, "original")]
+          and window._preview_generation == generation + 2)
+    check("restoring Original preserves local state without starting a cast",
+          window.cfg["aspect_override"] == "original" and window.session is None)
+
+
 SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
              "room-recovery": room_recovery,
-             "picture-options": picture_options, "accent": accent_choice,
+             "picture-options": picture_options, "aspect-override": aspect_override_preferences, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
              "density-junk": density_junk, "text-fit": text_fit_wide,

@@ -25,6 +25,8 @@ on:
       - 'src/cast_portal.py'
       - 'src/cast_ui.py'
       - 'src/cast_av.py'
+      - 'src/aspect_override.py'
+      - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
       - '.github/workflows/portal-security.yml'
@@ -51,6 +53,8 @@ on:
       - 'src/cast_portal.py'
       - 'src/cast_ui.py'
       - 'src/cast_av.py'
+      - 'src/aspect_override.py'
+      - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
       - '.github/workflows/portal-security.yml'
@@ -117,4 +121,4 @@ jobs:
           SMOOTHCAST_TEST_CONTEXT: '0'
         run: |
           .portal-gtk-venv/bin/python scripts/test_gui_isolated.py
-          .portal-gtk-venv/bin/python scripts/gui_checks.py thumbnail-strip room-recovery
+          .portal-gtk-venv/bin/python scripts/gui_checks.py thumbnail-strip room-recovery aspect-override
