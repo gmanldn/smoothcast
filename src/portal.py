@@ -1352,7 +1352,7 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             return self._error(400, "Invalid upload chunk length")
         if length <= 0 or length > portal_uploads.CHUNK_SIZE:
-            return self._error(413, "Upload chunks must be at most 2 MiB")
+            return self._error(413, f"Upload chunks must be at most {portal_uploads.CHUNK_SIZE // (1024 * 1024)} MiB")
         try:
             result = self.server.uploads.append(
                 self._cookie_token() or "", upload_id,
