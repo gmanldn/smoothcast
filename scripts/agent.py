@@ -345,9 +345,15 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
                      key=lambda c: int(c.get("id") or 0))
     handovers = [str(c.get("body") or "") for c in ordered
                  if re.search(r"(?m)^(?:Progress|Implementation|Handover):", str(c.get("body") or ""))]
-    latest = handovers[-1][:5000] if handovers else "No prior handover; inspect related commits."
+    latest = handovers[-1] if handovers else "No prior handover; inspect related commits."
+    if len(latest) > 2300:
+        latest = latest[:1500] + "\n[handover abbreviated; see issue]\n" + latest[-550:]
     body = str(issue.get("body") or "")
-    named = sorted(predicted_files(body))
+    if len(body) > 5200:
+        # Preserve the objective and tail checklist while avoiding token-heavy
+        # historical epics in every agent startup context.
+        body = body[:3800] + "\n[background abbreviated; inspect issue link]\n" + body[-1000:]
+    named = sorted(predicted_files(str(issue.get("body") or "")))
     # Pure local routing: do not consume the entire handbook or query GitHub
     # again just to decide which source invariants this ticket needs.
     import agent_context
@@ -356,6 +362,7 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
         f"# SmoothCast issue #{number}: {issue.get('title', '')}\n\n"
         f"Source baseline: {base}\n"
         "Authority: GitHub issue and latest develop source; refresh before each ship.\n"
+        f"Full issue: https://github.com/{REPO}/issues/{number}\n"
         f"Likely files: {', '.join(named) or 'not specified; inspect issue and source'}\n"
         "Start here: AGENTS.md then one relevant handbook topic.\n"
         f"Context route: {guidance}\n\n"
