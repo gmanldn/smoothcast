@@ -39,6 +39,9 @@ class ProcScanTests(unittest.TestCase):
             fake_proc(root, "4243", ("/usr/bin/python3", "/elsewhere/src/cast_control.py"))
             fake_proc(root, "4244", ("/usr/bin/ffplay", APP))
             fake_proc(root, "4246", ("/usr/bin/cat", APP))
+            fake_proc(root, "4247", ("/usr/bin/python3", "/tmp/check.py", APP))
+            fake_proc(root, "4248", ("/usr/bin/python3", "-c", APP))
+            fake_proc(root, "4249", ("/usr/bin/python3", "/tmp/test.py", "--file", APP))
             (root / "uptime").write_text("1\n")
             self.assertEqual(sorted(launch.gui_instances(root)), [4242])
 
