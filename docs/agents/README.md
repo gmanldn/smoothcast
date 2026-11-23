@@ -10,6 +10,7 @@ repository root. This routing page is the human-readable fallback: open
 
 | Task | Read |
 | --- | --- |
+| **Start here when picking work:** choose, claim, ship, close without collisions | [Coordination](../COORDINATION.md) (`python3 scripts/agent.py board`) |
 | Claim, implement, review or close an issue | [Workflow](workflow.md) and [canonical issues](../ISSUES.md) |
 | Test a change; debug GTK, CI, casting or local state | [Testing and safety](testing.md) |
 | Extend the DLNA fake receiver from captured protocol behavior | [Fake receiver profiles](fake_receivers.md) |
