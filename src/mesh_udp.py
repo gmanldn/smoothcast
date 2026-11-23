@@ -190,6 +190,8 @@ class UdpTransport:
         self.stand_in_peers = list(stand_in_peers or [])
         self._datagram_handler: Callable[[Datagram], None] | None = None
         self.send_errors = 0
+        self.sent_bytes = 0
+        self.recv_bytes = 0
         self.closed = False
         self._unicast = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._group_sock: socket.socket | None = None
@@ -274,6 +276,7 @@ class UdpTransport:
     def _send(self, payload: bytes, target: tuple[str, int]) -> None:
         try:
             self._unicast.sendto(payload, target)
+            self.sent_bytes += len(payload)
         except OSError:
             self.send_errors += 1
 
@@ -287,6 +290,7 @@ class UdpTransport:
                 return
             except OSError:
                 return
+            self.recv_bytes += len(data)
             handler = self._datagram_handler
             if handler is not None:
                 handler(Datagram(source, data, multicast))

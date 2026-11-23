@@ -6,6 +6,7 @@ import threading
 import time
 
 import castctl
+import cast_mesh
 import state_labels
 import lan_interfaces
 import portal
@@ -71,6 +72,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         else:
             self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
+        cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
         return True
 
@@ -93,6 +95,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.toast("Room link copied")
 
     def _stop_portal(self) -> None:
+        cast_mesh.stop(self)
         current, self._portal = getattr(self, "_portal", None), None
         self._portal_ip = None
         timer = getattr(self, "_portal_activity_timer", None)
@@ -183,6 +186,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if mesh is not None:
             Async.run(lambda: mesh.observe_peers(peer_list), domain="background")
         self._reconcile_portal_casts()
+        cast_mesh.push_clients(self)
         return True
 
     def _portal_apply_music_autogain(self, value: bool) -> str:

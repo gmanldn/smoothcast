@@ -228,9 +228,10 @@ _ROUTER_NODE = None
 def test_mesh_modules_never_touch_playback_or_arbitrary_network_clients():
     forbidden = {"cast_session", "cast_control", "streamer", "dlna", "castctl", "server",
                  "urllib", "requests", "subprocess", "http", "ssl", "gi"}
-    for path in SRC.glob("mesh_*.py"):
-        if path.name == "mesh_transport.py":
-            continue                              # pinned HTTPS client (#358), reviewed separately
+    core = ("model", "ports", "beacon", "rpc", "membership", "state", "sync", "roles",
+            "visibility", "cache", "clients", "policy")
+    for name in core:                             # adapters (udp/http/transport/service) do I/O
+        path = SRC / f"mesh_{name}.py"
         tree = ast.parse(path.read_text())
         names = set()
         for node in ast.walk(tree):

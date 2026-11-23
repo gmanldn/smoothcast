@@ -254,3 +254,22 @@ They do not verify reachability from a phone or another LAN host, nor real
 transcoding of a growing file on a device.
 The isolated GUI smoke checks that the shared-room card builds; real second-device
 and physical playback-control checks remain device qualification.
+
+## Mesh (experimental, off by default)
+
+Full nodes on the same LAN can discover each other and share a live inventory of
+nodes, connected browsers and Cast/DLNA/browser targets (design:
+[MESH_DESIGN.md](MESH_DESIGN.md), threat model: [MESH_SECURITY.md](MESH_SECURITY.md)).
+It is disabled until the Network view ships. To try it, add to
+`~/.config/cast-control/config.json`:
+
+```json
+{"mesh_enabled": true, "mesh_seeds": ["192.168.1.20"], "mesh_strict": false}
+```
+
+`mesh_seeds` are optional private addresses to contact when multicast is blocked;
+`mesh_strict` only lets nodes already seen by presence discovery sync with you.
+Turning `mesh_enabled` off restores the exact previous behaviour: no sockets and no
+threads. Paired browsers can read the live view at `/api/mesh` and `/api/mesh/events`
+(Server-Sent Events). The mesh runs on its own thread and its failures never affect
+playback or the portal; `mesh_service.MeshService.diagnostics()` reports redacted health.

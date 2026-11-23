@@ -208,7 +208,7 @@ class Replicator:
 
     def _address(self, node_id: str) -> str | None:
         member = self._membership.member(node_id)
-        return None if member is None else member.address
+        return None if member is None else member.endpoint
 
     def _pump(self, link: _Link) -> None:
         """Start the next queued request for *link* if allowed."""

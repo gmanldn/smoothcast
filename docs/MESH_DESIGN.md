@@ -21,7 +21,11 @@ ticket disagree, the ticket's acceptance criteria win; update both.
 | Presence beacon, UDP transport | `src/mesh_beacon.py`, `src/mesh_udp.py` | done (#396) |
 | Membership, RPC router | `src/mesh_membership.py`, `src/mesh_rpc.py` | done (#397) |
 | Replication, view | `src/mesh_state.py`, `src/mesh_sync.py` | done (#398) |
-| Roles, visibility, cache, web push, UI, security, runtime | M6–M12 | planned |
+| Primary role, target visibility | `src/mesh_roles.py`, `src/mesh_visibility.py` | done (#399, #400) |
+| Cache, web clients and live feed | `src/mesh_cache.py`, `src/mesh_clients.py`, `src/portal_mesh_http.py` | done (#401, #402) |
+| Abuse resistance | `src/mesh_policy.py`, `docs/MESH_SECURITY.md` | done (#404) |
+| Runtime, HTTP request channel, app hook | `src/mesh_service.py`, `src/mesh_http.py`, `src/cast_mesh.py` | done (#405), **off by default** |
+| Network UI (desktop + browser) | M10 | planned (#403) |
 
 Deviations from the sketch below, decided while implementing: indirect probes are
 *witness* probes (a helper vouches from beats it heard first-hand, because the

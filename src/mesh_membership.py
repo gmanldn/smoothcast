@@ -125,6 +125,11 @@ class Member:
     probe_token: int = 0
     probe_started: float = 0.0
 
+    @property
+    def endpoint(self) -> str:
+        """``ip:port`` for request/response calls (the node's mesh port)."""
+        return f"{self.address}:{self.port}" if self.port else self.address
+
 
 @dataclass
 class Tombstone:
@@ -382,7 +387,7 @@ class Membership:
                 self.stats.probe_failures += 1
             done(bool(ok))
 
-        self._rpc.call(member.address, "ping", body, reply, timeout)
+        self._rpc.call(member.endpoint, "ping", body, reply, timeout)
 
     def _on_ping(self, _source: str, body: dict[str, Any]) -> dict[str, Any]:
         local = self._beacon.local
@@ -484,7 +489,7 @@ class Membership:
             if value is not None and value.get("ok") is True:
                 self._indirect_verdict(node_id, token, True, indirect=True)
 
-        self._rpc.call(helper.address, "pingreq", {"target": node_id}, reply,
+        self._rpc.call(helper.endpoint, "pingreq", {"target": node_id}, reply,
                        self.config.probe_timeout_s)
 
     def _indirect_verdict(self, node_id: str, token: int, alive: bool,
