@@ -235,7 +235,7 @@ class SessionMixin:
                     stop_if_cancelled_after_start()
                     return session, media
                 receiver_key = codec_key = ""
-                if use_direct and media.direct_ok:
+                if renderer is None:
                     try:
                         receiver_key = receiver_memory.receiver_key(
                             uuid=str(cfg.get("device_uuid") or ""), host=device_ip, port=8009)
@@ -287,7 +287,11 @@ class SessionMixin:
                     audio_delay_ms=adelay,
                     music_autogain=music_enabled,
                 )
+                # start_transcode returned only after verifying our HLS URL on
+                # the receiver; a successful FFmpeg/catt launch alone is not proof.
                 stop_if_cancelled_after_start()
+                if receiver_key:
+                    learned.record(receiver_key, codec_key, "hls", True)
                 return session, media
             except Exception:
                 # Clean up failed startup processes.
