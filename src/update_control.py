@@ -13,7 +13,7 @@ import version
 
 # Only the released line may update itself. A detached HEAD, a developer
 # branch or a dirty tree is never pulled: that would rewrite someone's work.
-ELIGIBLE_BRANCHES = frozenset({"main", "master"})
+ELIGIBLE_BRANCHES = frozenset({"develop", "main", "master"})
 
 
 def _git(repo: Path, args: list[str], timeout: int) -> str | None:
@@ -110,7 +110,7 @@ def _fetch_branch(repo: Path, branch: str, timeout: int) -> str | None:
 
 
 def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
-                  verify: bool = True) -> str | None:
+                  verify: bool = True, channel: str = "main") -> str | None:
     """Opt-in read-only update check. Never merges/pulls/restarts the running app.
 
     The only network operation is a bounded fetch of one release branch (and
@@ -118,8 +118,8 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     probe is not reported as an installed update. Frozen/installed packages do
     not attempt source checkout updates.
     """
-    if (not enabled or getattr(sys, "frozen", False)
-            or not (repo / ".git").exists()):
+    if (not enabled or channel not in {"develop", "main"}
+            or getattr(sys, "frozen", False) or not (repo / ".git").exists()):
         return None
     branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
     if branch not in ELIGIBLE_BRANCHES:
@@ -130,7 +130,7 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     before = _git(repo, ["rev-parse", "HEAD"], timeout)
     if not before:
         return None
-    candidate = _fetch_branch(repo, branch, timeout)
+    candidate = _fetch_branch(repo, channel, timeout)
     if not candidate or candidate == before:
         return None
     if _git(repo, ["merge-base", "--is-ancestor", before, candidate], timeout) is None:
@@ -144,7 +144,9 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     release = version.parse_version_text(source) if source is not None else None
     if not release or _semver(release) is None:
         return None
-    if _semver(release) <= _semver(version.__version__):
+    # Develop may advance through commits without changing its semantic version.
+    if (_semver(release) < _semver(version.__version__)
+            or (channel == "main" and _semver(release) == _semver(version.__version__))):
         return None
     if verify:
         # Tag signatures are checked against the pinned candidate SHA, never a
@@ -154,9 +156,9 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
             return (f"SmoothCast v{release} may be available, but its signature "
                     "could not be verified. No files were changed. Use a trusted "
                     "installer or review your update-signing keys.")
-    return (f"SmoothCast v{release} is available; running v{version.__version__}. "
-            "No files were changed. Update from your trusted release source "
-            "when playback is finished.")
+    return (f"SmoothCast {channel} candidate {candidate[:12]} (v{release}) "
+            f"is available; running v{version.__version__}. No files were changed. "
+            "Safe staged installation is not yet available.")
 
 
 def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = False,
