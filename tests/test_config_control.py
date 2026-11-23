@@ -37,6 +37,18 @@ def load_from_source(path, defaults):
 
 
 class ConfigRecoveryTests(unittest.TestCase):
+    def test_update_channel_setting_is_validated_and_defaults_to_develop(self):
+        defaults = real_defaults()
+        self.assertEqual(defaults["update_channel"], "develop")
+        self.assertEqual(config_control.sanitise_config(
+            {"update_channel": "main"}, defaults)["update_channel"], "main")
+        for invalid in ("MAIN", "feature", "", "../main", 1, True, None):
+            with self.subTest(invalid=invalid):
+                cfg = config_control.sanitise_config(
+                    {"update_channel": invalid, "quality": "high"}, defaults)
+                self.assertEqual(cfg["update_channel"], "develop")
+                self.assertEqual(cfg["quality"], "high")
+
     def test_invalid_fields_fall_back_without_losing_valid_neighbours(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "config.json"
