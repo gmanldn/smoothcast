@@ -1659,7 +1659,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 </section>
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Network</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
@@ -1798,6 +1798,10 @@ keepScreenOn.addEventListener("change",()=>{
 });
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
+function showJoinedName(value){
+  const name=typeof value==="string"&&value.trim()?value.trim():"Guest";
+  $("joinedAs").textContent="Joined as "+name;
+}
 function configureOpenJoin(){
   // This is presentation only; the host still decides whether a PIN is required.
   $("pinRow").hidden=true;
@@ -1819,6 +1823,7 @@ $("loginForm").addEventListener("submit",async e=>{
     $("pin").value="";
     try{localStorage.setItem("sc_name",d.participant.name)}catch(_){}
     $("displayName").value=d.participant.name;
+    showJoinedName(d.participant.name);
     $("login").hidden=true;
     void syncRemoteWakeLock();
     void restoreUpload();
@@ -1837,6 +1842,7 @@ $("loginForm").addEventListener("submit",async e=>{
       csrf=data.csrf;
       try{localStorage.setItem("sc_name",data.participant.name)}catch(_){}
       $("displayName").value=data.participant.name;
+      showJoinedName(data.participant.name);
       $("login").hidden=true;
       void syncRemoteWakeLock();
       void restoreUpload();
@@ -2308,7 +2314,7 @@ $("volume").addEventListener("change",()=>{
   editingControls.delete("volume");
   queueVolume(Number($("volume").value));
 });
-$("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
+$("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showJoinedName(d.participant.name);showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
   if(stalePage)throw Error("Reload required");
