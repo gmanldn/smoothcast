@@ -182,6 +182,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.library_search_stream: Callable | None = None
         self.library_replication = None
         self.mesh_files = None
+        self.nodes_provider: Callable | None = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -236,7 +237,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.room.expire_inactive(self.clock())
 
     def host_allowed(self, host: str) -> bool:
-        return bool(host) and host.lower() in self._allowed_hosts
+        return bool(host) and (host.lower() in self._allowed_hosts or lan_guard.is_entry_host(host))
 
     def origin_allowed(self, origin: str, host: str) -> bool:
         try:
@@ -554,6 +555,25 @@ class _Handler(BaseHTTPRequestHandler):
             payload, "gzip" in self.headers.get("Accept-Encoding", ""))
         return self._send(status, body, extra_headers={**extra, **headers})
 
+    def _nodes_page(self) -> None:
+        """Fallback entry page: live SmoothCast computers, for networks without mDNS."""
+        import html
+        provider = getattr(self.server, "nodes_provider", None)
+        try:
+            nodes = list(provider()) if provider else []
+        except Exception:
+            nodes = []
+        rows = "".join(
+            f'<li><a href="{html.escape(str(n.get("url", "")), quote=True)}">'
+            f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
+            for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
+        mine = html.escape(self.server.hostname_label or "This computer")
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,"
+                "initial-scale=1'><title>SmoothCast computers</title><h1>SmoothCast in this house</h1>"
+                "<p>Open any computer to join the room.</p><ul><li><a href='/'>" + mine
+                + " (this one)</a></li>" + rows + "</ul>")
+        return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
+
     def _mesh_file(self, path: str, *, head: bool) -> None:
         """Ranged media bytes by content key, served locally or proxied (#422)."""
         files = getattr(self.server, "mesh_files", None)
@@ -705,6 +725,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if path == "/nodes":
+            return self._nodes_page()
         if path == "/api/openapi.json":
             return self._send(200, api_spec.spec())
         if path == "/silence.wav":

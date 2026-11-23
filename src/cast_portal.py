@@ -190,6 +190,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         available = getattr(getattr(self, "_portal", None),
                             "peer_discovery_available", False)
         peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
+        if getattr(self, "_portal", None) is not None:
+            self._portal.server.nodes_provider = lambda: peer_list
         mesh = getattr(self, "_mesh_library", None)
         if mesh is not None:
             Async.run(lambda: mesh.observe_peers(peer_list), domain="background")

@@ -19,7 +19,7 @@ def source_routes() -> set[str]:
     for name in SOURCES:
         text = (ROOT / "src" / name).read_text(encoding="utf-8")
         for match in re.finditer(
-                r'''["'`](\^?/(?:api|mesh)/[^"'`\s?\\)]*|/screen|/silence\.wav)''', text):
+                r'''["'`](\^?/(?:api|mesh)/[^"'`\s?\\)]*|/screen|/nodes|/silence\.wav)''', text):
             found.add(re.split(r"\(", match.group(1).lstrip("^"))[0])
     return found
 

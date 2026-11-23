@@ -1264,6 +1264,35 @@
         ]
       }
     },
+    "/nodes": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "summary": "Fallback list of SmoothCast computers (HTML)",
+        "tags": [
+          "room"
+        ]
+      }
+    },
     "/screen": {
       "get": {
         "responses": {

@@ -80,6 +80,8 @@ PATHS: dict[str, dict] = {
                                    params=[_p("id", "path")], content="application/octet-stream",
                                    tag="screens")},
     "/screen": {"get": _op("The screen page (HTML)", auth=False, content="text/html", tag="screens")},
+    "/nodes": {"get": _op("Fallback list of SmoothCast computers (HTML)", auth=False,
+                          content="text/html")},
     "/silence.wav": {"get": _op("One second of silence for lock-screen controls", auth=False,
                                 content="audio/wav")},
     "/mesh/library/generation": {"get": _op("Library epoch, sequence, count, capabilities",
