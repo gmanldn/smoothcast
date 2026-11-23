@@ -1599,7 +1599,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced") -> list[str]:
         chain: list[str] = []
         aspect_filters = aspect_override.filters(aspect_mode)
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
@@ -1622,7 +1622,12 @@ class Session:
             post_overlay.extend(aspect_filters)
             if video_size and not aspect_filters:
                 out_w, out_h = _rotated_dimensions(*video_size, rotation)
-                if out_w > 1920 or out_h > 1080:
+                if quality == "saver" and software and (out_w > 1280 or out_h > 720):
+                    post_overlay.append(
+                        "scale=w=1280:h=720:force_original_aspect_ratio=decrease:"
+                        "force_divisible_by=2"
+                    )
+                elif out_w > 1920 or out_h > 1080:
                     post_overlay.append(
                         "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
                         "force_divisible_by=2"
@@ -1660,9 +1665,15 @@ class Session:
         # Scale the *transposed* picture. A 1920x1080 source rotated 90°
         # becomes 1080x1920; looking at input bounds alone missed this.
         # Both x264/yuv420p and h264_vaapi need even output dimensions.
-        if video_size and not aspect_filters and (software or rotation in (90, 270, 180)):
+        if video_size and ((quality == "saver" and software)
+                           or (not aspect_filters and (software or rotation in (90, 270, 180)))):
             out_w, out_h = _rotated_dimensions(*video_size, rotation)
-            if out_w > 1920 or out_h > 1080:
+            if quality == "saver" and software and (out_w > 1280 or out_h > 720):
+                chain.append(
+                    "scale=w=1280:h=720:force_original_aspect_ratio=decrease:"
+                    "force_divisible_by=2"
+                )
+            elif out_w > 1920 or out_h > 1080:
                 chain.append(
                     "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
                     "force_divisible_by=2"
@@ -1820,6 +1831,7 @@ class Session:
             embedded_bitmap=bitmap_track is not None,
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
+            quality=quality,
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
