@@ -255,7 +255,7 @@ def test_protocol_negotiation():
     for local, remote in (([1], [2]), ([], [1]), ([1], []), ([1], ["x"]), ([1], [None]),
                           ([1], [0, -1]), ([1], [True]), ([1], [1.0]),
                           ([1], ["1"]), ([1], range(1, 100)),
-                          ([1], [1] * (mm.MAX_PROTOCOLS + 1)))):
+                          ([1], [1] * (mm.MAX_PROTOCOLS + 1))):
         with pytest.raises(mm.MeshModelError):
             mm.negotiate_protocol(local, remote)
 
