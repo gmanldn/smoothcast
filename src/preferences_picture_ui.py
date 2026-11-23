@@ -13,7 +13,7 @@ class PicturePreferencesMixin:
         low, high = picture_adjustments.BOUNDS[key]
         row = Adw.ActionRow(
             title=title,
-            subtitle="Affects transcoded video on the next cast or restart.",
+            subtitle="Preview updates now; TV output changes on the next cast or restart.",
         )
         control = Gtk.SpinButton.new_with_range(low, high, step)
         control.set_digits(0 if step >= 1 else 2)
