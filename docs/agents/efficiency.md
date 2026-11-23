@@ -107,3 +107,13 @@ gh api -X POST "$R/issues/N/comments" -f body='Claim: <agent>; scope: <files>'
 
 `gh auth status` can report an invalid token while `gh api` works; trust
 `gh api user`. Use `--paginate` for more than 100 issues.
+
+## Complexity budget (#516)
+
+`python3 scripts/ci/complexity_report.py` prints source size, the largest
+modules and functions, startup imports and the bytes an agent reads first.
+`docs/complexity-baseline.json` is a ratchet: `tests/test_complexity_budget.py`
+fails only on large unexplained growth (total +20%, a module +30%, a new module
+over 1,200 lines). If growth is justified, refresh with `--write-baseline` and
+say why in the commit message. Prefer extending or deleting code over adding a
+module; see the strategy in #511.
