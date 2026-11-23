@@ -57,6 +57,7 @@ def _manifest(entries: object) -> list[tuple[str, int, str]]:
         raise StageError("Empty or oversized generation manifest")
     planned: list[tuple[str, int, str]] = []
     names: set[str] = set()
+    components: dict[str, str] = {}
     total = 0
     for raw_name, attributes in entries.items():
         name = _safe_name(raw_name)
@@ -65,6 +66,13 @@ def _manifest(entries: object) -> list[tuple[str, int, str]]:
         if folded in names:
             raise StageError("Duplicate or case-colliding manifest paths")
         names.add(folded)
+        for i in range(1, len(name.split("/")) + 1):
+            prefix = "/".join(name.split("/")[:i])
+            prior = components.setdefault(prefix.casefold(), prefix)
+            if prior != prefix:
+                raise StageError("Directory names collide by case")
+        if name == "stage-manifest.json":
+            raise StageError("Candidate uses reserved stage manifest path")
         if not isinstance(attributes, dict):
             raise StageError("Invalid file metadata")
         size, digest = attributes.get("size"), attributes.get("sha256")
@@ -105,12 +113,12 @@ def _copy_one(source: Path, dest: Path, size: int, digest: str) -> None:
                         raise StageError("Source grew beyond declared size")
                     calculated.update(block)
                     writer.write(block)
+                if os.name != "nt":
+                    os.fchmod(writer.fileno(), 0o700 if info.st_mode & 0o100 else 0o600)
                 writer.flush()
                 os.fsync(writer.fileno())
             if read != size or not hmac.compare_digest(calculated.hexdigest(), digest):
                 raise StageError("Candidate file changed or failed SHA-256 verification")
-            if os.name != "nt":
-                dest.chmod(0o700 if info.st_mode & 0o100 else 0o600)
     except OSError as exc:
         raise StageError(f"Cannot stage candidate file: {exc.strerror or type(exc).__name__}") from exc
 
@@ -137,7 +145,9 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
     root, source = Path(root), Path(source)
     if root.is_symlink() or source.is_symlink():
         raise StageError("Refusing a linked root/source")
-    if root.resolve() == source.resolve() or root.resolve() in source.resolve().parents:
+    # Canonicalise benign platform aliases such as macOS /tmp -> /private/tmp.
+    root, source = root.resolve(), source.resolve()
+    if root == source or root in source.parents:
         raise StageError("Cannot stage from within the installation")
     releases = root / "releases"
     _directory(root)
