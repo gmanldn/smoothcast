@@ -24,6 +24,7 @@ def test_new_fingerprints_are_bounded_and_old_records_remain_supported():
     assert "upload.hashVersion||1" in js
     assert "new Set(offsets)" in js
     assert "offset+=16*1024" in js
+    assert "Math.min(file.size,chunkSize,8*1024*1024)" in js
     assert "await new Promise(resolve=>setTimeout(resolve,0))" in js
 
 
