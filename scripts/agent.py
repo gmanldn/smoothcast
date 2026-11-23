@@ -15,6 +15,7 @@ Never launches a GUI, never force-pushes, never closes without ``--close``.
 from __future__ import annotations
 
 import argparse
+import ast
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -23,7 +24,6 @@ import re
 import subprocess
 import sys
 import time
-import tomllib
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -97,7 +97,9 @@ def parse_events(comments: list[dict]) -> list[dict]:
                 or "release the claim" in body.lower() or "releasing my claim" in body.lower():
             events.append({"kind": "release", "issue": issue, "agent": "legacy", "at": created,
                            "ttl": 0, "files": set(), "id": c.get("id", 0)})
-    return sorted(events, key=lambda e: (e["at"], e["id"]))
+    # IDs record immutable publication order. A heartbeat edits an older claim's
+    # beat in place; ordering by the beat would resurrect it after a release.
+    return sorted(events, key=lambda e: e["id"])
 
 
 def active_claims(events: list[dict], now: datetime) -> list[dict]:
@@ -312,16 +314,28 @@ def cmd_claim(a: argparse.Namespace) -> int:
     body = (f"Claim: {me} · ~{ttl} min lease, refresh with `agent.py heartbeat {a.number}` · "
             f"files: {', '.join(sorted(files)) or 'tbd'}\n{claim_marker(me, sorted(files), ttl)}")
     posted = gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments", "-f", f"body={body}")
-    assert isinstance(posted, dict)
-    # Optimistic lock: after posting, the earliest live claim on the ticket/files wins.
-    events = [e for e in parse_events(recent_comments()) if e["id"] <= posted["id"]]
-    mine = [e for e in events if e["id"] == posted["id"]]
+    if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+        raise td.DigestError("GitHub did not return a claim comment ID")
+    # Verify publication before taking an assignment. The global comment feed
+    # can lag; consult this issue directly only when our claim is missing.
+    recent = recent_comments()
+    if not any(c.get("id") == posted["id"] for c in recent):
+        direct = gh(f"repos/{REPO}/issues/{a.number}/comments?per_page=100")
+        if isinstance(direct, list):
+            seen = {c.get("id") for c in recent}
+            recent.extend(c for c in direct if isinstance(c, dict) and c.get("id") not in seen)
+    # Optimistic lock: only an earlier published claim can beat our claim.
+    events = [e for e in parse_events(recent) if e["id"] <= posted["id"]]
+    mine = [e for e in events if e["id"] == posted["id"] and e["kind"] == "claim"]
     rivals = [c for c in active_claims(events, utcnow())
               if c["agent"] != me and (c["issue"] == a.number or files & c["files"]) and c["id"] < posted["id"]]
-    if mine and rivals:
+    if not mine or rivals:
         gh("-X", "DELETE", f"repos/{REPO}/issues/comments/{posted['id']}")
-        print(f"LOST RACE to {rivals[0]['agent']} on #{rivals[0]['issue']}; claim withdrawn. "
-              "Run: python3 scripts/agent.py next")
+        if rivals:
+            print(f"LOST RACE to {rivals[0]['agent']} on #{rivals[0]['issue']}; claim withdrawn. "
+                  "Run: python3 scripts/agent.py next")
+        else:
+            print("CLAIM NOT CONFIRMED in GitHub comment feed; withdrawn, retry or pick another.")
         return 3
     gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/labels", "-f", "labels[]=in-flight")
     login = gh("user")
@@ -335,14 +349,21 @@ def cmd_claim(a: argparse.Namespace) -> int:
 
 def cmd_heartbeat(a: argparse.Namespace) -> int:
     me = agent_id()
-    for c in reversed(gh(f"repos/{REPO}/issues/{a.number}/comments?per_page=100") or []):  # type: ignore[union-attr]
+    comments = gh(f"repos/{REPO}/issues/{a.number}/comments?per_page=100")
+    if not isinstance(comments, list):
+        raise td.DigestError(f"cannot inspect claims on #{a.number}")
+    live = active_claims(parse_events(comments), utcnow())
+    owned = {c["id"] for c in live if c["agent"] == me and c["issue"] == a.number}
+    for c in reversed(comments):
+        if c.get("id") not in owned:
+            continue
         m = _MARK.search(c.get("body") or "")
-        if m and f"agent={me}" in m.group(2) and m.group(1) == "claim":
+        if m and m.group(1) == "claim":
             new = re.sub(r"beat=\d+", f"beat={int(time.time())}", c["body"])
             gh("-X", "PATCH", f"repos/{REPO}/issues/comments/{c['id']}", "-f", f"body={new}")
             print(f"lease on #{a.number} refreshed")
             return 0
-    print(f"no live claim by {me} on #{a.number}")
+    print(f"no live claim by {me} on #{a.number}; claim again instead of reviving an expired lease")
     return 1
 
 
@@ -367,8 +388,22 @@ def cmd_release(a: argparse.Namespace) -> int:
 
 
 def mypy_gated() -> set[str]:
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    return set(data.get("tool", {}).get("mypy", {}).get("files", []))
+    """Read the simple list of mypy-gated files with Python 3.10 stdlib only."""
+    contents = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    section = contents.split("[tool.mypy]", 1)
+    if len(section) != 2:
+        return set()
+    body = section[1].split("\n[", 1)[0]
+    match = re.search(r"(?ms)^files\s*=\s*(\[[^\]]*\])", body)
+    if not match:
+        return set()
+    try:
+        files = ast.literal_eval(match.group(1))
+    except (SyntaxError, ValueError) as exc:
+        raise ValueError("invalid [tool.mypy] files list in pyproject.toml") from exc
+    if not isinstance(files, list) or any(not isinstance(f, str) for f in files):
+        raise ValueError("[tool.mypy] files must be a list of strings")
+    return set(files)
 
 
 def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, list[str]]]:
@@ -460,6 +495,14 @@ def cmd_ship(a: argparse.Namespace) -> int:
     return 5
 
 
+def close_issue(number: int) -> None:
+    """Close through REST and verify the response; gh issue close may hit GraphQL 403."""
+    result = gh("-X", "PATCH", f"repos/{REPO}/issues/{number}", "-f", "state=closed",
+                "-f", "state_reason=completed")
+    if not isinstance(result, dict) or result.get("state") != "closed":
+        raise td.DigestError(f"GitHub did not confirm closing #{number}")
+
+
 def cmd_done(a: argparse.Namespace) -> int:
     head = git("rev-parse", "HEAD").strip()
     if subprocess.run(["git", "merge-base", "--is-ancestor", head, "origin/develop"], cwd=ROOT).returncode:
@@ -472,8 +515,8 @@ def cmd_done(a: argparse.Namespace) -> int:
     gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments", "-f", f"body={body}")
     release(a.number, "work complete.")
     if a.close:
-        subprocess.run(["gh", "issue", "close", str(a.number), "--reason", "completed"], cwd=ROOT)
-        print(f"closed #{a.number}")
+        close_issue(a.number)
+        print(f"closed #{a.number} (confirmed by GitHub REST)")
     else:
         print(f"evidence posted on #{a.number}; add --close once every acceptance item passes")
     return 0
