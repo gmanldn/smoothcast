@@ -261,7 +261,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>controller.abort(),60000)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
-    assert "Select Resume upload to retry" in page
+    assert "Select Resume to retry" in page
     assert "Audio is validated and added to the shared queue" in page
     assert "video can be queued or streamed" in page
     assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
@@ -874,37 +874,42 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         status, raw, _ = rig.request("POST", "/api/uploads",
-                                     {"name": "../clip.mp4", "size": 6, "queue": False},
+                                     {"name": "../clip.mp4", "size": 5, "queue": False},
                                      cookie=cookie, csrf=login_result["csrf"], origin=origin)
         assert status == 201
         created = decode(raw)
         upload_id = created["id"]
         status, _, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
-            extra_headers={"Content-Range": "bytes 0-2/6"},
+            "PUT", f"/api/uploads/{upload_id}", b"ab", cookie=cookie,
+            extra_headers={"Content-Range": "bytes 0-1/5"},
             content_type="application/octet-stream")
         assert status == 403  # unauthenticated chunks never reach the store
         status, raw, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
+            "PUT", f"/api/uploads/{upload_id}", b"ab", cookie=cookie,
             csrf=login_result["csrf"], origin=origin,
-            extra_headers={"Content-Range": "bytes 0-2/6"},
+            extra_headers={"Content-Range": "bytes 0-1/5"},
             content_type="application/octet-stream")
-        assert status == 200 and decode(raw)["received"] == 3
+        assert status == 200 and decode(raw)["received"] == 2
+        # Reopen the portal with the original cookie, as a reloaded browser does.
+        status, raw, _ = rig.request("GET", "/api/session", cookie=cookie)
+        assert status == 200
+        resumed = decode(raw)
+        assert resumed["participant"]["id"] == login_result["participant"]["id"]
         status, raw, _ = rig.request(
             "GET", f"/api/uploads/{upload_id}", cookie=cookie)
-        assert status == 200 and decode(raw)["received"] == 3
+        assert status == 200 and decode(raw)["received"] == 2
         status, raw, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie,
-            csrf=login_result["csrf"], origin=origin,
-            extra_headers={"Content-Range": "bytes 3-5/6"},
+            "PUT", f"/api/uploads/{upload_id}", b"cde", cookie=cookie,
+            csrf=resumed["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 2-4/5"},
             content_type="application/octet-stream")
         assert status == 200 and decode(raw)["complete"]
         status, raw, _ = rig.request("POST", f"/api/uploads/{upload_id}/complete", {},
-                                     cookie=cookie, csrf=login_result["csrf"], origin=origin)
+                                     cookie=cookie, csrf=resumed["csrf"], origin=origin)
         assert status == 202 and decode(raw)["ok"]
         action, payload = rig.calls[-1]
         assert action == "cast_upload"
-        assert Path(payload["path"]).read_bytes() == b"abcdef"
+        assert Path(payload["path"]).read_bytes() == b"abcde"
         assert Path(payload["path"]).parent == uploads.root
     finally:
         rig.close()
