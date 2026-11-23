@@ -412,3 +412,42 @@ assert.deepEqual(calls,["queue_clear"]);
 """
     subprocess.run(["node", "-"], input=harness + actions + scenarios,
                    check=True, text=True, timeout=10)
+
+
+def test_browser_screen_help_and_available_controls_for_touch_guests():
+    """Disclose screen-only effects and disable commands with no available target."""
+    import shutil
+    import subprocess
+    import pytest
+    from portal_screen_page import panel_html
+
+    panel = panel_html()
+    assert "How to use and control browser screens" in panel
+    assert "<details class=\"help\"><summary>" in panel
+    assert "not the main room TV" in panel
+    assert "until it reconnects" in panel
+    assert 'toggle.disabled=!sc.item||!sc.ready' in panel
+    assert 'stop.disabled=!sc.item||!sc.ready' in panel
+    assert 'pick.addEventListener("change",()=>{choice[sc.id]=pick.value;updateScreenPlayButton(play,pick,sc.ready)})' in panel
+
+    script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function updateScreenPlayButton(")
+    end = script.index("const label=", start)
+    fn = script[start:end]
+    if not shutil.which("node"):
+        pytest.skip("Node.js is required to test browser screen selection")
+    harness = r"""
+const assert=require("node:assert/strict");
+const play={disabled:false},pick={value:""};
+updateScreenPlayButton(play,pick,true);
+assert.equal(play.disabled,true,"no item selected");
+pick.value="queue-1";
+updateScreenPlayButton(play,pick,true);
+assert.equal(play.disabled,false,"reachable screen with a selected item");
+updateScreenPlayButton(play,pick,false);
+assert.equal(play.disabled,true,"unreachable screen cannot play");
+pick.value="";
+updateScreenPlayButton(play,pick,true);
+assert.equal(play.disabled,true,"cleared selection cannot play");
+"""
+    subprocess.run(["node", "-"], input=fn + harness, check=True, text=True, timeout=10)
