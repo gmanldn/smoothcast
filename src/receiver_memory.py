@@ -67,6 +67,31 @@ def codec_signature(*, container: str, video: str, profile: str = "none",
     return hashlib.sha256("|".join(p.lower() for p in parts).encode("ascii")).hexdigest()
 
 
+def media_signature(media: object, *, container: str, subtitle_kind: str) -> str:
+    """Form a codec-only signature from ffprobe facts, never file metadata.
+
+    FFprobe media exposes pixel format but may not expose the H.264 level;
+    include pixel format (bit depth) and the level if available. A learned
+    preference is never authority to bypass the hard direct-play planner.
+    """
+    if not _CODEC_PART.fullmatch(container) or subtitle_kind not in (
+            "none", "sidecar", "embedded", "burn"):
+        raise ValueError("Invalid source codec descriptor")
+
+    def clean(value: object) -> str:
+        raw = str(value or "none").strip().lower()
+        if "/" in raw or "\\" in raw:
+            raise ValueError("Codec descriptor must not be a path")
+        return re.sub(r"[^a-z0-9_.+-]", "_", raw)[:48] or "none"
+
+    return codec_signature(
+        container=container, video=clean(getattr(media, "vcodec", None)),
+        profile=clean(getattr(media, "vprofile", None)),
+        level=clean(getattr(media, "vlevel", None) or getattr(media, "pix_fmt", None)),
+        audio=clean(getattr(media, "acodec", None)), subtitle=subtitle_kind,
+    )
+
+
 def _digest(value: str) -> bool:
     return isinstance(value, str) and _DIGEST.fullmatch(value) is not None
 
