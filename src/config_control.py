@@ -43,6 +43,7 @@ _OPTIONS = {
     "subtitle_style": frozenset(subtitle_style.PRESETS),
     "accent": accent.IDS,
     "density": density.IDS,
+    "update_channel": frozenset({"develop", "main"}),
 }
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
