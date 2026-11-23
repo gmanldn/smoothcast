@@ -62,6 +62,19 @@ class SourceShapeTests(unittest.TestCase):
                 self.assertIs(type(media.direct_ok), bool)
                 self.assertTrue(media.direct_reason)
 
+    def test_fake_receiver_rejects_malformed_video_codec_levels(self):
+        stream = {
+            "codec": "h264", "profile": "high", "level": "4.1",
+            "width": 1920, "height": 1080, "fps": 30,
+        }
+        self.assertTrue(supports("chromecast-gen2", stream))
+        for level in ("-1.0", "4.-1", "4.10", "4", "bogus", None):
+            with self.subTest(level=level):
+                self.assertFalse(supports(
+                    "chromecast-gen2", {**stream, "level": level},
+                ))
+        self.assertEqual(_fake_profiles["level_tuple"]("5.2"), (5, 2))
+
     def test_fake_receiver_rejects_noninteger_video_geometry(self):
         # A Python bool is an int subclass; ffprobe dimensions/fps are not.
         valid = {
