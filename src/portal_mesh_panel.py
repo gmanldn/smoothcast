@@ -48,6 +48,8 @@ _PANEL = r"""
 <script>
 (function(){
   const panel=document.getElementById("meshPanel");if(!panel)return;
+  const navLink=document.getElementById("meshNavLink");
+  function showNetworkNavigation(visible){if(navLink)navLink.hidden=!visible}
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
@@ -134,10 +136,10 @@ _PANEL = r"""
     if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return schedule();
     try{
       const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store"});
-      if(r.status===503||r.status===404){panel.hidden=true;return schedule()}
+      if(r.status===503||r.status===404){panel.hidden=true;showNetworkNavigation(false);return schedule()}
       if(!r.ok)return schedule();
       const d=await r.json();nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
-      panel.hidden=false;started=true;backoff=3000;render();open();
+      panel.hidden=false;showNetworkNavigation(true);started=true;backoff=3000;render();open();
     }catch(_){schedule()}
   }
   document.addEventListener("visibilitychange",()=>{
@@ -145,7 +147,7 @@ _PANEL = r"""
     else{clearTimeout(hiddenTimer);if(started&&!es)boot()}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """
