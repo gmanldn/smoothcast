@@ -44,6 +44,16 @@ class CanonicalVersionTests(unittest.TestCase):
                 f"{version.MAJOR}.{version.MINOR}.{version.PATCH}",
             )
 
+    def test_candidate_release_source_is_parsed_without_execution(self):
+        source = (
+            "MAJOR = 4\nMINOR = 5\nPATCH = 6\n"
+            "raise AssertionError('untrusted source was executed')\n"
+        )
+        self.assertEqual(version.parse_version_text(source), "4.5.6")
+        self.assertIsNone(version.parse_version_text("MAJOR = 1\nMINOR = True\nPATCH = 4\n"))
+        self.assertIsNone(version.parse_version_text("def bad(:\n"))
+        self.assertIsNone(version.parse_version_text("MAJOR = 1\nMINOR = 2\n"))
+
     def test_checkout_version_parsing_never_executes_arbitrary_code(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
