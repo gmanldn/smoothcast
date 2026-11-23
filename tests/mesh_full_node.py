@@ -12,13 +12,14 @@ import mesh_membership as mem
 import mesh_model as mm
 import mesh_state as ms_
 import mesh_sync as sync
+from mesh_policy import MeshPolicy
 from mesh_rpc import RpcRouter
 
 
 class FullNode:
     def __init__(self, *, node_id: str, boot_id: str, name: str, clock: Any,
                  transport: Any, rng: random.Random, boot_epoch: int,
-                 seeds: tuple[str, ...] = (), hook_wake: bool = True,
+                 seeds: tuple[str, ...] = (), hook_wake: bool = True, strict: bool = False,
                  sync_config: sync.SyncConfig | None = None) -> None:
         self.node_id = node_id
         self._clock = clock
@@ -29,7 +30,10 @@ class FullNode:
         own = mm.NodeRecord(node_id=node_id, boot_id=boot_id, name=name, version="1.2.0",
                             rev=1, boot_epoch=boot_epoch, mesh_port=8801,
                             capabilities=("room",), addresses=(transport.address,))
-        self.rpc = RpcRouter(transport)
+        self.policy = MeshPolicy(
+            strict=strict, member_addresses=lambda: [m.address for m in self.membership.members()],
+            is_blocked=lambda a: self.membership.is_blocked_address(a))
+        self.rpc = RpcRouter(transport, authorize=self.policy.allow, clock=clock)
         self.beacon = mb.Beacon(clock=clock, transport=transport, rng=rng, local=self.local,
                                 on_event=self._on_beacon,
                                 config=mb.BeaconConfig(seeds=tuple(seeds)))

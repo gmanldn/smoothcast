@@ -111,8 +111,8 @@ class Replicator:
         self._repair_timer: TimerHandle | None = None
         self._started = False
         self._closed = False
-        rpc.register("sync", self._on_sync)
-        rpc.register("push", self._on_push)
+        rpc.register("sync", self._on_sync, protected=True)
+        rpc.register("push", self._on_push, protected=True)
 
     # -- lifecycle ----------------------------------------------------------
     def start(self) -> None:
@@ -181,6 +181,13 @@ class Replicator:
                     link = self._link(event.node_id)
                     link.want_sync = True
                     self._pump(link)
+
+    def revoke(self, node_id: str) -> None:
+        """Host action: cut a peer off now (it falls back to public discovery only)."""
+        self._membership.block(node_id)
+        self._drop_link(node_id)
+        self._state.drop(node_id)
+        self._publisher.changed()
 
     def refresh_incarnation(self) -> None:
         """Mirror a changed incarnation into the record (called on a timer)."""

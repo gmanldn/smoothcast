@@ -47,6 +47,8 @@ SEED_RETRY_S = 5.0
 UNICAST_AFTER_S = 2.5            # no multicast from a peer for this long -> unicast beats
 PEER_FORGET_S = 300.0
 RIVAL_WINDOW_S = 5.0
+NONCE_TTL_S = 10.0
+ADDRESS_CLAIM_S = 1.6      # a live address cannot be displaced by another source
 RATE_CAPACITY = 24.0
 RATE_REFILL_PER_S = 12.0
 MAX_BUCKETS = 256
@@ -238,6 +240,7 @@ class _Peer:
     last_heard: float
     last_multicast: float = -1e9
     rival_seen: float = -1e9
+    addr_heard: float = -1e9      # last beat from the *current* address
 
 
 @dataclass
@@ -258,6 +261,8 @@ class BeaconStats:
     stale_boots: int = 0
     sent: int = 0
     callback_errors: int = 0
+    address_conflicts: int = 0
+    unsolicited_welcomes: int = 0
 
 
 @dataclass
@@ -286,7 +291,7 @@ class Beacon:
         self.stats = BeaconStats()
         self._peers: dict[str, _Peer] = {}
         self._buckets: OrderedDict[str, _Bucket] = OrderedDict()
-        self._nonces: OrderedDict[str, None] = OrderedDict()
+        self._nonces: OrderedDict[str, float] = OrderedDict()
         self._timers: list[TimerHandle] = []
         self._burst_timers: list[TimerHandle] = []
         self._welcomed: dict[str, float] = {}
@@ -442,8 +447,8 @@ class Beacon:
     def _message(self, kind: str, *, echo: str = "", hints: bool = False) -> bytes:
         nonce = "%016x" % self._rng.getrandbits(64)
         if kind == "hello":
-            self._nonces[nonce] = None
-            while len(self._nonces) > 16:
+            self._nonces[nonce] = self._clock.monotonic()
+            while len(self._nonces) > 64:
                 self._nonces.popitem(last=False)
         gossip: tuple[tuple[str, int], ...] = ()
         if hints:
@@ -518,6 +523,11 @@ class Beacon:
                 self._emit_safe(DuplicateIdentity(message.node_id, message.boot_id,
                                                   datagram.src, True, message.boot_epoch))
             return
+        if message.kind == "welcome":
+            sent = self._nonces.get(message.echo)
+            if sent is None or now - sent > NONCE_TTL_S:
+                self.stats.unsolicited_welcomes += 1   # replayed or forged reply
+                return
         if message.kind == "goodbye":
             self._handle_goodbye(message, datagram)
             return
@@ -561,6 +571,7 @@ class Beacon:
             peer = self._peers[message.node_id] = _Peer(
                 message.node_id, message.boot_id, message.boot_epoch,
                 message.incarnation, message.rev, src, message.port, now)
+            peer.addr_heard = now
             if datagram.multicast:
                 peer.last_multicast = now
             self._emit_safe(PeerSeen(message.node_id, message.boot_id, src, message.port,
@@ -585,7 +596,7 @@ class Beacon:
             peer.boot_id, peer.boot_epoch = message.boot_id, message.boot_epoch
             peer.incarnation, peer.rev = message.incarnation, message.rev
             peer.address, peer.port = src, message.port
-            peer.last_heard = now
+            peer.last_heard = peer.addr_heard = now
             if datagram.multicast:
                 peer.last_multicast = now
             self._emit_safe(PeerSeen(message.node_id, message.boot_id, src, message.port,
@@ -595,6 +606,14 @@ class Beacon:
                                      message.incarnation, message.rev, datagram.multicast,
                                      message.port, message.boot_epoch))
             return
+        if peer.address != src:
+            if now - peer.addr_heard < ADDRESS_CLAIM_S:
+                # The node is still beating from its known address: a second source
+                # using its identity is a conflict (or a spoof), never a move.
+                self.stats.address_conflicts += 1
+                return
+        else:
+            peer.addr_heard = now
         moved = peer.address != src or peer.port != message.port
         peer.last_heard = now
         if datagram.multicast:
@@ -602,6 +621,7 @@ class Beacon:
         peer.incarnation = max(peer.incarnation, message.incarnation)
         if moved:
             peer.address, peer.port = src, message.port
+            peer.addr_heard = now
             self._emit_safe(PeerSeen(message.node_id, message.boot_id, src, message.port,
                                      peer.incarnation, message.rev, message.boot_epoch,
                                      "moved"))
