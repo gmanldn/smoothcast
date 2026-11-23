@@ -70,6 +70,11 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
     cfg = deepcopy(defaults)
     if not isinstance(raw, dict):
         return cfg
+    # Existing installations had an explicit quality choice but no auto-mode
+    # flag. Preserve that user's preference; only fresh profiles default auto.
+    if ("quality_auto" in defaults and "quality" in raw
+            and "quality_auto" not in raw):
+        cfg["quality_auto"] = False
     for key, value in raw.items():
         if key not in defaults:
             continue
