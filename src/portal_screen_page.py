@@ -240,16 +240,33 @@ _PANEL_HTML = r"""
   const panel=document.getElementById("screensPanel"),dash=document.getElementById("dashboard");
   setInterval(()=>{if(dash&&dash.hidden)panel.hidden=true},1000);
   let items=[],seq=0,queueOptionsKey="";const choice=Object.create(null);
+  const pendingScreenCommands=new Map();
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const clock=s=>{s=Math.max(0,Math.floor(Number(s)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
   async function send(id,body){
-    try{const r=await fetch(`/api/screens/${id}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf},
+    const key=String(id),session=csrf;
+    if(pendingScreenCommands.get(key)===session)return;
+    pendingScreenCommands.set(key,session);refreshScreenPending(key);
+    if(csrf===session)msg.textContent="Sending screen command…";
+    try{const r=await fetch(`/api/screens/${encodeURIComponent(key)}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session},
       body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
-      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");msg.textContent="Screen command received; checking its state.";
-    }catch(err){msg.textContent=err.message}}
+      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");
+      if(csrf===session)msg.textContent="Screen command received; checking its state.";
+    }catch(err){if(csrf===session)msg.textContent=err.message}
+    finally{if(pendingScreenCommands.get(key)===session){pendingScreenCommands.delete(key);refreshScreenPending(key)}}
+  }
   function updateScreenPlayButton(play,pick,ready){play.disabled=!ready||!pick.value}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
   const screenById=new Map();
+  function markScreenPending(li,id){
+    const busy=pendingScreenCommands.get(id)===csrf;
+    li.setAttribute("aria-busy",String(busy));
+    for(const button of Array.from(li.children[1]?.children||[]).slice(1))button.setAttribute("aria-disabled",String(busy));
+  }
+  function refreshScreenPending(id){
+    const row=Array.from(list.children).find(li=>li.dataset?.screenId===id);
+    if(row)markScreenPending(row,id);
+  }
   function makeScreenRow(sc){
     const key=String(sc.id),li=el("li","queue-item"),box=el("div");
     li.dataset.screenId=key;
@@ -307,6 +324,7 @@ _PANEL_HTML = r"""
     toggle.disabled=!sc.item||!sc.ready;
     stop.setAttribute("aria-label","Stop playback on "+sc.name);
     stop.disabled=!sc.item||!sc.ready;
+    markScreenPending(li,key);
   }
   window.scRenderScreens=function(s){
     const queuePanel=document.getElementById("queuePanel");
