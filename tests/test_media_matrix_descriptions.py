@@ -93,5 +93,15 @@ class SourceShapeTests(unittest.TestCase):
                         self.assertFalse(accepted)
 
 
+    def test_report_matches_synthetic_video_capability_matrix(self):
+        generator = run_path(str(ROOT / "scripts" / "ci" / "render_playback_matrix.py"))
+        expected = generator["render"]()
+        actual = (ROOT / "docs" / "PLAYBACK_MATRIX.md").read_text("utf-8")
+        self.assertEqual(actual, expected, "Regenerate the checked-in matrix using --write")
+        self.assertEqual(sum(line.startswith("| sample-") for line in actual.splitlines()), 48)
+        self.assertIn("Not a direct/remux/transcode/playability matrix", actual)
+        self.assertIn("not playable-or-typed-refusal evidence", actual)
+
+
 if __name__ == "__main__":
     unittest.main()
