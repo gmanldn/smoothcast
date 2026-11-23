@@ -435,7 +435,8 @@ class CastControlApp(Adw.Application):
             return
         key = (disk if stale_version else None,
                disk_revision if stale_revision else None)
-        if key == self._noticed_runtime_key:
+        if key == self._noticed_runtime_key and getattr(
+                window, "_installed_version_stale", False):
             return
         self._noticed_runtime_key = key
         if stale_version:
