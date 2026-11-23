@@ -194,7 +194,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             "Nothing is downloaded or installed automatically. These options "
             "apply on the next app launch, not during playback.",
         )
-        self._switch(updates, "auto_update", "Check for releases on startup",
+        self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
         self._switch(updates, "verify_updates", "Require a trusted signature",
@@ -291,7 +291,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
-                     "house_pin_enabled", "show_cover_art", "auto_update",
+                     "house_pin_enabled", "show_cover_art", "check_release_updates",
                      "verify_updates"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
