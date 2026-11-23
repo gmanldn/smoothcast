@@ -28,6 +28,7 @@ dev = [
     "mypy",
     "hypothesis",
     "PyYAML>=6,<7",
+    "pillow>=11,<14",  # Exercise optional join-slate rendering in headless CI
 ]
 
 packaging = [
