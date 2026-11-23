@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
+from pathlib import Path
 from types import SimpleNamespace
+import sys
 import unittest
 from unittest import mock
 
-import dlna
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import dlna  # noqa: E402
 
 
 def result(value=None, error=None):
