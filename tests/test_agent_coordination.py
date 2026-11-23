@@ -141,3 +141,68 @@ def test_failing_ids_parses_pytest_summary_and_ignores_noise():
            "ERROR tests/test_b.py::test_y\nFAILED tests/test_a.py::test_x - again\n3 failed")
     assert agent.failing_ids(out) == ["tests/test_a.py::test_x", "tests/test_b.py::test_y"]
     assert agent.failing_ids("all passed") == []
+
+
+def test_heartbeat_edit_cannot_resurrect_a_released_claim():
+    # Heartbeat updates the old comment in place *after* the release was posted.
+    # Its beat is now newer than release's timestamp, but its ID is older.
+    old = marker_comment(1, 10, 30, "a1", ["src/a.py"])
+    old["body"] = old["body"].replace(
+        "beat=" + str(int((NOW - timedelta(minutes=30)).timestamp())),
+        "beat=" + str(int((NOW - timedelta(minutes=1)).timestamp())),
+    )
+    released = comment(2, 10, 10, "Released\n<!-- sc-release v1 agent=a1 -->")
+    assert claims(old, released) == []
+
+
+def test_heartbeat_cannot_extend_expired_or_released_claim(monkeypatch):
+    calls = []
+    expired = marker_comment(1, 10, 120, "me", ["src/a.py"], ttl=90)
+    released = marker_comment(2, 11, 20, "me", ["src/b.py"])
+    release_event = comment(3, 11, 10, "Released\n<!-- sc-release v1 agent=me -->")
+    def fake_gh(*args):
+        calls.append(args)
+        return [expired] if "/10/" in args[0] else [released, release_event]
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "me")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    for number in (10, 11):
+        assert agent.cmd_heartbeat(agent.build_parser().parse_args(["heartbeat", str(number)])) == 1
+    assert not any(args[0] == "-X" for args in calls)
+
+
+def test_unconfirmed_claim_is_withdrawn_without_assignee_or_label(monkeypatch):
+    calls = []
+    def fake_gh(*args):
+        calls.append(args)
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            return {"id": 90}
+        if args[0].endswith("/comments?per_page=100"):
+            return []
+        return None
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "me")
+    monkeypatch.setattr(agent, "load_issue", lambda n: {"body": "edit src/a.py"})
+    monkeypatch.setattr(agent, "recent_comments", lambda: [])
+    assert agent.cmd_claim(agent.build_parser().parse_args(["claim", "42"])) == 3
+    assert any(args[:2] == ("-X", "DELETE") and args[2].endswith("/comments/90") for args in calls)
+    assert not any("labels" in " ".join(args) or "assignees" in " ".join(args) for args in calls)
+
+
+def test_mypy_file_selection_uses_python_310_standard_library():
+    assert {"src/actions.py", "src/version.py"} <= agent.mypy_gated()
+
+
+def test_close_issue_requires_explicit_rest_confirmation(monkeypatch):
+    calls = []
+    def ok(*args):
+        calls.append(args)
+        return {"state": "closed"}
+    monkeypatch.setattr(agent, "gh", ok)
+    agent.close_issue(42)
+    assert calls == [("-X", "PATCH", "repos/gmanldn/smoothcast/issues/42",
+                      "-f", "state=closed", "-f", "state_reason=completed")]
+    monkeypatch.setattr(agent, "gh", lambda *_args: {"state": "open"})
+    import pytest
+    with pytest.raises(agent.td.DigestError, match="did not confirm"):
+        agent.close_issue(42)
