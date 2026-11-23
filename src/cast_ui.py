@@ -16,6 +16,7 @@ import cast_targets
 
 import responsive_layout
 import queue_accessibility
+import slider_accessibility
 
 import buffer_health
 import notifications
@@ -370,6 +371,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._syncing = True
         self.volume_scale.set_value(50)
         self._syncing = False
+        slider_accessibility.sync_percent(self.volume_scale, Gtk, 50)
         self.volume_scale.connect("value-changed", self._on_volume_changed)
         self.volume_label = Gtk.Label(label="50%", xalign=1.0, ellipsize=Pango.EllipsizeMode.END)
         self.volume_label.add_css_class("caption")

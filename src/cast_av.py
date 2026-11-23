@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import slider_accessibility
 import command_trace
 import benchmark
 
@@ -35,6 +36,7 @@ class AvMixin:
     def _on_volume_changed(self, scale) -> None:
         value = int(scale.get_value())
         self.volume_label.set_text(f"{value}%")
+        slider_accessibility.sync_percent(scale, Gtk, value)
         self._apply_volume_icon()
         if self._syncing:
             return

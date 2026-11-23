@@ -14,6 +14,7 @@ import castctl
 import config_control
 import config_persistence
 import idle_chrome
+import slider_accessibility
 
 import audio_monitor
 import ui_theme
@@ -147,7 +148,10 @@ class Async:
 
 class SeekBar(Gtk.DrawingArea):
     def __init__(self, on_seek, on_hover) -> None:
-        super().__init__()
+        # The role is construct-only; without it assistive tech sees a canvas.
+        super().__init__(accessible_role=Gtk.AccessibleRole.SLIDER)
+        self.update_property([Gtk.AccessibleProperty.LABEL], ["Playback position"])
+        slider_accessibility.sync_position(self, Gtk, 0.0, 0.0)
         self.position = 0.0
         self.duration = 0.0
         self.buffered = 0.0
@@ -176,6 +180,7 @@ class SeekBar(Gtk.DrawingArea):
         self.position = position or 0.0
         self.duration = duration or 0.0
         self.buffered = buffered or 0.0
+        slider_accessibility.sync_position(self, Gtk, self.position, self.duration)
         self.queue_draw()
 
     def _x_to_value(self, x: float) -> float:
