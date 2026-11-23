@@ -1,7 +1,6 @@
 """Receiver-safe HLS frame-rate policy; no ffmpeg or real Cast process (#545)."""
 from __future__ import annotations
 
-import math
 from pathlib import Path
 import sys
 import unittest
