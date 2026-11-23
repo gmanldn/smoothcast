@@ -107,3 +107,15 @@ def test_fails_closed_on_unprivileged_install_directory(tmp_path):
     with pytest.raises(mg.StageError, match="owned and private"):
         mg.stage_local_snapshot(root, source, COMMIT, files)
     assert not (root / "releases" / COMMIT).exists()
+
+
+def test_rejects_directory_case_collisions_and_reserved_manifest(tmp_path):
+    source, root, files = sample(tmp_path)
+    files["SRC/another.py"] = next(iter(files.values()))
+    with pytest.raises(mg.StageError, match="Directory names collide"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    files.pop("SRC/another.py")
+    files["stage-manifest.json"] = next(iter(files.values()))
+    with pytest.raises(mg.StageError, match="reserved"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
