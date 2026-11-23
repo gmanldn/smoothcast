@@ -28,6 +28,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ticket_digest as td  # noqa: E402
+from ci import ship_patch  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "gmanldn/smoothcast"
@@ -701,6 +702,14 @@ def cmd_ship(a: argparse.Namespace) -> int:
             if not isinstance(state, dict) or state.get("state") != "open":
                 print(f"issue #{task['issue']} is no longer open; review latest state before shipping")
                 return 3
+        # A contested push may have left our own unpublished version commit.
+        # Remove ONLY that verified generated commit before rebasing the code.
+        if task is not None:
+            try:
+                ship_patch.recover_private_patch(ROOT, remote_before)
+            except ship_patch.PatchAllocationError as exc:
+                print(f"PATCH RECOVERY REFUSED: {exc}")
+                return 6
         before = git("rev-parse", "HEAD").strip()
         r = subprocess.run(["git", "-c", "rebase.autoStash=false", "rebase", "origin/develop"], cwd=ROOT, capture_output=True, text=True)
         if r.returncode:
@@ -758,6 +767,15 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
+        if task is not None:
+            try:
+                minted = ship_patch.assign_private_patch(ROOT, remote_before, task["issue"])
+            except (ship_patch.PatchAllocationError, OSError) as exc:
+                print(f"PATCH ASSIGNMENT REFUSED: {exc}; pending work preserved")
+                return 6
+            if minted:
+                print(f"  assigned next develop PATCH at {minted[:12]} (unpublished until push)")
+                changed = sorted(set(changed) | {"src/version.py"})
         push = subprocess.run(["git", "push", "origin", "HEAD:develop"],
                               cwd=ROOT, capture_output=True, text=True)
         sha = git("rev-parse", "HEAD").strip()
