@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from runpy import run_path
 import sys
 import unittest
 
@@ -11,8 +12,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import media_matrix  # noqa: E402
 import streamer  # noqa: E402
-from fakecast.profiles import PROFILES, supports  # noqa: E402
-
+# Load the dependency-free capability table directly: importing the\n# fakecast package initialises its PyChromecast protocol server, which is\n# intentionally absent from the fast syntax lane.\n_fake_profiles = run_path(str(ROOT / "fakecast" / "profiles.py"))\nPROFILES = _fake_profiles["PROFILES"]\nsupports = _fake_profiles["supports"]\n
 
 class SourceShapeTests(unittest.TestCase):
     def test_unique_48_cases_cover_containers_codecs_and_subtitles(self):
