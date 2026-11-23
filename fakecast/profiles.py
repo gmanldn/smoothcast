@@ -79,7 +79,12 @@ def level_tuple(value: object) -> tuple[int, int] | None:
         return None
     try:
         major, minor = str(value).split(".", maxsplit=1)
-        return int(major), int(minor)
+        parsed_major, parsed_minor = int(major), int(minor)
+        # Cast H.264/HEVC level components use nonnegative decimal digits.
+        # Reject malformed levels rather than treating them as below a limit.
+        if parsed_major < 0 or not 0 <= parsed_minor <= 9:
+            return None
+        return parsed_major, parsed_minor
     except (ValueError, TypeError):
         return None
 
