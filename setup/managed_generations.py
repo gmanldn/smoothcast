@@ -158,6 +158,7 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
     if shutil.disk_usage(releases).free < sum(size for _name, size, _sha in planned) * 2:
         raise StageError("Insufficient free space to stage and preserve rollback")
     temporary = Path(tempfile.mkdtemp(prefix=".staging-", dir=releases))
+    published = False
     try:
         for name, size, digest in planned:
             _copy_one(source.joinpath(*name.split("/")),
@@ -180,8 +181,13 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
         if target.exists() or target.is_symlink():
             raise StageError("Generation appeared during staging")
         temporary.rename(target)
+        published = True
         _sync_dir(releases)
         return target
     except BaseException:
+        # A failed parent-directory sync must not leave an apparently staged
+        # generation whose durable publication is uncertain.
+        if published:
+            shutil.rmtree(target, ignore_errors=True)
         shutil.rmtree(temporary, ignore_errors=True)
         raise
