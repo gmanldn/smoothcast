@@ -26,7 +26,11 @@ def handler():
                   and node.name == "_show_stale_runtime_notice")
     future = ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)
     module = ast.fix_missing_locations(ast.Module(body=[future, method], type_ignores=[]))
-    namespace = {"version": version, "pathlib": __import__("pathlib")}
+    namespace = {
+        "version": version,
+        "pathlib": __import__("pathlib"),
+        "__file__": str(ROOT / "src" / "cast_control.py"),
+    }
     exec(compile(module, "<isolated desktop handler>", "exec"), namespace)
     return namespace["_show_stale_runtime_notice"]
 
