@@ -307,3 +307,52 @@ def test_mesh_upstream_connection_closed_on_handshake_error(phase):
     with pytest.raises(OSError):
         proxy._open("http://127.0.0.1:8080", "qh:" + "b" * 32, None, False)
     assert closed == [True]
+
+
+def test_mesh_origin_generation_changes_on_same_size_replacement(origin):
+    """The validator tracks the open file, not just its byte count."""
+    harness, idx, key = origin
+    path = idx.resolve_path(key)
+    assert path is not None
+    status, headers, body = get(harness, f"/mesh/file/{key}")
+    assert status == 200 and body == DATA
+    generation = headers["X-SmoothCast-Generation"]
+    assert len(generation) == 64
+    replacement = path.with_name("new-media.tmp")
+    replacement.write_bytes(b"X" * len(DATA))
+    os.replace(replacement, path)
+    status, headers, body = get(harness, f"/mesh/file/{key}")
+    assert status == 200 and body == b"X" * len(DATA)
+    assert headers["X-SmoothCast-Generation"] != generation
+
+
+def test_proxy_retry_rejects_changed_generation_even_if_size_is_identical():
+    first = _ResumeReply()
+    first.values["X-SmoothCast-Generation"] = "old-generation"
+    assert mesh_files._valid_resume(first, 100, 199, "1000",
+                                    '"same"', "old-generation")
+    first.values["X-SmoothCast-Generation"] = "new-generation"
+    assert not mesh_files._valid_resume(first, 100, 199, "1000",
+                                        '"same"', "old-generation")
+    first.values.pop("X-SmoothCast-Generation")
+    assert not mesh_files._valid_resume(first, 100, 199, "1000",
+                                        '"same"', "old-generation")
+    # Legacy peers without the new header remain compatible; their identity
+    # cannot be guaranteed through this mechanism.
+    assert mesh_files._valid_resume(first, 100, 199, "1000", '"same"')
+
+
+def test_proxy_exposes_mesh_generation_for_later_range_requests(origin):
+    home, _idx, key = origin
+    proxy = RoomHarness(count=1)
+    try:
+        origin_port = home.server.server_address[1]
+        proxy.server.mesh_files = mesh_files.MeshFiles(
+            lambda _key: None, lambda _key: ["home"],
+            lambda _origin: f"http://127.0.0.1:{origin_port}/")
+        status, headers, body = get(proxy, f"/mesh/file/{key}",
+                                    {"Range": "bytes=0-1023"})
+        assert status == 206 and body == DATA[:1024]
+        assert len(headers["X-SmoothCast-Generation"]) == 64
+    finally:
+        proxy.close()
