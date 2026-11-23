@@ -631,7 +631,7 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     if not message:
         print("--message must be nonempty")
         return 2
-    if not re.search(rf"(?<!\\d)#{number}(?!\\d)", message):
+    if not re.search(rf"(?<!\d)#{number}(?!\d)", message):
         message += f" (Refs #{number})"
     committed = subprocess.run(["git", "commit", "-m", message], cwd=ROOT,
                                capture_output=True, text=True)
@@ -654,10 +654,10 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
         if isinstance(comments, list) and any(
                 marker in str(c.get("body") or "") for c in comments):
             return
-        body = (f"Progress: pushed a coherent develop slice at {sha[:12]}\\n"
-                f"Handover: {next_action or 'Review remaining issue acceptance criteria against develop'}\\n"
-                f"Commit: {sha}\\nVerification: {verification}\\n"
-                f"Files: {', '.join(changed[:20]) or 'see commit'}\\n{marker}")
+        body = (f"Progress: pushed a coherent develop slice at {sha[:12]}\n"
+                f"Handover: {next_action or 'Review remaining issue acceptance criteria against develop'}\n"
+                f"Commit: {sha}\nVerification: {verification}\n"
+                f"Files: {', '.join(changed[:20]) or 'see commit'}\n{marker}")
         posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments",
                     "-f", f"body={body}")
         if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
