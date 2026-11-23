@@ -131,7 +131,8 @@ _PANEL = r"""
     es.onerror=()=>{conn("Reconnecting to the room…");if(es&&es.readyState===2){close();schedule()}};
   }
   function close(){if(es){es.close();es=null}}
-  function schedule(){clearTimeout(retry);retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
+  function cancelMeshRetry(){if(retry!==null){clearTimeout(retry);retry=null}}
+  function schedule(){cancelMeshRetry();retry=setTimeout(boot,backoff);backoff=Math.min(30000,backoff*2)}
   async function boot(){
     if(document.hidden||!dash||dash.hidden||typeof csrf==="undefined"||!csrf)return schedule();
     try{
@@ -144,10 +145,10 @@ _PANEL = r"""
   }
   document.addEventListener("visibilitychange",()=>{
     if(document.hidden){hiddenTimer=setTimeout(()=>{close()},30000)}
-    else{clearTimeout(hiddenTimer);if(started&&!es)boot()}
+    else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshRetry();close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """
