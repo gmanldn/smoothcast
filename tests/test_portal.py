@@ -316,15 +316,16 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "fetch(\"/api/status\"" in page
     assert "https://" not in page and "http://" not in page
     assert PIN not in page
-    assert 'id="keepScreenOn" type="checkbox"> Keep screen on' in page
+    assert 'id="keepScreenOn" type="checkbox"' in page
+    assert "Keep screen on" in page
     assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>controller.abort(),60000)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume to retry" in page
-    assert "Audio is validated and added to the shared queue" in page
-    assert "video can be queued or streamed" in page
+    assert "Audio always goes into Up Next" in page
+    assert "compatible video may start playing" in page
     assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
     assert "while(batchIndex<batchFiles.length" in page
     assert "six-digit PIN" in page
@@ -336,14 +337,14 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'id="musicAutogain"' in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
-    assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
+    assert 'id="queue" aria-label="Shared Up Next queue" tabindex="-1"' in page
     assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
     assert 'button.setAttribute("aria-label",labels[i])' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
     assert "queue_revision=queueRevision" in page and "body.queue_command_id=" in page
-    assert "Add to the shared queue" in page
+    assert "Add to Up Next" in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
