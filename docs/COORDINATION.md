@@ -22,10 +22,11 @@ python3 scripts/agent.py release 207 --note "…"
 
 ## Why collisions happened
 
-Every agent posts as one GitHub user and claims with a free-text comment, so
-the assignee field was never set (`ticket_digest` always showed `claimed=0`),
-two agents picked the same top ticket within seconds, and nobody could see
-which files another agent was already editing. Reds on `develop` came from
+Historically, agents shared one GitHub identity and claimed with free-text
+comments; an assignee-only issue digest often missed active work. This caused
+duplicate ticket selection and overlapping file edits. The current structured
+comment lease is the source of claim truth even when an assignee or label is
+present. Reds on `develop` came from
 shared ratchets (complexity baseline, stale test expectations) that no agent
 ran before pushing.
 
