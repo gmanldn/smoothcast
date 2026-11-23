@@ -79,6 +79,60 @@ def test_ranking_prefers_now_then_priority_ready_and_unfinished_work():
     assert agent.score(issue("P3", ["later"]), set(), set(), True, 0)[0] > 1000  # resume own claim first
 
 
+def test_ranked_candidates_count_dependencies_in_later_or_icebox(monkeypatch):
+    """An open prerequisite cannot vanish because its priority tier differs."""
+    ready = {"number": 100, "title": "[P1] Work now", "state": "open",
+             "labels": [{"name": "now"}], "body": "Depends on #900"}
+    prerequisite = {"number": 900, "title": "[P3] Waiting", "state": "open",
+                    "labels": [{"name": "icebox"}], "body": ""}
+    monkeypatch.setattr(agent, "gh", lambda *args: [ready, prerequisite])
+    monkeypatch.setattr(agent, "recent_comments", lambda: [])
+    monkeypatch.setattr(agent, "hot_files", lambda: set())
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    args = agent.build_parser().parse_args(["next"])
+    ranked, skipped, _, _, _ = agent.ranked_candidates(args)
+    assert not skipped
+    assert len(ranked) == 1
+    assert ranked[0][1] == 100 and ranked[0][4] == (900,)
+
+
+def test_open_issue_snapshot_paginates_and_refuses_incomplete_data(monkeypatch):
+    import pytest
+
+    first_page = [
+        {"number": i, "title": "[P3] Deferred", "state": "open",
+         "labels": [{"name": "icebox"}], "body": ""}
+        for i in range(1, 101)
+    ]
+    selected = {"number": 150, "title": "[P1] Work", "state": "open",
+                "labels": [{"name": "now"}], "body": "Depends on #1"}
+    def pages(*args):
+        return first_page if args[0].endswith("per_page=100") else [selected]
+
+    monkeypatch.setattr(agent, "gh", pages)
+    pool, open_nums = agent.all_open_issue_pool({"now", "next"})
+    assert list(pool) == [150]
+    assert {1, 100, 150} <= open_nums
+    monkeypatch.setattr(agent, "gh", lambda *args: first_page)
+    with pytest.raises(agent.td.DigestError, match="incomplete dependency detection"):
+        agent.all_open_issue_pool({"now"}, max_pages=2)
+    monkeypatch.setattr(agent, "gh", lambda *args: None)
+    with pytest.raises(agent.td.DigestError, match="complete open issue list"):
+        agent.all_open_issue_pool({"now"})
+
+
+def test_start_refuses_automatic_selection_of_blocked_ticket(monkeypatch):
+    args = agent.build_parser().parse_args(["start"])
+    ticket = {"title": "[P0] Blocked", "body": "Depends on #9"}
+    monkeypatch.setattr(agent, "git", lambda *args, **kw: "")
+    monkeypatch.setattr(agent, "ranked_candidates",
+                        lambda args: ([(1000, 42, ticket, set(), (9,))], [], [], set(), "ours"))
+    monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
+        AssertionError("blocked ticket must not be claimed")))
+    assert agent.cmd_start(args) == 3
+
+
 def test_hot_files_demote_a_ticket_and_say_why():
     cold, _ = agent.score(issue(labels=["now"]), {"src/a.py"}, set(), False, 0)
     hot, why = agent.score(issue(labels=["now"]), {"src/a.py"}, {"src/a.py"}, False, 0)
