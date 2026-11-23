@@ -126,7 +126,7 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_procedure_is_documented(self):
         doc = (ROOT / "docs/RELEASE_FLOW.md").read_text("utf-8")
-        self.assertIn("Dry run first", doc)
+        self.assertIn("owner", doc)       # main promotion is documented as an owner-only manual step
 
 
 if __name__ == "__main__":

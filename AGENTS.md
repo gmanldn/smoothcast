@@ -65,4 +65,4 @@ read-only and **not claim-aware**; never assume its result is unclaimed.
   Use `agent.py ship` rather than raw `git push` so every outgoing commit
   is checked for regression and skipped version numbers. A GitHub
   workflow independently reports version-integrity violations. Interim work
-  is identified by commit SHA. Packaging authority: `packaging/SmoothCast.spec`.
+  is identified by Git commit SHA; `smoothcast --version` is GUI-free. Packaging authority: `packaging/SmoothCast.spec`.

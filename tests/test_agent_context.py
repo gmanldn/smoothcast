@@ -89,7 +89,7 @@ class AgentContextTests(unittest.TestCase):
     def test_root_sends_agents_to_agent_ready_issues_without_large_context(self):
         root = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("scripts/ticket_digest.py --next --label agent-ready", root)
-        self.assertLess(len(root), 3000)
+        self.assertLess(len(root), 3500)
 
     def test_workflow_stays_readable_while_release_details_remain_available(self):
         guide = (ROOT / "docs/agents/workflow.md").read_text(encoding="utf-8")

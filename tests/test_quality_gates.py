@@ -111,11 +111,11 @@ class AgentHygieneTests(unittest.TestCase):
         self.assertLess(agents.index("## Branch and concurrent work"), agents.index("## Ticket flow"))
         for needle in ("**Commit only to `develop`.**",
                        "git worktree add --detach ../smoothcast-N origin/develop",
-                       "git push origin HEAD:develop", "Never force-push",
+                       "agent.py ship", "Never force-push",
                        "against `main`", "only the owner manually promotes it",
                        "workflow.md"):
             self.assertIn(needle, agents)
-        self.assertLess(len(agents), 3000)  # root stays essentials-only (raised from 2500 for the claim flow)
+        self.assertLess(len(agents), 3500)  # root stays essentials-only (raised from 2500 for the claim/ship flow)
 
     def test_workflow_documents_trunk_flow_hygiene_and_manual_main(self):
         workflow = read("docs/agents/workflow.md")

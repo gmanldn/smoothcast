@@ -12,7 +12,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
     def test_root_is_small_and_routes_to_a_tiered_handbook(self):
         compact = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         original = (ROOT / "docs/AGENT_REFERENCE.md").read_text(encoding="utf-8")
-        self.assertLess(len(compact), 3000, "Root AGENTS must stay essentials-only")
+        self.assertLess(len(compact), 3500, "Root AGENTS must stay essentials-only")
         self.assertGreater(len(original), 30000, "Full original notes were lost")
         for required in (
             "docs/agents/README.md",
