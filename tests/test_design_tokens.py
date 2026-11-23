@@ -57,3 +57,23 @@ def test_served_page_follows_light_dark_and_contrast_preferences():
     rest = style[style.index("}}", root_end) + 2:]
     assert re.findall(r"#[0-9a-fA-F]{3,8}\b", rest) == [], "hard-coded colour outside the token block"
     assert "button.secondary{background:var(--secondary);color:var(--on-secondary)}" in style
+
+
+def test_forced_colors_maps_every_surface_to_system_colours():
+    css = dt.css()
+    block = css[css.index("@media(forced-colors:active)"):]
+    assert "#" not in block, "forced-colors must use system colours only"
+    assert "--sc-user" not in block, "a custom accent must not override the user's palette"
+    assert "--bg:Canvas;" in block and "--text:CanvasText;" in block
+    assert "--accent:Highlight;--on-accent:HighlightText;" in block
+    # every override names a real token, and text/surface pairs stay paired
+    assert set(dt.FORCED) <= set(dt.DARK)
+    assert dt.FORCED["on_secondary"] == "ButtonText" and dt.FORCED["secondary"] == "ButtonFace"
+    assert dt.FORCED["on_nav"] == "ButtonText" and dt.FORCED["nav_hover"] == "ButtonFace"
+    assert dt.FORCED["on_accent"] == "HighlightText" and dt.FORCED["accent"] == "Highlight"
+
+
+def test_both_pages_serve_forced_colors_support():
+    import portal_screen_page
+    assert "@media(forced-colors:active)" in portal._HTML
+    assert "@media(forced-colors:active)" in portal_screen_page.screen_page().decode()
