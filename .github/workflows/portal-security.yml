@@ -31,6 +31,8 @@ on:
       - 'tests/test_portal*.py'
       - '.github/workflows/portal-security.yml'
   pull_request:
+    # Do not duplicate tests for the long-lived develop -> main release PR.
+    branches: [develop]
     paths:
       - 'src/portal.py'
       - 'src/async_jobs.py'
@@ -62,6 +64,11 @@ on:
 
 permissions:
   contents: read
+
+# One active, latest pending per ref; never starve this security suite.
+concurrency:
+  group: smoothcast-portal-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
