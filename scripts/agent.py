@@ -375,8 +375,30 @@ def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, li
     chosen = tests_for(changed, tests)
     if chosen:
         xdist = ["-n", "auto"] if len(chosen) > 3 else []
-        steps.append((f"pytest ({len(chosen)} files)", [sys.executable, "-m", "pytest", "-q", "-x", *xdist, *chosen]))
+        steps.append((f"pytest ({len(chosen)} files)", [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *xdist, *chosen]))
     return steps
+
+
+def failing_ids(output: str) -> list[str]:
+    """Node ids of failed tests from pytest -q output."""
+    return sorted({line.split()[1] for line in output.splitlines()
+                   if line.startswith(("FAILED ", "ERROR ")) and len(line.split()) > 1})
+
+
+def failing_on_develop(ids: list[str]) -> set[str]:
+    """Which of these tests also fail on a pristine origin/develop (not your regression)."""
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="sc-base-") as tmp:
+        tree = Path(tmp) / "tree"
+        if subprocess.run(["git", "worktree", "add", "--detach", "-q", str(tree), "origin/develop"],
+                          cwd=ROOT, capture_output=True).returncode:
+            return set()  # cannot prove it: treat every failure as yours
+        try:
+            res = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids],
+                                 cwd=tree, capture_output=True, text=True)
+            return set(failing_ids(res.stdout))
+        finally:
+            subprocess.run(["git", "worktree", "remove", "--force", str(tree)], cwd=ROOT, capture_output=True)
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
@@ -403,8 +425,14 @@ def cmd_ship(a: argparse.Namespace) -> int:
             res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
             print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
             if res.returncode:
-                print((res.stdout + res.stderr)[-1800:])
-                return 1
+                ids = failing_ids(res.stdout)
+                mine = set(ids) - failing_on_develop(ids) if ids and label.startswith("pytest") else set(ids or ["?"])
+                if mine:
+                    print((res.stdout + res.stderr)[-1800:])
+                    print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
+                    return 1
+                print(f"  NOT yours: {len(ids)} test(s) already fail on origin/develop; pushing anyway "
+                      f"(a red develop outranks new work): {', '.join(ids)[:300]}")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0

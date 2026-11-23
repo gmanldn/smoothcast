@@ -134,3 +134,10 @@ def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
     assert "mypy" not in labels and "ruff" in labels
     monkeypatch.setattr(agent, "mypy_gated", lambda: {"src/cast_ui.py"})
     assert "mypy" in [name for name, _ in agent.plan_checks(["src/cast_ui.py"], {})]
+
+
+def test_failing_ids_parses_pytest_summary_and_ignores_noise():
+    out = ("..F\nFAILED tests/test_a.py::test_x - AssertionError: boom\n"
+           "ERROR tests/test_b.py::test_y\nFAILED tests/test_a.py::test_x - again\n3 failed")
+    assert agent.failing_ids(out) == ["tests/test_a.py::test_x", "tests/test_b.py::test_y"]
+    assert agent.failing_ids("all passed") == []
