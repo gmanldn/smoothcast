@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
+from mesh_file_wire import _CONTENT_RANGE, _matches_request, _valid_resume, pump_stream
+
 import lan_guard
 import portal_media
 
@@ -22,59 +24,6 @@ CHUNK = 1024 * 1024
 MAX_RETRIES = 3
 TIMEOUT = 5.0
 HOP_HEADER = "X-SmoothCast-Hop"
-_CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
-
-
-def _valid_resume(reply, start: int, end: int, total: str | None,
-                  etag: str | None, generation: str | None = None) -> bool:
-    """Only append bytes that continue the original range and object."""
-    if reply.status != 206:
-        return False
-    match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
-    if match is None or total is None or total == "*":
-        return False
-    first, last, size = match.groups()
-    if (int(first) != start or int(last) != end or size != total
-            or int(last) < int(first) or int(last) >= int(size)):
-        return False
-    try:
-        length = int(reply.getheader("Content-Length") or "")
-    except ValueError:
-        return False
-    if length != end - start + 1:
-        return False
-    if etag is not None and reply.getheader("ETag") != etag:
-        return False
-    if generation is not None and reply.getheader("X-SmoothCast-Generation") != generation:
-        return False
-    return True
-
-
-_SINGLE_RANGE = re.compile(r"bytes=(\d*)-(\d*)\Z")
-
-
-def _matches_request(requested: str | None, status: int, start: int,
-                     end: int, size: int) -> bool:
-    """Never substitute a different byte span for a browser's Range."""
-    if not 0 <= start <= end < size:
-        return False
-    if requested is None:
-        return status == 200 and start == 0
-    if status != 206:
-        return False
-    match = _SINGLE_RANGE.fullmatch(requested)
-    if match is None:
-        return False
-    first, last = match.groups()
-    if first:
-        offset = int(first)
-        if offset >= size:
-            return False
-        expected_end = min(int(last), size - 1) if last else size - 1
-        return (not last or int(last) >= offset) and start == offset and end == expected_end
-    if not last or int(last) == 0:
-        return False
-    return start == max(0, size - int(last)) and end == size - 1
 
 
 def key_from_path(path: str) -> str | None:
@@ -188,38 +137,7 @@ class MeshFiles:
     def _pump(self, handler, key: str, url: str, conn, reply, start: int, length: int,
               total: str | None, etag: str | None,
               generation: str | None = None) -> None:
-        sent, retries = 0, 0
-        try:
-            while sent < length:
-                try:
-                    chunk = reply.read(min(CHUNK, length - sent))
-                    if not chunk:
-                        raise OSError("upstream ended early")
-                except OSError:
-                    retries += 1
-                    if retries > MAX_RETRIES:
-                        return
-                    conn.close()
-                    last = start + length - 1
-                    try:
-                        conn, reply = self._open(
-                            url, key, f"bytes={start + sent}-{last}", False)
-                    except OSError:
-                        continue
-                    if not _valid_resume(
-                            reply, start + sent, last, total, etag, generation):
-                        return
-                    continue
-                try:
-                    handler.wfile.write(chunk)
-                except OSError:
-                    return
-                sent += len(chunk)
-        finally:
-            # Headers already announced Content-Length. On an unrecoverable
-            # upstream failure terminate the downstream socket: do not permit
-            # keep-alive or let a client treat a truncated body as complete.
-            if sent < length:
-                handler.close_connection = True
-            # A retry may have replaced the original connection. Always close it.
-            conn.close()
+        # Preserve the public test/runtime method while keeping wire logic small.
+        pump_stream(self._open, handler, key, url, conn, reply, start, length,
+                    total, etag, generation, chunk_size=CHUNK,
+                    max_retries=MAX_RETRIES)
