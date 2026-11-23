@@ -513,7 +513,7 @@ def _guarded(method):
             return None
         except PortalRequestError as exc:
             if not self._started:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             return None
         except Exception as exc:
             failure = failure_boundary.describe(exc)
@@ -596,6 +596,12 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(status, payload, extra_headers=(
             {"Retry-After": "1"} if status == 429 else None))
 
+    def _exception_error(self, exc: object) -> None:
+        """Preserve public wording; include a stable code only if known."""
+        code = getattr(exc, "code", None)
+        extra = {"code": code} if isinstance(code, str) and code else {}
+        self._error(exc.status, exc.message, **extra)
+
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
         if not self.server.host_allowed(host):
@@ -655,7 +661,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             files.serve(self, key, head=head, write_headers=write_headers)
         except portal_media.MediaError as exc:
-            return self._error(exc.status, exc.message)
+            return self._exception_error(exc)
         self.close_connection = True
 
     def _libraries(self) -> None:
@@ -784,7 +790,8 @@ class _Handler(BaseHTTPRequestHandler):
         if delay <= 0:
             return False
         self._send(
-            429, {"ok": False, "error": "Too many room requests. Try again shortly."},
+            429, {"ok": False, "error": "Too many room requests. Try again shortly.",
+                  "code": "room.rate_limited"},
             extra_headers={"Retry-After": str(max(1, math.ceil(delay)))},
         )
         return True
@@ -902,7 +909,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, **self.server.uploads.status(
                     self._cookie_token() or "", upload_id)})
             except portal_uploads.UploadError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
         if upload_id:
             return self._error(401, "Enter the PIN shown in SmoothCast")
         return self._error(404, "Not found")
@@ -936,9 +943,9 @@ class _Handler(BaseHTTPRequestHandler):
                     self.server.uploads.revoke_owner_keys({key})
                     return self._error(403, "Room access was revoked")
             except PortalRequestError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             return self._send(201, {"ok": True, **created})
         upload_id = self._upload_complete_route(path)
         if upload_id:
@@ -982,15 +989,15 @@ class _Handler(BaseHTTPRequestHandler):
                            "Upload received; casting started.")
                 return self._send(202, {"ok": True, "message": message})
             except PortalRequestError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         try:
             body = self._body()
         except PortalRequestError as exc:
-            return self._error(exc.status, exc.message)
+            return self._exception_error(exc)
         if path == "/api/login":
             pin = body.get("pin")
             if not isinstance(pin, str):
@@ -1008,7 +1015,7 @@ class _Handler(BaseHTTPRequestHandler):
                 else:
                     token, csrf, participant = self.server.login(client, pin, name)
             except (portal_room.RoomError, PortalRequestError) as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             cookie = (f"sc_portal_session={token}; Path=/; HttpOnly; SameSite=Strict; "
                       f"Max-Age={SESSION_SECONDS}")
             return self._send(200, {
@@ -1029,7 +1036,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 participant = self.server.room.rename(participant_id, name)
             except portal_room.RoomError as exc:
-                return self._error(exc.status, exc.message)
+                return self._exception_error(exc)
             return self._send(200, {"ok": True,
                                     "participant": participant.public(self.server.clock())})
         if path == "/api/action":
@@ -1058,7 +1065,8 @@ class _Handler(BaseHTTPRequestHandler):
                     if action in {"queue_play", "queue_remove", "queue_move", "queue_next", "queue_vote"}:
                         item_id = body.get("id")
                         if not isinstance(item_id, str) or item_id not in self.server.queue_ids:
-                            return self._error(404, "That queue item is no longer here")
+                            return self._error(
+                                404, "That queue item is no longer here", code="room.queue_item_gone")
                     if action == "queue_move":
                         position = body.get("position")
                         if isinstance(position, bool) or not isinstance(position, int) or position < 0:
@@ -1072,7 +1080,7 @@ class _Handler(BaseHTTPRequestHandler):
                                 command_trace.stage("dispatched")
                                 result = self.server.room.vote(participant_id, body["id"], value)
                         except portal_room.RoomError as exc:
-                            return self._error(exc.status, exc.message)
+                            return self._exception_error(exc)
                         return self._send(202, {"ok": True, "message": "Vote saved",
                                                 "vote": result})
                     if action in {"queue_remove", "queue_move", "queue_next", "queue_clear"}:
@@ -1097,7 +1105,7 @@ class _Handler(BaseHTTPRequestHandler):
                                         self._cookie_token() or ""),
                                 })
                         except PortalRequestError as exc:
-                            return self._error(exc.status, exc.message)
+                            return self._exception_error(exc)
                         except Exception:
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
@@ -1129,6 +1137,8 @@ class _Handler(BaseHTTPRequestHandler):
                     extra["revision"] = exc.revision
                 if exc.session_id is not None:
                     extra["session_id"] = exc.session_id
+                if exc.code is not None:
+                    extra["code"] = exc.code
                 return self._error(exc.status, exc.message, **extra)
             return self._send(202, {
                 "ok": True, "message": receipt.message,
@@ -1202,7 +1212,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, **result})
         except portal_uploads.UploadError as exc:
             self.close_connection = True
-            return self._error(exc.status, exc.message)
+            return self._exception_error(exc)
         except OSError:
             self.close_connection = True
             return self._error(507, "Could not store this upload chunk")
@@ -1225,7 +1235,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.uploads.cancel(self._cookie_token() or "", upload_id)
             return self._send(200, {"ok": True})
         except portal_uploads.UploadError as exc:
-            return self._error(exc.status, exc.message)
+            return self._exception_error(exc)
 
     def _not_allowed(self) -> None:
         self._error(405, "Method not allowed")
