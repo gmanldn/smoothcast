@@ -339,7 +339,11 @@ _PANEL_HTML = r"""
       for(const child of Array.from(list.children))if(!rows.includes(child))child.remove();
     }
     for(const key of Object.keys(choice))if(!screenById.has(key))delete choice[key];
-    if(focused&&!list.contains(focused))document.getElementById("screensPanelHeading").focus({preventScroll:true});
+    if(focused){
+      if(list.contains(focused)){
+        if(document.activeElement!==focused)focused.focus({preventScroll:true});
+      }else document.getElementById("screensPanelHeading").focus({preventScroll:true});
+    }
   };
 
 })();
