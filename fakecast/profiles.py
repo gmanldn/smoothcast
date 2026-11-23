@@ -75,7 +75,7 @@ PROFILES: dict[str, ReceiverProfile] = {
 }
 
 
-_LEVEL = re.compile(r"(?:[1-9]|[1-9][0-9])\\.[0-9]\\Z")
+_LEVEL = re.compile(r"(?:[1-9]|[1-9][0-9])\.[0-9]\Z")
 
 
 def level_tuple(value: object) -> tuple[int, int] | None:
