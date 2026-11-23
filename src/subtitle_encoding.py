@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import tempfile
 
 MAX_SUBTITLE_BYTES = 16 * 1024 * 1024
@@ -169,24 +170,12 @@ def _caption_plain_text(value: str) -> str:
     return " ".join(html.unescape(value).split())[:240]
 
 
-def load_timed_cues(source: Path) -> TimedCues:
-    """Build a safe sidecar cue index off-thread. No FFmpeg or receiver activity."""
-    source = Path(source)
-    if source.suffix.lower() not in _PREVIEW_SUFFIXES:
-        raise SubtitleEncodingError("Unsupported timed subtitle preview format")
-    raw = _read_regular(source, MAX_SUBTITLE_BYTES + 1)
-    if source.suffix.lower() == ".srt":
-        data, _encoding = decode_srt(raw)
-        text = data.decode("utf-8")
-    else:
-        try:
-            text = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            text = raw.decode("cp1252")
+def _parse_timed_cues(text: str, suffix: str) -> TimedCues:
+    """Parse bounded UTF-8 subtitle text into a scrub-time cue index."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     items: list[tuple[float, float, str]] = []
-    if source.suffix.lower() in {".ass", ".ssa"}:
-        columns = _ASS_FORMAT
+    if suffix in {".ass", ".ssa"}:
+        columns: tuple[str, ...] = _ASS_FORMAT
         in_events = False
         for line in text.splitlines():
             stripped = line.strip()
@@ -234,6 +223,57 @@ def load_timed_cues(source: Path) -> TimedCues:
         maximum = max(maximum, end)
         max_ends.append(maximum)
     return TimedCues(tuple(items), tuple(starts), tuple(max_ends))
+
+
+def load_timed_cues(source: Path) -> TimedCues:
+    """Build a safe sidecar cue index off-thread. No FFmpeg or receiver activity."""
+    source = Path(source)
+    if source.suffix.lower() not in _PREVIEW_SUFFIXES:
+        raise SubtitleEncodingError("Unsupported timed subtitle preview format")
+    raw = _read_regular(source, MAX_SUBTITLE_BYTES + 1)
+    if source.suffix.lower() == ".srt":
+        data, _encoding = decode_srt(raw)
+        text = data.decode("utf-8")
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252")
+    return _parse_timed_cues(text, source.suffix.lower())
+
+
+def load_embedded_timed_cues(source: Path, subtitle_index: int) -> TimedCues:
+    """Extract one embedded text track with bounded FFmpeg work, off-thread."""
+    source = Path(source)
+    if isinstance(subtitle_index, bool) or not isinstance(subtitle_index, int) or subtitle_index < 0:
+        raise SubtitleEncodingError("Embedded subtitle track index is invalid")
+    try:
+        info = source.stat()
+    except OSError as exc:
+        raise SubtitleEncodingError("Embedded subtitle source is unavailable") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise SubtitleEncodingError("Embedded subtitle source must be a regular file")
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+            "-i", str(source), "-map", f"0:s:{subtitle_index}", "-c:s", "srt",
+            "-fs", str(MAX_SUBTITLE_BYTES), "-f", "srt", "pipe:1"]
+    try:
+        result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, timeout=15, check=False)
+    except FileNotFoundError as exc:
+        raise SubtitleEncodingError("FFmpeg is unavailable for embedded subtitle preview") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SubtitleEncodingError("Embedded subtitle extraction timed out") from exc
+    except OSError as exc:
+        raise SubtitleEncodingError("Could not start embedded subtitle extraction") from exc
+    if result.returncode != 0 or not result.stdout:
+        raise SubtitleEncodingError("Embedded text track could not be extracted")
+    if len(result.stdout) >= MAX_SUBTITLE_BYTES:
+        raise SubtitleEncodingError("Embedded subtitle preview exceeds 16 MiB")
+    try:
+        text = result.stdout.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise SubtitleEncodingError("FFmpeg returned invalid subtitle text") from exc
+    return _parse_timed_cues(text, ".srt")
 
 
 def cue_at(cues: TimedCues, position: float) -> str:
