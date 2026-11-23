@@ -468,6 +468,9 @@ class AvMixin:
         video_index = media.video_stream_index if media is not None else 0
         aspect_mode = self.cfg.get("aspect_override", "original")
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
+        # Snapshot settings for asynchronous decodes; do not read a changing GTK config
+        # from the worker after a user moves a colour control.
+        aspect_options["picture_config"] = dict(self.cfg)
         if sparse:
             cache = getattr(self, "_sparse_frame_cache", None)
             if cache is None:
