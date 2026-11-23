@@ -6,6 +6,28 @@ import sys
 
 
 def main() -> int:
+    """Run the command; an unexpected error becomes one civil line, never a traceback."""
+    try:
+        return _main()
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:  # SystemExit (argparse, explicit exits) passes through
+        import failure_boundary
+        failure = failure_boundary.describe(exc)
+        logged = False
+        try:
+            import error_log
+            error_log.log(f"cli failed: {failure.detail}")
+            logged = True
+        except Exception:
+            pass
+        print(f"smoothcast: {failure.message}", file=sys.stderr)
+        if logged:
+            print("Details were written to the private error log.", file=sys.stderr)
+        return 1
+
+
+def _main() -> int:
     from frozen_runtime import dispatch_frozen_helper, is_frozen
     child = dispatch_frozen_helper(sys.argv[1:])
     if child is not None:

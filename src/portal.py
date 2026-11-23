@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, deque
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import errno
@@ -30,6 +30,8 @@ import mesh_files
 import library_replication
 import portal_commands
 import command_trace
+import error_log
+import failure_boundary
 import peer_discovery
 import portal_room
 import portal_screen_page
@@ -198,6 +200,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.mesh_feed = None       # set by the app when the mesh runs (#402/#405)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
+        self.failures = failure_boundary.Notifier()
         port = self.server_address[1]
         self._allowed_hosts = {
             f"{self.server_address[0]}:{port}".lower(),
@@ -493,12 +496,58 @@ def _silent_wav(seconds: int = 1, rate: int = 8000) -> bytes:
 SILENT_WAV = _silent_wav()
 
 
+def _guarded(method):
+    """Turn anything escaping a request handler into one civil JSON error (#512).
+
+    The traceback goes only to the private log, once per repeating fault; the
+    client never sees an interpreter error page or a dropped connection.
+    """
+    @wraps(method)
+    def wrapper(self):
+        self._started = False
+        try:
+            return method(self)
+        except (ConnectionError, TimeoutError):
+            self.close_connection = True  # the peer went away; nobody to answer
+            return None
+        except PortalRequestError as exc:
+            if not self._started:
+                return self._error(exc.status, exc.message)
+            return None
+        except Exception as exc:
+            failure = failure_boundary.describe(exc)
+        route = "/".join(self._path().split("/")[:3])
+        if self.server.failures.allow(failure):
+            error_log.log(f"portal {self.command} {route} failed: {failure.detail}")
+        self.close_connection = True
+        if not self._started:
+            try:
+                self._error(500, failure.message, code=failure_boundary.CODE)
+            except OSError:
+                pass
+        return None
+    return wrapper
+
+
+def _guard_handlers(cls):
+    for name in ("do_GET", "do_POST", "do_PUT", "do_DELETE", "do_HEAD"):
+        if name in cls.__dict__:
+            setattr(cls, name, _guarded(cls.__dict__[name]))
+    return cls
+
+
+@_guard_handlers
 class _Handler(BaseHTTPRequestHandler):
     server: _PortalHTTPServer
+    _started = False
     protocol_version = "HTTP/1.1"
     timeout = REQUEST_TIMEOUT
     server_version = "SmoothCastPortal"
     sys_version = ""
+
+    def send_response(self, code, message=None):
+        self._started = True
+        super().send_response(code, message)
 
     def parse_request(self) -> bool:
         # The trust boundary is the home LAN: refuse any non-LAN peer outright.
