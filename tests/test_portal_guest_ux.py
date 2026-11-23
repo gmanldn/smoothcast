@@ -366,3 +366,46 @@ assert.equal(labels.length,4);
 """
     subprocess.run(["node", "-"], input=harness + controls + checks,
                    check=True, text=True, timeout=10)
+
+
+def test_clear_up_next_requires_confirmation_before_shared_mutation():
+    """No destructive queue command on a stray tap or cancelled confirmation."""
+    import shutil
+    import subprocess
+    import pytest
+
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function confirmClearQueue(){")
+    end = script.index('document.querySelectorAll("[data-action]")', start)
+    actions = script[start:end]
+    assert 'void act("queue_clear")' in actions
+    if not shutil.which("node"):
+        pytest.skip("Node.js is required to test the shared queue confirmation")
+    harness = r"""
+const assert=require("node:assert/strict");
+let queueState=[],calls=[],prompts=[],allow=false,click;
+const window={confirm(message){prompts.push(message);return allow}};
+const $=id=>({
+  addEventListener(name,handler){
+    assert.equal(id,"clearQueue");
+    assert.equal(name,"click");
+    click=handler;
+  }
+});
+function act(action){calls.push(action)}
+"""
+    scenarios = r"""
+click();
+assert.equal(calls.length,0);
+assert.equal(prompts.length,0,"empty queue must never prompt");
+queueState=[{id:"one"},{id:"two"}];
+click();
+assert.equal(calls.length,0,"cancelled dialog must never send a command");
+assert.match(prompts.at(-1),/2 waiting items.*for everyone/);
+assert.match(prompts.at(-1),/does not stop what is currently playing/);
+allow=true;
+click();
+assert.deepEqual(calls,["queue_clear"]);
+"""
+    subprocess.run(["node", "-"], input=harness + actions + scenarios,
+                   check=True, text=True, timeout=10)
