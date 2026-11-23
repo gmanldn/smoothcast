@@ -10,6 +10,7 @@ import subprocess
 import uuid
 
 import aspect_override
+import picture_adjustments
 
 
 class SparseFrameCache:
@@ -212,7 +213,8 @@ def cover_art(source: Path, *, timeout: int = 8) -> bytes:
 
 
 def preview_frame(source: Path, position: float, *, timeout: int = 12,
-                  video_stream_index: int = 0, aspect_mode: str = "original") -> bytes:
+                  video_stream_index: int = 0, aspect_mode: str = "original",
+                  picture_config: dict | None = None) -> bytes:
     """Decode a small JPEG frame for the pre-cast scrubber, without writing files.
 
     This runs only in a worker thread. A bounded output resolution and timeout
@@ -234,7 +236,8 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12,
         "-ss", str(max(0.0, position)), "-i", str(source),
         "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",
-        "-vf", ",".join(aspect_override.filters(aspect_mode, width=640, height=360))
+        "-vf", ",".join(picture_adjustments.filters(picture_config) +
+                         aspect_override.filters(aspect_mode, width=640, height=360))
         or "scale=640:360:force_original_aspect_ratio=decrease",
         "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
     ]
