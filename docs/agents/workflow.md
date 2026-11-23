@@ -8,7 +8,11 @@ to `main`. The owner manually decides when (and whether) to merge it.
 
 ## Many agents, one trunk
 
-1. Start with `python3 scripts/agent.py board` and `agent.py next`.
+1. Prefer `python3 scripts/agent.py start [ISSUE]` (auto-picks a free
+   ticket if omitted). It refreshes develop, coordinates the claim, creates
+   a private detached worktree, and writes a bounded source-grounded task
+   brief in that worktree's Git admin directory. Or start with
+   `python3 scripts/agent.py board` and `agent.py next`.
    These inspect live comment claims and hot files before choosing a P0/P1
    issue or small fix. Read current issue comments before changing code;
    `ticket_digest.py` alone cannot see every structured claim.
@@ -24,12 +28,19 @@ to `main`. The owner manually decides when (and whether) to merge it.
    checkout), stage **named files only**, and make small cohesive commits with
    `Refs #N`. No feature branches or agent PRs.
 4. Push each finished coherent slice **directly to `origin/develop`**.
-   Preferred command: `python3 scripts/agent.py ship --skip-checks` for
-   explicit unverified rapid delivery; plain `ship` runs affected checks.
+   Preferred command in a private worktree: `python3 scripts/agent.py ship
+   --message "concise change"` (auto-stages tracked changes, then targeted
+   checks); add `--files` to stage new files. Explicit `--skip-checks`
+   marks the slice unverified; the version-history check cannot be skipped.
+   A successful ship records a SHA-based handover, including the next step.
    On push rejection, fetch and rebase only YOUR unpublished commits.
    Never force-push, reset away user changes, rewrite published history, or
    delete other agents' worktrees/stashes.
 5. **Record permanent progress before relinquishing temporary ownership:**
+   `python3 scripts/agent.py finish --done "landed…" --next "remaining…"
+   --verification "actual tests"` saves a handover and releases the claim.
+   Closure additionally needs `--next none --checklist "acceptance…" --close`.
+   Legacy `progress`/`done` continue to work.
    `python3 scripts/agent.py progress N --done "landed ..." --next "remaining ..."
    --commit <actual-SHA> --verification "actual results" --release`. This
    posts searchable durable evidence and ends the lease; `agent.py next`
@@ -61,9 +72,9 @@ git push origin HEAD:develop # fast-forward only; repeat fetch/rebase if contest
 - Prefer completing small independent tickets rather than keeping many broad
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
-- The canonical `src/version.py` increments for a completed issue or an
-  explicit owner version request. Re-read its current value just before the
-  edit and never rewrite another agent's bump.
+- `src/version.py` changes **only for explicit owner-authorised release
+  intent**, not on ticket closure. Re-read before an authorised change. Use
+  `smoothcast --build-id` to identify intermediate develop commits.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
