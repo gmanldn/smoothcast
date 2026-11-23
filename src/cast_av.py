@@ -494,44 +494,64 @@ class AvMixin:
         return False
 
 
+    def _thumbnail_identity(self) -> tuple[str, int, int] | None:
+        media = self.media
+        path = self._preview_path
+        if (path is None or media is None or media.is_audio_only or str(media.path) != path
+                or self.session is not None or self.external
+                or getattr(self, "_url_cast_url", None) or getattr(self, "_closing", False)):
+            return None
+        return path, self._preview_generation, media.video_stream_index
+
+
     def _refresh_thumbnail_strip(self, position: float, *, visible: bool) -> None:
-        """Show nearby cached hover frames; this method never starts a decoder."""
+        """Show nearby cached hover frames without scheduling a decoder."""
         strip = getattr(self, "thumbnail_strip", None)
         if strip is None:
             return
-        media = self.media
-        if (not visible or self._preview_path is None or media is None
-                or media.is_audio_only):
-            strip.set_visible(False)
-            self._thumbnail_positions = []
-            return
+        source = self._thumbnail_identity() if visible else None
         cache = getattr(self, "_sparse_frame_cache", None)
-        entries = cache.nearby(
-            self._preview_path, self._preview_generation,
-            media.video_stream_index, position,
-        ) if cache is not None else []
-        self._thumbnail_positions = []
+        entries = tuple(cache.nearby(*source, position)) if source and cache is not None else ()
+        render_key = source, entries
+        if render_key == getattr(self, "_thumbnail_render_key", None):
+            return
+
+        self._thumbnail_render_key = render_key
+        frames = []
+        for moment, image in entries:
+            try:
+                frames.append((moment, Gdk.Texture.new_from_bytes(GLib.Bytes.new(image))))
+            except GLib.Error:
+                continue  # Skip an invalid JPEG without blocking the other cached frames.
+
+        self._thumbnail_positions = [moment for moment, _texture in frames]
         for index, (button, picture, label) in enumerate(zip(
-                self.thumbnail_buttons, self.thumbnail_pictures,
-                self.thumbnail_times)):
-            if index < len(entries):
-                moment, image = entries[index]
-                picture.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(image)))
-                label.set_text(fmt_time(moment))
+                self.thumbnail_buttons, self.thumbnail_pictures, self.thumbnail_times)):
+            if index < len(frames):
+                moment, texture = frames[index]
+                picture.set_paintable(texture)
+                time_label = fmt_time(moment)
+                label.set_text(time_label)
+                action = f"Seek to {time_label}"
+                button.set_tooltip_text(action)
+                button.update_property([Gtk.AccessibleProperty.LABEL], [action])
                 button.set_visible(True)
-                self._thumbnail_positions.append(moment)
             else:
                 picture.set_paintable(None)
                 label.set_text("")
                 button.set_visible(False)
-        strip.set_visible(bool(entries))
+        strip.set_visible(bool(frames))
 
 
     def _on_thumbnail_clicked(self, _button, index: int) -> None:
-        """Jump to the exact source timestamp represented by a cached tile."""
+        """Seek only while the original local preview still owns the strip."""
         positions = getattr(self, "_thumbnail_positions", [])
-        if 0 <= index < len(positions):
-            self.seek_to(positions[index])
+        if not 0 <= index < len(positions):
+            return
+        if self._thumbnail_render_key[0] != self._thumbnail_identity():
+            self._refresh_thumbnail_strip(0.0, visible=False)
+            return
+        self.seek_to(positions[index])
 
 
     def _queue_preview(self, position: float, *, sparse: bool = False) -> None:

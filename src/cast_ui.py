@@ -266,8 +266,11 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         clock_row.append(self.seekbar)
         clock_row.append(self.remaining_label)
         body.append(clock_row)
-        self.thumbnail_strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.thumbnail_strip.set_halign(Gtk.Align.CENTER)
+        self.thumbnail_strip = Gtk.ScrolledWindow()
+        self.thumbnail_strip.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        thumbnail_tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        thumbnail_tiles.set_halign(Gtk.Align.CENTER)
+        self.thumbnail_strip.set_child(thumbnail_tiles)
         self.thumbnail_strip.set_visible(False)
         self.thumbnail_buttons = []
         self.thumbnail_pictures = []
@@ -286,7 +289,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             content.append(time_label)
             tile.set_child(content)
             tile.connect("clicked", self._on_thumbnail_clicked, index)
-            self.thumbnail_strip.append(tile)
+            thumbnail_tiles.append(tile)
             self.thumbnail_buttons.append(tile)
             self.thumbnail_pictures.append(picture)
             self.thumbnail_times.append(time_label)
@@ -1348,6 +1351,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        thumbnails = getattr(self, "_thumbnail_render_key", None)
+        if thumbnails and thumbnails[0] is not None and thumbnails[0] != self._thumbnail_identity():
+            self._refresh_thumbnail_strip(0.0, visible=False)
         self._publish_portal_status()
         app = getattr(self, "app", None)
         if getattr(app, "_mpris", None) is not None:

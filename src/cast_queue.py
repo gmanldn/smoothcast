@@ -148,6 +148,8 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             self._preview_path = path
             self._preview_generation += 1
             self._preview_pending = None
+            if getattr(self, "_thumbnail_render_key", None):
+                self._refresh_thumbnail_strip(0.0, visible=False)
             self._preview_position = playback_state.start_offset(
                 None, (self.cfg.get("positions") or {}).get(path),
             )
@@ -381,6 +383,8 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         self._unload_local_video()
         self._preview_path = None
         self._preview_position = 0.0
+        if getattr(self, "_thumbnail_render_key", None):
+            self._refresh_thumbnail_strip(0.0, visible=False)
         self.preview_picture.set_visible(False)
         self.media = None
         self._update_audio_choices(None)

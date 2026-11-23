@@ -13,13 +13,14 @@ the bounded LRU, so it never schedules extra decoders; it fills progressively
 as the user scrubs across new slots. Each tile is labelled with its source
 timestamp and selecting one seeks to that exact timestamp. It remains visible
 after the pointer leaves the seekbar so the tiles can be selected, and resets
-when the selected film is cleared.
+when the preview source changes or a receiver takes over. On narrow windows
+the strip scrolls horizontally, keeping all cached frames reachable.
 
 Explicit seeks, local playhead updates and frame stepping bypass slot
 quantisation and remain source-time-accurate. Subtitle cue lookup still
 uses the user's exact hovered source timestamp.
 
 Regression: pytest -q tests/test_sparse_thumbnail_cache.py.
-The GTK strip itself is not launched in routine tests; isolated GUI UX
-verification remains a separate acceptance check. Hardware checks are tracked
-through #208.
+Run `python3 scripts/gui_checks.py thumbnail-strip` for the isolated GTK
+check. It exercises tile layout, activation and ownership with synthetic images
+on a private Xvfb display. Hardware checks are tracked through #208.

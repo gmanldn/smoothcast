@@ -115,26 +115,37 @@ def test_hover_is_approximate_only_while_exact_frame_step_remains_precise():
 
 def test_thumbnail_strip_uses_nearby_cached_frames_and_exact_click_positions():
     methods = main_window_methods()
-    names = ("_refresh_thumbnail_strip", "_on_thumbnail_clicked")
+    names = ("_thumbnail_identity", "_refresh_thumbnail_strip", "_on_thumbnail_clicked")
     source = "\n\n".join(methods[name] for name in names)
+    corrupt = b"\xff\xd8corrupt"
+
+    def texture(data):
+        if data == corrupt:
+            raise ValueError("Invalid JPEG")
+        return data
+
+    decode = mock.Mock(side_effect=texture)
     ns = {
-        "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
-        "GLib": SimpleNamespace(Bytes=SimpleNamespace(new=lambda data: data)),
+        "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=decode)),
+        "GLib": SimpleNamespace(Bytes=SimpleNamespace(new=lambda data: data), Error=ValueError),
+        "Gtk": SimpleNamespace(AccessibleProperty=SimpleNamespace(LABEL="label")),
         "fmt_time": lambda value: f"{value:g}",
     }
     exec(compile("class Window:\n" + textwrap.indent(textwrap.dedent(source), "    "),
                  "<thumbnail-strip>", "exec"), ns)
     window = ns["Window"]()
     window._preview_path, window._preview_generation = "film.mkv", 1
-    window.media = SimpleNamespace(is_audio_only=False, video_stream_index=0)
+    window.media = SimpleNamespace(path="film.mkv", is_audio_only=False, video_stream_index=0)
+    window.session, window.external = None, False
     window._sparse_frame_cache = screenshot.SparseFrameCache(interval=10)
     for moment in (0, 10, 20):
         window._sparse_frame_cache.put(
             window._sparse_frame_cache.key("film.mkv", 1, 0, moment),
             b"\xff\xd8" + str(moment).encode(),
         )
+    window._sparse_frame_cache.put(window._sparse_frame_cache.key("film.mkv", 1, 0, 30), corrupt)
     window.thumbnail_strip = SimpleNamespace(set_visible=mock.Mock())
-    window.thumbnail_buttons = [SimpleNamespace(set_visible=mock.Mock()) for _ in range(5)]
+    window.thumbnail_buttons = [mock.Mock() for _ in range(5)]
     window.thumbnail_pictures = [SimpleNamespace(set_paintable=mock.Mock()) for _ in range(5)]
     window.thumbnail_times = [SimpleNamespace(set_text=mock.Mock()) for _ in range(5)]
     window._refresh_thumbnail_strip(11, visible=True)
@@ -142,8 +153,14 @@ def test_thumbnail_strip_uses_nearby_cached_frames_and_exact_click_positions():
     assert [button.set_visible.call_args.args[0] for button in window.thumbnail_buttons] == [
         True, True, True, False, False,
     ]
+    window._refresh_thumbnail_strip(12, visible=True)
+    assert decode.call_count == 4  # Unchanged cached images keep their existing textures.
     window.seek_to = mock.Mock()
     window._on_thumbnail_clicked(None, 1)
     window.seek_to.assert_called_once_with(10)
-    window._refresh_thumbnail_strip(11, visible=False)
+    window._preview_generation += 1
+    window._on_thumbnail_clicked(None, 1)
+    window.seek_to.assert_called_once_with(10)  # No seek after the source generation changed.
+    assert window._thumbnail_positions == []
+    assert all(picture.set_paintable.call_args.args == (None,) for picture in window.thumbnail_pictures)
     window.thumbnail_strip.set_visible.assert_called_with(False)

@@ -742,8 +742,61 @@ def network_view(app, window) -> None:
     check("refresh with no service is a harmless no-op", not popover.button.get_visible())
 
 
+def thumbnail_strip(_app, window) -> None:
+    """Exercise the real thumbnail widgets and local seek path inside Xvfb."""
+    from gi.repository import GdkPixbuf
+    from screenshot import SparseFrameCache
+
+    path = Path(os.environ["XDG_CACHE_HOME"]) / "test-film.mkv"
+    window.media = streamer.MediaInfo(path, duration=90.0)
+    window._preview_path = str(path)
+    window.queue_durations[str(path)] = 90.0
+    window.seekbar.set_state(0.0, 90.0, 0.0)
+    window._timed_subtitle_preview = lambda _position: None
+    preview_requests = []
+    window._queue_preview = lambda position, *, sparse=False: preview_requests.append((position, sparse))
+    cache = window._sparse_frame_cache = SparseFrameCache()
+    pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 16, 9)
+    for index in range(5):
+        pixbuf.fill(0x223355FF + index * 0x11000000)
+        ok, jpeg = pixbuf.save_to_bufferv("jpeg", [], [])
+        if not ok:
+            raise RuntimeError("Could not generate a synthetic thumbnail")
+        cache.put(cache.key(str(path), window._preview_generation, 0, index * 10), jpeg)
+
+    window._on_hover(True, 24.0)
+    window._on_hover(False, 24.0)
+    pump(0.2)
+    strip = window.thumbnail_strip
+    check("five cached tiles stay visible when the pointer leaves the seekbar",
+          strip.get_mapped() and strip.get_height() > 0
+          and all(button.get_visible() for button in window.thumbnail_buttons))
+    check("all timestamps label distinct textures",
+          [label.get_text() for label in window.thumbnail_times]
+          == ["0:00", "0:10", "0:20", "0:30", "0:40"]
+          and all(picture.get_paintable() is not None for picture in window.thumbnail_pictures))
+    check("the horizontally scrollable strip does not widen a narrow player",
+          strip.measure(Gtk.Orientation.HORIZONTAL, -1)[0] <= 360)
+    tile = window.thumbnail_buttons[2]
+    check("tile describes its seek action", tile.get_tooltip_text() == "Seek to 0:20")
+    tile.activate()
+    pump(0.4)
+    check("activating the third tile seeks to its exact source time",
+          window._preview_position == 20.0 and preview_requests == [(24.0, True), (20.0, False)])
+
+    # Simulate a cast acquiring the receiver before a previously queued click arrives.
+    window.session = object()
+    try:
+        tile.emit("clicked")
+        check("a stale local tile cannot seek the receiver",
+              not strip.get_visible() and preview_requests == [(24.0, True), (20.0, False)]
+              and all(picture.get_paintable() is None for picture in window.thumbnail_pictures))
+    finally:
+        window.session = None
+
+
 SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
-             "local-video-runtime": local_video_runtime,
+             "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
