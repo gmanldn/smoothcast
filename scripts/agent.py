@@ -388,12 +388,18 @@ def cmd_start(a: argparse.Namespace) -> int:
         print(f"issue #{number} is already closed; no claim made")
         return 3
     chosen_files = a.files or ",".join(sorted(predicted_files(issue.get("body") or "")))
-    claimed = cmd_claim(argparse.Namespace(number=number, files=chosen_files, ttl=a.ttl))
-    if claimed:
-        return claimed
+    # Do not inherit the shared checkout's identity: repeated starts are
+    # independent agents even when the same automation account launches them.
+    previous = os.environ.get("SC_AGENT")
+    identity = f"{previous or 'agent'}-{uuid.uuid4().hex[:8]}"
+    os.environ["SC_AGENT"] = identity
     target = ROOT.parent / f"smoothcast-issue-{number}-{uuid.uuid4().hex[:8]}"
-    created = False
+    claimed = created = False
     try:
+        code = cmd_claim(argparse.Namespace(number=number, files=chosen_files, ttl=a.ttl))
+        if code:
+            return code
+        claimed = True
         run = subprocess.run(["git", "worktree", "add", "--detach", str(target), "origin/develop"],
                              cwd=ROOT, capture_output=True, text=True)
         if run.returncode:
@@ -402,7 +408,7 @@ def cmd_start(a: argparse.Namespace) -> int:
         admin = subprocess.run(["git", "-C", str(target), "rev-parse", "--absolute-git-dir"],
                                capture_output=True, text=True, check=True).stdout.strip()
         folder = Path(admin)
-        folder.joinpath("sc-agent-id").write_text(agent_id() + "\n", encoding="utf-8")
+        folder.joinpath("sc-agent-id").write_text(identity + "\n", encoding="utf-8")
         head = git("rev-parse", "origin/develop").strip()
         metadata = {"issue": number, "title": issue.get("title") or "",
                     "source_head": head, "started_at": utcnow().isoformat()}
@@ -412,13 +418,19 @@ def cmd_start(a: argparse.Namespace) -> int:
         packet = issue_context_packet(number, issue, comments if isinstance(comments, list) else [], head)
         brief = folder / "sc-agent-brief.md"
         brief.write_text(packet, encoding="utf-8")
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError, td.DigestError) as exc:
         if created:
             subprocess.run(["git", "worktree", "remove", "--force", str(target)],
                            cwd=ROOT, capture_output=True)
-        release(number, f"start failed: {type(exc).__name__}")
+        if claimed:
+            release(number, f"start failed: {type(exc).__name__}")
         print(f"could not initialise private worktree for #{number}: {exc}")
         return 4
+    finally:
+        if previous is None:
+            os.environ.pop("SC_AGENT", None)
+        else:
+            os.environ["SC_AGENT"] = previous
     print(f"READY issue #{number}: {issue.get('title', '')}")
     print(f"  worktree: {target}")
     print(f"  context: {brief} (read the issue and latest handover)")
