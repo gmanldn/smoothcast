@@ -36,7 +36,7 @@ PRIORITY_RE = re.compile(r"^\[(P[0-2])\]")
 LEGACY_RE = re.compile(r"\[(SC-\d{3})\]")
 DISPLAY_PREFIX_RE = re.compile(r"^\[P[0-2]\](?:\[SC-\d{3}\])?\s*")
 PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
-SKIP_LABELS = {"epic", "icebox", "needs-human", "in-flight"}
+SKIP_LABELS = {"epic", "icebox", "needs-human", "in-flight", "needs-split", "verify-close"}
 LIST_FIELDS = "number,title,state,labels,assignees,updatedAt,url"
 VIEW_FIELDS = "number,title,state,labels,assignees,updatedAt,url,body"
 
@@ -438,7 +438,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--include-skipped",
         action="store_true",
-        help="with --next, include epic, icebox, needs-human and in-flight issues",
+        help="with --next, include normally excluded triage/verification issues",
     )
     parser.add_argument(
         "--show", type=int, metavar="NUMBER", help="read one issue body"

@@ -132,6 +132,23 @@ class NextIssueTests(unittest.TestCase):
         self.assertTrue(stdout.startswith("#1 P0"))
         self.assertEqual(stderr, "")
 
+    def test_next_skips_unsplit_and_verification_only_tickets(self):
+        rows = [
+            issue(1, "[P0] Waiting for CI", labels=("agent-ready", "Verify-Close")),
+            issue(2, "[P0] Needs scoping", labels=("agent-ready", "NEEDS-SPLIT")),
+            issue(3, "[P1] Implementable", labels=("agent-ready",)),
+        ]
+        out, err = self.run_digest(rows, "--next", "--label", "agent-ready")
+        self.assertTrue(out.startswith("#3 P1"))
+        self.assertIn("Skipped 2", err)
+        self.assertLess(len(out + err), 300)
+
+        out, err = self.run_digest(
+            rows, "--next", "--label", "agent-ready", "--include-skipped"
+        )
+        self.assertTrue(out.startswith("#1 P0"))
+        self.assertEqual(err, "")
+
     def test_next_keeps_label_and_matching_and_json_output(self):
         rows = [
             issue(1, "[P0] Wrong wave", labels=("agent-ready", "wave-2")),

@@ -85,11 +85,10 @@ choose new identifiers only deliberately (never reuse a legacy ID).
 
 ## Labels and the safe pick command
 
-Run `python3 scripts/ticket_digest.py --next --label agent-ready` and read
-the issue and its **Agent brief**. See #511 for the label legend. `--next`
-excludes epics (`epic`), deferred work (`icebox`), human checks (`needs-human`)
-and active work (`in-flight`). It prints the skipped count on stderr.
-Use `--include-skipped` to include these labels when triaging.
+Use `python3 scripts/ticket_digest.py --next --label agent-ready`; read only
+the selected issue and its **Agent brief** (#511). `--next` excludes `epic`,
+`icebox`, `needs-human`, `in-flight`, `needs-split` and `verify-close`.
+To inspect excluded work, add `--include-skipped`; counts go to stderr.
 
 ## Priorities, classification and status
 
