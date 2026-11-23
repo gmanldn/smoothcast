@@ -68,3 +68,27 @@ notarisation, Windows signing/installer generation and hardware qualification
 remain separate release gates. See GitHub issue #192.
 
 Reference: https://pyinstaller.org/en/stable/spec-files.html
+
+## Unsigned macOS disk image (issue #556)
+
+The native `macos-15` package job produces `dist/SmoothCast.app` with
+PyInstaller, checks its headless package contract, archives the existing
+`smoothcast-darwin.tar.gz`, and creates `smoothcast-macos.dmg` using Apple's
+`hdiutil`. Both archives have adjacent `.sha256` files. The build deliberately
+never starts GTK or contacts a receiver.
+
+For local macOS packaging, after a successful `scripts/build_release.py` run:
+
+```sh
+python3 scripts/ci/build_macos_dmg.py
+shasum -a 256 -c dist/smoothcast-macos.dmg.sha256
+```
+
+The unsigned DMG is a **CI test artefact**, not a notarised release.
+Users may encounter macOS Gatekeeper warnings. Do not recommend disabling
+Gatekeeper globally. A public release requires signing embedded executables
+and the bundle with the appropriate Developer ID identity, validating the
+hardened runtime and entitlements, notarising the distributed DMG with Apple's
+notary service, stapling tickets, and verifying with `spctl`/stapler on macOS.
+Credentials must be provisioned as CI secrets, never committed. Physical
+macOS GUI and receiver checks remain a distinct gate in issue #264.

@@ -1,9 +1,0 @@
-blank_issues_enabled: false
-
-contact_links:
-  - name: SmoothCast issue workflow
-    url: https://github.com/gmanldn/smoothcast/blob/main/docs/ISSUES.md
-    about: How to claim, validate and close one issue without creating a second backlog.
-  - name: Agent token efficiency
-    url: https://github.com/gmanldn/smoothcast/blob/main/docs/AGENT_TOKEN_EFFICIENCY.md
-    about: Bounded issue reads, code-navigation limits and measured byte counts.
