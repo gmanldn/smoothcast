@@ -231,6 +231,7 @@ _PANEL_HTML = r"""
 <section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading">Screens</h2><span id="screensCount" class="muted"></span></div>
 <p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if the host requires it. Tap Start screen once to allow sound.</p>
 <ul id="screensList"><li class="empty">No screens connected</li></ul>
+<details class="help"><summary>How to use and control browser screens</summary><div class="help-body"><p><strong>Set up a screen:</strong> open the screen page on the device that will play sound or video, join with a name and the House PIN if required, then choose Start screen on that device.</p><p><strong>Choose from queue</strong> selects an item already in Up Next. <strong>Play</strong> starts it on that individual screen, not the main room TV. Pause, Resume and Stop affect only the named screen.</p><p>If a screen is not responding, controls remain unavailable until it reconnects. Add new media using the room's Find or Add files sections first.</p></div></details>
 <p id="screensMsg" class="muted" role="status" aria-live="polite"></p></section>
 <script>
 (function(){
@@ -246,6 +247,7 @@ _PANEL_HTML = r"""
       body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
       const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");msg.textContent="Screen command received; checking its state.";
     }catch(err){msg.textContent=err.message}}
+  function updateScreenPlayButton(play,pick,ready){play.disabled=!ready||!pick.value}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
   window.scRenderScreens=function(s){
     const queuePanel=document.getElementById("queuePanel");
@@ -264,10 +266,10 @@ _PANEL_HTML = r"""
       const pick=el("select");pick.setAttribute("aria-label","Choose what to play on "+sc.name);
       const none=el("option","","Choose from queue");none.value="";pick.append(none);
       for(const q of items){const o=el("option","",q.title);o.value=q.id;pick.append(o)}
-      pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value});
-      const play=el("button","tiny","Play");play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";play.setAttribute("aria-label","Play selected queue item on "+sc.name);play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
-      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name);toggle.disabled=!sc.item;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
-      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.setAttribute("aria-label","Stop playback on "+sc.name);stop.disabled=!sc.item;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
+      pick.value=items.some(q=>q.id===choice[sc.id])?choice[sc.id]:"";pick.addEventListener("change",()=>{choice[sc.id]=pick.value;updateScreenPlayButton(play,pick,sc.ready)});
+      const play=el("button","tiny","Play");play.type="button";updateScreenPlayButton(play,pick,sc.ready);play.title="Play the selected shared-queue item on this screen, not the room TV";play.setAttribute("aria-label","Play selected queue item on "+sc.name);play.addEventListener("click",()=>{if(pick.value)send(sc.id,{action:"play",item:pick.value,follow:true});else msg.textContent="Pick something from the queue first."});
+      const toggle=el("button","secondary tiny",sc.state==="paused"?"Resume":"Pause");toggle.type="button";toggle.title="Pause or resume playback on this screen only";toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name);toggle.disabled=!sc.item||!sc.ready;toggle.addEventListener("click",()=>send(sc.id,{action:sc.state==="paused"?"resume":"pause"}));
+      const stop=el("button","secondary tiny","Stop");stop.type="button";stop.title="Stop this screen without stopping the host TV";stop.setAttribute("aria-label","Stop playback on "+sc.name);stop.disabled=!sc.item||!sc.ready;stop.addEventListener("click",()=>send(sc.id,{action:"stop"}));
       actions.append(pick,play,toggle,stop);li.append(box,actions);rows.push(li)}
     list.replaceChildren(...rows)};
 })();
