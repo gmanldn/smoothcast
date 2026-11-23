@@ -182,7 +182,10 @@ class ReceiverMemoryTests(unittest.TestCase):
 
     def test_diagnostics_only_export_aggregates_no_identifiers_or_titles(self):
         import diagnostics
+        import time
 
+        # The collector intentionally uses the real wall clock for TTL expiry.
+        self.clock.now = time.time()
         self.store.record(self.key, self.sig, "direct", False)
         self.store.record(self.key, self.sig, "hls", True)
         summary = self.store.summary()
