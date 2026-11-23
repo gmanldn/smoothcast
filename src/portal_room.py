@@ -194,7 +194,9 @@ class PortalRoom:
         now = self.clock() if now is None else now
         with self._lock:
             # Ignore a completion racing a room reset/revocation.
-            if participant_id not in self.participants and participant_id not in self._dormant:
+            if (participant_id not in self.participants and
+                    participant_id not in self._dormant and
+                    participant_id not in {"someone", "system", "receiver", "host"}):
                 return
             key = room_activity.command_key(participant_id, command_id)
             if key is not None:
