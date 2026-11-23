@@ -267,6 +267,7 @@ def test_invalid_version_jump_is_blocked_even_with_skip_checks(monkeypatch, tmp_
 def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "ROOT", tmp_path)
     monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
     monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "" if args[0] == "status" else "a" * 40)
     monkeypatch.setattr(agent, "ticket_commits", lambda n: ["a" * 40])
     original_run = subprocess.run
