@@ -53,6 +53,7 @@ DEFAULTS: dict = {
     "auto_shutdown": False,
     "notifications": True,  # Notify when the window is unfocused (#267)
     "portal_screens": True,
+    "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
     "library_indexer": True,
     "library_folders": [],

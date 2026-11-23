@@ -448,7 +448,13 @@ class AvMixin:
 
         media = self.media if self.media is not None and str(self.media.path) == path else None
         if media is not None and media.is_audio_only:
-            finish()
+            if self.cfg.get("show_cover_art", True):
+                Async.run(
+                    lambda: screenshot.cover_art(pathlib.Path(path)),
+                    done=finish, failed=lambda _error: finish(), domain="media",
+                )
+            else:
+                finish()
             return False
         video_index = media.video_stream_index if media is not None else 0
         Async.run(

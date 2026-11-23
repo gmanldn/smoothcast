@@ -109,6 +109,9 @@ class PreferencesWindow(Adw.PreferencesWindow):
             playback, "Notifications",
             "Desktop notifications are suppressed while SmoothCast is focused.",
         )
+        art = self._group(playback, "Artwork", "Shown in the preview above the scrubber.")
+        self._switch(art, "show_cover_art", "Show cover art",
+                     "Use a track's embedded artwork; turn off to keep the plain slate.")
         self._switch(alerts, "notifications", "Show desktop notifications",
                      "Notify when a cast finishes, fails or the receiver disappears.")
 
@@ -268,7 +271,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
-                     "house_pin_enabled"):
+                     "house_pin_enabled", "show_cover_art"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
