@@ -43,6 +43,10 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
     length = parse_wire_uint(reply.getheader("Content-Length"))
     if length != end - start + 1:
         return False
+    # An unvalidated resume may splice bytes from another file generation.
+    # Weak ETags only promise semantic equivalence, not byte identity.
+    if generation is None and (etag is None or etag.startswith("W/")):
+        return False
     if etag is not None and reply.getheader("ETag") != etag:
         return False
     if generation is not None and reply.getheader("X-SmoothCast-Generation") != generation:
