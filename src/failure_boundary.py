@@ -44,10 +44,13 @@ class UserFailure:
     title: str
     steps: tuple[str, ...]
     detail: str  # private: for the error log and diagnostics, never for display
+    reviewed: bool = False  # title is audited copy that already includes the first step
 
     @property
     def message(self) -> str:
         """One display-safe message: what happened and the first thing to try."""
+        if self.reviewed:
+            return self.title[:MAX_MESSAGE]
         head = self.title.rstrip(".")
         text = f"{head}. {self.steps[0]}" if self.steps else f"{head}."
         return text[:MAX_MESSAGE]
@@ -78,7 +81,9 @@ def describe(exc: object) -> UserFailure:
     try:
         reviewed = getattr(exc, "user_message", None)
         if isinstance(reviewed, str) and reviewed.strip():
-            return UserFailure(reviewed.strip()[:MAX_MESSAGE], (), _detail(exc))
+            steps = getattr(exc, "steps", ())
+            clean = tuple(s for s in steps if isinstance(s, str)) if isinstance(steps, tuple) else ()
+            return UserFailure(reviewed.strip()[:MAX_MESSAGE], clean, _detail(exc), True)
         return UserFailure(TITLE, STEPS, _detail(exc))
     except Exception:
         return UserFailure(TITLE, STEPS, "")
