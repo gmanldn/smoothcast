@@ -21,7 +21,10 @@ def media_code() -> str:
     html = portal._page().decode("utf-8")
     start = html.index("const MEDIA=")
     end = html.index('(()=>{\n  const box=$("lockControls")')
-    return html[start:end]
+    # Media Session reuses the already-tested source-second projection helper.
+    projection = next(line for line in html.splitlines()
+                      if line.startswith("function projectPosition("))
+    return projection + "\n" + html[start:end]
 
 
 HARNESS = """
@@ -49,7 +52,7 @@ def run(body: str) -> dict:
 
 def test_playing_sets_metadata_position_state_and_silent_audio():
     out = run("""
-syncMediaSession({state:"PLAYING",title:"Paddington 2",receiver:"Lounge TV",duration:5400,position:120,speed:1.5});
+syncMediaSession({state:"PLAYING",title:"Paddington 2",receiver:"Lounge TV",duration:5400,position:120,rate:1.5});
 const ms=navigator.mediaSession;
 const out={title:ms.metadata.title,album:ms.metadata.album,state:ms.playbackState,pos:ms.position,
  played, vol:MEDIA.audio.volume, loop:MEDIA.audio.loop, names:Object.keys(handlers).sort()};
@@ -60,6 +63,40 @@ const out={title:ms.metadata.title,album:ms.metadata.album,state:ms.playbackStat
     assert out["played"] == ["/silence.wav"] and out["loop"] is True and out["vol"] < 0.001
     assert out["names"] == ["nexttrack", "pause", "play", "previoustrack",
                             "seekbackward", "seekforward", "seekto"]
+
+
+def test_lock_screen_source_rate_age_and_buffering_are_truthful():
+    out = run("""
+syncMediaSession({state:"PLAYING",title:"Film",duration:100,position:40,
+                  rate:2,speed:0.5,snapshot_age_ms:750});
+const playing={state:navigator.mediaSession.playbackState,
+               position:{...navigator.mediaSession.position}};
+syncMediaSession({state:"BUFFERING",title:"Film",duration:100,position:41,
+                  rate:2,snapshot_age_ms:2500});
+const buffering={state:navigator.mediaSession.playbackState,
+                 position:{...navigator.mediaSession.position}};
+syncMediaSession({state:"PAUSED",title:"Film",duration:100,position:20,
+                  rate:0.5,snapshot_age_ms:2500});
+const paused={state:navigator.mediaSession.playbackState,
+              position:{...navigator.mediaSession.position}};
+syncMediaSession({state:"PLAYING",title:"Film",duration:100,position:10,
+                  rate:"3",snapshot_age_ms:1000});
+const malformed=navigator.mediaSession.position;
+const out={playing,buffering,paused,malformed};
+""")
+    assert out["playing"] == {
+        "state": "playing",
+        "position": {"duration": 100, "position": 41.5, "playbackRate": 2},
+    }
+    assert out["buffering"] == {
+        "state": "paused",
+        "position": {"duration": 100, "position": 41, "playbackRate": 2},
+    }
+    assert out["paused"] == {
+        "state": "paused",
+        "position": {"duration": 100, "position": 20, "playbackRate": 0.5},
+    }
+    assert out["malformed"] == {"duration": 100, "position": 11, "playbackRate": 1}
 
 
 def test_handlers_call_existing_actions_with_source_seconds():
