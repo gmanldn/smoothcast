@@ -40,7 +40,12 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
         self._sync_ui_timers()
-        if not self.is_active() or not refresh_config(self.cfg):
+        if not self.is_active():
+            return
+        # A source checkout can change while this process still runs the old
+        # imported modules. Explain that on focus; never hot-swap loaded code.
+        self.app._show_stale_runtime_notice(self)
+        if not refresh_config(self.cfg):
             return
         self.app.apply_accent(self.cfg.get("accent", "default"))
         self.app.apply_density(self.cfg.get("density", "comfortable"))
@@ -1232,7 +1237,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         subtitle = f"{device} · {state}" if device else "No receiver selected"
         tooltip = f"Running {APP_NAME} {version.label()}"
         if self.update_notice:
-            subtitle += " · restart to update"
+            subtitle += (" · restart to apply" if getattr(self, "_installed_version_stale", False)
+                         else " · update information")
             tooltip += f"\n{self.update_notice}"
         self.title_widget.set_subtitle(subtitle)
         self.title_widget.set_tooltip_text(tooltip)
