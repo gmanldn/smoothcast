@@ -206,3 +206,60 @@ def test_close_issue_requires_explicit_rest_confirmation(monkeypatch):
     import pytest
     with pytest.raises(agent.td.DigestError, match="did not confirm"):
         agent.close_issue(42)
+
+
+def test_history_preview_is_id_ordered_and_does_not_reuse_stale_handover():
+    comments = [
+        comment(4, 42, 2, "Implementation: abc5678. Why: final fix."),
+        comment(1, 42, 30, "Implementation: abc1234. Why: first slice."),
+        comment(3, 42, 10, "Progress: source tests passed\\nHandover: fix cleanup"),
+    ]
+    slices, progress, handover = agent.summarize_history(comments)
+    assert slices == 2
+    assert progress == "abc5678. Why: final fix."
+    assert handover == ""  # never pair older pending work with newer implementation
+
+
+def test_history_preview_preserves_latest_progress_and_remaining_work():
+    comments = [
+        comment(1, 42, 20, "Progress: basic transport landed\\nHandover: untested cancellation"),
+        comment(2, 42, 10, "Claim released."),
+        comment(3, 42, 3, "Progress: cancellation handling landed\\nHandover: test receiver restart"),
+    ]
+    assert agent.summarize_history(comments) == (
+        0, "cancellation handling landed", "test receiver restart"
+    )
+
+
+def test_progress_is_durable_and_optionally_releases_only_after_confirmation(monkeypatch):
+    posted, released = [], []
+    def fake_gh(*args):
+        posted.append(args)
+        return {"id": 1234}
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "release", lambda n, note: released.append((n, note)))
+    args = agent.build_parser().parse_args([
+        "progress", "42", "--done", "guard landed", "--next", "receiver soak",
+        "--commit", "abc123", "--verification", "pytest: 3 passed",
+        "--files", "src/portal.py", "--release",
+    ])
+    assert agent.cmd_progress(args) == 0
+    body = posted[0][-1]
+    assert "Progress: guard landed" in body
+    assert "Handover: receiver soak" in body
+    assert "Commit: abc123" in body
+    assert "Verification: pytest: 3 passed" in body
+    assert released == [(42, "Handover recorded in comment 1234.")]
+
+
+def test_progress_does_not_release_when_post_is_unconfirmed(monkeypatch):
+    released = []
+    monkeypatch.setattr(agent, "gh", lambda *args: {})
+    monkeypatch.setattr(agent, "release", lambda *args: released.append(args))
+    args = agent.build_parser().parse_args([
+        "progress", "42", "--done", "investigation", "--next", "write fix", "--release"
+    ])
+    import pytest
+    with pytest.raises(agent.td.DigestError, match="did not confirm"):
+        agent.cmd_progress(args)
+    assert released == []
