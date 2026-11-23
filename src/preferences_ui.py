@@ -197,7 +197,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
-        self._switch(updates, "verify_updates", "Require a trusted signature",
+        self._switch(updates, "release_check_verify", "Require a trusted signature",
                      "On by default. Updates without a signature trusted by "
                      "your Git keyring are not offered as safe to install.")
 
@@ -292,7 +292,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
                      "house_pin_enabled", "show_cover_art", "check_release_updates",
-                     "verify_updates"):
+                     "release_check_verify"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:
