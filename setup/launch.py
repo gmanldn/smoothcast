@@ -179,13 +179,26 @@ def is_gui_python_command(argv: list[str], target: str) -> bool:
     """True only if Python executes target as its actual script argument.
 
     Bounded parsing avoids treating an arbitrary later file operand as our app.
-    Unknown flags and -c/-m invocations deliberately fail closed.
+    Unknown flags and -c/-m invocations deliberately fail closed; -W/-X\n    option values are consumed before identifying the real script operand.
     """
     if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
         return False
     index = 1
-    while index < len(argv) and argv[index] in _PYTHON_NO_VALUE_SWITCHES:
-        index += 1
+    while index < len(argv):
+        option = argv[index]
+        if option in _PYTHON_NO_VALUE_SWITCHES:
+            index += 1
+        elif option in ("-W", "-X"):
+            # Python consumes exactly one value after these switches.
+            # Never mistake that value for the application's script path.
+            if (index + 1 >= len(argv) or not argv[index + 1]
+                    or argv[index + 1].startswith("-")):
+                return False
+            index += 2
+        elif (option.startswith("-W") or option.startswith("-X")) and len(option) > 2:
+            index += 1
+        else:
+            break
     return index < len(argv) and argv[index] == target
 
 
