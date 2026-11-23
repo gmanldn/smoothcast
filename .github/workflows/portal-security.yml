@@ -6,6 +6,9 @@ on:
     paths:
       - 'src/portal.py'
       - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
       - 'tests/test_screen_page_theme.py'
       - 'tests/test_room_accent.py'
       - 'src/async_jobs.py'
@@ -41,6 +44,9 @@ on:
     paths:
       - 'src/portal.py'
       - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
       - 'tests/test_screen_page_theme.py'
       - 'tests/test_room_accent.py'
       - 'src/async_jobs.py'
@@ -118,6 +124,7 @@ jobs:
           tests/test_portal_screens.py
           tests/test_screen_page_theme.py
           tests/test_room_accent.py
+          tests/test_design_tokens.py
           tests/test_portal_screens_http.py
           tests/test_portal_commands.py
           tests/test_portal_error_codes.py
