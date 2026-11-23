@@ -493,7 +493,7 @@ CI includes `tests/test_version_integrity.py` to check the canonical source, CLI
 
 ## Safe, opt-in update checks
 
-By default **SmoothCast makes no Git update request at startup**. Under **Preferences → Appearance → Updates**, users can opt into **Check for releases on startup**, effective on the next launch. This performs a bounded, read-only Git fetch **after** the first window is interactive and only for clean Git checkouts on the released `main`/`master` branch. Development branches, dirty worktrees, frozen apps and installed non-Git releases are never changed. If an eligible newer semantic release is found, the application displays its candidate version and the running version **without installing it**. It never modifies loaded application files, calls `git pull`, or restarts a cast.
+By default **SmoothCast makes no Git update request at startup**. Under **Preferences → Appearance → Updates**, select **Develop** (default) or **Main** for read-only candidate discovery and optionally enable **Check for releases on startup**, effective on the next launch. It performs a bounded Git metadata fetch **after** the first window appears, only from an eligible clean source checkout. Dirty worktrees, frozen apps and installed non-Git releases are never changed. No automatic installer, switch or restart is enabled yet. If an eligible newer semantic release is found, the application displays its candidate version and the running version **without installing it**. It never modifies loaded application files, calls `git pull`, or restarts a cast.
 
 **Require a trusted signature** is enabled by default for update discovery. Verification uses `git verify-commit` or a matching signed release tag against keys **the user has explicitly imported** into their own GPG keyring. An unverifiable candidate is reported as **untrusted**, not installed. The target SHA comes from an explicitly fetched origin release-branch ref; unrelated fetched tags cannot substitute a different candidate. This is not an automatic update installer: install from your trusted distribution channel when playback has finished, then quit and relaunch. The transactional, signed, one-click install/restart workflow remains tracked in [#138](https://github.com/gmanldn/smoothcast/issues/138).
 
@@ -658,5 +658,6 @@ preserve earlier research. Agents should start with
 than a second backlog. Contribute a new improvement using the
 [GitHub issue template](https://github.com/gmanldn/smoothcast/issues/new/choose),
 not by adding a second TODO document. All work is committed directly to
-`develop`; `main` is release-only and is updated automatically by a develop→main
-pull request when a verified `develop` commit bumps `src/version.py`.
+`develop`; `main` is owner-controlled and changes **only** when the owner
+explicitly chooses to merge it. Routine CI and agents do not promote or
+synchronise main; Verify is an optional manual diagnostic.
