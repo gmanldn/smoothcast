@@ -60,11 +60,12 @@ ongoing cast. A missing record is a safe no-op.
 `tests/test_receiver_memory.py` covers fake Cast receivers, decisions,
 identity independence, expiry, boundedness, corruption, atomic write failure,
 concurrency, diagnostics privacy and the forget command. The fast CI syntax
-job runs it. HLS observations are supported by the storage model but currently
-the cast workflow records **confirmed direct outcomes only**; no HLS success is
-asserted merely because FFmpeg or catt starts. Exact H.264 level is not exposed
-by current `MediaInfo`; pixel format is included as a bit-depth discriminator
-and learning remains subordinate to hard capability checks.
+job runs it. The workflow records a successful HLS outcome **only after**
+`Session.start_transcode()` verifies the receiver is playing the actual
+generation-specific HLS URL (via `_await_receiver`). FFmpeg or catt startup
+alone is not success; failed/uncertain HLS is never learned. Exact H.264 level
+is not exposed by `MediaInfo`; pixel format is included as a bit-depth
+discriminator and hard codec checks still take precedence.
 
 Do not expand the planner to override a hard rejection. Physical receiver
 qualification remains in #208.
