@@ -363,7 +363,7 @@ class LifecycleMixin:
                 preview_position=self._preview_position,
             )
         except screenshot.CaptureError as exc:
-            self.toast(str(exc), error=True)
+            self.toast(str(exc) or "Couldn't take the screenshot.", error=True)
             return
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
