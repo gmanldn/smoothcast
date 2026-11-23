@@ -101,7 +101,7 @@ def compare(current: dict, baseline: dict) -> list[str]:
                         f"by more than {TOTAL_TOLERANCE:.0%}")
     for name, count in current["modules"].items():
         base = baseline.get("modules", {}).get(name)
-        if base is not None and count > base * (1 + MODULE_TOLERANCE) and count > 300:
+        if base is not None and count > base * (1 + MODULE_TOLERANCE):
             problems.append(f"{name} grew to {count} lines from {base}")
         if base is None and count > LARGE_MODULE:
             problems.append(f"new module {name} has {count} lines (limit {LARGE_MODULE})")
