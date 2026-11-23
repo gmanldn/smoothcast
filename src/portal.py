@@ -36,6 +36,7 @@ import error_log
 import failure_boundary
 import peer_discovery
 import portal_room
+import room_activity
 import room_event_replay
 import portal_screen_page
 import portal_media
@@ -343,6 +344,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self.room_events.clear()
             for participant_id in participants:
                 self.room.leave(participant_id)
+            # A new PIN starts a new room: previous participants and titles
+            # must never appear in a new guest's activity feed.
+            self.room.reset_history()
             self._queue_command_cache.clear()
             old_pin = self.pin
             new_pin_value = new_pin()
@@ -474,9 +478,6 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     payload = ({**body, "_portal_auth_key": session_key}
                                if session_key is not None else body)
                     message = self.dispatch(action, payload)
-                    self.room.record(participant_id, "action", {
-                        "action": action, "id": body.get("id"),
-                    })
                     status, result = 202, str(message or "Queue updated")
                 except PortalRequestError as exc:
                     status, result = exc.status, exc.message
@@ -484,6 +485,12 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     status, result = 503, "SmoothCast could not accept that queue edit"
                 if status >= 400:
                     command_trace.stage("rejected", code=status)
+            self.room.record(participant_id, "action", {
+                "action": action, "id": body.get("id"),
+                "outcome": ("accepted" if status < 400 else
+                            "uncertain" if status >= 500 else "rejected"),
+                "reason": room_activity.reason_for_status(status),
+            }, command_id=command_id)
             self._queue_command_cache[key] = (
                 now + QUEUE_COMMAND_TTL, fingerprint, status, result,
             )
@@ -1167,6 +1174,8 @@ class _Handler(BaseHTTPRequestHandler):
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
             action = body.get("action")
+            envelope: portal_commands.MutationEnvelope | None = None
+            participant_id: str | None = None
             try:
                 envelope = portal_commands.parse_envelope(body)
                 participant_id = self.server.session_participant(self._cookie_token())
@@ -1229,7 +1238,8 @@ class _Handler(BaseHTTPRequestHandler):
                         except Exception:
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
-                                                {"action": action, "id": body.get("id")})
+                                                {"action": action, "id": body.get("id"),
+                                                 "outcome": "accepted"})
                         return self._send(202, {"ok": True, "message": result or "Command received; checking receiver state."})
                     if action == "seek":
                         value = body.get("value")
@@ -1250,6 +1260,12 @@ class _Handler(BaseHTTPRequestHandler):
                         client_id="legacy-" + self.server._session_key(token)[:40])
                 receipt = self.server.commands.execute(envelope, participant_key=participant_id)
             except portal_commands.CommandError as exc:
+                if envelope is not None and participant_id is not None:
+                    self.server.room.record(participant_id, "action", {
+                        "action": envelope.action,
+                        "outcome": "uncertain" if exc.status >= 500 else "rejected",
+                        "reason": room_activity.reason_for_status(exc.status),
+                    }, command_id=envelope.command_id)
                 extra = {}
                 if exc.status == 409:
                     extra["conflict"] = True
@@ -1260,6 +1276,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if exc.code is not None:
                     extra["code"] = exc.code
                 return self._error(exc.status, exc.message, **extra)
+            if envelope is not None and participant_id is not None:
+                self.server.room.record(participant_id, "action", {
+                    "action": envelope.action, "outcome": "accepted",
+                }, command_id=envelope.command_id)
             return self._send(202, {
                 "ok": True, "message": receipt.message,
                 "command_id": receipt.command_id,
