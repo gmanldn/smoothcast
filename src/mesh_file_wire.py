@@ -80,7 +80,7 @@ def _matches_request(requested: str | None, status: int, start: int,
 
 
 
-_UNSATISFIED_RANGE = re.compile(r"bytes \\*/([0-9]{1,19})\\Z")
+_UNSATISFIED_RANGE = re.compile(r"bytes \*/([0-9]{1,19})\Z")
 
 
 def valid_unsatisfied_range(requested: str | None, content_range: str | None) -> bool:
