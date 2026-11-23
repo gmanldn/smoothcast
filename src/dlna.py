@@ -8,11 +8,12 @@ explicit local file is served per session, under an unguessable URL.
 from __future__ import annotations
 
 import atexit
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -22,7 +23,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import IO
+from typing import IO, Iterable
 from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
@@ -280,21 +281,34 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
         completed, waiting = wait(pending, timeout=max(0.0, deadline - time.monotonic()))
         for future in waiting:
             future.cancel()
-        devices: list[Renderer] = []
-        seen = set()
-        for future in completed:
-            try:
-                item = future.result()
-            except Exception:
-                continue  # An invalid LAN responder must not break discovery.
-            if item is not None and (item.host, item.transport_url) not in seen:
-                devices.append(item)
-                seen.add((item.host, item.transport_url))
-        return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
+        return _collect_responsive_renderers(completed)
     finally:
         # Do not wait for unresponsive receivers. Each outstanding GET still
         # has a bounded socket timeout; its result is deliberately discarded.
         pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _collect_responsive_renderers(completed: Iterable[Future[Renderer | None]]) -> list[Renderer]:
+    """Isolate broken LAN responders; report unexpected inspection failures once.
+
+    Never log responder-provided URLs, titles or XML (untrusted LAN data).
+    """
+    devices: list[Renderer] = []
+    seen: set[tuple[str, str]] = set()
+    failed = 0
+    for future in completed:
+        try:
+            item = future.result()
+        except Exception:
+            failed += 1
+            continue  # A broken responder cannot prevent others being discovered.
+        if item is not None and (item.host, item.transport_url) not in seen:
+            devices.append(item)
+            seen.add((item.host, item.transport_url))
+    if failed:
+        logging.getLogger(__name__).warning(
+            "DLNA discovery ignored %d failed renderer inspections", failed)
+    return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
 
 
 def _upnp_fault(data: bytes) -> str:
