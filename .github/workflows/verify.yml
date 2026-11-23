@@ -63,6 +63,20 @@ jobs:
       - name: Enforce safety invariant evidence links
         run: python scripts/ci/check_invariants.py
 
+  mesh-protocol-contract:
+    name: Mesh protocol safety (headless)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install pytest
+        run: python -m pip install 'pytest>=8,<10'
+      - name: Verify v1 handshakes, schema safety and simulated mixed-version nodes
+        run: python -m pytest -q tests/test_peer_protocol.py tests/test_mesh_protocol.py
+
   reliability-benchmark:
     name: Fake Cast reliability benchmark
     needs: [scope]
