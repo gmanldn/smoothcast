@@ -2437,10 +2437,14 @@ async function restoreUpload(){
   uploading=true;
   updateUploadControls();
   try{
-    const records=await uploadStorage("readonly",store=>store.getAll())||[];
-    for(const record of records.sort((a,b)=>b.started-a.started)){
+    const records=await uploadStorage("readonly",store=>store.getAll());
+    // IndexedDB is client-controlled and may contain stale/malformed entries.
+    // Validate *before* sorting; a null entry must never crash room restoration.
+    const candidates=Array.isArray(records)?records.filter(validSavedUpload):[];
+    const started=record=>Number.isSafeInteger(record.started)&&record.started>=0?record.started:0;
+    candidates.sort((a,b)=>started(b)-started(a));
+    for(const record of candidates){
       if(csrf!==session)return;
-      if(!validSavedUpload(record))continue;
       try{
         const state=await uploadRequest("GET","/api/uploads/"+record.id);
         if(csrf!==session)return;
