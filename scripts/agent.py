@@ -86,9 +86,13 @@ def parse_events(comments: list[dict]) -> list[dict]:
         marker = _MARK.search(body)
         if marker:
             fields = dict(p.split("=", 1) for p in marker.group(2).split() if "=" in p)
-            beat = float(fields.get("beat") or created.timestamp())
+            # GitHub's created/updated timestamps are the lease clock.
+            # A client's beat field is informative only: trusting it lets a
+            # badly skewed clock create a near-permanent lock.
+            updated = parse_time(c.get("updated_at") or c["created_at"])
+            at = max(created, updated)
             events.append({"kind": marker.group(1), "issue": issue, "agent": fields.get("agent", "?"),
-                           "at": datetime.fromtimestamp(max(beat, created.timestamp()), timezone.utc),
+                           "at": at,
                            "ttl": min(max(int(fields.get("ttl", 90)), TTL_MIN), TTL_MAX),
                            "files": {f for f in fields.get("files", "").split(",") if f}, "id": c.get("id", 0)})
         elif re.match(r"\s*(?:\*\*)?claim\b", body, re.IGNORECASE) and "releas" not in body[:200].lower():
@@ -98,8 +102,8 @@ def parse_events(comments: list[dict]) -> list[dict]:
                 or "release the claim" in body.lower() or "releasing my claim" in body.lower():
             events.append({"kind": "release", "issue": issue, "agent": "legacy", "at": created,
                            "ttl": 0, "files": set(), "id": c.get("id", 0)})
-    # IDs record immutable publication order. A heartbeat edits an older claim's
-    # beat in place; ordering by the beat would resurrect it after a release.
+    # IDs record immutable publication order. A heartbeat edits an older
+    # claim; ordering by updated_at would resurrect it after a release.
     return sorted(events, key=lambda e: e["id"])
 
 
