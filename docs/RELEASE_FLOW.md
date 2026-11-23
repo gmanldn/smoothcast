@@ -8,10 +8,15 @@ automatic release PR or dependency on main's version or CI verdict.
 ## Day-to-day versioning
 
 - Canonical source: `src/version.py`.
-- Bump PATCH for a completed ticket or explicit owner request; refresh latest
-  `develop` immediately beforehand and avoid overwriting other agent bumps.
-- Commit and fast-forward push to `develop`; this is a development version,
-  **not** a published release.
+- Routine ticket work **never** changes `src/version.py`. Every development
+  revision is uniquely identified by its Git commit SHA (headless
+  `smoothcast --build-id`); semantic version numbers are *release intent*.
+- Owner explicitly requests/version-bumps a release candidate when appropriate,
+  then reviews and manually integrates it to `main`. Never auto-promote.
+- Agents commit and fast-forward push quickly to `develop` without touching
+  the version file. The history guard rejects regressions or skipped release
+  numbers when a release bump does occur.
+- Ticket closure is not the same as release creation.
 - Source checkout, installed build and actively running Python process may
   report different versions. Do not describe a changed file as an activated
   update.
