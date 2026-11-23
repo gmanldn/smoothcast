@@ -105,6 +105,8 @@ jobs:
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
       - name: Verify bounded federated search cursors
         run: python -m unittest discover -s tests -p test_federated_cursor.py
+      - name: Verify bounded local library search cursors
+        run: python -m unittest discover -s tests -p test_local_search_cursor.py
       - name: Verify no-device demo profile safety
         run: |
           python -m unittest discover -s tests -p test_demo_session.py
