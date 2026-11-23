@@ -9,12 +9,15 @@ from __future__ import annotations
 import gzip
 from http.client import HTTPConnection
 import json
+import os
+from pathlib import Path
 import threading
 import time
 from typing import Callable
 from urllib.parse import urlencode, urlsplit
 
 import federated_search
+import house_fetch
 import lan_guard
 import mesh_files
 import replica_manager
@@ -102,6 +105,35 @@ class MeshLibrary:
     def _origins(self) -> dict[str, dict]:
         with self._lock:
             return {o["origin_id"]: o for o in self.store.origins()}
+
+    @property
+    def cache_dir(self) -> Path:
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        return Path(base) / "smoothcast" / "house"
+
+    def remote_source(self, key: str) -> dict | None:
+        """Where to copy ``key`` from: the best online peer that holds it."""
+        for origin in self._peers_with(key):
+            url = self.fetcher.url_of(origin)
+            if not url:
+                continue
+            with self._lock:
+                row = self.store.conn.execute(
+                    "SELECT title, rel_path FROM rentries WHERE origin_id=? AND content_key=?",
+                    (origin, key)).fetchone()
+                info = self.store.origin(origin) or {}
+            if row:
+                return {"origin": origin, "name": info.get("name", "") or "another computer",
+                        "url": url, "title": row[0], "suffix": Path(row[1] or "").suffix}
+        return None
+
+    def fetch_remote(self, key: str, source: dict, cancelled: Callable[[], bool] = lambda: False,
+                     budget_gb: float = 20.0, keep: set[str] | None = None) -> Path:
+        """Copy the file into the house cache (verified), then trim the cache to budget."""
+        path = house_fetch.fetch(source["url"], key, self.cache_dir, suffix=source["suffix"],
+                                 cancelled=cancelled)
+        house_fetch.evict(self.cache_dir, int(budget_gb * 1024 ** 3), keep={str(path), *(keep or set())})
+        return path
 
     def _peers_with(self, key: str) -> list[str]:
         """Online peers whose replica holds this content key, best first."""

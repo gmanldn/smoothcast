@@ -132,16 +132,12 @@ delivery. See [worker domains](../ASYNC_WORKERS.md).
 
 ## Other subsystems
 
-- Media pipeline: `src/streamer.py`, `src/preflight.py`,
-  `src/subtitle_encoding.py`, `src/audio_monitor.py`.
-- Preview and responsiveness: `src/local_playback.py`,
-  `src/responsive_layout.py`, `src/position_tracker.py`.
-- Receiver protocols: `src/castctl.py` and `src/dlna.py`.
-- Reliability and diagnostics: `src/startup_cleanup.py`,
-  `src/update_control.py`, `src/diagnostics.py`.
-- Launch and desktop: `setup/`, `scripts/install_desktop.py`,
-  `src/version.py`.
-- Tests and CI: `tests/`, `.github/workflows/verify.yml`.
+- Media: `src/streamer.py`, `preflight.py`, `subtitle_encoding.py`, `audio_monitor.py`.
+- Preview/responsiveness: `local_playback.py`, `responsive_layout.py`, `position_tracker.py`.
+- Receivers: `castctl.py`, `dlna.py`. Reliability: `startup_cleanup.py`,
+  `update_control.py`, `diagnostics.py`.
+- Launch: `setup/`, `scripts/install_desktop.py`, `version.py`. CI: `tests/`,
+  `.github/workflows/verify.yml`.
 
 ## Asynchronous receiver transport safety
 

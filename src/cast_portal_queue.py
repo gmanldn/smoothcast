@@ -19,6 +19,12 @@ def portal_queue_id(path: str) -> str:
     return hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
 
 
+def _fetch_message(error: object, title: str) -> str:
+    """User-presentable text for a failed copy (house_fetch errors are written for users)."""
+    text = error.args[0] if getattr(error, "args", None) and isinstance(error.args[0], str) else ""
+    return f"Couldn't copy “{title}”: {text}" if text else f"Couldn't copy “{title}”."
+
+
 class PortalQueueMixin:
     def _portal_observe_queue(self) -> int:
         """Return the main-thread queue revision, advancing on any ordered change."""
@@ -68,6 +74,41 @@ class PortalQueueMixin:
         if path is None:
             raise portal.PortalRequestError(404, "That file is no longer available.")
         return path
+
+    def _portal_run_async(self, work, done, failed) -> None:
+        from cast_widgets import Async
+        Async.run(work, done=done, failed=failed, domain="media",
+                  valid=lambda: not getattr(self, "_closing", False))
+
+    def _portal_fetch_remote(self, key: object) -> str:
+        """Copy a file from another computer into the cache, then queue the copy."""
+        mesh = getattr(self, "_mesh_library", None)
+        source = mesh.remote_source(key) if mesh is not None and isinstance(key, str) else None
+        if source is None:
+            raise portal.PortalRequestError(
+                404, "That item isn't available right now; its computer may be asleep.")
+        pending = self.__dict__.setdefault("_portal_fetching", set())
+        if key in pending:
+            return f"Already fetching “{source['title']}”."
+        pending.add(key)
+        title, where = source["title"], source["name"]
+
+        def work():
+            return mesh.fetch_remote(key, source, cancelled=lambda: getattr(self, "_closing", False),
+                                     keep=set(self.queue))
+
+        def done(path):
+            pending.discard(key)
+            self._portal_queue_display_names = getattr(self, "_portal_queue_display_names", {})
+            self._portal_queue_display_names[str(path)] = title
+            self._enqueue([str(path)])
+
+        def failed(error):
+            pending.discard(key)
+            self.toast(_fetch_message(error, title), error=True)
+
+        self._portal_run_async(work, done, failed)
+        return f"Copying “{title}” from {where}; it joins Up Next when ready."
 
     def _portal_queue_index(self, item_id: object) -> int:
         if not isinstance(item_id, str):
@@ -153,7 +194,10 @@ class PortalQueueMixin:
             self._portal_observe_queue()
             return "Queued next." if operation == "queue_next" else "Queue order updated."
         if operation == "queue_add_key":
-            path = self._portal_library_path(payload.get("key"))
+            try:
+                path = self._portal_library_path(payload.get("key"))
+            except portal.PortalRequestError:
+                return self._portal_fetch_remote(payload.get("key"))
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             self._enqueue([str(path)])

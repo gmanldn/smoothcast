@@ -2100,8 +2100,7 @@ function syncMediaSession(s){
     const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
     text.append(title,meta,where_);li.append(text);
     const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
-    const local=(it.copies||[]).some(c=>c.origin==="local");
-    if(!local){add.disabled=true;add.title="Playing from other computers is coming soon"}
+    if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}
     add.addEventListener("click",async()=>{
       add.disabled=true;
       try{const d=await post("/api/action",{action:"queue_add_key",key:it.id});showError("errorDash",d.message||"Added to Up Next");add.textContent="Added"}
