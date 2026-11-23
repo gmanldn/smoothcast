@@ -125,7 +125,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("test_gui_isolated", self.workflow)
 
     def test_procedure_is_documented(self):
-        doc = (ROOT / "docs/agents/workflow.md").read_text("utf-8")
+        doc = (ROOT / "docs/RELEASE_FLOW.md").read_text("utf-8")
         self.assertIn("Dry run first", doc)
 
 

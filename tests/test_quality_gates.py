@@ -122,10 +122,13 @@ class AgentHygieneTests(unittest.TestCase):
         for needle in ("Everyone — humans and agents — commits to `develop`",
                        "git worktree add --detach", "git worktree remove",
                        "git push origin HEAD:develop", "Keep `develop` green",
-                       "Stage files by name", "own CI run",
-                       "promote_release.py", "head pinned to the verified commit", "bump_version.py",
-                       "Allow GitHub Actions to create and approve pull"):
+                       "Stage files by name", "coalesced", "bump_version.py"):
             self.assertIn(needle, workflow)
+        # Release promotion details moved to docs/RELEASE_FLOW.md when workflow.md was trimmed (#542).
+        release = read("docs/RELEASE_FLOW.md")
+        for needle in ("promote_release.py", "head pinned to the verified commit",
+                       "Allow GitHub Actions to create and approve pull"):
+            self.assertIn(needle, release)
 
     def test_no_document_still_tells_agents_to_use_feature_branches_or_agent_prs(self):
         for name in ("AGENTS.md", "CONTRIBUTING.md", "docs/ISSUES.md", "docs/agents/workflow.md"):
@@ -136,18 +139,13 @@ class AgentHygieneTests(unittest.TestCase):
 
 
 class CiConcurrencyTests(unittest.TestCase):
-    def test_every_trunk_push_gets_its_own_uncancelled_verify_run(self):
+    def test_trunk_verify_is_coalesced_per_ref_and_never_interrupts_a_running_run(self):
+        """#539: one running run plus the newest pending run per ref; never cancel the active one."""
         workflow = read(".github/workflows/verify.yml")
         block = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:", 1)[0]
-        # Push runs are keyed by commit SHA: a newer push can neither cancel nor
-        # replace a queued run (a regression of this left develop unverified).
-        self.assertIn("github.sha", block)
-        self.assertIn("github.event_name == 'pull_request' && github.ref || github.sha", block)
-        # Only superseded pull-request runs may be cancelled.
-        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", block)
+        self.assertIn("github.ref", block)
+        self.assertIn("cancel-in-progress: false", block)
         self.assertNotIn("cancel-in-progress: true", block)
-        self.assertNotIn("github.ref }}\n", block)
-
 
 
 class FakeReceiverDocTests(unittest.TestCase):
