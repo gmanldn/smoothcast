@@ -105,12 +105,14 @@ class EarlyActivationTests(unittest.TestCase):
                         body.index("_bootstrap(target)"))
         self.assertIn("launch.main(args, prechecked=True)", body)
 
+    @unittest.skipIf(os.name == "nt", "POSIX exec launcher")
     def test_secondary_launcher_skips_recheck_when_prechecked(self):
         with mock.patch.object(launch, "python_path", return_value=Path("/fake/python")), \
              mock.patch.object(launch, "media_arguments_from_caller", return_value=[]), \
              mock.patch.object(launch, "runtime_environment", return_value={}), \
              mock.patch.object(launch, "ensure_single_instance",
                                side_effect=AssertionError("guard must run once")), \
+             mock.patch.object(launch.os, "chdir"), \
              mock.patch.object(launch.os, "execvpe", side_effect=OSError("stubbed exec")):
             with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}):
                 self.assertEqual(launch.main([], prechecked=True), 1)
