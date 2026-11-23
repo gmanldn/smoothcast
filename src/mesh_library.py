@@ -111,8 +111,9 @@ class MeshLibrary:
         base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
         return Path(base) / "smoothcast" / "house"
 
-    def remote_source(self, key: str) -> dict | None:
-        """Where to copy ``key`` from: the best online peer that holds it."""
+    def remote_sources(self, key: str) -> list[dict]:
+        """Every online peer that holds ``key``, best first (for failover)."""
+        found = []
         for origin in self._peers_with(key):
             url = self.fetcher.url_of(origin)
             if not url:
@@ -123,17 +124,32 @@ class MeshLibrary:
                     (origin, key)).fetchone()
                 info = self.store.origin(origin) or {}
             if row:
-                return {"origin": origin, "name": info.get("name", "") or "another computer",
-                        "url": url, "title": row[0], "suffix": Path(row[1] or "").suffix}
-        return None
+                found.append({"origin": origin, "name": info.get("name", "") or "another computer",
+                              "url": url, "title": row[0], "suffix": Path(row[1] or "").suffix})
+        return found
+
+    def remote_source(self, key: str) -> dict | None:
+        sources = self.remote_sources(key)
+        return sources[0] if sources else None
 
     def fetch_remote(self, key: str, source: dict, cancelled: Callable[[], bool] = lambda: False,
                      budget_gb: float = 20.0, keep: set[str] | None = None) -> Path:
-        """Copy the file into the house cache (verified), then trim the cache to budget."""
-        path = house_fetch.fetch(source["url"], key, self.cache_dir, suffix=source["suffix"],
-                                 cancelled=cancelled)
-        house_fetch.evict(self.cache_dir, int(budget_gb * 1024 ** 3), keep={str(path), *(keep or set())})
-        return path
+        """Copy the file into the house cache (verified), trying other computers on failure."""
+        candidates = [source] + [s for s in self.remote_sources(key) if s["origin"] != source["origin"]]
+        failure: house_fetch.FetchError | None = None
+        for candidate in candidates:
+            try:
+                path = house_fetch.fetch(candidate["url"], key, self.cache_dir,
+                                         suffix=candidate["suffix"], cancelled=cancelled)
+            except house_fetch.FetchError as exc:
+                if cancelled():
+                    raise
+                failure = exc
+                continue
+            house_fetch.evict(self.cache_dir, int(budget_gb * 1024 ** 3),
+                              keep={str(path), *(keep or set())})
+            return path
+        raise failure or house_fetch.FetchError("No computer has that file right now.")
 
     def _peers_with(self, key: str) -> list[str]:
         """Online peers whose replica holds this content key, best first."""

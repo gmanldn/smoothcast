@@ -218,3 +218,34 @@ def test_no_online_copy_anywhere_is_a_clear_404():
     with pytest.raises(portal.PortalRequestError) as err:
         host._portal_queue_action("queue_add_key", {"key": KEY})
     assert err.value.status == 404 and "asleep" in err.value.message
+
+
+def test_fetch_remote_fails_over_to_the_next_computer_and_trims_the_cache(origin, tmp_path, monkeypatch):
+    import mesh_library
+    import replica_store as rs
+    url, key, _cache = origin
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    local = li.LibraryIndexer(tmp_path / "local.sqlite3", probe=lambda p: {})
+    store = rs.ReplicaStore(tmp_path / "r.sqlite3")
+    mesh = mesh_library.MeshLibrary(local, store=store)
+    for oid, name in (("dead", "Dead PC"), ("live", "Study PC")):
+        store.touch_origin(oid, name, 100.0)
+        store.conn.execute("UPDATE origins SET state='fresh', last_seen_at=? WHERE origin_id=?",
+                           (100.0 if oid == "live" else 200.0, oid))   # the dead one looks best
+        store.conn.execute(
+            "INSERT INTO rentries(origin_id,content_key,kind,title,sort_title,folder_label,rel_path)"
+            " VALUES(?,?,?,?,?,?,?)", (oid, key, "video", "Film", "film", "Films", "Film (1999).mkv"))
+    store.conn.commit()
+    mesh.fetcher.set_peers([{"id": "dead", "url": "http://127.0.0.1:9/", "name": "Dead PC"},
+                            {"id": "live", "url": url, "name": "Study PC"}])
+    sources = mesh.remote_sources(key)
+    assert [s["origin"] for s in sources] == ["dead", "live"] and sources[0]["suffix"] == ".mkv"
+    monkeypatch.setattr(hf, "fetch", lambda u, k, d, **kw: _real_fetch(u, k, d, min_free=0, **kw))
+    path = mesh.fetch_remote(key, sources[0])
+    assert path.read_bytes() == DATA and path.parent == mesh.cache_dir
+    assert mesh.remote_source("qh:" + "9" * 32) is None
+    with pytest.raises(hf.FetchError):
+        mesh.fetch_remote("qh:" + "9" * 32, {**sources[0], "url": "http://127.0.0.1:9/"})
+
+
+_real_fetch = hf.fetch
