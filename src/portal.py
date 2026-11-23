@@ -24,14 +24,20 @@ import time
 from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
+import api_spec
 import lan_guard
+import mesh_files
 import library_replication
 import portal_commands
 import peer_discovery
 import portal_room
 import portal_screen_page
+import portal_media
+import portal_mesh_http
+import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
+import shortcut_map
 import version
 
 
@@ -133,24 +139,29 @@ def valid_friendly_name(value: str) -> bool:
 def page_build() -> str:
     """Version plus the served page's hash, never a duplicated release constant."""
     return version.__version__ + "-" + hashlib.sha256(
-        (_HTML + portal_screen_page.panel_html()).encode("utf-8")
+        (_HTML + portal_screen_page.panel_html() + portal_mesh_panel.panel_html()
+         + shortcut_map.browser_json()).encode("utf-8")
     ).hexdigest()[:12]
 
 
 def _page() -> bytes:
     # Replace just the main closing tag; the Screens panel is part of the build.
-    markup = _HTML.replace("</main>", portal_screen_page.panel_html() + "</main>", 1)
+    markup = _HTML.replace("</main>", portal_screen_page.panel_html()
+                           + portal_mesh_panel.panel_html() + "</main>", 1)
     return (markup.replace("__SC_BUILD__", page_build())
-            .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))).encode("utf-8")
+            .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
+            .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
     allow_reuse_address = True
+    request_queue_size = 64
 
     def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
                  pin_required: bool = True,
+                 status_snapshot: Callable[[], dict | None] | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
                  hostname: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
@@ -169,8 +180,12 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._apply_default_command, fence=self.fence, clock=clock)
         self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
+        self.status_snapshot = status_snapshot
         self.library_search: Callable | None = None
+        self.library_search_stream: Callable | None = None
         self.library_replication = None
+        self.mesh_files = None
+        self.nodes_provider: Callable | None = None
         self.hostname_label = hostname or ""
         self._lock = threading.RLock()  # A PIN check and login must be atomic with revoke.
         self._queue_command_lock = threading.Lock()
@@ -178,6 +193,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self.queue_ids: set[str] = set()
         portal_screens_http.attach(self)
+        self.mesh_feed = None       # set by the app when the mesh runs (#402/#405)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
         port = self.server_address[1]
@@ -202,12 +218,16 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 503, "SmoothCast could not accept that command") from exc
         session_id, revision, _owner = self.fence.rotate()
         return portal_commands.CommandReceipt(
-            envelope.command_id, session_id, revision, result or "Command accepted")
+            envelope.command_id, session_id, revision, result or "Command received; checking receiver state.")
 
     def server_close(self) -> None:
         try:
-            self.screens.close()
-            self.commands.close()
+            screens = getattr(self, "screens", None)  # absent if bind failed in __init__
+            if screens is not None:
+                screens.close()
+            commands = getattr(self, "commands", None)
+            if commands is not None:
+                commands.close()
         finally:
             super().server_close()
 
@@ -220,7 +240,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.room.expire_inactive(self.clock())
 
     def host_allowed(self, host: str) -> bool:
-        return bool(host) and host.lower() in self._allowed_hosts
+        return bool(host) and (host.lower() in self._allowed_hosts or lan_guard.is_entry_host(host))
 
     def origin_allowed(self, origin: str, host: str) -> bool:
         try:
@@ -269,6 +289,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self.fence.rotate()
         if keys:
             self.screens.drop_owner_keys(set(keys))
+            if self.mesh_feed is not None:
+                self.mesh_feed.close_keys(keys)
         if keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(set(keys))
         return len(keys)
@@ -291,6 +313,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._lockouts.clear()
             self.fence.rotate()
         self.screens.drop_owner_keys(owner_keys)
+        if self.mesh_feed is not None:
+            self.mesh_feed.close_keys(owner_keys)
         if owner_keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(owner_keys)
         return new_pin_value
@@ -446,6 +470,19 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             return False
 
 
+def _silent_wav(seconds: int = 1, rate: int = 8000) -> bytes:
+    """One second of silence: the audio element phones need for lock-screen controls."""
+    import struct
+    data = bytes([128]) * (rate * seconds)
+    header = (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt "
+              + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate, 1, 8)
+              + b"data" + struct.pack("<I", len(data)))
+    return header + data
+
+
+SILENT_WAV = _silent_wav()
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: _PortalHTTPServer
     protocol_version = "HTTP/1.1"
@@ -496,7 +533,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str, **extra: object) -> None:
         payload = {"ok": False, "error": message}
         payload.update(extra)
-        self._send(status, payload)
+        self._send(status, payload, extra_headers=(
+            {"Retry-After": "1"} if status == 429 else None))
 
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
@@ -519,6 +557,70 @@ class _Handler(BaseHTTPRequestHandler):
         body, headers = library_replication.encode(
             payload, "gzip" in self.headers.get("Accept-Encoding", ""))
         return self._send(status, body, extra_headers={**extra, **headers})
+
+    def _nodes_page(self) -> None:
+        """Fallback entry page: live SmoothCast computers, for networks without mDNS."""
+        import html
+        provider = getattr(self.server, "nodes_provider", None)
+        try:
+            nodes = list(provider()) if provider else []
+        except Exception:
+            nodes = []
+        rows = "".join(
+            f'<li><a href="{html.escape(str(n.get("url", "")), quote=True)}">'
+            f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
+            for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
+        mine = html.escape(self.server.hostname_label or "This computer")
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,"
+                "initial-scale=1'><title>SmoothCast computers</title><h1>SmoothCast in this house</h1>"
+                "<p>Open any computer to join the room.</p><ul><li><a href='/'>" + mine
+                + " (this one)</a></li>" + rows + "</ul>")
+        return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
+
+    def _mesh_file(self, path: str, *, head: bool) -> None:
+        """Ranged media bytes by content key, served locally or proxied (#422)."""
+        files = getattr(self.server, "mesh_files", None)
+        key = mesh_files.key_from_path(path)
+        if files is None or key is None:
+            return self._error(404, "That media is not available right now")
+
+        def write_headers(status: int, headers: dict) -> None:
+            self.send_response(status)
+            for name, value in headers.items():
+                self.send_header(name, value)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+
+        try:
+            files.serve(self, key, head=head, write_headers=write_headers)
+        except portal_media.MediaError as exc:
+            return self._error(exc.status, exc.message)
+        self.close_connection = True
+
+    def _search_stream(self) -> None:
+        """Server-sent events: cached results at once, late origins as they answer."""
+        if not self._authenticated():
+            return self._error(401, "Session expired")
+        stream = getattr(self.server, "library_search_stream", None)
+        text = (parse_qs(urlsplit(self.path).query).get("q") or [""])[0]
+        if not text.strip():
+            return self._error(400, "Type something to search.")
+        if stream is None:
+            return self._error(404, "House search is not enabled")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            for event, payload in stream(text, 50):
+                self.wfile.write(f"event: {event}\ndata: {json.dumps(payload)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (OSError, ValueError):
+            pass
+        self.close_connection = True
 
     def _search(self) -> None:
         """GET /api/search?q=&limit=&cursor= over the local library (#409)."""
@@ -548,9 +650,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(raw_length or "0")
         except ValueError as exc:
-            raise PortalRequestError(400, "Invalid request body") from exc
+            raise PortalRequestError(400, "Request could not be read. Retry the action.") from exc
         if length < 0:
-            raise PortalRequestError(400, "Invalid request body")
+            raise PortalRequestError(400, "Request could not be read. Retry the action.")
         if length > MAX_BODY:
             raise PortalRequestError(413, "Request is too large")
         try:
@@ -626,16 +728,28 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if path == "/nodes":
+            return self._nodes_page()
+        if path == "/api/openapi.json":
+            return self._send(200, api_spec.spec())
+        if path == "/silence.wav":
+            return self._send(200, SILENT_WAV, content_type="audio/wav")
         if path in {"/", "/index.html"}:
             page = _page().replace(
                 b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
             return
+        if portal_mesh_http.route(self, "GET", path):
+            return
+        if path == "/api/search/stream":
+            return self._search_stream()
         if path == "/api/search":
             return self._search()
         if path.startswith("/mesh/library/"):
             return self._mesh_library(path)
+        if path.startswith("/mesh/file/"):
+            return self._mesh_file(path, head=False)
         if path == "/api/config":
             return self._send(200, {"pin_required": self.server.pin_required,
                                     "name": self.server.hostname_label})
@@ -660,7 +774,12 @@ class _Handler(BaseHTTPRequestHandler):
             if participant_id is None:
                 return self._error(401, "Session expired")
             try:
-                state = self.server.dispatch("status", {})
+                if self.server.status_snapshot is None:
+                    state = self.server.dispatch("status", {})
+                else:
+                    state = self.server.status_snapshot()
+                    if state is None:
+                        raise PortalRequestError(503, "Status snapshot is not ready")
             except Exception:
                 return self._error(503, "SmoothCast is not ready to report playback state")
             queue = state.get("queue") if isinstance(state.get("queue"), list) else []
@@ -839,10 +958,15 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._error(401, "Session expired")
                 if envelope is None:
                     if not isinstance(action, str) or action not in {
-                            "play_pause", "stop", "seek", "volume", "music_autogain",
+                            "play_pause", "stop", "seek", "volume", "mute", "music_autogain",
                             "next", "previous", "queue_play", "queue_remove",
-                            "queue_move", "queue_next", "queue_clear", "queue_vote"}:
+                            "queue_move", "queue_next", "queue_clear", "queue_vote",
+                            "queue_add_key"}:
                         return self._error(400, "Unsupported action")
+                    if action == "queue_add_key" and not (
+                            isinstance(body.get("key"), str)
+                            and re.fullmatch(r"qh:[0-9a-f]{32}", body["key"])):
+                        return self._error(400, "That search result is not valid")
                     participant_id = self.server.session_participant(self._cookie_token())
                     if participant_id is None:
                         return self._error(401, "Session expired")
@@ -877,7 +1001,7 @@ class _Handler(BaseHTTPRequestHandler):
                             "ok": True, "message": message,
                             "queue_command_id": body.get("queue_command_id"),
                         })
-                    if action in {"next", "previous", "queue_play"}:
+                    if action in {"next", "previous", "queue_play", "queue_add_key"}:
                         try:
                             result = self.server.dispatch(action, {
                                 **body, "_portal_auth_key": self.server._session_key(
@@ -889,7 +1013,7 @@ class _Handler(BaseHTTPRequestHandler):
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
                                                 {"action": action, "id": body.get("id")})
-                        return self._send(202, {"ok": True, "message": result or "Command accepted"})
+                        return self._send(202, {"ok": True, "message": result or "Command received; checking receiver state."})
                     if action == "seek":
                         value = body.get("value")
                         if isinstance(value, bool) or not isinstance(value, (float, int)):
@@ -1021,6 +1145,8 @@ class _Handler(BaseHTTPRequestHandler):
         # Only authenticated media may answer HEAD; every other path stays 405.
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if self._path().startswith("/mesh/file/"):
+            return self._mesh_file(self._path(), head=True)
         if not portal_screens_http.route(self, "HEAD", self._path()):
             self._not_allowed()
 
@@ -1032,6 +1158,7 @@ class Portal:
 
     def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
+                 status_snapshot: Callable[[], dict | None] | None = None,
                  name: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
@@ -1061,6 +1188,7 @@ class Portal:
         self.server, self.port_fallback = bind_room_server(
             (self.bind_ip, requested), self.pin, dispatch,
             uploads=self.uploads, hostname=self.name,
+            status_snapshot=status_snapshot,
             commands=commands, fence=fence,
             room=self.room, pin_required=pin_required,
         )
@@ -1160,6 +1288,11 @@ section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box
 label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid #718096;padding:8px 12px}
 input{width:100%;color:inherit;background:#121b27}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
+dialog#shortcutsHelp{background:var(--card);color:#f4f7fb;border:1px solid #718096;border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}
+dialog#shortcutsHelp::backdrop{background:#000b}
+#shortcutsList{display:grid;gap:8px}
+#shortcutsList li{display:flex;justify-content:space-between;gap:12px;align-items:center}
+#shortcutsList kbd{border:1px solid #718096;border-radius:6px;padding:4px 7px;white-space:nowrap}
 button.secondary{background:#36475d}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:#ffb4a9;min-height:1.4em}
@@ -1177,27 +1310,34 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 <form id="loginForm"><label for="name">Your name</label><input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" required>
 <div id="pinRow"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></div>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Connect</button></form></section>
-<div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
+<div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#findPanel">Find</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p><progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
 <label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
 <div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button><button class="secondary" data-action="previous">Previous</button><button class="secondary" data-action="next">Next</button></div></section>
 <section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
+<section><h2>Phone</h2><label><input id="lockControls" type="checkbox" checked> Lock-screen controls</label><p>Play, pause, skip and seek from your phone's lock screen or headphones while this page is open.</p>
+<label><input id="keepScreenOn" type="checkbox"> Keep screen on</label>
+<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p></section>
 <section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
 <section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity"></div></section>
 <section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
+<section id="findPanel"><h2>Find</h2><label for="findInput" class="muted">Search films, shows and music in every computer</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200"><p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div></section>
 <section id="queuePanel"><div class="row"><h2>Up Next</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue" aria-label="Up Next" tabindex="-1"><li class="empty">No videos queued</li></ul></section>
 <section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
 <section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
 <label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section></main>
+<div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section>
+<dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
-let stalePage=false;
+const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortcutMap=new Map(SHORTCUTS.map(entry=>[entry.key,entry]));
+let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
+  void syncRemoteWakeLock();
   document.getElementById("updateNotice").hidden=false;
   document.getElementById("dashboard").hidden=true;
   document.getElementById("uploadCard").hidden=true;
@@ -1209,8 +1349,47 @@ function matchingBuild(data){
 }
 const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-SmoothCast-Client-Build":PAGE_BUILD};
 let rateDelayUntil=0;
+const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
 async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
+const keepScreenOn=$("keepScreenOn");
+let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
+try{
+  keepScreenOn.checked=localStorage.getItem("sc_keep_screen_on")==="1";
+  remoteDimHintSeen=localStorage.getItem("sc_remote_dim_hint")==="1";
+}catch(_){}
+function wantsRemoteWakeLock(){
+  return keepScreenOn.checked&&!!csrf&&!stalePage&&!document.hidden;
+}
+async function syncRemoteWakeLock(){
+  if(!wantsRemoteWakeLock()){
+    const lock=remoteWakeLock;
+    remoteWakeLock=null;
+    if(lock&&!lock.released){try{await lock.release()}catch(_){}}
+    return;
+  }
+  if(requestingWakeLock||(remoteWakeLock&&!remoteWakeLock.released))return;
+  requestingWakeLock=true;
+  try{
+    const lock=await navigator.wakeLock.request("screen");
+    if(!wantsRemoteWakeLock()){await lock.release();return}
+    remoteWakeLock=lock;
+    lock.addEventListener("release",()=>{
+      if(remoteWakeLock===lock)remoteWakeLock=null;
+    });
+  }catch(_){
+    if(wantsRemoteWakeLock()&&!remoteDimHintSeen){
+      remoteDimHintSeen=true;
+      $("remoteDimHint").hidden=false;
+      try{localStorage.setItem("sc_remote_dim_hint","1")}catch(_){}
+    }
+  }finally{requestingWakeLock=false}
+}
+keepScreenOn.addEventListener("change",()=>{
+  try{localStorage.setItem("sc_keep_screen_on",keepScreenOn.checked?"1":"0")}catch(_){}
+  if(!keepScreenOn.checked)$("remoteDimHint").hidden=true;
+  return syncRemoteWakeLock();
+});
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
 $("loginForm").addEventListener("submit",async e=>{
@@ -1226,6 +1405,8 @@ $("loginForm").addEventListener("submit",async e=>{
     try{localStorage.setItem("sc_name",d.participant.name)}catch(_){}
     $("displayName").value=d.participant.name;
     $("login").hidden=true;
+    void syncRemoteWakeLock();
+    void restoreUpload();
     refresh();
   }catch(err){showError("error",err.message)}
   finally{loginButton.disabled=false}
@@ -1242,6 +1423,8 @@ $("loginForm").addEventListener("submit",async e=>{
       try{localStorage.setItem("sc_name",data.participant.name)}catch(_){}
       $("displayName").value=data.participant.name;
       $("login").hidden=true;
+      void syncRemoteWakeLock();
+      void restoreUpload();
       refresh();
       return true;
     }catch(_){return false}
@@ -1257,6 +1440,9 @@ $("loginForm").addEventListener("submit",async e=>{
 })();
 function expireSession(){
   csrf="";
+  void syncRemoteWakeLock();
+  shortcutState=null;
+  pendingControls.clear();
   statusFailures=0;
   $("dashboard").hidden=true;
   $("uploadCard").hidden=true;
@@ -1374,7 +1560,7 @@ function renderQueue(items){
     const row=nodes.find(item=>item.dataset?.queueId===focusTarget.id);
     const target=row&&Array.from(row.children[1].children)
       .find(item=>item.dataset.queueAction===focusTarget.action);
-    if(target!==focused)(target||queue).focus({preventScroll:true});
+    (target||queue).focus({preventScroll:true});
   }
 }
 let statusRequest=null,statusTimer=null,statusFailures=0;
@@ -1398,8 +1584,8 @@ async function refresh(){
     if(r.status===429){const seconds=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+seconds*1000;throw Error("Room updates are busy. Retrying shortly…")}
     if(!r.ok)throw Error(d.error||"Connection lost");
     if(!matchingBuild(d))return;
-    const s=d.state||{};$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;
+    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
@@ -1470,10 +1656,136 @@ function renderPeers(peers,available){
   }
 }
 function describe(event){const name=(event.data&&event.data.name)||"Someone";switch(event.type){case "joined":return name+(event.data.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+" voted on a film";case "action":return name+" used "+(event.data.action||"a control").replaceAll("_"," ");default:return name+" updated the room"}}
-async function act(action,value,extra={}){if(busy)return;if(Date.now()<rateDelayUntil){showError("errorDash","Too many controls at once. Try again shortly.");return}busy=true;statusRequest?.abort("superseded");try{const body={action,...extra};if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){body.queue_revision=queueRevision;body.queue_command_id=`q${Date.now().toString(36)}-${(++queueCommandSeq).toString(36)}`}if(value!==undefined)body.value=value;const result=await post("/api/action",body);showError("errorDash",result.message||"Command accepted")}catch(err){showError("errorDash",err.message)}finally{busy=false;refresh()}}
+function showShortcutHelp(){
+  const dialog=$("shortcutsHelp"),list=$("shortcutsList");
+  if(!list.children.length)for(const entry of SHORTCUTS){
+    const item=document.createElement("li"),description=document.createElement("span"),key=document.createElement("kbd");
+    description.textContent=entry.description;
+    key.textContent=entry.label==="space"?"Space":entry.label==="question"?"?":entry.label;
+    item.append(description,key);
+    list.append(item);
+  }
+  if(!dialog.open)dialog.showModal();
+}
+$("shortcutsClose").addEventListener("click",()=>$("shortcutsHelp").close());
+
+function shortcutCommand(action,state,seek,volume){
+  if(!state||state.busy||!state.active)return null;
+  if(action==="seek_back"||action==="seek_forward"){
+    if(!state.can_seek||!Number.isFinite(state.duration)||state.duration<=0)return null;
+    const delta=action==="seek_back"?-10:10;
+    return {action:"seek",value:Math.max(0,Math.min(state.duration,seek+delta))};
+  }
+  if(action==="volume_up"||action==="volume_down"){
+    if(state.volume==null||!Number.isFinite(volume))return null;
+    return {action:"volume",value:Math.max(0,Math.min(100,volume+(action==="volume_up"?5:-5)))};
+  }
+  if(action==="mute"&&state.volume==null)return null;
+  if(["play_pause","next","previous","mute"].includes(action))return {action};
+  return null;
+}
+
+window.addEventListener("keydown",event=>{
+  if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
+  if(event.target instanceof Element&&event.target.closest("input,textarea,select,button,[contenteditable],[role=textbox],[role=slider]"))return;
+  if($("shortcutsHelp").open)return;
+  const key=event.key.length===1?event.key.toLowerCase():event.key;
+  const shortcut=shortcutMap.get(key);
+  if(!shortcut)return;
+  event.preventDefault();
+  if(shortcut.action==="help"){showShortcutHelp();return;}
+  const command=shortcutCommand(shortcut.action,shortcutState,Number($("seek").value),Number($("volume").value));
+  if(!command||stalePage||!csrf||busy){
+    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and receiver are ready.");
+    return;
+  }
+  if(["play_pause","next","previous"].includes(command.action)){
+    const button=document.querySelector('[data-action="'+command.action+'"]');
+    if(!button||button.disabled){
+      showError("errorDash","This control is not available right now.");
+      return;
+    }
+  }
+  act(command.action,command.value);
+});
+
+async function act(action,value,extra={}){
+  if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
+  if(busy){
+    const key=action+":"+(extra.id||"");
+    if(!pendingControls.has(key)&&pendingControls.size>=16){
+      showError("errorDash","Too many controls are waiting; try again shortly");
+      return;
+    }
+    pendingControls.delete(key);
+    pendingControls.set(key,{action,value,extra});
+    showError("errorDash","Control waiting; your latest change will be sent");
+    return;
+  }
+  if(Date.now()<rateDelayUntil){
+    showError("errorDash","Too many controls at once. Try again shortly.");
+    return;
+  }
+  busy=true;
+  statusRequest?.abort("superseded");
+  try{
+    const body={action,...extra};
+    if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){
+      body.queue_revision=queueRevision;
+      body.queue_command_id="q"+Date.now().toString(36)+"-"+(++queueCommandSeq).toString(36);
+    }
+    if(value!==undefined)body.value=value;
+    const result=await post("/api/action",body);
+    showError("errorDash",result.message||"Command accepted");
+  }catch(err){showError("errorDash",err.message)}
+  finally{
+    busy=false;
+    if(pendingControls.size&&csrf&&!stalePage){
+      const first=pendingControls.keys().next().value;
+      const next=pendingControls.get(first);
+      pendingControls.delete(first);
+      if(next)void act(next.action,next.value,next.extra);
+    }else refresh();
+  }
+}
 $("clearQueue").addEventListener("click",()=>act("queue_clear"));
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
-$("seek").addEventListener("change",()=>act("seek",Number($("seek").value)));$("volume").addEventListener("change",()=>act("volume",Number($("volume").value)));
+for(const id of ["seek","volume"]){
+  const control=$(id);
+  control.addEventListener("pointerdown",()=>editingControls.add(id));
+  control.addEventListener("input",()=>editingControls.add(id));
+  control.addEventListener("pointercancel",()=>editingControls.delete(id));
+  control.addEventListener("blur",()=>editingControls.delete(id));
+}
+$("seek").addEventListener("change",()=>{
+  const value=Number($("seek").value);
+  editingControls.delete("seek");
+  act("seek",value);
+});
+let volumeTimer=null,lastVolumeSent=0,volumePending=null;
+function flushVolume(){
+  volumeTimer=null;
+  if(volumePending===null)return;
+  const value=volumePending;
+  volumePending=null;
+  lastVolumeSent=Date.now();
+  void act("volume",value);
+}
+function queueVolume(value){
+  volumePending=value;
+  if(volumeTimer===null){
+    volumeTimer=setTimeout(flushVolume,Math.max(0,150-(Date.now()-lastVolumeSent)));
+  }
+}
+$("volume").addEventListener("input",()=>{
+  const value=Number($("volume").value);
+  $("volumeText").textContent=value+"%";
+  queueVolume(value);
+});
+$("volume").addEventListener("change",()=>{
+  editingControls.delete("volume");
+  queueVolume(Number($("volume").value));
+});
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
 async function uploadRequest(method,path,body,headers={}){
@@ -1504,11 +1816,79 @@ async function sendChunk(path,file,offset,end){
     }
   }
 }
+// Keep only upload metadata. The server still owns the offset and checks the cookie.
+async function uploadStorage(mode, operation){
+  try{
+    const db=await new Promise((resolve,reject)=>{
+      const request=indexedDB.open("smoothcast-uploads",1);
+      request.onupgradeneeded=()=>request.result.createObjectStore("pending",{keyPath:"id"});
+      request.onsuccess=()=>resolve(request.result);
+      request.onerror=()=>reject(request.error);
+    });
+    try{
+      return await new Promise((resolve,reject)=>{
+        const transaction=db.transaction("pending",mode);
+        const request=operation(transaction.objectStore("pending"));
+        transaction.oncomplete=()=>resolve(request.result);
+        transaction.onabort=()=>reject(transaction.error);
+      });
+    }finally{db.close()}
+  }catch(_){return undefined}
+}
+async function firstChunkHash(file,chunkSize){
+  // FNV-1a 64 works on plain HTTP LAN pages, where SubtleCrypto is unavailable.
+  const bytes=new Uint8Array(await file.slice(0,chunkSize).arrayBuffer());
+  let hash=0xcbf29ce484222325n;
+  for(const byte of bytes)hash=BigInt.asUintN(64,(hash^BigInt(byte))*0x100000001b3n);
+  return hash.toString(16).padStart(16,"0");
+}
+async function matchesPendingFile(file,upload){
+  return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
+    &&await firstChunkHash(file,upload.chunkSize)===upload.hash;
+}
+async function clearPendingUpload(){
+  const id=pendingUpload?.id;
+  pendingUpload=null;
+  if(id)await uploadStorage("readwrite",store=>store.delete(id));
+}
+async function restoreUpload(){
+  if(uploading||!csrf)return;
+  const session=csrf;
+  uploading=true;
+  updateUploadControls();
+  try{
+    const records=await uploadStorage("readonly",store=>store.getAll())||[];
+    for(const record of records.sort((a,b)=>b.started-a.started)){
+      if(!/^[A-Za-z0-9_-]{32}$/.test(record.id)||csrf!==session)continue;
+      try{
+        const state=await uploadRequest("GET","/api/uploads/"+record.id);
+        if(csrf!==session)return;
+        pendingUpload={...record,received:state.received};
+        $("uploadProgress").max=record.size;
+        $("uploadProgress").value=state.received;
+        $("uploadQueue").checked=record.queueOnly;
+        showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
+        return;
+      }catch(error){
+        if(error.status===404){await uploadStorage("readwrite",store=>store.delete(record.id));continue}
+        // Avoid exposing stored filenames until the current cookie has been checked.
+        if(csrf===session&&!stalePage)showError("uploadStatus","Could not check for interrupted uploads. Reload to try again.");
+        return;
+      }
+    }
+  }finally{finishUpload()}
+}
 function updateUploadControls(){
   const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
   if(audio)$("uploadQueue").checked=true;
-  $("uploadButton").disabled=uploading;$("uploadButton").textContent=pendingUpload?"Resume upload":(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
-  $("videoFile").disabled=uploading||!!batchFiles;$("uploadQueue").disabled=uploading||!!batchFiles||!!audio;$("cancelUpload").hidden=!uploading&&!batchFiles;$("cancelUpload").disabled=cancelUpload;
+  const resumeLabel=pendingUpload&&`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`;
+  $("uploadButton").disabled=uploading||!!pendingUpload&&!file;
+  $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
+  $("videoFile").disabled=uploading||!!batchFiles;
+  $("videoFile").multiple=!pendingUpload||!!batchFiles;
+  $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
+  $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
+  $("cancelUpload").disabled=cancelUpload;
 }
 function resetUploadBatch(){
   pendingUpload=null;
@@ -1529,26 +1909,93 @@ function finishUpload(){
   }
 }
 async function discardUpload(){
-  if(pendingUpload){try{await uploadRequest("DELETE",pendingUpload.path)}catch(error){if(error.status!==404)throw error}pendingUpload=null}
+  if(pendingUpload){
+    try{await uploadRequest("DELETE","/api/uploads/"+pendingUpload.id)}
+    catch(error){if(error.status!==404)throw error}
+    await clearPendingUpload();
+  }
   batchFiles=null;batchIndex=0;
   showError("uploadStatus","Upload cancelled");
 }
 $("uploadButton").addEventListener("click",async()=>{
   if(uploading)return;
-  if(!batchFiles){const selected=Array.from($("videoFile").files);if(!selected.length)return;batchFiles=selected;batchIndex=0;batchAdded=0;batchTotal=selected.length;batchQueueOnly=$("uploadQueue").checked}
-  uploading=true;cancelUpload=false;updateUploadControls();const json={"Content-Type":"application/json"};
+  const selected=Array.from($("videoFile").files);
+  if(!batchFiles&&!selected.length)return;
+  const session=csrf,json={"Content-Type":"application/json"};
+  uploading=true;
+  cancelUpload=false;
+  updateUploadControls();
   try{
-    while(batchIndex<batchFiles.length&&!cancelUpload){
-      const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name),queueOnly=audio||batchQueueOnly;let state;casting=false;
-      if(pendingUpload){showError("uploadStatus",`Checking ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);state=await uploadRequest("GET",pendingUpload.path)}
-      else{showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);pendingUpload={path:"/api/uploads/"+state.id,chunkSize:state.chunk_size}}
-      const {path,chunkSize}=pendingUpload;$("uploadProgress").max=file.size;$("uploadProgress").value=state.received;
-      while(state.received<file.size&&!cancelUpload){const end=Math.min(state.received+chunkSize,file.size);state=await sendChunk(path,file,state.received,end);$("uploadProgress").value=state.received;if(state.ready_to_cast)casting=true;const percent=Math.floor(state.received*100/file.size);showError("uploadStatus",casting?`Casting ${file.name} — ${percent}% received`:`${batchIndex+1}/${batchFiles.length} · ${queueOnly?"Adding":"Uploading"} ${file.name}: ${percent}%`)}
-      if(cancelUpload){await discardUpload();break}
-      $("cancelUpload").disabled=true;const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);pendingUpload=null;batchIndex++;batchAdded++;showError("uploadStatus",result.message||`${file.name} added`);
+    if(!batchFiles){
+      if(pendingUpload&&(selected.length!==1||!await matchesPendingFile(selected[0],pendingUpload))){
+        $("videoFile").value="";
+        showError("uploadStatus",`This file does not match the original. Choose ${pendingUpload.name} to resume.`);
+        return;
+      }
+      if(cancelUpload){await discardUpload();return}
+      if(!session||csrf!==session)return;
+      batchFiles=selected;
+      batchIndex=0;
+      batchAdded=0;
+      batchTotal=selected.length;
+      batchQueueOnly=pendingUpload?.queueOnly??$("uploadQueue").checked;
     }
-    if(batchFiles&&batchIndex>=batchFiles.length){const count=batchAdded,total=batchTotal;batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;showError("uploadStatus",`${count} of ${total} files added`)}
-  }catch(error){if(error.status===404)pendingUpload=null;if(error.status===413||error.status===422){pendingUpload=null;batchIndex++;if(batchIndex>=batchFiles.length){batchFiles=null;batchIndex=0;showError("uploadStatus",`${error.message} No files remain in this batch.`)}else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`)}else if(cancelUpload){try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}}else showError("uploadStatus",pendingUpload?error.message+" Select Resume upload to retry.":error.message)}
+    while(batchIndex<batchFiles.length&&!cancelUpload){
+      const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
+      const queueOnly=audio||batchQueueOnly;
+      let state;
+      if(pendingUpload){
+        showError("uploadStatus",`Checking ${file.name}…`);
+        state=await uploadRequest("GET","/api/uploads/"+pendingUpload.id);
+      }else{
+        showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
+        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
+        const {id,chunk_size:chunkSize}=state;
+        pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
+        const record={...pendingUpload,hash:await firstChunkHash(file,chunkSize)};
+        await uploadStorage("readwrite",store=>store.put(record));
+      }
+      const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
+      casting=!!state.ready_to_cast;
+      $("uploadProgress").max=file.size;
+      $("uploadProgress").value=state.received;
+      pendingUpload.received=state.received;
+      while(state.received<file.size&&!cancelUpload){
+        const end=Math.min(state.received+chunkSize,file.size);
+        state=await sendChunk(path,file,state.received,end);
+        $("uploadProgress").value=pendingUpload.received=state.received;
+        if(state.ready_to_cast)casting=true;
+        const percent=Math.floor(state.received*100/file.size);
+        showError("uploadStatus",casting?`Casting ${file.name} — ${percent}% received`:`${batchIndex+1}/${batchFiles.length} · ${queueOnly?"Adding":"Uploading"} ${file.name}: ${percent}%`);
+      }
+      if(cancelUpload){await discardUpload();break}
+      $("cancelUpload").disabled=true;
+      const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      await clearPendingUpload();
+      batchIndex++;
+      batchAdded++;
+      showError("uploadStatus",result.message||`${file.name} added`);
+    }
+    if(batchFiles&&batchIndex>=batchFiles.length){
+      const count=batchAdded,total=batchTotal;
+      batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;
+      showError("uploadStatus",`${count} of ${total} files added`);
+    }
+  }catch(error){
+    if(error.status===404){
+      await clearPendingUpload();
+      showError("uploadStatus",error.message+" Select the upload button to start this file again.");
+    }else if(error.status===413||error.status===422){
+      await clearPendingUpload();
+      batchIndex++;
+      if(batchIndex>=batchFiles.length){
+        batchFiles=null;batchIndex=0;
+        showError("uploadStatus",`${error.message} No files remain in this batch.`);
+      }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
+    }else if(cancelUpload){
+      try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
+    }else showError("uploadStatus",pendingUpload?error.message+" Select Resume to retry.":error.message);
+  }
   finally{finishUpload()}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
@@ -1559,9 +2006,125 @@ $("cancelUpload").addEventListener("click",async()=>{
   finally{finishUpload()}
 });
 document.addEventListener("visibilitychange",()=>{
+  void syncRemoteWakeLock();
   if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");return}
   statusFailures=0;
   refresh();
 });
 window.addEventListener("online",()=>{statusFailures=0;refresh()});
+
+const MEDIA={audio:null,bound:false};
+function lockControlsOn(){try{return localStorage.getItem("sc_lockscreen")!=="0"}catch(_){return true}}
+function mediaSupported(){return typeof navigator!=="undefined"&&"mediaSession" in navigator&&typeof MediaMetadata==="function"}
+function bindMediaSession(){
+  if(MEDIA.bound)return;MEDIA.bound=true;
+  const ms=navigator.mediaSession,state=()=>shortcutState||{};
+  const set=(name,fn)=>{try{ms.setActionHandler(name,fn)}catch(_){}};
+  set("play",()=>{if(state().state!=="PLAYING")act("play_pause")});
+  set("pause",()=>{if(state().state==="PLAYING")act("play_pause")});
+  set("nexttrack",()=>act("next"));
+  set("previoustrack",()=>act("previous"));
+  set("seekto",d=>{if(d&&Number.isFinite(d.seekTime))act("seek",Math.max(0,d.seekTime))});
+  set("seekbackward",d=>act("seek",Math.max(0,(Number(state().position)||0)-((d&&d.seekOffset)||10))));
+  set("seekforward",d=>act("seek",(Number(state().position)||0)+((d&&d.seekOffset)||10)));
+}
+function mediaAudio(){
+  if(!MEDIA.audio){const a=new Audio("/silence.wav");a.loop=true;a.volume=0.0001;a.setAttribute("aria-hidden","true");MEDIA.audio=a}
+  return MEDIA.audio;
+}
+function syncMediaSession(s){
+  if(!mediaSupported()||!lockControlsOn()||!s)return;
+  const ms=navigator.mediaSession,playing=s.state==="PLAYING"||s.state==="BUFFERING";
+  if(!s.title||!(playing||s.state==="PAUSED")){
+    ms.playbackState="none";if(MEDIA.audio)MEDIA.audio.pause();return;
+  }
+  bindMediaSession();
+  const a=mediaAudio();
+  if(a.paused){const p=a.play();if(p&&p.catch)p.catch(()=>{})}
+  try{ms.metadata=new MediaMetadata({title:String(s.title),artist:String(s.artist||""),album:s.receiver?"SmoothCast - "+s.receiver:"SmoothCast"})}catch(_){}
+  ms.playbackState=playing?"playing":"paused";
+  const duration=Number(s.duration)||0,position=Number(s.position)||0;
+  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:Number(s.speed)||1})}catch(_){}}
+}
+(()=>{
+  const box=$("lockControls");if(!box)return;
+  box.checked=lockControlsOn();
+  box.addEventListener("change",()=>{
+    try{localStorage.setItem("sc_lockscreen",box.checked?"1":"0")}catch(_){}
+    if(!box.checked){if(MEDIA.audio)MEDIA.audio.pause();if(mediaSupported())navigator.mediaSession.playbackState="none"}
+    else syncMediaSession(shortcutState);
+  });
+})();
+
+(()=>{
+  const input=$("findInput"),out=$("findResults"),status=$("findStatus");
+  if(!input||!out||!status)return;
+  let timer=null,source=null,controller=null;
+  const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
+  const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
+  function where(copies){
+    const list=copies||[];if(!list.length)return"";
+    const online=list.filter(c=>c.online),names=c=>c.origin==="local"?"This computer":(c.origin_name||"Another computer");
+    if(!online.length)return names(list[0])+" is offline"+(list[0].last_seen?" - last seen "+new Date(list[0].last_seen*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"");
+    return"On "+online.map(names).join(" - also on ");
+  }
+  function item(it,type){
+    const li=document.createElement("li");li.className="queue-item";
+    const text=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+    title.textContent=it.title||it.name||"Untitled";meta.className="muted";
+    if(type==="artists"||type==="albums"){
+      meta.textContent=(it.artist?it.artist+" - ":"")+it.count+" "+(it.count===1?"song":"songs");
+      text.append(title,meta);li.append(text);
+      const go=document.createElement("button");go.className="tiny secondary";go.type="button";go.textContent="Show";
+      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);run()});
+      const a=document.createElement("div");a.className="queue-actions";a.append(go);li.append(a);return li;
+    }
+    if(type==="shows"){
+      meta.textContent=it.count+" episode"+(it.count===1?"":"s");text.append(title,meta);li.append(text);return li;
+    }
+    const bits=[it.year,it.artist,it.album,it.duration?clock(it.duration):""].filter(Boolean);
+    meta.textContent=bits.join(" - ");
+    const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
+    text.append(title,meta,where_);li.append(text);
+    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
+    const local=(it.copies||[]).some(c=>c.origin==="local");
+    if(!local){add.disabled=true;add.title="Playing from other computers is coming soon"}
+    add.addEventListener("click",async()=>{
+      add.disabled=true;
+      try{const d=await post("/api/action",{action:"queue_add_key",key:it.id});showError("errorDash",d.message||"Added to Up Next");add.textContent="Added"}
+      catch(err){showError("errorDash",err.message);add.disabled=false}
+    });
+    const a=document.createElement("div");a.className="queue-actions";a.append(add);li.append(a);return li;
+  }
+  function render(d){
+    out.replaceChildren();let n=0;
+    for(const g of d.groups||[]){
+      const h=document.createElement("h3");h.textContent=LABELS[g.type]||g.type;
+      const ul=document.createElement("ul");ul.setAttribute("aria-label",h.textContent);ul.className="find-list";
+      for(const it of g.items||[]){ul.append(item(it,g.type));n++}
+      out.append(h,ul);
+    }
+    const pending=(d.pending_origins||[]).length;
+    status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
+      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
+  }
+  function stop(){if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
+  async function run(){
+    stop();const q=input.value.trim();
+    if(!q){out.replaceChildren();status.textContent="";return}
+    const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
+    if(typeof EventSource==="function"){
+      source=new EventSource(url);
+      source.addEventListener("results",e=>render(JSON.parse(e.data)));
+      source.addEventListener("more",e=>render(JSON.parse(e.data)));
+      source.addEventListener("done",()=>stop());
+      source.onerror=()=>stop();
+      return;
+    }
+    controller=new AbortController();
+    try{const r=await fetch(url,{credentials:"same-origin",signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error||"Search failed");render(d)}
+    catch(err){if(err.name!=="AbortError")status.textContent=err.message}
+  }
+  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+})();
 </script></body></html>"""

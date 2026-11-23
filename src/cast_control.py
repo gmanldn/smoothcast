@@ -39,12 +39,13 @@ from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
+from cast_ui_timers import UiTimerMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -82,6 +83,13 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._hover_time: float | None = None
         self._finished_handled = False
         self._closing = False
+        self._timers_enabled = False
+        self._timer_ids: dict[str, int] = {}
+        self._timer_periods: dict[str, int | None] = {}
+        self._reflow_source: int | None = None
+        self.connect("realize", self._bind_surface_resize)
+        self.connect("map", self._on_mapping_change)
+        self.connect("unmap", self._on_mapping_change)
         self._portal = None
         self._portal_ip: str | None = None
         self._cast_starting = False
@@ -137,18 +145,14 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
             self._refresh_portal()
             GLib.timeout_add_seconds(15, self._refresh_portal)
             GLib.timeout_add_seconds(15, self._refresh_network_activity)
-            # A GUI smoke test builds widgets only: it must not scan LANs,
-            # adopt casts, poll receivers or run media/telemetry timers.
-            GLib.timeout_add(500, self._tick)
-            GLib.timeout_add(200, self._refresh_responsive_layout)
-            GLib.timeout_add(100, self._meter_tick)
+            # No GTK/receiver timers in the isolated GUI smoke test.
+            self._timers_enabled = True
+            self._sync_ui_timers()
             GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
-            GLib.timeout_add(4000, self._poll_device)
             GLib.timeout_add(400, self._initial_scan)
             GLib.timeout_add(600, self._adopt_session)
-            GLib.timeout_add_seconds(5, self._sleep_tick)
-            GLib.timeout_add_seconds(3, self._sleep_fade_tick)
             GLib.timeout_add_seconds(600, self._theme_tick)
+
 
 class CastControlApp(Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:

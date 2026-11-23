@@ -42,6 +42,9 @@ class FakeApp:
 
 def window(*, keep=False, mode="transcode"):
     class FakeWindow(lifecycle_type()):
+        def _stop_ui_timers(self):
+            pass
+
         def __init__(self):
             self.app = FakeApp()
             self._closing = False

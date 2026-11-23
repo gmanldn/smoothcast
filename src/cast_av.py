@@ -448,7 +448,13 @@ class AvMixin:
 
         media = self.media if self.media is not None and str(self.media.path) == path else None
         if media is not None and media.is_audio_only:
-            finish()
+            if self.cfg.get("show_cover_art", True):
+                Async.run(
+                    lambda: screenshot.cover_art(pathlib.Path(path)),
+                    done=finish, failed=lambda _error: finish(), domain="media",
+                )
+            else:
+                finish()
             return False
         video_index = media.video_stream_index if media is not None else 0
         Async.run(
@@ -487,7 +493,7 @@ class AvMixin:
             self._refresh_controls()
             return
         if stream is not None and stream.get_error() is not None:
-            self.toast(f"Local preview decoder: {stream.get_error().message}", error=True)
+            self.toast("Preview could not decode this file. Try another format or codec.", error=True)
             self._unload_local_video()
             return
         if self._local_video_path != path:
@@ -592,7 +598,7 @@ class AvMixin:
             return
         error = stream.get_error()
         if error is not None:
-            self.toast(f"Local decoder failed: {error.message}", error=True)
+            self.toast("Preview could not decode this file. Try another format or codec.", error=True)
             self._unload_local_video()
             self.preview_picture.set_visible(False)
             self._queue_preview(self._preview_position)
@@ -634,6 +640,7 @@ class AvMixin:
             )
         except Exception:
             self.monitor = None
+        self._sync_ui_timers()
 
 
     def _stop_monitor(self, reset: bool = True) -> None:
@@ -651,6 +658,7 @@ class AvMixin:
             ).start()
         if reset and self.meter is not None:
             self.meter.reset()
+        self._sync_ui_timers()
 
 
     def _resume_monitor(self) -> None:

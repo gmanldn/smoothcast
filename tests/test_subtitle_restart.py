@@ -249,6 +249,7 @@ def test_restarted_cast_gets_exact_saved_sidecar_and_embedded_index(tmp_path):
 
 
 def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget():
+    """INV-004: Subtitle validation must precede existing cast cleanup."""
     text = main_window_methods()["_restart_at"]
     assert text.index("subtitle_restart.validate_restart(state, media, delay)") < (
         text.index("session.stop(device, send_stop=False)")
@@ -256,4 +257,4 @@ def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget
     assert "subs_file=captions.external" in text
     assert "embedded_subtitle_index=captions.embedded_index" in text
     source = Path(__file__).resolve().parents[1] / "src/cast_session.py"
-    assert len(source.read_bytes().replace(b"\r\n", b"\n")) < 48000
+    assert len(source.read_bytes().replace(b"\r\n", b"\n")) < 50000

@@ -91,7 +91,7 @@ class PromotionTests(unittest.TestCase):
         self.repo.commit({"a.txt": "main edit"}, "main edit")
         self.repo.git("checkout", "-q", "develop")
         self.repo.commit({"src/version.py": VERSION.format(2), "a.txt": "develop edit"})
-        with self.assertRaisesRegex(pr.PromoteError, "cannot merge cleanly"):
+        with self.assertRaisesRegex(pr.PromoteError, "cannot merge cleanly.*a.txt.*workflow.md"):
             self.decide()
 
     def test_unreadable_version_is_refused(self):
@@ -203,6 +203,18 @@ class WorkflowContractTests(unittest.TestCase):
             text = (ROOT / ".github/workflows" / name).read_text("utf-8")
             self.assertNotIn("push origin main", text, name)
             self.assertNotIn("git push origin HEAD:main", text, name)
+
+    def test_sync_main_workflow_only_writes_develop_and_explains_conflicts(self):
+        text = (ROOT / ".github/workflows/sync-main.yml").read_text("utf-8")
+        self.assertIn("branches: [main]", text)
+        self.assertIn("ref: develop", text)
+        self.assertIn("git push origin HEAD:develop", text)
+        self.assertNotIn("origin HEAD:main", text)
+        self.assertNotIn("push origin main", text)
+        self.assertIn("merge --abort", text)                      # never leaves a half merge
+        self.assertIn("Conflicting files:", text)
+        self.assertIn("contents: write", text)
+        self.assertNotIn("pull-requests", text)                   # no PR rights needed or granted
 
     def test_precommit_guard_is_wired(self):
         config = (ROOT / ".pre-commit-config.yaml").read_text("utf-8")

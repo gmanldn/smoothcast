@@ -91,7 +91,7 @@ def test_notify_respects_disabled_focus_and_event_payloads():
     app.send_notification.reset_mock()
     method._notify(notifications.ERROR, "Receiver rejected the cast")
     assert app.send_notification.call_count == 1
-    assert app.send_notification.call_args.args[1].title == "Cast failed"
+    assert app.send_notification.call_args.args[1].title == "Playback error"
 
     app.send_notification.reset_mock()
     method.cfg["notifications"] = False

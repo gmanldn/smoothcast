@@ -57,3 +57,11 @@ def test_page_scripts_parse(name, tmp_path):
         result = subprocess.run(["node", "--check", str(target)],
                                 capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
+
+
+def test_wake_lock_pip_and_dim_hint_contract():
+    html = portal_screen_page.screen_page().decode()
+    assert 'navigator.wakeLock.request("screen")' in html
+    assert 'addEventListener("visibilitychange"' in html and "keepAwake()" in html
+    assert 'id="pipButton"' in html and "document.pictureInPictureEnabled" in html
+    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in html

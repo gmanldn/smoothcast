@@ -47,6 +47,7 @@ SCENARIOS: dict[str, str | None] = {
     "audio-delay": None,
     "side-panel": None,
     "bookmarks": None,
+    "network-view": None,
 }
 
 

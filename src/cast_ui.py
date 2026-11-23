@@ -39,6 +39,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
+        self._sync_ui_timers()
         if not self.is_active() or not refresh_config(self.cfg):
             return
         self.app.apply_accent(self.cfg.get("accent", "default"))
@@ -102,8 +103,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
         try:
             Gio.AppInfo.launch_default_for_uri(issue_report.report_url(version.label()), None)
-        except GLib.Error as exc:
-            self.toast(f"Could not open the browser: {exc.message}", error=True)
+        except GLib.Error:
+            self.toast("Could not open your browser. Copy the report link and open it manually.", error=True)
             return
         self.toast("Opening GitHub. Attach the file from Save diagnostics… to your report.")
 
@@ -668,6 +669,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         body.append(address_row)
         self.portal_qr_button = Gtk.MenuButton(label="Show QR code", sensitive=False)
         address_row.append(self.portal_qr_button)
+        import mesh_ui
+        address_row.append(mesh_ui.build_button(self))
         popover = Gtk.Popover()
         self.portal_qr_button.set_popover(popover)
         qr_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -719,10 +722,10 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         guest_row.append(self.portal_guest_dropdown)
         guest_row.append(self.portal_revoke_button)
         body.append(guest_row)
-        self.portal_end_access_button = Gtk.Button(label="End guest access / New PIN")
+        self.portal_end_access_button = Gtk.Button(label="Sign everyone out")
         self.portal_end_access_button.add_css_class("destructive-action")
         self.portal_end_access_button.set_tooltip_text(
-            "Sign out all guests and generate a new PIN; playback continues")
+            "Sign out every connected browser and rotate the room PIN; playback continues")
         self.portal_end_access_button.connect(
             "clicked", self._portal_confirm_end_access)
         body.append(self.portal_end_access_button)
@@ -881,6 +884,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         add("j", self._skip_back10)
         add("l", self._skip_forward10)
         add("m", self.toggle_mute)
+        add("question", self.action_shortcuts)
         add("Up", lambda: self._nudge_volume(5))
         add("Down", lambda: self._nudge_volume(-5))
         add("g", lambda: self._adjust_subtitle_delay(-1))
@@ -1265,7 +1269,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.cast_ip_entry.set_sensitive(not target_locked)
         self.add_ip_button.set_sensitive(not target_locked)
         self.device_dropdown.set_tooltip_text(
-            "Stop the current cast before changing TVs" if target_locked
+            "Stop this cast before switching receivers." if target_locked
             else "Choose a Cast or DLNA receiver"
         )
         embedded_burned = bool(
@@ -1316,6 +1320,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        self._publish_portal_status()
+        self._sync_ui_timers()
         self._update_panel_badges()
 
 

@@ -8,12 +8,13 @@ unknown kind, malformed body or raising handler yields no reply (the caller sees
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 import json
 import re
 from typing import Any
 
-from mesh_ports import Transport
+from mesh_ports import Clock, Transport
 
 MAX_RPC_BYTES = 128 * 1024
 _KIND = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
@@ -32,17 +33,47 @@ def encode_request(kind: str, body: dict[str, Any]) -> bytes:
     return data
 
 
+RATE_CAPACITY = 200.0
+RATE_REFILL_PER_S = 100.0
+MAX_BUCKETS = 256
+
+
 class RpcRouter:
-    def __init__(self, transport: Transport) -> None:
+    """Dispatches by kind. *protected* kinds consult ``authorize(source, kind)``;
+    with a *clock*, every source is also rate limited by a token bucket."""
+
+    def __init__(self, transport: Transport, *,
+                 authorize: Callable[[str, str], bool] | None = None,
+                 clock: Clock | None = None) -> None:
         self._transport = transport
         self._handlers: dict[str, Handler] = {}
+        self._protected: set[str] = set()
+        self._authorize = authorize
+        self._clock = clock
+        self._buckets: OrderedDict[str, tuple[float, float]] = OrderedDict()
         self.errors = 0
+        self.denied = 0
+        self.rate_limited = 0
         transport.set_request_handler(self._dispatch)
 
-    def register(self, kind: str, handler: Handler) -> None:
+    def register(self, kind: str, handler: Handler, *, protected: bool = False) -> None:
         if not _KIND.fullmatch(kind):
             raise ValueError("invalid rpc kind")
         self._handlers[kind] = handler
+        if protected:
+            self._protected.add(kind)
+
+    def _allow_rate(self, source: str) -> bool:
+        if self._clock is None:
+            return True
+        now = self._clock.monotonic()
+        tokens, stamp = self._buckets.pop(source, (RATE_CAPACITY, now))
+        tokens = min(RATE_CAPACITY, tokens + (now - stamp) * RATE_REFILL_PER_S)
+        allowed = tokens >= 1.0
+        self._buckets[source] = (tokens - 1.0 if allowed else tokens, now)
+        while len(self._buckets) > MAX_BUCKETS:
+            self._buckets.popitem(last=False)
+        return allowed
 
     def call(self, address: str, kind: str, body: dict[str, Any], callback: Callback,
              timeout: float = 3.0) -> None:
@@ -76,6 +107,13 @@ class RpcRouter:
             kind = head.decode("ascii")
             handler = self._handlers.get(kind)
             if handler is None:
+                return None
+            if not self._allow_rate(source):
+                self.rate_limited += 1
+                return None
+            if (kind in self._protected and self._authorize is not None
+                    and not self._authorize(source, kind)):
+                self.denied += 1
                 return None
             body = json.loads(tail.decode("utf-8")) if tail else {}
             if not isinstance(body, dict):

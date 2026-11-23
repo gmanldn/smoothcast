@@ -202,6 +202,28 @@ class LibraryIndexer:
         with self._lock:
             return search_engine.search(self._conn, text, limit, cursor)
 
+    def resolve_path(self, key: object) -> Path | None:
+        """Readable regular file for a shared entry, contained in its library root."""
+        entry = self.entry(key) if isinstance(key, str) else None
+        folder = next((f for f in self._folders if entry and f.id == entry["folder_id"]), None)
+        if entry is None or folder is None or not folder.shared:
+            return None
+        root = Path(os.path.realpath(folder.path))
+        path = Path(os.path.realpath(root / entry["rel_path"]))
+        try:
+            path.relative_to(root)
+            info = path.stat()
+        except (OSError, ValueError):
+            return None
+        import stat as _stat
+        return path if _stat.S_ISREG(info.st_mode) and os.access(path, os.R_OK) else None
+
+    def search_rows(self, text: object, limit: int = 50) -> list[dict]:
+        """Ranked local rows (shared folders only) for peers' live queries."""
+        with self._lock:
+            rows, _partial = search_engine.run(self._conn, text, limit)
+            return [r for r in rows[:limit] if self._is_shared(r["folder_id"])]
+
     # -- reads for replication / search ----------------------------------
     def entry(self, key: str) -> dict | None:
         with self._lock:

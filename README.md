@@ -6,11 +6,11 @@ A modern GTK4/libadwaita Chromecast companion with live compressor metering, dia
 
 **The tool that plays your media on every screen in the house, and lets everyone in the room join in.**
 
-- **Everyone's hands on the queue, nobody installs anything.** Guests scan a QR code, enter a PIN and add songs and films from their own phone, vote, reorder and control playback. No app, no account, no cloud.
+- **Everyone's hands on the queue, nobody installs anything.** Guests scan a QR code, join with their name and add songs and films from their own phone, vote, reorder and control playback. No app, no account, no cloud.
 - **Every device is a screen.** Open the room's `/screen` page on a TV, tablet, laptop or spare phone and it becomes a display or speaker for the shared queue. Chromecast, DLNA TVs and browsers all appear as targets; formats a browser cannot play are converted on the host automatically.
 - **Host or client, your choice.** A computer with the media runs SmoothCast as the host; every other device only needs a browser. Several hosts can coexist on one network.
 - **Bullet-proof by design.** Fenced, idempotent commands; stale or double taps cannot skip a film; a failing guest, screen or receiver never interrupts what is playing; recoveries are automatic and every failure is explained in plain words.
-- **Built for the home network.** Everything stays on your LAN and is never reachable from the internet. Anyone you've given the Wi-Fi password is trusted to join; today the room asks for a PIN, which is becoming optional. Sessions expire and the host can sign guests out at any time.
+- **Built for the home network.** Everything stays on your LAN and is never reachable from the internet. Anyone you've given the Wi-Fi password is trusted to join; joining is open by default, with an optional House PIN for untrusted Wi-Fi. Sessions expire and the host can sign everyone out at any time.
 
 See [what makes SmoothCast different](docs/PRODUCT.md) for the roles and guarantees, and the [vision](docs/VISION.md) for where it is going: one smart mesh of media nodes, web clients and casting targets, controlled as one, with a shared queue.
 
@@ -23,7 +23,7 @@ See [what makes SmoothCast different](docs/PRODUCT.md) for the roles and guarant
 - **Night mode** — stronger compression for late-night low-volume viewing
 - **Dialogue-first surround downmix** — with the Dialogue or Night profile, 5.0/5.1/6.1/7.1 and quad tracks are mixed to stereo with the centre channel lifted ~5 dB over FFmpeg's default matrix, surrounds lowered, the LFE dropped and no clipping; the level used for auto-trim is measured on that same mix. Original, stereo/mono and unrecognised layouts keep the plain `-ac 2` downmix
 - **Live position tracking** — seek bar stays on the original film timeline through pause/resume, seeks and 0.5×–2× playback; HLS time is converted to source time
-- **PIN-protected shared room** — everyone on the local network can join with their name, see who is present, add videos to the shared queue, vote, reorder/remove/play titles, and control play/pause, skip, seek and volume from a phone
+- **Shared room with optional House PIN** — everyone on the local network can join with their name, see who is present, add videos to the shared queue, vote, reorder/remove/play titles, and control play/pause, skip, seek and volume from a phone
 - **Responsive window** — sizes itself to the monitor, stacks cards as the window narrows, wraps playback buttons, and scrolls the full page vertically rather than clipping
 - **Refined media-console interface** — purpose-built Now Playing slate, primary Open video action, readable transport controls, compact queue and activity empty states, live device badges, grouped sound/video/subtitles settings and structured technical diagnostics
 - **Desktop notifications** — posts a Gio notification when a cast finishes, fails or the receiver disappears, but never while the window is focused; Preferences > Playback > Notifications turns it off and the choice is stored as `"notifications"` in `config.json`
@@ -378,15 +378,16 @@ Errors return `{"ok": false, "command", "error", "message"}` with HTTP 400 (bad 
 
 The desktop app starts an authenticated, browser-based shared room while it is
 running. The main screen shows a friendly mDNS address such as
-`smoothcast-lounge.local` (with the numeric IP as a fallback) and a fresh
-six-digit PIN. Everyone who joins with that PIN and a display name appears in
-the presence list and can add videos to the shared queue, vote, reorder or
-remove titles, start a film, skip forward/back and use play/pause, seek and
-volume. The queue belongs to the running desktop queue; web actions are
-marshalled onto the GTK thread. The portal uses the Python standard library and
-adds no web framework dependency. It stops with the app and restarts with a new
-PIN if the selected LAN interface changes. See the
-[shared room guide](docs/LAN_PORTAL.md) for pairing, security and verification
+`smoothcast-lounge.local` (with the numeric IP as a fallback). Joining is open
+by default on the trusted home LAN: enter a display name and you appear in the
+presence list, able to add videos to the shared queue, vote, reorder or remove
+titles, start a film, skip forward/back and use play/pause, seek and volume. An
+optional **House PIN** can be enabled in Preferences when people you do not
+trust use the Wi-Fi. The queue belongs to the running desktop queue; web
+actions are marshalled onto the GTK thread. The portal uses the Python standard
+library and adds no web framework dependency. It stops with the app and
+restarts with a new PIN if the selected LAN interface changes. See the
+[shared room guide](docs/LAN_PORTAL.md) for joining, security and verification
 details.
 
 ## Playlists, resume and safe playback transitions

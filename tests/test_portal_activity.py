@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import portal_commands
 import peer_discovery_ui
 import portal_uploads
+import portal_status
 from gui_source import main_window_methods
 
 
@@ -49,6 +50,7 @@ def _build_window(tmp_path):
     methods = main_window_methods()
     code = "\n".join(textwrap.indent(methods[name], "    ") for name in (
         "_portal_upload_path", "_portal_queue_action", "_portal_handle",
+        "_portal_dispatch",
         "_portal_apply_music_autogain", "_reconcile_portal_casts",
         "_retry_portal_cast"))
     idle: list = []
@@ -181,6 +183,19 @@ def test_command_branch_runs_fenced_mutation(tmp_path):
     window._portal_fence.rotate(owner="TV")
     with pytest.raises(portal_commands.CommandError):
         window._portal_handle("command", {"envelope": envelope})
+
+
+def test_status_dispatch_reads_snapshot_without_idle_callback(tmp_path):
+    window, _uploads, idle = _build_window(tmp_path)
+    window._portal_status = portal_status.PublishedStatus()
+    window._portal_status.publish({"title": "Cached", "queue": []})
+
+    result = window._portal_dispatch("status", {})
+
+    assert result["title"] == "Cached"
+    assert result["snapshot_version"] == 1
+    assert isinstance(result["snapshot_age_ms"], int)
+    assert idle == []
 
 
 def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():

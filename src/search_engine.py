@@ -15,7 +15,20 @@ DEADLINE = 0.25
 PROGRESS_OPS = 10000
 COLS = ("content_key", "kind", "title", "sort_title", "year", "show", "season", "episode",
         "artist", "album", "duration", "folder_id")
-SELECT = ", ".join(f"e.{c}" for c in COLS)
+REPLICA_COLS = (*COLS[:-1], "origin_id", "folder_label", "rel_path")
+
+
+class Source:
+    """Which tables a query runs against (local index or peer replicas)."""
+
+    def __init__(self, table: str, fts: str, tri: str, cols: tuple[str, ...]) -> None:
+        self.table, self.fts, self.tri, self.cols = table, fts, tri, cols
+        self.select = ", ".join(f"e.{c}" for c in cols)
+
+
+LOCAL = Source("entries", "entries_fts", "entries_tri", COLS)
+REPLICA = Source("rentries", "rentries_fts", "rentries_tri", REPLICA_COLS)
+SELECT = LOCAL.select
 
 SCHEMA = """
 PRAGMA recursive_triggers=ON;
@@ -37,10 +50,13 @@ END;
 """
 
 
+INDEXES = "CREATE INDEX IF NOT EXISTS entries_kind_year ON entries(kind, year, sort_title);"
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     fresh = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE name='entries_fts'").fetchone() is None
-    conn.executescript(SCHEMA)
+    conn.executescript(SCHEMA + INDEXES)
     if fresh:
         conn.execute("INSERT INTO entries_fts(entries_fts) VALUES('rebuild')")
         conn.execute("INSERT INTO entries_tri(entries_tri) VALUES('rebuild')")
@@ -62,43 +78,46 @@ def _filter_sql(filters: dict[str, str]) -> tuple[str, list]:
     if years:
         clauses.append("e.year BETWEEN ? AND ?")
         args += list(years)
-    for column in ("artist", "album"):
-        if filters.get(column):
-            clauses.append(f"e.{column} LIKE ? ESCAPE '\\'")
-            escaped = filters[column].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            args.append(f"%{escaped}%")
     return ("".join(f" AND ({c})" for c in clauses), args)
 
 
-def _row(values) -> dict:
-    return dict(zip(COLS, values))
-
-
 def run(conn: sqlite3.Connection, text: object, limit: int = 50, offset: int = 0,
-        *, deadline: float = DEADLINE, clock=time.monotonic) -> tuple[list[dict], bool]:
+        *, deadline: float = DEADLINE, clock=time.monotonic,
+        source: Source = LOCAL) -> tuple[list[dict], bool]:
     """Return (rows ranked best first, partial)."""
     query = search_query.parse(text)
     extra, args = _filter_sql(query.filters)
+
+    def _row(values) -> dict:
+        return dict(zip(source.cols, values))
+    select, table, fts, tri = source.select, source.table, source.fts, source.tri
+    column_terms = []
+    for column in ("artist", "album"):
+        words = search_query.parse(query.filters.get(column, "")).terms
+        if words:
+            column_terms.append(f'{column} : "{" ".join(words)}"')
     stop = clock() + deadline
     conn.set_progress_handler(lambda: 1 if clock() > stop else 0, PROGRESS_OPS)
     rows: list[tuple[float, dict]] = []
     try:
-        if query.terms:
-            match = search_query.fts_expression(query.terms)
+        if query.terms or column_terms:
+            match = " ".join([search_query.fts_expression(query.terms), *column_terms]).strip()
             for r in conn.execute(
-                    f"SELECT {SELECT}, bm25(entries_fts,10,6,6,5,4,1) FROM entries_fts "
-                    f"JOIN entries e ON e.rowid=entries_fts.rowid "
-                    f"WHERE entries_fts MATCH ?{extra} LIMIT 500", [match, *args]):
+                    f"SELECT {select}, bm25({fts},10,6,6,5,4,1) FROM {fts} "
+                    f"JOIN {table} e ON e.rowid={fts}.rowid "
+                    f"WHERE {fts} MATCH ?{extra} LIMIT 500", [match, *args]):
                 rows.append((r[-1], _row(r[:-1])))
-            if len(rows) < 5 and len(query.text.replace(" ", "")) >= 3:
+            # Typo tolerance only for loose text: an artist:/album: filter means exact intent.
+            if (query.terms and not column_terms and len(rows) < 5
+                    and len(query.text.replace(" ", "")) >= 3):
                 have = {row["content_key"] for _s, row in rows}
                 grams = sorted(search_query.trigrams(query.text))
                 if grams:
                     expr = " OR ".join(f'"{g}"' for g in grams)
                     for r in conn.execute(
-                            f"SELECT {SELECT}, bm25(entries_tri) FROM entries_tri "
-                            f"JOIN entries e ON e.rowid=entries_tri.rowid "
-                            f"WHERE entries_tri MATCH ?{extra} LIMIT 200", [expr, *args]):
+                            f"SELECT {select}, bm25({tri}) FROM {tri} "
+                            f"JOIN {table} e ON e.rowid={tri}.rowid "
+                            f"WHERE {tri} MATCH ?{extra} LIMIT 200", [expr, *args]):
                         row = _row(r[:-1])
                         if row["content_key"] in have:
                             continue
@@ -107,7 +126,7 @@ def run(conn: sqlite3.Connection, text: object, limit: int = 50, offset: int = 0
                             rows.append((10.0 + r[-1], row))
         elif query.filters:
             for r in conn.execute(
-                    f"SELECT {SELECT} FROM entries e WHERE 1=1{extra} "
+                    f"SELECT {select} FROM {table} e WHERE 1=1{extra} "
                     "ORDER BY e.sort_title LIMIT 500", args):
                 rows.append((0.0, _row(r)))
         else:
@@ -134,10 +153,14 @@ def _item(row: dict) -> dict:
             "year": row["year"], "artist": row["artist"], "album": row["album"],
             "duration": row["duration"], "show": row["show"],
             "season": row["season"], "episode": row["episode"],
-            "copies": [{"origin": "local", "online": True}]}
+            "copies": row.get("copies") or [{"origin": "local", "online": True}]}
+
+
+_BLANK = {c: None for c in (*REPLICA_COLS, "sort_title")}
 
 
 def group(rows: list[dict]) -> list[dict]:
+    rows = [{**_BLANK, **row} for row in rows]  # peers may omit optional fields
     films, songs, other = [], [], []
     shows: dict[str, dict] = {}
     artists: dict[str, int] = {}

@@ -12,6 +12,7 @@ Read an individual guide only when needed. Never silently truncate a guide.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 import sys
 
@@ -70,6 +71,26 @@ def list_topics() -> str:
     )
 
 
+def related_invariants(words: list[str]) -> str:
+    """Annotate a relevant source path from the sole invariant matrix authority."""
+    paths = set(re.findall(r"src/[a-z0-9_]+\.py", " ".join(words).lower()))
+    if not paths:
+        return ""
+    identifiers = []
+    try:
+        with (ROOT / "docs" / "INVARIANTS.md").open(encoding="utf-8") as manifest:
+            for line in manifest:
+                if not line.startswith("| INV-"):
+                    continue
+                parts = [value.strip() for value in line.strip().strip("|").split("|")]
+                if len(parts) == 4 and parts[2].lower() in paths:
+                    identifiers.append(parts[0])
+    except OSError:
+        return ""
+    return (" Guarding invariants: " + ", ".join(identifiers)
+            + " (docs/INVARIANTS.md)." if identifiers else "")
+
+
 def route_hint(words: list[str]) -> str:
     matches = route(words)
     if not matches:
@@ -79,7 +100,8 @@ def route_hint(words: list[str]) -> str:
     suffix = "; also consider " + ", ".join(matches[1:3]) if len(matches) > 1 else ""
     return (f"Read docs/agents/{first}.md for "
             f"{TOPICS[first][0].lower()}{suffix}. "
-            "Open only task-relevant source ranges and direct callers.")
+            "Open only task-relevant source ranges and direct callers."
+            + related_invariants(words))
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -58,6 +58,17 @@ class PortalQueueMixin:
             raise portal.PortalRequestError(400, "Uploaded media is unavailable")
         return path
 
+    def _portal_library_path(self, key: object) -> pathlib.Path:
+        """Resolve a search result to a readable file inside a shared library folder."""
+        indexer = getattr(self, "_library_indexer", None)
+        if indexer is None or indexer.entry(key) is None:
+            raise portal.PortalRequestError(
+                404, "That item isn't on this computer. Playing from other computers is coming soon.")
+        path = indexer.resolve_path(key)
+        if path is None:
+            raise portal.PortalRequestError(404, "That file is no longer available.")
+        return path
+
     def _portal_queue_index(self, item_id: object) -> int:
         if not isinstance(item_id, str):
             raise portal.PortalRequestError(400, "Queue item is missing")
@@ -141,6 +152,12 @@ class PortalQueueMixin:
             self._rebuild_queue()
             self._portal_observe_queue()
             return "Queued next." if operation == "queue_next" else "Queue order updated."
+        if operation == "queue_add_key":
+            path = self._portal_library_path(payload.get("key"))
+            if self.busy:
+                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            self._enqueue([str(path)])
+            return "Added to the queue."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))
             if self.busy:

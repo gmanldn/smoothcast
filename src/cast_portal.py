@@ -9,10 +9,10 @@ import castctl
 import state_labels
 import lan_interfaces
 import portal
+import portal_status
 import portal_commands
 import portal_join
 import peer_discovery_ui
-import portal_uploads
 import network_activity
 from cast_portal_host import PortalHostMixin
 from portal_upload_recovery import PortalUploadRecoveryMixin
@@ -36,6 +36,10 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
             return True
         try:
+            snapshot = getattr(self, "_portal_status", None)
+            if snapshot is None:
+                snapshot = self._portal_status = portal_status.PublishedStatus()
+            self._publish_portal_status()
             fence = getattr(self, "_portal_fence", None)
             if fence is None:
                 fence = self._portal_fence = portal_commands.CommandFence(
@@ -43,6 +47,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
+                                         status_snapshot=snapshot.read,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
                                          preferred_port=int(self.cfg.get("portal_port", 0)))
@@ -71,8 +76,10 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         else:
             self.portal_status_label.set_text("Listening on your local network")
         self._show_portal_qr(self._portal.url)
-        if getattr(self, "_portal_activity_timer", None) is None:
-            self._portal_activity_timer = GLib.timeout_add_seconds(1, self._refresh_portal_activity)
+        import cast_mesh
+        cast_mesh.start(self, address)
+        self._sync_portal_activity_timer()
+        self._publish_portal_status()
         return True
 
     def _show_portal_qr(self, url: str | None) -> None:
@@ -94,6 +101,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.toast("Room link copied")
 
     def _stop_portal(self) -> None:
+        import cast_mesh
+        cast_mesh.stop(self)
         current, self._portal = getattr(self, "_portal", None), None
         self._portal_ip = None
         timer = getattr(self, "_portal_activity_timer", None)
@@ -103,6 +112,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             except (ValueError, TypeError):
                 pass
             self._portal_activity_timer = None
+        self._portal_activity_period = None
         if current is not None:
             current.stop()
         if hasattr(self, "portal_url_label"):
@@ -116,57 +126,19 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         peer_discovery_ui.refresh_peer_links(
             self, [], available=False, status="Peer discovery stopped")
 
-    def _refresh_portal_activity(self) -> bool:
-        """Show what LAN clients are sending or casting, refreshed every second."""
-        label = getattr(self, "portal_activity_label", None)
-        if label is None or getattr(self, "_closing", False):
-            self._portal_activity_timer = None
-            return False
-        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
-        try:
-            activity = uploads.snapshot() if uploads is not None else []
-        except Exception:
-            activity = []
-        room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
-        participants = room.snapshot().get("participants", []) if room is not None else []
-        names = [person["name"] for person in participants if isinstance(person, dict)
-                 and isinstance(person.get("name"), str)]
-        roster = ", ".join(names[:4])
-        if len(names) > 4:
-            roster += f", +{len(names) - 4} more"
-        ids = tuple(person["id"] for person in participants
-                    if isinstance(person, dict) and isinstance(person.get("id"), str))
-        if hasattr(self, "portal_guest_dropdown") and ids != getattr(self, "portal_guest_ids", ()):
-            prior = getattr(self, "portal_guest_ids", ())
-            selected = self.portal_guest_dropdown.get_selected()
-            chosen = prior[selected] if selected < len(prior) else None
-            labels = [str(person.get("name", "Guest")) for person in participants
-                      if isinstance(person, dict) and isinstance(person.get("id"), str)]
-            self.portal_guest_ids = ids
-            self.portal_guest_dropdown.set_model(
-                Gtk.StringList.new(labels if labels else ["No guests connected"]))
-            self.portal_guest_dropdown.set_selected(
-                ids.index(chosen) if chosen in ids else 0)
-            self.portal_guest_dropdown.set_sensitive(bool(ids))
-            self.portal_revoke_button.set_sensitive(bool(ids))
-        summary = portal_uploads.format_portal_activity(activity)
-        presence = f"In room: {roster}" if roster else "No guests connected"
-        screens = getattr(getattr(self._portal, "server", None), "screens", None)
-        try:
-            screen_rows = screens.snapshot() if screens is not None else []
-        except Exception:
-            screen_rows = []
-        ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
-                 if isinstance(row, dict) and row.get("ready")]
-        shown = f" · Screens: {', '.join(ready)}" if ready else ""
-        label.set_text(f"{presence} · {summary}{shown}")
-        peers = getattr(getattr(self, "_portal", None), "peers", None)
-        peer_list = peers.snapshot() if peers is not None else []
-        available = getattr(getattr(self, "_portal", None),
-                            "peer_discovery_available", False)
-        peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
-        self._reconcile_portal_casts()
-        return True
+    def _sync_portal_activity_timer(self) -> None:
+        """Room UI refreshes once per second only when the window is mapped."""
+        if (self._closing or self._portal is None
+                or not getattr(self, "_timers_enabled", False)):
+            return
+        period = 1000 if self.get_mapped() else 15000
+        current = getattr(self, "_portal_activity_timer", None)
+        if current is not None and period == getattr(self, "_portal_activity_period", None):
+            return
+        if current is not None:
+            GLib.source_remove(current)
+        self._portal_activity_period = period
+        self._portal_activity_timer = GLib.timeout_add(period, self._refresh_portal_activity)
 
     def _portal_apply_music_autogain(self, value: bool) -> str:
         self.cfg["music_autogain"] = value
@@ -182,7 +154,15 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             raise portal_commands.CommandError(exc.status, exc.message) from exc
 
     def _portal_dispatch(self, operation: str, payload: dict) -> object:
-        """Marshal web requests onto GTK's main thread; never read GTK off-thread."""
+        """Serve cached reads directly and marshal all GTK-owned work to GTK."""
+        if operation == "status":
+            if self._closing:
+                raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+            snapshot = getattr(self, "_portal_status", None)
+            state = snapshot.read() if snapshot is not None else None
+            if state is None:
+                raise portal.PortalRequestError(503, "Status snapshot is not ready")
+            return state
         completed = threading.Event()
         cancelled = threading.Event()
         result: list[object] = []
@@ -195,6 +175,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             except Exception as exc:
                 result.append(exc)
             finally:
+                self._publish_portal_status()
                 completed.set()
             return False
 
@@ -209,6 +190,21 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if result and isinstance(result[0], Exception):
             raise result[0]
         return result[0] if result else {}
+
+    def _publish_portal_status(self) -> None:
+        """Publish GTK-owned status for HTTP threads without dispatch waits."""
+        snapshot = getattr(self, "_portal_status", None)
+        if snapshot is None or self._closing:
+            return
+        try:
+            state = self._portal_handle("status", {})
+        except Exception as exc:
+            console = getattr(self, "_console", None)
+            if console is not None:
+                console(f"Could not publish room status: {exc}")
+            return
+        if isinstance(state, dict):
+            snapshot.publish(state)
 
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:

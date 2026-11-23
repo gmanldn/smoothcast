@@ -12,6 +12,28 @@ ticket disagree, the ticket's acceptance criteria win; update both.
 > duplicate or confused nodes) but treat explicit pairing and PIN tiers as
 > optional, off-by-default settings when implementing M1–M12.
 
+## Implementation status
+
+| Layer | Module | State |
+| --- | --- | --- |
+| Wire model | `src/mesh_model.py` | done (#394) |
+| Ports + simulator | `src/mesh_ports.py`, `tests/mesh_sim.py` | done (#395) |
+| Presence beacon, UDP transport | `src/mesh_beacon.py`, `src/mesh_udp.py` | done (#396) |
+| Membership, RPC router | `src/mesh_membership.py`, `src/mesh_rpc.py` | done (#397) |
+| Replication, view | `src/mesh_state.py`, `src/mesh_sync.py` | done (#398) |
+| Primary role, target visibility | `src/mesh_roles.py`, `src/mesh_visibility.py` | done (#399, #400) |
+| Cache, web clients and live feed | `src/mesh_cache.py`, `src/mesh_clients.py`, `src/portal_mesh_http.py` | done (#401, #402) |
+| Abuse resistance | `src/mesh_policy.py`, `docs/MESH_SECURITY.md` | done (#404) |
+| Runtime, HTTP request channel, app hook | `src/mesh_service.py`, `src/mesh_http.py`, `src/cast_mesh.py` | done (#405), **off by default** |
+| Network UI (desktop popover + browser card) | `src/mesh_view_model.py`, `src/mesh_ui.py`, `src/portal_mesh_panel.py` | done (#403) |
+
+Deviations from the sketch below, decided while implementing: indirect probes are
+*witness* probes (a helper vouches from beats it heard first-hand, because the
+request handler is synchronous); membership grants direct evidence from the node
+itself the power to revive a timed-out node (partition heal), while second-hand
+claims cannot; record sections are not delta-encoded (records are capped at
+16 KiB), but sync replies are chunked under 100 KiB.
+
 ## Goal
 
 Every SmoothCast **full node** (the desktop app) continuously knows, within a

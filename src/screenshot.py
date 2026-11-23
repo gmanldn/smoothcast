@@ -113,6 +113,37 @@ def capture_frame(
     return target
 
 
+def cover_art(source: Path, *, timeout: int = 8) -> bytes:
+    """Extract a small JPEG of a track's embedded artwork, in memory only.
+
+    Runs in a worker thread. Raises CaptureError when the file has no
+    attached picture; it never reads a motion-video stream (#64).
+    """
+    source = Path(source).expanduser()
+    try:
+        info = source.stat()
+    except OSError as exc:
+        raise CaptureError(f"Source is missing: {source.name}") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise CaptureError(f"Source is not a regular file: {source.name}")
+    command = [
+        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        "-i", str(source), "-map", "0:v:0", "-an", "-sn", "-dn",
+        "-frames:v", "1", "-vf", "scale=480:480:force_original_aspect_ratio=decrease",
+        "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=timeout,
+                                check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise CaptureError("Cover art extraction timed out") from exc
+    except OSError as exc:
+        raise CaptureError(f"Cannot start FFmpeg: {exc}") from exc
+    if result.returncode or not result.stdout.startswith(b"\xff\xd8"):
+        raise CaptureError("No embedded cover art")
+    return result.stdout
+
+
 def preview_frame(source: Path, position: float, *, timeout: int = 12,
                   video_stream_index: int = 0) -> bytes:
     """Decode a small JPEG frame for the pre-cast scrubber, without writing files.

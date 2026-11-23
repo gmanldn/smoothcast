@@ -31,6 +31,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
     ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib,
           "watch_history": watch_history, "queue_metadata": queue_metadata,
           "reliability_metrics": reliability_metrics,
+          "hdr_tonemap": __import__("hdr_tonemap"),
           "Async": SimpleNamespace(run=lambda _work, **_kwargs: None)}
     ns.update(dependencies or {})
     exec(compile(source, "<cast-preflight-failure>", "exec"), ns)

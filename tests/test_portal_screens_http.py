@@ -8,25 +8,31 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import portal
 import portal_media
+import portal_status
 
 PIN = "234567"
 CAPS = ["video/mp4", "audio/mpeg", "audio/mp4"]
 
 
 class Rig:
-    def __init__(self, tmp_path: Path):
+    def __init__(self, tmp_path: Path, *, status_snapshot=None):
         self.tmp = tmp_path
         self.files: dict[str, Path] = {}
         self.queue: list[dict] = []
         self.calls: list[tuple] = []
         self.resolve_error: portal.PortalRequestError | None = None
-        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), PIN, self.dispatch)
+        self.server = portal._PortalHTTPServer(
+            ("127.0.0.1", 0), PIN, self.dispatch,
+            status_snapshot=status_snapshot,
+        )
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.02}, daemon=True)
@@ -526,3 +532,55 @@ def test_screens_never_touch_the_hosts_own_playback_session(rig):
                         csrf=remote_csrf)[0] == 202
     rig.request("GET", f"/api/media/{media}", cookie=screen_cookie)
     assert {call[0] for call in rig.calls} <= {"status", "media_path"}
+
+
+def test_status_http_reads_snapshot_while_gtk_dispatcher_is_blocked(tmp_path):
+    snapshot = portal_status.PublishedStatus()
+    snapshot.publish({"title": "Cached", "state": "PLAYING", "queue": []})
+    rig = Rig(tmp_path, status_snapshot=snapshot.read)
+    entered, release = threading.Event(), threading.Event()
+    blocked_at = [0.0]
+
+    dispatch_calls = []
+
+    def blocked_dispatch(operation, _payload):
+        dispatch_calls.append(operation)
+        blocked_at[0] = time.monotonic()
+        entered.set()
+        release.wait()
+        return {"title": "Live", "state": "PLAYING", "queue": []}
+
+    rig.server.dispatch = blocked_dispatch
+    blocker = threading.Thread(target=lambda: rig.server.dispatch("status", {}), daemon=True)
+    blocker.start()
+    assert entered.wait(1.0)
+    try:
+        guests = [rig.login(f"Guest {index}")[0] for index in range(32)]
+
+        def read_status(cookie):
+            started = time.perf_counter()
+            status, data = rig.json("GET", "/api/status", cookie=cookie)
+            return status, data, time.perf_counter() - started
+
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            replies = list(pool.map(read_status, guests))
+        assert all(status == 200 for status, _data, _elapsed in replies)
+        assert all(elapsed < 0.05 for _status, _data, elapsed in replies), \
+            f"status latency over 50 ms: {max(elapsed for _status, _data, elapsed in replies):.3f}s"
+        assert all(data["state"]["title"] == "Cached" for _status, data, _elapsed in replies)
+        assert all("snapshot_age_ms" in data["state"] for _status, data, _elapsed in replies)
+        assert dispatch_calls == ["status"]
+        first_age = replies[0][1]["state"]["snapshot_age_ms"]
+        time.sleep(0.03)
+        status, later = rig.json("GET", "/api/status", cookie=guests[0])
+        assert status == 200
+        assert later["state"]["snapshot_age_ms"] > first_age
+        assert later["state"]["snapshot_version"] == 1
+        remaining = 3.0 - (time.monotonic() - blocked_at[0])
+        if remaining > 0:
+            time.sleep(remaining)
+        assert not release.is_set()
+    finally:
+        release.set()
+        blocker.join(3.0)
+        rig.close()

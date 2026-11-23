@@ -3,7 +3,11 @@
 SmoothCast is Python 3.10+ with GTK4/libadwaita, FFmpeg, Chromecast (`catt`)
 and DLNA. Ordinary tests do not import GTK.
 
-## GTK window: smaller modules
+<!-- invariant: INV-009 -->
+
+## GTK window: seven smaller modules
+
+<!-- invariant: INV-011 -->
 
 Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 
@@ -26,14 +30,17 @@ or import GTK in ordinary tests.
 
 ## Discovered receiver identity
 
+<!-- invariant: INV-001 -->
+
 The selected Cast receiver has a friendly `device` and optional persisted
 `device_uuid`. An idle scan may recover a renamed receiver only when its UUID
 and new name are unique. Manual IP/DLNA selections clear that UUID. Display
-names alone do not prove ownership; #15 tracks mDNS reconciliation and device
-qualification. Host lookup rejects duplicate/missing current records and
-failed scans, so it cannot reuse an old address.
+names alone do not prove ownership (#15). Host lookup rejects duplicate or
+missing records and failed scans, so it never reuses an old address.
 
 ## HLS stall watchdog (P0 SC-010)
+
+<!-- invariant: INV-002 -->
 
 `stream_watchdog.StreamWatchdog` is a pure, monotonic-clock state machine.
 The GUI tick supplies cached FFmpeg and receiver progress; the
@@ -43,17 +50,17 @@ FFmpeg continues (36 s) can trigger **one** automatic HLS restart at the
 source-file playback position. It requires the receiver to report the **exact
 saved stream URL and optional title**, and refuses paused, offline, busy,
 unknown/foreign or completed playback. The one-restart budget survives
-FFmpeg generation changes; a subsequent failure displays an error instead of
-looping forever. A confirmed receiver IDLE/end is handled by the existing
-completion path and never converted into a restart.
+FFmpeg generation changes; a later failure shows an error instead of looping.
+A confirmed receiver IDLE/end uses the completion path, never a restart.
 
-The asynchronous restart goes through `SessionMixin._restart_at`. Do not
-schedule extra background polling or launch GTK to test; deterministic unit
-and UI-wiring checks live in `tests/test_stream_watchdog.py`. Real-device
-buffering and first-frame behavior still require qualification under
-[GitHub issue #17](https://github.com/gmanldn/smoothcast/issues/17).
+The restart goes through `SessionMixin._restart_at`. Add no extra polling and
+never launch GTK to test; checks live in `tests/test_stream_watchdog.py`.
+Real-device behavior is tracked in
+[#17](https://github.com/gmanldn/smoothcast/issues/17).
 
 ## Direct Cast acceptance and safe HLS fallback
+
+<!-- invariant: INV-003 -->
 
 `src/direct_probe.py` classifies receiver status after the `catt`
 direct-cast command returns: verified PLAYING/PAUSED with matching title is
@@ -70,6 +77,8 @@ and the actual cast worker's direct-to-HLS branch with fakes. Real device
 decoder/subtitle negotiation remains P0 issue #18.
 
 ## Subtitle selection on encoder restarts (P0 SC-015)
+
+<!-- invariant: INV-004 -->
 
 `SessionMixin._restart_at` preserves the saved external subtitle
 file, its burn-in mode, or the selected embedded *stream index*. It first
@@ -89,6 +98,8 @@ transfers stay under [issue #22](https://github.com/gmanldn/smoothcast/issues/22
 
 ## HLS generation identity (P1 SC-062)
 
+<!-- invariant: INV-005, INV-006 -->
+
 Every new `streamer.Session.start_transcode` generates a cryptographically
 random 128-bit stream ID. The playlist is
 `movie-<32 lowercase hex>.m3u8`, with matching
@@ -107,9 +118,12 @@ every playlist segment belongs to its saved generation.
 
 `tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
 cross-generation stale requests, narrow allowlists, encoder arguments and
-finalised recovery, using only mock encoders/TV and ephemeral local servers.
+finalised recovery with mock encoders and ephemeral local servers; it never
+launches GTK or controls a real receiver.
 
 ## Cast diagnostics and workers
+
+<!-- invariant: INV-007, INV-010 -->
 
 `network_route_ui.start` runs opt-in Cast checks off-thread; late
 results are rejected. See [setup](../../setup/README.md).
@@ -130,6 +144,8 @@ delivery. See [worker domains](../ASYNC_WORKERS.md).
 - Tests and CI: `tests/`, `.github/workflows/verify.yml`.
 
 ## Asynchronous receiver transport safety
+
+<!-- invariant: INV-008 -->
 
 `SessionMixin.toggle_play` and `SessionMixin.seek_to` serialize direct
 Google Cast and DLNA transport commands with the window's `busy` guard.

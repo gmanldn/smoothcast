@@ -27,6 +27,7 @@ CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ROOM_CHECKPOINT_FILE = CONFIG_DIR / "room-checkpoint.json"
 ICON_NAME = APP_ID
+
 DEFAULTS: dict = {
     "schema_version": 1,  # == config_control.SCHEMA_VERSION (tested).
     "device": castctl.DEFAULT_DEVICE,
@@ -52,6 +53,7 @@ DEFAULTS: dict = {
     "auto_shutdown": False,
     "notifications": True,  # Notify when the window is unfocused (#267)
     "portal_screens": True,
+    "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
     "library_indexer": True,
     "library_folders": [],

@@ -71,7 +71,7 @@ class BookmarkUiMixin:
                     position, time.time(),
                 )
             except ValueError as exc:
-                self.toast(str(exc), error=True)
+                self.toast(str(exc) or "Couldn't save that bookmark.", error=True)
                 return
             save_config(self.cfg)
             self.menu_button.set_menu_model(self._build_menu())

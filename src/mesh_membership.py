@@ -125,6 +125,11 @@ class Member:
     probe_token: int = 0
     probe_started: float = 0.0
 
+    @property
+    def endpoint(self) -> str:
+        """``ip:port`` for request/response calls (the node's mesh port)."""
+        return f"{self.address}:{self.port}" if self.port else self.address
+
 
 @dataclass
 class Tombstone:
@@ -168,6 +173,7 @@ class Membership:
         self._regenerate = on_regenerate
         self.config = config or MembershipConfig()
         self.stats = MembershipStats()
+        self._blocked: dict[str, str] = {}      # node_id -> last known address
         self._members: dict[str, Member] = {}
         self._tombstones: OrderedDict[str, Tombstone] = OrderedDict()
         self._timer: TimerHandle | None = None
@@ -206,8 +212,27 @@ class Membership:
         return self._tombstones.get(node_id)
 
     # -- events from the beacon -------------------------------------------------
+    # -- revocation ---------------------------------------------------------
+    def block(self, node_id: str) -> None:
+        """Revoke a peer: forget it and ignore it until :meth:`unblock`."""
+        member = self._members.get(node_id)
+        self._blocked[node_id] = member.address if member is not None else ""
+        while len(self._blocked) > 2 * mesh_model.MAX_NODES:
+            self._blocked.pop(next(iter(self._blocked)))
+        if member is not None:
+            self._bury(member, "revoked")
+
+    def unblock(self, node_id: str) -> None:
+        if self._blocked.pop(node_id, None) is not None:
+            self._beacon.forget(node_id)      # its next beat is seen as a fresh arrival
+
+    def is_blocked_address(self, address: str) -> bool:
+        return address in self._blocked.values()
+
     def on_beacon_event(self, event: mb.BeaconEvent) -> None:
         if self._closed:
+            return
+        if getattr(event, "node_id", None) in self._blocked:
             return
         if isinstance(event, mb.PeerSeen):
             self._on_seen(event)
@@ -234,7 +259,7 @@ class Membership:
             self._tombstones.popitem(last=False)
         del self._members[member.node_id]
         self.stats.downs += 1
-        if reason == "timeout":
+        if reason in {"timeout", "revoked"}:
             self._beacon.forget(member.node_id)
         self._emit_safe(NodeDown(member.node_id, member.boot_id, reason))
 
@@ -362,7 +387,7 @@ class Membership:
                 self.stats.probe_failures += 1
             done(bool(ok))
 
-        self._rpc.call(member.address, "ping", body, reply, timeout)
+        self._rpc.call(member.endpoint, "ping", body, reply, timeout)
 
     def _on_ping(self, _source: str, body: dict[str, Any]) -> dict[str, Any]:
         local = self._beacon.local
@@ -464,7 +489,7 @@ class Membership:
             if value is not None and value.get("ok") is True:
                 self._indirect_verdict(node_id, token, True, indirect=True)
 
-        self._rpc.call(helper.address, "pingreq", {"target": node_id}, reply,
+        self._rpc.call(helper.endpoint, "pingreq", {"target": node_id}, reply,
                        self.config.probe_timeout_s)
 
     def _indirect_verdict(self, node_id: str, token: int, alive: bool,

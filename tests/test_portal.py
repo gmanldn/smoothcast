@@ -112,21 +112,22 @@ def test_portal_rejects_non_rfc1918_addresses():
 @pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
 def test_up_next_render_preserves_focus_and_labels_queue_actions():
     source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
-    script = source[source.index("let queueRenderKey=null;"):source.index("let statusRequest=null")]
+    script = source[source.index("let queueRenderKey=null,queuePressed="):source.index("let statusRequest=null")]
     harness = r"""
 const assert = require("node:assert/strict");
 class Element {
   constructor(tag){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.listeners={};this.parentElement=null;this.className="";this.textContent="";this.classList={add:name=>{this.className+=(this.className?" ":"")+name}}}
-  append(...items){for(const item of items){item.parentElement=this;this.children.push(item)}}
+  append(...items){for(const item of items){if(item.parentElement){const siblings=item.parentElement.children;const i=siblings.indexOf(item);if(i>=0)siblings.splice(i,1)}item.parentElement=this;this.children.push(item)}}
   replaceChildren(...items){this.children=[];this.append(...items)}
   addEventListener(name,handler){this.listeners[name]=handler}
   setAttribute(name,value){this.attributes[name]=String(value)}
   getAttribute(name){return this.attributes[name]??null}
-  closest(selector){if(selector!=="[data-queue-id]")return null;for(let node=this;node;node=node.parentElement)if(node.dataset.queueId)return node;return null}
+  closest(selector){const field=selector==="[data-queue-id]"?"queueId":selector==="[data-queue-action]"?"queueAction":null;if(!field)return null;for(let node=this;node;node=node.parentElement)if(node.dataset[field])return node;return null}
+  contains(node){for(let current=node;current;current=current.parentElement)if(current===this)return true;return false}
   focus(){document.activeElement=this}
 }
 const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
-const document={activeElement:null,createElement:tag=>new Element(tag)};
+const document={activeElement:null,createElement:tag=>new Element(tag),addEventListener(){}};
 const elements={queue};function $(id){return elements[id]}
 const calls=[];function act(...args){calls.push(args)}
 """
@@ -141,7 +142,7 @@ assert.deepEqual(buttons.map(button=>button.getAttribute("aria-label")),[
   "Vote for Alpha","Play Alpha now","Move Alpha earlier in Up Next","Move Alpha later in Up Next","Play Alpha next","Remove Alpha from Up Next"]);
 assert.equal(buttons[2].disabled,true,"the first item cannot move earlier");
 assert.equal(buttons[3].disabled,false,"the first item can move later");
-buttons[3].listeners.click();
+queue.listeners.click({target:buttons[3]});
 assert.deepEqual(calls[0], ["queue_move",undefined,{id:"a",position:1}]);
 const betaRow=queue.children[1], betaNext=betaRow.children[1].children[4];
 betaNext.focus();
@@ -150,7 +151,14 @@ assert.equal(queue.children[0],originalRow,"unchanged polling must retain the ex
 renderQueue([initial[1],initial[0]]);
 const reorderedBetaNext=queue.children[0].children[1].children.find(button=>button.dataset.queueAction==="next");
 assert.equal(document.activeElement,reorderedBetaNext,"reordering must restore focus to the same item and action");
+assert.equal(reorderedBetaNext,betaNext,"reordering must not replace a pressed control");
+queue.listeners.pointerdown({target:reorderedBetaNext});
 renderQueue([initial[0]]);
+assert.equal(queue.children[0].dataset.queueId,"b","a pressed row stays until click");
+queue.listeners.click({target:reorderedBetaNext});
+assert.deepEqual(calls.at(-1),["queue_next",undefined,{id:"b"}],"pressed button acts on original item");
+releaseQueuePointer();
+assert.equal(queue.children[0].dataset.queueId,"a");
 assert.equal(document.activeElement,queue,"when the focused row disappears, focus returns to the queue");
 """
     subprocess.run(["node", "-"], input=harness + script + scenario,
@@ -242,6 +250,65 @@ const fetch = (_url, {signal}) => {
                    text=True, check=True, timeout=10)
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_remote_wake_lock_persists_and_reacquires_only_while_visible():
+    start = portal._HTML.index('const keepScreenOn=')
+    end = portal._HTML.index('const PIN_REQUIRED=', start)
+    script = portal._HTML[start:end]
+    harness = """
+const assert = require("node:assert/strict");
+const storage = new Map([["sc_keep_screen_on", "1"]]);
+const localStorage = {getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)};
+const checkbox = {checked:false,addEventListener(_event,handler){this.change=handler}};
+const hint = {hidden:true};
+const $ = id => id==="keepScreenOn"?checkbox:hint;
+const document = {hidden:false};
+const navigator = {wakeLock:{request}};
+let csrf="",stalePage=false,requests=0,releases=0;
+function request(type){
+  assert.equal(type,"screen");
+  requests++;
+  return Promise.resolve({
+    released:false,
+    addEventListener(event,handler){assert.equal(event,"release");this.onrelease=handler},
+    async release(){this.released=true;releases++;this.onrelease?.()},
+  });
+}
+"""
+    scenario = """
+(async()=>{
+  assert.equal(checkbox.checked,true);
+  await syncRemoteWakeLock();
+  assert.equal(requests,0,"a saved preference does not acquire before authentication");
+  csrf="paired";
+  await Promise.all([syncRemoteWakeLock(),syncRemoteWakeLock()]);
+  assert.equal(requests,1,"only one request is in flight");
+  document.hidden=true;
+  await syncRemoteWakeLock();
+  assert.equal(releases,1);
+  document.hidden=false;
+  await syncRemoteWakeLock();
+  assert.equal(requests,2,"a visible tab reacquires the lock");
+  checkbox.checked=false;
+  await checkbox.change();
+  assert.equal(storage.get("sc_keep_screen_on"),"0");
+  assert.equal(releases,2);
+  delete navigator.wakeLock;
+  checkbox.checked=true;
+  await checkbox.change();
+  assert.equal(storage.get("sc_keep_screen_on"),"1");
+  assert.equal(hint.hidden,false,"unsupported browsers show the dim hint");
+  checkbox.checked=false;
+  await checkbox.change();
+  checkbox.checked=true;
+  await checkbox.change();
+  assert.equal(hint.hidden,true,"the hint is shown only once");
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
 def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     status, body, headers = rig.request("GET", "/")
     assert status == 200
@@ -249,11 +316,13 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "fetch(\"/api/status\"" in page
     assert "https://" not in page and "http://" not in page
     assert PIN not in page
+    assert 'id="keepScreenOn" type="checkbox"> Keep screen on' in page
+    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>controller.abort(),60000)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
-    assert "Select Resume upload to retry" in page
+    assert "Select Resume to retry" in page
     assert "Audio is validated and added to the shared queue" in page
     assert "video can be queued or streamed" in page
     assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
@@ -262,18 +331,18 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
-    assert 'title.textContent=itemTitle' in page
+    assert 'li.children[0].children[0].textContent=itemTitle' in page
     assert 'detail.textContent=' in page
     assert 'id="musicAutogain"' in page
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
     assert 'id="queue" aria-label="Up Next" tabindex="-1"' in page
     assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
-    assert 'setAttribute("aria-label",label)' in page
+    assert 'button.setAttribute("aria-label",labels[i])' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
-    assert "queue_revision=queueRevision" in page and "body.queue_command_id=`q" in page
+    assert "queue_revision=queueRevision" in page and "body.queue_command_id=" in page
     assert "Add to the shared queue" in page
 
 
@@ -827,7 +896,7 @@ def test_application_wires_portal_into_home_screen_and_closes_it():
     assert "GLib.idle_add(run)" in methods["_portal_dispatch"]
     assert "self._refresh_portal()" in methods["__init__"]
     assert "self._stop_portal()" in methods["_on_close"]
-    assert "_refresh_portal_activity" in methods["_refresh_portal"]
+    assert "_sync_portal_activity_timer" in methods["_refresh_portal"]
     assert "room.snapshot()" in methods["_refresh_portal_activity"]
     assert "In room:" in methods["_refresh_portal_activity"]
     assert "peer_discovery_available" in methods["_refresh_portal_activity"]
@@ -866,37 +935,42 @@ def test_upload_http_flow_authenticates_chunks_resumes_and_dispatches_staged_pat
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
         status, raw, _ = rig.request("POST", "/api/uploads",
-                                     {"name": "../clip.mp4", "size": 6, "queue": False},
+                                     {"name": "../clip.mp4", "size": 5, "queue": False},
                                      cookie=cookie, csrf=login_result["csrf"], origin=origin)
         assert status == 201
         created = decode(raw)
         upload_id = created["id"]
         status, _, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
-            extra_headers={"Content-Range": "bytes 0-2/6"},
+            "PUT", f"/api/uploads/{upload_id}", b"ab", cookie=cookie,
+            extra_headers={"Content-Range": "bytes 0-1/5"},
             content_type="application/octet-stream")
         assert status == 403  # unauthenticated chunks never reach the store
         status, raw, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"abc", cookie=cookie,
+            "PUT", f"/api/uploads/{upload_id}", b"ab", cookie=cookie,
             csrf=login_result["csrf"], origin=origin,
-            extra_headers={"Content-Range": "bytes 0-2/6"},
+            extra_headers={"Content-Range": "bytes 0-1/5"},
             content_type="application/octet-stream")
-        assert status == 200 and decode(raw)["received"] == 3
+        assert status == 200 and decode(raw)["received"] == 2
+        # Reopen the portal with the original cookie, as a reloaded browser does.
+        status, raw, _ = rig.request("GET", "/api/session", cookie=cookie)
+        assert status == 200
+        resumed = decode(raw)
+        assert resumed["participant"]["id"] == login_result["participant"]["id"]
         status, raw, _ = rig.request(
             "GET", f"/api/uploads/{upload_id}", cookie=cookie)
-        assert status == 200 and decode(raw)["received"] == 3
+        assert status == 200 and decode(raw)["received"] == 2
         status, raw, _ = rig.request(
-            "PUT", f"/api/uploads/{upload_id}", b"def", cookie=cookie,
-            csrf=login_result["csrf"], origin=origin,
-            extra_headers={"Content-Range": "bytes 3-5/6"},
+            "PUT", f"/api/uploads/{upload_id}", b"cde", cookie=cookie,
+            csrf=resumed["csrf"], origin=origin,
+            extra_headers={"Content-Range": "bytes 2-4/5"},
             content_type="application/octet-stream")
         assert status == 200 and decode(raw)["complete"]
         status, raw, _ = rig.request("POST", f"/api/uploads/{upload_id}/complete", {},
-                                     cookie=cookie, csrf=login_result["csrf"], origin=origin)
+                                     cookie=cookie, csrf=resumed["csrf"], origin=origin)
         assert status == 202 and decode(raw)["ok"]
         action, payload = rig.calls[-1]
         assert action == "cast_upload"
-        assert Path(payload["path"]).read_bytes() == b"abcdef"
+        assert Path(payload["path"]).read_bytes() == b"abcde"
         assert Path(payload["path"]).parent == uploads.root
     finally:
         rig.close()
@@ -1307,3 +1381,92 @@ def test_authenticated_read_rate_limit_does_not_block_room_recovery(rig):
     _, other, other_cookie = login(rig, name="Other")
     assert rig.request("GET", "/api/status", cookie=other_cookie)[0] == 200
     assert other["csrf"]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_phone_volume_changes_coalesce_and_preserve_pending_edit():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index('for(const id of ["seek","volume"])'):
+                    source.index('$("nameForm").addEventListener', source.index('for(const id of ["seek","volume"])'))]
+    harness = r"""
+const assert = require("node:assert/strict");
+const elements=new Map();
+function $(id){
+  if(!elements.has(id))elements.set(id,{value:0,textContent:"",listeners:{},
+    addEventListener(name,fn){this.listeners[name]=fn}});
+  return elements.get(id);
+}
+const editingControls=new Set(),calls=[],timers=[];
+const act=(...args)=>calls.push(args);
+let now=1000;
+Date.now=()=>now;
+const setTimeout=(fn,delay)=>{timers.push({fn,delay});return timers.length};
+"""
+    scenario = r"""
+$("volume").value=33;
+$("volume").listeners.pointerdown();
+$("volume").listeners.input();
+assert.equal(editingControls.has("volume"),true);
+$("volume").value=48;
+$("volume").listeners.input();
+assert.equal(timers.length,1,"rapid drag is one scheduled request");
+timers.shift().fn();
+assert.deepEqual(calls,[["volume",48]]);
+assert.equal($("volumeText").textContent,"48%");
+now+=60;
+$("volume").value=62;
+$("volume").listeners.input();
+$("volume").value=64;
+$("volume").listeners.change();
+assert.equal(editingControls.has("volume"),false);
+assert.equal(timers.length,1);
+assert.equal(timers[0].delay,90,"last write is sent no sooner than 150 ms");
+timers.shift().fn();
+assert.deepEqual(calls,[["volume",48],["volume",64]]);
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_phone_inflight_controls_keep_latest_intent_visible():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    script = source[source.index("async function act(action,value,extra={})"):
+                    source.index('$("clearQueue").addEventListener', source.index("async function act(action,value,extra={})"))]
+    harness = r"""
+const assert=require("node:assert/strict");
+const pendingControls=new Map(),messages=[],requests=[];
+const showError=(id,value)=>messages.push(value);
+let busy=false,csrf="session",stalePage=false,rateDelayUntil=0,queueRevision=0,queueCommandSeq=0;
+let statusRequest=null;
+let release=null,refreshes=0;
+const refresh=()=>refreshes++;
+const post=async (url,body)=>{requests.push(body);return await new Promise(resolve=>{release=resolve})};
+"""
+    scenario = r"""
+(async()=>{
+  const first=act("stop");
+  await act("seek",10);
+  await act("seek",20);
+  assert.equal(requests.length,1);
+  assert.equal(pendingControls.size,1,"latest seek replaces earlier unsent seek");
+  assert.match(messages.at(-1),/waiting/i);
+  release({message:"Stopped"});
+  await first;
+  assert.equal(requests.length,2);
+  assert.deepEqual(requests[1],{action:"seek",value:20});
+  release({message:"Seeked"});
+  for(let i=0;i<5;i++)await Promise.resolve();
+  assert.equal(pendingControls.size,0);
+  assert.equal(refreshes,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+def test_status_refresh_does_not_overwrite_an_active_slider():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    assert 'if(!editingControls.has("seek")){' in source
+    assert 'if(!editingControls.has("volume")){' in source
+    assert 'queueElement.addEventListener("click",event=>' in source

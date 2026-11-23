@@ -316,6 +316,7 @@ class SimNetwork:
 
     def _send_datagram(self, sender: SimTransport, dst: str | None, payload: bytes) -> None:
         src = sender.address
+        dst = dst.partition(":")[0] if dst is not None else None
         if src in self._offline:
             return
         size = len(payload) + UDP_OVERHEAD
@@ -357,6 +358,7 @@ class SimNetwork:
                  callback: Callable[[bytes | None, str | None], None],
                  timeout: float) -> None:
         src = sender.address
+        dst = dst.partition(":")[0]            # "ip:port" endpoints address the same node
         done = {"v": False}
 
         def finish(reply: bytes | None, error: str | None) -> None:
