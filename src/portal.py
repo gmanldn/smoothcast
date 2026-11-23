@@ -1580,6 +1580,12 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .quick-links a{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);text-decoration:none;color:var(--text);background:var(--input);font-weight:650}
 .quick-links a:hover{background:var(--nav-hover)}
+.room-link{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
+.room-link label{grid-column:1/-1;margin:0;font-weight:650}
+.room-link input{min-width:0;margin:0;background:var(--input)}
+.room-link button{white-space:nowrap;min-height:44px}
+.room-link #roomLinkStatus{grid-column:1/-1;margin:0;min-height:1.2em}
+@media(max-width:350px){.room-link{grid-template-columns:minmax(0,1fr)}.room-link button{width:100%}}
 .room-heading{display:flex;gap:10px;justify-content:space-between;align-items:baseline;flex-wrap:wrap}
 .room-heading h2{margin:0 0 9px}
 #dashboard section{scroll-margin-top:78px}
@@ -1640,7 +1646,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 </section>
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
@@ -1722,6 +1728,21 @@ const clientHeaders={"X-SmoothCast-Client-Schema":String(CLIENT_SCHEMA),"X-Smoot
 let rateDelayUntil=0;
 const pendingControls=new Map(),editingControls=new Set();
 let csrf="",busy=false,uploading=false,cancelUpload=false,casting=false,pendingUpload=null,batchFiles=null,batchIndex=0,batchAdded=0,batchTotal=0,batchQueueOnly=true,activeUploadController=null,queueRevision=0,queueCommandSeq=0;const $=id=>document.getElementById(id),showError=(id,msg)=>$(id).textContent=msg;
+
+const roomInviteLink=location.origin+"/";
+$("roomLinkText").value=roomInviteLink;
+$("roomLinkCopy").addEventListener("click",async()=>{
+  try{
+    if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");
+    await navigator.clipboard.writeText(roomInviteLink);
+    $("roomLinkStatus").textContent="Room link copied. Share it with someone on the same Wi-Fi.";
+  }catch(_){
+    $("roomLinkText").focus();
+    $("roomLinkText").select();
+    $("roomLinkStatus").textContent="Link selected. Copy it manually and share it on the same Wi-Fi.";
+  }
+});
+
 async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
 const keepScreenOn=$("keepScreenOn");
 let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
