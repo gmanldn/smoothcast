@@ -163,7 +163,7 @@ class OptOutTests(RepoCase):
     def test_invalid_channels_are_rejected_without_git_or_network(self):
         with mock.patch.object(update_control.subprocess, "run",
                                side_effect=AssertionError("untrusted channel reached Git")):
-            for value in ("feature/x", "", "MAIN", "../../main", None):
+            for value in ("feature/x", "", "MAIN", "../../main", None, [], {}):
                 self.assertIsNone(update_control.check_release(
                     self.local, enabled=True, verify=False, channel=value,
                 ))
