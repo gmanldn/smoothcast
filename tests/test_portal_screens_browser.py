@@ -70,15 +70,16 @@ const document={
   activeElement:null,getElementById:id=>elements[id]||null,
   createElement:tag=>new FakeNode(tag)
 };
-const window={},csrf="session-fixture";
+const window={};let csrf="session-fixture";
 const setInterval=()=>{};
 const requests=[];
-const fetch=async(url,options)=>{
+let fetch=async(url,options)=>{
   requests.push({url,body:JSON.parse(options.body)});
   return {ok:true,json:async()=>({})};
 };
 """
     scenario = r"""
+(async()=>{
 const one={id:"screen-1",name:"Kitchen",ready:true,video:false,
   state:"paused",item:"track",title:"First",position:0,duration:60};
 window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
@@ -101,10 +102,12 @@ assert.equal(document.activeElement,pick);
 window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"resume","handler must use the latest state");
+for(let i=0;i<5;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],
   queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"pause","handler must not capture a stale state");
+for(let i=0;i<5;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],queue:[]});
 assert.equal(list.children[0],row,"queue changes must retain the screen row");
 assert.equal(pick.value,"");
@@ -127,6 +130,33 @@ toggle.focus();
 window.scRenderScreens({screens:[],queue:[]});
 assert.equal(document.activeElement,heading,"disconnected focused screen returns to heading");
 assert.equal(list.children[0].textContent,"No screens connected");
+window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
+const liveRow=list.children[0],buttons=liveRow.children[1].children;
+const select=buttons[0],livePlay=buttons[1],liveToggle=buttons[2];
+select.value="track";select.listeners.change();
+const pending=[],before=requests.length;
+fetch=(url,options)=>new Promise(resolve=>{
+  requests.push({url,body:JSON.parse(options.body)});
+  pending.push(resolve);
+});
+liveToggle.listeners.click();livePlay.listeners.click();liveToggle.listeners.click();
+assert.equal(requests.length,before+1,"duplicate taps must be coalesced");
+assert.equal(liveRow.attrs["aria-busy"],"true");
+assert.equal(livePlay.attrs["aria-disabled"],"true");
+window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
+assert.equal(livePlay.attrs["aria-disabled"],"true","poll must not unlock pending commands");
+pending[0]({ok:true,json:async()=>({})});
+for(let i=0;i<5;i++)await Promise.resolve();
+assert.equal(liveRow.attrs["aria-busy"],"false");
+assert.equal(livePlay.attrs["aria-disabled"],"false");
+liveToggle.listeners.click();
+assert.equal(requests.length,before+2);
+csrf="replacement";
+elements.screensMsg.textContent="New room";
+pending[1]({ok:true,json:async()=>({})});
+for(let i=0;i<5;i++)await Promise.resolve();
+assert.equal(elements.screensMsg.textContent,"New room");
+})().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run(
         ["node", "-"], input=harness + script + scenario,
