@@ -54,8 +54,8 @@ def read_checkout_version(path: Path) -> str | None:
     return parse_version_text(source)
 
 
-_SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\\Z")
-_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]+\\Z")
+_SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
+_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]+\Z")
 
 
 def _read_small(path: Path, size: int = 4096) -> str | None:
