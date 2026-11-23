@@ -16,8 +16,9 @@ The retired root `IMPROVEMENTS.md` is **not** an active backlog.
   workflow opens a develop→main pull request and merges it (see
   [Releases](#releases-develop--main-automatically)). Nothing else writes to `main`.
 - `src/version.py` is the one release authority. For each **completed ticket**,
-  bump PATCH once with `python3 scripts/ci/bump_version.py patch --issue N
-  --expect X.Y.Z`, in the ticket's coherent final commit. Intermediate commits
+  bump PATCH once with
+  `python3 scripts/ci/bump_version.py patch --issue N --expect X.Y.Z`
+  in the ticket's coherent final commit. Intermediate commits
   carry their SHA, not a new version. Rebase then rerun if the version moved.
 - External contributors without push access may open a PR **against
   `develop`**; that is the only PR flow besides the automatic release PR.
