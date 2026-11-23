@@ -163,7 +163,9 @@ def _page() -> bytes:
                            + portal_mesh_panel.panel_html() + "</main>", 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
-            .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())).encode("utf-8")
+            .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
+            .replace("__SC_ACCENTS__", json.dumps(design_tokens.web_accents(), separators=(",", ":")))
+            ).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -1851,9 +1853,21 @@ const roomEvents=makeRoomEvents({
   setInterval:(f,ms)=>setInterval(f,ms),clearInterval:id=>clearInterval(id),
   now:()=>Date.now()
 });
+const ROOM_ACCENTS=__SC_ACCENTS__;
+let appliedAccent="";
+function applyAccentPreset(value){
+  const preset=Object.hasOwn(ROOM_ACCENTS,value)?value:"default";
+  if(preset===appliedAccent)return;
+  appliedAccent=preset;
+  const root=document.documentElement.style, colours=ROOM_ACCENTS[preset];
+  for(const scheme of ["dark","light"]){
+    root.setProperty("--sc-user-accent-"+scheme,colours[scheme].accent);
+    root.setProperty("--sc-user-on-accent-"+scheme,colours[scheme].on_accent);
+  }
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
-    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);

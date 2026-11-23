@@ -6,6 +6,7 @@ import threading
 import time
 
 import castctl
+import accent
 import state_labels
 import lan_interfaces
 import portal
@@ -255,6 +256,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
+                "accent": accent.normalize(self.cfg.get("accent")),
                 "network_activity": network_activity.portal_entries(
                     getattr(self, "_network_activity_entries", []),
                     self._device_host(self._device()),
