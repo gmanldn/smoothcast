@@ -199,6 +199,35 @@ class ReceiverMemoryTests(unittest.TestCase):
         self.assertNotIn("192.168.", text)
         self.assertNotIn("film.mkv", text)
 
+    def test_headless_cli_can_forget_one_receiver_without_touching_any_other(self):
+        import cli
+        import io
+        from contextlib import redirect_stdout
+
+        uuid = "44ad6ed8-44de-48b9-959b-3e4cd075e234"
+        other = memory.receiver_key(host="192.168.1.20", port=8009)
+        self.store.record(self.key, self.sig, "direct", False)
+        self.store.record(other, self.sig, "hls", True)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            status = memory.main(["--uuid", uuid, "--store", str(self.path)])
+        self.assertEqual(status, 0)
+        self.assertIn("cleared", output.getvalue())
+        self.assertEqual(set(json.loads(self.path.read_text())["receivers"]), {other})
+        with mock.patch.object(cli.sys, "argv",
+                               ["smoothcast", "--forget-receiver", "--uuid", uuid,
+                                "--store", str(self.path)]):
+            self.assertEqual(cli._main(), 0)
+        self.assertEqual(set(json.loads(self.path.read_text())["receivers"]), {other})
+
+    def test_forget_cli_refuses_untrusted_path_input_without_mutating_state(self):
+        self.store.record(self.key, self.sig, "direct", True)
+        original = self.path.read_bytes()
+        with self.assertRaises(SystemExit) as raised:
+            memory.main(["--host", "../private/film.mkv", "--store", str(self.path)])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(self.path.read_bytes(), original)
+
     def test_forget_only_one_receiver_and_other_history_survives(self):
         other = memory.receiver_key(host="192.168.1.20", port=8009)
         self.store.record(self.key, self.sig, "direct", False)
