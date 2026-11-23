@@ -1,0 +1,252 @@
+"""P0 multi-agent lifecycle: isolated worktrees, races and durable handovers.
+
+All Git tests use temporary repositories. No GUI, Chromecast, network or
+personal checkout is touched. The local bare remote models origin/develop.
+"""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import agent
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(cwd: Path, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(cwd), *args], text=True).strip()
+
+
+def seed_git(tmp: Path) -> tuple[Path, Path, Path]:
+    remote, seed = tmp / "remote.git", tmp / "seed"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    seed.mkdir()
+    run(seed, "init", "-q")
+    run(seed, "config", "user.email", "test@example.invalid")
+    run(seed, "config", "user.name", "SmoothCast Test")
+    run(seed, "checkout", "-qb", "develop")
+    (seed / "src").mkdir()
+    (seed / "scripts/ci").mkdir(parents=True)
+    (seed / "src/version.py").write_text("MAJOR = 1\nMINOR = 2\nPATCH = 51\n")
+    shutil.copy2(SOURCE_ROOT / "scripts/ci/check_version_history.py",
+                 seed / "scripts/ci/check_version_history.py")
+    (seed / "base.txt").write_text("base\n")
+    run(seed, "add", ".")
+    run(seed, "commit", "-qm", "baseline")
+    run(seed, "remote", "add", "origin", str(remote))
+    run(seed, "push", "-q", "-u", "origin", "develop")
+    a, b = tmp / "agent-a", tmp / "agent-b"
+    for name in (a, b):
+        subprocess.run(["git", "clone", "-q", "-b", "develop", str(remote), str(name)],
+                       check=True)
+        run(name, "config", "user.email", "test@example.invalid")
+        run(name, "config", "user.name", "SmoothCast Test")
+    return remote, a, b
+
+
+def commit(cwd: Path, filename: str, body: str) -> None:
+    path = cwd / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    run(cwd, "add", filename)
+    run(cwd, "commit", "-qm", f"test: {filename} (Refs #584)")
+
+
+def test_issue_packet_is_bounded_and_keeps_last_handover():
+    comments = [{"id": 1, "body": "Progress: old\nHandover: old"},
+                {"id": 3, "body": "Progress: latest\nHandover: one remaining test"}]
+    packet = agent.issue_context_packet(
+        584, {"title": "Coordinator", "body": "Edit src/cli.py\n" + "x" * 40000},
+        comments, "a" * 40,
+    )
+    assert "issue #584" in packet
+    assert "src/cli.py" in packet
+    assert "one remaining test" in packet
+    assert "old\nHandover: old" not in packet
+    assert len(packet) < 38000
+
+
+def test_start_rolls_back_lease_if_worktree_creation_fails(monkeypatch, tmp_path):
+    repo = tmp_path / "work"
+    repo.mkdir()
+    monkeypatch.setattr(agent, "ROOT", repo)
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "a" * 40)
+    monkeypatch.setattr(agent, "load_issue", lambda n: {
+        "title": "One", "body": "Edit src/cli.py", "state": "open"})
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: 0)
+    released = []
+    monkeypatch.setattr(agent, "release", lambda n, note: released.append(n))
+    monkeypatch.setattr(agent.subprocess, "run", lambda *a, **kw: SimpleNamespace(
+        returncode=1, stderr="cannot add worktree", stdout=""))
+    args = agent.build_parser().parse_args(["start", "584"])
+    assert agent.cmd_start(args) == 4
+    assert released == [584]
+
+
+def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    run(work, "init", "-q")
+    run(work, "config", "user.email", "test@example.invalid")
+    run(work, "config", "user.name", "SmoothCast Test")
+    (work / "existing.py").write_text("a = 1\n")
+    run(work, "add", ".")
+    run(work, "commit", "-qm", "baseline")
+    (work / "existing.py").write_text("a = 2\n")
+    (work / "untracked.py").write_text("not_auto_staged = True\n")
+    monkeypatch.setattr(agent, "ROOT", work)
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    a = argparse.Namespace(message="fix: small change", dry_run=False, files="")
+    assert agent.commit_private_slice(a) == 0
+    assert "Refs #584" in run(work, "log", "-1", "--format=%s")
+    assert "existing.py" in run(work, "show", "--format=", "--name-only", "HEAD")
+    assert "untracked.py" not in run(work, "show", "--format=", "--name-only", "HEAD")
+    a.files = "untracked.py"
+    a.message = "test: add source"
+    assert agent.commit_private_slice(a) == 0
+    assert "untracked.py" in run(work, "show", "--format=", "--name-only", "HEAD")
+    a.files = "../danger.py"
+    assert agent.commit_private_slice(a) == 2
+
+
+def test_dry_run_cannot_create_auto_commit(monkeypatch):
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    a = argparse.Namespace(message="fix: code", dry_run=True, files="")
+    assert agent.commit_private_slice(a) == 2
+
+
+def test_ship_records_true_multiline_handover_only_once(monkeypatch):
+    seen = []
+    comments = []
+    def gh(*args):
+        if args[0].endswith("/comments?per_page=100"):
+            return list(comments)
+        if args[:2] == ("-X", "POST"):
+            body = args[-1][5:]
+            comments.append({"body": body})
+            seen.append(body)
+            return {"id": 12}
+        raise AssertionError(args)
+    monkeypatch.setattr(agent, "gh", gh)
+    sha = "a" * 40
+    agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
+                                "compile passed", "more tests")
+    agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
+                                "compile passed", "more tests")
+    assert len(seen) == 1
+    assert "\nHandover: more tests\nCommit: " in seen[0]
+    assert f"<!-- sc-ship v1 sha={sha} -->" in seen[0]
+
+
+def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_path):
+    remote, a, b = seed_git(tmp_path)
+    commit(b, "b.txt", "B\n")
+    commit(a, "a.txt", "A\n")
+    run(a, "push", "-q", "origin", "HEAD:develop")
+    monkeypatch.setattr(agent, "ROOT", b)
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 0
+    run(b, "fetch", "-q", "origin", "develop")
+    assert (b / "a.txt").read_text() == "A\n"
+    assert (b / "b.txt").read_text() == "B\n"
+    history = run(b, "log", "origin/develop", "--format=%s")
+    assert "a.txt" in history and "b.txt" in history
+
+
+def test_lost_push_ack_is_not_a_failed_or_duplicated_commit(monkeypatch, tmp_path):
+    remote, a, b = seed_git(tmp_path)
+    commit(b, "b.txt", "B\n")
+    monkeypatch.setattr(agent, "ROOT", b)
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    real_run = subprocess.run
+    pushes = []
+    def lost_ack(command, **kwargs):
+        if command[:2] == ["git", "push"]:
+            ok = real_run(command, **kwargs)
+            assert ok.returncode == 0
+            pushes.append(1)
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="connection lost")
+        return real_run(command, **kwargs)
+    monkeypatch.setattr(agent.subprocess, "run", lost_ack)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 0
+    assert len(pushes) == 1
+    assert run(b, "rev-parse", "HEAD") == run(b, "rev-parse", "origin/develop")
+
+
+def test_competing_push_retries_and_keeps_both_changes(monkeypatch, tmp_path):
+    remote, a, b = seed_git(tmp_path)
+    commit(a, "a.txt", "A\n")
+    commit(b, "b.txt", "B\n")
+    monkeypatch.setattr(agent, "ROOT", b)
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    real_run = subprocess.run
+    pushes = []
+    def contest(command, **kwargs):
+        if command[:2] == ["git", "push"]:
+            pushes.append(1)
+            if len(pushes) == 1:
+                run(a, "push", "-q", "origin", "HEAD:develop")
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="non-fast-forward")
+        return real_run(command, **kwargs)
+    monkeypatch.setattr(agent.subprocess, "run", contest)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 0
+    assert len(pushes) == 2
+    assert (b / "a.txt").read_text() == "A\n"
+    assert (b / "b.txt").read_text() == "B\n"
+
+
+def test_invalid_version_jump_is_blocked_even_with_skip_checks(monkeypatch, tmp_path):
+    remote, a, b = seed_git(tmp_path)
+    commit(b, "src/version.py", "MAJOR = 1\nMINOR = 2\nPATCH = 53\n")
+    monkeypatch.setattr(agent, "ROOT", b)
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 6
+    assert run(b, "rev-parse", "HEAD") != run(b, "rev-parse", "origin/develop")
+
+
+def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp_path):
+    monkeypatch.setattr(agent, "ROOT", tmp_path)
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "a" * 40 if args[-1] != "--porcelain" else "")
+    monkeypatch.setattr(agent, "ticket_commits", lambda n: ["a" * 40])
+    original_run = subprocess.run
+    def fake_subprocess(args, **kwargs):
+        if args[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return SimpleNamespace(returncode=0)
+        raise AssertionError(args)
+    monkeypatch.setattr(agent.subprocess, "run", fake_subprocess)
+    state = []
+    def gh(*args):
+        if args[0].endswith("/comments?per_page=100"):
+            return [{"body": body} for body in state]
+        if args[:2] == ("-X", "POST"):
+            state.append(args[-1][5:])
+            return {"id": len(state)}
+        raise AssertionError(args)
+    monkeypatch.setattr(agent, "gh", gh)
+    released = []
+    closed = []
+    monkeypatch.setattr(agent, "release", lambda n, note: released.append(n))
+    monkeypatch.setattr(agent, "close_issue", lambda n: closed.append(n))
+    incomplete = agent.build_parser().parse_args(
+        ["finish", "--done", "implementation", "--next", "still testing", "--close"])
+    assert agent.cmd_finish(incomplete) == 2
+    complete = agent.build_parser().parse_args(
+        ["finish", "--done", "completed", "--next", "none",
+         "--verification", "tests: 10 passed", "--checklist", "all criteria", "--close"])
+    assert agent.cmd_finish(complete) == 0
+    assert agent.cmd_finish(complete) == 0
+    assert len(state) == 1
+    assert closed == [584, 584]  # REST closure itself is idempotent
+    assert released == [584, 584]
