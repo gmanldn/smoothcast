@@ -14,7 +14,7 @@ def _retry_js() -> str:
     start = "async function sendChunk(path,file,offset,end){"
     end = "// Keep only upload metadata."
     assert SOURCE.count(start) == 1
-    return SOURCE.split(start, 1)[1].split(end, 1)[0].join((start, ""))
+    return start + SOURCE.split(start, 1)[1].split(end, 1)[0]
 
 
 def test_upload_retry_reconciles_exact_offsets():
