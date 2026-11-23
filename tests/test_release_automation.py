@@ -369,6 +369,7 @@ class MainSyncRecoveryTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+        (self.root / "source").mkdir()
         self.source = Repo(self.root / "source")
         self.source.commit({"src/version.py": VERSION.format(1), "base.txt": "initial"})
         self.remote = self.root / "origin.git"
