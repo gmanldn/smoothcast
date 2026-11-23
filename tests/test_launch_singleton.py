@@ -83,6 +83,7 @@ class GuardBehaviourTests(unittest.TestCase):
     def test_unresponsive_instance_refuses_duplicate_without_killing(self):
         self.assertEqual(self.guard([101, 102], False, []), (3, []))
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc and session bus contract")
     def test_unprobeable_instance_is_left_alone(self):
         # No session bus or no gdbus: fail closed, never spawn a second GUI.
         self.assertEqual(self.guard([101], None, []), (3, []))
