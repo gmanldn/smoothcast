@@ -69,12 +69,14 @@ testing. Always describe actual evidence accurately.
 | Event | Work scheduled | Purpose |
 | --- | --- | --- |
 | Ordinary `develop` push | No full Verify, native packaging or CodeQL | Eliminate redundant work from parallel agents |
+| One nightly deferred run (after owner merges workflow into `main`) | Headless compile, Ruff and a compact security/reliability regression set on latest `develop` | Batch many commits into one bounded check; skip real GUI and native packaging |
 | Security-sensitive portal/auth/room/transfer file push | Headless Portal Security suite only | Catch high-consequence auth/ownership regressions |
 | Explicit Verify dispatch | Fast lane by default; full lane on MINOR/MAJOR | Owner-requested software qualification |
 | Explicit Portal Security dispatch or PR into `develop` | Headless suite plus private Xvfb GTK smoke | Deeper qualification, without touching user desktop |
 | Explicit Package dispatch or `v*` tag | Native Linux/macOS/Windows bundles | Avoid three-platform builds per edit |
 | Weekly CodeQL schedule or manual dispatch | Static security analysis | Detect accumulated issues without per-commit scans |
 
+- The nightly deferred workflow checks out **`develop` explicitly**, even though GitHub's cron uses the default branch's workflow definition. Its 15-minute budget and coalescing prevent runaway checks, and it never merges, pushes or tags anything.
 - Portal push paths are intentionally narrow: cosmetic changes, general UI
   tweaks and most docs/tests should not trigger its heavy integration tests.
   Coalescing cancels obsolete security runs when a newer relevant revision
