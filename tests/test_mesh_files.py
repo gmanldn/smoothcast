@@ -356,3 +356,61 @@ def test_proxy_exposes_mesh_generation_for_later_range_requests(origin):
         assert len(headers["X-SmoothCast-Generation"]) == 64
     finally:
         proxy.close()
+
+
+def test_mesh_stream_stops_instead_of_mixing_replaced_file_bytes():
+    """A same-length replacement after an upstream drop must truncate safely."""
+    from io import BytesIO
+
+    class Reply:
+        def __init__(self, payload, generation, *, broken=False):
+            self.status = 206
+            self.payload = payload
+            self.generation = generation
+            self.broken = broken
+
+        def getheader(self, name):
+            return {
+                "Content-Range": "bytes 4-7/8",
+                "Content-Length": "4",
+                "X-SmoothCast-Generation": self.generation,
+            }.get(name)
+
+        def read(self, _n):
+            if self.broken:
+                raise OSError("origin disconnected")
+            self.broken = True
+            return self.payload
+
+    class Connection:
+        def close(self):
+            pass
+
+    class Client:
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    client = Client()
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    retried = []
+    def reopen(_url, _key, requested_range, _head):
+        retried.append(requested_range)
+        return Connection(), Reply(b"WXYZ", "new-generation")
+    proxy._open = reopen
+    class Initial:
+        def __init__(self):
+            self.called = False
+
+        def read(self, _n):
+            if not self.called:
+                self.called = True
+                return b"ABCD"
+            raise OSError("upstream vanished")
+
+    proxy._pump(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                Connection(), Initial(), 0, 8, "8", None, "old-generation")
+    assert retried == ["bytes=4-7"]
+    assert client.wfile.getvalue() == b"ABCD"
+    assert client.close_connection is True
