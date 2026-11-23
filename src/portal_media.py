@@ -14,6 +14,7 @@ open time (regular file, no symlink swap) and never reveals the path.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -117,8 +118,21 @@ def transcode_slot() -> _Slot:
                               "of streams")
 
 
+def file_generation(info: os.stat_result) -> str:
+    """Opaque, cheap change detector for one open file; not a content digest.
+
+    fstat rather than path.stat ties identity to the descriptor being served.
+    The file may still change in place without reliable timestamps on unusual
+    filesystems; a full digest is intentionally not computed on the hot path.
+    """
+    identity = (info.st_dev, info.st_ino, info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns)
+    return hashlib.sha256(repr(identity).encode("ascii")).hexdigest()
+
+
 def serve_direct(handler, path: str | os.PathLike[str], mime: str, *,
                  head: bool = False,
+                 mesh_generation: bool = False,
                  write_headers: Callable[[int, dict], None]) -> None:
     """Send one file (or one byte range of it) to *handler*'s socket."""
     file, size = open_regular(path)
@@ -136,6 +150,8 @@ def serve_direct(handler, path: str | os.PathLike[str], mime: str, *,
         length = max(0, last - first + 1) if size else 0
         headers = {"Content-Type": mime, "Content-Length": str(length),
                    "Accept-Ranges": "bytes"}
+        if mesh_generation:
+            headers["X-SmoothCast-Generation"] = file_generation(os.fstat(file.fileno()))
         if status == 206:
             headers["Content-Range"] = f"bytes {first}-{last}/{size}"
         write_headers(status, headers)
