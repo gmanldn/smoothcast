@@ -107,6 +107,7 @@ class LifecycleMixin:
         if previewing and not duration:
             duration = self.queue_durations.get(self._preview_path, 0.0)
         if hovering:
+            self._refresh_thumbnail_strip(value, visible=previewing)
             self.elapsed_label.set_text(fmt_time(value))
             if duration:
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - value))}")
@@ -157,6 +158,7 @@ class LifecycleMixin:
         self._preview_path = None
         self._preview_position = 0.0
         self._preview_pending = None
+        self._refresh_thumbnail_strip(0.0, visible=False)
         self._unload_local_video()
         self.preview_picture.set_visible(False)
 

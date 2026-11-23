@@ -7,11 +7,19 @@ the selected film, stream index and preview generation; old film frames
 cannot be presented after another film is selected. The existing
 180ms debounce and single active background decoding job remain.
 
+While scrubbing, the desktop shows up to five cached neighboring frames in a
+strip beneath the seekbar. The strip is populated only from images already in
+the bounded LRU, so it never schedules extra decoders; it fills progressively
+as the user scrubs across new slots. Each tile is labelled with its source
+timestamp and selecting one seeks to that exact timestamp. It remains visible
+after the pointer leaves the seekbar so the tiles can be selected, and resets
+when the selected film is cleared.
+
 Explicit seeks, local playhead updates and frame stepping bypass slot
 quantisation and remain source-time-accurate. Subtitle cue lookup still
 uses the user's exact hovered source timestamp.
 
 Regression: pytest -q tests/test_sparse_thumbnail_cache.py.
-Full issue #40 is still OPEN: a visible row/strip of adjacent thumbnails
-and isolated GUI UX verification remain to implement. Hardware checks
-are tracked through #208.
+The GTK strip itself is not launched in routine tests; isolated GUI UX
+verification remains a separate acceptance check. Hardware checks are tracked
+through #208.

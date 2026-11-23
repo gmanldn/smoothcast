@@ -40,6 +40,22 @@ def test_cache_rejects_invalid_limits_and_handles_unknown_positions():
         assert cache.sample(position) == 0
 
 
+def test_nearby_returns_only_same_source_generation_and_stream_in_time_order():
+    cache = screenshot.SparseFrameCache(interval=10, max_entries=8)
+    for position in (0, 10, 20, 30):
+        cache.put(cache.key("film.mkv", 4, 2, position),
+                  b"\xff\xd8" + str(position).encode())
+    cache.put(cache.key("other.mkv", 4, 2, 20), b"\xff\xd8other")
+    cache.put(cache.key("film.mkv", 3, 2, 20), b"\xff\xd8old")
+    cache.put(cache.key("film.mkv", 4, 1, 20), b"\xff\xd8stream")
+
+    frames = cache.nearby("film.mkv", 4, 2, 19, radius=2)
+    assert frames == [(0, b"\xff\xd80"), (10, b"\xff\xd810"),
+                      (20, b"\xff\xd820"), (30, b"\xff\xd830")]
+    assert len(cache.nearby("film.mkv", 4, 2, 19, limit=2)) == 2
+    assert cache.nearby("film.mkv", 4, 2, 19, limit=0) == []
+
+
 def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
     decode = mock.Mock(return_value=b"\xff\xd8JPEG")
     show = mock.Mock()
@@ -61,7 +77,9 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
                                  Error=ValueError, timeout_add=lambda *_: 1),
         "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
     }
-    source = main_window_methods()["_start_preview"]
+    methods = main_window_methods()
+    source = "\n\n".join(methods[name] for name in
+                           ("_start_preview", "_refresh_thumbnail_strip"))
     exec(compile("class Window:\n" + textwrap.indent(textwrap.dedent(source), "    "),
                  "<preview-cache>", "exec"), ns)
     window = ns["Window"]()
@@ -91,3 +109,41 @@ def test_hover_is_approximate_only_while_exact_frame_step_remains_precise():
     assert "if self._preview_busy" in methods["_start_preview"]
     assert "cached = cache.get(key)" in methods["_start_preview"]
     assert "pathlib.Path(path), position, video_stream_index=video_index" in methods["_start_preview"]
+    assert "self._refresh_thumbnail_strip(position, visible=True)" in methods["_start_preview"]
+    assert "self.seek_to(positions[index])" in methods["_on_thumbnail_clicked"]
+
+
+def test_thumbnail_strip_uses_nearby_cached_frames_and_exact_click_positions():
+    methods = main_window_methods()
+    names = ("_refresh_thumbnail_strip", "_on_thumbnail_clicked")
+    source = "\n\n".join(methods[name] for name in names)
+    ns = {
+        "Gdk": SimpleNamespace(Texture=SimpleNamespace(new_from_bytes=lambda data: data)),
+        "GLib": SimpleNamespace(Bytes=SimpleNamespace(new=lambda data: data)),
+        "fmt_time": lambda value: f"{value:g}",
+    }
+    exec(compile("class Window:\n" + textwrap.indent(textwrap.dedent(source), "    "),
+                 "<thumbnail-strip>", "exec"), ns)
+    window = ns["Window"]()
+    window._preview_path, window._preview_generation = "film.mkv", 1
+    window.media = SimpleNamespace(is_audio_only=False, video_stream_index=0)
+    window._sparse_frame_cache = screenshot.SparseFrameCache(interval=10)
+    for moment in (0, 10, 20):
+        window._sparse_frame_cache.put(
+            window._sparse_frame_cache.key("film.mkv", 1, 0, moment),
+            b"\xff\xd8" + str(moment).encode(),
+        )
+    window.thumbnail_strip = SimpleNamespace(set_visible=mock.Mock())
+    window.thumbnail_buttons = [SimpleNamespace(set_visible=mock.Mock()) for _ in range(5)]
+    window.thumbnail_pictures = [SimpleNamespace(set_paintable=mock.Mock()) for _ in range(5)]
+    window.thumbnail_times = [SimpleNamespace(set_text=mock.Mock()) for _ in range(5)]
+    window._refresh_thumbnail_strip(11, visible=True)
+    assert window._thumbnail_positions == [0, 10, 20]
+    assert [button.set_visible.call_args.args[0] for button in window.thumbnail_buttons] == [
+        True, True, True, False, False,
+    ]
+    window.seek_to = mock.Mock()
+    window._on_thumbnail_clicked(None, 1)
+    window.seek_to.assert_called_once_with(10)
+    window._refresh_thumbnail_strip(11, visible=False)
+    window.thumbnail_strip.set_visible.assert_called_with(False)

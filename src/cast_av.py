@@ -27,7 +27,7 @@ import audio_monitor
 
 import screenshot
 
-from cast_widgets import save_config, Async
+from cast_widgets import save_config, Async, fmt_time
 
 
 class AvMixin:
@@ -445,6 +445,8 @@ class AvMixin:
                         self.preview_picture.set_visible(False)
                 else:
                     self.preview_picture.set_visible(False)
+                if sparse:
+                    self._refresh_thumbnail_strip(position, visible=True)
             if self._preview_pending is not None and not self._preview_timer_id:
                 self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
 
@@ -488,6 +490,46 @@ class AvMixin:
             done=finish, failed=lambda _error: finish(), domain="media",
         )
         return False
+
+
+    def _refresh_thumbnail_strip(self, position: float, *, visible: bool) -> None:
+        """Show nearby cached hover frames; this method never starts a decoder."""
+        strip = getattr(self, "thumbnail_strip", None)
+        if strip is None:
+            return
+        media = self.media
+        if (not visible or self._preview_path is None or media is None
+                or media.is_audio_only):
+            strip.set_visible(False)
+            self._thumbnail_positions = []
+            return
+        cache = getattr(self, "_sparse_frame_cache", None)
+        entries = cache.nearby(
+            self._preview_path, self._preview_generation,
+            media.video_stream_index, position,
+        ) if cache is not None else []
+        self._thumbnail_positions = []
+        for index, (button, picture, label) in enumerate(zip(
+                self.thumbnail_buttons, self.thumbnail_pictures,
+                self.thumbnail_times)):
+            if index < len(entries):
+                moment, image = entries[index]
+                picture.set_paintable(Gdk.Texture.new_from_bytes(GLib.Bytes.new(image)))
+                label.set_text(fmt_time(moment))
+                button.set_visible(True)
+                self._thumbnail_positions.append(moment)
+            else:
+                picture.set_paintable(None)
+                label.set_text("")
+                button.set_visible(False)
+        strip.set_visible(bool(entries))
+
+
+    def _on_thumbnail_clicked(self, _button, index: int) -> None:
+        """Jump to the exact source timestamp represented by a cached tile."""
+        positions = getattr(self, "_thumbnail_positions", [])
+        if 0 <= index < len(positions):
+            self.seek_to(positions[index])
 
 
     def _queue_preview(self, position: float, *, sparse: bool = False) -> None:

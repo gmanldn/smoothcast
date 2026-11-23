@@ -266,6 +266,31 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         clock_row.append(self.seekbar)
         clock_row.append(self.remaining_label)
         body.append(clock_row)
+        self.thumbnail_strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.thumbnail_strip.set_halign(Gtk.Align.CENTER)
+        self.thumbnail_strip.set_visible(False)
+        self.thumbnail_buttons = []
+        self.thumbnail_pictures = []
+        self.thumbnail_times = []
+        for index in range(5):
+            tile = Gtk.Button()
+            tile.add_css_class("flat")
+            tile.set_size_request(112, 76)
+            content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            picture = Gtk.Picture()
+            picture.set_content_fit(Gtk.ContentFit.COVER)
+            picture.set_size_request(104, 54)
+            time_label = Gtk.Label(label="", xalign=0.5)
+            time_label.add_css_class("caption")
+            content.append(picture)
+            content.append(time_label)
+            tile.set_child(content)
+            tile.connect("clicked", self._on_thumbnail_clicked, index)
+            self.thumbnail_strip.append(tile)
+            self.thumbnail_buttons.append(tile)
+            self.thumbnail_pictures.append(picture)
+            self.thumbnail_times.append(time_label)
+        body.append(self.thumbnail_strip)
 
         transport = Gtk.Grid(column_spacing=8, row_spacing=8)
         transport.set_halign(Gtk.Align.CENTER)

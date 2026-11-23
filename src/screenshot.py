@@ -45,6 +45,26 @@ class SparseFrameCache:
         while len(self._images) > self.max_entries:
             self._images.popitem(last=False)
 
+    def nearby(
+        self, path: str, generation: int, stream: int, position: float,
+        *, radius: int = 2, limit: int = 5,
+    ) -> list[tuple[float, bytes]]:
+        """Return cached frames around a hover time, in source-time order."""
+        if radius < 0 or limit < 1:
+            return []
+        center = self.bucket(position)
+        matches = [
+            (bucket, image) for (source, gen, video_stream, bucket), image
+            in self._images.items()
+            if source == str(path) and gen == generation and video_stream == stream
+            and abs(bucket - center) <= radius
+        ]
+        matches.sort(key=lambda item: item[0])
+        if len(matches) > limit:
+            matches = sorted(matches, key=lambda item: (abs(item[0] - center), item[0]))[:limit]
+            matches.sort(key=lambda item: item[0])
+        return [(bucket * self.interval, image) for bucket, image in matches]
+
 
 class CaptureError(RuntimeError):
     """A screenshot could not be captured."""
