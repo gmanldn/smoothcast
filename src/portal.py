@@ -2356,12 +2356,33 @@ async function uploadStorage(mode, operation){
   }catch(_){return undefined}
 }
 const UPLOAD_FINGERPRINT_BYTES=64*1024;
-async function firstChunkHash(file,chunkSize,legacy=false){
-  // Resume recognition is not a security digest. Never hash an 8 MiB upload
-  // chunk on the UI thread: two 32-bit integer hashes of 64 KiB are bounded.
-  const count=Math.min(file.size,legacy?chunkSize:UPLOAD_FINGERPRINT_BYTES);
-  if(!legacy){
-    const bytes=new Uint8Array(await file.slice(0,count).arrayBuffer());
+async function firstChunkHash(file,chunkSize,version=3){
+  // Recognition only, NOT a content digest. v3 samples first, middle and last
+  // blocks to reject most accidental file substitutions without an 8 MiB hash
+  // on the browser main thread; bytes read are bounded to 192 KiB.
+  if(version===3){
+    const width=Math.min(file.size,UPLOAD_FINGERPRINT_BYTES);
+    const offsets=[0,Math.floor((file.size-width)/2),file.size-width];
+    let a=0x811c9dc5,b=0x9e3779b9;
+    for(const offset of [...new Set(offsets)]){
+      // Include sample position so moving blocks cannot alias each other.
+      for(let n=offset;n>0;n=Math.floor(n/256)){
+        const byte=n%256;
+        a=Math.imul(a^byte,0x01000193);
+        b=Math.imul(b^byte,0x85ebca6b);
+      }
+      const bytes=new Uint8Array(await file.slice(offset,offset+width).arrayBuffer());
+      for(const byte of bytes){
+        a=Math.imul(a^byte,0x01000193);
+        b=Math.imul(b^byte,0x85ebca6b);
+      }
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+    return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
+  }
+  if(version===2){
+    // Existing v2 IndexedDB records used only the first 64 KiB.
+    const bytes=new Uint8Array(await file.slice(0,Math.min(file.size,UPLOAD_FINGERPRINT_BYTES)).arrayBuffer());
     let a=0x811c9dc5,b=0x9e3779b9;
     for(const byte of bytes){
       a=Math.imul(a^byte,0x01000193);
@@ -2369,8 +2390,8 @@ async function firstChunkHash(file,chunkSize,legacy=false){
     }
     return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
   }
-  // Older IndexedDB records store FNV-1a 64 over the former full chunk.
-  // Preserve resumability but yield between bounded blocks to keep UI live.
+  // Legacy v1 FNV-1a 64 over the full negotiated chunk. Yield for UI health.
+  const count=Math.min(file.size,chunkSize);
   let hash=0xcbf29ce484222325n;
   for(let offset=0;offset<count;offset+=16*1024){
     const bytes=new Uint8Array(await file.slice(offset,Math.min(count,offset+16*1024)).arrayBuffer());
@@ -2381,7 +2402,7 @@ async function firstChunkHash(file,chunkSize,legacy=false){
 }
 async function matchesPendingFile(file,upload){
   return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
-    &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion!==2)===upload.hash;
+    &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion||1)===upload.hash;
 }
 async function clearPendingUpload(){
   const id=pendingUpload?.id;
@@ -2489,7 +2510,7 @@ $("uploadButton").addEventListener("click",async()=>{
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
-        const record={...pendingUpload,hashVersion:2,hash:await firstChunkHash(file,chunkSize)};
+        const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
       }
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
