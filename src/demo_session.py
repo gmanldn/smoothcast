@@ -18,18 +18,23 @@ from typing import Iterator
 @dataclass(frozen=True)
 class DemoSession:
     root: Path
+    home: Path
     config_home: Path
     cache_home: Path
     data_home: Path
+    state_home: Path
     runtime_dir: Path
     media_dir: Path
 
     def environment(self) -> dict[str, str]:
-        """Apply these overrides before importing native or settings modules."""
+        """Apply before native imports: some modules still use Path.home()."""
         return {
+            "HOME": str(self.home),
+            "USERPROFILE": str(self.home),
             "XDG_CONFIG_HOME": str(self.config_home),
             "XDG_CACHE_HOME": str(self.cache_home),
             "XDG_DATA_HOME": str(self.data_home),
+            "XDG_STATE_HOME": str(self.state_home),
             "XDG_RUNTIME_DIR": str(self.runtime_dir),
         }
 
@@ -47,13 +52,15 @@ def isolated_demo_profile(parent: Path | None = None) -> Iterator[DemoSession]:
     """
     with tempfile.TemporaryDirectory(prefix="smoothcast-demo-", dir=parent) as temp:
         root = Path(temp).resolve(strict=True)
-        paths = {name: root / name
-                 for name in ("config", "cache", "data", "runtime", "media")}
+        paths = {name: root / name for name in (
+            "home", "config", "cache", "data", "state", "runtime", "media"
+        )}
         for directory in paths.values():
             directory.mkdir(mode=0o700)
         session = DemoSession(
-            root=root, config_home=paths["config"], cache_home=paths["cache"],
-            data_home=paths["data"], runtime_dir=paths["runtime"],
+            root=root, home=paths["home"], config_home=paths["config"],
+            cache_home=paths["cache"], data_home=paths["data"],
+            state_home=paths["state"], runtime_dir=paths["runtime"],
             media_dir=paths["media"],
         )
         config = {
