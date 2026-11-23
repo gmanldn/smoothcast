@@ -31,12 +31,16 @@ python3 scripts/agent.py board
 python3 scripts/agent.py next
 python3 scripts/agent.py claim N --files src/module.py
 python3 scripts/agent.py ship
+python3 scripts/agent.py progress N --done "..." --next "..." --commit SHA --release
 python3 scripts/agent.py done N --why "..." --checklist "..."
 ```
 
-Read the chosen issue and recent comments. Exit 3 from `claim` means
-another agent won: pick again. Release blocked claims promptly. Only close
-when acceptance criteria actually pass. The fallback
+Read the chosen issue, prior handovers, commits and recent comments **before**
+editing. Claims are 90-minute default leases, never permanent ownership;
+assignees or stale `in-flight` labels are not locks. Exit 3 from `claim`
+means another agent won: pick again. Post durable progress and remaining work
+then release promptly. Only close when acceptance criteria actually pass.
+[Coordination rules](docs/COORDINATION.md). The fallback
 `python3 scripts/ticket_digest.py --next --label agent-ready` is
 read-only and **not claim-aware**; never assume its result is unclaimed.
 
