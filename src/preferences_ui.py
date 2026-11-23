@@ -9,7 +9,6 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 import library_folders_ui
-import picture_check
 import preference_choices
 import picture_adjustments
 from preferences_picture_ui import PicturePreferencesMixin
