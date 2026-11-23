@@ -26,7 +26,7 @@ _CONTENT_RANGE = re.compile(r"bytes (\d+)-(\d+)/(\d+|\*)")
 
 
 def _valid_resume(reply, start: int, end: int, total: str | None,
-                  etag: str | None) -> bool:
+                  etag: str | None, generation: str | None = None) -> bool:
     """Only append bytes that continue the original range and object."""
     if reply.status != 206:
         return False
@@ -44,6 +44,8 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
     if length != end - start + 1:
         return False
     if etag is not None and reply.getheader("ETag") != etag:
+        return False
+    if generation is not None and reply.getheader("X-SmoothCast-Generation") != generation:
         return False
     return True
 
@@ -99,6 +101,7 @@ class MeshFiles:
             mime = mimetypes.guess_type(str(local))[0] or "application/octet-stream"
             with portal_media.stream_slot():
                 portal_media.serve_direct(handler, local, mime, head=head,
+                                          mesh_generation=True,
                                           write_headers=write_headers)
             return
         if proxied:  # a proxied request is never proxied again (no loops)
@@ -142,6 +145,10 @@ class MeshFiles:
                 return False
             headers = {"Content-Type": reply.getheader("Content-Type") or "application/octet-stream",
                        "Accept-Ranges": "bytes"}
+            generation = reply.getheader("X-SmoothCast-Generation")
+            if generation is not None:
+                # Internal generation only; do not expose origin filesystem identity.
+                headers["X-SmoothCast-Generation"] = generation
             try:
                 length = int(reply.getheader("Content-Length") or "")
             except ValueError:
@@ -173,13 +180,14 @@ class MeshFiles:
                 return True
             with portal_media.stream_slot():
                 self._pump(handler, key, url, conn, reply, start, length, total,
-                           reply.getheader("ETag"))
+                           reply.getheader("ETag"), generation)
             return True
         finally:
             conn.close()
 
     def _pump(self, handler, key: str, url: str, conn, reply, start: int, length: int,
-              total: str | None, etag: str | None) -> None:
+              total: str | None, etag: str | None,
+              generation: str | None = None) -> None:
         sent, retries = 0, 0
         try:
             while sent < length:
@@ -198,7 +206,8 @@ class MeshFiles:
                             url, key, f"bytes={start + sent}-{last}", False)
                     except OSError:
                         continue
-                    if not _valid_resume(reply, start + sent, last, total, etag):
+                    if not _valid_resume(
+                            reply, start + sent, last, total, etag, generation):
                         return
                     continue
                 try:
