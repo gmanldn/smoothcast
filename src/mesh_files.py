@@ -120,10 +120,13 @@ class MeshFiles:
                 total = str(size)
                 if not _matches_request(range_header, 206, start, last, size):
                     return False
-            write_headers(reply.status, headers)
             if head or length == 0:
+                write_headers(reply.status, headers)
                 return True
+            # Acquire capacity BEFORE sending HTTP success. A full stream pool
+            # must produce a real 503, not corrupt an already committed 200/206.
             with portal_media.stream_slot():
+                write_headers(reply.status, headers)
                 self._pump(handler, key, url, conn, reply, start, length, total,
                            reply.getheader("ETag"), generation)
             return True
