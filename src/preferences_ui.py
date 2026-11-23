@@ -102,6 +102,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self.portal_port_spin = Gtk.SpinButton.new_with_range(49152, 65535, 1)
         self.portal_port_spin.set_numeric(True)
+        self.portal_port_spin.update_property([Gtk.AccessibleProperty.LABEL], ["Room remote port"])
         room_port_row.add_suffix(self.portal_port_spin)
         room_port_row.set_activatable_widget(self.portal_port_spin)
         self.portal_port_spin.connect("value-changed", self._change_portal_port)

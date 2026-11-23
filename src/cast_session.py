@@ -1120,6 +1120,7 @@ class SessionMixin:
         dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
         entry = Gtk.Entry()
         entry.set_placeholder_text("https://...")
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Stream URL"])
         dialog.set_extra_child(entry)
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("open", "Open")

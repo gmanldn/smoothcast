@@ -84,6 +84,7 @@ class BookmarkUiMixin:
         entry.set_text(f"Bookmark {len(bookmarks.clean(self.cfg.get('bookmarks'))) + 1}")
         entry.set_max_length(bookmarks.MAX_LABEL)
         entry.set_activates_default(True)
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Bookmark name"])
         dialog = Adw.AlertDialog.new("Save bookmark", f"{media} at {fmt_time(position)}")
         dialog.set_extra_child(entry)
         dialog.add_response("cancel", "Cancel")

@@ -306,6 +306,7 @@ class LifecycleMixin:
         box.append(Gtk.Label(label="Playback speed (0.25x - 4x)", xalign=0.0))
         spin = Gtk.SpinButton.new_with_range(0.25, 4.0, 0.05)
         spin.set_digits(2)
+        spin.update_property([Gtk.AccessibleProperty.LABEL], ["Playback speed"])
         spin.set_value(min(4.0, max(0.25, float(self.cfg.get("playback_speed", 1.0)))))
         box.append(spin)
         apply = Gtk.Button(label="Apply")

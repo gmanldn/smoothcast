@@ -156,6 +156,7 @@ class SettingsCardMixin:
         burn_label.set_tooltip_text("Slower CPU encode — only if the TV cannot show CC tracks")
         self.burn_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.burn_switch.set_active(bool(self.cfg["burn_subs"]))
+        self.burn_switch.update_property([Gtk.AccessibleProperty.LABEL], ["Burn subtitles into video"])
         self.burn_switch.connect("notify::active", self._on_burn)
         burn_row.append(burn_label)
         burn_row.append(self.burn_switch)

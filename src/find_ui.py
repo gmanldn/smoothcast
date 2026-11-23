@@ -23,6 +23,7 @@ class FindWindow(Adw.Window):
         self._ticket = 0
         self.set_default_size(560, 600)
         self.entry = Gtk.SearchEntry(placeholder_text="Search films, shows and music in every computer")
+        self.entry.update_property([Gtk.AccessibleProperty.LABEL], ["Search every computer"])
         self.entry.connect("search-changed", self._queue_search)
         self.status = Gtk.Label(xalign=0, wrap=True)
         self.status.add_css_class("dim-label")

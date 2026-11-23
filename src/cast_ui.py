@@ -289,6 +289,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             content.append(picture)
             content.append(time_label)
             tile.set_child(content)
+            tile.update_property([Gtk.AccessibleProperty.LABEL], ["Jump to preview frame"])
             tile.connect("clicked", self._on_thumbnail_clicked, index)
             thumbnail_tiles.append(tile)
             self.thumbnail_buttons.append(tile)
@@ -860,6 +861,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         box.set_hexpand(True)
         switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         switch.set_active(active)
+        switch.update_property([Gtk.AccessibleProperty.LABEL], [label])
         switch.connect("notify::active", callback)
         switch.subtitle_label = sub
         row.append(box)
