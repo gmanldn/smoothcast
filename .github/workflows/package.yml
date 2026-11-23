@@ -3,41 +3,17 @@ name: Package SmoothCast
 # Build only when packaging inputs change, on a real release tag, or by
 # explicit dispatch. A continuously updated develop -> main release PR carries
 # the entire unmerged diff and must NOT rebuild three platforms on every push.
+# Native packaging is expensive. Never rebuild for ordinary develop pushes.
+# The owner requests a build explicitly, or a published version tag triggers it.
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [develop]
-    paths:
-      - 'packaging/**'
-      - 'scripts/build_release.py'
-      - 'scripts/ci/verify_frozen_artifact.py'
-      - 'scripts/ci/archive_frozen_artifact.py'
-      - 'src/frozen_*'
-      - 'src/castctl.py'
-      - 'src/streamer.py'
-      - 'src/cli.py'
-      - 'pyproject.toml'
-      - '.github/workflows/package.yml'
   push:
-    branches: [develop]
     tags: ['v*']
-    paths:
-      - 'packaging/**'
-      - 'scripts/build_release.py'
-      - 'scripts/ci/verify_frozen_artifact.py'
-      - 'scripts/ci/archive_frozen_artifact.py'
-      - 'src/frozen_*'
-      - 'src/castctl.py'
-      - 'src/streamer.py'
-      - 'src/cli.py'
-      - 'pyproject.toml'
-      - '.github/workflows/package.yml'
 
 permissions:
   contents: read
 
-# Keep one running build and only the latest pending build per ref. Never
-# cancel an active release-tag build; tags use separate ref-keyed groups.
+# Coalesce manual requests per ref, retain tag-specific release builds.
 concurrency:
   group: smoothcast-package-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
