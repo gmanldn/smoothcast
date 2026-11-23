@@ -18,18 +18,18 @@ _PANEL = r"""
 <style>
 #meshPanel .mesh-sum{font-weight:650;margin:.2rem 0 .6rem}
 #meshPanel ul{margin:0 0 10px;padding:0;list-style:none}
-#meshPanel li.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;border-top:1px solid #ffffff10;padding:9px 0;min-height:44px}
+#meshPanel li.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;border-top:1px solid var(--line);padding:9px 0;min-height:44px}
 #meshPanel li.row:first-child{border-top:0}
-#meshPanel .dot{width:12px;height:12px;border-radius:50%;background:#7e8a99;display:inline-block}
-#meshPanel .dot.ready,#meshPanel .dot.self,#meshPanel .dot.alive{background:#5fd3a0}
-#meshPanel .dot.busy{background:#ffd166}#meshPanel .dot.stale{background:#b0a07a}#meshPanel .dot.unreachable{background:#ff8a7a}
+#meshPanel .dot{width:12px;height:12px;border-radius:50%;background:var(--dim);display:inline-block}
+#meshPanel .dot.ready,#meshPanel .dot.self,#meshPanel .dot.alive{background:var(--accent)}
+#meshPanel .dot.busy{background:var(--focus)}#meshPanel .dot.stale{background:var(--muted)}#meshPanel .dot.unreachable{background:var(--danger)}
 #meshPanel .t{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#meshPanel .s{font-size:.8rem;color:#b7c3d0;grid-column:2}
+#meshPanel .s{font-size:.8rem;color:var(--muted);grid-column:2}
 #meshPanel .st{font-size:.8rem;grid-column:3;grid-row:1;text-align:right}
-#meshPanel .why{font-size:.78rem;color:#ffd7a8;grid-column:2 / 4}
-#meshPanel .badge{font-size:.68rem;border:1px solid #ffffff40;border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
-#meshPanel h3{font-size:.9rem;margin:12px 0 2px;color:#b7c3d0}
-#meshPanel .conn{font-size:.8rem;color:#ffd7a8;min-height:1.2em}
+#meshPanel .why{font-size:.78rem;color:var(--danger);grid-column:2 / 4}
+#meshPanel .badge{font-size:.68rem;border:1px solid var(--border);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+#meshPanel h3{font-size:.9rem;margin:12px 0 2px;color:var(--muted)}
+#meshPanel .conn{font-size:.8rem;color:var(--danger);min-height:1.2em}
 @media(prefers-reduced-motion:no-preference){#meshPanel li.row{animation:meshin .2s ease-out}}
 @keyframes meshin{from{opacity:0}to{opacity:1}}
 </style>
