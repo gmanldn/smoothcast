@@ -8,6 +8,7 @@ results.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 
 @dataclass(frozen=True)
@@ -74,19 +75,18 @@ PROFILES: dict[str, ReceiverProfile] = {
 }
 
 
+_LEVEL = re.compile(r"(?:[1-9]|[1-9][0-9])\\.[0-9]\\Z")
+
+
 def level_tuple(value: object) -> tuple[int, int] | None:
+    """Parse a canonical codec level; reject malformed values without guessing."""
     if value is None:
         return None
-    try:
-        major, minor = str(value).split(".", maxsplit=1)
-        parsed_major, parsed_minor = int(major), int(minor)
-        # Cast H.264/HEVC level components use nonnegative decimal digits.
-        # Reject malformed levels rather than treating them as below a limit.
-        if parsed_major < 0 or not 0 <= parsed_minor <= 9:
-            return None
-        return parsed_major, parsed_minor
-    except (ValueError, TypeError):
+    text = str(value)
+    if not _LEVEL.fullmatch(text):
         return None
+    major, minor = text.split(".")
+    return int(major), int(minor)
 
 
 def supports(profile: str, stream: object) -> bool:
