@@ -15,6 +15,7 @@ from utils import pretty_title
 import cast_targets
 
 import responsive_layout
+import queue_accessibility
 
 import buffer_health
 import notifications
@@ -1278,7 +1279,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         # Queue rows are retained during playback changes; update the spoken
         # current/queued state without an O(n) rebuild on every status refresh.
         if hasattr(self, "queue_list"):
-            self._sync_queue_accessible_states()
+            queue_accessibility.sync_rows(self, Gtk)
         online = self.device_state != "OFFLINE"
         playing = self.device_state in {"PLAYING", "BUFFERING"}
         paused = self.device_state == "PAUSED"
