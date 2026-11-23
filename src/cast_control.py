@@ -521,6 +521,7 @@ class CastControlApp(Adw.Application):
             pathlib.Path(__file__).resolve().parent.parent,
             enabled=bool(cfg.get("check_release_updates", False)),
             verify=bool(cfg.get("release_check_verify", True)),
+            channel=cfg.get("update_channel", "develop"),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
