@@ -47,7 +47,23 @@ def _added_since_last_tag(root: Path) -> int | None:
     return sum(1 for line in out.splitlines() if line.startswith("A") and line.endswith(".py"))
 
 
-def measure(root: Path = ROOT, *, with_git: bool = True) -> dict:
+def _digest_next_bytes(root: Path) -> int | None:
+    """Measure real --next output when requested; normal tests remain offline."""
+    script = root / "scripts" / "ticket_digest.py"
+    if not script.is_file():
+        return None
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--next"], cwd=root,
+            check=False, capture_output=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return len(result.stdout) if result.returncode == 0 else None
+
+
+def measure(root: Path = ROOT, *, with_git: bool = True,
+            with_issue_digest: bool = False) -> dict:
     src = root / "src"
     lines: dict[str, int] = {}
     funcs: list[tuple[str, int]] = []
@@ -71,6 +87,7 @@ def measure(root: Path = ROOT, *, with_git: bool = True) -> dict:
         "longest_functions": sorted(funcs, key=lambda item: (-item[1], item[0]))[:TOP],
         "most_top_level_imports": sorted(imports.items(), key=lambda item: (-item[1], item[0]))[:TOP],
         "modules_added_since_last_tag": _added_since_last_tag(root) if with_git else None,
+        "ticket_digest_next_bytes": _digest_next_bytes(root) if with_issue_digest else None,
         "agents_md_bytes": (root / "AGENTS.md").stat().st_size if (root / "AGENTS.md").exists() else 0,
         "handbook_bytes": sum(p.stat().st_size for p in handbook if p.exists()),
     }
@@ -97,7 +114,8 @@ def render(report: dict) -> str:
            "largest modules: " + ", ".join(f"{n} {c}" for n, c in report["largest_modules"][:5]),
            "longest functions: " + ", ".join(f"{n} {c}" for n, c in report["longest_functions"][:5]),
            f"modules over {LARGE_MODULE} lines: {len(report['modules_over_limit'])}",
-           f"modules added since last tag: {report['modules_added_since_last_tag']}"]
+           f"modules added since last tag: {report['modules_added_since_last_tag']}",
+           f"ticket digest --next bytes: {report.get('ticket_digest_next_bytes')}"]
     return "\n".join(out)
 
 
@@ -106,8 +124,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write-baseline", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--with-issue-digest", action="store_true",
+                        help="measure live --next output; opt-in network I/O")
     args = parser.parse_args(argv)
-    report = measure()
+    report = measure(with_issue_digest=args.with_issue_digest)
     if args.write_baseline:
         BASELINE.write_text(json.dumps(
             {k: report[k] for k in ("src_lines", "src_modules", "modules", "agents_md_bytes",
