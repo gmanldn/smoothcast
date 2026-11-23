@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SmoothCast
+Comment=Play media on compatible TVs and room screens
+Exec=smoothcast
+Icon=io.github.gmanldn.SmoothCast
+Terminal=false
+StartupNotify=true
+StartupWMClass=local.cast-control
+Categories=AudioVideo;Video;Audio;
+Keywords=cast;chromecast;stream;video;audio;
