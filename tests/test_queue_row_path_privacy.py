@@ -30,7 +30,9 @@ def private_path_reads(method: ast.FunctionDef) -> list[ast.Call]:
 
 def test_tooltip_uses_display_title_never_absolute_source_path():
     row = method_in("queue_row_ui.py", "_queue_row")
-    tooltip = calls_to(row, "set_tooltip_text")
+    # The drag handle has its own static usage hint; inspect only the row title.
+    tooltip = [call for call in calls_to(row, "set_tooltip_text")
+               if isinstance(call.func.value, ast.Name) and call.func.value.id == "row"]
     assert len(tooltip) == 1
     assert isinstance(tooltip[0].args[0], ast.Name)
     assert tooltip[0].args[0].id == "display_title"
