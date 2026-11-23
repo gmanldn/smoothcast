@@ -83,6 +83,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
         self._publish_portal_status()
+        if self.queue:
+            self._save_room_checkpoint()
         return True
 
     def _show_portal_qr(self, url: str | None) -> None:

@@ -45,7 +45,7 @@ def load_checkpoint(path: Path) -> LoadResult:
         return LoadResult()
     try:
         cache_privacy.ensure_private_directory(path.parent)
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         descriptor = os.open(path, flags)
         try:
             metadata = os.fstat(descriptor)
@@ -58,9 +58,12 @@ def load_checkpoint(path: Path) -> LoadResult:
                     os.fchmod(descriptor, 0o600)
             if metadata.st_size > MAX_CHECKPOINT_BYTES:
                 return LoadResult(error="Checkpoint is larger than the supported limit")
-            with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            with os.fdopen(descriptor, "rb") as stream:
                 descriptor = -1
-                payload = json.load(stream)
+                content = stream.read(MAX_CHECKPOINT_BYTES + 1)
+            if len(content) > MAX_CHECKPOINT_BYTES:
+                return LoadResult(error="Checkpoint is larger than the supported limit")
+            payload = json.loads(content.decode("utf-8"))
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
@@ -86,11 +89,17 @@ def load_checkpoint(path: Path) -> LoadResult:
             unavailable += 1
             continue
         try:
-            metadata = Path(value).stat()
-            if not stat.S_ISREG(metadata.st_mode) or not os.access(value, os.R_OK):
+            media = Path(value)
+            # Progressive or interrupted uploads can still exist as regular
+            # files. A restart has no completion record for a .partial file.
+            if media.resolve().suffix.lower() == ".partial":
                 unavailable += 1
                 continue
-        except (OSError, ValueError):
+            metadata = media.stat()
+            if not stat.S_ISREG(metadata.st_mode) or not os.access(media, os.R_OK):
+                unavailable += 1
+                continue
+        except (OSError, RuntimeError, ValueError):
             unavailable += 1
             continue
         restored.append(value)

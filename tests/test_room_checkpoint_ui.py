@@ -61,11 +61,16 @@ def recovery_type():
     return namespace["Recovery"]
 
 
-def window(checkpoint, *, selftest=False):
+def window(checkpoint, *, selftest=False, live_room=True):
     class TestWindow(recovery_type()):
         def __init__(self):
             self.app = SimpleNamespace(selftest=selftest)
             self._room_checkpoint_file = checkpoint
+            self._portal = object() if live_room else None
+            self._queue_revision = 0
+            self._observed_queue = ()
+            self.session = object()
+            self.tracker = object()
             self._room_checkpoint_last = None
             self._room_checkpoint_error_shown = False
             self.queue = []
@@ -74,6 +79,13 @@ def window(checkpoint, *, selftest=False):
             self.rebuilds = 0
             self.toasts = []
             self.logs = []
+
+        def _portal_observe_queue(self):
+            items = tuple(self.queue)
+            if items != self._observed_queue:
+                self._observed_queue = items
+                self._queue_revision += 1
+            return self._queue_revision
 
         def _rebuild_queue(self):
             self.rebuilds += 1
@@ -98,6 +110,7 @@ def test_startup_prompt_restores_paths_without_restoring_playback(tmp_path):
     room_checkpoint.write_checkpoint(checkpoint, files)
     host = window(checkpoint)
 
+    owned_session, tracker = host.session, host.tracker
     host._offer_room_recovery()
     dialog = FakeDialog.instances[-1]
     assert dialog.title == "Recover previous room?"
@@ -111,7 +124,9 @@ def test_startup_prompt_restores_paths_without_restoring_playback(tmp_path):
     assert host.rebuilds == 1
     assert host.toasts == [("Recovered 10 queued item(s)", False)]
     dialog.callback(dialog, "recover")
-    assert host.queue == files, "a repeated recovery response must replace, not duplicate, queue rows"
+    assert host.queue == files
+    assert host.rebuilds == 1  # Replayed responses cannot restore the same checkpoint twice.
+    assert host.session is owned_session and host.tracker is tracker
 
 
 def test_discard_clears_saved_room_and_damaged_file_is_not_silently_removed(tmp_path):
@@ -126,7 +141,9 @@ def test_discard_clears_saved_room_and_damaged_file_is_not_silently_removed(tmp_
     assert checkpoint.exists()
     dialog.callback(dialog, "keep")
     assert checkpoint.exists()
-    dialog.callback(dialog, "discard")
+    host._offer_room_recovery()
+    discard_dialog = FakeDialog.instances[-1]
+    discard_dialog.callback(discard_dialog, "discard")
     assert room_checkpoint.load_checkpoint(checkpoint).items == ()
 
 
@@ -156,4 +173,40 @@ def test_selftest_mode_never_reads_or_writes_room_state(tmp_path):
     host.queue = [str(tmp_path / "film.mkv")]
     host._save_room_checkpoint()
     assert FakeDialog.instances == []
+    assert not checkpoint.exists()
+
+
+
+def test_late_prompt_responses_do_not_replace_or_clear_a_new_room_queue(tmp_path):
+    old_file = tmp_path / "old.mkv"
+    new_file = tmp_path / "new.mkv"
+    for media in (old_file, new_file):
+        media.write_bytes(b"movie")
+    for action in ("recover", "discard"):
+        checkpoint = tmp_path / f"{action}.json"
+        room_checkpoint.write_checkpoint(checkpoint, [str(old_file)])
+        host = window(checkpoint)
+        owned_session, tracker = host.session, host.tracker
+        host._offer_room_recovery()
+        dialog = FakeDialog.instances[-1]
+        host.queue = [str(new_file)]
+        host._save_room_checkpoint()
+        dialog.callback(dialog, action)
+        assert host.queue == [str(new_file)]
+        assert room_checkpoint.load_checkpoint(checkpoint).items == (str(new_file),)
+        assert host.rebuilds == 0
+        assert host.session is owned_session and host.tracker is tracker
+        assert host.toasts == [("The room queue has changed. The current queue was kept.", True)]
+
+
+def test_empty_or_local_only_queue_does_not_create_a_room_checkpoint(tmp_path):
+    checkpoint = tmp_path / "room.json"
+    host = window(checkpoint, live_room=False)
+    host.queue = [str(tmp_path / "film.mkv")]
+    host._save_room_checkpoint()
+    assert not checkpoint.exists()
+
+    host.queue.clear()
+    host._portal = object()
+    host._save_room_checkpoint()
     assert not checkpoint.exists()

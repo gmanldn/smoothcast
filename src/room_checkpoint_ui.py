@@ -20,6 +20,27 @@ class RoomCheckpointUiMixin:
         if not checkpoint.exists():
             return
         saved = room_checkpoint.load_checkpoint(checkpoint)
+        if not saved.error and not saved.items and not saved.unavailable:
+            return
+
+        revision = self._portal_observe_queue()
+        handled = False
+
+        def response(_dialog, result):
+            nonlocal handled
+            if handled:
+                return
+            handled = True
+            if result not in {"recover", "discard"}:
+                return
+            if self._portal_observe_queue() != revision:
+                self.toast("The room queue has changed. The current queue was kept.", error=True)
+                return
+            if result == "recover":
+                self._recover_room_checkpoint()
+            else:
+                self._discard_room_checkpoint()
+
         if saved.error:
             dialog = Adw.AlertDialog.new(
                 "Previous room could not be read",
@@ -29,12 +50,8 @@ class RoomCheckpointUiMixin:
             dialog.add_response("discard", "Discard previous room")
             dialog.set_default_response("keep")
             dialog.set_close_response("keep")
-            dialog.connect("response", lambda _dialog, response:
-                           self._discard_room_checkpoint()
-                           if response == "discard" else None)
+            dialog.connect("response", response)
             dialog.present(self)
-            return
-        if not saved.items and not saved.unavailable:
             return
         detail = f"Recover {len(saved.items)} available queued item(s)?"
         if saved.unavailable:
@@ -48,12 +65,6 @@ class RoomCheckpointUiMixin:
         dialog.set_close_response("keep")
         dialog.set_response_appearance("recover", Adw.ResponseAppearance.SUGGESTED)
 
-        def response(_dialog, result):
-            if result == "recover":
-                self._recover_room_checkpoint()
-            elif result == "discard":
-                self._discard_room_checkpoint()
-
         dialog.connect("response", response)
         dialog.present(self)
 
@@ -63,6 +74,9 @@ class RoomCheckpointUiMixin:
         saved = room_checkpoint.load_checkpoint(checkpoint)
         if saved.error:
             self.toast("Shared room recovery could not be read", error=True)
+            return
+        if not saved.items and not saved.unavailable:
+            self.toast("No saved room queue is available to recover.", error=True)
             return
         self.queue = list(saved.items)
         self.selected_index = None

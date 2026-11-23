@@ -306,11 +306,14 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
 
     def _save_room_checkpoint(self) -> None:
-        if getattr(getattr(self, "app", None), "selftest", False):
+        if (getattr(getattr(self, "app", None), "selftest", False)
+                or getattr(self, "_portal", None) is None):
             return
         checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
         items = tuple(self.queue)
         if items == getattr(self, "_room_checkpoint_last", None):
+            return
+        if not items and not checkpoint.exists():
             return
         try:
             room_checkpoint.write_checkpoint(checkpoint, items)

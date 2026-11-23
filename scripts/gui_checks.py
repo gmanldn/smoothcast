@@ -31,6 +31,7 @@ MAX_SECONDS = 40
 SCENARIOS: dict[str, str | None] = {
     "local-video-runtime": None,
     "thumbnail-strip": None,
+    "room-recovery": None,
     "first-run": None,
     "saved-device": '{"device": "Seeded TV"}\n',
     "report-problem": None,

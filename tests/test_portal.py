@@ -390,6 +390,38 @@ def test_session_recovery_rejects_expired_cookie(rig):
     assert decode(body)["ok"] is False
 
 
+def test_restarted_room_can_publish_recovered_queue_but_rejects_old_cookie(tmp_path):
+    import room_checkpoint
+
+    media = tmp_path / "film.mkv"
+    media.write_bytes(b"synthetic movie")
+    checkpoint = tmp_path / "room.json"
+    original = PortalRig()
+    try:
+        status, _, old_cookie = login(original, name="Sam")
+        assert status == 200
+        room_checkpoint.write_checkpoint(checkpoint, [str(media)])
+        assert original.request("GET", "/api/session", cookie=old_cookie)[0] == 200
+    finally:
+        original.close()
+
+    saved = room_checkpoint.load_checkpoint(checkpoint)
+    assert saved.items == (str(media),)
+    new_room = PortalRig(queue=[{"id": "recovered", "title": Path(saved.items[0]).name}])
+    try:
+        assert new_room.request("GET", "/api/session", cookie=old_cookie)[0] == 401
+        assert not new_room.server.room.participants
+        status, _, new_cookie = login(new_room, name="Sam")
+        assert status == 200 and new_cookie != old_cookie
+        status, body, _ = new_room.request("GET", "/api/status", cookie=new_cookie)
+        assert status == 200
+        assert decode(body)["state"]["queue"] == [
+            {"id": "recovered", "title": "film.mkv", "votes": 0, "voted": False},
+        ]
+    finally:
+        new_room.close()
+
+
 def test_session_recovery_checks_host_and_origin(rig):
     _status, _data, cookie = login(rig, name="Sam")
     assert rig.request("GET", "/api/session", cookie=cookie,

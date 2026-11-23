@@ -13,6 +13,9 @@ on:
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
+      - 'src/room_checkpoint.py'
+      - 'src/room_checkpoint_ui.py'
+      - 'tests/test_room_checkpoint*.py'
       - 'src/portal_status.py'
       - 'src/portal_commands.py'
       - 'src/portal_uploads.py'
@@ -33,6 +36,9 @@ on:
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
+      - 'src/room_checkpoint.py'
+      - 'src/room_checkpoint_ui.py'
+      - 'tests/test_room_checkpoint*.py'
       - 'src/portal_status.py'
       - 'src/portal_commands.py'
       - 'src/portal_uploads.py'
@@ -69,6 +75,8 @@ jobs:
           tests/test_portal_join.py
           tests/test_mesh_transport.py
           tests/test_portal_room.py
+          tests/test_room_checkpoint.py
+          tests/test_room_checkpoint_ui.py
           tests/test_portal_status.py
           tests/test_async_jobs.py
           tests/test_castctl_seek.py
@@ -100,4 +108,4 @@ jobs:
           SMOOTHCAST_TEST_CONTEXT: '0'
         run: |
           .portal-gtk-venv/bin/python scripts/test_gui_isolated.py
-          .portal-gtk-venv/bin/python scripts/gui_checks.py thumbnail-strip
+          .portal-gtk-venv/bin/python scripts/gui_checks.py thumbnail-strip room-recovery

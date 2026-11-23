@@ -37,17 +37,19 @@ def test_missing_nonregular_and_invalid_references_are_skipped(tmp_path):
     media.write_bytes(b"movie")
     folder = tmp_path / "folder"
     folder.mkdir()
+    partial = tmp_path / "interrupted.partial"
+    partial.write_bytes(b"partial upload")
     checkpoint = tmp_path / "room.json"
     checkpoint.write_text(json.dumps({
         "schema_version": room_checkpoint.SCHEMA_VERSION,
-        "items": [str(media), str(tmp_path / "missing.mkv"), str(folder),
+        "items": [str(media), str(tmp_path / "missing.mkv"), str(folder), str(partial),
                   "relative.mkv", "\x00invalid", None],
     }), encoding="utf-8")
 
     result = room_checkpoint.load_checkpoint(checkpoint)
 
     assert result.items == (str(media),)
-    assert result.unavailable == 5
+    assert result.unavailable == 6
 
 
 def test_corrupt_and_unsupported_checkpoints_are_reported(tmp_path):
@@ -62,13 +64,31 @@ def test_failed_atomic_checkpoint_write_keeps_previous_queue(tmp_path, monkeypat
     checkpoint = tmp_path / "room.json"
     room_checkpoint.write_checkpoint(checkpoint, [str(tmp_path / "film.mkv")])
     previous = checkpoint.read_bytes()
-    monkeypatch.setattr(cache_privacy, "write_private_json_atomic",
-                        lambda *_args: (_ for _ in ()).throw(OSError("injected")))
+    def fail_replace(_source, _target):
+        raise OSError("injected")
+
+    monkeypatch.setattr(cache_privacy.os, "replace", fail_replace)
 
     with pytest.raises(OSError, match="injected"):
         room_checkpoint.write_checkpoint(checkpoint, [str(tmp_path / "new.mkv")])
 
     assert checkpoint.read_bytes() == previous
+    assert list(tmp_path.iterdir()) == [checkpoint]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires a POSIX FIFO")
+def test_non_file_checkpoint_is_rejected_without_blocking(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "room.json"
+    os.mkfifo(checkpoint)
+    open_descriptor = os.open
+
+    def checked_open(path, flags, *args, **kwargs):
+        if path == checkpoint:
+            assert flags & os.O_NONBLOCK
+        return open_descriptor(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", checked_open)
+    assert room_checkpoint.load_checkpoint(checkpoint).error == "Checkpoint is not a regular file"
 
 
 def test_checkpoint_rejects_nonlocal_urls_and_unbounded_queue(tmp_path):

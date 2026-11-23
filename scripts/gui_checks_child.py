@@ -29,7 +29,7 @@ import cast_control  # noqa: E402
 import streamer  # noqa: E402
 import version  # noqa: E402
 import video_policy  # noqa: E402
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 else ""
 RESULTS: list[tuple[str, bool, str]] = []
@@ -795,8 +795,38 @@ def thumbnail_strip(_app, window) -> None:
         window.session = None
 
 
+def room_recovery(app, window) -> None:
+    """Restore a private synthetic checkpoint through the real GTK prompt."""
+    import room_checkpoint
+
+    directory = Path(os.environ["XDG_CACHE_HOME"])
+    files = [directory / f"queued-{index}.mkv" for index in range(10)]
+    for file in files:
+        file.write_bytes(b"synthetic fixture")
+    checkpoint = window._room_checkpoint_file = directory / "room.json"
+    room_checkpoint.write_checkpoint(checkpoint, map(str, reversed(files)))
+    # Only opt into opening this dialog. The app was started in self-test mode
+    # and remains isolated from network, configuration and playback timers.
+    app.selftest = False
+    try:
+        window._offer_room_recovery()
+    finally:
+        app.selftest = True
+    pump(0.2)
+    dialog = window.get_visible_dialog()
+    valid = isinstance(dialog, Adw.AlertDialog) and dialog.get_heading() == "Recover previous room?"
+    check("a real recovery dialog asks before restoring the queue", valid and window.queue == [])
+    if not valid:
+        return
+    dialog.emit("response", "recover")
+    check("recovery restores ten items in saved order", window.queue == list(map(str, reversed(files))))
+    check("recovery leaves playback and room access stopped",
+          window.session is None and window.now_playing is None and window._portal is None)
+
+
 SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
+             "room-recovery": room_recovery,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,

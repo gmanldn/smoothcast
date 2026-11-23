@@ -158,6 +158,18 @@ the same position. Seeking a converted stream restarts it at the new position.
 - The room still uses plain HTTP on a trusted LAN (see below). Media sent to a
   screen is visible to that LAN segment in the same way as the dashboard.
 
+## Recovering a room queue
+
+While a room is running, SmoothCast checkpoints the ordered queue into a
+private file on the host. The file contains local media references and a format
+version. On restart, **Recover queue** restores available items in order and
+reports missing files or unfinished uploads. **Discard previous room** clears
+the checkpoint. If the queue changes while the prompt is open, the current
+queue is kept.
+
+Recovery does not start playback or restore guest sessions. Guests rejoin the
+current room using its current access settings.
+
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes
