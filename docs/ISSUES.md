@@ -5,34 +5,30 @@ This is the **only live backlog** for improvements, feature requests, bugs and
 outstanding verification. Pull requests are code changes, not new backlog items.
 There is intentionally **no root `IMPROVEMENTS.md`**.
 
-## Fast agent path — bounded, read-only first
+## Fast agent path — live claims before work
 
-GitHub Issues stay authoritative. Do **not** download every issue body to
-choose work.
+GitHub Issues remain authoritative. Start with the bounded
+[coordinator](COORDINATION.md), rather than downloading the whole backlog:
 
-1. `python3 scripts/ticket_digest.py --next` prints the highest-priority
-   eligible unclaimed issue. `--priority P0`, `--label`, `--limit` and `--search`
-   narrow the output without fetching bodies.
-2. Read **only that issue**:
-   `gh issue view N --json number,title,state,labels,assignees,body,url`.
-   Add `--comments` only when ownership or prior evidence matters.
-3. Claim before editing: assign yourself and post one short comment
-   (owner, intended scope, files). The assignee is the cheap machine-readable
-   claim; the comment is the durable detail. An unassigned issue with comments
-   may still be claimed—read them first.
+1. `python3 scripts/agent.py board` — see live claim leases, hot files and
+   any known red `develop` head.
+2. `python3 scripts/agent.py next` — choose free P0/P1 work. Read only
+   that issue and its latest implementation/claim comments.
+3. `python3 scripts/agent.py claim N --files src/module.py` — acquire
+   a short verified lease. Exit 3 = another agent won: choose again.
+4. Work in your own detached worktree. Commit small slices with `Refs #N`;
+   `python3 scripts/agent.py ship` runs affected checks and safely pushes
+   to `develop`. Tests are optional by owner request, not a push gate.
+   Never touch `main`, the real GUI or another agent's checkout.
+5. `python3 scripts/agent.py done N --why "..." --checklist "..."` posts
+   the SHA/evidence and releases the lease. Use `--close` **only** when all
+   acceptance criteria pass. Release blocked leases promptly.
 
-   ```sh
-   ISSUE=123
-   gh issue edit "$ISSUE" --add-assignee @me
-   gh issue comment "$ISSUE" --body "Claim: <agent> on develop; scope: <files>"
-   ```
-4. Use an isolated detached worktree of `origin/develop` and commit directly to
-   `develop` (no issue branches). Do not modify or force-reset another checkout.
-5. Push coherent progress directly to `develop` without waiting on a test gate.
-   Testing is optional by owner request, but never claim unrun tests as passing.
-   Never launch or focus the real GTK app during routine work.
-6. Comment the exact commit and evidence; close only when actual acceptance
-   criteria are satisfied. Real-device checks remain tracked in #208.
+`python3 scripts/ticket_digest.py --next --label agent-ready` remains a
+read-only fallback. Its assignee-only view cannot detect every concurrent
+comment lease; do not trust its "unclaimed" status for automatic selection.
+REST-backed `agent.py` also works in sessions where `gh issue` GraphQL is
+403-blocked.
 
 Measured on 18 November 2026 with 113 open issues at that time:
 
