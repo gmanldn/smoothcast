@@ -53,7 +53,7 @@ def machine_key() -> str:
 
 
 def _valid_fps(value: object) -> float | None:
-    if type(value) not in (int, float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     speed = float(value)
     return speed if math.isfinite(speed) and 0 < speed < 10000 else None
