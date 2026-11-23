@@ -188,7 +188,9 @@ def gui_instances(proc_root: Path = Path("/proc"),
                     for part in (entry / "cmdline").read_bytes().split(b"\0") if part]
         except OSError:
             continue
-        if len(argv) >= 2 and target in argv[1:] \
+        # The exact checkout script must be the Python entry point, not just
+        # an unrelated Python process argument (such as a lint/test fixture).
+        if len(argv) >= 2 and argv[1] == target \
                 and Path(argv[0]).name.startswith("python"):
             found.append(int(entry.name))
     return found
