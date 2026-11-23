@@ -20,9 +20,11 @@ GitHub Issues remain authoritative. Start with the bounded
    `python3 scripts/agent.py ship` runs affected checks and safely pushes
    to `develop`. Tests are optional by owner request, not a push gate.
    Never touch `main`, the real GUI or another agent's checkout.
-5. `python3 scripts/agent.py done N --why "..." --checklist "..."` posts
-   the SHA/evidence and releases the lease. Use `--close` **only** when all
-   acceptance criteria pass. Release blocked leases promptly.
+5. After a coherent slice, `python3 scripts/agent.py progress N --done "..."
+   --next "..." --commit SHA --verification "..." --release` posts a durable
+   handover with completed work and exact remaining tasks. For a fully evidenced
+   issue, `agent.py done N --why "..." --checklist "..." [--close]`
+   also releases the lease. Use `--close` **only** when acceptance passes.
 
 `python3 scripts/ticket_digest.py --next --label agent-ready` remains a
 read-only fallback. Its assignee-only view cannot detect every concurrent
@@ -82,10 +84,12 @@ choose new identifiers only deliberately (never reuse a legacy ID).
 
 ## Labels and the safe pick command
 
-Use `python3 scripts/ticket_digest.py --next --label agent-ready`; read only
-the selected issue and its **Agent brief** (#511). `--next` excludes `epic`,
-`icebox`, `needs-human`, `in-flight`, `needs-split` and `verify-close`.
-To inspect excluded work, add `--include-skipped`; counts go to stderr.
+Use **`python3 scripts/agent.py next`** to pick lease-aware work and see
+bounded prior progress. Confirm the selected issue's live claim/comments and
+shipped commits before changing code. `ticket_digest.py --next` is a
+read-only metadata fallback: it excludes stale `in-flight`/assignee items,
+so it must **not** be used as the final ownership check. See
+[coordination](COORDINATION.md) and the **Agent brief** (#511).
 
 ## Priorities, classification and status
 
@@ -143,11 +147,12 @@ additional requirements rather than creating competing tasks.
 1. Read `AGENTS.md`, this file and the specific issue **before editing**.
    Search for another owner, branch or open PR. Prefer P0 safety and high-value
    tasks, but don't collide with work someone else has claimed. Start with
-   `scripts/ticket_digest.py`, not a full-backlog download.
-2. **Claim the issue** by assigning yourself and posting one explicit comment
-   (owner/agent, intended scope, likely touched files). If
-   unable to finish, comment with blockers and handover steps. GitHub Issues
-   records the durable state; ephemeral local notes do not.
+   `scripts/agent.py board` and `next`, not a full-backlog download.
+2. **Claim a bounded slice** with `scripts/agent.py claim N --files src/x.py`.
+   The 90-minute default lease is a structured issue comment; GitHub assignees
+   and `in-flight` labels are advisory and may be stale. Exit 3 means another
+   live claim won. Use `heartbeat N` only when real work is ongoing. Read
+   earlier handover comments and `develop` before restarting unfinished work.
 3. Use an **isolated detached Git worktree** of `origin/develop` and commit to
    `develop` directly (see [workflow](agents/workflow.md)). Do not modify or
    force-reset a colleague's checkout; preserve stashes and uncommitted user
@@ -163,12 +168,13 @@ additional requirements rather than creating competing tasks.
    require the **explicit** isolated Xvfb runner
    `python3 scripts/test_gui_isolated.py`. Optional device checks use a
    separately authorised, controlled environment and are tracked in #208.
-6. Push the tested commit to `develop` (`Refs #68`, never a PR for agents) and
-   comment exactly which acceptance checks passed, which were not performed, and
-   any backward-compatibility risks. Watch CI on `develop`; if it goes red, fix
-   or `git revert` it before new work. Close by hand when automated evidence
-   satisfies the criteria: GitHub closes them from `Fixes #N` only when code
-   reaches `main`. Note any deferred device checks in #208.
+6. Push the coherent commit to `develop` (`Refs #68`, never a PR for agents)
+   and record a durable `agent.py progress N --done "..." --next "..."
+   --commit SHA --verification "..." --release` comment. Identify actual
+   passed/unrun checks, outstanding acceptance criteria, blockers and touched
+   files so a successor can continue without duplicating code. Keep the issue
+   open for remaining work. If CI later goes red, prioritise a fix or safe
+   revert. `Fixes #N` does not close on `develop` because `main` is manual.
 7. Comment final evidence and close as **completed** once the specified
    software and CI criteria pass; record device checks in #208. Use a compact, parseable close comment:
    `Implementation: <SHA>`, `Why: <outcome>`, `Files: <paths>`,
