@@ -119,3 +119,28 @@ def test_rejects_directory_case_collisions_and_reserved_manifest(tmp_path):
     with pytest.raises(mg.StageError, match="reserved"):
         mg.stage_local_snapshot(root, source, COMMIT, files)
     assert (root / "current").read_text() == "old-verified-generation"
+
+
+def test_disk_space_refusal_does_not_touch_live_generation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    source, root, files = sample(tmp_path)
+    monkeypatch.setattr(mg.shutil, "disk_usage", lambda _path: SimpleNamespace(free=0))
+    with pytest.raises(mg.StageError, match="Insufficient free space"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
+    assert not list((root / "releases").glob(".staging-*"))
+
+
+def test_write_sync_failure_cleans_private_staging(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+
+    def fail_sync(_fd):
+        raise OSError("disk I/O failed")
+
+    monkeypatch.setattr(mg.os, "fsync", fail_sync)
+    with pytest.raises(mg.StageError, match="Cannot stage"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
