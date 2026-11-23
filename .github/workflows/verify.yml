@@ -108,6 +108,8 @@ jobs:
         run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py
       - name: Verify source-second playheads and lock-screen controls
         run: python -m pytest -q tests/test_playhead_projection.py tests/test_media_session_portal.py
+      - name: Verify private queue tooltips and filtered selection
+        run: python -m pytest -q tests/test_queue_row_path_privacy.py
       - name: Verify browser upload resumability and bounded chunks
         run: python -m pytest -q tests/test_portal_uploads.py tests/test_portal_upload_fingerprint.py
       - name: Verify bounded federated search cursors
