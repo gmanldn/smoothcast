@@ -44,6 +44,7 @@ import audio_delay
 import subtitle_delay
 import subtitle_encoding
 import subtitle_style
+import picture_adjustments
 import video_policy
 import aspect_override
 
@@ -1599,7 +1600,7 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0, picture_config: dict | None = None) -> list[str]:
         chain: list[str] = []
         # H.264 High@4.1 is the conservative 1080p30 Cast baseline. Scale
         # alone does not make 1080p60/4K60 compatible with older receivers.
@@ -1613,6 +1614,9 @@ class Session:
         if hdr_filter:
             # Tone-map the source before drawing any SDR caption overlays.
             plan_filters.append(hdr_filter)
+        # Colour adjustments affect source pixels, not overlaid subtitle glyphs.
+        # Include them in the hardware fallback decision below.
+        plan_filters.extend(picture_adjustments.filters(picture_config))
         if plan_filters and video_size and video_plan is not None:
             video_size = video_plan.output_size(*video_size)
         chain.extend(plan_filters)
@@ -1723,6 +1727,7 @@ class Session:
         subtitle_preset: str = subtitle_style.DEFAULT,
         audio_delay_ms: int = 0,
         music_autogain: bool = False,
+        picture_config: dict | None = None,
     ) -> None:
         if not device.strip():
             raise StreamError(castctl.NO_DEVICE_MESSAGE)
@@ -1801,7 +1806,7 @@ class Session:
             if (out_w > 1920 or out_h > 1080 or hdr_tonemap.filter_for(media)
                     or (media.pix_fmt and media.pix_fmt not in {"yuv420p", "nv12", "yuvj420p"})):
                 self.used_software_fallback = True
-        if bitmap_track is not None:
+        if bitmap_track is not None or picture_adjustments.active(picture_config):
             self.used_software_fallback = True
         if not audio_only and not self.used_software_fallback and self._vaapi_known_bad():
             # Skip a hardware start that already stalled on this exact setup.
@@ -1846,6 +1851,7 @@ class Session:
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
             hdr_filter=hdr_tonemap.filter_for(media),
+            picture_config=picture_config,
             subtitle_force_style=subtitle_style.force_style(
                 subtitle_preset, codec=embedded_codec, path=staged) or "",
             fonts_dir=self._fonts_dir,
