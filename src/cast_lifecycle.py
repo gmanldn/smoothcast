@@ -113,7 +113,7 @@ class LifecycleMixin:
             if previewing:
                 self._timed_subtitle_preview(value)
             if previewing and self._local_stream() is None:
-                self._queue_preview(value)
+                self._queue_preview(value, sparse=True)
         else:
             if previewing:
                 self._timed_subtitle_preview(None)

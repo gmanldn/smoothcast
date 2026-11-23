@@ -420,6 +420,8 @@ class AvMixin:
         if self._preview_busy or self._preview_pending is None:
             return False
         path, position, generation = self._preview_pending
+        sparse = bool(getattr(self, "_preview_sparse", False))
+        self._preview_sparse = False
         self._preview_pending = None
         if path != self._preview_path or generation != self._preview_generation:
             return False
@@ -457,6 +459,28 @@ class AvMixin:
                 finish()
             return False
         video_index = media.video_stream_index if media is not None else 0
+        if sparse:
+            cache = getattr(self, "_sparse_frame_cache", None)
+            if cache is None:
+                cache = screenshot.SparseFrameCache()
+                self._sparse_frame_cache = cache
+            key = cache.key(path, generation, video_index, position)
+            cached = cache.get(key)
+            if cached is not None:
+                finish(cached)
+                return False
+            sample = cache.sample(position)
+            def ready(frame):
+                cache.put(key, frame)
+                finish(frame)
+            Async.run(
+                lambda: screenshot.preview_frame(
+                    pathlib.Path(path), sample, video_stream_index=video_index,
+                ),
+                done=ready, failed=lambda _error: finish(), domain="media",
+            )
+            return False
+        # An explicit seek or frame step must not be approximated by a hover bin.
         Async.run(
             lambda: screenshot.preview_frame(
                 pathlib.Path(path), position, video_stream_index=video_index,
@@ -466,13 +490,14 @@ class AvMixin:
         return False
 
 
-    def _queue_preview(self, position: float) -> None:
+    def _queue_preview(self, position: float, *, sparse: bool = False) -> None:
         """Debounce frame decoding, with at most one FFmpeg worker at a time."""
         if (self._preview_path is None or self.session is not None or self.external
                 or self._local_stream() is not None):
             return
         self._preview_pending = (self._preview_path, max(0.0, position),
                                  self._preview_generation)
+        self._preview_sparse = sparse
         if not self._preview_timer_id and not self._preview_busy:
             self._preview_timer_id = GLib.timeout_add(180, self._start_preview)
 

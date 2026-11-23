@@ -1,12 +1,49 @@
 """Safe, bounded FFmpeg frame capture, independent from GTK."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 import math
 import stat
 import subprocess
 import uuid
+
+
+class SparseFrameCache:
+    """Bounded GTK-thread-owned LRU: only quantised hover previews, never frame steps."""
+
+    def __init__(self, interval: float = 10.0, max_entries: int = 96):
+        if not math.isfinite(interval) or interval <= 0 or max_entries < 1:
+            raise ValueError("Invalid thumbnail cache limits")
+        self.interval = interval
+        self.max_entries = max_entries
+        self._images: OrderedDict[tuple[str, int, int, int], bytes] = OrderedDict()
+
+    def bucket(self, position: float) -> int:
+        if not isinstance(position, (int, float)) or not math.isfinite(position):
+            return 0
+        return min(10_000_000, int(max(0.0, position) // self.interval))
+
+    def key(self, path: str, generation: int, stream: int, position: float) -> tuple[str, int, int, int]:
+        return str(path), generation, stream, self.bucket(position)
+
+    def sample(self, position: float) -> float:
+        return self.bucket(position) * self.interval
+
+    def get(self, key: tuple[str, int, int, int]) -> bytes | None:
+        image = self._images.get(key)
+        if image is not None:
+            self._images.move_to_end(key)
+        return image
+
+    def put(self, key: tuple[str, int, int, int], image: bytes) -> None:
+        if not isinstance(image, bytes) or not image.startswith(b"\xff\xd8"):
+            return
+        self._images[key] = image
+        self._images.move_to_end(key)
+        while len(self._images) > self.max_entries:
+            self._images.popitem(last=False)
 
 
 class CaptureError(RuntimeError):
