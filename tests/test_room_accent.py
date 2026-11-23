@@ -40,8 +40,8 @@ def test_room_page_includes_only_server_checked_color_presets():
     assert "function applyAccentPreset(value)" in html
     assert 'Object.hasOwn(ROOM_ACCENTS,value)?value:"default"' in html
     assert 'applyAccentPreset(s.accent)' in html
-    start = html.index("const ROOM_ACCENTS=") + len("const ROOM_ACCENTS=")
-    decoded = json.loads(html[start:html.index(";", start)])
+    start = html.index("JSON.parse(", html.index("const ROOM_ACCENTS=")) + len("JSON.parse(")
+    decoded = json.loads(json.loads(html[start:html.index(")", start)]))
     assert decoded == design_tokens.web_accents()
     for scheme in ("dark", "light"):
         assert f"--sc-user-accent-{scheme}" in html

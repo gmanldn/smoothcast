@@ -22,7 +22,8 @@ def test_screen_page_serves_shared_dark_light_and_high_contrast_tokens():
         assert f"--bg:{colors['bg']}" in html
         assert f"--card:{colors['card']}" in html
         assert f"--text:{colors['text']}" in html
-        assert f"--accent:{colors['accent']}" in html
+        assert f"--accent:var(--sc-user-accent-{scheme}, {colors['accent']})" in html
+        assert f"--on-accent:var(--sc-user-on-accent-{scheme}, {colors['on_accent']})" in html
         assert design_tokens.contrast_ratio(colors["text"], colors["bg"]) >= 4.5
         assert design_tokens.contrast_ratio(colors["on_accent"], colors["accent"]) >= 4.5
 

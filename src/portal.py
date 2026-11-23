@@ -164,7 +164,7 @@ def _page() -> bytes:
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
-            .replace("__SC_ACCENTS__", json.dumps(design_tokens.web_accents(), separators=(",", ":")))
+            .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
             ).encode("utf-8")
 
 
@@ -1853,13 +1853,16 @@ const roomEvents=makeRoomEvents({
   setInterval:(f,ms)=>setInterval(f,ms),clearInterval:id=>clearInterval(id),
   now:()=>Date.now()
 });
-const ROOM_ACCENTS=__SC_ACCENTS__;
+// Raw markup is also executed by headless browser contract tests before
+// server-side placeholders are substituted. Treat that as no preset data.
+const ROOM_ACCENTS=(()=>{try{return JSON.parse(__SC_ACCENTS__)}catch(_){return {}}})();
 let appliedAccent="";
 function applyAccentPreset(value){
   const preset=Object.hasOwn(ROOM_ACCENTS,value)?value:"default";
-  if(preset===appliedAccent)return;
+  const colours=ROOM_ACCENTS[preset];
+  if(!colours||preset===appliedAccent)return;
   appliedAccent=preset;
-  const root=document.documentElement.style, colours=ROOM_ACCENTS[preset];
+  const root=document.documentElement.style;
   for(const scheme of ["dark","light"]){
     root.setProperty("--sc-user-accent-"+scheme,colours[scheme].accent);
     root.setProperty("--sc-user-on-accent-"+scheme,colours[scheme].on_accent);
