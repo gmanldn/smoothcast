@@ -119,8 +119,13 @@ class MeshFiles:
         headers = {"Host": f"{host}:{parts.port}", HOP_HEADER: "1"}
         if range_header:
             headers["Range"] = range_header
-        conn.request("HEAD" if head else "GET", f"/mesh/file/{key}", headers=headers)
-        return conn, conn.getresponse()
+        try:
+            conn.request("HEAD" if head else "GET", f"/mesh/file/{key}", headers=headers)
+            return conn, conn.getresponse()
+        except BaseException:
+            # No caller owns the connection until getresponse succeeds.
+            conn.close()
+            raise
 
     def _proxy(self, handler, key: str, url: str, *, head: bool, write_headers) -> bool:
         range_header = handler.headers.get("Range")
