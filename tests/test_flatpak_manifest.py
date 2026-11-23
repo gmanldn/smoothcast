@@ -22,7 +22,7 @@ class FlatpakManifestTests(unittest.TestCase):
         self.assertEqual(m["runtime"], "org.gnome.Platform")
         self.assertEqual(m["sdk"], "org.gnome.Sdk")
         self.assertEqual(m["command"], "smoothcast")
-        self.assertTrue(str(m["runtime-version"]).isdigit())
+        self.assertEqual(m["runtime-version"], "51")  # Current supported GNOME release
         build = "\n".join(m["modules"][0]["build-commands"])
         self.assertIn("--no-index", build)
         self.assertIn("--no-build-isolation", build)
