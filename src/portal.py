@@ -2230,7 +2230,14 @@ async function act(action,value,extra={}){
     }else refresh();
   }
 }
-$("clearQueue").addEventListener("click",()=>act("queue_clear"));
+function confirmClearQueue(){
+  const count=queueState.length;
+  if(!count)return false;
+  return window.confirm(`Clear ${count} waiting item${count===1?"":"s"} from Up Next for everyone? This does not stop what is currently playing.`);
+}
+$("clearQueue").addEventListener("click",()=>{
+  if(confirmClearQueue())void act("queue_clear");
+});
 document.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>act(b.dataset.action)));
 for(const id of ["seek","volume"]){
   const control=$(id);
