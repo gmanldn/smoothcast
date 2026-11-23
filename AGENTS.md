@@ -22,7 +22,7 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 
 ## Rules
 
-- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
+- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next --label agent-ready`, claim
   before work, `Refs #N` in commits, close when code and automated CI pass;
   device checks tracked in #208. [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
