@@ -2565,8 +2565,9 @@ function mediaAudio(){
 }
 function syncMediaSession(s){
   if(!mediaSupported()||!lockControlsOn()||!s)return;
-  const ms=navigator.mediaSession,playing=s.state==="PLAYING"||s.state==="BUFFERING";
-  if(!s.title||!(playing||s.state==="PAUSED")){
+  const ms=navigator.mediaSession,playing=s.state==="PLAYING";
+  const active=playing||s.state==="PAUSED"||s.state==="BUFFERING";
+  if(!s.title||!active){
     ms.playbackState="none";if(MEDIA.audio)MEDIA.audio.pause();return;
   }
   bindMediaSession();
@@ -2574,8 +2575,9 @@ function syncMediaSession(s){
   if(a.paused){const p=a.play();if(p&&p.catch)p.catch(()=>{})}
   try{ms.metadata=new MediaMetadata({title:String(s.title),artist:String(s.artist||""),album:s.receiver?"SmoothCast - "+s.receiver:"SmoothCast"})}catch(_){}
   ms.playbackState=playing?"playing":"paused";
-  const duration=Number(s.duration)||0,position=Number(s.position)||0;
-  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:Number(s.speed)||1})}catch(_){}}
+  const duration=Number(s.duration)||0,position=projectPosition(s,s.snapshot_age_ms,0);
+  const rate=typeof s.rate==="number"&&Number.isFinite(s.rate)&&s.rate>=0.05&&s.rate<=4?s.rate:1;
+  if(duration>0&&Number.isFinite(duration)){try{ms.setPositionState({duration,position:Math.min(Math.max(0,position),duration),playbackRate:rate})}catch(_){}}
 }
 (()=>{
   const box=$("lockControls");if(!box)return;
