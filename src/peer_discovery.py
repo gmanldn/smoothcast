@@ -8,9 +8,22 @@ import secrets
 import socket
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
-from zeroconf import ServiceBrowser, ServiceInfo, ServiceListener, Zeroconf
+# zeroconf costs ~60 ms to import, so it is resolved on first use, not at startup
+# (#463). Module-level names stay patchable for tests.
+Zeroconf: Any = None
+ServiceInfo: Any = None
+ServiceBrowser: Any = None
+
+
+def _ensure_zeroconf() -> None:
+    global Zeroconf, ServiceInfo, ServiceBrowser
+    if Zeroconf is None or ServiceInfo is None or ServiceBrowser is None:
+        import zeroconf
+        Zeroconf = Zeroconf or zeroconf.Zeroconf
+        ServiceInfo = ServiceInfo or zeroconf.ServiceInfo
+        ServiceBrowser = ServiceBrowser or zeroconf.ServiceBrowser
 
 SERVICE_TYPE = "_smoothcast._tcp.local."
 PROTOCOL_VERSION = 1
@@ -85,11 +98,11 @@ def parse_peer(instance_id: object, name: object, version: object,
     return None
 
 
-class PeerDirectory(ServiceListener):
+class PeerDirectory:  # a duck-typed zeroconf ServiceListener
     """Advertise this room and keep a bounded, expiring list of LAN peers."""
 
     def __init__(self, bind_ip: str, name: str, port: int, *, instance_id: str | None = None,
-                 clock=time.monotonic, zeroconf: Zeroconf | None = None) -> None:
+                 clock=time.monotonic, zeroconf: Any = None) -> None:
         try:
             address = ipaddress.IPv4Address(bind_ip)
         except ipaddress.AddressValueError as exc:
@@ -109,9 +122,10 @@ class PeerDirectory(ServiceListener):
         self._peers: dict[str, Peer] = {}
         self._closed = False
         self._owns_zeroconf = zeroconf is None
-        self._zc: Zeroconf | None = zeroconf
-        self._browser: ServiceBrowser | None = None
-        self._service: ServiceInfo | None = None
+        self._zc: Any = zeroconf
+        self._browser: Any = None
+        self._service: Any = None
+        _ensure_zeroconf()
         try:
             if self._zc is None:
                 self._zc = Zeroconf(interfaces=[bind_ip])
@@ -131,7 +145,7 @@ class PeerDirectory(ServiceListener):
                 server=f"{self.name}.local.",
             )
             self._zc.register_service(self._service)
-            self._browser = ServiceBrowser(self._zc, SERVICE_TYPE, listener=self)
+            self._browser = ServiceBrowser(self._zc, SERVICE_TYPE, listener=cast(Any, self))
         except Exception:
             self.close()
             raise
@@ -143,17 +157,17 @@ class PeerDirectory(ServiceListener):
             return value.decode("utf-8", "strict")
         return value if isinstance(value, str) else ""
 
-    def add_service(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
+    def add_service(self, zeroconf: Any, service_type: str, name: str) -> None:
         self._load_service(zeroconf, service_type, name)
 
-    def update_service(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
+    def update_service(self, zeroconf: Any, service_type: str, name: str) -> None:
         self._load_service(zeroconf, service_type, name)
 
-    def remove_service(self, _zeroconf: Zeroconf, _service_type: str, name: str) -> None:
+    def remove_service(self, _zeroconf: Any, _service_type: str, name: str) -> None:
         with self._lock:
             self._peers.pop(name, None)
 
-    def _load_service(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
+    def _load_service(self, zeroconf: Any, service_type: str, name: str) -> None:
         try:
             info = zeroconf.get_service_info(service_type, name, timeout=1000)
             if info is None:

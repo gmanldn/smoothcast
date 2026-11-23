@@ -4,9 +4,6 @@ from __future__ import annotations
 from gi.repository import Adw, Gtk
 
 import library_folders
-import library_index_v2
-import library_replication
-import mesh_library
 import peer_discovery_ui
 import portal_uploads
 from cast_widgets import Async
@@ -15,6 +12,8 @@ from cast_widgets import Async
 class PortalHostMixin:
     def _ensure_library_indexer(self, folders=None) -> None:
         """Start the shared-library indexer once folders exist (#408)."""
+        import library_index_v2          # sqlite + search stack: only when folders exist (#463)
+        import library_replication
         if not self.cfg.get("library_indexer", True):
             return
         folders = library_folders.load(self.cfg) if folders is None else folders
@@ -38,6 +37,7 @@ class PortalHostMixin:
 
     def _ensure_mesh_library(self, indexer, current) -> None:
         """House-wide search: replicas of peers' shared libraries (#411, #412)."""
+        import mesh_library
         mesh = getattr(self, "_mesh_library", None)
         if mesh is None:
             try:

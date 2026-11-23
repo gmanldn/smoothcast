@@ -40,7 +40,8 @@ def test_promotion_accepts_a_skipped_patch_lane_but_not_a_failure():
     assert "(needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped')" in promote
     assert "needs.lint.result == 'success'" in promote
     assert "needs.syntax.result == 'success'" in promote
-    assert "scope, syntax, reliability-benchmark, lint, typecheck" in promote
+    needs = promote.split("needs: [", 1)[1].split("]", 1)[0].replace(" ", "").split(",")
+    assert {"scope", "syntax", "reliability-benchmark", "lint", "typecheck"} <= set(needs)
     assert "(needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped')" in promote
 
 

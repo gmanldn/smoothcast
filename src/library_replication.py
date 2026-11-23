@@ -10,9 +10,10 @@ import gzip
 import json
 import threading
 import time
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-import library_index_v2
+if TYPE_CHECKING:  # the sqlite indexer is only needed once a library is shared (#463)
+    import library_index_v2
 
 MAX_PAGE = 5000
 MAX_PAGE_BYTES = 2 * 1024 * 1024
@@ -85,6 +86,7 @@ def _clamp(limit: object) -> int:
 
 def build_changes_response(indexer: library_index_v2.LibraryIndexer, epoch: object,
                            since: object, limit: object = MAX_PAGE) -> tuple[int, dict]:
+    import library_index_v2
     try:
         start = int(since)  # type: ignore[call-overload]
     except (TypeError, ValueError):

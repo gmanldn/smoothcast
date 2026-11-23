@@ -157,6 +157,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
     from reliability_metrics import recent as recent_reliability
+    import startup_timeline
 
     home_value = str(home) if home is not None else str(Path.home())
     payload: dict = {
@@ -178,6 +179,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "reliability": recent_reliability(reliability),
         # Deliberately excludes paths, media titles, receiver names and payloads.
         "command_traces": command_trace.recent(),
+        # Milliseconds since SmoothCast code started: where the first second goes.
+        "startup": startup_timeline.snapshot(),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),

@@ -145,6 +145,20 @@ jobs:
           SMOOTHCAST_PERF_SLACK: '3'
         run: python -m pytest -q tests/perf -s -p no:cacheprovider
 
+  import-budget:
+    name: Startup import budget
+    needs: [scope]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK bindings (system Python)
+        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-psutil
+      - name: Heavy modules stay off the GUI startup path (no window is opened)
+        env:
+          SMOOTHCAST_IMPORT_SLACK: '2'
+        run: /usr/bin/python3 scripts/ci/import_budget.py
+
   lint:
     name: Ruff lint
     runs-on: ubuntu-24.04
@@ -400,6 +414,7 @@ jobs:
       needs.lint.result == 'success' &&
       needs.typecheck.result == 'success' &&
       needs.dependency-audit.result == 'success' &&
+      needs.import-budget.result == 'success' &&
       (needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped') &&
       (needs.search-performance.result == 'success' || needs.search-performance.result == 'skipped') &&
       (needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped') &&
@@ -407,7 +422,7 @@ jobs:
       (needs.media-integration.result == 'success' || needs.media-integration.result == 'skipped') &&
       (needs.setup-contract.result == 'success' || needs.setup-contract.result == 'skipped') &&
       (needs.installed-artifact.result == 'success' || needs.installed-artifact.result == 'skipped')
-    needs: [scope, syntax, mesh-protocol-contract, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance]
+    needs: [scope, syntax, mesh-protocol-contract, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance, import-budget]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

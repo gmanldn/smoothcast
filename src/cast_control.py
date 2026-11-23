@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """SmoothCast desktop UI."""
 from __future__ import annotations
+
+import startup_timeline  # first: its clock starts the startup timeline (#463)
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -378,8 +380,12 @@ class CastControlApp(Adw.Application):
 
 
     def do_activate(self) -> None:
+        startup_timeline.mark("activate")
         window = self._window()
+        startup_timeline.mark("window_built")
         window.present()
+        startup_timeline.mark("presented")
+        GLib.idle_add(startup_timeline.mark_idle)
         if not self.selftest and not self._mpris_started:
             # MPRIS2 media widget / media keys (Linux desktop bus, issue #266).
             self._mpris_started = True

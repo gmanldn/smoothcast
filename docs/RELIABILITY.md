@@ -75,3 +75,22 @@ exercise GTK, and physical receivers need separate qualification.
 Hidden transcoding sessions retain a separate 1-second stall-watchdog tick;
 only the visual seekbar and audio-meter callbacks stop. This preserves HLS
 recovery during minimised/hidden playback without waking an idle window.
+
+## Startup budget (#463)
+
+The window should be interactive in under 800 ms on reference hardware. Two
+guards keep it that way:
+
+- **Import gate** — `python3 scripts/ci/import_budget.py` (CI job *Startup
+  import budget*, every push) imports the GUI entry module with
+  `-X importtime`, opens no window, and fails if a heavy module loads at
+  startup (`zeroconf`, `pychromecast`, `PIL`, `requests`, `catt`, the library
+  index/search/replica stack, …), if more than 460 modules load (394 before this
+  work, 387 now), or if the import takes over 3 s. Heavy modules load on first
+  use (`peer_discovery` resolves zeroconf lazily; `cast_portal_host` imports the
+  library stack only once a library folder exists). Add a new heavy dependency
+  to the denylist rather than raising the budget.
+- **Timeline** — `startup_timeline` records `activate`, `window_built`,
+  `presented` and `interactive` (first idle iteration after presenting), in
+  milliseconds since SmoothCast code started. `smoothcast --diagnostics` and the
+  diagnostics bundle include it under `startup`, next to the 800 ms budget.

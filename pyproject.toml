@@ -193,6 +193,7 @@ py-modules = [
     "shortcut_map",
     "sleep_fade",
     "startup_cleanup",
+    "startup_timeline",
     "state_labels",
     "stream_watchdog",
     "streamer",
