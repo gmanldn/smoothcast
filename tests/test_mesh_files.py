@@ -414,3 +414,51 @@ def test_mesh_stream_stops_instead_of_mixing_replaced_file_bytes():
     assert retried == ["bytes=4-7"]
     assert client.wfile.getvalue() == b"ABCD"
     assert client.close_connection is True
+
+
+def test_mesh_proxy_stream_limit_rejects_before_success_headers(monkeypatch):
+    """Busy mesh forwarding must be a clean 503, never a committed empty 200."""
+    from io import BytesIO
+    import portal_media
+
+    class Reply:
+        status = 200
+
+        def getheader(self, name):
+            return {"Content-Length": "3", "Content-Type": "video/mp4"}.get(name)
+
+        def read(self, _size):
+            return b"abc"
+
+    class Conn:
+        def close(self):
+            pass
+
+    class Client:
+        headers = {}
+        close_connection = False
+
+        def __init__(self):
+            self.wfile = BytesIO()
+
+    proxy = mesh_files.MeshFiles(lambda _key: None, lambda _key: [], lambda _peer: None)
+    proxy._open = lambda *_args: (Conn(), Reply())
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(portal_media, "_streams", slots)
+    assert slots.acquire(blocking=False)
+    sent_headers = []
+    client = Client()
+    try:
+        with pytest.raises(portal_media.MediaError) as exc:
+            proxy._proxy(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                         head=False, write_headers=lambda *args: sent_headers.append(args))
+        assert exc.value.status == 503
+        assert sent_headers == []
+        assert client.wfile.getvalue() == b""
+    finally:
+        slots.release()
+
+    assert proxy._proxy(client, "qh:" + "a" * 32, "http://127.0.0.1/",
+                        head=False, write_headers=lambda *args: sent_headers.append(args))
+    assert sent_headers[0][0] == 200
+    assert client.wfile.getvalue() == b"abc"
