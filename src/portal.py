@@ -159,9 +159,11 @@ def page_build() -> str:
 
 
 def _page() -> bytes:
-    # Replace just the main closing tag; the Screens panel is part of the build.
-    markup = _HTML.replace("</main>", portal_screen_page.panel_html()
-                           + portal_mesh_panel.panel_html() + "</main>", 1)
+    # Keep optional panels inside #dashboard: their grid placement and login
+    # visibility must follow the rest of the authenticated room controls.
+    dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
+    markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
+                           + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
