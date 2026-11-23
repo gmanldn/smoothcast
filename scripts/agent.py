@@ -516,10 +516,17 @@ def cmd_claim(a: argparse.Namespace) -> int:
         else:
             print("CLAIM NOT CONFIRMED in GitHub comment feed; withdrawn, retry or pick another.")
         return 3
-    gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/labels", "-f", "labels[]=in-flight")
-    login = gh("user")
-    if isinstance(login, dict) and login.get("login"):  # AGENTS.md: claim by assignment + comment
-        gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/assignees", "-f", f"assignees[]={login['login']}")
+    # The confirmed structured comment is the lock. GitHub labels/assignees
+    # are advisory and must never turn a successful lease into a false failure.
+    # Otherwise start() can leave an invisible orphan lease on metadata 403.
+    try:
+        gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/labels", "-f", "labels[]=in-flight")
+        login = gh("user")
+        if isinstance(login, dict) and login.get("login"):
+            gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/assignees",
+               "-f", f"assignees[]={login['login']}")
+    except td.DigestError as exc:
+        print(f"claim confirmed; advisory labels/assignees unavailable: {exc}")
     print(f"claimed #{a.number} as {me}; lease {ttl} min (heartbeat to extend). Files: {', '.join(sorted(files)) or 'tbd'}")
     if files & PLAN_FIRST:
         print("NOTE: plan-first module; comment a short plan before editing (CLAUDE.md).")
