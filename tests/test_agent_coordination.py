@@ -33,6 +33,23 @@ def test_structured_claim_is_live_until_ttl_then_expires():
     assert claims(marker_comment(1, 10, 40, "a1", ["src/x.py"], ttl=30)) == []
 
 
+def test_client_future_heartbeat_cannot_create_permanent_claim():
+    stale = marker_comment(13, 584, 120, "clock-skewed", ["src/a.py"], ttl=90)
+    future = int((NOW + timedelta(days=180)).timestamp())
+    stale["body"] = stale["body"].replace(
+        "beat=" + str(int((NOW - timedelta(minutes=120)).timestamp())),
+        f"beat={future}"
+    )
+    assert claims(stale) == []  # GitHub created_at wins over client beat.
+
+    renewed = dict(stale, updated_at=iso(2))
+    assert [x["agent"] for x in claims(renewed)] == ["clock-skewed"]
+
+    published_release = comment(
+        14, 584, 5, "Released\n<!-- sc-release v1 agent=clock-skewed -->")
+    assert claims(renewed, published_release) == []  # Comment-ID order wins.
+
+
 def test_release_marker_ends_only_that_agents_claim():
     release = comment(3, 10, 5, "Released\n<!-- sc-release v1 agent=a1 -->")
     live = claims(marker_comment(1, 10, 20, "a1", ["src/x.py"]),
