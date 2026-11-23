@@ -36,6 +36,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self._stop_portal()
         if not address:
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
+            self._set_room_join_link(None, "Room unavailable — connect to a private LAN")
             return True
         try:
             snapshot = getattr(self, "_portal_status", None)
@@ -60,6 +61,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_status_label.set_text(
                 "Could not start the shared room. Check the network connection and room settings."
             )
+            self._set_room_join_link(None, "Room unavailable — check network settings")
             return True
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.
@@ -70,6 +72,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
         self.portal_url_label.set_text(self._portal.url)
+        self._set_room_join_link(self._portal.url)
         self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(
             self._portal.pin if self._portal.server.pin_required else "Not required")
@@ -127,6 +130,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_copy_button.set_sensitive(False)
             self._show_portal_qr(None)
             self.portal_url_label.set_text("—")
+            self._set_room_join_link(None, "Room stopped")
             self.portal_pin_label.set_text("—")
         if hasattr(self, "portal_activity_label"):
             self.portal_activity_label.set_text("No client activity")
