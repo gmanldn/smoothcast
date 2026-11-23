@@ -102,6 +102,7 @@ class FederatedSearch:
             try:
                 raw = base64.b64decode(cursor, altchars=b"-_", validate=True)
                 if (0 < len(raw) <= 5 and raw.isascii() and raw.isdecimal()
+                        and (raw == b"0" or not raw.startswith(b"0"))
                         and base64.urlsafe_b64encode(raw).decode() == cursor):
                     candidate = int(raw)
                     if candidate <= len(rows):
