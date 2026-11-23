@@ -2407,6 +2407,20 @@ async function matchesPendingFile(file,upload){
   return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
     &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion||1)===upload.hash;
 }
+const MAX_UPLOAD_CHUNK_BYTES=8*1024*1024;
+function validUploadChunkSize(size){
+  return Number.isSafeInteger(size)&&size>0&&size<=MAX_UPLOAD_CHUNK_BYTES;
+}
+function validUploadProgress(value,size){
+  return Number.isSafeInteger(size)&&size>0&&size<=2**40
+    &&Number.isSafeInteger(value)&&value>=0&&value<=size;
+}
+function validSavedUpload(record){
+  return record&&typeof record.id==="string"&&/^[A-Za-z0-9_-]{32}$/.test(record.id)
+    &&typeof record.name==="string"&&record.name.length>0
+    &&validUploadChunkSize(record.chunkSize)
+    &&validUploadProgress(record.received,record.size);
+}
 async function clearPendingUpload(){
   const id=pendingUpload?.id;
   pendingUpload=null;
@@ -2420,10 +2434,15 @@ async function restoreUpload(){
   try{
     const records=await uploadStorage("readonly",store=>store.getAll())||[];
     for(const record of records.sort((a,b)=>b.started-a.started)){
-      if(!/^[A-Za-z0-9_-]{32}$/.test(record.id)||csrf!==session)continue;
+      if(csrf!==session)return;
+      if(!validSavedUpload(record))continue;
       try{
         const state=await uploadRequest("GET","/api/uploads/"+record.id);
         if(csrf!==session)return;
+        if(!validUploadProgress(state.received,record.size)){
+          showError("uploadStatus","Saved upload progress is invalid. Reload to check it again.");
+          return;
+        }
         pendingUpload={...record,received:state.received};
         $("uploadProgress").max=record.size;
         $("uploadProgress").value=state.received;
@@ -2512,11 +2531,15 @@ $("uploadButton").addEventListener("click",async()=>{
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
+        if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
+          throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
       }
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
+      if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
+        throw Error("Upload progress is invalid. Reload and choose the file again.");
       casting=!!state.ready_to_cast;
       $("uploadProgress").max=file.size;
       $("uploadProgress").value=state.received;
