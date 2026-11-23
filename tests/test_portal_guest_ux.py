@@ -230,3 +230,63 @@ const $=id=>fields[id];
 """
     subprocess.run(["node", "-"], input=harness + share + checks,
                    check=True, text=True, timeout=10)
+
+
+def test_joined_room_and_open_expiry_return_focus_to_visible_content():
+    """Headless browser focus regression for join/rejoin, not a real desktop."""
+    import shutil
+    import subprocess
+    import pytest
+
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function showJoinedRoom(){")
+    end = script.index("function applyStatus(d){", start)
+    joined = script[start:end]
+    start = script.index("function expireSession(){")
+    end = script.index("function clock(s){", start)
+    expired = script[start:end]
+    assert 'id="playbackHeading" tabindex="-1"' in portal._HTML
+    if not shutil.which("node"):
+        pytest.skip("Node.js required to test focus transitions")
+    harness = r"""
+const assert=require("node:assert/strict");
+const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
+ playbackHeading:{focusCount:0,focus(){this.focusCount++}},
+ login:{hidden:true},loginButton:{disabled:false},
+ pin:{focusCount:0,focus(){this.focusCount++}},
+ name:{focusCount:0,focus(){this.focusCount++}},
+ errorDash:{textContent:""},error:{textContent:""}};
+const $=id=>elements[id];
+const loginButton=elements.loginButton;
+let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null;
+const pendingControls={clear(){}};const roomEvents={stop(){}};
+function syncRemoteWakeLock(){}
+function resetUploadBatch(){}
+function showError(id,msg){$(id).textContent=msg}
+"""
+    scenario = r"""
+showJoinedRoom();
+assert.equal(elements.playbackHeading.focusCount,1);
+assert.equal(elements.dashboard.hidden,false);
+showJoinedRoom();
+assert.equal(elements.playbackHeading.focusCount,1,"polls must not steal focus");
+const PIN_REQUIRED=false;
+expireSession();
+assert.equal(elements.name.focusCount,1);
+assert.equal(elements.pin.focusCount,0);
+assert.match(elements.error.textContent,/name to rejoin/);
+assert.equal(elements.login.hidden,false);
+assert.equal(elements.dashboard.hidden,true);
+"""
+    subprocess.run(["node", "-"], input=harness + joined + expired + scenario,
+                   check=True, text=True, timeout=10)
+
+
+def test_update_notice_focuses_recovery_action():
+    """A stale remote must offer a reachable reload button to keyboard users."""
+    text = portal._HTML
+    start = text.index("function showUpdateNotice(){")
+    end = text.index("function matchingBuild(", start)
+    notice = text[start:end]
+    assert 'document.getElementById("updateNotice").hidden=false' in notice
+    assert 'document.getElementById("reloadNow").focus?.({preventScroll:true})' in notice
