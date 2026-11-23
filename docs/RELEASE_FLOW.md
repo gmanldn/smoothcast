@@ -11,6 +11,25 @@ can authorise the verified GitHub Actions actor for the protected merge or
 choose a manually reviewed-PR release route. Do not force-merge, disable
 protection, or mistake an unmerged `develop` version for a published release.
 
+## Permanent working-branch protection after release
+
+On 23 November 2026 release PR #544 successfully merged to `main`, but
+GitHub's repository setting `delete_branch_on_merge=true` automatically
+deleted **`develop`**, its PR source. The released tree and history were
+not lost: `main` contained the latest develop commit as a merge parent,
+and `develop` was recreated by a non-forced ref creation.
+
+**Repository setting to change:** Settings → General → Pull Requests →
+**Automatically delete head branches** → off. Because `develop` is the
+permanent integration branch, never let GitHub prune it after a release.
+
+`.github/workflows/sync-main.yml` is a defence in depth: it checks out
+`main` (not potentially deleted `develop`) and handles both the main push
+and merged-PR close events. When the branch is absent it attempts a non-forced
+restore from the merged main commit; when present it merges or fast-forwards
+without overwriting concurrent agent work. Failures must be investigated;
+do not force-push or overwrite divergent refs. **MainProtector remains active.**
+
 ## Releases: develop → main automatically
 
 1. On `develop`, for each **completed GitHub ticket**, run
