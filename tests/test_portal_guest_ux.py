@@ -92,3 +92,57 @@ def test_portal_stays_local_and_unprivileged():
     assert 'post("/api/login"' in portal._HTML
     assert 'credentials:"same-origin"' in portal._HTML
     assert '"X-CSRF-Token":csrf' in portal._HTML
+
+
+def test_upload_picker_has_actionable_disabled_state():
+    """No file selected must not offer a button that silently does nothing."""
+    text = portal._HTML
+    assert 'id="uploadSelectionHint"' in text
+    assert 'aria-describedby="uploadSelectionHint" disabled' in text
+    assert '$("uploadButton").disabled=uploading||!file;' in text
+
+
+def test_upload_button_state_transitions_in_headless_browser_js():
+    """Exercise the actual browser handler without a GUI, network or file reads."""
+    import shutil
+    import subprocess
+    import pytest
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js is required for this browser-control regression")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function updateUploadControls(){")
+    end = script.index("function resetUploadBatch(){", start)
+    controls = script[start:end]
+    harness = r"""
+const assert = require("node:assert/strict");
+let uploading=false,pendingUpload=null,batchFiles=null,batchIndex=0,cancelUpload=false;
+const el={
+ videoFile:{files:[],disabled:false,multiple:true},
+ uploadQueue:{checked:true,disabled:false},
+ uploadButton:{disabled:false,textContent:""},
+ cancelUpload:{hidden:true,disabled:false}
+};
+const $=id=>el[id];
+"""
+    scenario = r"""
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"empty picker must disable upload");
+el.videoFile.files=[{name:"video.mp4",size:100}];
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,false);
+assert.equal(el.uploadButton.textContent,"Upload and add");
+el.uploadQueue.checked=false;
+updateUploadControls();
+assert.equal(el.uploadButton.textContent,"Upload and cast","video intent must be clear");
+el.videoFile.files=[{name:"audio.mp3",size:100}];
+updateUploadControls();
+assert.equal(el.uploadQueue.checked,true,"audio always goes into Up Next");
+assert.equal(el.uploadQueue.disabled,true);
+assert.equal(el.uploadButton.textContent,"Upload and add");
+uploading=true;
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"in-flight upload cannot be started twice");
+"""
+    subprocess.run(["node", "-"], input=harness + controls + scenario,
+                   check=True, text=True, timeout=10)
