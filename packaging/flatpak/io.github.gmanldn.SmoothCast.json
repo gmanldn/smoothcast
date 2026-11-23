@@ -1,7 +1,7 @@
 {
   "id": "io.github.gmanldn.SmoothCast",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "49",
+  "runtime-version": "51",
   "sdk": "org.gnome.Sdk",
   "command": "smoothcast",
   "finish-args": [
