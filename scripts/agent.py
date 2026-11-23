@@ -348,12 +348,17 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
     latest = handovers[-1][:5000] if handovers else "No prior handover; inspect related commits."
     body = str(issue.get("body") or "")
     named = sorted(predicted_files(body))
+    # Pure local routing: do not consume the entire handbook or query GitHub
+    # again just to decide which source invariants this ticket needs.
+    import agent_context
+    guidance = agent_context.route_hint([str(issue.get("title") or ""), *named[:3]])
     return (
         f"# SmoothCast issue #{number}: {issue.get('title', '')}\n\n"
         f"Source baseline: {base}\n"
         "Authority: GitHub issue and latest develop source; refresh before each ship.\n"
         f"Likely files: {', '.join(named) or 'not specified; inspect issue and source'}\n"
-        "Start here: AGENTS.md then one routed handbook topic.\n\n"
+        "Start here: AGENTS.md then one relevant handbook topic.\n"
+        f"Context route: {guidance}\n\n"
         f"## Acceptance and background\n{body[:30000]}\n\n"
         f"## Most recent durable handover\n{latest}\n"
     )
