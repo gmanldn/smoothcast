@@ -103,6 +103,129 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Wait for SmoothCast to start again.
   2. Reload the page.
 
+<a id="errors-ffmpeg-missing"></a>
+## `ffmpeg.missing`
+
+- Severity: error; retryable: no
+- Message: FFmpeg is missing or cannot start. SmoothCast needs FFmpeg 5.0 or newer.
+- Try:
+  1. Install FFmpeg 5.0 or newer.
+  2. Restart SmoothCast.
+
+<a id="errors-ffmpeg-decoder-failed"></a>
+## `ffmpeg.decoder_failed`
+
+- Severity: error; retryable: no
+- Message: SmoothCast could not decode this file. Choose a different track or file.
+- Try:
+  1. Choose another audio track or subtitle option.
+  2. Try a different file.
+
+<a id="errors-ffmpeg-decoder-timeout"></a>
+## `ffmpeg.decoder_timeout`
+
+- Severity: warning; retryable: yes
+- Message: Checking this file took too long. Try again or choose a different file.
+- Try:
+  1. Retry the action.
+  2. Try a different file if it keeps happening.
+
+<a id="errors-ffmpeg-probe-missing"></a>
+## `ffmpeg.probe_missing`
+
+- Severity: error; retryable: no
+- Message: ffprobe is missing. Install FFmpeg, which includes it.
+- Try:
+  1. Install FFmpeg 5.0 or newer.
+  2. Restart SmoothCast.
+
+<a id="errors-media-probe-failed"></a>
+## `media.probe_failed`
+
+- Severity: warning; retryable: yes
+- Message: SmoothCast could not read this file. Check that it is a playable media file.
+- Try:
+  1. Check that the file opens in another player.
+  2. Choose a different file.
+
+<a id="errors-media-audio-track-missing"></a>
+## `media.audio_track_missing`
+
+- Severity: warning; retryable: no
+- Message: The selected audio track is not in this file. Choose Auto or another track.
+- Try:
+  1. Set the audio track to Auto.
+  2. Choose another track.
+
+<a id="errors-media-no-audio-stream"></a>
+## `media.no_audio_stream`
+
+- Severity: warning; retryable: no
+- Message: This file has no audio. Choose a different file.
+- Try:
+  1. Choose a different file.
+
+<a id="errors-media-changed"></a>
+## `media.changed`
+
+- Severity: info; retryable: yes
+- Message: The queued item changed. Try casting it again.
+- Try:
+  1. Cast it again.
+
+<a id="errors-subtitle-unavailable"></a>
+## `subtitle.unavailable`
+
+- Severity: warning; retryable: no
+- Message: The selected subtitles are unavailable. Choose other subtitles or turn them off.
+- Try:
+  1. Choose another subtitle track.
+  2. Turn subtitles off.
+
+<a id="errors-subtitle-unreadable"></a>
+## `subtitle.unreadable`
+
+- Severity: warning; retryable: no
+- Message: SmoothCast could not read these subtitles. Choose a valid subtitle file.
+- Try:
+  1. Choose a different subtitle file.
+  2. Turn subtitles off.
+
+<a id="errors-subtitle-audio-only"></a>
+## `subtitle.audio_only`
+
+- Severity: info; retryable: no
+- Message: Audio-only media does not support subtitles. Choose Auto or Off.
+- Try:
+  1. Set subtitles to Off.
+
+<a id="errors-cast-no-supported-format"></a>
+## `cast.no_supported_format`
+
+- Severity: error; retryable: no
+- Message: This receiver advertises no format SmoothCast can send. Choose another receiver.
+- Try:
+  1. Choose another receiver.
+  2. Try a Google Cast target.
+
+<a id="errors-cast-settings-unsupported"></a>
+## `cast.settings_unsupported`
+
+- Severity: warning; retryable: no
+- Message: This receiver needs normal speed and unrotated video. Reset those settings and retry.
+- Try:
+  1. Reset speed to normal.
+  2. Turn rotation off.
+  3. Retry the action.
+
+<a id="errors-cast-audio-only-unverified"></a>
+## `cast.audio_only_unverified`
+
+- Severity: warning; retryable: no
+- Message: This DLNA receiver is not verified for audio-only playback. Choose a Google Cast target.
+- Try:
+  1. Choose a Google Cast target.
+
 <a id="errors-internal-unexpected"></a>
 ## `internal.unexpected`
 

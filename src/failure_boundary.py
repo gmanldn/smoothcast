@@ -16,6 +16,8 @@ import re
 import time
 from typing import Callable
 
+import errors
+
 TITLE = "SmoothCast hit an unexpected problem"
 STEPS = ("Retry the action.", "If it keeps happening, use Report a problem in the Help menu.")
 CODE = "unexpected_error"
@@ -45,6 +47,7 @@ class UserFailure:
     steps: tuple[str, ...]
     detail: str  # private: for the error log and diagnostics, never for display
     reviewed: bool = False  # title is audited copy that already includes the first step
+    code: str = "internal.unexpected"  # catalogue code (docs/ERRORS.md)
 
     @property
     def message(self) -> str:
@@ -76,6 +79,13 @@ def _detail(exc: object) -> str:
     return " <- ".join(parts)[:MAX_DETAIL]
 
 
+def _code(exc: object) -> str:
+    code = getattr(exc, "code", None)
+    if not isinstance(code, str):
+        code = getattr(getattr(exc, "spec", None), "code", None)
+    return code if isinstance(code, str) and code in errors.CATALOGUE else errors.FALLBACK.code
+
+
 def describe(exc: object) -> UserFailure:
     """Map any exception (or nothing) to a polite failure; never raises."""
     try:
@@ -83,7 +93,12 @@ def describe(exc: object) -> UserFailure:
         if isinstance(reviewed, str) and reviewed.strip():
             steps = getattr(exc, "steps", ())
             clean = tuple(s for s in steps if isinstance(s, str)) if isinstance(steps, tuple) else ()
-            return UserFailure(reviewed.strip()[:MAX_MESSAGE], clean, _detail(exc), True)
+            code = _code(exc)
+            if not clean and code in errors.CATALOGUE:
+                clean = errors.CATALOGUE[code].steps
+            errors.record(code)
+            return UserFailure(reviewed.strip()[:MAX_MESSAGE], clean, _detail(exc), True, code)
+        errors.record(errors.FALLBACK.code)
         return UserFailure(TITLE, STEPS, _detail(exc))
     except Exception:
         return UserFailure(TITLE, STEPS, "")

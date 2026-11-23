@@ -150,7 +150,8 @@ class SessionMixin:
                 media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
                 raise UserFacingError(
-                    "The selected audio track is no longer in this film. Choose Auto or another track."
+                    "The selected audio track is no longer in this film. Choose Auto or another track.",
+                    code="media.audio_track_missing",
                 )
             music_enabled = streamer.schedule_music_analysis(
                 path, media, audio_track, self, cfg)
@@ -161,7 +162,8 @@ class SessionMixin:
                 embedded = streamer.preferred_embedded_subtitle(media, requested)
                 if subs_mode == "embedded" and embedded is None:
                     raise UserFacingError(
-                        "The selected subtitle track is unavailable. Choose another track or turn subtitles off."
+                        "The selected subtitle track is unavailable. Choose another track or turn subtitles off.",
+                        code="subtitle.unavailable",
                     )
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.
@@ -182,13 +184,15 @@ class SessionMixin:
             if renderer is not None:
                 if speed != 1.0 or rotation != 0:
                     raise UserFacingError(
-                        "This receiver needs normal speed and unrotated video. Reset those settings and try again."
+                        "This receiver needs normal speed and unrotated video. Reset those settings and try again.",
+                        code="cast.settings_unsupported",
                     )
                 try:
                     media_type = dlna.negotiate_media_type(renderer)
                 except dlna.DlnaError as exc:
                     raise UserFacingError(
-                        "The receiver advertises no supported MP4 or MPEG-TS format. Choose another receiver."
+                        "The receiver advertises no supported MP4 or MPEG-TS format. Choose another receiver.",
+                        code="cast.no_supported_format",
                     ) from exc
                 if cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
@@ -198,7 +202,7 @@ class SessionMixin:
                 raise streamer.StreamError("Cast cancelled before replacing current playback")
             if (prewarm_fingerprint is not None and
                     queue_metadata.file_fingerprint(path) != prewarm_fingerprint):
-                raise UserFacingError("The queued film changed. Try casting it again.")
+                raise UserFacingError("The queued film changed. Try casting it again.", code="media.changed")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
             if cancel.is_set():

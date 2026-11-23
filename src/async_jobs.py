@@ -48,9 +48,12 @@ class WorkRejected(RuntimeError):
 class UserFacingError(RuntimeError):
     """An expected failure with copy reviewed for display and optional private detail."""
 
-    def __init__(self, message: str, *, detail: str | None = None) -> None:
+    default_code = "internal.unexpected"
+
+    def __init__(self, message: str, *, detail: str | None = None, code: str | None = None) -> None:
         super().__init__(message if not detail else f"{message} {detail}")
         self.user_message = message
+        self.code = code or self.default_code  # stable, untranslated (docs/ERRORS.md)
 
 
 class WorkDomains:

@@ -65,3 +65,54 @@ def test_catalogued_errors_flow_through_the_failure_boundary():
     assert failure.message == errors.CATALOGUE["cast.receiver_offline"].message
     assert failure.steps == errors.CATALOGUE["cast.receiver_offline"].steps
     assert "/home/sam" not in failure.detail
+
+
+def test_every_code_used_at_a_raise_site_is_catalogued():
+    """Slice B: sites tag failures with ``code=``; a typo must fail here, not in the field."""
+    import ast
+    used = set()
+    for path in (ROOT / "src").glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call):
+                for kw in node.keywords:
+                    if kw.arg == "code" and isinstance(kw.value, ast.Constant) \
+                            and isinstance(kw.value.value, str) and "." in kw.value.value:
+                        used.add(kw.value.value)
+    assert len(used) >= 15
+    assert used <= set(errors.CATALOGUE), sorted(used - set(errors.CATALOGUE))
+
+
+def test_user_facing_error_code_reaches_failure_and_recent_ring():
+    from async_jobs import UserFacingError
+    errors.reset_recent()
+    failure = failure_boundary.describe(UserFacingError("Gone.", code="media.unavailable"))
+    assert failure.code == "media.unavailable"
+    assert failure.steps == errors.CATALOGUE["media.unavailable"].steps
+    failure_boundary.describe(UserFacingError("Odd.", code="not.a_code"))
+    failure_boundary.describe(ValueError("raw"))
+    assert [e["code"] for e in errors.recent()] == [
+        "media.unavailable", "internal.unexpected", "internal.unexpected"]
+
+
+def test_recent_ring_is_bounded_and_diagnostics_carry_codes():
+    import diagnostics
+    errors.reset_recent()
+    for _ in range(50):
+        errors.record("cast.receiver_offline")
+    assert len(errors.recent()) == 20
+    assert diagnostics.collect()["error_codes"][-1]["code"] == "cast.receiver_offline"
+    errors.reset_recent()
+
+
+def test_preflight_and_ffmpeg_failures_carry_catalogue_codes(tmp_path):
+    import ffmpeg_compat
+    import preflight
+    import subprocess
+    exc = None
+    try:
+        ffmpeg_compat.require_supported_ffmpeg(run=lambda *a, **k: (_ for _ in ()).throw(OSError()))
+    except ffmpeg_compat.FFmpegVersionError as caught:
+        exc = caught
+    assert exc and exc.code == "ffmpeg.missing"
+    assert issubclass(preflight.PreflightError, ffmpeg_compat.UserFacingError)
+    assert subprocess  # imported for parity with the runtime modules

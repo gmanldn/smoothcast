@@ -157,6 +157,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
     from reliability_metrics import recent as recent_reliability
+    import errors
     import shutdown_plan
     import startup_timeline
 
@@ -184,6 +185,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "startup": startup_timeline.snapshot(),
         # Clean vs unclean previous exits and how long the last shutdown took (#465).
         "shutdown": shutdown_plan.ShutdownLedger().summary(),
+        # Last error codes shown to the user: codes and times only, no context (#207).
+        "error_codes": errors.recent(),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),

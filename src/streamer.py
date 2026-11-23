@@ -476,9 +476,9 @@ def audio_cast_options(media: "MediaInfo", subs_mode: str,
     if getattr(media, "is_audio_only", False) is not True:
         return subs_path, burn
     if subs_mode in {"pick", "embedded"}:
-        raise StreamPreparationError("Audio-only media does not support subtitles; choose Auto or Off")
+        raise StreamPreparationError("Audio-only media does not support subtitles; choose Auto or Off", code="subtitle.audio_only")
     if dlna:
-        raise StreamPreparationError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
+        raise StreamPreparationError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target", code="cast.audio_only_unverified")
     return None, False
 
 
@@ -935,7 +935,7 @@ def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: floa
             except OSError:
                 pass
             proc.communicate()
-            raise StreamPreparationError("ffprobe timed out while reading this file")
+            raise StreamPreparationError("ffprobe timed out while reading this file", code="media.probe_failed")
         try:
             stdout, stderr = proc.communicate(timeout=min(0.1, remaining))
             return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
@@ -955,13 +955,13 @@ def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> Med
         result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
                   subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
-        raise StreamPreparationError("ffprobe is not installed or not on PATH") from exc
+        raise StreamPreparationError("ffprobe is not installed or not on PATH", code="ffmpeg.probe_missing") from exc
     except subprocess.TimeoutExpired as exc:
-        raise StreamPreparationError("ffprobe timed out while reading this file") from exc
+        raise StreamPreparationError("ffprobe timed out while reading this file", code="media.probe_failed") from exc
     except OSError as exc:
         raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
-        raise StreamPreparationError("ffprobe could not read this file")
+        raise StreamPreparationError("ffprobe could not read this file", code="media.probe_failed")
     try:
         data = json.loads(result.stdout or "{}")
         if not isinstance(data, dict):
@@ -1750,7 +1750,7 @@ class Session:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
             if track is None or not track.is_supported:
-                raise StreamPreparationError("Selected embedded subtitle track is unavailable or unsupported")
+                raise StreamPreparationError("Selected embedded subtitle track is unavailable or unsupported", code="subtitle.unavailable")
             bitmap_track = track if track.is_bitmap else None
             embedded_codec = track.codec if track.is_text else ""
             burn_subs = True

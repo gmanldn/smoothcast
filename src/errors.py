@@ -10,9 +10,11 @@ Call sites are migrated in later slices; this module changes no behaviour.
 """
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
+import time
 
-CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "upload", "internal")
+CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "subtitle", "upload", "internal")
 SEVERITIES = ("info", "warning", "error")
 
 
@@ -71,6 +73,48 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("app.shutting_down", "info", False,
           "SmoothCast is shutting down. Reconnect when it has restarted.",
           "Wait for SmoothCast to start again.", "Reload the page."),
+    _spec("ffmpeg.missing", "error", False,
+          "FFmpeg is missing or cannot start. SmoothCast needs FFmpeg 5.0 or newer.",
+          "Install FFmpeg 5.0 or newer.", "Restart SmoothCast."),
+    _spec("ffmpeg.decoder_failed", "error", False,
+          "SmoothCast could not decode this file. Choose a different track or file.",
+          "Choose another audio track or subtitle option.", "Try a different file."),
+    _spec("ffmpeg.decoder_timeout", "warning", True,
+          "Checking this file took too long. Try again or choose a different file.",
+          "Retry the action.", "Try a different file if it keeps happening."),
+    _spec("ffmpeg.probe_missing", "error", False,
+          "ffprobe is missing. Install FFmpeg, which includes it.",
+          "Install FFmpeg 5.0 or newer.", "Restart SmoothCast."),
+    _spec("media.probe_failed", "warning", True,
+          "SmoothCast could not read this file. Check that it is a playable media file.",
+          "Check that the file opens in another player.", "Choose a different file."),
+    _spec("media.audio_track_missing", "warning", False,
+          "The selected audio track is not in this file. Choose Auto or another track.",
+          "Set the audio track to Auto.", "Choose another track."),
+    _spec("media.no_audio_stream", "warning", False,
+          "This file has no audio. Choose a different file.",
+          "Choose a different file."),
+    _spec("media.changed", "info", True,
+          "The queued item changed. Try casting it again.",
+          "Cast it again."),
+    _spec("subtitle.unavailable", "warning", False,
+          "The selected subtitles are unavailable. Choose other subtitles or turn them off.",
+          "Choose another subtitle track.", "Turn subtitles off."),
+    _spec("subtitle.unreadable", "warning", False,
+          "SmoothCast could not read these subtitles. Choose a valid subtitle file.",
+          "Choose a different subtitle file.", "Turn subtitles off."),
+    _spec("subtitle.audio_only", "info", False,
+          "Audio-only media does not support subtitles. Choose Auto or Off.",
+          "Set subtitles to Off."),
+    _spec("cast.no_supported_format", "error", False,
+          "This receiver advertises no format SmoothCast can send. Choose another receiver.",
+          "Choose another receiver.", "Try a Google Cast target."),
+    _spec("cast.settings_unsupported", "warning", False,
+          "This receiver needs normal speed and unrotated video. Reset those settings and retry.",
+          "Reset speed to normal.", "Turn rotation off.", "Retry the action."),
+    _spec("cast.audio_only_unverified", "warning", False,
+          "This DLNA receiver is not verified for audio-only playback. Choose a Google Cast target.",
+          "Choose a Google Cast target."),
     _spec("internal.unexpected", "error", True,
           "SmoothCast hit an unexpected problem. Retry the action.",
           "Retry the action.",
@@ -78,6 +122,22 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
 )}
 
 FALLBACK = CATALOGUE["internal.unexpected"]
+
+_RECENT: "deque[tuple[float, str]]" = deque(maxlen=20)
+
+
+def record(code: str) -> None:
+    """Remember that ``code`` reached a user (bounded; codes only, never context)."""
+    _RECENT.append((time.time(), code if code in CATALOGUE else FALLBACK.code))
+
+
+def recent() -> list[dict]:
+    """Last error codes shown, oldest first, for the diagnostics bundle."""
+    return [{"at": int(at), "code": code} for at, code in _RECENT]
+
+
+def reset_recent() -> None:
+    _RECENT.clear()
 
 
 class SmoothCastError(Exception):
