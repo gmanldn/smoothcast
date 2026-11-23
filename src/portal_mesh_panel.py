@@ -38,6 +38,12 @@ _PANEL = r"""
 <p id="meshHint" class="muted"></p>
 <h3>Devices</h3><ul id="meshNodes" aria-label="Devices"></ul>
 <h3>Targets</h3><ul id="meshTargets" aria-label="Playback targets"></ul>
+
+<details class="help"><summary>What do the network devices and target states mean?</summary><div class="help-body">
+<p><strong>Devices</strong> are SmoothCast computers cooperating on your local network. <strong>Targets</strong> are the TVs, speakers and browser screens they can reach. <strong>This device</strong> identifies this host; <strong>Primary</strong> is the node coordinating the mesh, not the receiver currently playing.</p>
+<p><strong>Ready</strong> means the receiver is currently reachable, <strong>In use</strong> means another room has it, <strong>Not seen lately</strong> means discovery is out of date, and <strong>Can't be reached</strong> means no node can currently contact it.</p>
+<p>This panel is a read-only view of local network activity. It does not cast, claim receivers or upload files; use Now Playing, Find or Add files for room actions. Reconnecting indicates that updates have temporarily stopped, not that your current cast has ended.</p>
+</div></details>
 <div id="meshLive" class="sr-only" aria-live="polite" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div></section>
 <script>
 (function(){
