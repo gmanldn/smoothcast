@@ -263,3 +263,30 @@ def test_progress_does_not_release_when_post_is_unconfirmed(monkeypatch):
     with pytest.raises(agent.td.DigestError, match="did not confirm"):
         agent.cmd_progress(args)
     assert released == []
+
+
+def test_ticket_commits_requires_an_exact_issue_number(monkeypatch):
+    calls = []
+    def fake_git(*args):
+        calls.append(args)
+        return "a" * 40 + "\n" + "b" * 40 + "\n"
+    monkeypatch.setattr(agent, "git", fake_git)
+    assert agent.ticket_commits(511) == ["a" * 40, "b" * 40]
+    assert calls == [("log", "--extended-regexp",
+                      "--grep=(^|[^0-9])#511([^0-9]|$)", "--format=%H",
+                      "origin/develop")]
+
+
+def test_done_requires_a_published_ticket_commit_and_explicit_close_evidence(monkeypatch):
+    from argparse import Namespace
+    from types import SimpleNamespace
+    monkeypatch.setattr(agent, "git", lambda *args: "a" * 40 if args[0] == "rev-parse" else "")
+    monkeypatch.setattr(agent.subprocess, "run", lambda *_args, **_kw: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(agent, "ticket_commits", lambda n: [])
+    monkeypatch.setattr(agent, "gh", lambda *_args: (_ for _ in ()).throw(AssertionError("no API write")))
+    monkeypatch.setattr(agent, "release", lambda *_args: (_ for _ in ()).throw(AssertionError("no release")))
+    base = Namespace(number=511, why="reason", checklist="not done",
+                     verification="not run (unverified)", close=False)
+    assert agent.cmd_done(base) == 2  # no published commit for this exact issue
+    base.close = True
+    assert agent.cmd_done(base) == 2  # cannot close with default unverified evidence
