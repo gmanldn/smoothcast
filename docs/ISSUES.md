@@ -83,6 +83,13 @@ The stable title format is **`[P0][SC-058] Short action or outcome`** for
 migrated work. Future proposals use informative titles, priority and scope;
 choose new identifiers only deliberately (never reuse a legacy ID).
 
+## Labels and the safe pick command
+
+Labels (legend and strategy: #511): `wave-1`, `wave-2`, `icebox`, `agent-ready`,
+`needs-split`, `needs-human`, `in-flight`, `verify-close`, `epic`. Less-capable
+agents use `python3 scripts/ticket_digest.py --next --label agent-ready --unclaimed`
+and read only the issue plus its **Agent brief** comment.
+
 ## Priorities, classification and status
 
 - **P0:** correctness, broken playback, data/process safety, serious

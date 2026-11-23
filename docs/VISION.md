@@ -6,6 +6,12 @@ security and trust — this page wins; reconcile the other document when you
 next touch it. Implementation detail still lives in tickets and design docs
 such as [MESH_DESIGN.md](MESH_DESIGN.md).
 
+**Order of work is set separately.** This page is the destination. The sequence,
+the deferred (icebox) items and the rules for agents live in the strategy epic
+[#511](https://github.com/gmanldn/smoothcast/issues/511); where the two differ
+on *what to build next*, #511 wins. In short: quality and foundations first,
+then power-user features, then the household features marked below as deferred.
+
 ## The goal
 
 SmoothCast is a **lightweight, universally available and responsive smart mesh**
@@ -26,6 +32,11 @@ equipment they own, and whoever drops round for the evening.
 - **Quality of engineering first.** Before we add a feature we make sure it is
   deterministic, bounded, tested without hardware, and explains itself when it
   fails.
+- **Elegant before big.** The mantras are *universal, simple, fast, compatible*.
+  Linux, macOS and Windows are equally first-class. SmoothCast never crashes:
+  every failure reaches the user as a sensible, polite message. When a feature
+  would add complication without a clear payoff, we defer it rather than ship
+  it half-built.
 
 ## The house we design for
 
@@ -194,7 +205,7 @@ epic #436 (trust-model changes: #416, #417, #418). Each new item is scoped so it
 - Mixed-version compatibility via protocol versions and capabilities (#387).
 - One house library across all nodes (#367) with content fingerprints (#366);
   shared-nothing replicated search is designed in [MESH_SEARCH.md](MESH_SEARCH.md).
-- Rooms instead of device names (#370), group presets (#371), private rooms
+- Rooms instead of device names (#370), group presets (#371, deferred: rooms are independent, with no cross-room sync promise), private rooms
   (#376), quiet hours (#375).
 - House health at a glance (#386).
 - **#421 — Partition healing.** The shared queue and room state become
@@ -241,7 +252,9 @@ epic #436 (trust-model changes: #416, #417, #418). Each new item is scoped so it
 - Everyone edits Up Next, atomically and idempotently (done: #314, #323).
 - **#429 — Room follows the house, or goes solo.** One house queue by default;
   any room can "go solo" with its own queue and later rejoin.
-- Votes, fair turns, undo (#326, #327, #328), activity timeline (#332).
+- **Conflicts are settled by "last action wins, visibly":** the activity
+  timeline (#332) shows who did what. Votes, fair turns and control leases
+  (#326, #327, #331) are deferred courtesy features; undo (#328) is Wave 2.
 - Movie-night vote (#392), house radio when the queue runs dry (#379).
 
 ### 6. Phones and tablets feel native, without an app
@@ -304,5 +317,8 @@ Every feature above ships with:
 
 - Cloud accounts, remote access over the internet, or relay servers.
 - DRM, piracy automation, or scraping of commercial streaming sites.
-- A native mobile app (the web client must be good enough).
+- A native mobile app **for now**. The web client must first be good enough
+  (budgets above, WCAG 2.2 AA). Native apps may be revisited later if the web
+  platform cannot deliver something people need, such as reliable background
+  controls.
 - Defences against hostile people on the home LAN (see the trust model).
