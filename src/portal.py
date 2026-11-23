@@ -2391,7 +2391,8 @@ async function firstChunkHash(file,chunkSize,version=3){
     return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
   }
   // Legacy v1 FNV-1a 64 over the full negotiated chunk. Yield for UI health.
-  const count=Math.min(file.size,chunkSize);
+  // Corrupt/stale IndexedDB records must never trigger an unbounded legacy hash.
+  const count=Math.min(file.size,chunkSize,8*1024*1024);
   let hash=0xcbf29ce484222325n;
   for(let offset=0;offset<count;offset+=16*1024){
     const bytes=new Uint8Array(await file.slice(offset,Math.min(count,offset+16*1024)).arrayBuffer());
