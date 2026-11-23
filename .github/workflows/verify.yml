@@ -106,6 +106,8 @@ jobs:
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
       - name: Verify mesh Range resume integrity
         run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py
+      - name: Verify source-second playheads and lock-screen controls
+        run: python -m pytest -q tests/test_playhead_projection.py tests/test_media_session_portal.py
       - name: Verify browser upload resumability and bounded chunks
         run: python -m pytest -q tests/test_portal_uploads.py tests/test_portal_upload_fingerprint.py
       - name: Verify bounded federated search cursors
