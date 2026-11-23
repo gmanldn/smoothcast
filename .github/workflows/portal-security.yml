@@ -31,11 +31,6 @@ on:
       - 'tests/test_portal*.py'
       - 'src/room_event_replay.py'
       - 'tests/test_room_event*.py'
-      - 'src/benchmark.py'
-      - 'src/low_end_policy.py'
-      - 'src/streamer.py'
-      - 'scripts/low_end_probe.py'
-      - 'tests/test_low_end*.py'
       - '.github/workflows/portal-security.yml'
   pull_request:
     # Do not duplicate tests for the long-lived develop -> main release PR.
@@ -68,11 +63,6 @@ on:
       - 'tests/test_portal*.py'
       - 'src/room_event_replay.py'
       - 'tests/test_room_event*.py'
-      - 'src/benchmark.py'
-      - 'src/low_end_policy.py'
-      - 'src/streamer.py'
-      - 'scripts/low_end_probe.py'
-      - 'tests/test_low_end*.py'
       - '.github/workflows/portal-security.yml'
   workflow_dispatch:
 
@@ -126,9 +116,6 @@ jobs:
           tests/test_portal_uploads.py
           tests/test_portal_queue.py
           tests/test_room_conformance.py
-          tests/test_low_end_policy.py
-          tests/test_low_end_encoding.py
-          tests/test_low_end_probe.py
 
   gtk-portal-smoke:
     name: Isolated GTK host-control smoke (Xvfb)
