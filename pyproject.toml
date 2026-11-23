@@ -119,7 +119,7 @@ py-modules = [
     "mesh_library",
     "mesh_membership",
     "mesh_model",
-    "mesh_policy",
+    "mesh_policy", "mesh_discovery",
     "mesh_ports",
     "mesh_roles",
     "mesh_rpc",

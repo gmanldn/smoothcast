@@ -265,3 +265,23 @@ def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypa
     cast_mesh.stop(window)
     assert window._mesh is None and window._portal.server.mesh_feed is None
     assert wait_for(lambda: not mesh_threads())
+
+
+def test_app_hook_feeds_scanned_receivers_into_the_mesh(monkeypatch, tmp_path):
+    import cast_mesh
+    from types import SimpleNamespace as NS
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": True, "strict": False, "seeds": ()})
+    monkeypatch.setattr(svc, "config_path", lambda: tmp_path / "config.json")
+    window = FakeWindow()
+    window.devices = [NS(name="Lounge TV", host="127.0.0.1", port=1, uuid="u1", model="Chromecast")]
+    window.dlna_devices = []
+    cast_mesh.start(window, LOOP)
+    service = window._mesh
+    assert wait_for(lambda: service.state == "running")
+    cast_mesh.push_clients(window)
+    assert wait_for(lambda: "Lounge TV" in {t.name for _n, t in service.view.targets()})
+    window.devices = []
+    cast_mesh.push_clients(window)
+    cast_mesh.stop(window)
+    assert wait_for(lambda: not mesh_threads())

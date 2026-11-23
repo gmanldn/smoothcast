@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 
 import entry_name
+import mesh_discovery
 import mesh_service
 from version import __version__
 
@@ -27,6 +28,10 @@ def start(window: object, address: str) -> None:
             bind_ip=address, name=getattr(portal, "name", "") or "SmoothCast",
             version=__version__, room_port=getattr(portal, "port", None),
             strict=settings["strict"], seeds=settings["seeds"])
+        adapter = mesh_discovery.DiscoveryAdapter()
+        config.discovery = adapter.snapshot
+        window._mesh_discovery = adapter             # type: ignore[attr-defined]
+        window._mesh_scan_sig = None                 # type: ignore[attr-defined]
         service = mesh_service.MeshService(config)
         entry = entry_name.EntryName(address, int(getattr(portal, "port", 0) or 0))
         window._entry_name = entry                   # type: ignore[attr-defined]
@@ -84,6 +89,7 @@ def push_clients(window: object) -> None:
     if service is None or portal is None or service.state != "running":
         return
     try:
+        _feed_discovery(window, service)
         people = portal.room.snapshot().get("participants", [])
         screens = portal.server.screens.snapshot()
         signature = (tuple((p.get("id"), p.get("name"), p.get("online")) for p in people),
@@ -94,3 +100,18 @@ def push_clients(window: object) -> None:
             service.set_clients(people, screens)
     except Exception:
         return
+
+
+def _feed_discovery(window: object, service: object) -> None:
+    """Hand the app's latest Cast/DLNA scan lists to the mesh when they change."""
+    adapter = getattr(window, "_mesh_discovery", None)
+    if adapter is None:
+        return
+    cast = list(getattr(window, "devices", None) or [])
+    dlna = list(getattr(window, "dlna_devices", None) or [])
+    signature = (tuple(mesh_discovery.cast_id(d) + str(getattr(d, "name", "")) for d in cast),
+                 tuple(mesh_discovery.dlna_id(d) + str(getattr(d, "name", "")) for d in dlna))
+    if signature != getattr(window, "_mesh_scan_sig", None):
+        window._mesh_scan_sig = signature            # type: ignore[attr-defined]
+        adapter.update(cast, dlna)
+        service.discovery_changed()                  # type: ignore[attr-defined]

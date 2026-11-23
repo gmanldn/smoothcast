@@ -180,13 +180,33 @@ class MeshService:
             clock=loop, rng=rng, source=self._observe_source, publish=self.replicator.update,
             node_edges=lambda: [(m.node_id, loop.monotonic() - m.last_heard)
                                 for m in self.membership.members()],
-            prober=cfg.prober)
+            prober=cfg.prober or self._thread_prober)
         self.cache = mesh_cache.MeshCache(cfg.cache_path or cfg.state_dir / "mesh_cache.sqlite")
         self.cache.open()
         self.feed = mesh_clients.MeshFeed(self.publisher, primary=lambda: self.roles.primary)
         self.started_at = time.monotonic()
         loop.start()
         loop.call_soon_threadsafe(self._start_components)
+
+    def _thread_prober(self, item: mv.Discovered, done: Callable[[mv.ProbeResult], None]) -> None:
+        """Run the blocking TCP connect on a short-lived worker; answer on the loop."""
+        loop = self._loop
+
+        def work() -> None:
+            result: mv.ProbeResult = (False, None, "no_route")
+            try:
+                if item.probe is not None:
+                    result = mv.connect_probe(*item.probe)
+            except Exception:
+                pass
+            if loop is not None:
+                loop.call_soon_threadsafe(lambda: done(result))
+
+        threading.Thread(target=work, name="smoothcast-mesh-probe", daemon=True).start()
+
+    def _probe_round_now(self) -> None:
+        """Run a probe round immediately (tests and the Refresh action)."""
+        self.observer._probe_round()
 
     def _make_rpc(self, loop: mesh_udp.MeshLoop) -> RpcRouter:
         policy = mesh_policy.MeshPolicy(
