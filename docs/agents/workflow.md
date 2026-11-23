@@ -49,16 +49,15 @@ to `main`. The owner manually decides when (and whether) to merge it.
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
    is not proof of functionality. [Claim and handover protocol](../COORDINATION.md).
 
+**Preferred complete loop (claims, isolated worktree, PATCH allocation and durable handover):**
+
 ```sh
-git fetch origin develop
-git worktree add --detach ../smoothcast-ISSUE origin/develop
-cd ../smoothcast-ISSUE
-# edit a bounded issue slice; stage exact files
-git add path/to/changed.py
-git commit -m 'fix: concise outcome (Refs #ISSUE)'
-git fetch origin develop
-git rebase origin/develop    # own unpublished commits only
-git push origin HEAD:develop # fast-forward only; repeat fetch/rebase if contested
+python3 scripts/agent.py start        # or start ISSUE: claim and create worktree
+cd /path/printed/by/start
+# implement the narrow issue slice
+python3 scripts/agent.py ship --message "fix: completed behaviour" --next "none" --skip-checks
+# supply real targeted evidence when available, then close only if complete:
+python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
 
 ## Concurrency and token efficiency
@@ -72,9 +71,12 @@ git push origin HEAD:develop # fast-forward only; repeat fetch/rebase if contest
 - Prefer completing small independent tickets rather than keeping many broad
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
-- `src/version.py` changes **only for explicit owner-authorised release
-  intent**, not on ticket closure. Re-read before an authorised change. Use
-  `smoothcast --build-id` to identify intermediate develop commits.
+- A successful private-worktree `agent.py ship` appends one guarded PATCH
+  increment after its code changes, never before the latest remote rebase.
+  The normal Git SHA identifies every intermediate code revision; `main` and
+  release tags remain owner-controlled. **Raw `git push` skips the patch
+  allocator**: use `agent.py ship`, and don't manually compete for the shared
+  version file. Stronger server-side per-ticket once-only enforcement is #583.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
