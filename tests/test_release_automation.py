@@ -207,7 +207,15 @@ class WorkflowContractTests(unittest.TestCase):
     def test_sync_main_workflow_only_writes_develop_and_explains_conflicts(self):
         text = (ROOT / ".github/workflows/sync-main.yml").read_text("utf-8")
         self.assertIn("branches: [main]", text)
-        self.assertIn("ref: develop", text)
+        self.assertIn("ref: main", text)
+        self.assertIn("types: [closed]", text)
+        self.assertIn("github.event.pull_request.merged == true", text)
+        self.assertIn("git ls-remote --heads origin develop", text)
+        self.assertIn("git push origin origin/main:refs/heads/develop", text)
+        self.assertIn("git checkout --detach origin/develop", text)
+        self.assertIn("git merge --ff-only origin/main", text)
+        self.assertNotIn("git push --force", text)
+        self.assertNotIn("git push origin --force", text)
         self.assertIn("git push origin HEAD:develop", text)
         self.assertNotIn("origin HEAD:main", text)
         self.assertNotIn("push origin main", text)
@@ -334,6 +342,91 @@ fi
         run, calls = self._run(fetch_fails=True)
         self.assertNotEqual(run.returncode, 0)
         self.assertEqual(calls, "")
+
+
+
+class MainSyncRecoveryTests(unittest.TestCase):
+    """Exercise the actual main-sync shell against disposable local Git repos.
+
+    No GitHub API, desktop, external network or test fixture receiver required.
+    """
+
+    @staticmethod
+    def _script() -> str:
+        lines = (ROOT / ".github/workflows/sync-main.yml").read_text("utf-8").splitlines()
+        marker = lines.index(
+            "      - name: Reconcile main into develop without deleting or rewriting history"
+        )
+        start = lines.index("        run: |", marker) + 1
+        body: list[str] = []
+        for line in lines[start:]:
+            if line and not line.startswith("          "):
+                break
+            body.append(line[10:] if line else "")
+        return "\n".join(body)
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        (self.root / "source").mkdir()
+        self.source = Repo(self.root / "source")
+        self.source.commit({"src/version.py": VERSION.format(1), "base.txt": "initial"})
+        self.remote = self.root / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)],
+                       check=True, env=ENV, capture_output=True)
+        self.source.git("remote", "add", "origin", str(self.remote))
+        self.source.git("push", "-q", "origin", "main")
+        self.runner = self.root / "runner"
+        subprocess.run(["git", "clone", "-q", "--branch", "main",
+                        str(self.remote), str(self.runner)],
+                       check=True, env=ENV, capture_output=True)
+
+    def run_sync(self):
+        return subprocess.run(
+            ["bash", "-e", "-o", "pipefail", "-c", self._script()],
+            cwd=self.runner, env=ENV, capture_output=True, text=True, timeout=15,
+        )
+
+    def remote_sha(self, branch):
+        return self.source.git("ls-remote", "--heads", "origin", branch).split()[0]
+
+    def test_missing_develop_is_recreated_from_verified_main(self):
+        before = self.remote_sha("main")
+        result = self.run_sync()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("Restored develop", result.stdout)
+        self.assertEqual(self.remote_sha("develop"), before)
+
+    def test_existing_develop_ahead_is_never_replaced(self):
+        self.source.git("checkout", "-q", "-b", "develop")
+        tip = self.source.commit({"unreleased.txt": "preserve"}, "work in progress")
+        self.source.git("push", "-q", "origin", "develop")
+        result = self.run_sync()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(self.remote_sha("develop"), tip)
+
+    def test_divergent_main_is_merged_without_erasing_develop_changes(self):
+        self.source.git("checkout", "-q", "-b", "develop")
+        previous = self.source.commit({"develop.txt": "unreleased"}, "unreleased")
+        self.source.git("push", "-q", "origin", "develop")
+        self.source.git("checkout", "-q", "main")
+        updated = self.source.commit({"hotfix.txt": "from main"}, "main release")
+        self.source.git("push", "-q", "origin", "main")
+        result = self.run_sync()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.runner_git = lambda *args: subprocess.run(
+            ["git", *args], cwd=self.runner, env=ENV, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        self.runner_git("fetch", "-q", "origin", "develop")
+        tip = self.runner_git("rev-parse", "origin/develop")
+        self.assertNotEqual(tip, previous)
+        self.assertNotEqual(tip, updated)
+        self.runner_git("merge-base", "--is-ancestor", previous, tip)
+        self.runner_git("merge-base", "--is-ancestor", updated, tip)
+        self.assertEqual(self.runner_git("show", "origin/develop:develop.txt"), "unreleased")
+        self.assertEqual(self.runner_git("show", "origin/develop:hotfix.txt"), "from main")
 
 
 if __name__ == "__main__":

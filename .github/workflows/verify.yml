@@ -76,6 +76,10 @@ jobs:
         run: python -m unittest discover -s tests -p test_ticket_efficiency.py
       - name: Verify stale-safe per-ticket version bumps
         run: python -m unittest discover -s tests -p test_ticket_versioning.py
+      - name: Verify exact-head CI verdict does not trust stale checks
+        run: python -m unittest discover -s tests -p test_head_verdict.py
+      - name: Verify GTK dependency bootstrap never bypasses import gate
+        run: python -m unittest discover -s tests -p test_gtk_ci_deps.py
       - name: Verify bounded agent routing and instruction budgets
         run: |
           python -m unittest discover -s tests -p test_agent_context.py
@@ -99,6 +103,10 @@ jobs:
           python -m pip install 'pytest>=8,<10'
           python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py tests/test_notifications.py
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
+      - name: Verify no-device demo profile safety
+        run: |
+          python -m unittest discover -s tests -p test_demo_session.py
+          python -m unittest discover -s tests -p test_demo_cli_guard.py
       - name: Verify synthetic media source corpus
         run: python -m pytest -q tests/test_media_matrix_descriptions.py
       - name: Verify Cast HLS frame-rate compatibility
@@ -200,7 +208,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install GTK bindings (system Python)
-        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-psutil
+        run: python3 scripts/ci/install_gtk_import_deps.py
       - name: Heavy modules stay off the GUI startup path (no window is opened)
         env:
           SMOOTHCAST_IMPORT_SLACK: '2'

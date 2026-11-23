@@ -45,6 +45,11 @@ def _main() -> int:
         from gi.repository import Gtk, Adw  # noqa: F401
         print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
         return 0
+    if sys.argv[1:2] == ["--demo"]:
+        # Never interpret an unfinished demo request as a normal GUI launch:
+        # the normal app could discover or control the user's actual TV.
+        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
+        return 2
     if sys.argv[1:] in (["--version"], ["-V"]):
         from version import label
         print(f"SmoothCast {label()}")
