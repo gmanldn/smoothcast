@@ -185,3 +185,48 @@ assert.equal(locked.loginButton.textContent,"Join room");
 """
     subprocess.run(["node", "-"], input=harness + setup + finish,
                    check=True, text=True, timeout=10)
+
+
+def test_room_share_link_never_copies_a_pin_and_recovers_without_clipboard():
+    """The guest shares only the local origin, even if URL carries query data."""
+    import shutil
+    import subprocess
+    import pytest
+
+    markup = portal._HTML
+    for fragment in ('id="roomLinkText"', 'id="roomLinkCopy"',
+                     'id="roomLinkHint"', 'id="roomLinkStatus" role="status"'):
+        assert fragment in markup
+    script = markup.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index('const roomInviteLink=location.origin+"/";')
+    end = script.index("async function post(", start)
+    share = script[start:end]
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed to test clipboard fallback")
+    harness = r"""
+const assert=require("node:assert/strict");
+const location={origin:"http://192.168.1.10:4105",search:"?pin=123456",hash:"#secret"};
+let copied=[],clicked;
+const navigator={clipboard:{writeText:async value=>copied.push(value)}};
+const fields={
+ roomLinkText:{value:"",focused:false,selected:false,focus(){this.focused=true},select(){this.selected=true}},
+ roomLinkCopy:{addEventListener(event,callback){assert.equal(event,"click");clicked=callback}},
+ roomLinkStatus:{textContent:""}
+};
+const $=id=>fields[id];
+"""
+    checks = r"""
+(async()=>{
+  assert.equal(fields.roomLinkText.value,"http://192.168.1.10:4105/");
+  await clicked();
+  assert.deepEqual(copied,["http://192.168.1.10:4105/"]);
+  assert.match(fields.roomLinkStatus.textContent,/copied/i);
+  navigator.clipboard=null;
+  await clicked();
+  assert.equal(fields.roomLinkText.focused,true);
+  assert.equal(fields.roomLinkText.selected,true);
+  assert.match(fields.roomLinkStatus.textContent,/manually/i);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + share + checks,
+                   check=True, text=True, timeout=10)
