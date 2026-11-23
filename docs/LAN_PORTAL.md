@@ -328,6 +328,11 @@ The dashboard is organised in the order a new guest needs it:
 6. **More settings and network information** — optional lock-screen controls,
    wake lock, audio normalisation, other hosts and read-only receiver activity.
 
+The connected dashboard also shows a copyable room link near the top. It
+contains only the local address, never a PIN or session credential. When a
+browser cannot use the clipboard on local HTTP, the link is selected for
+manual copying instead of silently failing.
+
 Help is available **next to the relevant action** using touch-, mouse- and
 keyboard-operable disclosure controls, with additional desktop hover titles.
 These explain side effects and unavailable actions; tooltips are not required
