@@ -181,7 +181,7 @@ def is_gui_python_command(argv: list[str], target: str) -> bool:
     Bounded parsing avoids treating an arbitrary later file operand as our app.
     Unknown flags and -c/-m invocations deliberately fail closed.
     """
-    if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
+    if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
         return False
     index = 1
     while index < len(argv) and argv[index] in _PYTHON_NO_VALUE_SWITCHES:
