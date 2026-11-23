@@ -276,6 +276,7 @@ class SessionMixin:
             self._update_embedded_choices(media)
             self._update_audio_choices(media)
             self.now_playing = str(path)
+            self.menu_button.set_menu_model(self._build_menu())
             if str(path) in self.queue:
                 self.selected_index = self.queue.index(str(path))
             self._finished_handled = False

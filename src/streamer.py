@@ -528,6 +528,62 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
     ))
 
 
+@dataclass(frozen=True)
+class Chapter:
+    """Source timeline chapter, independent from HLS stream offset."""
+    start: float
+    end: float
+    title: str
+
+
+MAX_CHAPTERS = 128
+
+
+def _chapter_seconds(item: dict, field: str) -> float | None:
+    try:
+        ticks = item[field]
+        if type(ticks) not in (str, int) or len(str(ticks)) > 24:
+            raise ValueError("invalid chapter ticks")
+        time_base = Fraction(str(item["time_base"]))
+        if not 0 < time_base <= 1:
+            raise ValueError("invalid time base")
+        value = float(int(ticks) * time_base)
+    except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
+        try:
+            value = float(item[field + "_time"])
+        except (KeyError, ValueError, TypeError, OverflowError):
+            return None
+    return value if math.isfinite(value) and 0 <= value <= 100_000_000 else None
+
+
+def parse_chapters(value: object, duration: float = 0.0) -> tuple[Chapter, ...]:
+    """Conservative flat-chapter parser; never invent an alternate edition map."""
+    if not isinstance(value, list):
+        return ()
+    cap = duration if isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0 else None
+    result: list[Chapter] = []
+    for item in value[:MAX_CHAPTERS * 4]:
+        if not isinstance(item, dict):
+            continue
+        start, end = _chapter_seconds(item, "start"), _chapter_seconds(item, "end")
+        if start is None or end is None or end <= start:
+            continue
+        if cap is not None:
+            if start >= cap:
+                continue
+            end = min(end, cap)
+        if result and start < result[-1].end:
+            continue  # Overlapping edition/segment markers are not safely seekable.
+        tags = item.get("tags")
+        raw_title = tags.get("title") if isinstance(tags, dict) else None
+        title = " ".join(raw_title.split()) if isinstance(raw_title, str) else ""
+        title = "".join(ch for ch in title if ch.isprintable())[:96]
+        result.append(Chapter(start, end, title or f"Chapter {len(result) + 1}"))
+        if len(result) >= MAX_CHAPTERS:
+            break
+    return tuple(result)
+
+
 @dataclass
 class MediaInfo:
     path: pathlib.Path
@@ -551,6 +607,7 @@ class MediaInfo:
     audio_tracks: int = 0
     audio_streams: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
+    chapters: tuple[Chapter, ...] = ()
     audio_only: bool = False
     size: int = 0
     bitrate: int = 0
@@ -887,7 +944,7 @@ def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> Med
         pass
     try:
         args = ["ffprobe", "-v", "error", "-print_format", "json",
-                "-show_format", "-show_streams", str(path)]
+                "-show_format", "-show_streams", "-show_chapters", str(path)]
         result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
                   subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
@@ -914,6 +971,7 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
     """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
+    media.chapters = parse_chapters(data.get("chapters"), media.duration)
     tags = {str(key).casefold(): value for key, value in (fmt.get("tags") or {}).items()}
     media.title = str(tags.get("title") or "").strip()
     media.artist = str(tags.get("artist") or tags.get("album_artist") or "").strip()

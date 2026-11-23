@@ -147,6 +147,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             favourites.append("Clear favourites", "app.clear-favourites")
         section.append_submenu("Favourites", favourites)
         section.append_submenu("Bookmarks", self._build_bookmarks_menu())
+        chapter_media = self._chapter_media()
+        if chapter_media is not None and chapter_media.chapters:
+            section.append_submenu("Chapters", self._build_chapters_menu())
         menu.append_section(None, section)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")

@@ -4,7 +4,7 @@ from __future__ import annotations
 import pathlib
 import time
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 import bookmarks
 import watch_history
@@ -23,6 +23,36 @@ class BookmarkUiMixin:
         if self.cfg.get("bookmarks"):
             markers.append("Clear bookmarks", "app.clear-bookmarks")
         return markers
+
+    def _chapter_media(self):
+        if self.external:
+            return None
+        if self.session is not None:
+            state = getattr(self.session, "state", None)
+            active = getattr(state, "file", None)
+        else:
+            active = self._preview_path
+        media = getattr(self, "media", None)
+        return media if media is not None and active and str(media.path) == str(active) else None
+
+    def _build_chapters_menu(self) -> Gio.Menu:
+        menu = Gio.Menu()
+        media = self._chapter_media()
+        if media is not None:
+            for index, chapter in enumerate(getattr(media, "chapters", ())):
+                label = f"{chapter.title} ({fmt_time(chapter.start)}–{fmt_time(chapter.end)})"
+                item = Gio.MenuItem.new(label, None)
+                item.set_action_and_target_value("app.chapter-jump", GLib.Variant("i", index))
+                menu.append_item(item)
+        return menu
+
+    def _jump_to_chapter(self, index: int) -> None:
+        media = self._chapter_media()
+        chapters = getattr(media, "chapters", ()) if media is not None else ()
+        if type(index) is not int or index < 0 or index >= len(chapters):
+            self.toast("Chapter is unavailable for the current film", error=True)
+            return
+        self.seek_to(chapters[index].start)
 
     def _bookmark_current(self) -> tuple[str | None, float | None]:
         previewing = self.session is None and self._preview_path is not None

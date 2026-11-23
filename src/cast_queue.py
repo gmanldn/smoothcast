@@ -144,6 +144,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             self._unload_local_video()
             self.media = None
             self._update_audio_choices(None)
+            self.menu_button.set_menu_model(self._build_menu())
             self._preview_path = path
             self._preview_generation += 1
             self._preview_pending = None
@@ -167,6 +168,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             self.media = cached[1]
             self._update_embedded_choices(self.media)
             self._update_audio_choices(self.media)
+            self.menu_button.set_menu_model(self._build_menu())
             self._preview_position = min(
                 self._preview_position, max(0.0, self.media.duration - 1.0)
             ) if self.media.duration else 0.0
@@ -197,6 +199,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self.media = media
                 self._update_embedded_choices(media)
                 self._update_audio_choices(media)
+                self.menu_button.set_menu_model(self._build_menu())
                 duration = media.duration
                 self._preview_position = min(self._preview_position, max(0.0, duration - 1.0)) if duration else 0.0
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
