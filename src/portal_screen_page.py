@@ -19,7 +19,7 @@ def screen_page() -> bytes:
 
 
 def panel_html() -> str:
-    """Dashboard section + script, inserted just before ``</main>``."""
+    """Dashboard section + script, composed inside the joined room grid."""
     return _PANEL_HTML
 
 
