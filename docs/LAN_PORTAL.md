@@ -323,7 +323,8 @@ The dashboard is organised in the order a new guest needs it:
    is checked by default and leaves the current playback uninterrupted.
    Audio is always queued. Unticking the option for video may start it early.
 4. **Up Next** — vote, play an item now, make it next, move it up/down or remove
-   it. Clearing this waiting list does not stop the current cast.
+   it. Clearing the entire shared waiting list requires confirmation; it does
+   not stop the current cast.
 5. **Screens** — open the room's screen page on a TV, tablet or laptop to
    make that browser a separate playback target. Give the screen a name,
    enter the House PIN only if required, and tap **Start screen** to allow
