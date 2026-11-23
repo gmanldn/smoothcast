@@ -103,6 +103,8 @@ jobs:
           python -m pip install 'pytest>=8,<10'
           python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py tests/test_notifications.py tests/test_panel_ui.py
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
+      - name: Verify mesh Range resume integrity
+        run: python -m pytest -q tests/test_mesh_files.py
       - name: Verify bounded federated search cursors
         run: python -m unittest discover -s tests -p test_federated_cursor.py
       - name: Verify bounded local library search cursors
