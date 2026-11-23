@@ -22,6 +22,7 @@ import command_trace
 import dlna
 
 import streamer
+import low_end_policy
 
 import audio_delay
 import subtitle_delay
@@ -272,7 +273,8 @@ class SessionMixin:
                             learned.record(receiver_key, codec_key, "direct", True)
                         return session, media
                 session.start_transcode(
-                    media, offset, device=device, quality=cfg["quality"],
+                    media, offset, device=device,
+                    quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=cfg["audio"], subs_file=effective_subs_path,
                     burn_subs=effective_burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
@@ -627,7 +629,7 @@ class SessionMixin:
         state = session.state
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
-        quality = self.cfg["quality"]
+        cfg = dict(self.cfg)  # frozen before background restart
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
@@ -656,7 +658,8 @@ class SessionMixin:
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
-                    media, target, device=device, quality=quality,
+                    media, target, device=device,
+                    quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
