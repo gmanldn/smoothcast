@@ -218,7 +218,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             screens = getattr(self, "screens", None)  # absent if bind failed in __init__
             if screens is not None:
                 screens.close()
-            self.commands.close()
+            commands = getattr(self, "commands", None)
+            if commands is not None:
+                commands.close()
         finally:
             super().server_close()
 
