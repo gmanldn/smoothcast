@@ -48,7 +48,7 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
     return True
 
 
-_SINGLE_RANGE = re.compile(r"bytes=(\\d*)-(\\d*)\\Z")
+_SINGLE_RANGE = re.compile(r"bytes=(\d*)-(\d*)\Z")
 
 
 def _matches_request(requested: str | None, status: int, start: int,
