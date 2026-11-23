@@ -86,6 +86,8 @@ jobs:
           python -m unittest discover -s tests -p test_silent_except_lint.py
       - name: Verify DLNA responder failures never break discovery or leak details
         run: python -m unittest discover -s tests -p test_dlna_discovery_failures.py
+      - name: Verify bounded receiver-learning persistence
+        run: python -m unittest discover -s tests -p test_receiver_memory.py
       - name: Verify code and issue-body budget contracts
         run: |
           python -m pip install 'pytest>=8,<10'
