@@ -24,7 +24,8 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
     def test_layout_reads_actual_window_allocation(self):
         self.assertIn("width = self.get_width() or self._startup_width", self.source)
         self.assertIn("height = self.get_height() or self._startup_height", self.source)
-        self.assertIn('responsive_layout.layout_for_size(width, height, self.cfg.get("density"))', self.source)
+        self.assertIn('width, height, self.cfg.get("density"),', self.source)
+        self.assertIn("responsive_layout.layout_for_size(", self.source)
         self.assertIn('surface.connect("notify::width", self._queue_reflow)', self.source)
         self.assertIn('surface.connect("notify::height", self._queue_reflow)', self.source)
         self.assertNotIn("GLib.timeout_add(200, self._refresh_responsive_layout)", self.source)
@@ -32,9 +33,10 @@ class ResponsiveGtkWiringTests(unittest.TestCase):
     def test_transport_and_actions_reflow_in_grids(self):
         self.assertIn("Gtk.Grid(column_spacing=8, row_spacing=8)", self.source)
         self.assertIn("if state.transport_wrapped:", self.source)
-        self.assertIn("if state.actions_wrapped else (n, 0)", self.source)
         self.assertIn("self.transport_grid.attach(button, column, row, 1, 1)", self.source)
-        self.assertIn("self.action_grid.attach(child, col, row, 1, 1)", self.source)
+        # The action strip is a FlowBox: it wraps itself, so it cannot widen the window.
+        self.assertIn("action_row = Gtk.FlowBox()", self.source)
+        self.assertIn("self.action_grid.set_max_children_per_line(state.action_columns)", self.source)
 
     def test_long_text_wraps_instead_of_forcing_width(self):
         self.assertIn("Pango.WrapMode.WORD_CHAR", self.source)

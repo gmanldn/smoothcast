@@ -30,6 +30,7 @@ GUI_MODULES = (
     "cast_widgets.py",
     "bookmark_ui.py",
     "cast_ui.py",
+    "panel_ui.py",
     "cast_settings.py",
     "preferences_ui.py",
     "library_folders_ui.py",
@@ -51,7 +52,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "UiTimerMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "UiTimerMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:

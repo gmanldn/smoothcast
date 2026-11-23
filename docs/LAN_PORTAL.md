@@ -1,8 +1,8 @@
 # SmoothCast shared room
 
 When the SmoothCast desktop app is running, it starts a small web room on the
-selected private LAN IPv4 interface. The **Shared room** card on the main
-screen shows the address. Open that address in a browser on the same local
+selected private LAN IPv4 interface. The **Room** tab of the main window's
+side panel shows the address. Open that address in a browser on the same local
 network, enter your name, and you join a shared queue with everyone else in the
 room. Joining is open by default on the trusted home LAN; an optional **House
 PIN** can be enabled in Preferences when people you do not trust use the Wi-Fi.

@@ -10,7 +10,7 @@ import time
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
+from gi.repository import Gtk, Pango
 
 import loudness
 from cast_widgets import DEFAULTS, save_config
@@ -24,20 +24,13 @@ class SettingsCardMixin:
         )
         card.add_css_class("settings-card")
         body.set_spacing(11)
-        # The player stays media-first. Existing controls remain available
-        # without a duplicated handler or broken cross-module widget reference.
-        preferences_button = Gtk.Button(label="Open Preferences…")
+        # Every common control sits right here; the searchable Preferences
+        # window reaches the same handlers plus the rarely used options.
+        preferences_button = Gtk.Button(label="All preferences…")
         preferences_button.set_halign(Gtk.Align.START)
         preferences_button.set_tooltip_text("Search all playback, sound, subtitle and appearance settings (Ctrl+,)")
         preferences_button.connect("clicked", lambda _button: self.action_preferences())
         body.append(preferences_button)
-        inline = Gtk.Expander(label="Show inline playback controls")
-        inline.set_expanded(False)
-        inline.set_tooltip_text("The familiar quality, sound and caption controls")
-        inline_body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=11)
-        inline.set_child(inline_body)
-        body.append(inline)
-        body = inline_body
         self._syncing = True
 
         def group(title: str) -> None:
@@ -130,7 +123,7 @@ class SettingsCardMixin:
         self.gain_spin.set_valign(Gtk.Align.CENTER)
         self.gain_spin.set_tooltip_text("Type a boost in dB (0–24) and press Enter, or use the arrows")
         self.gain_spin.connect("value-changed", self._on_gain)
-        gain_unit = Gtk.Label(label="dB", xalign=0.0)
+        gain_unit = Gtk.Label(label="dB", xalign=0.0, ellipsize=Pango.EllipsizeMode.END)
         gain_unit.add_css_class("dim-label")
         gain_row.append(gain_text)
         gain_row.append(self.gain_spin)

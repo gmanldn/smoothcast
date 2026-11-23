@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Shared SmoothCast constants, config helpers and custom GTK widgets."""
 from __future__ import annotations
-
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -10,39 +9,26 @@ gi.require_version("Adw", "1")
 
 from gi.repository import GLib, Gtk
 import pathlib
-
 import threading
-
 import castctl
 import config_control
 import config_persistence
 import idle_chrome
 
 import audio_monitor
-
 import ui_theme
-
 import error_log
-
 import async_jobs
 
 
-
 APP_ID = "local.cast-control"
-
-
 APP_NAME = "SmoothCast"
-
-
 CONFIG_DIR = pathlib.Path(GLib.get_user_config_dir()) / "cast-control"
-
-
 CONFIG_FILE = CONFIG_DIR / "config.json"
 ROOM_CHECKPOINT_FILE = CONFIG_DIR / "room-checkpoint.json"
 
 
 ICON_NAME = APP_ID
-
 
 DEFAULTS: dict = {
     "schema_version": 1,  # == config_control.SCHEMA_VERSION (tested).

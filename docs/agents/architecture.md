@@ -14,6 +14,7 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Concern | Module |
 | --- | --- |
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
+| Header, side-panel tabs, reflow | `src/panel_ui.py` |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
@@ -158,6 +159,5 @@ This is the bounded transport-safety slice of P0 SC-009 (GitHub issue #16);
 cancellation, retry policy and full physical receiver acceptance remain
 open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
 
-Search symbols and affected callers before opening large files; follow runtime
-state ownership through the whole cast/cleanup lifecycle. For historical
-edge-case notes see [archived instructions](../AGENT_REFERENCE.md).
+Search symbols and callers before opening large files; follow runtime state
+ownership through the cast/cleanup lifecycle. Notes: [archive](../AGENT_REFERENCE.md).

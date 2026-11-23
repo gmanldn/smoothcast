@@ -631,13 +631,81 @@ def bookmarks_menu(app, window) -> None:
     check("Clear bookmarks empties the list", window.cfg["bookmarks"] == [])
 
 
+def side_panel(app, window) -> None:
+    """Player beside a tabbed side panel: tabs, badges, sizes, nothing clipped or trapped."""
+    import panel_ui
+    import responsive_layout
+
+    keys = [key for key, _title, _icon in panel_ui.PANEL_TABS]
+    check("there is one tab per panel page", list(window.panel_tabs) == keys, repr(list(window.panel_tabs)))
+    check("the Queue tab is showing first", window.panel_stack.get_visible_child_name() == "queue")
+    for position, key in enumerate(keys, start=1):
+        window._show_panel_tab_number(position)
+        pump(0.1)
+        check(f"tab {position} ({key}) shows its page",
+              window.panel_stack.get_visible_child_name() == key
+              and window.panel_tabs[key][0].get_active(), window.panel_stack.get_visible_child_name())
+    window._show_panel_tab_number(99)
+    check("an out-of-range tab number is ignored", window.panel_stack.get_visible_child_name() == keys[-1])
+    window._focus_queue_search()
+    check("Ctrl+F brings the Queue tab forward", window.panel_stack.get_visible_child_name() == "queue")
+
+    badge = window.panel_tabs["queue"][1]
+    check("an empty queue shows no count", not badge.get_visible())
+    window.queue = ["/films/a.mkv", "/films/b.mkv"]
+    window._update_panel_badges()
+    check("the Queue tab counts its items", badge.get_visible() and badge.get_text() == "2", badge.get_text())
+    window.queue = []
+    window._update_panel_badges()
+    check("clearing the queue hides the count", not badge.get_visible())
+    check("no receiver chosen: the Devices tab asks for attention",
+          window.panel_tabs["devices"][1].get_visible())
+
+    check("the receiver picker is in the player card, not hidden in a tab",
+          window.device_dropdown.is_ancestor(window.player_card)
+          and not window.device_dropdown.is_ancestor(window.side_panel))
+    check("every Devices-tab control lives in the side panel",
+          all(w.is_ancestor(window.side_panel) for w in
+              (window.cast_ip_entry, window.add_ip_button, window.network_check_button)))
+
+    settle, minwidth, _find = _narrow_helpers(window)
+    settle()
+    check("at 360 px the panel is stacked under the player and the window fits",
+          window._layout_state.stacked and minwidth() <= 360, f"min={minwidth()}")
+    check("stacked: the tab strip drops its text labels", window._layout_state.tabs_icon_only)
+
+    # Wide windows: the panel sits beside the player. A layout whose minimum
+    # width exceeds the width it is chosen at would trap the window (it could
+    # never be shrunk far enough to stack), so every width must fit its own state.
+    window.get_height = lambda: 800
+    for width in (responsive_layout.STACK_BELOW, 1000, 1100, 1280, 1920):
+        window.get_width = lambda w=width: w
+        for _ in range(4):
+            window._refresh_responsive_layout()
+            pump(0.4)
+        check(f"{width} px wide: the layout's minimum width fits inside it (no trapped window)",
+              minwidth() <= width, f"min={minwidth()}")
+    check("at 1920 px the panel sits beside the player", not window._layout_state.stacked)
+    for size in ((1000, 700), (1280, 800)):
+        window.get_width, window.get_height = (lambda w=size[0]: w), (lambda h=size[1]: h)
+        window.set_default_size(*size)
+        for _ in range(5):
+            window._refresh_responsive_layout()
+            pump(0.4)
+        ok, bounds = window.cast_button.compute_bounds(window.page_scroller)
+        bottom = bounds.get_y() + bounds.get_height() if ok else 10 ** 6
+        check(f"{size[0]}x{size[1]}: the Cast button is on screen without scrolling",
+              ok and bottom <= window.page_scroller.get_height() + 1,
+              f"bottom={bottom} viewport={window.page_scroller.get_height()}")
+
+
 SCENARIOS = {"first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
              "local-video-runtime": local_video_runtime,
              "picture-options": picture_options, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
              "density-junk": density_junk, "text-fit": text_fit_wide,
-             "audio-delay": audio_delay_menu,
+             "audio-delay": audio_delay_menu, "side-panel": side_panel,
              "subtitle-style": subtitle_style_choice,
              "subtitle-style-saved": subtitle_style_saved,
              "subtitle-style-junk": subtitle_style_junk,
