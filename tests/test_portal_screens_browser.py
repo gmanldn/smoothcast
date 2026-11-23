@@ -110,6 +110,19 @@ assert.equal(list.children[0],row,"queue changes must retain the screen row");
 assert.equal(pick.value,"");
 assert.equal(play.disabled,true,"removed queue item must not be playable");
 assert.equal(document.activeElement,pick);
+const second={...one,id:"screen-2",name:"Study"};
+window.scRenderScreens({screens:[one,second],queue:[]});
+const secondRow=list.children[1];
+const nativeInsert=list.insertBefore.bind(list);
+list.insertBefore=(node,reference)=>{
+  nativeInsert(node,reference);
+  document.activeElement=null; // Simulate browsers that blur controls on node moves.
+};
+window.scRenderScreens({screens:[second,one],queue:[]});
+assert.equal(list.children[0],secondRow);
+assert.equal(list.children[1],row);
+assert.equal(document.activeElement,pick,"reordering must recover focused control");
+list.insertBefore=nativeInsert;
 toggle.focus();
 window.scRenderScreens({screens:[],queue:[]});
 assert.equal(document.activeElement,heading,"disconnected focused screen returns to heading");
