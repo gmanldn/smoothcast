@@ -193,6 +193,9 @@ class PortalRoom:
                now: float | None = None, *, command_id: str | None = None) -> None:
         now = self.clock() if now is None else now
         with self._lock:
+            # Ignore a completion racing a room reset/revocation.
+            if participant_id not in self.participants and participant_id not in self._dormant:
+                return
             key = room_activity.command_key(participant_id, command_id)
             if key is not None:
                 while self._activity_keys and next(iter(self._activity_keys.values())) <= now:
