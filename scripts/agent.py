@@ -515,6 +515,19 @@ def cmd_ship(a: argparse.Namespace) -> int:
             print("nothing to ship: HEAD equals origin/develop")
             return 0
         rebased = git("rev-parse", "HEAD").strip() != before
+        # Mandatory even with --skip-checks: a concurrent agent must never
+        # regress, skip or silently overwrite a canonical version increment.
+        # Inspect *every* unpublished commit after rebasing, not only HEAD.
+        version_guard = subprocess.run(
+            [sys.executable, "scripts/ci/check_version_history.py",
+             "--before", git("rev-parse", "origin/develop").strip(),
+             "--after", git("rev-parse", "HEAD").strip()],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if version_guard.returncode:
+            print("VERSION INTEGRITY FAILED; not pushing develop.")
+            print((version_guard.stdout + version_guard.stderr)[-1500:])
+            return 6
         if not a.skip_checks:
             tests = {str(p.relative_to(ROOT)): p.read_text(errors="replace")
                      for p in (ROOT / "tests").glob("test_*.py")}
