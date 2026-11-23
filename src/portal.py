@@ -30,6 +30,7 @@ import portal_commands
 import peer_discovery
 import portal_room
 import portal_screen_page
+import portal_mesh_http
 import portal_screens_http
 import portal_uploads
 import shortcut_map
@@ -180,6 +181,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self.queue_ids: set[str] = set()
         portal_screens_http.attach(self)
+        self.mesh_feed = None       # set by the app when the mesh runs (#402/#405)
         self._attempts: dict[str, deque[float]] = {}
         self._lockouts: dict[str, float] = {}
         port = self.server_address[1]
@@ -271,6 +273,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self.fence.rotate()
         if keys:
             self.screens.drop_owner_keys(set(keys))
+            if self.mesh_feed is not None:
+                self.mesh_feed.close_keys(keys)
         if keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(set(keys))
         return len(keys)
@@ -293,6 +297,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._lockouts.clear()
             self.fence.rotate()
         self.screens.drop_owner_keys(owner_keys)
+        if self.mesh_feed is not None:
+            self.mesh_feed.close_keys(owner_keys)
         if owner_keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(owner_keys)
         return new_pin_value
@@ -634,6 +640,8 @@ class _Handler(BaseHTTPRequestHandler):
                 b"__PIN_REQUIRED__", b"1" if self.server.pin_required else b"0")
             return self._send(200, page, content_type="text/html; charset=utf-8")
         if portal_screens_http.route(self, "GET", path):
+            return
+        if portal_mesh_http.route(self, "GET", path):
             return
         if path == "/api/search":
             return self._search()
