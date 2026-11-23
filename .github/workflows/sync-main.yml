@@ -1,22 +1,9 @@
-name: Sync main into develop
+name: Manual sync main into develop
 
-# `main` is release-only. GitHub's "Automatically delete head branches"
-# also deletes `develop` when the automated develop->main PR merges (#518).
-# Never checkout a potentially deleted develop ref. Recreate it from a
-# release merge only when the ref is absent; otherwise merge main into develop
-# without force or history loss. This job NEVER writes main.
-#
-# Listen for both merge-related events: the PR-closed event can recover the
-# ref even if the main push event ran before automatic head-branch deletion.
-# Repo owners should also turn OFF automatic head-branch deletion; that is
-# an administrative setting and not changed by this workflow.
-
+# This workflow is NEVER scheduled automatically. The owner decides whether
+# to incorporate main changes; routine agents and CI ignore main entirely.
+# A manual invocation is explicit authorisation only for the requested sync.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-    types: [closed]
   workflow_dispatch:
 
 permissions:
