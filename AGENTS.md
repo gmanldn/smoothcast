@@ -32,6 +32,7 @@ python3 scripts/agent.py next
 python3 scripts/agent.py claim N --files src/module.py
 python3 scripts/agent.py ship
 python3 scripts/agent.py progress N --done "..." --next "..." --commit SHA --release
+# OR when fully evidenced:
 python3 scripts/agent.py done N --why "..." --checklist "..."
 ```
 
