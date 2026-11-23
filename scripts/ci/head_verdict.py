@@ -115,7 +115,7 @@ def inspect(
         result["blockers"] = ["no push Verify SmoothCast run at exact develop SHA"]
         return result
     verify = max(verify_runs, key=_run_number)
-    run_id = _run_number(verify)[1]
+    run_id = _run_number(verify)[0]
     result["run"] = run_id
     result["url"] = verify.get("html_url") or (
         f"https://github.com/{repository}/actions/runs/{run_id}"
