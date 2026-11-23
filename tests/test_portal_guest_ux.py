@@ -290,3 +290,18 @@ def test_update_notice_focuses_recovery_action():
     notice = text[start:end]
     assert 'document.getElementById("updateNotice").hidden=false' in notice
     assert 'document.getElementById("reloadNow").focus?.({preventScroll:true})' in notice
+
+
+def test_mesh_panel_uses_shared_semantic_theme_instead_of_dark_literals():
+    """Network-status badges remain legible in light/dark/high-contrast themes."""
+    import re
+    import portal_mesh_panel
+
+    panel = portal_mesh_panel.panel_html()
+    css = panel.split("<style>", 1)[1].split("</style>", 1)[0]
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css)
+    for token in ("--line", "--accent", "--focus", "--muted",
+                  "--danger", "--border", "--dim"):
+        assert f"var({token})" in css
+    assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
+    assert 'id="meshTargets" aria-label="Playback targets"' in panel
