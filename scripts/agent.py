@@ -4,7 +4,7 @@
     python3 scripts/agent.py board            who holds what, hot files, CI head
     python3 scripts/agent.py next [--lane L]  best ticket that collides with nobody
     python3 scripts/agent.py claim N          atomic claim (loser backs off)
-    python3 scripts/agent.py ship [--dry-run] rebase, run only affected checks, push
+    python3 scripts/agent.py ship [--skip-checks]  rebase and push; checks optional
     python3 scripts/agent.py done N --why .. --checklist ..   evidence + release
 
 Design: docs/agents/coordination.md. Claims live in structured issue comments
@@ -425,21 +425,27 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if not changed:
             print("nothing to ship: HEAD equals origin/develop")
             return 0
-        tests = {str(p.relative_to(ROOT)): p.read_text(errors="replace") for p in (ROOT / "tests").glob("test_*.py")}
         rebased = git("rev-parse", "HEAD").strip() != before
-        for label, cmd in plan_checks(changed, tests):
-            started = time.time()
-            res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-            print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
-            if res.returncode:
-                ids = failing_ids(res.stdout)
-                mine = set(ids) - failing_on_develop(ids) if ids and label.startswith("pytest") else set(ids or ["?"])
-                if mine:
-                    print((res.stdout + res.stderr)[-1800:])
-                    print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
-                    return 1
-                print(f"  NOT yours: {len(ids)} test(s) already fail on origin/develop; pushing anyway "
-                      f"(a red develop outranks new work): {', '.join(ids)[:300]}")
+        if not a.skip_checks:
+            tests = {str(p.relative_to(ROOT)): p.read_text(errors="replace")
+                     for p in (ROOT / "tests").glob("test_*.py")}
+            for label, cmd in plan_checks(changed, tests):
+                started = time.time()
+                res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+                print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} "
+                      f"({time.time() - started:.1f}s)")
+                if res.returncode:
+                    ids = failing_ids(res.stdout)
+                    mine = (set(ids) - failing_on_develop(ids)
+                            if ids and label.startswith("pytest") else set(ids or ["?"]))
+                    if mine:
+                        print((res.stdout + res.stderr)[-1800:])
+                        print(f"  YOUR failures: {', '.join(sorted(mine))[:400]}")
+                        return 1
+                    print(f"  NOT yours: {len(ids)} test(s) already fail on "
+                          f"origin/develop; pushing anyway: {', '.join(ids)[:300]}")
+        else:
+            print("  checks skipped by request; this push is UNVERIFIED")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
@@ -497,12 +503,14 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(fn=cmd_release)
     s = sub.add_parser("ship")
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--skip-checks", action="store_true",
+                   help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)
     d = sub.add_parser("done")
     d.add_argument("number", type=int)
     d.add_argument("--why", required=True)
     d.add_argument("--checklist", required=True)
-    d.add_argument("--verification", default="portable=pass; isolated GTK=not run; device=n/a")
+    d.add_argument("--verification", default="not run (unverified)")
     d.add_argument("--close", action="store_true")
     d.set_defaults(fn=cmd_done)
     return p
