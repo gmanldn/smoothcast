@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+    # Contributor PRs into develop only. The long-lived release PR targets main;
+    # its head is the very same develop SHA, already checked by the push lane.
+    branches: [develop]
 
 permissions:
   contents: read
@@ -13,14 +16,14 @@ permissions:
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
-# Every push to develop or main gets its own run (the group is the commit SHA),
-# so no integration commit is cancelled or replaced while queued. The scope job
-# picks the patch fast lane or the minor/major full matrix; release promotion
-# waits for that run. Pull requests share one group per branch and a newer push
-# cancels the superseded run.
+# Busy develop has one running verification plus its newest pending commit.
+# Do NOT cancel the running one: ongoing pushes must not starve validation.
+# GitHub replaces an older pending run with the latest; any release promotion
+# still requires all gates to pass for the EXACT tested SHA and checks HEAD.
+# Distinct refs (main and contributor PRs) do not cancel each other.
 concurrency:
-  group: smoothcast-verify-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   scope:
@@ -41,6 +44,13 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # Pending develop runs can be superseded. Compare against the last
+          # released main instead of the immediately previous push; otherwise
+          # a MINOR/MAJOR bump in a cancelled run could skip the full matrix.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/develop" ]; then
+            git fetch origin main
+            BASE="$(git rev-parse origin/main)"
+          fi
           lane="$(python scripts/ci/test_scope.py --base "$BASE" --head "$GITHUB_SHA")"
           echo "lane=$lane" >> "$GITHUB_OUTPUT"
           echo "Test lane: **$lane**" >> "$GITHUB_STEP_SUMMARY"
