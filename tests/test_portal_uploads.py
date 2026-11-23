@@ -280,14 +280,15 @@ def test_large_chunk_is_streamed_in_bounded_reads_and_synced_once(tmp_path):
 def test_small_legacy_chunks_resume_and_oversized_chunk_is_rejected(tmp_path):
     uploads = manager(tmp_path)
     size = portal_uploads.CHUNK_SIZE
-    created = uploads.create("owner", "movie.mkv", size + 1)
     legacy = 2 * 1024 * 1024
-    uploads.append("owner", created["id"], f"bytes 0-{legacy - 1}/{size + 1}",
+    total = legacy + size + 1  # Oversized second chunk fits file but exceeds cap.
+    created = uploads.create("owner", "movie.mkv", total)
+    uploads.append("owner", created["id"], f"bytes 0-{legacy - 1}/{total}",
                    legacy, BytesIO(b"a" * legacy))
     assert uploads.status("owner", created["id"])["received"] == legacy
     with pytest.raises(portal_uploads.UploadError, match="range or size"):
         uploads.append("owner", created["id"],
-                       f"bytes {legacy}-{legacy + size}/{size + 1}",
+                       f"bytes {legacy}-{legacy + size}/{total}",
                        size + 1, BytesIO(b""))
     assert uploads.status("owner", created["id"])["received"] == legacy
     uploads.close()
