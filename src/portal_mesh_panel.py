@@ -148,7 +148,7 @@ _PANEL = r"""
     else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshRetry();close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshRetry();backoff=3000;close();started=false;prev=null}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """
