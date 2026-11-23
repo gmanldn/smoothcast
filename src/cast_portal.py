@@ -11,6 +11,7 @@ import lan_interfaces
 import portal
 import portal_status
 import portal_commands
+import command_trace
 import portal_join
 import peer_discovery_ui
 import network_activity
@@ -181,6 +182,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 completed.set()
             return False
 
+        # A GLib idle callback runs on a different context than the portal thread.
+        run = command_trace.propagate(run) or run
         source_id = GLib.idle_add(run)
         if not completed.wait(4):
             cancelled.set()

@@ -25,6 +25,8 @@ import threading
 import time
 from typing import Callable
 
+import command_trace
+
 ACTIONS = frozenset({"play_pause", "stop", "seek", "volume", "mute", "music_autogain"})
 CLIENT_ID_MAX = 64
 COMMAND_ID_MAX = 128
@@ -322,6 +324,14 @@ class CommandDispatcher:
 
     def execute(self, envelope: MutationEnvelope, *,
                 participant_key: str | None = None) -> CommandReceipt:
+        """Correlate the request without exposing the client command ID."""
+        with command_trace.scope("portal", envelope.action,
+                                 command_id=envelope.command_id,
+                                 client_id=envelope.client_id):
+            return self._execute(envelope, participant_key=participant_key)
+
+    def _execute(self, envelope: MutationEnvelope, *,
+                 participant_key: str | None = None) -> CommandReceipt:
         """Apply once; bound competing requests per authenticated participant."""
         key = (envelope.client_id, envelope.command_id)
         owner = participant_key or envelope.client_id
@@ -444,6 +454,7 @@ def precheck(controller: object, fence: CommandFence | None,
         raise CommandError(503, "The LAN portal is not ready")
     fence.check(envelope.expected_session_id, envelope.expected_revision,
                 owner=controller._device())
+    command_trace.stage("fenced")
 
 
 def run_mutation(controller: object, fence: CommandFence,
@@ -453,9 +464,11 @@ def run_mutation(controller: object, fence: CommandFence,
         raise CommandError(503, "SmoothCast is shutting down")
     fence.check(envelope.expected_session_id, envelope.expected_revision,
                 owner=controller._device())
+    command_trace.stage("fenced")
     revision = fence.snapshot()[1]
     if getattr(controller, "busy", False):
         raise CommandError(409, "SmoothCast is finishing another command", revision=revision)
+    command_trace.stage("dispatched")
     action = envelope.action
     if action == "play_pause":
         if not controller.play_button.get_sensitive():

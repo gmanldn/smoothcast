@@ -11,6 +11,8 @@ from queue import Empty, Full, Queue
 import threading
 from typing import Callable
 
+import command_trace
+
 # (workers, waiting jobs).  Short control/status work cannot queue behind
 # FFmpeg conversion or library scanning.  No new runtime dependency.
 DEFAULT_LIMITS = {
@@ -157,7 +159,13 @@ class WorkDomains:
                     thread.start()
                     self._workers[domain].append(thread)
             try:
-                queue.put_nowait(_Job(work, done, failed, valid))
+                queue.put_nowait(_Job(
+                    command_trace.propagate(work) or work,
+                    command_trace.propagate(done),
+                    command_trace.propagate(failed),
+                    valid,
+                ))
+                command_trace.stage("worker_queued")
             except Full:
                 rejection = f"{domain.capitalize()} work queue is busy; retry shortly"
         if rejection is not None:

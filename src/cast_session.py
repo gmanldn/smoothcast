@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import command_trace
 
 import dlna
 
@@ -341,6 +342,7 @@ class SessionMixin:
         Async.run(work, done=done, failed=failed, domain="media")
 
 
+    @command_trace.traced("desktop", "stop")
     def stop_stream(self) -> None:
         pos = self.tracker.value()
         if self.media is not None and pos is not None:
@@ -411,6 +413,7 @@ class SessionMixin:
         Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg), domain="transport")
 
 
+    @command_trace.traced("desktop", "play_pause")
     def toggle_play(self) -> None:
         if self.busy:
             return
@@ -472,6 +475,7 @@ class SessionMixin:
         Async.run(work, done=done, failed=failed, domain="transport")
 
 
+    @command_trace.traced("desktop", "seek")
     def seek_to(self, target: float, *, feedback_label: str | None = None) -> None:
         # Guard before seekbar moves.
         if self.busy:

@@ -30,6 +30,7 @@ import re
 import sys
 
 import castctl
+import command_trace
 import state_labels
 import streamer
 
@@ -285,7 +286,8 @@ def _human(command: str, result: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        result = HANDLERS[args.command](args)
+        with command_trace.scope("cli", args.command):
+            result = HANDLERS[args.command](args)
         code, payload = EXIT_OK, {"ok": True, "command": args.command, **result}
     except CliError as exc:
         code = exc.code

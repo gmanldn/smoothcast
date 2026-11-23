@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import command_trace
 import benchmark
 
 import dlna
@@ -152,6 +153,7 @@ class AvMixin:
         self.toast("Muted" if muted else "Sound on")
 
 
+    @command_trace.traced("desktop", "mute")
     def toggle_mute(self) -> None:
         self.mute_button.set_active(not self.mute_button.get_active())
 

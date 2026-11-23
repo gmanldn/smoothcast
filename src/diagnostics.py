@@ -8,6 +8,8 @@ to run without GTK, a display or a prepared virtual environment.
 """
 from __future__ import annotations
 
+import command_trace
+
 import json
 import os
 from pathlib import Path
@@ -174,6 +176,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "config": redact_config(config or {}, home=home_value),
         "receiver": _clean_receiver(receiver, home_value),
         "reliability": recent_reliability(reliability),
+        # Deliberately excludes paths, media titles, receiver names and payloads.
+        "command_traces": command_trace.recent(),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),

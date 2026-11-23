@@ -52,6 +52,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import cli_control
+import command_trace
 import version
 
 TOKEN_ENV = "SMOOTHCAST_CONTROL_TOKEN"
@@ -279,7 +280,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             args = build_args(command, body, self.server.roots)
             with self.server.command_lock:
-                result = cli_control.HANDLERS[command](args)
+                with command_trace.scope("control_api", command):
+                    result = cli_control.HANDLERS[command](args)
         except RequestError as exc:
             self._fail(command, exc.status, exc.message)
         except cli_control.CliError as exc:

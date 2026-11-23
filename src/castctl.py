@@ -1,6 +1,8 @@
 """Google Cast control boundary with catt and PyChromecast adapters."""
 from __future__ import annotations
 
+import command_trace
+
 import ipaddress
 import json
 import pathlib
@@ -344,12 +346,23 @@ def scan(timeout: float = 30) -> list[Device]:
 
 def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Return receiver status using the active Cast backend."""
-    return _backend.info(device, timeout)
+    result = _backend.info(device, timeout)
+    if result is not None:
+        command_trace.stage("status_observed")
+    return result
 
 
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     """Run a receiver command using the active Cast backend."""
-    return _backend.command(device, *args, timeout=timeout)
+    command_trace.stage("receiver_call")
+    try:
+        accepted, response = _backend.command(device, *args, timeout=timeout)
+    except Exception:
+        command_trace.stage("receiver_failed", code=502)
+        raise
+    command_trace.stage("receiver_ack" if accepted else "receiver_failed",
+                        code=None if accepted else 502)
+    return accepted, response
 
 
 def _is_idempotent(args: tuple[str, ...]) -> bool:

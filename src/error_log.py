@@ -15,6 +15,8 @@ import traceback
 from types import TracebackType
 from typing import Optional
 
+import command_trace
+
 ExceptionDetails = tuple[type[BaseException], BaseException, TracebackType | None]
 
 MAX_LINES = 10000
@@ -105,6 +107,9 @@ class ErrorLog:
 
     def add(self, message: str, *, exc_info: bool | ExceptionDetails = False) -> None:
         stamp = _dt.datetime.now().isoformat(timespec="seconds")
+        trace_id = command_trace.current_id()
+        if trace_id is not None:
+            message = f"[command:{trace_id}] {message}"
         if exc_info:
             # Uncaught exception hooks run outside an except block: sys.exc_info()
             # is empty there. The explicit tuple is the authoritative traceback.
