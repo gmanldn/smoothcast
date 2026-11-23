@@ -7,24 +7,19 @@ automatic release PR or dependency on main's version or CI verdict.
 
 ## Day-to-day versioning
 
-- Canonical source: `src/version.py`.
-- Each coherent private-worktree `agent.py ship` allocates the next **PATCH**
-  number on the newest `origin/develop` and appends an isolated version-only
-  commit to the change. A losing parallel push discards only that generated,
-  **unpublished** version commit, rebases its code, reallocates and retries a
-  normal fast-forward push; nothing rewrites already-published commits.
-- A successful develop push and its PATCH are **development identifiers**, not
-  an automatic publication. The Git SHA (`smoothcast --build-id`) remains
-  authoritative for exact source identity, including intermediate commits.
-- Explicit valid existing SemVer bumps are not incremented a second time.
-  `scripts/ci/check_version_history.py` rejects jumps and regressions.
-  Raw `git push` bypasses the local allocator: prefer `agent.py ship`. The
-  stronger server-enforced exactly-once **per-ticket** requirement is still
-  tracked by #583, not falsely claimed as complete.
-- The owner exclusively decides when to merge `develop` to `main`, tag or
-  publish a release. Ticket closure is distinct from release publication.
-- Source checkout, installed build and running process may show different
-  versions; don't describe a changed file as an activated update.
+- `src/version.py` is the **canonical release SemVer**, not a counter of
+  commits or completed tickets. Normal agent shipments do not edit it.
+- Every development slice is identified by its Git SHA (`smoothcast
+  --build-id`). `smoothcast --version` remains the semantic baseline.
+- `agent.py ship` refreshes `origin/develop`, checks claims and version
+  integrity, rebases only unpublished code and fast-forward pushes. It never
+  automatically promotes a release or writes to main.
+- The guarded `ship --assign-patch` allocator remains available only for
+  explicit owner-authorised release intent. If a push races, it may remove
+  only its own generated unpublished version-only commit before retrying.
+  #583 tracks outstanding server-enforced exactly-once assignment.
+- Source checkout, downloaded, installed and running processes can differ;
+  changing a file on disk does not activate a running build.
 
 ## Owner-controlled integration and publishing
 
