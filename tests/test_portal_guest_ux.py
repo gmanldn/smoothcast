@@ -39,7 +39,7 @@ def test_guest_navigation_has_unique_ids_and_real_targets():
 def test_join_explains_shared_controls_and_optional_house_pin():
     page = room_html()
     text = portal._HTML
-    assert 'id="joinTitle">Join the room' in text
+    assert 'id="joinTitle">Join the house' in text
     assert "only if the host has enabled one" in text
     assert "Everyone who joins can control playback" in text
     assert "No app, account or cloud" in text
@@ -168,7 +168,7 @@ function simulate(pinRequired){
   const PIN_REQUIRED=pinRequired;
   const elements={
     pinRow:{hidden:false},pin:{required:true,value:""},
-    loginHint:{textContent:"PIN needed"},loginButton:{textContent:"Join room"}
+    loginHint:{textContent:"PIN needed"},loginButton:{textContent:"Join"}
   };
   const $=id=>elements[id],loginButton=elements.loginButton;
 """
@@ -181,7 +181,7 @@ assert.equal(open.pin.required,false);
 assert.equal(open.loginButton.textContent,"Join");
 assert.equal(locked.pinRow.hidden,false);
 assert.equal(locked.pin.required,true);
-assert.equal(locked.loginButton.textContent,"Join room");
+assert.equal(locked.loginButton.textContent,"Join");
 """
     subprocess.run(["node", "-"], input=harness + setup + finish,
                    check=True, text=True, timeout=10)
