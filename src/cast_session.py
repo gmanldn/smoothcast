@@ -36,6 +36,7 @@ import watch_history
 import progress_model
 
 import direct_probe
+import receiver_memory
 
 import stream_watchdog
 
@@ -49,7 +50,7 @@ import reliability_metrics
 
 import url_control
 
-from cast_widgets import DEFAULTS, save_config, fmt_time, Async
+from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
 
 
 class SessionMixin:
@@ -129,6 +130,7 @@ class SessionMixin:
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
+        learned = receiver_memory.ReceiverMemory(CONFIG_DIR / receiver_memory.STATE_NAME)
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
@@ -232,8 +234,21 @@ class SessionMixin:
                     )
                     stop_if_cancelled_after_start()
                     return session, media
-                if (use_direct and media.direct_ok and not burn and embedded is None
-                        and not music_enabled
+                receiver_key = codec_key = ""
+                if use_direct and media.direct_ok:
+                    try:
+                        receiver_key = receiver_memory.receiver_key(
+                            uuid=str(cfg.get("device_uuid") or ""), host=device_ip, port=8009)
+                        codec_key = receiver_memory.media_signature(
+                            media, container=path.suffix.lower().lstrip("."),
+                            subtitle_kind=("sidecar" if effective_subs_path else
+                                           "embedded" if embedded else "none"))
+                    except ValueError:
+                        pass  # No stable identity/codec: retain normal direct decision.
+                learned_hls = bool(receiver_key and codec_key and
+                                   learned.advice(receiver_key, codec_key) == "hls")
+                if (use_direct and media.direct_ok and not learned_hls
+                        and not burn and embedded is None and not music_enabled
                         and (aspect_mode == "original" or getattr(media, "is_audio_only", False))):
                     try:
                         session.start_direct(
@@ -241,7 +256,10 @@ class SessionMixin:
                             subs_disabled=(subs_mode == "off"), title=title,
                             offset=offset,
                         )
-                        if direct_probe.verify_direct_start(device, title) == "rejected":
+                        outcome = direct_probe.verify_direct_start(device, title)
+                        if outcome == "rejected":
+                            if receiver_key:
+                                learned.record(receiver_key, codec_key, "direct", False)
                             raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
                     except streamer.StreamError:
                         # The failed direct attempt can leave a catt subprocess.
@@ -249,6 +267,8 @@ class SessionMixin:
                         session = streamer.Session()
                     else:
                         stop_if_cancelled_after_start()
+                        if outcome == "accepted" and receiver_key:
+                            learned.record(receiver_key, codec_key, "direct", True)
                         return session, media
                 session.start_transcode(
                     media, offset, device=device, quality=cfg["quality"],
