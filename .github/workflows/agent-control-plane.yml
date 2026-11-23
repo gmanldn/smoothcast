@@ -42,7 +42,12 @@ jobs:
       - name: Python syntax
         run: python -m compileall -q scripts/agent.py scripts/ci/check_version_history.py src/cli.py src/version.py tests/test_agent_lifecycle.py
       - name: Focused dependencies
-        run: python -m pip install 'pytest>=8,<10'
+        run: python -m pip install 'pytest>=8,<10' 'ruff==0.16.9'
+      - name: Ruff (coordinator and headless regression suite)
+        run: >
+          ruff check scripts/agent.py scripts/ci/check_version_history.py
+          tests/test_agent_lifecycle.py tests/test_agent_coordination.py
+          src/version.py src/cli.py
       - name: Regression tests (no GUI, offline Git remotes)
         run: >
           python -m pytest -q -p no:cacheprovider
