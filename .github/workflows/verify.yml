@@ -87,7 +87,7 @@ jobs:
       - name: Verify code and issue-body budget contracts
         run: |
           python -m pip install 'pytest>=8,<10'
-          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py
+          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py
 
   mesh-protocol-contract:
     name: Mesh protocol safety (headless)
