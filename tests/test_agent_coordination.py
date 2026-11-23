@@ -108,6 +108,8 @@ def test_claim_loses_race_to_earlier_claim_and_withdraws(monkeypatch):
             return mine
         if args[:2] == ("-X", "DELETE"):
             deleted.append(args[2])
+        if args[0].endswith("/comments?per_page=100"):
+            return list(feed)
         return None
 
     monkeypatch.setattr(agent, "gh", fake_gh)
@@ -125,6 +127,70 @@ def test_claim_loses_race_to_earlier_claim_and_withdraws(monkeypatch):
     args = agent.build_parser().parse_args(["claim", "42"])
     assert agent.cmd_claim(args) == 3
     assert posted and deleted and deleted[0].endswith("/comments/9")
+
+
+def test_comment_ledger_paginates_and_detects_live_successor(monkeypatch):
+    """A live claim beyond GitHub's first 100 comments must fence stale workers."""
+    earlier = [comment(i, 584, 70, f"unrelated note {i}") for i in range(1, 101)]
+    successor = marker_comment(101, 584, 5, "successor", ["src/a.py"])
+    requested = []
+
+    def fake_gh(*args):
+        requested.append(args[0])
+        if args[0].endswith("/comments?per_page=100"):
+            return earlier
+        if args[0].endswith("/comments?per_page=100&page=2"):
+            return [successor]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    assert not agent.ensure_live_task_claim({"issue": 584, "files": ["src/a.py"]})
+    assert len(requested) == 2
+    assert any("page=2" in path for path in requested)
+
+
+def test_comment_ledger_refuses_truncated_or_unavailable_history(monkeypatch):
+    import pytest
+
+    def saturated(*args):
+        return [comment(i, 584, 1, "note") for i in range(1, 101)]
+
+    monkeypatch.setattr(agent, "gh", saturated)
+    with pytest.raises(agent.td.DigestError, match="incomplete lease history"):
+        agent.issue_comments(584, max_pages=2)
+    with pytest.raises(agent.td.DigestError, match="incomplete conflict check"):
+        agent.recent_comments(pages=2)
+
+    monkeypatch.setattr(agent, "gh", lambda *args: None)
+    with pytest.raises(agent.td.DigestError, match="complete comments"):
+        agent.issue_comments(584)
+
+
+def test_claim_post_confirmation_rechecks_issue_even_when_global_feed_has_self(monkeypatch):
+    """A busy repo can truncate a rival from the global feed; issue ledger wins."""
+    earlier = marker_comment(9, 584, 2, "rival", ["src/a.py"])
+    ours = marker_comment(10, 584, 0, "self", ["src/a.py"])
+    removed = []
+
+    def fake_gh(*args):
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            return {"id": 10}
+        if args[0].endswith("/comments?per_page=100"):
+            return [earlier, ours]
+        if args[:2] == ("-X", "DELETE"):
+            removed.append(args[2])
+            return {}
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "self")
+    monkeypatch.setattr(agent, "load_issue", lambda n: {"body": "edit src/a.py"})
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    monkeypatch.setattr(agent, "recent_comments", lambda: [ours])
+    assert agent.cmd_claim(agent.build_parser().parse_args(["claim", "584"])) == 3
+    assert removed == [f"repos/{agent.REPO}/issues/comments/10"]
 
 
 def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
