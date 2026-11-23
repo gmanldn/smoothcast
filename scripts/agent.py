@@ -255,6 +255,36 @@ def cmd_board(_a: argparse.Namespace) -> int:
     return 0
 
 
+def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
+    """Bounded last-progress preview from durable issue comments; no extra API calls.
+
+    The most recent progress-bearing comment is authoritative for the preview:
+    do not attach an older Handover line to a later Implementation update.
+    """
+    slices, latest, remaining = 0, "", ""
+    ordered = sorted((c for c in comments if isinstance(c, dict)),
+                     key=lambda c: int(c.get("id") or 0))
+    for comment in ordered:
+        body = str(comment.get("body") or "")
+        progress, handover = "", ""
+        for line in body.splitlines():
+            match = re.match(r"^\s*(Implementation|Progress|Handover|Remaining):\s*(.+)$",
+                             line, re.IGNORECASE)
+            if not match:
+                continue
+            label, value = match.groups()
+            value = " ".join(value.split())[:160]
+            if label.lower() == "implementation":
+                slices += 1
+            if label.lower() in {"implementation", "progress"}:
+                progress = value
+            else:
+                handover = value
+        if progress or handover:
+            latest, remaining = progress, handover
+    return slices, latest, remaining
+
+
 def cmd_next(a: argparse.Namespace) -> int:
     me, now = agent_id(), utcnow()
     claims = active_claims(parse_events(recent_comments()), now)
@@ -286,12 +316,15 @@ def cmd_next(a: argparse.Namespace) -> int:
     ranked.sort(key=lambda r: (-r[0], r[1]))
     for _base, n, issue, files, wait in ranked[: a.limit]:
         comments = gh(f"repos/{REPO}/issues/{n}/comments?per_page=100")
-        slices = sum(1 for c in comments if isinstance(c, dict) and "Implementation:" in (c.get("body") or "")) \
-            if isinstance(comments, list) else 0
+        slices, progress, handover = summarize_history(comments if isinstance(comments, list) else [])
         total, why = score(issue, files, hot, any(c["issue"] == n and c["agent"] == me for c in claims), slices, wait)
         print(f"#{n:<4} {total:>4}  {td.display_title(issue['title'])[:70]}\n       {', '.join(why)}"
-              f"\n       files: {', '.join(sorted(files)[:4]) or '(none named; read the brief)'}"
-              f"\n       -> python3 scripts/agent.py claim {n}")
+              f"\n       files: {', '.join(sorted(files)[:4]) or '(none named; read the brief)'}")
+        if progress:
+            print(f"       last progress: {progress}")
+        if handover:
+            print(f"       handover: {handover}")
+        print(f"       -> review comments/commits; python3 scripts/agent.py claim {n}")
     if not ranked:
         print("nothing free: every candidate is claimed, blocked or excluded")
     for n, reason in skipped[:5]:
@@ -344,6 +377,27 @@ def cmd_claim(a: argparse.Namespace) -> int:
     print(f"claimed #{a.number} as {me}; lease {ttl} min (heartbeat to extend). Files: {', '.join(sorted(files)) or 'tbd'}")
     if files & PLAN_FIRST:
         print("NOTE: plan-first module; comment a short plan before editing (CLAUDE.md).")
+    return 0
+
+
+def cmd_progress(a: argparse.Namespace) -> int:
+    """Persist the work/evidence/next-action independently of the expiring claim."""
+    if not a.done.strip() or not a.next.strip():
+        print("both --done and --next must describe completed and remaining work")
+        return 2
+    body = (f"Progress: {a.done.strip()}\n"
+            f"Handover: {a.next.strip()}\n"
+            f"Commit: {a.commit.strip() or 'not pushed'}\n"
+            f"Verification: {a.verification.strip() or 'not run (unverified)'}\n"
+            f"Files: {a.files.strip() or 'see commit'}")
+    posted = gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments",
+                "-f", f"body={body}")
+    if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+        raise td.DigestError(f"GitHub did not confirm handover on #{a.number}")
+    print(f"durable handover on #{a.number}: comment {posted['id']}")
+    if a.release:
+        release(a.number, f"Handover recorded in comment {posted['id']}.")
+        print(f"released #{a.number}")
     return 0
 
 
@@ -537,6 +591,15 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--files", default="", help="comma-separated files you will edit (default: from the ticket)")
     c.add_argument("--ttl", type=int, default=90, help="lease minutes (30-180)")
     c.set_defaults(fn=cmd_claim)
+    progress = sub.add_parser("progress", help="post durable work evidence and next steps")
+    progress.add_argument("number", type=int)
+    progress.add_argument("--done", required=True, help="what was actually completed")
+    progress.add_argument("--next", required=True, help="specific remaining work; 'none' if complete")
+    progress.add_argument("--commit", default="not pushed", help="actual pushed SHA or 'not pushed'")
+    progress.add_argument("--verification", default="not run (unverified)")
+    progress.add_argument("--files", default="", help="file paths touched")
+    progress.add_argument("--release", action="store_true", help="also release the short-lived lease")
+    progress.set_defaults(fn=cmd_progress)
     h = sub.add_parser("heartbeat")
     h.add_argument("number", type=int)
     h.set_defaults(fn=cmd_heartbeat)
