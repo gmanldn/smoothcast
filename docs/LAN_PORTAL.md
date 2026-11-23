@@ -302,3 +302,36 @@ reconnection; the fresh snapshot includes `stream_resync: gap`, `invalid` or
 `restarted` when appropriate. The cache retains at most 128 state frames of
 at most 64 KiB each globally; revoked and expired guests lose their history.
 The existing `/api/status` polling fallback remains available.
+
+## Joining and using the room (guest quick start)
+
+The room is designed for **first-time guests**. Open the link shown on the
+SmoothCast desktop host while connected to the same local Wi-Fi. You do not
+need a separate account or app. Enter a display name and, **only if the host
+has enabled it**, the six-digit House PIN. With an open room, the PIN field
+disappears. Room controls affect the shared selected receiver and queue, not
+just the browser on your phone.
+
+The dashboard is organised in the order a new guest needs it:
+
+1. **Now Playing** — read the receiver, title and state; play/pause, seek,
+   skip, stop or change the *receiver* volume. These affect everyone using
+   that receiver.
+2. **Find** — search host-shared films and music, filter available titles and
+   browse libraries.
+3. **Add files** — upload from your own phone/computer. **Add to Up Next**
+   is checked by default and leaves the current playback uninterrupted.
+   Audio is always queued. Unticking the option for video may start it early.
+4. **Up Next** — vote, play an item now, make it next, move it up/down or remove
+   it. Clearing this waiting list does not stop the current cast.
+5. **People** — view participants and recent activity, or change your name.
+6. **More settings and network information** — optional lock-screen controls,
+   wake lock, audio normalisation, other hosts and read-only receiver activity.
+
+Help is available **next to the relevant action** using touch-, mouse- and
+keyboard-operable disclosure controls, with additional desktop hover titles.
+These explain side effects and unavailable actions; tooltips are not required
+to discover the main journey. The layout is one column on phones and a
+two-column workspace on larger screens, using the existing light/dark colour
+tokens. The web room remains entirely self-hosted and uses the existing
+session, CSRF and command protocols.

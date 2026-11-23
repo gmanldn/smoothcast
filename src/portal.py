@@ -1555,34 +1555,147 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 @media(max-width:480px){.queue-item{grid-template-columns:minmax(0,1fr)}.queue-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}@media(max-width:480px){main{padding:12px}section{padding:15px}}
-</style></head><body><main><header><h1>SmoothCast</h1><p>Local playback dashboard</p></header>
+
+/* Guest-first room layout: semantic tokens, progressive disclosure and touch-safe help. */
+[hidden]{display:none!important}
+main{max-width:1120px;padding:clamp(12px,3vw,28px)}
+.site-head{display:flex;align-items:center;gap:14px;padding:18px 0 22px}
+.site-mark{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:1.6rem;font-weight:800}
+.site-head p{line-height:1.5}
+.eyebrow{font-size:.74rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#login{max-width:660px;margin:24px auto}
+#login h2{font-size:clamp(1.4rem,4vw,1.85rem);letter-spacing:-.025em}
+#login .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0;margin:22px 0;list-style:none}
+#login .steps li{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0;font-size:.88rem}
+.steps strong{display:block;margin-bottom:4px;color:var(--text)}
+.field-hint,.section-desc{font-size:.88rem;line-height:1.5;color:var(--muted);margin:0 0 12px}
+.field-hint{margin:6px 0}
+#dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+#dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel{grid-column:1/-1}
+#dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
+#dashboard nav a{white-space:nowrap;flex:none}
+.welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
+.welcome h2{font-size:1.2rem;margin:6px 0}
+.quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.quick-links a{display:inline-flex;align-items:center;min-height:44px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);text-decoration:none;color:var(--text);background:var(--input);font-weight:650}
+.quick-links a:hover{background:var(--nav-hover)}
+.room-heading{display:flex;gap:10px;justify-content:space-between;align-items:baseline;flex-wrap:wrap}
+.room-heading h2{margin:0 0 9px}
+#dashboard section{scroll-margin-top:78px}
+#playback .actions button{min-height:52px}
+#playback #title{overflow-wrap:anywhere}
+#playback #volume{margin-top:5px}
+#findChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
+#queuePanel #clearQueue{margin:8px 0 4px}
+#queuePanel #queue{margin:12px 0 0}
+.toggle{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:8px 0}
+.toggle input[type="checkbox"]{width:20px;min-height:20px;height:20px;flex:none;margin:1px 0 0;accent-color:var(--accent)}
+.toggle span{flex:1;min-width:0}
+.help{border-top:1px solid var(--line);margin-top:14px;padding-top:11px}
+.help summary{font-weight:650;cursor:pointer;min-height:44px;display:flex;align-items:center;gap:7px;color:var(--text)}
+.help summary::marker{color:var(--accent)}
+.help .help-body{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:7px;font-size:.87rem;line-height:1.55}
+.help .help-body p{margin:.4rem 0}.help .help-body p:first-child{margin-top:0}.help .help-body p:last-child{margin-bottom:0}
+#advancedPanel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px;scroll-margin-top:78px}
+#advancedPanel>summary{cursor:pointer;font-size:1.05rem;font-weight:750;min-height:44px;align-content:center}
+#advancedPanel>p{font-size:.88rem;margin:6px 0}
+.advanced-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
+.advanced-grid>section{margin:0;box-shadow:none;border:1px solid var(--line);min-width:0}
+.advanced-grid h3{font-size:1rem;margin:0 0 8px}
+#dashboard #errorDash:not(:empty){background:var(--input);padding:12px;border-radius:10px}
+#uploadCard #videoFile{max-width:100%}
+@media(min-width:820px){
+  #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel{grid-column:1/-1}
+  #playback,#uploadCard{grid-column:1}
+  #findPanel,#queuePanel{grid-column:2}
+  #peoplePanel{grid-column:1/-1}
+  .advanced-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:560px){
+  #login .steps{grid-template-columns:1fr}
+  #login .steps li{padding:9px 12px}
+  .site-mark{width:42px;height:42px}
+  .welcome{padding:14px}
+  .actions button{flex:1 1 42%}
+  #dashboard nav{margin-inline:-4px}
+}
+
+</style></head><body><main><header class="site-head"><span class="site-mark" aria-hidden="true">S</span><div><h1>SmoothCast</h1><p>Watch, listen and build the queue together — on your own Wi-Fi.</p></div></header>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
-<section id="login"><h2>Connect to SmoothCast</h2><p id="loginHint">Enter your name and the six-digit PIN shown on the SmoothCast home screen.</p>
-<form id="loginForm"><label for="name">Your name</label><input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" required>
-<div id="pinRow"><label for="pin">Access PIN</label><input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required></div>
-<p id="error" role="alert" aria-live="polite"></p><button type="submit">Connect</button></form></section>
-<div id="dashboard" hidden><nav aria-label="Room sections"><a href="#playback">Playback</a><a href="#findPanel">Find</a><a href="#queuePanel">Queue</a><a href="#peoplePanel">People</a><a href="#networkActivity">Network</a></nav><section id="playback"><div class="row"><h2>Now Playing</h2><span id="state" class="muted">—</span></div>
-<p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p><progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
+<section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the room</h2>
+<p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
+<ol class="steps" aria-label="How SmoothCast works"><li><strong>1. Join</strong>Enter a name so everyone knows who's here.</li><li><strong>2. Add or find</strong>Choose something from the house or upload a file.</li><li><strong>3. Share the queue</strong>Vote, move items and control the room together.</li></ol>
+<form id="loginForm"><label for="name">Your display name</label><p class="field-hint" id="nameHint">Shown to others in this room. You can change it later.</p>
+<input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" aria-describedby="nameHint" required>
+<div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask the host for the six-digit House PIN shown in SmoothCast.</p>
+<input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" aria-describedby="pinHint" required></div>
+<p id="loginHint" class="field-hint">You must be on the same local network. A House PIN is required only if the host has enabled one.</p>
+<p id="error" role="alert" aria-live="polite"></p><button type="submit">Join room</button></form>
+<details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
+</section>
+<div id="dashboard" hidden>
+<nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
+<p id="errorDash" role="status" aria-live="polite"></p>
+<section id="playback" aria-labelledby="playbackHeading">
+<div class="room-heading"><h2 id="playbackHeading">Now Playing</h2><span id="state" class="muted">—</span></div>
+<p class="section-desc">These controls affect the room's selected TV or speaker.</p>
+<p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p>
+<progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Seek</label><input id="seek" type="range" min="0" max="1" value="0" disabled>
-<div class="actions"><button data-action="play_pause">Play / pause</button><button class="secondary" data-action="stop">Stop</button><button class="secondary" data-action="previous">Previous</button><button class="secondary" data-action="next">Next</button></div></section>
-<section><h2>Volume</h2><label for="volume">Receiver volume</label><input id="volume" type="range" min="0" max="100" value="0" disabled><p id="volumeText">—</p></section>
-<section><h2>Phone</h2><label><input id="lockControls" type="checkbox" checked> Lock-screen controls</label><p>Play, pause, skip and seek from your phone's lock screen or headphones while this page is open.</p>
-<label><input id="keepScreenOn" type="checkbox"> Keep screen on</label>
-<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p></section>
-<section><h2>Music</h2><label><input id="musicAutogain" type="checkbox"> Normalise audio-only tracks</label><p>Targets -16 LUFS with a -1.5 dBTP ceiling. Existing programme/album normalisation takes precedence.</p></section>
-<section id="peoplePanel"><h2>In the room</h2><div id="people" class="participants"></div><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form><h2 style="margin-top:18px">Activity</h2><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section>
-<section><h2>Nearby SmoothCast hosts</h2><p>Opening another host requires that host's own room PIN. Discovery does not grant access.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
-<section id="findPanel"><h2>Find</h2><label for="findInput" class="muted">Search films, shows and music in every computer</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200"><div id="findChips" role="group" aria-label="Filter results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the receiver cannot seek.</p>
+<input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
+<div class="actions"><button data-action="play_pause" title="Toggle playback for everyone using this receiver">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the room receiver">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
+<label for="volume">Receiver volume</label><p class="field-hint" id="volumeHelp">Changes the selected receiver's volume, not the volume of this phone.</p>
+<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the room receiver volume" disabled><p id="volumeText" class="muted">—</p>
+<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the selected receiver. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the receiver is not ready or does not support that action.</p></div></details>
+</section>
+<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
+<p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
+<label for="findInput">Search films, shows and music</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200">
+<div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
 <p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div>
-<details id="libraries"><summary>Libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details></section>
-<section id="queuePanel"><div class="row"><h2>Up Next</h2><span id="queueCount" class="muted"></span></div><button id="clearQueue" class="secondary tiny" type="button" disabled>Clear Up Next</button><ul id="queue" aria-label="Up Next" tabindex="-1"><li class="empty">No videos queued</li></ul></section>
-<section id="networkActivity"><h2>On your network</h2><p>Read-only status from reachable Cast and DLNA receivers; refreshes every 15 seconds. Unreachable receivers are omitted.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section></div><p id="errorDash" role="status" aria-live="polite"></p>
-<section id="uploadCard" hidden><h2>Add media from this device</h2><p>Files transfer in resumable chunks. Audio is validated and added to the shared queue; video can be queued or streamed to this host’s receiver.</p>
-<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple>
-<label style="display:flex;align-items:center;gap:9px;min-height:44px"><input id="uploadQueue" type="checkbox" style="width:auto;min-height:auto" checked> Add to the shared queue</label>
+<details id="libraries" class="help"><summary>Browse libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds media advertised by SmoothCast hosts on your network. <strong>Available now</strong> limits results to items that can currently be reached; an unavailable host may return later.</p><p>Use the result's action to play or add it to Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
+</section>
+<section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
+<p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
+<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
+<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div></section>
+<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
+<details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
+</section>
+<section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
+<p class="section-desc">The shared waiting list. Everyone can contribute, vote or change the order; actions affect the whole room.</p>
+<button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
+<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the room receiver; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+<section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
+<p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
+<div id="people" class="participants"></div>
+<form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form>
+<h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div>
+<details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
+</section>
+<details id="advancedPanel"><summary>More settings and network information</summary><p>Optional controls for phones, music and other devices. Most guests will not need to change these.</p>
+<div class="advanced-grid">
+<section aria-labelledby="phoneHeading"><h3 id="phoneHeading">Phone remote</h3>
+<label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
+<label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
+<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p>
+</section>
+<section aria-labelledby="musicHeading"><h3 id="musicHeading">Music playback</h3>
+<label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
+<details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to audio-only playback where the host supports processing.</p></div></details>
+</section>
+<section aria-labelledby="peerHeading"><h3 id="peerHeading">Nearby SmoothCast hosts</h3><p class="section-desc">Open another SmoothCast computer's room if you want to switch hosts. It has its own access settings; discovery does not grant permission.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
+<section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Read-only status from reachable Cast and DLNA receivers, refreshed every 15 seconds. No commands are sent to these other receivers.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section>
+</div></details></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
@@ -1769,7 +1882,7 @@ function renderQueue(items){
   if(!rows.length){
     const empty=document.createElement("li");
     empty.className="empty";
-    empty.textContent="No videos queued";
+    empty.textContent="Nothing in Up Next yet";
     nodes.push(empty);
   }else rows.forEach((item,index)=>{
     const itemTitle=typeof item.title==="string"&&item.title?item.title:"Video";
@@ -1809,6 +1922,7 @@ function renderQueue(items){
     Array.from(buttons).forEach((button,i)=>{
       button.textContent=captions[i];
       button.setAttribute("aria-label",labels[i]);
+      button.title=labels[i];
       button.className="tiny"+(i===0?" vote"+(item.voted?" on":""):"")
         +([2,3,4,5].includes(i)?" secondary":"");
       button.disabled=(i===2&&index===0)||(i===3&&index===rows.length-1);
