@@ -25,16 +25,28 @@ class PicturePreferencesMixin:
         self._picture_spins[key] = control
         control.connect("value-changed", lambda spin: self._picture_changed(key, spin))
 
+    def _refresh_picture_preview(self) -> None:
+        """Discard stale colour-preview frames without changing live playback."""
+        owner = self.owner
+        if (getattr(owner, "_preview_path", None) is None
+                or getattr(owner, "session", None) is not None
+                or getattr(owner, "external", False)):
+            return
+        owner._preview_generation = getattr(owner, "_preview_generation", 0) + 1
+        owner._queue_preview(getattr(owner, "_preview_position", 0.0))
+
     def _picture_changed(self, key: str, spin) -> None:
         if self._syncing:
             return
         self.owner.cfg[key] = picture_adjustments.validated(key, spin.get_value())
         save_config(self.owner.cfg)
+        self._refresh_picture_preview()
 
     def _reset_picture(self, _button) -> None:
         self.owner.cfg.update(picture_adjustments.DEFAULTS)
         save_config(self.owner.cfg)
         self.sync_from_owner()
+        self._refresh_picture_preview()
 
     def _build_picture_preferences(self, playback, output) -> None:
         picture = self._group(
