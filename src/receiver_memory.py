@@ -164,9 +164,9 @@ class ReceiverMemory:
                         if not isinstance(item, dict):
                             raise ValueError("Malformed outcome")
                         mode, ok, at = item.get("mode"), item.get("ok"), item.get("at")
-                        if (mode not in ("direct", "hls") or type(ok) is not bool
-                                or type(at) not in (int, float) or not math.isfinite(at)
-                                or at < 0):
+                        if (mode not in ("direct", "hls") or not isinstance(ok, bool)
+                                or not isinstance(at, (int, float)) or isinstance(at, bool)
+                                or not math.isfinite(at) or at < 0):
                             raise ValueError("Malformed outcome fields")
                         records.append(Outcome(mode, ok, float(at)))
                     entries[signature] = records
