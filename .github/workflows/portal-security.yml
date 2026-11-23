@@ -36,6 +36,7 @@ on:
       - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
+      - 'tests/test_portal_guest_ux.py'
       - 'src/room_event_replay.py'
       - 'tests/test_room_event*.py'
       - '.github/workflows/portal-security.yml'
@@ -75,6 +76,7 @@ on:
       - 'src/preferences_ui.py'
       - 'tests/test_sparse_thumbnail_cache.py'
       - 'tests/test_portal*.py'
+      - 'tests/test_portal_guest_ux.py'
       - 'src/room_event_replay.py'
       - 'tests/test_room_event*.py'
       - '.github/workflows/portal-security.yml'
@@ -107,6 +109,7 @@ jobs:
         run: >-
           python -m pytest -q
           tests/test_portal.py
+          tests/test_portal_guest_ux.py
           tests/test_portal_join.py
           tests/test_mesh_transport.py
           tests/test_portal_room.py

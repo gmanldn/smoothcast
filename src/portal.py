@@ -1590,6 +1590,8 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
 #queuePanel #clearQueue{margin:8px 0 4px}
 #queuePanel #queue{margin:12px 0 0}
+#queuePanel .queue-actions button{min-height:44px;min-width:44px}
+#queuePanel #clearQueue,#findChips .tiny{min-height:44px}
 .toggle{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:8px 0}
 .toggle input[type="checkbox"]{width:20px;min-height:20px;height:20px;flex:none;margin:1px 0 0;accent-color:var(--accent)}
 .toggle span{flex:1;min-width:0}
