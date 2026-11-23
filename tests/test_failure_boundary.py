@@ -162,3 +162,28 @@ def test_cli_still_survives_a_broken_error_log(capsys):
             mock.patch("error_log.log", side_effect=OSError("disk full")):
         assert cli.main() == 1
     assert "private error log" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("method", "path", "body", "target"), [
+    ("GET", "/api/status", None, "_authenticated"),
+    ("POST", "/api/action", {"action": "pause"}, "_authenticated"),
+    ("PUT", "/api/uploads/abc/0", None, "_authenticated"),
+    ("DELETE", "/api/uploads/abc", None, "_authenticated"),
+    ("GET", "/screen", None, "_safe_origin"),
+    ("POST", "/api/login", {"pin": PIN, "name": "Sam"}, "_safe_origin"),
+])
+def test_every_route_family_answers_a_crash_with_civil_json(rig, method, path, body, target):
+    """An exception in any method/route family never reaches the client raw (#512)."""
+    cookie, csrf = login(rig)
+    kwargs = {"cookie": cookie}
+    if method != "GET":
+        kwargs["csrf"] = csrf
+    with mock.patch.object(portal._Handler, target, side_effect=RuntimeError("secret /home/sam/x")), \
+            mock.patch("error_log.log") as log:
+        status, data, headers = rig.request(method, path, body, origin=f"http://{rig.host}", **kwargs)
+    text = data.decode("utf-8", "replace")
+    assert status == 500, (method, path, status, text[:120])
+    assert headers["Content-Type"].startswith("application/json")
+    assert "Traceback" not in text and "secret" not in text and "/home/sam" not in text
+    assert decode(data)["code"] == "unexpected_error"
+    assert log.call_count == 1 and "/home/sam" not in log.call_args[0][0]
