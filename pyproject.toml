@@ -277,6 +277,7 @@ files = [
     "src/control_api.py",
     "src/density.py",
     "src/design_tokens.py",
+    "src/demo_session.py",
     "src/desktop_failure_notice.py",
     "src/dlna.py",
     "src/entry_name.py",
