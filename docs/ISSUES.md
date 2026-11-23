@@ -28,10 +28,11 @@ choose work.
    ```
 4. Use an isolated detached worktree of `origin/develop` and commit directly to
    `develop` (no issue branches). Do not modify or force-reset another checkout.
-5. Validate targeted tests first, then the full headless suite when the change
-   warrants it. Never launch or focus the real GTK app during routine tests.
-6. Comment compact evidence and close when every software/CI item passes.
-   Real-device checks are tracked in #208 and do not block closure.
+5. Push coherent progress directly to `develop` without waiting on a test gate.
+   Testing is optional by owner request, but never claim unrun tests as passing.
+   Never launch or focus the real GTK app during routine work.
+6. Comment the exact commit and evidence; close only when actual acceptance
+   criteria are satisfied. Real-device checks remain tracked in #208.
 
 Measured on 18 November 2026 with 113 open issues at that time:
 
@@ -67,8 +68,8 @@ financial saving without an A/B usage measurement.
 | Next priority | Search for `is:issue is:open in:title "[P1]"`, then `[P2]` |
 | A specific migrated idea | Search the Issues tab for `SC-058`, substituting its original number |
 | Changes awaiting review/merge | [Pull requests](https://github.com/gmanldn/smoothcast/pulls) targeting `develop` |
-| Integration branch | `develop` is the only branch anyone commits to; `main` is **release-only** and updated by an automatic develop→main PR |
-| Automated validation | [Verify SmoothCast actions](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml) |
+| Integration branch | `develop` is the only active branch; `main` is owner-only and merged manually |
+| Automated validation | [Manual Verify SmoothCast diagnostics](https://github.com/gmanldn/smoothcast/actions/workflows/verify.yml) |
 | Current instructions for code agents | Root [AGENTS.md](../AGENTS.md), followed by this document |
 | Historic original 50 ideas | [Verbatim snapshot](IMPROVEMENTS_ORIGINAL_50_20261118.md), **not** a current work queue |
 | Migration and historical evidence | [18 November 2026 migration reference](ISSUES_MIGRATION_20261118.md) |
