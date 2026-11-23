@@ -15,9 +15,10 @@ TIMEOUT = 10.0
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 class Client:
@@ -53,7 +54,12 @@ class Client:
         finally:
             conn.close()
         if reply.status >= 400:
-            raise ApiError(reply.status, str(payload.get("error") or f"HTTP {reply.status}"))
+            from errors import CATALOGUE
+            code = payload.get("code") if isinstance(payload, dict) else None
+            if not isinstance(code, str) or code not in CATALOGUE:
+                code = None
+            raise ApiError(reply.status, str(payload.get("error") or f"HTTP {reply.status}"),
+                           code=code)
         return payload
 
     def login(self) -> None:
