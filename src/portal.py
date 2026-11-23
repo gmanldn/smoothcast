@@ -1234,8 +1234,16 @@ class _Handler(BaseHTTPRequestHandler):
                                         self._cookie_token() or ""),
                                 })
                         except PortalRequestError as exc:
+                            self.server.room.record(participant_id, "action", {
+                                "action": action, "id": body.get("id"),
+                                "outcome": "rejected" if exc.status < 500 else "uncertain",
+                                "reason": room_activity.reason_for_status(exc.status),
+                            })
                             return self._exception_error(exc)
                         except Exception:
+                            self.server.room.record(participant_id, "action", {
+                                "action": action, "outcome": "uncertain", "reason": "error",
+                            })
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
                                                 {"action": action, "id": body.get("id"),
