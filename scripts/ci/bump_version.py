@@ -1,4 +1,4 @@
-"""Bump the authoritative version for a completed ticket or explicit release.
+"""Bump authoritative release SemVer only on explicit owner-authorised intent.
 
     python3 scripts/ci/bump_version.py patch --issue 541 --expect 1.2.25
 
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--file", type=Path, default=DEFAULT_FILE)
     parser.add_argument("--issue", type=int, metavar="N",
-                        help="completed GitHub issue number for the commit reference")
+                        help="related GitHub issue number for explicit version change")
     parser.add_argument("--expect", metavar="X.Y.Z",
                         help="fail rather than write if the checkout version differs")
     args = parser.parse_args(argv)
