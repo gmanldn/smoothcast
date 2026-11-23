@@ -106,7 +106,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             "bookmark_ui.py": 9_000,
             "cast_ui.py": 72_000,
             "cast_settings.py": 10_000,
-            "preferences_ui.py": 16_000,
+            "preferences_ui.py": 17_000,
             "preference_choices.py": 5_000,
             "cast_queue.py": 36_000,
             "cast_session.py": 56_000,

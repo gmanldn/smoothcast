@@ -41,12 +41,13 @@ from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_ui_timers import UiTimerMixin
+from find_ui import FindMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -274,6 +275,7 @@ class CastControlApp(Adw.Application):
         simple("open", lambda *a: self._window().action_open())
         simple("play-locally", lambda *a: self._window()._play_locally())
         simple("add-files", lambda *a: self._window().action_add_files())
+        simple("find-house", lambda *a: self._window().action_find_house())
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())

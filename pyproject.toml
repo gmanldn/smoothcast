@@ -91,6 +91,8 @@ py-modules = [
     "error_log",
     "federated_search",
     "ffmpeg_compat",
+    "find_results",
+    "find_ui",
     "fingerprint",
     "font_attachments",
     "frozen_entry",
