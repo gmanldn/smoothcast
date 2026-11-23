@@ -474,7 +474,7 @@ class CastControlApp(Adw.Application):
         if self._mpris is not None:
             window._sync_ui_timers()
         if (not getattr(sys, "frozen", False)
-                and bool(window.cfg.get("auto_update", False))):
+                and bool(window.cfg.get("check_release_updates", False))):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
@@ -488,7 +488,7 @@ class CastControlApp(Adw.Application):
 
         notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
-            enabled=bool(cfg.get("auto_update", False)),
+            enabled=bool(cfg.get("check_release_updates", False)),
             verify=bool(cfg.get("verify_updates", True)),
         )
         if notice:
