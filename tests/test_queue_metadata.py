@@ -13,7 +13,7 @@ import textwrap
 from types import SimpleNamespace
 from unittest import mock
 
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 import queue_metadata
 
 
@@ -52,6 +52,7 @@ def window(*, durations=None, probe=None):
         "streamer": SimpleNamespace(ffprobe=media_probe),
         "queue_metadata": queue_metadata,
     }
+    namespace.update(handler_globals())
     exec(compile(code, "<queue-metadata-handler>", "exec"), namespace)
 
     class Window(namespace["Extracted"]):

@@ -20,6 +20,9 @@ Pure text/AST only: never imports GTK or starts a window.
 from __future__ import annotations
 
 import ast
+import atexit
+import shutil
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -136,3 +139,28 @@ def _cached_main_window_methods() -> dict[str, str]:
                 if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
             }
     return {}
+
+
+def handler_globals() -> dict:
+    """Globals every ``exec``-ed GUI handler needs, with a throwaway CONFIG_DIR.
+
+    Handlers lifted out of the mixins run in a hand-built namespace, so each
+    module the production code imports must be supplied. Keeping those that
+    are not specific to one test here means a new production import is one edit
+    in one place. ``CONFIG_DIR`` is always a fresh temp directory so a test can
+    never read or write a real SmoothCast config.
+    """
+    import fingerprint
+    import low_end_policy
+    import picture_adjustments
+    import receiver_memory
+
+    config_dir = Path(tempfile.mkdtemp(prefix="smoothcast-test-config-"))
+    atexit.register(shutil.rmtree, config_dir, ignore_errors=True)
+    return {
+        "fingerprint": fingerprint,
+        "low_end_policy": low_end_policy,
+        "picture_adjustments": picture_adjustments,
+        "receiver_memory": receiver_memory,
+        "CONFIG_DIR": config_dir,
+    }

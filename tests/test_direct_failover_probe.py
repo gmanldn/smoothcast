@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -147,6 +147,7 @@ def cast_worker(status="rejected"):
             run=lambda work, done=None, failed=None, **_kwargs: jobs.append((work, done, failed))
         ),
     }
+    namespace.update(handler_globals())
     exec(compile(code, "<direct-handoff>", "exec"), namespace)
 
     class Window(namespace["Handlers"]):

@@ -10,7 +10,7 @@ import textwrap
 from types import SimpleNamespace
 from unittest import mock
 
-from gui_source import main_window_methods
+from gui_source import handler_globals, main_window_methods
 import hls_pause_recovery
 
 
@@ -37,6 +37,7 @@ def fixture(mode="direct", *, paused=False):
         "pathlib": pathlib,
         "fmt_time": lambda seconds: str(int(seconds)),
     }
+    namespace.update(handler_globals())
     exec(compile(source, "<transport-serialization>", "exec"), namespace)
 
     class Window(namespace["Transport"]):
@@ -265,7 +266,7 @@ def test_transcode_seek_still_routes_through_hls_restart_once():
     window.seek_to(38)
     assert not jobs
     assert window.busy
-    window._restart_at.assert_called_once_with(window.session, 38)
+    window._restart_at.assert_called_once_with(window.session, 38, feedback_label=None)
     window.seek_to(39)
     window._restart_at.assert_called_once()
 
