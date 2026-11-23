@@ -20,6 +20,8 @@ on:
       - 'tests/test_command_trace*.py'
       - 'src/pychromecast_backend.py'
       - 'src/portal_join.py'
+      - 'tests/test_join_slate.py'
+      - 'pyproject.toml'
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
@@ -60,6 +62,8 @@ on:
       - 'tests/test_command_trace*.py'
       - 'src/pychromecast_backend.py'
       - 'src/portal_join.py'
+      - 'tests/test_join_slate.py'
+      - 'pyproject.toml'
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
@@ -113,6 +117,7 @@ jobs:
           tests/test_portal_cast_entry.py
           tests/test_portal_screen_page.py
           tests/test_portal_join.py
+          tests/test_join_slate.py
           tests/test_mesh_transport.py
           tests/test_portal_room.py
           tests/test_room_checkpoint.py
