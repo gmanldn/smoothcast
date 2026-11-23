@@ -356,8 +356,9 @@ class AvMixin:
             return
         mapping = {0: "high", 1: "balanced", 2: "saver"}
         value = mapping.get(dropdown.get_selected(), "balanced")
-        if value != self.cfg["quality"]:
+        if value != self.cfg["quality"] or self.cfg.get("quality_auto", True):
             self.cfg["quality"] = value
+            self.cfg["quality_auto"] = False  # Explicit choice wins over the CPU probe.
             save_config(self.cfg)
             self.toast(f"Quality: {streamer.QUALITY_LABELS[value]} (restart to apply)")
 
