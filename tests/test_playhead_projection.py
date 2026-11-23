@@ -146,3 +146,64 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     window.tracker.rate = float("nan")
     assert window._portal_handle("status", {})["rate"] == 1.0
 
+
+
+
+def test_scrub_change_is_single_commit_cancel_is_noop_zero_valid():
+    """Extract browser scrub helpers and run them with fake DOM and fake clock."""
+    html = portal._HTML
+    cancel = html.split("function cancelSeekPreview(){", 1)[1].split("\n}", 1)[0]
+    commit = html.split("function commitSeekPreview(){", 1)[1].split("\n}", 1)[0]
+    script = FUNCTION + "\n" + """
+const assert=require("node:assert/strict");
+let seekCanceled=false,playhead=null,at=0,editingControls=new Set(["seek"]);
+const values={seek:{value:"45"},progress:{value:12},elapsed:{textContent:""}};
+const $=name=>values[name];
+const performance={now:()=>1000};
+const clock=x=>String(x);
+const commands=[];
+const act=(name,value)=>commands.push([name,value]);
+""" + "\nfunction cancelSeekPreview(){" + cancel + "\n}" + \
+        "\nfunction commitSeekPreview(){" + commit + "\n}" + """
+$("seek").value="38";
+cancelSeekPreview();
+$("seek").value="63";
+commitSeekPreview();
+assert.deepEqual(commands,[]);
+assert.equal($("seek").value,12);
+assert.equal($("elapsed").textContent,"12");
+editingControls.add("seek");
+$("seek").value="0";
+commitSeekPreview();
+assert.deepEqual(commands,[["seek",0]]);
+assert.equal($("elapsed").textContent,"0");
+$("seek").value="72.5";
+commitSeekPreview();
+assert.deepEqual(commands,[["seek",0],["seek",72.5]]);
+$("seek").value="-4";
+commitSeekPreview();
+$("seek").value="Infinity";
+commitSeekPreview();
+assert.equal(commands.length,2);
+playhead={s:{state:"PLAYING",position:10,duration:100,rate:2},age:500,at:0};
+cancelSeekPreview();
+assert.equal($("seek").value,13);
+assert.equal($("elapsed").textContent,"13");
+"""
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    result = subprocess.run(["node", "-e", script], check=False,
+                            capture_output=True, text=True, timeout=8)
+    assert result.returncode == 0, result.stderr
+
+
+def test_scrub_wiring_previews_without_network_and_cancels_escape():
+    html = portal._HTML
+    assert 'function commitSeekPreview(){' in html
+    assert 'function cancelSeekPreview(){' in html
+    assert '"seek").addEventListener("input",()=>{' in html
+    assert 'if(!seekCanceled)$("elapsed").textContent=clock(' in html
+    assert '"seek").addEventListener("pointercancel",cancelSeekPreview)' in html
+    assert 'event.key==="Escape"' in html
+    assert '"seek").addEventListener("change",commitSeekPreview)' in html
+    assert 'void act("seek",value)' in html

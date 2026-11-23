@@ -2066,11 +2066,35 @@ for(const id of ["seek","volume"]){
   control.addEventListener("pointercancel",()=>editingControls.delete(id));
   control.addEventListener("blur",()=>editingControls.delete(id));
 }
-$("seek").addEventListener("change",()=>{
+// Preview source-film time while dragging, without ever issuing a seek.
+// A cancelled pointer gesture must not submit a delayed change event.
+let seekCanceled=false;
+function cancelSeekPreview(){
+  seekCanceled=true;
+  editingControls.delete("seek");
+  const pos=playhead
+    ?projectPosition(playhead.s,playhead.age,performance.now()-playhead.at)
+    :Math.max(0,Number($("progress").value)||0);
+  $("seek").value=pos;
+  $("elapsed").textContent=clock(pos);
+}
+function commitSeekPreview(){
   const value=Number($("seek").value);
   editingControls.delete("seek");
-  act("seek",value);
+  if(seekCanceled){seekCanceled=false;return}
+  if(!Number.isFinite(value)||value<0)return;
+  $("elapsed").textContent=clock(value);
+  void act("seek",value); // zero is valid; exactly one mutation on commit
+}
+$("seek").addEventListener("pointerdown",()=>{seekCanceled=false});
+$("seek").addEventListener("input",()=>{
+  if(!seekCanceled)$("elapsed").textContent=clock(Number($("seek").value));
 });
+$("seek").addEventListener("pointercancel",cancelSeekPreview);
+$("seek").addEventListener("keydown",event=>{
+  if(event.key==="Escape"){event.preventDefault();cancelSeekPreview()}
+});
+$("seek").addEventListener("change",commitSeekPreview);
 let volumeTimer=null,lastVolumeSent=0,volumePending=null;
 function flushVolume(){
   volumeTimer=null;
