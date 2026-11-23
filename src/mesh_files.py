@@ -48,6 +48,33 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
     return True
 
 
+_SINGLE_RANGE = re.compile(r"bytes=(\\d*)-(\\d*)\\Z")
+
+
+def _matches_request(requested: str | None, status: int, start: int,
+                     end: int, size: int) -> bool:
+    """Never substitute a different byte span for a browser's Range."""
+    if not 0 <= start <= end < size:
+        return False
+    if requested is None:
+        return status == 200 and start == 0
+    if status != 206:
+        return False
+    match = _SINGLE_RANGE.fullmatch(requested)
+    if match is None:
+        return False
+    first, last = match.groups()
+    if first:
+        offset = int(first)
+        if offset >= size:
+            return False
+        expected_end = min(int(last), size - 1) if last else size - 1
+        return (not last or int(last) >= offset) and start == offset and end == expected_end
+    if not last or int(last) == 0:
+        return False
+    return start == max(0, size - int(last)) and end == size - 1
+
+
 def key_from_path(path: str) -> str | None:
     prefix = "/mesh/file/"
     if not path.startswith(prefix):
@@ -120,6 +147,9 @@ class MeshFiles:
             start = 0
             # A full 200 response can still be resumed by an exact 206 Range.
             total = str(length) if reply.status == 200 else None
+            if range_header is not None and reply.status == 200:
+                # An upstream that ignores Range cannot satisfy a seeking client.
+                return False
             if reply.status == 206:
                 match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
                 if match is None:
@@ -131,6 +161,8 @@ class MeshFiles:
                     return False
                 headers["Content-Range"] = reply.getheader("Content-Range") or ""
                 total = size
+                if not _matches_request(range_header, 206, start, int(last), int(size)):
+                    return False
             write_headers(reply.status, headers)
             if head or length == 0:
                 return True
@@ -170,5 +202,10 @@ class MeshFiles:
                     return
                 sent += len(chunk)
         finally:
+            # Headers already announced Content-Length. On an unrecoverable
+            # upstream failure terminate the downstream socket: do not permit
+            # keep-alive or let a client treat a truncated body as complete.
+            if sent < length:
+                handler.close_connection = True
             # A retry may have replaced the original connection. Always close it.
             conn.close()
