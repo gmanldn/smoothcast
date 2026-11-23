@@ -18,6 +18,15 @@ CASES = [
     # (snapshot, ageMs, sinceMs, expected)
     ({"state": "PLAYING", "position": 10, "duration": 100}, 0, 0, 10),
     ({"state": "PLAYING", "position": 10, "duration": 100}, 500, 1500, 12),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": 0.5}, 500, 1500, 11),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": 2.0}, 500, 1500, 14),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": 4.0}, 500, 1500, 18),
+    ({"state": "PAUSED", "position": 10, "duration": 100, "rate": 2.0}, 500, 1500, 10),
+    ({"state": "BUFFERING", "position": 10, "duration": 100, "rate": 2.0}, 500, 1500, 10),
+    ({"state": "PLAYING", "position": 99, "duration": 100, "rate": 2.0}, 500, 1500, 100),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": None}, 500, 1500, 12),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": "2"}, 500, 1500, 12),
+    ({"state": "PLAYING", "position": 10, "duration": 100, "rate": -5}, 500, 1500, 12),
     ({"state": "PAUSED", "position": 10, "duration": 100}, 500, 5000, 10),
     ({"state": "BUFFERING", "position": 10, "duration": 100}, 0, 5000, 10),
     ({"state": "IDLE", "position": 10, "duration": 100}, 0, 5000, 10),
@@ -57,3 +66,83 @@ def test_projection_handles_non_finite_without_throwing():
         "projectPosition({},0,0),projectPosition({state:'PLAYING',position:3},NaN,NaN)]));"
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True, timeout=8)
     assert json.loads(result.stdout) == [0, 0, 0, 3]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+def test_room_snapshot_version_fences_delayed_status_messages():
+    # Only the pure browser helper: no GTK, network or real browser.
+    source = portal._HTML
+    initial = next(line for line in source.splitlines()
+                   if line.startswith('let roomSnapshotEpoch='))
+    function = next(line for line in source.splitlines()
+                    if line.startswith('function acceptRoomSnapshot('))
+    scenario = """
+    const assert=require('node:assert/strict');
+    const frame=(epoch,ver)=>({stream_epoch:epoch,state:{snapshot_version:ver}});
+    assert.equal(acceptRoomSnapshot(frame('a',5)),true);
+    assert.equal(acceptRoomSnapshot(frame('a',5)),true);  // age refresh
+    assert.equal(acceptRoomSnapshot(frame('a',4)),false); // stale poll
+    assert.equal(acceptRoomSnapshot(frame('a',6)),true);
+    assert.equal(acceptRoomSnapshot(frame('a',3)),false);
+    assert.equal(acceptRoomSnapshot(frame('b',1)),true); // portal restart
+    assert.equal(acceptRoomSnapshot(frame('b',0)),false);
+    assert.equal(acceptRoomSnapshot(frame('b',2)),true);
+    assert.equal(acceptRoomSnapshot({state:{snapshot_version:3}}),true); // legacy
+    assert.equal(acceptRoomSnapshot(frame('b',1)),false); // missing metadata cannot reset fence
+    assert.equal(acceptRoomSnapshot(frame('c',NaN)),true);
+    assert.equal(acceptRoomSnapshot(frame('b',1)),false);
+    """
+    result = subprocess.run(["node", "-"], input=initial+"\n"+function+"\n"+scenario,
+                            capture_output=True, text=True, timeout=8)
+    assert result.returncode == 0, result.stderr
+
+ 
+
+def test_server_snapshot_uses_tracked_source_playback_rate():
+    # Extract the GTK method as source, never import gi, start a window or touch a receiver.
+    from types import SimpleNamespace
+    import textwrap
+
+    from gui_source import main_window_methods
+
+    method = main_window_methods()["_portal_handle"]
+    state_label = SimpleNamespace(label="Playing", short="Playing",
+                                  accessible="Playing", icon="play")
+    namespace = {
+        "portal": SimpleNamespace(PortalRequestError=RuntimeError),
+        "castctl": SimpleNamespace(volume_percent=lambda _: 50),
+        "state_labels": SimpleNamespace(present=lambda _: state_label),
+        "network_activity": SimpleNamespace(portal_entries=lambda *_: []),
+        "accent": __import__("accent"),
+    }
+    exec(compile("class Window:\n" + textwrap.indent(method, "    "),
+                 "<isolated-room-status>", "exec"), namespace)
+    window = namespace["Window"]()
+    window._closing = False
+    window._portal = None
+    window.tracker = SimpleNamespace(value=lambda: 18.0, duration=120.0,
+                                     rate=2.0, known=True)
+    window.media = None
+    window.np_title = SimpleNamespace(get_text=lambda: "Film")
+    window.now_playing = None
+    window._portal_queue_status = lambda: []
+    window.device_info = None
+    window.session = object()
+    window.external = False
+    window.busy = False
+    window._device = lambda: "Receiver"
+    window.device_state = "PLAYING"
+    window._portal_observe_queue = lambda: 1
+    window.cfg = {"music_autogain": False, "accent": "default"}
+    window._network_activity_entries = []
+    window._device_host = lambda _device: "192.168.1.10"
+    window._portal_fence = None
+
+    assert window._portal_handle("status", {})["rate"] == 2.0
+    window.tracker.rate = 0.5
+    assert window._portal_handle("status", {})["rate"] == 0.5
+    window.tracker.rate = float("inf")
+    assert window._portal_handle("status", {})["rate"] == 1.0
+    window.tracker.rate = float("nan")
+    assert window._portal_handle("status", {})["rate"] == 1.0
+

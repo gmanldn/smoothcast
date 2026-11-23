@@ -6,6 +6,7 @@ import threading
 import time
 
 import castctl
+import accent
 import state_labels
 import lan_interfaces
 import portal
@@ -250,11 +251,17 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "state_short": state_labels.present(self.device_state).short,
                 "state_description": state_labels.present(self.device_state).accessible,
                 "state_icon": state_labels.present(self.device_state).icon,
-                "position": position, "duration": duration, "volume": volume,
+                "position": position, "duration": duration,
+                # Source seconds per wall second. The tracker is authoritative,
+                # not HLS segment timestamps or a browser-side playback guess.
+                "rate": (self.tracker.rate
+                         if 0.05 <= self.tracker.rate <= 4.0 else 1.0),
+                "volume": volume,
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
                 "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
+                "accent": accent.normalize(self.cfg.get("accent")),
                 "network_activity": network_activity.portal_entries(
                     getattr(self, "_network_activity_entries", []),
                     self._device_host(self._device()),

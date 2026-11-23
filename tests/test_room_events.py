@@ -253,3 +253,99 @@ def test_replay_never_crosses_participants_and_revocation_clears_events(rig):
     refused = rig.stream(sam, last_event_id=initial["id"])
     assert refused.status == 401
     refused.close()
+
+
+def test_two_clients_converge_across_play_pause_seek_loss_and_queue_edits(rig):
+    """A published owner-state change reaches every connected participant.
+
+    Different participants have different stream IDs and room.me metadata,
+    but must agree on the authoritative media, queue and source-time state.
+    """
+    ana, bo = rig.login("Ana"), rig.login("Bo")
+    clients = [rig.stream(ana), rig.stream(bo)]
+    try:
+        assert all(s.status == 200 for s in clients)
+        first = [json.loads(s.event()[1]["data"])["state"] for s in clients]
+        assert all(state["revision"] == 1 for state in first)
+
+        changes = [
+            dict(state="PAUSED", revision=2),
+            dict(state="PLAYING", position=43.5, revision=3),
+            dict(state="OFFLINE", receiver=None, revision=4),
+            dict(state="PLAYING", revision=5, queue_revision=1,
+                 queue=[{"id": "q2", "title": "Song 2"}, {"id": "q1", "title": "Song 1"}]),
+        ]
+        for change in changes:
+            rig.update(**change)
+            current = [json.loads(s.event()[1]["data"])["state"] for s in clients]
+            for state in current:
+                for key in ("state", "revision", "position", "session_id",
+                            "queue_revision", "receiver"):
+                    assert state.get(key) == rig.state.get(key), (key, change)
+                # The room augments each queue row with viewer-specific vote
+                # metadata, so compare the authoritative item identity/order.
+                assert [(q["id"], q["title"]) for q in state["queue"]] == [
+                    (q["id"], q["title"]) for q in rig.state["queue"]
+                ], change
+            assert current[0]["revision"] == current[1]["revision"]
+            assert current[0]["queue_revision"] == current[1]["queue_revision"]
+    finally:
+        for stream in clients:
+            stream.close()
+
+
+def test_late_subscriber_receives_current_full_snapshot(rig):
+    rig.update(title="New Film", state="PAUSED", position=73.25, revision=18,
+               queue_revision=2, queue=[{"id": "q9", "title": "Latest"}])
+    stream = rig.stream(rig.login("Later"))
+    try:
+        assert stream.status == 200
+        document = json.loads(stream.event()[1]["data"])
+        state = document["state"]
+        assert (state["title"], state["state"], state["position"]) == (
+            "New Film", "PAUSED", 73.25)
+        assert (state["revision"], state["queue_revision"]) == (18, 2)
+        assert [(q["id"], q["title"]) for q in state["queue"]] == [
+            ("q9", "Latest")
+        ]
+        assert state["room"]["me"]["name"] == "Later"
+    finally:
+        stream.close()
+
+
+def test_revoking_a_participant_closes_an_already_open_stream(rig):
+    cookie = rig.login("Sam")
+    stream = rig.stream(cookie)
+    try:
+        assert stream.status == 200
+        stream.event()
+        owner = rig.server.session_participant(cookie.split("=", 1)[1])
+        assert owner is not None
+        rig.server.revoke_participant(owner)
+        with pytest.raises((EOFError, ConnectionError)):
+            stream._until(b"this-event-does-not-exist", timeout=2.0)
+        refused = rig.stream(cookie)
+        try:
+            assert refused.status == 401
+        finally:
+            refused.close()
+    finally:
+        stream.close()
+
+
+def test_twenty_simultaneous_clients_include_one_nonreading_browser(rig):
+    """One slow browser cannot prevent the other 19 from receiving updates."""
+    sessions = [rig.login(f"Guest {index}") for index in range(20)]
+    streams = [rig.stream(cookie) for cookie in sessions]
+    try:
+        assert all(s.status == 200 for s in streams)
+        # Stream 0 deliberately does not read its initial frame.
+        for stream in streams[1:]:
+            assert json.loads(stream.event()[1]["data"])["state"]["revision"] == 1
+        rig.update(state="PAUSED", revision=2)
+        for stream in streams[1:]:
+            state = json.loads(stream.event(timeout=3.0)[1]["data"])["state"]
+            assert state["state"] == "PAUSED" and state["revision"] == 2
+    finally:
+        for stream in streams:
+            stream.close()

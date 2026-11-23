@@ -52,7 +52,7 @@ DEFAULTS: dict = {
     "direct": True,
     "autonext": False,
     "auto_shutdown": False,
-    "notifications": True,  # Notify when the window is unfocused (#267)
+    "notifications": True,  # In-app toasts and console; no OS dock counters (#543)
     "portal_screens": True,
     "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,

@@ -1,9 +1,9 @@
-"""SmoothCast's single authoritative semantic release version.
+"""SmoothCast's single authoritative semantic version.
 
-Change MAJOR/MINOR/PATCH exactly once per release. Ordinary Git commits between
-releases are identified by their commit SHA, not fictitious per-commit versions.
-The running Python process keeps its imported version even if an asynchronous
-git pull changes the on-disk checkout; restarting loads the new version.
+Owner policy: one PATCH bump per completed GitHub ticket, not every transient
+commit. A bumped develop checkout is not a published release until protected
+promotion to main succeeds. A running process keeps its imported version until
+restart, even if asynchronous updates change the checkout.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import re
 
 MAJOR = 1
 MINOR = 2
-PATCH = 25
+PATCH = 28
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 

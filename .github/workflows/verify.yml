@@ -74,6 +74,12 @@ jobs:
         run: python -m unittest discover -s tests -p test_ci_burst_policy.py
       - name: Verify ticket digest selection and fallback
         run: python -m unittest discover -s tests -p test_ticket_efficiency.py
+      - name: Verify stale-safe per-ticket version bumps
+        run: python -m unittest discover -s tests -p test_ticket_versioning.py
+      - name: Verify bounded agent routing and instruction budgets
+        run: |
+          python -m unittest discover -s tests -p test_agent_context.py
+          python -m unittest discover -s tests -p test_agent_token_efficiency.py
       - name: Lint user-facing UX copy
         run: python scripts/ci/ux_copy_lint.py
       - name: Enforce safety invariant evidence links
@@ -91,8 +97,14 @@ jobs:
       - name: Verify code and issue-body budget contracts
         run: |
           python -m pip install 'pytest>=8,<10'
-          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py
+          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py tests/test_notifications.py
           python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
+      - name: Verify synthetic media source corpus
+        run: python -m pytest -q tests/test_media_matrix_descriptions.py
+      - name: Verify Cast HLS frame-rate compatibility
+        run: python -m pytest -q tests/test_transcode_fps_cap.py
+      - name: Verify bounded room activity privacy and command receipts
+        run: python -m pytest -q tests/test_room_activity.py tests/test_room_activity_safety.py
 
   mesh-protocol-contract:
     name: Mesh protocol safety (headless)

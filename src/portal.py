@@ -36,6 +36,7 @@ import error_log
 import failure_boundary
 import peer_discovery
 import portal_room
+import room_activity
 import room_event_replay
 import portal_screen_page
 import portal_media
@@ -162,7 +163,9 @@ def _page() -> bytes:
                            + portal_mesh_panel.panel_html() + "</main>", 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
-            .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())).encode("utf-8")
+            .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
+            .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
+            ).encode("utf-8")
 
 
 class _PortalHTTPServer(ThreadingHTTPServer):
@@ -343,6 +346,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self.room_events.clear()
             for participant_id in participants:
                 self.room.leave(participant_id)
+            # A new PIN starts a new room: previous participants and titles
+            # must never appear in a new guest's activity feed.
+            self.room.reset_history()
             self._queue_command_cache.clear()
             old_pin = self.pin
             new_pin_value = new_pin()
@@ -474,9 +480,6 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     payload = ({**body, "_portal_auth_key": session_key}
                                if session_key is not None else body)
                     message = self.dispatch(action, payload)
-                    self.room.record(participant_id, "action", {
-                        "action": action, "id": body.get("id"),
-                    })
                     status, result = 202, str(message or "Queue updated")
                 except PortalRequestError as exc:
                     status, result = exc.status, exc.message
@@ -484,6 +487,12 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                     status, result = 503, "SmoothCast could not accept that queue edit"
                 if status >= 400:
                     command_trace.stage("rejected", code=status)
+            self.room.record(participant_id, "action", {
+                "action": action, "id": body.get("id"),
+                "outcome": ("accepted" if status < 400 else
+                            "uncertain" if status >= 500 else "rejected"),
+                "reason": room_activity.reason_for_status(status),
+            }, command_id=command_id)
             self._queue_command_cache[key] = (
                 now + QUEUE_COMMAND_TTL, fingerprint, status, result,
             )
@@ -1167,6 +1176,8 @@ class _Handler(BaseHTTPRequestHandler):
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
             action = body.get("action")
+            envelope: portal_commands.MutationEnvelope | None = None
+            participant_id: str | None = None
             try:
                 envelope = portal_commands.parse_envelope(body)
                 participant_id = self.server.session_participant(self._cookie_token())
@@ -1225,11 +1236,20 @@ class _Handler(BaseHTTPRequestHandler):
                                         self._cookie_token() or ""),
                                 })
                         except PortalRequestError as exc:
+                            self.server.room.record(participant_id, "action", {
+                                "action": action, "id": body.get("id"),
+                                "outcome": "rejected" if exc.status < 500 else "uncertain",
+                                "reason": room_activity.reason_for_status(exc.status),
+                            })
                             return self._exception_error(exc)
                         except Exception:
+                            self.server.room.record(participant_id, "action", {
+                                "action": action, "outcome": "uncertain", "reason": "error",
+                            })
                             return self._error(503, "SmoothCast could not accept that command")
                         self.server.room.record(participant_id, "action",
-                                                {"action": action, "id": body.get("id")})
+                                                {"action": action, "id": body.get("id"),
+                                                 "outcome": "accepted"})
                         return self._send(202, {"ok": True, "message": result or "Command received; checking receiver state."})
                     if action == "seek":
                         value = body.get("value")
@@ -1250,6 +1270,12 @@ class _Handler(BaseHTTPRequestHandler):
                         client_id="legacy-" + self.server._session_key(token)[:40])
                 receipt = self.server.commands.execute(envelope, participant_key=participant_id)
             except portal_commands.CommandError as exc:
+                if envelope is not None and participant_id is not None:
+                    self.server.room.record(participant_id, "action", {
+                        "action": envelope.action,
+                        "outcome": "uncertain" if exc.status >= 500 else "rejected",
+                        "reason": room_activity.reason_for_status(exc.status),
+                    }, command_id=envelope.command_id)
                 extra = {}
                 if exc.status == 409:
                     extra["conflict"] = True
@@ -1260,6 +1286,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if exc.code is not None:
                     extra["code"] = exc.code
                 return self._error(exc.status, exc.message, **extra)
+            if envelope is not None and participant_id is not None:
+                self.server.room.record(participant_id, "action", {
+                    "action": envelope.action, "outcome": "accepted",
+                }, command_id=envelope.command_id)
             return self._send(202, {
                 "ok": True, "message": receipt.message,
                 "command_id": receipt.command_id,
@@ -1680,7 +1710,7 @@ function expireSession(){
   $("pin").focus();
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
-function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead;return dur?Math.min(v,dur):v}
+function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const rate=s.rate,speed=typeof rate==="number"&&Number.isFinite(rate)&&rate>=0.05&&rate<=4?rate:1;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead*speed;return dur?Math.min(v,dur):v}
 let playhead=null,paintedAt=-1;
 function trackPlayhead(s){playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead()}
 function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);if(Math.abs(pos-paintedAt)<0.2)return;paintedAt=pos;const dur=Number(playhead.s.duration)||0;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
@@ -1823,9 +1853,28 @@ const roomEvents=makeRoomEvents({
   setInterval:(f,ms)=>setInterval(f,ms),clearInterval:id=>clearInterval(id),
   now:()=>Date.now()
 });
+// Raw markup is also executed by headless browser contract tests before
+// server-side placeholders are substituted. Treat that as no preset data.
+const ROOM_ACCENTS=(()=>{try{return JSON.parse(__SC_ACCENTS__)}catch(_){return {}}})();
+let appliedAccent="";
+function applyAccentPreset(value){
+  const preset=Object.hasOwn(ROOM_ACCENTS,value)?value:"default";
+  const colours=ROOM_ACCENTS[preset];
+  if(!colours||preset===appliedAccent)return;
+  appliedAccent=preset;
+  const root=document.documentElement.style;
+  for(const scheme of ["dark","light"]){
+    root.setProperty("--sc-user-accent-"+scheme,colours[scheme].accent);
+    root.setProperty("--sc-user-on-accent-"+scheme,colours[scheme].on_accent);
+  }
+}
+let roomSnapshotEpoch="",roomSnapshotVersion=-1;
+// A delayed poll or SSE frame must never roll a newer same-run film state back.
+function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
-    const s=d.state||{};shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+  if(!acceptRoomSnapshot(d))return true;
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
@@ -1914,7 +1963,7 @@ function renderPeers(peers,available){
     focused.focus({preventScroll:true});
   }
 }
-function describe(event){const d=event.data||{},name=d.name||"Someone",q=d.title?" \u201c"+d.title+"\u201d":"";switch(event.type){case "joined":return name+(d.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+(d.voted===false?" removed a vote from":" voted for")+(q||" an item");case "action":{const a=d.action||"";const words={queue_play:"played"+q+" now",queue_remove:"removed"+q,queue_move:"moved"+q,queue_next:"queued"+q+" next",queue_add_key:"added"+q,queue_clear:"cleared Up Next",play_pause:"paused or resumed playback",stop:"stopped playback",seek:"changed the playback position",volume:"changed the volume",mute:"toggled mute",next:"skipped to the next item",previous:"went back to the previous item",music_autogain:"changed music normalisation"};return name+" "+(words[a]||"used "+(a||"a control").replaceAll("_"," "))}default:return name+" updated the room"}}
+function describe(event){const d=event.data||{},name=d.name||"Someone",q=d.title?" \u201c"+d.title+"\u201d":"";switch(event.type){case "joined":return name+(d.reconnected?" reconnected":" joined");case "left":return name+" left";case "renamed":return "You are now "+name;case "voted":return name+(d.voted===false?" removed a vote from":" voted for")+(q||" an item");case "action":{const a=d.action||"";const words={queue_play:"played"+q+" now",queue_remove:"removed"+q,queue_move:"moved"+q,queue_next:"queued"+q+" next",queue_add_key:"added"+q,queue_clear:"cleared Up Next",play_pause:"paused or resumed playback",stop:"stopped playback",seek:"changed the playback position",volume:"changed the volume",mute:"toggled mute",next:"skipped to the next item",previous:"went back to the previous item",music_autogain:"changed music normalisation"};const sentence=name+" "+(words[a]||"used "+(a||"a control").replaceAll("_"," "));const result={accepted:"request accepted; confirmation pending",rejected:"request refused",uncertain:"receiver confirmation unavailable",confirmed:"confirmed"}[d.outcome];return result?sentence+" \u00b7 "+result:sentence}case "screen":return name+" used a browser screen";default:return name+" updated the room"}}
 function ago(at){const s=Math.max(0,Date.now()/1000-Number(at));if(!Number.isFinite(s))return "";if(s<45)return "just now";if(s<3600)return Math.max(1,Math.round(s/60))+" min ago";return new Date(at*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
 function showShortcutHelp(){
   const dialog=$("shortcutsHelp"),list=$("shortcutsList");

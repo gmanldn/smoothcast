@@ -5,6 +5,13 @@ on:
     branches: [develop]
     paths:
       - 'src/portal.py'
+      - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
+      - 'tests/test_playhead_projection.py'
+      - 'tests/test_screen_page_theme.py'
+      - 'tests/test_room_accent.py'
       - 'src/async_jobs.py'
       - 'tests/test_async_jobs.py'
       - 'src/castctl.py'
@@ -37,6 +44,13 @@ on:
     branches: [develop]
     paths:
       - 'src/portal.py'
+      - 'src/portal_screen_page.py'
+      - 'src/design_tokens.py'
+      - 'src/accent.py'
+      - 'tests/test_design_tokens.py'
+      - 'tests/test_playhead_projection.py'
+      - 'tests/test_screen_page_theme.py'
+      - 'tests/test_room_accent.py'
       - 'src/async_jobs.py'
       - 'tests/test_async_jobs.py'
       - 'src/castctl.py'
@@ -110,6 +124,10 @@ jobs:
           tests/test_pychromecast_backend.py
           tests/test_portal_activity.py::test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread
           tests/test_portal_screens.py
+          tests/test_screen_page_theme.py
+          tests/test_room_accent.py
+          tests/test_design_tokens.py
+          tests/test_playhead_projection.py
           tests/test_portal_screens_http.py
           tests/test_portal_commands.py
           tests/test_portal_error_codes.py

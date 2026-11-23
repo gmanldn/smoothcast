@@ -1,8 +1,8 @@
-"""Pure desktop-notification policy for finished, error and device-lost events (#267).
+"""GTK-free policy for in-app playback alerts (#267, #543).
 
-The GUI posts a Gio.Notification for a small allow-list of events when the
-window is not focused. Keeping the decision here makes the policy testable
-without GTK, a display or a receiver.
+Finished, error and device-lost events remain visible via Adw.Toast and the
+activity console. Never post a desktop-shell notification: Ubuntu Dock can
+count those as unread badges. The policy needs no GTK or receiver.
 """
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ EVENTS = frozenset({FINISHED, ERROR, DEVICE_LOST})
 
 
 def enabled(cfg: dict) -> bool:
-    """Notifications default to on; only an explicit false disables them."""
+    """In-app playback notices default on; explicit false disables them."""
     return bool(cfg.get("notifications", True))
 
 
 def should_notify(cfg: dict, event: str, *, window_active: bool) -> bool:
-    """Return True only for a known event when enabled and the window is unfocused."""
+    """Notify in-app only for permitted background events; never the OS shell."""
     if event not in EVENTS:
         return False
     if not enabled(cfg):

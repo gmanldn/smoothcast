@@ -22,7 +22,7 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 
 ## Rules
 
-- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next`, claim
+- **GitHub Issues are authoritative:** `python3 scripts/ticket_digest.py --next --label agent-ready`, claim
   before work, `Refs #N` in commits, close when code and automated CI pass;
   device checks tracked in #208. [Issues](docs/ISSUES.md).
 - **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
@@ -31,8 +31,8 @@ everyone's top priority. See [workflow](docs/agents/workflow.md).
 - **Precise output:** results, evidence, blockers; never hide errors.
   [Caveman](.kilo/skills/caveman/SKILL.md).
 - **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
-- **Release authority:** `src/version.py`, not every Git commit. The Git commit SHA
-  names a development revision; `./smoothcast --version` is GUI-free.
+- **Versions:** `src/version.py` per ticket via `scripts/ci/bump_version.py --issue N`.
+  Git commit SHA tracks interim work; `./smoothcast --version` is GUI-free.
 
 ## Testing — patch fast lane, no desktop focus
 

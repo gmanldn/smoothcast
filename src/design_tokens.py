@@ -8,6 +8,8 @@ formula, used by tests to keep every text pair readable.
 """
 from __future__ import annotations
 
+import accent
+
 DARK = {
     "bg": "#101722", "card": "#1c2735", "text": "#f4f7fb", "muted": "#b7c3d0", "dim": "#8394aa",
     "accent": "#4d9de0", "on_accent": "#081522", "input": "#121b27", "border": "#718096",
@@ -31,18 +33,47 @@ SCHEMES = {"dark": DARK, "light": LIGHT}
 HIGH_CONTRAST = {"muted": "text", "dim": "text", "border": "text", "header_line": "text"}
 
 
-def _vars(values: dict[str, str]) -> str:
-    return "".join(f"--{name.replace('_', '-')}:{value};" for name, value in values.items())
+def _vars(values: dict[str, str], scheme: str) -> str:
+    result = []
+    for name, value in values.items():
+        css_name = name.replace("_", "-")
+        if name in {"accent", "on_accent"}:
+            value = f"var(--sc-user-{css_name}-{scheme}, {value})"
+        result.append(f"--{css_name}:{value};")
+    return "".join(result)
+
+
+def web_accents() -> dict[str, dict[str, dict[str, str]]]:
+    """Only reviewed preset IDs and readable colours; no untrusted CSS/JS."""
+    table: dict[str, dict[str, dict[str, str]]] = {}
+    for preset, _label, _colour in accent.PRESETS:
+        if preset == accent.DEFAULT_ID:
+            table[preset] = {
+                scheme: {"accent": values["accent"], "on_accent": values["on_accent"]}
+                for scheme, values in SCHEMES.items()
+            }
+            continue
+        colour = accent.accent_hex(preset)
+        variants = {}
+        for scheme, values in SCHEMES.items():
+            candidate = colour
+            for fraction in range(11):
+                if contrast_ratio(candidate, values["card"]) >= 3:
+                    break
+                candidate = accent.mix(colour, "#000000", fraction / 10)
+            variants[scheme] = {"accent": candidate, "on_accent": accent.text_on(candidate)}
+        table[preset] = variants
+    return table
 
 
 def css() -> str:
     """Root custom properties: dark by default, light and high-contrast via media queries."""
     high_dark = {name: DARK[source] for name, source in HIGH_CONTRAST.items()}
     high_light = {name: LIGHT[source] for name, source in HIGH_CONTRAST.items()}
-    return (":root{" + _vars(DARK) + "}"
-            "@media(prefers-color-scheme:light){:root{" + _vars(LIGHT) + "}}"
-            "@media(prefers-contrast:more){:root{" + _vars(high_dark) + "}}"
-            "@media(prefers-contrast:more) and (prefers-color-scheme:light){:root{" + _vars(high_light) + "}}")
+    return (":root{" + _vars(DARK, "dark") + "}"
+            "@media(prefers-color-scheme:light){:root{" + _vars(LIGHT, "light") + "}}"
+            "@media(prefers-contrast:more){:root{" + _vars(high_dark, "dark") + "}}"
+            "@media(prefers-contrast:more) and (prefers-color-scheme:light){:root{" + _vars(high_light, "light") + "}}")
 
 
 def _channel(value: int) -> float:

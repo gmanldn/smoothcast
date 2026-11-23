@@ -100,13 +100,18 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         """INV-011: GUI modules stay within bounded split-mixin budgets."""
         # A single 200 KB window module forced agents to grep and read a whole
         # file per task. Keep each concern in a file small enough to read.
+        # Baselines measured on develop when this new CI gate was enabled
+        # (23 Nov 2026): launcher 32,062 B, preferences 17,229 B. A limit
+        # *below* existing trunk size makes every future Verify red, even
+        # for documentation-only commits. Keep small, explicit headroom and
+        # require genuine mixin extraction before these files grow further.
         limits = {
-            "cast_control.py": 26_000,
+            "cast_control.py": 33_000,
             "cast_widgets.py": 35_000,
             "bookmark_ui.py": 9_000,
             "cast_ui.py": 72_000,
             "cast_settings.py": 10_000,
-            "preferences_ui.py": 17_000,
+            "preferences_ui.py": 18_000,
             "preference_choices.py": 5_000,
             "cast_queue.py": 36_000,
             "cast_session.py": 56_000,

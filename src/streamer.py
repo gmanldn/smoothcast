@@ -1599,8 +1599,13 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced") -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced", source_fps: float = 0.0) -> list[str]:
         chain: list[str] = []
+        # H.264 High@4.1 is the conservative 1080p30 Cast baseline. Scale
+        # alone does not make 1080p60/4K60 compatible with older receivers.
+        # Adjust for the user's playback speed; leave 24/25/30fps unchanged.
+        fps_cap = (math.isfinite(source_fps) and source_fps > 0
+                   and source_fps * speed > 30.0)
         aspect_filters = aspect_override.filters(aspect_mode)
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
@@ -1618,6 +1623,8 @@ class Session:
             post_overlay = list(chain[len(plan_filters):])
             if speed != 1.0:
                 post_overlay.append(f"setpts=PTS/{speed:g}")
+            if fps_cap:
+                post_overlay.append("fps=fps=30")
             post_overlay.extend(rotation_filters(rotation))
             post_overlay.extend(aspect_filters)
             if video_size and not aspect_filters:
@@ -1660,6 +1667,8 @@ class Session:
             chain.extend([shift[0], sub_filter, shift[1]] if shift else [sub_filter])
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
+        if fps_cap:
+            chain.append("fps=fps=30")
         chain.extend(rotation_filters(rotation))
         chain.extend(aspect_filters)
         # Scale the *transposed* picture. A 1920x1080 source rotated 90°
@@ -1831,6 +1840,7 @@ class Session:
             embedded_bitmap=bitmap_track is not None,
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
+            source_fps=media.fps,
             quality=quality,
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,

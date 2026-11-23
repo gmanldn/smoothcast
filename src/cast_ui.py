@@ -996,29 +996,33 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _notify(self, event: str, detail: str = "") -> None:
-        """Post a desktop notification without presenting or focusing the window."""
+        """Keep playback alerts in-app; OS notifications create dock badges (#543).
+
+        Adw.Toast never sends a shell notification or raises a window, while
+        the bounded console retains the message after a toast expires.
+        """
         try:
             active = bool(self.is_active())
         except Exception:
             active = False
         if not notifications.should_notify(self.cfg, event, window_active=active):
             return
+        title = notifications.event_title(event)
         if event == notifications.FINISHED:
-            title = notifications.event_title(event)
             name = pathlib.Path(detail).name if detail else ""
             body = f"{name} finished playing." if name else "The cast finished."
         elif event == notifications.ERROR:
-            title = notifications.event_title(event)
             body = detail or "The cast failed."
         else:
-            title = notifications.event_title(event)
             body = f"{detail} stopped responding." if detail else "The receiver stopped responding."
+        # Gio.Application.send_notification(None, ...) made every event a
+        # separate, persistent GNOME notification; Ubuntu Dock counted them.
+        # Keep visibility without registering anything with the desktop shell.
+        self._console(f"{title}: {body}")
         try:
-            notification = Gio.Notification.new(title)
-            notification.set_body(body)
-            self.app.send_notification(None, notification)
+            self.toast(body, error=event != notifications.FINISHED)
         except Exception as exc:
-            self._console(f"Notification unavailable: {exc}")
+            self._console(f"In-app playback alert unavailable: {exc}")
 
 
     def _set_chip(self, label: str, kind: str) -> None:

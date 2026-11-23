@@ -21,39 +21,62 @@ HANDBOOK = ROOT / "docs" / "agents"
 TOPICS = {
     "workflow": (
         "Issue ownership, worktrees, commits and releases",
-        ("issue", "issues", "ticket", "backlog", "pr", "pull", "branch",
-         "worktree", "merge", "version", "release", "git", "status"),
+        ("issue", "issues", "ticket", "tickets", "backlog", "pr", "pull",
+         "branch", "worktree", "workflow", "merge", "version",
+         "release", "git", "status"),
     ),
     "testing": (
         "Headless tests, CI, Xvfb and device safety",
-        ("test", "pytest", "unittest", "ci", "action", "xvfb",
-         "gui smoke", "focus", "display", "regression", "verify"),
+        ("test", "tests", "testing", "pytest", "unittest", "ci", "action",
+         "xvfb", "gui smoke", "focus", "display", "regression", "verify"),
     ),
     "architecture": (
         "Module map for playback, GTK, DLNA, subtitles and setup",
-        ("src/", "setup/", "cast_", "stream", "media", "dlna", "subtitle",
-         "receiver", "preview", "ffmpeg", "sound", "audio", "gtk",
-         "playback", "queue", "widget", "device", ".py"),
+        ("src/", "setup/", "cast_", "stream", "streamer", "streaming",
+         "media", "dlna", "subtitle", "subtitles", "receiver", "preview",
+         "ffmpeg", "sound", "audio", "gtk", "playback", "queue",
+         "widget", "device", ".py"),
     ),
     "efficiency": (
         "Caveman, Ponytail and context/tool-output discipline",
-        ("token", "context", "agent", "caveman", "ponytail", "prompt",
-         "cost", "budget", "compact", "compression", "efficiency"),
+        ("token", "tokens", "context", "agent", "agents", "caveman",
+         "ponytail", "prompt", "cost", "budget", "compact",
+         "compression", "efficiency"),
     ),
 }
 MAX_HINT_CHARS = 1500
 MAX_READ_CHARS = 8000
 
 
+_PATH_MARKERS = {"src/", "setup/", "cast_", ".py"}
+
+
+def _term_count(query: str, term: str) -> int:
+    """Keep source-path markers, but match ordinary words only as whole terms.
+
+    The legacy substring rule interpreted the PR keyword inside 'preview',
+    'improve' and 'problem' as a workflow request.
+    """
+    if term in _PATH_MARKERS:
+        return query.count(term)
+    return len(re.findall(
+        rf"(?<![a-z0-9_]){re.escape(term)}(?![a-z0-9_])", query
+    ))
+
+
 def route(words: list[str]) -> list[str]:
-    """Rank topics from local keyword matches; no repo read or network call."""
+    """Rank task-specific guides without broad substring false matches."""
     query = " ".join(words).lower()
     if not query.strip():
         return []
     scores = {
-        name: sum(query.count(term) for term in terms)
+        name: sum(_term_count(query, term) for term in terms)
         for name, (_, terms) in TOPICS.items()
     }
+    # An explicit handbook path is a stronger signal than other query words.
+    for name in TOPICS:
+        if f"docs/agents/{name}.md" in query:
+            scores[name] += 4
     return [name for name in sorted(scores, key=lambda k: (-scores[k], k))
             if scores[name] > 0]
 
