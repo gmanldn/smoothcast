@@ -49,8 +49,9 @@ def test_real_synthetic_video_is_parsed_by_production_ffprobe(
             check=False, capture_output=True, text=True, timeout=10,
         )
         if result.returncode and not any(
-            row.split()[-1] == encoder for row in encoders.stdout.splitlines()
-            if row.strip() and row.lstrip().startswith("V")
+            len(parts) > 1 and parts[1] == encoder
+            for row in encoders.stdout.splitlines()
+            if (parts := row.split()) and parts[0].startswith("V")
         ):
             pytest.skip(f"Optional encoder {encoder} is not available")
         pytest.fail(f"FFmpeg {encoder}/{extension} fixture failed: {result.stderr[-500:]}")
