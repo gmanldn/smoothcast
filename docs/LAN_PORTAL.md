@@ -349,7 +349,15 @@ Its controls and keyboard focus survive normal status polling, even when a
 screen changes between Playing and Paused. Each command reads the latest screen
 state, and a selection disappears safely if its queue item is removed. If a
 screen disconnects while its controls have focus, focus returns to the Screens
-heading instead of being lost.
+heading instead of being lost. Rapid repeated taps are coalesced **per
+screen** while a command is awaiting acknowledgement; other screens can still
+receive commands independently. In-flight buttons remain focusable with an
+accessible busy state. Replies from an expired session do not overwrite
+messages for a newly joined room.
+
+Mesh discovery runs one snapshot request at a time and cancels pending
+requests when the guest leaves or backgrounds the tab. Late responses cannot
+reopen the Network panel or event stream after room access changes.
 
 Help is available **next to the relevant action** using touch-, mouse- and
 keyboard-operable disclosure controls, with additional desktop hover titles.
