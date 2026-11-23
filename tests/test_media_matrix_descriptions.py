@@ -62,6 +62,22 @@ class SourceShapeTests(unittest.TestCase):
                 self.assertIs(type(media.direct_ok), bool)
                 self.assertTrue(media.direct_reason)
 
+    def test_fake_receiver_rejects_noninteger_video_geometry(self):
+        # A Python bool is an int subclass; ffprobe dimensions/fps are not.
+        valid = {
+            "codec": "h264", "profile": "high", "level": "4.1",
+            "width": 1920, "height": 1080, "fps": 30,
+        }
+        self.assertTrue(supports("chromecast-gen2", valid))
+        for field in ("width", "height", "fps"):
+            for bad in (True, False, 0, -1, 1.5, "1", None):
+                with self.subTest(field=field, bad=bad):
+                    self.assertFalse(supports(
+                        "chromecast-gen2", {**valid, field: bad},
+                    ))
+        # The deliberately unconstrained generic test profile is unchanged.
+        self.assertTrue(supports("generic", {"codec": "unrecognised"}))
+
     def test_every_fake_receiver_profile_rejects_undocumented_video_codecs(self):
         """480-ish checks exercise fake capability, not end-to-end planner."""
         self.assertGreaterEqual(len(PROFILES), 6)
