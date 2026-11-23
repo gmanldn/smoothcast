@@ -237,8 +237,8 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12,
         "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",
         "-vf", ",".join(picture_adjustments.filters(picture_config) +
-                         aspect_override.filters(aspect_mode, width=640, height=360))
-        or "scale=640:360:force_original_aspect_ratio=decrease",
+                         (aspect_override.filters(aspect_mode, width=640, height=360)
+                          or ["scale=640:360:force_original_aspect_ratio=decrease"])),
         "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
     ]
     try:
