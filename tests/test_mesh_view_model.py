@@ -147,7 +147,7 @@ def test_browser_panel_is_self_contained_parses_and_is_in_the_dashboard():
     page = portal._page().decode()
     assert page.count('id="meshPanel"') == 1 and "/api/mesh/events" in page
     if shutil.which("node"):
-        script = re.findall(r"<script>(.*?)</script>", html, flags=re.S)[0]
+        script = re.findall(r"<script>(.*?)</script>", html, flags=re.S | re.I)[0]
         out = Path(__file__).with_name("_mesh_panel_check.js")
         out.write_text(script)
         try:
