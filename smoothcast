@@ -72,12 +72,17 @@ def main(argv: list[str] | None = None) -> int:
     if target is None:
         print("SmoothCast supports Linux, macOS and Windows 10/11 x64.", file=sys.stderr)
         return 1
+    # Activating the already-running primary must not wait for dependency
+    # probes, bootstrap, installs or desktop registration (#540).
+    guarded = launch.ensure_single_instance(args)
+    if guarded is not None:
+        return guarded
     if not launch.runtime_ready():
         code = _bootstrap(target)
         if code:
             return code
     _install_desktop(target)
-    return launch.main(args)
+    return launch.main(args, prechecked=True)
 
 
 if __name__ == "__main__":
