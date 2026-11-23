@@ -13,6 +13,7 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
+import portal_join
 import portal_media
 import portal_screen_page
 import portal_screens
@@ -60,6 +61,16 @@ def attach(server) -> None:
 
 
 def route(handler, method: str, path: str) -> bool:
+    if path == "/join-qr.png" and method == "GET":
+        # Only the server's bound IPv4 endpoint, never a user-controlled Host or PIN.
+        ip, port = handler.server.server_address[:2]
+        try:
+            png = portal_join.qr_png(f"http://{ip}:{port}/")
+        except (ValueError, ImportError):
+            handler._error(503, "Room join QR unavailable on this network")
+        else:
+            handler._send(200, png, content_type="image/png")
+        return True
     if path == "/screen" and method == "GET":
         handler._send(200, portal_screen_page.screen_page(),
                       content_type="text/html; charset=utf-8")

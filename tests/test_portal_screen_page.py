@@ -65,3 +65,15 @@ def test_wake_lock_pip_and_dim_hint_contract():
     assert 'addEventListener("visibilitychange"' in html and "keepAwake()" in html
     assert 'id="pipButton"' in html and "document.pictureInPictureEnabled" in html
     assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in html
+
+
+def test_idle_screen_shows_self_hosted_join_qr_and_safe_short_address():
+    html = portal_screen_page.screen_page().decode()
+    assert '<div class="stage" id="slate" hidden>' in html
+    assert 'src="/join-qr.png"' in html
+    assert 'id="joinAddress"' in html
+    assert '$("joinAddress").textContent=location.host' in html
+    assert "joinAddress\").innerHTML" not in html
+    # Playing view and login remain independent from the idle QR slate.
+    assert '<div id="player" hidden>' in html
+    assert 'id="loginView" hidden' in html

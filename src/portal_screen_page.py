@@ -47,6 +47,9 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-
 .err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
 .big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
 .slate{text-align:center;max-width:44rem}
+.join-qr{margin:24px auto 0;max-width:min(26rem,90vw);display:grid;justify-items:center;gap:4px}
+.join-qr img{display:block;width:min(180px,36vw);height:auto;aspect-ratio:1;background:#fff;border:8px solid #fff;border-radius:10px}
+.join-qr strong{color:var(--text);overflow-wrap:anywhere}
 .dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent);animation:pulse 2.4s infinite}
 .dot.bad{background:var(--danger);animation:none}.dot.warn{background:var(--focus);animation:none}
 @keyframes pulse{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
@@ -82,6 +85,10 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 <div class="stage" id="slate" hidden><div class="slate">
 <p class="big"><span class="dot" id="dot"></span><span id="slateName">Screen</span></p>
 <p id="slateText" role="status" aria-live="polite">Ready. Pick something in the room to play it here.</p>
+<div class="join-qr" aria-label="Join this SmoothCast room">
+<img src="/join-qr.png" width="180" height="180" alt="Scan this QR code to join the room on your phone">
+<p>Or open <strong id="joinAddress"></strong> on the same Wi-Fi network.</p>
+</div>
 <p><button class="ghost" id="fsSlate" type="button">Full screen</button></p></div></div>
 
 <div id="player" hidden><video id="video" playsinline preload="auto"></video>
@@ -95,6 +102,8 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 const MIMES=__MIMES__;
 const READY="Ready. Pick something in the room to play it here.";
 const $=id=>document.getElementById(id);
+// Short address is text, never HTML; the QR contains the bound numeric endpoint.
+$("joinAddress").textContent=location.host;
 let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
 let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false,recoverAt=0,stallTimer=null;
 const video=$("video");
