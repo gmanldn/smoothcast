@@ -94,6 +94,25 @@ class AudioOnlyMediaTests(unittest.TestCase):
             with self.assertRaisesRegex(streamer.StreamError, "ffprobe could not read"):
                 streamer.ffprobe(path)
 
+    def test_audio_only_subtitle_choices_and_unqualified_dlna_fail_closed(self):
+        media = streamer.MediaInfo(Path("track.mp3"), audio_only=True)
+        subtitle = Path("captions.srt")
+        self.assertEqual(
+            streamer.audio_cast_options(media, "auto", subtitle, False),
+            (None, False),
+        )
+        self.assertEqual(
+            streamer.audio_cast_options(media, "off", subtitle, False),
+            (None, False),
+        )
+        for mode in ("pick", "embedded"):
+            with self.subTest(mode=mode), self.assertRaisesRegex(
+                streamer.StreamError, "does not support subtitles",
+            ):
+                streamer.audio_cast_options(media, mode, subtitle, False)
+        with self.assertRaisesRegex(streamer.StreamError, "DLNA receiver profile"):
+            streamer.audio_cast_options(media, "auto", None, False, dlna=True)
+
     def test_audio_preflight_decodes_selected_track_without_video(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "track.flac"
@@ -208,6 +227,45 @@ class AudioOnlyMediaTests(unittest.TestCase):
                     fake_server.server_close()
                     serve_thread.join(timeout=1)
                     session._stop_sampler()
+
+    def test_mp3_and_aac_sources_use_audio_only_cast_transcode(self):
+        """Common music inputs both take the receiver-compatible AAC path."""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for filename, encoder in (("track.mp3", "libmp3lame"),
+                                      ("track.m4a", "aac")):
+                with self.subTest(filename=filename):
+                    path = root / filename
+                    self.make_fixture(path, encoder)
+                    media = streamer.ffprobe(path)
+                    session = streamer.Session()
+                    proc = mock.MagicMock()
+                    proc.pid = 12345
+                    proc.poll.return_value = None
+                    with mock.patch.object(streamer, "ROOT", root), \
+                         mock.patch.object(streamer, "FFMPEG_LOG", root / "ffmpeg.log"), \
+                         mock.patch.object(streamer, "PROGRESS_FILE", root / "progress.log"), \
+                         mock.patch.object(streamer, "host_ip", return_value="192.168.1.9"), \
+                         mock.patch.object(streamer, "require_compatible_ffmpeg", return_value=(7, 0)), \
+                         mock.patch.object(streamer.video_policy, "make_plan") as video_plan, \
+                         mock.patch.object(session, "_start_server"), \
+                         mock.patch.object(session, "_wait_for_segments", return_value=True), \
+                         mock.patch.object(streamer, "_save_session"), \
+                         mock.patch.object(streamer.time, "sleep"), \
+                         mock.patch.object(session, "_await_receiver"), \
+                         mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
+                        session.start_transcode(
+                            media, 0, device="speaker", quality="balanced",
+                            audio_profile="original", subs_file=None,
+                            burn_subs=False, title=filename,
+                        )
+                        args = list(popen.call_args_list[0].args[0])
+                    self.assertIn("-vn", args)
+                    self.assertEqual(args[args.index("-map") + 1], "0:a:0")
+                    self.assertEqual(args[args.index("-c:a") + 1], "aac")
+                    self.assertEqual(args[args.index("-i") + 1], str(path))
+                    self.assertNotIn("-c:v", args)
+                    video_plan.assert_not_called()
 
     def test_mixed_music_video_queue_keeps_order_across_audio_items(self):
         queue = ["song.mp3", "album.flac", "film.mkv", "track.m4a"]

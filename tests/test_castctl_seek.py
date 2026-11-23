@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from subprocess import CompletedProcess
 import sys
 import unittest
 from unittest import mock
@@ -54,6 +55,22 @@ class SeekRoundingTests(unittest.TestCase):
                 castctl.stop("TV"), (False, castctl.COMMAND_TIMEOUT_MESSAGE),
             )
         self.assertEqual(cmd.call_count, 2)
+
+    def test_catt_failure_does_not_return_process_details(self):
+        private_text = "Could not load /private/media/film.mkv"
+        result = CompletedProcess([], 1, stdout="", stderr=private_text)
+        with mock.patch.object(castctl, "log_backend_failure") as log:
+            with mock.patch.object(castctl, "_run", return_value=result):
+                ok, message = castctl._catt_command("TV", "play")
+                self.assertFalse(ok)
+                self.assertNotIn(private_text, message)
+                self.assertIn("receiver connection", message)
+            with mock.patch.object(castctl, "_run", side_effect=OSError(private_text)):
+                ok, message = castctl._catt_command("TV", "play")
+                self.assertFalse(ok)
+                self.assertNotIn(private_text, message)
+                self.assertIn("installation", message)
+            self.assertEqual(log.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -43,16 +43,21 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
-        self._stop_ui_timers()
-        reliability_metrics.finish_active(self, "interrupted", Async.run)
-        getattr(self, "_cancel_music_import", lambda: None)()
-        self._cancel_queue_prewarm()
-        self._stop_portal()
-        watch = getattr(self, "_cast_status_watch", None)
-        if watch is not None:
-            watch.close()
-        if self._dlna_cancel is not None:
-            self._dlna_cancel.set()
+        plan = self._shutdown_plan()            # ordered steps, per-step deadlines, 1 s budget (#465)
+        plan.run("ui_timers", self._stop_ui_timers)
+        plan.run("metrics", lambda: reliability_metrics.finish_active(self, "interrupted", Async.run))
+        plan.run("background_work", lambda: (
+            getattr(self, "_cancel_music_import", lambda: None)(), self._cancel_queue_prewarm()))
+        plan.run("portal", self._stop_portal)
+        plan.run("house_services", self._stop_house_services, deadline=0.4, threaded=True)
+
+        def receiver_watch() -> None:
+            watch = getattr(self, "_cast_status_watch", None)
+            if watch is not None:
+                watch.close()
+            if self._dlna_cancel is not None:
+                self._dlna_cancel.set()
+        plan.run("receiver_watch", receiver_watch)
         if self._cast_starting:
             # Closing a GtkApplication while Async.run's daemon worker is
             # still running can terminate that worker before GLib.idle_add
@@ -66,17 +71,19 @@ class LifecycleMixin:
                     self._closing_hold = True
                 self.set_visible(False)
             return True
-        self._stop_monitor()
-        self._unload_local_video()
-        # Save the last *actual* normal allocation, not GTK's default size.
-        # Fullscreen/maximised allocations are never persisted as preferences.
-        self._remember_normal_geometry()
-        width, height = self._last_normal_size
-        if width > 0 and height > 0:
-            self.cfg["window_width"] = width
-            self.cfg["window_height"] = height
-        save_config(self.cfg)
-        flush_config()
+        plan.run("media", lambda: (self._stop_monitor(), self._unload_local_video()))
+
+        def save_settings() -> None:
+            # Save the last *actual* normal allocation, not GTK's default size.
+            # Fullscreen/maximised allocations are never persisted as preferences.
+            self._remember_normal_geometry()
+            width, height = self._last_normal_size
+            if width > 0 and height > 0:
+                self.cfg["window_width"] = width
+                self.cfg["window_height"] = height
+            save_config(self.cfg)
+            flush_config()
+        plan.run("settings", save_settings)
         # DLNA's local HTTP server is process-owned; unlike Chromecast's HLS
         # keep-streaming path it cannot survive closing this application.
         if self.session is not None and (
@@ -85,6 +92,7 @@ class LifecycleMixin:
             device = self._device()
             thread = threading.Thread(target=lambda: session.stop(device), daemon=False)
             thread.start()
+        self._finish_shutdown()
         return False
 
 
@@ -107,13 +115,14 @@ class LifecycleMixin:
         if previewing and not duration:
             duration = self.queue_durations.get(self._preview_path, 0.0)
         if hovering:
+            self._refresh_thumbnail_strip(value, visible=previewing)
             self.elapsed_label.set_text(fmt_time(value))
             if duration:
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - value))}")
             if previewing:
                 self._timed_subtitle_preview(value)
             if previewing and self._local_stream() is None:
-                self._queue_preview(value)
+                self._queue_preview(value, sparse=True)
         else:
             if previewing:
                 self._timed_subtitle_preview(None)
@@ -157,6 +166,7 @@ class LifecycleMixin:
         self._preview_path = None
         self._preview_position = 0.0
         self._preview_pending = None
+        self._refresh_thumbnail_strip(0.0, visible=False)
         self._unload_local_video()
         self.preview_picture.set_visible(False)
 
@@ -296,6 +306,7 @@ class LifecycleMixin:
         box.append(Gtk.Label(label="Playback speed (0.25x - 4x)", xalign=0.0))
         spin = Gtk.SpinButton.new_with_range(0.25, 4.0, 0.05)
         spin.set_digits(2)
+        spin.update_property([Gtk.AccessibleProperty.LABEL], ["Playback speed"])
         spin.set_value(min(4.0, max(0.25, float(self.cfg.get("playback_speed", 1.0)))))
         box.append(spin)
         apply = Gtk.Button(label="Apply")
@@ -366,8 +377,8 @@ class LifecycleMixin:
                 preview_path=self._preview_path,
                 preview_position=self._preview_position,
             )
-        except screenshot.CaptureError as exc:
-            self.toast(str(exc) or "Couldn't take the screenshot.", error=True)
+        except screenshot.FramePositionError as exc:
+            self.toast(exc.message, error=True)
             return
         output_dir = pathlib.Path(
             self.cfg.get("screenshot_dir") or pathlib.Path.home() / "Pictures"
@@ -379,7 +390,10 @@ class LifecycleMixin:
                 source, position, output_dir, video_stream_index=video_index,
             ),
             done=lambda out: self.toast(f"Screenshot saved: {out.name}"),
-            failed=lambda message: self.toast(f"Screenshot failed: {message}", error=True),
+            failed=lambda _message: self.toast(
+                "Could not save the screenshot. Check the file and screenshot folder, then try again.",
+                error=True,
+            ),
         )
 
 

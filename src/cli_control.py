@@ -30,6 +30,7 @@ import re
 import sys
 
 import castctl
+import command_trace
 import state_labels
 import streamer
 
@@ -49,10 +50,11 @@ SMOOTHCAST_DEVICE environment variable. Chromecast receivers only (name or IPv4)
 class CliError(Exception):
     """A command failed with a specific exit code and message."""
 
-    def __init__(self, code: int, message: str) -> None:
+    def __init__(self, code: int, message: str, *, catalogue_code: str | None = None) -> None:
         super().__init__(message)
-        self.code = code
+        self.code = code  # Existing CLI process exit code (not a catalogue identifier).
         self.message = message
+        self.catalogue_code = catalogue_code
 
 
 def parse_time(text: str) -> float:
@@ -179,7 +181,8 @@ def cmd_status(args: argparse.Namespace) -> dict:
     device = _device(args)
     info = castctl.info(device)
     if info is None:
-        raise CliError(EXIT_UNREACHABLE, f"{device} did not respond (offline or unreachable)")
+        raise CliError(EXIT_UNREACHABLE, f"{device} did not respond (offline or unreachable)",
+                       catalogue_code="cast.receiver_offline")
     result = {
         "device": device,
         "state": castctl.player_state(info),
@@ -201,7 +204,8 @@ def cmd_cast(args: argparse.Namespace) -> dict:
     device = _device(args)
     path = Path(args.file).expanduser()
     if not path.is_file():
-        raise CliError(EXIT_MEDIA, f"no such file: {path}")
+        raise CliError(EXIT_MEDIA, f"no such file: {path}",
+                       catalogue_code="media.unavailable")
     offset = parse_time(args.offset) if args.offset else 0.0
     try:
         media = streamer.ffprobe(path)
@@ -285,12 +289,15 @@ def _human(command: str, result: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        result = HANDLERS[args.command](args)
+        with command_trace.scope("cli", args.command):
+            result = HANDLERS[args.command](args)
         code, payload = EXIT_OK, {"ok": True, "command": args.command, **result}
     except CliError as exc:
         code = exc.code
         payload = {"ok": False, "command": args.command,
                    "error": _ERROR_NAMES.get(exc.code, "failed"), "message": exc.message}
+        if exc.catalogue_code:
+            payload["code"] = exc.catalogue_code
     if args.json:
         print(json.dumps(payload))
     elif code == EXIT_OK:

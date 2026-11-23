@@ -158,6 +158,18 @@ the same position. Seeking a converted stream restarts it at the new position.
 - The room still uses plain HTTP on a trusted LAN (see below). Media sent to a
   screen is visible to that LAN segment in the same way as the dashboard.
 
+## Recovering a room queue
+
+While a room is running, SmoothCast checkpoints the ordered queue into a
+private file on the host. The file contains local media references and a format
+version. On restart, **Recover queue** restores available items in order and
+reports missing files or unfinished uploads. **Discard previous room** clears
+the checkpoint. If the queue changes while the prompt is open, the current
+queue is kept.
+
+Recovery does not start playback or restore guest sessions. Guests rejoin the
+current room using its current access settings.
+
 ## Access and privacy
 
 - A new unpredictable PIN is generated each time the portal starts or changes
@@ -278,3 +290,15 @@ Turning `mesh_enabled` off restores the exact previous behaviour: no sockets and
 threads. Paired browsers can read the live view at `/api/mesh` and `/api/mesh/events`
 (Server-Sent Events). The mesh runs on its own thread and its failures never affect
 playback or the portal; `mesh_service.MeshService.diagnostics()` reports redacted health.
+
+## Room event reconnects
+
+Authenticated `/api/events` streams expose a random per-server `stream_epoch`
+and monotonically increasing `epoch:sequence` SSE IDs. On reconnect, clients
+may supply the standard `Last-Event-ID` header. SmoothCast replays available
+events **for the authenticated participant only**, then always sends a complete
+current snapshot. Missing, invalid, expired or previous-server IDs never block
+reconnection; the fresh snapshot includes `stream_resync: gap`, `invalid` or
+`restarted` when appropriate. The cache retains at most 128 state frames of
+at most 64 KiB each globally; revoked and expired guests lose their history.
+The existing `/api/status` polling fallback remains available.

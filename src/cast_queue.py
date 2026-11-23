@@ -14,6 +14,7 @@ from utils import pretty_title
 import time
 
 import castctl
+import fingerprint
 import state_labels
 
 import dlna
@@ -141,12 +142,16 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         if self.session is None and not self.external:
             if self._preview_path == path:
                 return  # A row re-selection must not reset the local playhead.
+            self._reset_ab_repeat()
             self._unload_local_video()
             self.media = None
             self._update_audio_choices(None)
+            self.menu_button.set_menu_model(self._build_menu())
             self._preview_path = path
             self._preview_generation += 1
             self._preview_pending = None
+            if getattr(self, "_thumbnail_render_key", None):
+                self._refresh_thumbnail_strip(0.0, visible=False)
             self._preview_position = playback_state.start_offset(
                 None, (self.cfg.get("positions") or {}).get(path),
             )
@@ -167,6 +172,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             self.media = cached[1]
             self._update_embedded_choices(self.media)
             self._update_audio_choices(self.media)
+            self.menu_button.set_menu_model(self._build_menu())
             self._preview_position = min(
                 self._preview_position, max(0.0, self.media.duration - 1.0)
             ) if self.media.duration else 0.0
@@ -197,6 +203,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self.media = media
                 self._update_embedded_choices(media)
                 self._update_audio_choices(media)
+                self.menu_button.set_menu_model(self._build_menu())
                 duration = media.duration
                 self._preview_position = min(self._preview_position, max(0.0, duration - 1.0)) if duration else 0.0
                 self.seekbar.set_state(self._preview_position, duration, 0.0)
@@ -240,6 +247,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
             if path not in self.queue:
                 self.queue.append(path)
                 added += 1
+                fingerprint.KEYS.get(path)         # warm the content key in the background
         if not added:
             return
         self._rebuild_queue()
@@ -300,11 +308,14 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
 
     def _save_room_checkpoint(self) -> None:
-        if getattr(getattr(self, "app", None), "selftest", False):
+        if (getattr(getattr(self, "app", None), "selftest", False)
+                or getattr(self, "_portal", None) is None):
             return
         checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
         items = tuple(self.queue)
         if items == getattr(self, "_room_checkpoint_last", None):
+            return
+        if not items and not checkpoint.exists():
             return
         try:
             room_checkpoint.write_checkpoint(checkpoint, items)
@@ -374,10 +385,13 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
                 self._preview_path is None or self._preview_path in self.queue):
             return
         self._preview_generation += 1
+        self._reset_ab_repeat()
         self._preview_pending = None
         self._unload_local_video()
         self._preview_path = None
         self._preview_position = 0.0
+        if getattr(self, "_thumbnail_render_key", None):
+            self._refresh_thumbnail_strip(0.0, visible=False)
         self.preview_picture.set_visible(False)
         self.media = None
         self._update_audio_choices(None)

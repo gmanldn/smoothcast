@@ -10,8 +10,8 @@ There is intentionally **no root `IMPROVEMENTS.md`**.
 GitHub Issues stay authoritative. Do **not** download every issue body to
 choose work.
 
-1. `python3 scripts/ticket_digest.py --next` prints one highest-priority
-   unclaimed issue. `--priority P0`, `--label`, `--limit` and `--search`
+1. `python3 scripts/ticket_digest.py --next` prints the highest-priority
+   eligible unclaimed issue. `--priority P0`, `--label`, `--limit` and `--search`
    narrow the output without fetching bodies.
 2. Read **only that issue**:
    `gh issue view N --json number,title,state,labels,assignees,body,url`.
@@ -82,6 +82,14 @@ issue number is the legacy number. The migrated range is `SC-001`–`SC-132`.
 The stable title format is **`[P0][SC-058] Short action or outcome`** for
 migrated work. Future proposals use informative titles, priority and scope;
 choose new identifiers only deliberately (never reuse a legacy ID).
+
+## Labels and the safe pick command
+
+Run `python3 scripts/ticket_digest.py --next --label agent-ready` and read
+the issue and its **Agent brief**. See #511 for the label legend. `--next`
+excludes epics (`epic`), deferred work (`icebox`), human checks (`needs-human`)
+and active work (`in-flight`). It prints the skipped count on stderr.
+Use `--include-skipped` to include these labels when triaging.
 
 ## Priorities, classification and status
 

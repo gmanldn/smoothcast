@@ -11,6 +11,7 @@ import lan_interfaces
 import portal
 import portal_status
 import portal_commands
+import command_trace
 import portal_join
 import peer_discovery_ui
 import network_activity
@@ -48,13 +49,16 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
                                          status_snapshot=snapshot.read,
+                                         status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
                                          preferred_port=int(self.cfg.get("portal_port", 0)))
-        except (OSError, portal.PortalError) as exc:
+        except (OSError, portal.PortalError):
             self._portal = None
             self._portal_ip = None
-            self.portal_status_label.set_text(f"LAN portal unavailable: {exc}")
+            self.portal_status_label.set_text(
+                "Could not start the shared room. Check the network connection and room settings."
+            )
             return True
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.
@@ -80,6 +84,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
         self._publish_portal_status()
+        if self.queue:
+            self._save_room_checkpoint()
         return True
 
     def _show_portal_qr(self, url: str | None) -> None:
@@ -179,6 +185,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 completed.set()
             return False
 
+        # A GLib idle callback runs on a different context than the portal thread.
+        run = command_trace.propagate(run) or run
         source_id = GLib.idle_add(run)
         if not completed.wait(4):
             cancelled.set()

@@ -16,7 +16,9 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
 
-from castctl import CastError, Device, NO_DEVICE_MESSAGE, ReceiverInfo, validate_manual_target
+from castctl import (
+    CastError, Device, NO_DEVICE_MESSAGE, ReceiverInfo, log_backend_failure, validate_manual_target,
+)
 
 
 StatusListener = Callable[[ReceiverInfo], None]
@@ -223,8 +225,9 @@ class PyChromecastBackend:
             manual = self.connect_manual(value)
         except ValueError:
             return None, "Receiver is not connected. Scan the network or enter a private LAN IPv4 address."
-        except CastError as exc:
-            return None, str(exc)
+        except CastError:
+            log_backend_failure("Google Cast receiver connection failed", exc_info=True)
+            return None, "Could not connect to the receiver. Check its power and network connection."
         return manual.uuid, None
 
     def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
@@ -318,10 +321,11 @@ class PyChromecastBackend:
                 media.play_media(url, content_type, **options)
             else:
                 return False, f"Unsupported Google Cast command: {action}"
-        except (TypeError, ValueError) as exc:
-            return False, str(exc) or "The command arguments are invalid."
-        except Exception as exc:
-            return False, str(exc) or "The Google Cast receiver rejected the command."
+        except (TypeError, ValueError):
+            return False, "The receiver command has invalid settings. Check the values and try again."
+        except Exception:
+            log_backend_failure("Google Cast receiver command failed", exc_info=True)
+            return False, "The receiver command failed. Check the receiver connection and try again."
         return True, ""
 
     def subscribe(

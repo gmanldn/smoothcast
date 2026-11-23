@@ -10,10 +10,18 @@ import ipaddress
 import socket
 from collections.abc import Mapping
 
-try:
-    import psutil
-except ImportError:  # CI source tests can run without installed runtime deps.
-    psutil = None
+psutil = _UNSET = object()   # imported on first use: ~25 ms we keep off the startup path (#463)
+
+
+def _load_psutil():
+    global psutil
+    if psutil is _UNSET:
+        try:
+            import psutil as module
+        except ImportError:  # CI source tests can run without installed runtime deps.
+            module = None
+        psutil = module
+    return psutil
 
 
 _VIRTUAL_PREFIXES = (
@@ -60,10 +68,12 @@ def select_private_lan_ip(
         target = ipaddress.IPv4Address(receiver) if receiver else None
     except ipaddress.AddressValueError:
         target = None
-    if interface_addrs is None:
-        interface_addrs = psutil.net_if_addrs if psutil else lambda: {}
-    if interface_stats is None:
-        interface_stats = psutil.net_if_stats if psutil else lambda: {}
+    if interface_addrs is None or interface_stats is None:
+        ps = _load_psutil()
+        if interface_addrs is None:
+            interface_addrs = ps.net_if_addrs if ps else lambda: {}
+        if interface_stats is None:
+            interface_stats = ps.net_if_stats if ps else lambda: {}
     if hostname_lookup is None:
         hostname_lookup = socket.getaddrinfo
 

@@ -36,6 +36,7 @@ PRIORITY_RE = re.compile(r"^\[(P[0-2])\]")
 LEGACY_RE = re.compile(r"\[(SC-\d{3})\]")
 DISPLAY_PREFIX_RE = re.compile(r"^\[P[0-2]\](?:\[SC-\d{3}\])?\s*")
 PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+SKIP_LABELS = {"epic", "icebox", "needs-human", "in-flight"}
 LIST_FIELDS = "number,title,state,labels,assignees,updatedAt,url"
 VIEW_FIELDS = "number,title,state,labels,assignees,updatedAt,url,body"
 
@@ -435,6 +436,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="print one highest-priority unclaimed issue and stop",
     )
     parser.add_argument(
+        "--include-skipped",
+        action="store_true",
+        help="with --next, include epic, icebox, needs-human and in-flight issues",
+    )
+    parser.add_argument(
         "--show", type=int, metavar="NUMBER", help="read one issue body"
     )
     parser.add_argument(
@@ -477,6 +483,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.next:
             candidates = [issue for issue in matched if not issue["claim"]]
+            if not args.include_skipped:
+                eligible = [
+                    issue for issue in candidates
+                    if SKIP_LABELS.isdisjoint(label.casefold() for label in issue["labels"])
+                ]
+                skipped = len(candidates) - len(eligible)
+                if skipped:
+                    print(
+                        f"Skipped {skipped} issue(s) with excluded labels. "
+                        "Use --include-skipped to include them.",
+                        file=sys.stderr,
+                    )
+                candidates = eligible
             selected = sort_for_next(candidates)[:1]
             if args.json:
                 print(

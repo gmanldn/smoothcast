@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   shared-room-model:
@@ -25,3 +26,12 @@ jobs:
         env:
           SMOOTHCAST_MODEL_DEEP: "1"
         run: python -m pytest -q tests/test_room_state_machine.py --tb=long
+      - name: Complexity report with measured agent digest size
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci/complexity_report.py --with-issue-digest >> "$GITHUB_STEP_SUMMARY"
+      - name: Issue body size advisory (non-blocking)
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/ci/issue_body_budget.py --fetch >> "$GITHUB_STEP_SUMMARY"

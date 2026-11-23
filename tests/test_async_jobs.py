@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from queue import Empty, Queue
+import sys
 import threading
 
 import pytest
 
-from async_jobs import WorkDomains
+from async_jobs import UserFacingError, WorkDomains
 
 
 def fixture(limits=None):
@@ -110,19 +111,43 @@ def test_stale_owner_validation_occurs_on_main_context_and_drops_reply():
         pool.shutdown()
 
 
-def test_failure_is_reported_and_worker_remains_available():
-    pool, callbacks, errors = fixture()
+def test_failure_is_reported_without_exposing_the_exception():
+    callbacks = Queue()
+    details = []
+    pool = WorkDomains(
+        callbacks.put,
+        on_error=lambda _message, *, exc_info: details.append(sys.exc_info()[1] if exc_info else None),
+    )
     seen = []
     try:
         def fail():
-            raise OSError("disconnect")
+            raise OSError("Could not open /private/media/film.mkv")
         assert pool.submit(fail, failed=seen.append, domain="transport")
         deliver(callbacks)
-        assert seen == ["disconnect"]
-        assert "work failed" in errors[0]
+        assert seen == ["Check that the receiver is connected, then try again."]
+        assert len(details) == 1 and "/private/media/film.mkv" in str(details[0])
         assert pool.submit(lambda: "recovered", done=seen.append, domain="transport")
         deliver(callbacks)
-        assert seen == ["disconnect", "recovered"]
+        assert seen[-1] == "recovered"
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_expected_failure_preserves_only_reviewed_copy(wrapped):
+    pool, callbacks, _errors = fixture()
+    shown = "The selected subtitle track is unavailable. Choose another track."
+    seen = []
+    try:
+        def fail():
+            problem = UserFacingError(shown, detail="/private/media/film.mkv")
+            if wrapped:
+                raise RuntimeError("Raw wrapper output") from problem
+            raise problem
+
+        assert pool.submit(fail, failed=seen.append, domain="media")
+        deliver(callbacks)
+        assert seen == [shown]
     finally:
         pool.shutdown()
 

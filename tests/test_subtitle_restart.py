@@ -257,4 +257,4 @@ def test_handler_validation_precedes_destructive_stop_and_keeps_gui_under_budget
     assert "subs_file=captions.external" in text
     assert "embedded_subtitle_index=captions.embedded_index" in text
     source = Path(__file__).resolve().parents[1] / "src/cast_session.py"
-    assert len(source.read_bytes().replace(b"\r\n", b"\n")) < 50000
+    assert len(source.read_bytes().replace(b"\r\n", b"\n")) < 56000

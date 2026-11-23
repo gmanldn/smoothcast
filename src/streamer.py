@@ -21,6 +21,8 @@ from fractions import Fraction
 from http.client import HTTPConnection, HTTPException
 from dataclasses import asdict, dataclass, field
 
+from async_jobs import UserFacingError
+
 import audio_downmix
 import cache_policy
 import cache_privacy
@@ -43,6 +45,7 @@ import subtitle_delay
 import subtitle_encoding
 import subtitle_style
 import video_policy
+import aspect_override
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
@@ -414,6 +417,10 @@ class StreamError(RuntimeError):
     pass
 
 
+class StreamPreparationError(StreamError, UserFacingError):
+    """An expected playback preparation failure with copy safe to display."""
+
+
 @dataclass(frozen=True)
 class AudioTrack:
     """One audio stream, indexed relative to other audio tracks (0:a:N)."""
@@ -469,9 +476,9 @@ def audio_cast_options(media: "MediaInfo", subs_mode: str,
     if getattr(media, "is_audio_only", False) is not True:
         return subs_path, burn
     if subs_mode in {"pick", "embedded"}:
-        raise StreamError("Audio-only media does not support subtitles; choose Auto or Off")
+        raise StreamPreparationError("Audio-only media does not support subtitles; choose Auto or Off", code="subtitle.audio_only")
     if dlna:
-        raise StreamError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target")
+        raise StreamPreparationError("This DLNA receiver profile has not been verified for audio-only playback; choose a Google Cast target", code="cast.audio_only_unverified")
     return None, False
 
 
@@ -528,6 +535,62 @@ def preferred_embedded_subtitle(media: "MediaInfo", selected: int = -1) -> Subti
     ))
 
 
+@dataclass(frozen=True)
+class Chapter:
+    """Source timeline chapter, independent from HLS stream offset."""
+    start: float
+    end: float
+    title: str
+
+
+MAX_CHAPTERS = 128
+
+
+def _chapter_seconds(item: dict, field: str) -> float | None:
+    try:
+        ticks = item[field]
+        if type(ticks) not in (str, int) or len(str(ticks)) > 24:
+            raise ValueError("invalid chapter ticks")
+        time_base = Fraction(str(item["time_base"]))
+        if not 0 < time_base <= 1:
+            raise ValueError("invalid time base")
+        value = float(int(ticks) * time_base)
+    except (KeyError, ValueError, TypeError, ZeroDivisionError, OverflowError):
+        try:
+            value = float(item[field + "_time"])
+        except (KeyError, ValueError, TypeError, OverflowError):
+            return None
+    return value if math.isfinite(value) and 0 <= value <= 100_000_000 else None
+
+
+def parse_chapters(value: object, duration: float = 0.0) -> tuple[Chapter, ...]:
+    """Conservative flat-chapter parser; never invent an alternate edition map."""
+    if not isinstance(value, list):
+        return ()
+    cap = duration if isinstance(duration, (int, float)) and math.isfinite(duration) and duration > 0 else None
+    result: list[Chapter] = []
+    for item in value[:MAX_CHAPTERS * 4]:
+        if not isinstance(item, dict):
+            continue
+        start, end = _chapter_seconds(item, "start"), _chapter_seconds(item, "end")
+        if start is None or end is None or end <= start:
+            continue
+        if cap is not None:
+            if start >= cap:
+                continue
+            end = min(end, cap)
+        if result and start < result[-1].end:
+            continue  # Overlapping edition/segment markers are not safely seekable.
+        tags = item.get("tags")
+        raw_title = tags.get("title") if isinstance(tags, dict) else None
+        title = " ".join(raw_title.split()) if isinstance(raw_title, str) else ""
+        title = "".join(ch for ch in title if ch.isprintable())[:96]
+        result.append(Chapter(start, end, title or f"Chapter {len(result) + 1}"))
+        if len(result) >= MAX_CHAPTERS:
+            break
+    return tuple(result)
+
+
 @dataclass
 class MediaInfo:
     path: pathlib.Path
@@ -551,6 +614,7 @@ class MediaInfo:
     audio_tracks: int = 0
     audio_streams: list[AudioTrack] = field(default_factory=list)
     subtitle_tracks: list[SubtitleTrack] = field(default_factory=list)
+    chapters: tuple[Chapter, ...] = ()
     audio_only: bool = False
     size: int = 0
     bitrate: int = 0
@@ -871,7 +935,7 @@ def _ffprobe_cancellable(args: list[str], cancel: threading.Event, timeout: floa
             except OSError:
                 pass
             proc.communicate()
-            raise StreamError("ffprobe timed out while reading this file")
+            raise StreamPreparationError("ffprobe timed out while reading this file", code="media.probe_failed")
         try:
             stdout, stderr = proc.communicate(timeout=min(0.1, remaining))
             return subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
@@ -887,17 +951,17 @@ def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> Med
         pass
     try:
         args = ["ffprobe", "-v", "error", "-print_format", "json",
-                "-show_format", "-show_streams", str(path)]
+                "-show_format", "-show_streams", "-show_chapters", str(path)]
         result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
                   subprocess.run(args, capture_output=True, text=True, timeout=30))
     except FileNotFoundError as exc:
-        raise StreamError("ffprobe is not installed or not on PATH") from exc
+        raise StreamPreparationError("ffprobe is not installed or not on PATH", code="ffmpeg.probe_missing") from exc
     except subprocess.TimeoutExpired as exc:
-        raise StreamError("ffprobe timed out while reading this file") from exc
+        raise StreamPreparationError("ffprobe timed out while reading this file", code="media.probe_failed") from exc
     except OSError as exc:
         raise StreamError(f"ffprobe could not be started: {exc}") from exc
     if result.returncode != 0:
-        raise StreamError("ffprobe could not read this file")
+        raise StreamPreparationError("ffprobe could not read this file", code="media.probe_failed")
     try:
         data = json.loads(result.stdout or "{}")
         if not isinstance(data, dict):
@@ -914,6 +978,7 @@ def _read_probe(media: MediaInfo, data: dict) -> None:
     """Fill *media* from parsed ffprobe JSON; malformed shapes raise TypeError etc."""
     fmt = data.get("format") or {}
     media.duration = _duration_seconds(fmt.get("duration"))
+    media.chapters = parse_chapters(data.get("chapters"), media.duration)
     tags = {str(key).casefold(): value for key, value in (fmt.get("tags") or {}).items()}
     media.title = str(tags.get("title") or "").strip()
     media.artist = str(tags.get("artist") or tags.get("album_artist") or "").strip()
@@ -1120,6 +1185,7 @@ class SessionState:
     stream_url: str = ""
     subtitle_delay_ms: int = 0
     audio_delay_ms: int = 0
+    aspect_mode: str = "original"
 
 
 def load_session() -> SessionState | None:
@@ -1160,6 +1226,8 @@ def _checked_state(known: dict) -> SessionState | None:
             clean[name] = known[name]
         elif required:
             return None
+    if "aspect_mode" in clean:
+        clean["aspect_mode"] = aspect_override.normalize(clean["aspect_mode"])
     try:
         return SessionState(**clean)
     except TypeError:
@@ -1531,8 +1599,9 @@ class Session:
                 .replace(",", "\\,").replace(";", "\\;")
                 .replace("[", "\\[").replace("]", "\\]"))
 
-    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None) -> list[str]:
+    def _filter_args(self, burn_subs: bool, staged: pathlib.Path | None, software: bool, speed: float, rotation: int = 0, *, aspect_mode: str = "original", embedded_subtitle_index: int | None = None, embedded_source: pathlib.Path | None = None, embedded_bitmap: bool = False, video_stream_index: int = 0, video_size: tuple[int, int] | None = None, subtitle_offset: float = 0.0, subtitle_delay_ms: int = 0, video_plan: video_policy.Plan | None = None, subtitle_force_style: str = "", fonts_dir: pathlib.Path | None = None, hdr_filter: str | None = None, quality: str = "balanced") -> list[str]:
         chain: list[str] = []
+        aspect_filters = aspect_override.filters(aspect_mode)
         # Optional auto deinterlace/crop (#54) run first, so captions are drawn on
         # the picture that is actually sent and every later size check sees it.
         plan_filters = video_plan.filters() if video_plan is not None else []
@@ -1550,9 +1619,15 @@ class Session:
             if speed != 1.0:
                 post_overlay.append(f"setpts=PTS/{speed:g}")
             post_overlay.extend(rotation_filters(rotation))
-            if video_size:
+            post_overlay.extend(aspect_filters)
+            if video_size and not aspect_filters:
                 out_w, out_h = _rotated_dimensions(*video_size, rotation)
-                if out_w > 1920 or out_h > 1080:
+                if quality == "saver" and software and (out_w > 1280 or out_h > 720):
+                    post_overlay.append(
+                        "scale=w=1280:h=720:force_original_aspect_ratio=decrease:"
+                        "force_divisible_by=2"
+                    )
+                elif out_w > 1920 or out_h > 1080:
                     post_overlay.append(
                         "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
                         "force_divisible_by=2"
@@ -1586,12 +1661,19 @@ class Session:
         if speed != 1.0:
             chain.append(f"setpts=PTS/{speed:g}")
         chain.extend(rotation_filters(rotation))
+        chain.extend(aspect_filters)
         # Scale the *transposed* picture. A 1920x1080 source rotated 90°
         # becomes 1080x1920; looking at input bounds alone missed this.
         # Both x264/yuv420p and h264_vaapi need even output dimensions.
-        if video_size and (software or rotation in (90, 270, 180)):
+        if video_size and ((quality == "saver" and software)
+                           or (not aspect_filters and (software or rotation in (90, 270, 180)))):
             out_w, out_h = _rotated_dimensions(*video_size, rotation)
-            if out_w > 1920 or out_h > 1080:
+            if quality == "saver" and software and (out_w > 1280 or out_h > 720):
+                chain.append(
+                    "scale=w=1280:h=720:force_original_aspect_ratio=decrease:"
+                    "force_divisible_by=2"
+                )
+            elif out_w > 1920 or out_h > 1080:
                 chain.append(
                     "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:"
                     "force_divisible_by=2"
@@ -1602,7 +1684,7 @@ class Session:
         # filter (which runs in software) forces a download/upload round trip.
         need_subtitle_filter = ((burn_subs and staged is not None)
                                 or embedded_subtitle_index is not None)
-        force_software = not software and (rotation != 0 or bool(plan_filters))
+        force_software = not software and (rotation != 0 or bool(plan_filters) or bool(aspect_filters))
         if (not software and need_subtitle_filter) or force_software:
             return ["-vf", f"hwdownload,format=nv12,{','.join(chain)},hwupload"]
         if chain:
@@ -1625,6 +1707,7 @@ class Session:
         device_ip: str | None = None,
         speed: float = 1.0,
         rotation: int = 0,
+        aspect_mode: str = "original",
         embedded_subtitle_index: int | None = None,
         audio_track_index: int = -1,
         subtitle_delay_ms: int = 0,
@@ -1646,6 +1729,7 @@ class Session:
         local_ip = host_ip(device_ip)
         speed = max(0.05, float(speed))
         rotation = normalize_rotation(rotation)
+        aspect_mode = aspect_override.normalize(aspect_mode)
         cache_privacy.ensure_private_directory(ROOT)
         # File names, not just query parameters, identify each encoder
         # generation: stale TV requests cannot read the replacement film.
@@ -1677,7 +1761,7 @@ class Session:
             track = next((t for t in media.subtitle_tracks
                           if t.index == embedded_subtitle_index), None)
             if track is None or not track.is_supported:
-                raise StreamError("Selected embedded subtitle track is unavailable or unsupported")
+                raise StreamPreparationError("Selected embedded subtitle track is unavailable or unsupported", code="subtitle.unavailable")
             bitmap_track = track if track.is_bitmap else None
             embedded_codec = track.codec if track.is_text else ""
             burn_subs = True
@@ -1741,12 +1825,13 @@ class Session:
         if bitmap_track is None and embedded_codec.lower() in {"ass", "ssa"}:
             self._fonts_dir = font_attachments.prepare_fonts(media.path, ROOT, generation)
         filter_args = [] if audio_only else self._filter_args(
-            burn_subs, staged, software, speed, rotation,
+            burn_subs, staged, software, speed, rotation, aspect_mode=aspect_mode,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=media.path if embedded_subtitle_index is not None else None,
             embedded_bitmap=bitmap_track is not None,
             video_stream_index=media.video_stream_index,
             video_size=(media.width, media.height),
+            quality=quality,
             subtitle_offset=max(0.0, offset),
             subtitle_delay_ms=subtitle_delay_ms,
             video_plan=video_plan,
@@ -1842,6 +1927,7 @@ class Session:
                     audio_gain_db=audio_gain_db,
                     audio_loudness=audio_loudness, device_ip=device_ip,
                     speed=speed, rotation=rotation,
+                    aspect_mode=aspect_mode,
                     embedded_subtitle_index=embedded_subtitle_index,
                     audio_track_index=audio_track_index,
                     subtitle_delay_ms=subtitle_delay_ms,
@@ -1881,6 +1967,7 @@ class Session:
             embedded_subtitle_index=(embedded_subtitle_index if embedded_subtitle_index is not None else -1),
             speed=speed,
             rotation=rotation,
+            aspect_mode=aspect_mode,
             subtitle_delay_ms=subtitle_delay_ms,
             audio_delay_ms=audio_delay_ms,
             started_at=time.time(),

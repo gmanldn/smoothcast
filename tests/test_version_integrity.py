@@ -44,6 +44,68 @@ class CanonicalVersionTests(unittest.TestCase):
                 f"{version.MAJOR}.{version.MINOR}.{version.PATCH}",
             )
 
+    def test_checkout_revision_from_loose_and_detached_git_head(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gitdir = root / ".git"
+            branch = gitdir / "refs" / "heads" / "develop"
+            branch.parent.mkdir(parents=True)
+            branch.write_text("a" * 40 + "\n", encoding="ascii")
+            (gitdir / "HEAD").write_text("ref: refs/heads/develop\n", encoding="ascii")
+            self.assertEqual(version.read_checkout_revision(root), "a" * 40)
+            (gitdir / "HEAD").write_text("B" * 40 + "\n", encoding="ascii")
+            self.assertEqual(version.read_checkout_revision(root), "b" * 40)
+
+    def test_checkout_revision_from_packed_refs_and_linked_worktree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            worktree = root / "worktree"
+            common = repo / ".git"
+            internal = common / "worktrees" / "test1"
+            internal.mkdir(parents=True)
+            worktree.mkdir()
+            (worktree / ".git").write_text(
+                f"gitdir: {internal}\n", encoding="ascii"
+            )
+            (internal / "commondir").write_text("../..\n", encoding="ascii")
+            (internal / "HEAD").write_text(
+                "ref: refs/heads/develop\n", encoding="ascii"
+            )
+            (common / "packed-refs").write_text(
+                "# pack-refs with: peeled\n" + "c" * 40
+                + " refs/heads/develop\n" + "d" * 40
+                + " refs/heads/main\n", encoding="ascii"
+            )
+            self.assertEqual(version.read_checkout_revision(worktree), "c" * 40)
+
+    def test_checkout_revision_rejects_invalid_and_unbounded_refs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gitdir = root / ".git"
+            gitdir.mkdir()
+            head = gitdir / "HEAD"
+            for content in ("ref: refs/heads/../secret", "ref: refs/heads//develop",
+                            "ref: refs/heads/../../outside", "not a ref",
+                            "f" * 39, "x" * 2000):
+                head.write_text(content, encoding="ascii")
+                self.assertIsNone(version.read_checkout_revision(root), content)
+            head.write_text("ref: refs/heads/develop\n", encoding="ascii")
+            (gitdir / "packed-refs").write_text("c" * (2 * 1024 * 1024 + 5),
+                                                encoding="ascii")
+            self.assertIsNone(version.read_checkout_revision(root))
+            self.assertIsNone(version.read_checkout_revision(root / "absent"))
+
+    def test_candidate_release_source_is_parsed_without_execution(self):
+        source = (
+            "MAJOR = 4\nMINOR = 5\nPATCH = 6\n"
+            "raise AssertionError('untrusted source was executed')\n"
+        )
+        self.assertEqual(version.parse_version_text(source), "4.5.6")
+        self.assertIsNone(version.parse_version_text("MAJOR = 1\nMINOR = True\nPATCH = 4\n"))
+        self.assertIsNone(version.parse_version_text("def bad(:\n"))
+        self.assertIsNone(version.parse_version_text("MAJOR = 1\nMINOR = 2\n"))
+
     def test_checkout_version_parsing_never_executes_arbitrary_code(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
@@ -85,7 +147,8 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertIn('version=version.__version__', source)
         self.assertIn('print(f"{APP_NAME} {version.label()}")', source)
         self.assertIn('window.update_notice = notice', source)
-        self.assertIn('subtitle += " · restart to update"', source)
+        self.assertIn(' · restart to apply', source)
+        self.assertIn(' · update information', source)
 
     def test_no_duplicated_current_release_in_agent_docs(self):
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

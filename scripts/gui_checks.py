@@ -30,10 +30,13 @@ MAX_SECONDS = 40
 # scenario -> contents of the seeded config.json (None: no config file at all)
 SCENARIOS: dict[str, str | None] = {
     "local-video-runtime": None,
+    "thumbnail-strip": None,
+    "room-recovery": None,
     "first-run": None,
     "saved-device": '{"device": "Seeded TV"}\n',
     "report-problem": None,
     "picture-options": None,
+    "aspect-override": None,
     "accent": None,
     "accent-saved": '{"accent": "violet"}\n',
     "accent-junk": '{"accent": "<script>"}\n',

@@ -9,17 +9,22 @@ from __future__ import annotations
 import gzip
 from http.client import HTTPConnection
 import json
+import os
+from pathlib import Path
 import threading
 import time
 from typing import Callable
 from urllib.parse import urlencode, urlsplit
 
 import federated_search
+import house_fetch
+import library_browse
 import lan_guard
 import mesh_files
 import replica_manager
 import replica_store
 import search_engine
+import base64
 
 TIMEOUT = 2.0
 MAX_BODY = 16 * 1024 * 1024
@@ -103,6 +108,100 @@ class MeshLibrary:
         with self._lock:
             return {o["origin_id"]: o for o in self.store.origins()}
 
+    # -- browsing "Libraries on the network" ------------------------------
+    def libraries(self) -> dict:
+        shared = [f for f in self.indexer._folders if f.shared]
+        with self.indexer._lock:
+            counts = dict(self.indexer._conn.execute(
+                "SELECT folder_id, COUNT(*) FROM entries GROUP BY folder_id").fetchall())
+        origins = [{"id": "local", "name": "This computer", "online": True,
+                    "folders": [{"label": f.label, "kind": f.kind, "count": counts.get(f.id, 0)}
+                                for f in shared]}]
+        with self._lock:
+            for origin in self.store.origins():
+                folders = library_browse.folder_summaries(
+                    self.store.conn, "rentries", "origin_id = ?", [origin["origin_id"]], "folder_label")
+                origins.append({"id": origin["origin_id"], "name": origin["name"] or "Another computer",
+                                "online": origin["state"] in ("fresh", "stale"), "folders": folders})
+        return {"origins": origins}
+
+    def browse(self, origin: str, folder: str, path: str = "", cursor: str | None = None,
+               limit: int = library_browse.PAGE) -> dict | None:
+        """One level of a shared folder, or None if the origin/folder is unknown."""
+        limit = max(1, min(int(limit), library_browse.PAGE))
+        try:
+            offset = int(base64.urlsafe_b64decode((cursor or "").encode()).decode()) if cursor else 0
+        except (ValueError, UnicodeError):
+            offset = 0
+        if origin == "local":
+            match = next((f for f in self.indexer._folders if f.shared and f.label == folder), None)
+            if match is None:
+                return None
+            conn, lock = self.indexer._conn, self.indexer._lock
+            table, scope, args = "entries", "folder_id = ?", [match.id]
+            source = search_engine.LOCAL
+            copies = [{"origin": "local", "origin_name": "This computer", "online": True}]
+        else:
+            info = self._origins().get(origin)
+            if info is None:
+                return None
+            conn, lock = self.store.conn, self._lock
+            table, scope, args = "rentries", "origin_id = ? AND folder_label = ?", [origin, folder]
+            source = search_engine.REPLICA
+            copies = [federated_search._copy(origin, info)]
+        with lock:
+            dirs, keys, more = library_browse.listing(conn, table, scope, args, path, offset, limit)
+            rows = library_browse.rows_for(conn, source, scope, args, keys)
+        items = [search_engine._item({**row, "copies": copies}) for row in rows]
+        nxt = base64.urlsafe_b64encode(str(offset + limit).encode()).decode() if more else None
+        return {"origin": origin, "folder": folder, "path": library_browse.clean_path(path).rstrip("/"),
+                "dirs": dirs, "items": items, "next": nxt}
+
+    @property
+    def cache_dir(self) -> Path:
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        return Path(base) / "smoothcast" / "house"
+
+    def remote_sources(self, key: str) -> list[dict]:
+        """Every online peer that holds ``key``, best first (for failover)."""
+        found = []
+        for origin in self._peers_with(key):
+            url = self.fetcher.url_of(origin)
+            if not url:
+                continue
+            with self._lock:
+                row = self.store.conn.execute(
+                    "SELECT title, rel_path FROM rentries WHERE origin_id=? AND content_key=?",
+                    (origin, key)).fetchone()
+                info = self.store.origin(origin) or {}
+            if row:
+                found.append({"origin": origin, "name": info.get("name", "") or "another computer",
+                              "url": url, "title": row[0], "suffix": Path(row[1] or "").suffix})
+        return found
+
+    def remote_source(self, key: str) -> dict | None:
+        sources = self.remote_sources(key)
+        return sources[0] if sources else None
+
+    def fetch_remote(self, key: str, source: dict, cancelled: Callable[[], bool] = lambda: False,
+                     budget_gb: float = 20.0, keep: set[str] | None = None) -> Path:
+        """Copy the file into the house cache (verified), trying other computers on failure."""
+        candidates = [source] + [s for s in self.remote_sources(key) if s["origin"] != source["origin"]]
+        failure: house_fetch.FetchError | None = None
+        for candidate in candidates:
+            try:
+                path = house_fetch.fetch(candidate["url"], key, self.cache_dir,
+                                         suffix=candidate["suffix"], cancelled=cancelled)
+            except house_fetch.FetchError as exc:
+                if cancelled():
+                    raise
+                failure = exc
+                continue
+            house_fetch.evict(self.cache_dir, int(budget_gb * 1024 ** 3),
+                              keep={str(path), *(keep or set())})
+            return path
+        raise failure or house_fetch.FetchError("No computer has that file right now.")
+
     def _peers_with(self, key: str) -> list[str]:
         """Online peers whose replica holds this content key, best first."""
         with self._lock:
@@ -140,3 +239,9 @@ class MeshLibrary:
 
     def stop(self) -> None:
         self.manager.stop()
+        self.search_service.close()
+        with self._lock:
+            try:
+                self.store.close()
+            except Exception:
+                pass

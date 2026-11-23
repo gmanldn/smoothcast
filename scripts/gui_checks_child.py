@@ -29,7 +29,7 @@ import cast_control  # noqa: E402
 import streamer  # noqa: E402
 import version  # noqa: E402
 import video_policy  # noqa: E402
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 SCENARIO = sys.argv[1] if len(sys.argv) > 1 else ""
 RESULTS: list[tuple[str, bool, str]] = []
@@ -742,9 +742,114 @@ def network_view(app, window) -> None:
     check("refresh with no service is a harmless no-op", not popover.button.get_visible())
 
 
+def thumbnail_strip(_app, window) -> None:
+    """Exercise the real thumbnail widgets and local seek path inside Xvfb."""
+    from gi.repository import GdkPixbuf
+    from screenshot import SparseFrameCache
+
+    path = Path(os.environ["XDG_CACHE_HOME"]) / "test-film.mkv"
+    window.media = streamer.MediaInfo(path, duration=90.0)
+    window._preview_path = str(path)
+    window.queue_durations[str(path)] = 90.0
+    window.seekbar.set_state(0.0, 90.0, 0.0)
+    window._timed_subtitle_preview = lambda _position: None
+    preview_requests = []
+    window._queue_preview = lambda position, *, sparse=False: preview_requests.append((position, sparse))
+    cache = window._sparse_frame_cache = SparseFrameCache()
+    pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 16, 9)
+    for index in range(5):
+        pixbuf.fill(0x223355FF + index * 0x11000000)
+        ok, jpeg = pixbuf.save_to_bufferv("jpeg", [], [])
+        if not ok:
+            raise RuntimeError("Could not generate a synthetic thumbnail")
+        cache.put(cache.key(str(path), window._preview_generation, 0, index * 10), jpeg)
+
+    window._on_hover(True, 24.0)
+    window._on_hover(False, 24.0)
+    pump(0.2)
+    strip = window.thumbnail_strip
+    check("five cached tiles stay visible when the pointer leaves the seekbar",
+          strip.get_mapped() and strip.get_height() > 0
+          and all(button.get_visible() for button in window.thumbnail_buttons))
+    check("all timestamps label distinct textures",
+          [label.get_text() for label in window.thumbnail_times]
+          == ["0:00", "0:10", "0:20", "0:30", "0:40"]
+          and all(picture.get_paintable() is not None for picture in window.thumbnail_pictures))
+    check("the horizontally scrollable strip does not widen a narrow player",
+          strip.measure(Gtk.Orientation.HORIZONTAL, -1)[0] <= 360)
+    tile = window.thumbnail_buttons[2]
+    check("tile describes its seek action", tile.get_tooltip_text() == "Seek to 0:20")
+    tile.activate()
+    pump(0.4)
+    check("activating the third tile seeks to its exact source time",
+          window._preview_position == 20.0 and preview_requests == [(24.0, True), (20.0, False)])
+
+    # Simulate a cast acquiring the receiver before a previously queued click arrives.
+    window.session = object()
+    try:
+        tile.emit("clicked")
+        check("a stale local tile cannot seek the receiver",
+              not strip.get_visible() and preview_requests == [(24.0, True), (20.0, False)]
+              and all(picture.get_paintable() is None for picture in window.thumbnail_pictures))
+    finally:
+        window.session = None
+
+
+def room_recovery(app, window) -> None:
+    """Restore a private synthetic checkpoint through the real GTK prompt."""
+    import room_checkpoint
+
+    directory = Path(os.environ["XDG_CACHE_HOME"])
+    files = [directory / f"queued-{index}.mkv" for index in range(10)]
+    for file in files:
+        file.write_bytes(b"synthetic fixture")
+    checkpoint = window._room_checkpoint_file = directory / "room.json"
+    room_checkpoint.write_checkpoint(checkpoint, map(str, reversed(files)))
+    # Only opt into opening this dialog. The app was started in self-test mode
+    # and remains isolated from network, configuration and playback timers.
+    app.selftest = False
+    try:
+        window._offer_room_recovery()
+    finally:
+        app.selftest = True
+    pump(0.2)
+    dialog = window.get_visible_dialog()
+    valid = isinstance(dialog, Adw.AlertDialog) and dialog.get_heading() == "Recover previous room?"
+    check("a real recovery dialog asks before restoring the queue", valid and window.queue == [])
+    if not valid:
+        return
+    dialog.emit("response", "recover")
+    check("recovery restores ten items in saved order", window.queue == list(map(str, reversed(files))))
+    check("recovery leaves playback and room access stopped",
+          window.session is None and window.now_playing is None and window._portal is None)
+
+
+def aspect_override_preferences(_app, window) -> None:
+    """Use the real aspect selector and verify reversible scrub preview requests."""
+    window.action_preferences()
+    pump(0.4)
+    prefs = window._preferences_window
+    row = prefs._combos["aspect_override"]
+    names = [row.get_model().get_string(i) for i in range(row.get_model().get_n_items())]
+    check("all six modes and the stretch warning are visible",
+          len(names) == 6 and "may distort" in names[1] and "distort" in row.get_subtitle())
+    generation = window._preview_generation
+    window._preview_position = 12.5
+    requested = []
+    window._queue_preview = lambda position: requested.append((position, window.cfg["aspect_override"]))
+    row.set_selected(2)
+    row.set_selected(0)
+    check("aspect and Original request a new preview at the same source time",
+          requested == [(12.5, "4:3"), (12.5, "original")]
+          and window._preview_generation == generation + 2)
+    check("restoring Original preserves local state without starting a cast",
+          window.cfg["aspect_override"] == "original" and window.session is None)
+
+
 SCENARIOS = {"network-view": network_view, "first-run": first_run, "saved-device": saved_device, "report-problem": report_problem,
-             "local-video-runtime": local_video_runtime,
-             "picture-options": picture_options, "accent": accent_choice,
+             "local-video-runtime": local_video_runtime, "thumbnail-strip": thumbnail_strip,
+             "room-recovery": room_recovery,
+             "picture-options": picture_options, "aspect-override": aspect_override_preferences, "accent": accent_choice,
              "accent-saved": accent_saved, "accent-junk": accent_junk,
              "density": density_choice, "density-saved": density_saved,
              "density-junk": density_junk, "text-fit": text_fit_wide,

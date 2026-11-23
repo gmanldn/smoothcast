@@ -22,6 +22,7 @@ import pychromecast
 from fakecast import FakeCastReceiver
 from castctl import ReceiverInfo
 from pychromecast_backend import PyChromecastBackend
+import low_end_policy
 
 SCHEMA = 1
 TOLERANCE = 1.0  # A 100% margin tolerates hosted-runner noise; tune after baselines.
@@ -128,6 +129,8 @@ def main(argv: list[str] | None = None) -> int:
         baseline = (json.loads(args.baseline.read_text(encoding="utf-8"))
                     if args.baseline and args.baseline.is_file() else None)
         result["comparison"] = compare(result, baseline)
+        # Informational scenario: never present a CI runner as physical hardware.
+        result["low_end_reference"] = low_end_policy.budget()
         encoded = json.dumps(result, indent=2, sort_keys=True)
         if args.output:
             args.output.write_text(encoded + "\n", encoding="utf-8")

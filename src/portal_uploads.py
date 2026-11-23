@@ -141,10 +141,11 @@ def stale_early_casts(casting: dict, *, now: float, busy: bool,
 class UploadError(ValueError):
     """A safe rejection from the authenticated portal upload protocol."""
 
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 def default_upload_root() -> Path:
@@ -249,11 +250,11 @@ class UploadManager:
             pending = [upload for upload in self._uploads.values()
                        if upload.complete_path is None]
             if len(pending) >= MAX_ACTIVE_UPLOADS:
-                raise UploadError(429, "Too many uploads are already in progress")
+                raise UploadError(429, "Too many uploads are already in progress", code="room.rate_limited")
             reserved = sum(upload.size - upload.received for upload in pending)
             free = self._disk_usage(self.root).free
             if free - reserved - size_value < MIN_FREE_BYTES:
-                raise UploadError(507, "Not enough free space to receive this file")
+                raise UploadError(507, "Not enough free space to receive this file", code="upload.disk_full")
             for _ in range(4):
                 upload_id = secrets.token_urlsafe(24)
                 partial = self.root / f"{upload_id}.partial"
@@ -278,12 +279,12 @@ class UploadManager:
 
     def _get(self, owner: str, upload_id: str) -> _Upload:
         if not isinstance(upload_id, str) or not _UPLOAD_ID.fullmatch(upload_id):
-            raise UploadError(404, "Upload not found. Choose the file again.")
+            raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
         with self._lock:
             upload = self._uploads.get(upload_id)
         owner_key = hashlib.sha256(owner.encode("utf-8")).hexdigest()
         if upload is None or not hmac.compare_digest(upload.owner, owner_key):
-            raise UploadError(404, "Upload not found. Choose the file again.")
+            raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
         return upload
 
     def is_queue_only(self, owner: str, upload_id: str) -> bool:
@@ -298,7 +299,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found. Choose the file again.")
+                raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received, "complete": upload.complete_path is not None,
                     "ready_to_cast": upload.early_cast in {"requested", "active"}}
@@ -368,7 +369,7 @@ class UploadManager:
             raise UploadError(400, "Upload chunk range or size is invalid")
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found. Choose the file again.")
+                raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             if upload.complete_path is not None:
                 raise UploadError(409, "This upload is already complete")
             if start != upload.received:
@@ -437,7 +438,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found. Choose the file again.")
+                raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             if upload.complete_path is None:
                 if upload.received != upload.size:
                     raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
@@ -507,7 +508,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found. Choose the file again.")
+                raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             if not accepted:
                 upload.cast_submitted = False
 
@@ -515,7 +516,7 @@ class UploadManager:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
-                raise UploadError(404, "Upload not found. Choose the file again.")
+                raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             if upload.cast_submitted:
                 raise UploadError(409, "Casting has already been requested for this upload")
             try:

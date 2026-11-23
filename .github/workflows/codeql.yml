@@ -4,12 +4,19 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    # The auto-release PR (develop -> main) already runs CodeQL on push.
+    branches: [develop]
   schedule:
     - cron: '23 4 * * 1'
 
 permissions:
   contents: read
+
+# Retain weekly scans and latest pending per branch without wasting runners
+# on queued superseded commit analyses. Running scans finish, not starve.
+concurrency:
+  group: smoothcast-codeql-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   analyze:

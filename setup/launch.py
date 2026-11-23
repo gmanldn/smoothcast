@@ -9,10 +9,8 @@ import os
 from pathlib import Path
 import re
 import shutil
-import signal
 import subprocess
 import sys
-import time
 
 import bootstrap
 import native_runtime
@@ -156,10 +154,10 @@ def media_arguments_from_caller(args: list[str], caller: Path) -> list[str]:
 # --- Single instance guard --------------------------------------------------
 #
 # GApplication already forwards a launch to a running primary over D-Bus, but a
-# primary that cannot build its window (or that has hung) keeps the application
-# id with nothing on screen: further launches forward to it and show nothing.
-# Before starting a new instance, ask any same-checkout instance to present
-# itself; when it cannot, clear it out so this launch always ends with a window.
+# primary that cannot build its window (or that has hung) may keep the app id
+# while forwarding later launches to no visible window. Probe the primary;
+# a failed activation MUST NOT kill a process by unverified PID or start a
+# second competing GUI. The user can resolve a truly hung instance explicitly.
 
 def app_identity() -> tuple[str, str]:
     """Read the application id and D-Bus object path without importing GTK."""
@@ -220,37 +218,6 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     return result.returncode == 0
 
 
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
-def stop_instances(pids: list[int], grace: float = 3.0) -> list[int]:
-    """Terminate leftover instances gracefully, then forcibly."""
-    signalled = []
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            continue
-        signalled.append(pid)
-    pending = [pid for pid in signalled if _alive(pid)]
-    deadline = time.monotonic() + max(0.0, grace)
-    while pending and time.monotonic() < deadline:
-        pending = [pid for pid in pending if _alive(pid)]
-        if pending:
-            time.sleep(0.05)
-    for pid in pending:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
-    return signalled
-
-
 def ensure_single_instance(args: list[str]) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
     if os.name != "posix":
@@ -259,23 +226,25 @@ def ensure_single_instance(args: list[str]) -> int | None:
     if not pids:
         return None
     activated = activate_existing()
-    if activated is None:
-        # Cannot probe: leave single-instance handling to GApplication.
-        return None
     if activated:
         if not args:
-            # The existing window is showing and there is nothing to open, so a
-            # second process would only add another windowless client.
+            # Existing primary confirmed its activation; no extra GUI.
             return 0
-        # Media arguments still have to be forwarded, so let GApplication do it.
+        # Forward file and action arguments through GApplication.
         return None
-    stopped = stop_instances(pids)
-    print("SmoothCast: cleared " + str(len(stopped)) + " unresponsive instance(s)",
-          file=sys.stderr)
-    return None
+    # A D-Bus timeout or missing probe is NOT proof of a hung process. In
+    # particular, a PID found in /proc may be reused before SIGTERM/SIGKILL.
+    # Preserve a possibly active cast and refuse to create a competing GUI.
+    print(
+        "SmoothCast is already running but its window could not be activated. "
+        "The existing process was left untouched. Close it normally (or use "
+        "your system process manager if it is unresponsive), then retry.",
+        file=sys.stderr,
+    )
+    return 3
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
@@ -299,9 +268,10 @@ def main(argv: list[str] | None = None) -> int:
     # GTK's process cwd is intentionally ROOT; preserve the caller's media
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
-    guarded = ensure_single_instance(args)
-    if guarded is not None:
-        return guarded
+    if not prechecked:
+        guarded = ensure_single_instance(args)
+        if guarded is not None:
+            return guarded
     command = [str(installed), str(ROOT / "src" / "cast_control.py"), *media_args]
     try:
         env = runtime_environment()

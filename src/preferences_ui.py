@@ -64,8 +64,13 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self._choice(output, "quality", "Video quality",
                      "High uses more processing; Data saver reduces bandwidth and resolution.")
+        self._switch(output, "quality_auto", "Automatically choose video quality",
+                     "Benchmark this CPU after the window opens, then choose a safe "
+                     "software-encoding tier. Turn off to use the quality selected above.")
         self._choice(output, "rotation", "Video rotation",
                      "Clockwise rotation requires video transcoding.")
+        self._choice(output, "aspect_override", "Aspect ratio",
+                     "Stretch can distort the picture. Changes appear in the scrub preview and apply to the next cast.")
         self._switch(output, "direct", "Direct play when supported",
                      "Send a compatible file unchanged; sound filters and rotation may require conversion.")
         self._switch(output, "keep_streaming", "Keep casting after closing",
@@ -100,6 +105,7 @@ class PreferencesWindow(Adw.PreferencesWindow):
         )
         self.portal_port_spin = Gtk.SpinButton.new_with_range(49152, 65535, 1)
         self.portal_port_spin.set_numeric(True)
+        self.portal_port_spin.update_property([Gtk.AccessibleProperty.LABEL], ["Room remote port"])
         room_port_row.add_suffix(self.portal_port_spin)
         room_port_row.set_activatable_widget(self.portal_port_spin)
         self.portal_port_spin.connect("value-changed", self._change_portal_port)
@@ -186,6 +192,18 @@ class PreferencesWindow(Adw.PreferencesWindow):
         self._choice(visual, "density", "Interface density",
                      "Scales spacing and control sizes. Long text wraps in narrow windows and under large fonts instead of being clipped.")
 
+        updates = self._group(
+            general, "Updates",
+            "Nothing is downloaded or installed automatically. These options "
+            "apply on the next app launch, not during playback.",
+        )
+        self._switch(updates, "check_release_updates", "Check for releases on startup",
+                     "Off by default. Uses the Internet only when enabled, after "
+                     "the window appears; a check never changes the running code.")
+        self._switch(updates, "release_check_verify", "Require a trusted signature",
+                     "On by default. Updates without a signature trusted by "
+                     "your Git keyring are not offered as safe to install.")
+
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""
         cfg = self.owner.cfg
@@ -237,9 +255,14 @@ class PreferencesWindow(Adw.PreferencesWindow):
             save_config(self.owner.cfg)
             self.owner.app.apply_density(value)
             self.owner._refresh_responsive_layout()
-        elif key == "subtitle_style":
-            self.owner.cfg[key] = str(value)
-            save_config(self.owner.cfg)
+        elif key in {"subtitle_style", "aspect_override"}:
+            owner = self.owner
+            owner.cfg[key] = str(value)
+            save_config(owner.cfg)
+            if key == "aspect_override":
+                owner._preview_generation += 1
+                owner._refresh_thumbnail_strip(0.0, visible=False)
+                owner._queue_preview(owner._preview_position)
         else:
             widgets = {
                 "quality": "quality_dropdown",
@@ -271,7 +294,8 @@ class PreferencesWindow(Adw.PreferencesWindow):
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
-                     "house_pin_enabled", "show_cover_art"):
+                     "house_pin_enabled", "show_cover_art", "check_release_updates",
+                     "release_check_verify", "quality_auto"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
         elif bool(owner.cfg.get(key, False)) != active:

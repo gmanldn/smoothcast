@@ -13,13 +13,15 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
+from async_jobs import UserFacingError
+
 import subtitle_encoding
 
 if TYPE_CHECKING:
     import streamer
 
 
-class PreflightError(RuntimeError):
+class PreflightError(UserFacingError):
     """Cannot safely decode the requested source/transforms."""
 
 
@@ -54,17 +56,17 @@ def check_media(
     """
     path = pathlib.Path(media.path)
     if not path.is_file():
-        raise PreflightError("The selected movie no longer exists")
+        raise PreflightError("The selected movie no longer exists", code="media.unavailable")
     if media.is_audio_only:
         if subs_file is not None or embedded_subtitle_index is not None or burn_subs:
-            raise PreflightError("Audio-only media does not support subtitles")
+            raise PreflightError("Audio-only media does not support subtitles", code="subtitle.audio_only")
         tracks = media.audio_streams
         if audio_track_index >= 0 and not any(t.index == audio_track_index for t in tracks):
-            raise PreflightError("The selected audio track is not in this file")
+            raise PreflightError("The selected audio track is not in this file", code="media.audio_track_missing")
         selected = next((t for t in tracks if t.index == audio_track_index), None) if audio_track_index >= 0 else None
         selected = selected or next((t for t in tracks if t.default), None) or (tracks[0] if tracks else None)
         if selected is None:
-            raise PreflightError("The selected file has no audio stream")
+            raise PreflightError("The selected file has no audio stream", code="media.no_audio_stream")
         with tempfile.TemporaryDirectory(prefix="smoothcast-preflight-") as folder:
             output = pathlib.Path(folder) / "sample.mka"
             args = [
@@ -77,25 +79,29 @@ def check_media(
                     args, capture_output=True, text=True, timeout=max(2, min(timeout, 60)),
                 )
             except subprocess.TimeoutExpired as exc:
-                raise PreflightError("Audio decoder check timed out") from exc
+                raise PreflightError("Audio decoder check timed out", code="ffmpeg.decoder_timeout") from exc
             except OSError as exc:
-                raise PreflightError(f"FFmpeg decoder check could not start: {exc}") from exc
+                raise PreflightError("Could not start the decoder. Check that FFmpeg is installed.", code="ffmpeg.missing") from exc
             if result.returncode != 0:
                 tail = " ".join((result.stderr or "").splitlines()[-3:]).strip()
-                raise PreflightError(f"Audio decoder check failed: {tail[:280] or 'FFmpeg error'}")
+                raise PreflightError(
+                    "Could not decode the audio in this file. Choose a different track or file.",
+                    detail=tail[:280],
+                    code="ffmpeg.decoder_failed",
+                )
             try:
                 size = output.stat().st_size
             except OSError:
                 size = 0
             if size <= 0:
-                raise PreflightError("Audio decoder check produced no media")
+                raise PreflightError("Audio decoder check produced no media", code="ffmpeg.decoder_failed")
             return PreflightResult(bytes_rendered=size, sample_seconds=0.8)
     if type(media.video_stream_index) is not int or media.video_stream_index < 0:
         raise PreflightError("The selected video stream index is invalid")
     tracks = media.audio_streams
     if audio_track_index >= 0:
         if not any(t.index == audio_track_index for t in tracks):
-            raise PreflightError("The selected audio track is not in this movie")
+            raise PreflightError("The selected audio track is not in this movie", code="media.audio_track_missing")
         audio_map = f"0:a:{audio_track_index}"
     else:
         preferred = next((t for t in tracks if t.default), None)
@@ -108,21 +114,25 @@ def check_media(
     if embedded_subtitle_index is not None and (
         embedded_track is None or not embedded_track.is_supported
     ):
-        raise PreflightError("The selected embedded subtitle is missing or unsupported")
+        raise PreflightError("The selected embedded subtitle is missing or unsupported", code="subtitle.unavailable")
     with tempfile.TemporaryDirectory(prefix="smoothcast-preflight-") as folder:
         scratch = pathlib.Path(folder)
         video_filters: list[str] = []
         if subs_file is not None:
             subs_file = pathlib.Path(subs_file)
             if not subs_file.is_file():
-                raise PreflightError("The selected subtitle file is missing")
+                raise PreflightError("The selected subtitle file is missing", code="subtitle.unavailable")
             if subs_file.suffix.lower() == ".srt":
                 try:
                     subs_file, _ = subtitle_encoding.stage_srt(
                         subs_file, scratch / "preflight-subs.srt",
                     )
                 except subtitle_encoding.SubtitleEncodingError as exc:
-                    raise PreflightError(f"Subtitle decoder: {exc}") from exc
+                    raise PreflightError(
+                        "Could not read the subtitles. Choose a valid subtitle file.",
+                        detail=str(exc),
+                        code="subtitle.unreadable",
+                    ) from exc
         bitmap_subtitle = bool(embedded_track and embedded_track.is_bitmap)
         if embedded_subtitle_index is not None and not bitmap_subtitle:
             video_filters.append(
@@ -160,19 +170,23 @@ def check_media(
                 args, capture_output=True, text=True, timeout=max(2, min(timeout, 60)),
             )
         except subprocess.TimeoutExpired as exc:
-            raise PreflightError("MKV decoder check timed out") from exc
+            raise PreflightError("MKV decoder check timed out", code="ffmpeg.decoder_timeout") from exc
         except OSError as exc:
-            raise PreflightError(f"FFmpeg decoder check could not start: {exc}") from exc
+            raise PreflightError("Could not start the decoder. Check that FFmpeg is installed.", code="ffmpeg.missing") from exc
         if result.returncode != 0:
-            # Show only a bounded diagnostic tail, not a huge FFmpeg dump.
+            # Retain a bounded FFmpeg tail for diagnostics.
             tail = " ".join((result.stderr or "").splitlines()[-3:]).strip()
-            raise PreflightError(f"MKV decoder check failed: {tail[:280] or 'FFmpeg error'}")
+            raise PreflightError(
+                "Could not decode the video in this file. Choose a different track or file.",
+                detail=tail[:280],
+                code="ffmpeg.decoder_failed",
+            )
         try:
             size = output.stat().st_size
         except OSError:
             size = 0
         if size <= 0:
-            raise PreflightError("MKV decoder check produced no media")
+            raise PreflightError("MKV decoder check produced no media", code="ffmpeg.decoder_failed")
         try:
             verify = subprocess.run(
                 ["ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -183,9 +197,9 @@ def check_media(
             streams = (json.loads(verify.stdout or "{}").get("streams") or [])
             frames = int(streams[0].get("nb_read_frames") or 0) if streams else 0
         except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, IndexError) as exc:
-            raise PreflightError("Could not verify decoded sample video frames") from exc
+            raise PreflightError("Could not verify decoded sample video frames", code="ffmpeg.decoder_failed") from exc
         if verify.returncode != 0 or frames < 1:
-            raise PreflightError("MKV decoder check produced no video frames")
+            raise PreflightError("MKV decoder check produced no video frames", code="ffmpeg.decoder_failed")
         return PreflightResult(bytes_rendered=size, sample_seconds=0.8)
 
 

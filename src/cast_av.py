@@ -17,6 +17,7 @@ import threading
 import time
 
 import castctl
+import command_trace
 import benchmark
 
 import dlna
@@ -27,7 +28,7 @@ import audio_monitor
 
 import screenshot
 
-from cast_widgets import save_config, Async
+from cast_widgets import save_config, Async, fmt_time
 
 
 class AvMixin:
@@ -152,6 +153,7 @@ class AvMixin:
         self.toast("Muted" if muted else "Sound on")
 
 
+    @command_trace.traced("desktop", "mute")
     def toggle_mute(self) -> None:
         self.mute_button.set_active(not self.mute_button.get_active())
 
@@ -354,8 +356,9 @@ class AvMixin:
             return
         mapping = {0: "high", 1: "balanced", 2: "saver"}
         value = mapping.get(dropdown.get_selected(), "balanced")
-        if value != self.cfg["quality"]:
+        if value != self.cfg["quality"] or self.cfg.get("quality_auto", True):
             self.cfg["quality"] = value
+            self.cfg["quality_auto"] = False  # Explicit choice wins over the CPU probe.
             save_config(self.cfg)
             self.toast(f"Quality: {streamer.QUALITY_LABELS[value]} (restart to apply)")
 
@@ -420,6 +423,8 @@ class AvMixin:
         if self._preview_busy or self._preview_pending is None:
             return False
         path, position, generation = self._preview_pending
+        sparse = bool(getattr(self, "_preview_sparse", False))
+        self._preview_sparse = False
         self._preview_pending = None
         if path != self._preview_path or generation != self._preview_generation:
             return False
@@ -443,6 +448,8 @@ class AvMixin:
                         self.preview_picture.set_visible(False)
                 else:
                     self.preview_picture.set_visible(False)
+                if sparse:
+                    self._refresh_thumbnail_strip(position, visible=True)
             if self._preview_pending is not None and not self._preview_timer_id:
                 self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
 
@@ -457,22 +464,107 @@ class AvMixin:
                 finish()
             return False
         video_index = media.video_stream_index if media is not None else 0
+        aspect_mode = self.cfg.get("aspect_override", "original")
+        aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
+        if sparse:
+            cache = getattr(self, "_sparse_frame_cache", None)
+            if cache is None:
+                cache = screenshot.SparseFrameCache()
+                self._sparse_frame_cache = cache
+            key = cache.key(path, generation, video_index, position)
+            cached = cache.get(key)
+            if cached is not None:
+                finish(cached)
+                return False
+            sample = cache.sample(position)
+            def ready(frame):
+                cache.put(key, frame)
+                finish(frame)
+            Async.run(
+                lambda: screenshot.preview_frame(
+                    pathlib.Path(path), sample, video_stream_index=video_index, **aspect_options,
+                ),
+                done=ready, failed=lambda _error: finish(), domain="media",
+            )
+            return False
+        # An explicit seek or frame step must not be approximated by a hover bin.
         Async.run(
             lambda: screenshot.preview_frame(
-                pathlib.Path(path), position, video_stream_index=video_index,
+                pathlib.Path(path), position, video_stream_index=video_index, **aspect_options,
             ),
             done=finish, failed=lambda _error: finish(), domain="media",
         )
         return False
 
 
-    def _queue_preview(self, position: float) -> None:
+    def _thumbnail_identity(self) -> tuple[str, int, int] | None:
+        media = self.media
+        path = self._preview_path
+        if (path is None or media is None or media.is_audio_only or str(media.path) != path
+                or self.session is not None or self.external
+                or getattr(self, "_url_cast_url", None) or getattr(self, "_closing", False)):
+            return None
+        return path, self._preview_generation, media.video_stream_index
+
+
+    def _refresh_thumbnail_strip(self, position: float, *, visible: bool) -> None:
+        """Show nearby cached hover frames without scheduling a decoder."""
+        strip = getattr(self, "thumbnail_strip", None)
+        if strip is None:
+            return
+        source = self._thumbnail_identity() if visible else None
+        cache = getattr(self, "_sparse_frame_cache", None)
+        entries = tuple(cache.nearby(*source, position)) if source and cache is not None else ()
+        render_key = source, entries
+        if render_key == getattr(self, "_thumbnail_render_key", None):
+            return
+
+        self._thumbnail_render_key = render_key
+        frames = []
+        for moment, image in entries:
+            try:
+                frames.append((moment, Gdk.Texture.new_from_bytes(GLib.Bytes.new(image))))
+            except GLib.Error:
+                continue  # Skip an invalid JPEG without blocking the other cached frames.
+
+        self._thumbnail_positions = [moment for moment, _texture in frames]
+        for index, (button, picture, label) in enumerate(zip(
+                self.thumbnail_buttons, self.thumbnail_pictures, self.thumbnail_times)):
+            if index < len(frames):
+                moment, texture = frames[index]
+                picture.set_paintable(texture)
+                time_label = fmt_time(moment)
+                label.set_text(time_label)
+                action = f"Seek to {time_label}"
+                button.set_tooltip_text(action)
+                button.update_property([Gtk.AccessibleProperty.LABEL], [action])
+                button.set_visible(True)
+            else:
+                picture.set_paintable(None)
+                label.set_text("")
+                button.set_visible(False)
+        strip.set_visible(bool(frames))
+
+
+    def _on_thumbnail_clicked(self, _button, index: int) -> None:
+        """Seek only while the original local preview still owns the strip."""
+        positions = getattr(self, "_thumbnail_positions", [])
+        if not 0 <= index < len(positions):
+            return
+        if self._thumbnail_render_key[0] != self._thumbnail_identity():
+            self._refresh_thumbnail_strip(0.0, visible=False)
+            return
+        self.seek_to(positions[index])
+
+
+    def _queue_preview(self, position: float, *, sparse: bool = False) -> None:
         """Debounce frame decoding, with at most one FFmpeg worker at a time."""
         if (self._preview_path is None or self.session is not None or self.external
                 or self._local_stream() is not None):
             return
         self._preview_pending = (self._preview_path, max(0.0, position),
                                  self._preview_generation)
+        self._preview_sparse = sparse
         if not self._preview_timer_id and not self._preview_busy:
             self._preview_timer_id = GLib.timeout_add(180, self._start_preview)
 

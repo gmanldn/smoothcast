@@ -1,6 +1,8 @@
 """Google Cast control boundary with catt and PyChromecast adapters."""
 from __future__ import annotations
 
+import command_trace
+
 import ipaddress
 import json
 import pathlib
@@ -55,7 +57,7 @@ CATT = _find_catt()
 # be commanded. The empty string means "nothing chosen yet" (issue #239).
 DEFAULT_DEVICE = ""
 NO_DEVICE_MESSAGE = "No receiver selected. Scan the network and choose one."
-COMMAND_TIMEOUT_MESSAGE = "The device did not respond in time."
+COMMAND_TIMEOUT_MESSAGE = "The receiver did not respond in time."
 
 
 class CastError(RuntimeError):
@@ -171,6 +173,16 @@ def _catt_info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     return cast(ReceiverInfo, payload)
 
 
+def log_backend_failure(message: str, *, exc_info: bool = False) -> None:
+    # Keep diagnostic failure independent of the receiver result.
+    try:
+        import error_log
+
+        error_log.log(message, exc_info=exc_info)
+    except OSError:
+        pass
+
+
 def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     if not device.strip():
         return False, NO_DEVICE_MESSAGE
@@ -178,12 +190,13 @@ def _catt_command(device: str, *args: str, timeout: float = 12) -> tuple[bool, s
         result = _run(["-d", device, *args], timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, COMMAND_TIMEOUT_MESSAGE
-    except OSError as exc:
-        return False, str(exc)
-    message = (result.stdout or result.stderr or "").strip()
+    except OSError:
+        log_backend_failure("Could not start the Cast command helper", exc_info=True)
+        return False, "Could not start the Cast helper. Check the SmoothCast installation."
     if result.returncode != 0:
-        return False, message or "The command failed."
-    return True, message
+        log_backend_failure(f"Cast command helper exited with code {result.returncode}")
+        return False, "The receiver command failed. Check the receiver connection and try again."
+    return True, (result.stdout or result.stderr or "").strip()
 
 
 @runtime_checkable
@@ -333,12 +346,30 @@ def scan(timeout: float = 30) -> list[Device]:
 
 def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     """Return receiver status using the active Cast backend."""
-    return _backend.info(device, timeout)
+    result = _backend.info(device, timeout)
+    if result is not None:
+        command_trace.stage("status_observed")
+        if isinstance(result, dict):
+            command_trace.observe_receiver(device, player_state(result))
+    return result
 
 
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     """Run a receiver command using the active Cast backend."""
-    return _backend.command(device, *args, timeout=timeout)
+    command_trace.clear_receiver_expectation()
+    command_trace.stage("receiver_call")
+    try:
+        accepted, response = _backend.command(device, *args, timeout=timeout)
+    except Exception:
+        command_trace.stage("receiver_failed", code=502)
+        raise
+    command_trace.stage("receiver_ack" if accepted else "receiver_failed",
+                        code=None if accepted else 502)
+    if accepted and len(args) == 1:
+        expected = {"play": "PLAYING", "pause": "PAUSED", "stop": "IDLE"}.get(args[0])
+        if expected is not None:
+            command_trace.expect_receiver(device, expected)
+    return accepted, response
 
 
 def _is_idempotent(args: tuple[str, ...]) -> bool:

@@ -221,5 +221,120 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("scripts/ci/guard_branch.py", config)
 
 
+class ReleasePromotionRaceTests(unittest.TestCase):
+    """Execute the real CI merge step with fake git/gh; never touch any remote."""
+
+    @staticmethod
+    def _script() -> str:
+        lines = (ROOT / ".github/workflows/verify.yml").read_text("utf-8").splitlines()
+        marker = lines.index("      - name: Open and merge the release pull request")
+        start = lines.index("        run: |", marker) + 1
+        body = []
+        for line in lines[start:]:
+            if line and not line.startswith("          "):
+                break
+            body.append(line[10:] if line else "")
+        return "\n".join(body)
+
+    def _run(self, *, phase: str = "stable", result: str = "ok",
+             create: bool = False, fetch_fails: bool = False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            fetches = root / "fetches"
+            calls = root / "gh-calls"
+            fetches.write_text("0")
+            calls.write_text("")
+            git_stub = """#!/bin/sh
+if [ "$1" = fetch ]; then
+    if [ "$FETCH_FAILS" = 1 ]; then exit 3; fi
+    count="$(cat "$TEST_FETCHES")"
+    echo "$((count + 1))" > "$TEST_FETCHES"
+elif [ "$1" = rev-parse ] && [ "$2" = origin/develop ]; then
+    count="$(cat "$TEST_FETCHES")"
+    if { [ "$HEAD_PHASE" = before ] && [ "$count" -ge 1 ]; } ||
+       { [ "$HEAD_PHASE" = during ] && [ "$count" -ge 2 ]; }; then
+        echo newer-verified-commit
+    else
+        echo "$GITHUB_SHA"
+    fi
+else
+    exit 4
+fi
+"""
+            gh_stub = """#!/bin/sh
+echo "$*" >> "$TEST_GH_CALLS"
+if [ "$1" = pr ] && [ "$2" = list ]; then
+    if [ "$CREATE_FAIL" = 1 ]; then echo ""; else echo 509; fi
+elif [ "$1" = pr ] && [ "$2" = create ]; then
+    if [ "$CREATE_FAIL" = 1 ]; then exit 5; fi
+    echo https://github.com/example/repo/pull/509
+elif [ "$1" = pr ] && [ "$2" = merge ]; then
+    if [ "$MERGE_RESULT" != ok ]; then exit 6; fi
+else
+    exit 7
+fi
+"""
+            for name, source in (("git", git_stub), ("gh", gh_stub)):
+                executable = bin_dir / name
+                executable.write_text(source)
+                executable.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                "GITHUB_SHA": "verified-commit",
+                "TAG": "v1.2.16",
+                "TEST_FETCHES": str(fetches),
+                "TEST_GH_CALLS": str(calls),
+                "HEAD_PHASE": phase,
+                "MERGE_RESULT": result,
+                "CREATE_FAIL": "1" if create else "0",
+                "FETCH_FAILS": "1" if fetch_fails else "0",
+            }
+            run = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", self._script()],
+                                 env=env, capture_output=True, text=True, timeout=10)
+            return run, calls.read_text()
+
+    def test_verified_head_merges_only_at_exact_sha(self):
+        run, calls = self._run()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
+        self.assertNotIn("--admin", calls)
+        self.assertNotIn("--force", calls)
+
+    def test_head_advanced_before_pr_is_clean_skip(self):
+        run, calls = self._run(phase="before")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(calls, "")
+        self.assertIn("newer verified run", run.stdout)
+
+    def test_head_advanced_during_failed_merge_is_clean_skip(self):
+        run, calls = self._run(phase="during", result="fail")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
+        self.assertIn("newer verified run", run.stdout)
+
+    def test_unmoved_head_merge_failure_is_not_masked(self):
+        run, calls = self._run(result="fail")
+        self.assertEqual(run.returncode, 1, run.stdout)
+        self.assertIn("MainProtector", run.stdout)
+        self.assertIn("pr merge 509 --merge --match-head-commit verified-commit", calls)
+
+    def test_pr_creation_failure_only_skipped_when_head_moves(self):
+        moved, _ = self._run(phase="during", create=True)
+        blocked, _ = self._run(create=True)
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        self.assertIn("newer verified run", moved.stdout)
+        self.assertEqual(blocked.returncode, 1, blocked.stdout)
+        self.assertIn("Allow GitHub Actions to create and approve pull requests",
+                      blocked.stdout)
+
+    def test_failed_head_refresh_never_allows_promotion(self):
+        run, calls = self._run(fetch_fails=True)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertEqual(calls, "")
+
+
 if __name__ == "__main__":
     unittest.main()

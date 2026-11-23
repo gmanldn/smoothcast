@@ -40,7 +40,12 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
     def _refresh_config_on_focus(self, *_args) -> None:
         """Pick up other instances' settings without replacing local edits."""
         self._sync_ui_timers()
-        if not self.is_active() or not refresh_config(self.cfg):
+        if not self.is_active():
+            return
+        # A source checkout can change while this process still runs the old
+        # imported modules. Explain that on focus; never hot-swap loaded code.
+        self.app._show_stale_runtime_notice(self)
+        if not refresh_config(self.cfg):
             return
         self.app.apply_accent(self.cfg.get("accent", "default"))
         self.app.apply_density(self.cfg.get("density", "comfortable"))
@@ -132,6 +137,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         section.append("Open video…", "app.open")
         section.append("Play locally", "app.play-locally")
         section.append("Add videos to queue…", "app.add-files")
+        section.append("Find in the house…", "app.find-house")
         section.append("Open URL…", "app.open-url")
         recents = Gio.Menu()
         for index, path in enumerate(self.cfg["recents"][:8]):
@@ -147,6 +153,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             favourites.append("Clear favourites", "app.clear-favourites")
         section.append_submenu("Favourites", favourites)
         section.append_submenu("Bookmarks", self._build_bookmarks_menu())
+        chapter_media = self._chapter_media()
+        if chapter_media is not None and chapter_media.chapters:
+            section.append_submenu("Chapters", self._build_chapters_menu())
         menu.append_section(None, section)
         playback = Gio.Menu()
         playback.append("Stop stream", "app.stop-stream")
@@ -263,6 +272,35 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         clock_row.append(self.seekbar)
         clock_row.append(self.remaining_label)
         body.append(clock_row)
+        self.thumbnail_strip = Gtk.ScrolledWindow()
+        self.thumbnail_strip.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        thumbnail_tiles = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        thumbnail_tiles.set_halign(Gtk.Align.CENTER)
+        self.thumbnail_strip.set_child(thumbnail_tiles)
+        self.thumbnail_strip.set_visible(False)
+        self.thumbnail_buttons = []
+        self.thumbnail_pictures = []
+        self.thumbnail_times = []
+        for index in range(5):
+            tile = Gtk.Button()
+            tile.add_css_class("flat")
+            tile.set_size_request(112, 76)
+            content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            picture = Gtk.Picture()
+            picture.set_content_fit(Gtk.ContentFit.COVER)
+            picture.set_size_request(104, 54)
+            time_label = Gtk.Label(label="", xalign=0.5)
+            time_label.add_css_class("caption")
+            content.append(picture)
+            content.append(time_label)
+            tile.set_child(content)
+            tile.update_property([Gtk.AccessibleProperty.LABEL], ["Jump to preview frame"])
+            tile.connect("clicked", self._on_thumbnail_clicked, index)
+            thumbnail_tiles.append(tile)
+            self.thumbnail_buttons.append(tile)
+            self.thumbnail_pictures.append(picture)
+            self.thumbnail_times.append(time_label)
+        body.append(self.thumbnail_strip)
 
         transport = Gtk.Grid(column_spacing=8, row_spacing=8)
         transport.set_halign(Gtk.Align.CENTER)
@@ -302,6 +340,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         for index, widget in enumerate(self.transport_controls):
             transport.attach(widget, index, 0, 1, 1)
         body.append(transport)
+        repeat_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        repeat_row.set_halign(Gtk.Align.CENTER)
+        self.mark_a_button = self._text_button("Mark A", "Set A–B loop start", self._mark_ab_start)
+        self.mark_b_button = self._text_button("Mark B", "Set A–B loop end", self._mark_ab_end)
+        self.clear_ab_button = self._text_button("Clear A–B", "Clear A–B loop", self._clear_ab_repeat)
+        for button in (self.mark_a_button, self.mark_b_button, self.clear_ab_button):
+            repeat_row.append(button)
+        body.append(repeat_row)
 
         volume_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         volume_row.add_css_class("volume-row")
@@ -820,6 +866,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         box.set_hexpand(True)
         switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         switch.set_active(active)
+        switch.update_property([Gtk.AccessibleProperty.LABEL], [label])
         switch.connect("notify::active", callback)
         switch.subtitle_label = sub
         row.append(box)
@@ -1190,7 +1237,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         subtitle = f"{device} · {state}" if device else "No receiver selected"
         tooltip = f"Running {APP_NAME} {version.label()}"
         if self.update_notice:
-            subtitle += " · restart to update"
+            subtitle += (" · restart to apply" if getattr(self, "_installed_version_stale", False)
+                         else " · update information")
             tooltip += f"\n{self.update_notice}"
         self.title_widget.set_subtitle(subtitle)
         self.title_widget.set_tooltip_text(tooltip)
@@ -1320,7 +1368,13 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        thumbnails = getattr(self, "_thumbnail_render_key", None)
+        if thumbnails and thumbnails[0] is not None and thumbnails[0] != self._thumbnail_identity():
+            self._refresh_thumbnail_strip(0.0, visible=False)
         self._publish_portal_status()
+        app = getattr(self, "app", None)
+        if getattr(app, "_mpris", None) is not None:
+            app._mpris_tick()
         self._sync_ui_timers()
         self._update_panel_badges()
 

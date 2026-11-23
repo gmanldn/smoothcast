@@ -6,8 +6,8 @@ promise, the guarantees behind it and the honest limits today.
 
 ## The promise
 
-1. **Everyone participates, nobody installs.** A guest scans a QR code, types a
-   PIN and can add music or films from their own phone, vote, reorder the queue
+1. **Everyone participates, nobody installs.** A guest scans a QR code, gives a
+   name (and the house PIN only if one is set) and can add music or films from their own phone, vote, reorder the queue
    and control playback.
 2. **Every device is a target.** Chromecast, DLNA TVs and any browser (as a
    *screen* or *speaker*) appear in the same flow. Pick media, pick a target,
@@ -31,8 +31,8 @@ as one, with a shared queue — is set out in [VISION.md](VISION.md).
 | Role | Needs | Can do |
 | --- | --- | --- |
 | **Host** (desktop app) | The media, GTK app, FFmpeg | Owns the queue and receivers; casts to Chromecast/DLNA; serves media to screens; hosts the room |
-| **Controller** (guest browser) | A browser and the PIN | Add/upload media, vote, reorder, play, pause, seek, volume |
-| **Screen / speaker** (any browser) | A browser, the PIN, one tap | Plays the shared queue on itself, direct or host-converted |
+| **Controller** (guest browser) | A browser (and the house PIN, if set) | Add/upload media, vote, reorder, play, pause, seek, volume |
+| **Screen / speaker** (any browser) | A browser, the house PIN if set, one tap | Plays the shared queue on itself, direct or host-converted |
 | **Cast / DLNA target** | A compatible TV or speaker | Plays what the host sends |
 
 A device can be several of these at once: a phone is a controller and, if its
@@ -66,6 +66,7 @@ owner wants to listen privately, also a speaker.
 
 ## Roadmap pointers
 
-Pairing and scoped trust between full nodes (#358), shared host libraries
-(#349), node-to-node transfers (#357), a headless host without a window (#213)
-and an event-push room channel (#316).
+Automatic node membership (#418, replacing manual pairing #358), shared host
+libraries (#349), node-to-node transfers (#357), a headless host without a
+window (#213) and an event-push room channel (#316). The order of work, and what
+is deferred, is in [#511](https://github.com/gmanldn/smoothcast/issues/511).

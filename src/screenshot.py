@@ -1,6 +1,7 @@
 """Safe, bounded FFmpeg frame capture, independent from GTK."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 import math
@@ -8,9 +9,75 @@ import stat
 import subprocess
 import uuid
 
+import aspect_override
+
+
+class SparseFrameCache:
+    """Bounded GTK-thread-owned LRU: only quantised hover previews, never frame steps."""
+
+    def __init__(self, interval: float = 10.0, max_entries: int = 96):
+        if not math.isfinite(interval) or interval <= 0 or max_entries < 1:
+            raise ValueError("Invalid thumbnail cache limits")
+        self.interval = interval
+        self.max_entries = max_entries
+        self._images: OrderedDict[tuple[str, int, int, int], bytes] = OrderedDict()
+
+    def bucket(self, position: float) -> int:
+        if not isinstance(position, (int, float)) or not math.isfinite(position):
+            return 0
+        return min(10_000_000, int(max(0.0, position) // self.interval))
+
+    def key(self, path: str, generation: int, stream: int, position: float) -> tuple[str, int, int, int]:
+        return str(path), generation, stream, self.bucket(position)
+
+    def sample(self, position: float) -> float:
+        return self.bucket(position) * self.interval
+
+    def get(self, key: tuple[str, int, int, int]) -> bytes | None:
+        image = self._images.get(key)
+        if image is not None:
+            self._images.move_to_end(key)
+        return image
+
+    def put(self, key: tuple[str, int, int, int], image: bytes) -> None:
+        if not isinstance(image, bytes) or not image.startswith(b"\xff\xd8"):
+            return
+        self._images[key] = image
+        self._images.move_to_end(key)
+        while len(self._images) > self.max_entries:
+            self._images.popitem(last=False)
+
+    def nearby(
+        self, path: str, generation: int, stream: int, position: float,
+        *, radius: int = 2, limit: int = 5,
+    ) -> list[tuple[float, bytes]]:
+        """Return cached frames around a hover time, in source-time order."""
+        if radius < 0 or limit < 1:
+            return []
+        center = self.bucket(position)
+        matches = [
+            (bucket, image) for (source, gen, video_stream, bucket), image
+            in self._images.items()
+            if source == str(path) and gen == generation and video_stream == stream
+            and abs(bucket - center) <= radius
+        ]
+        matches.sort(key=lambda item: item[0])
+        if len(matches) > limit:
+            matches = sorted(matches, key=lambda item: (abs(item[0] - center), item[0]))[:limit]
+            matches.sort(key=lambda item: item[0])
+        return [(bucket * self.interval, image) for bucket, image in matches]
+
 
 class CaptureError(RuntimeError):
     """A screenshot could not be captured."""
+
+
+class FramePositionError(CaptureError):
+    """A controlled explanation of why the visible frame cannot be located."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 def owned_frame_time(
@@ -20,33 +87,33 @@ def owned_frame_time(
 ) -> float:
     """Choose the timestamp of the *owned* visible film, never an unrelated row."""
     if external:
-        raise CaptureError("Cannot capture another application's TV stream")
+        raise FramePositionError("Cannot capture another application's TV stream")
     if session is not None:
         state = getattr(session, "state", None)
         if state is None or Path(getattr(state, "file", "")) != source:
-            raise CaptureError("Active film and media metadata do not match")
+            raise FramePositionError("Active film and media metadata do not match")
         position = tracker.value()
         if position is None:
-            raise CaptureError("Cannot capture: receiver position is unknown")
+            raise FramePositionError("Cannot capture: receiver position is unknown")
     elif local_video_path == str(source):
         try:
             stream = local_stream() if callable(local_stream) else local_stream
             timestamp = stream.get_timestamp() if stream is not None else -1
         except (OSError, TypeError, ValueError, AttributeError) as exc:
-            raise CaptureError("Cannot capture: local playback position is unknown") from exc
+            raise FramePositionError("Cannot capture: local playback position is unknown") from exc
         if not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp) or timestamp < 0:
             if preview_path != str(source):
-                raise CaptureError("Cannot capture: local playback position is unknown")
+                raise FramePositionError("Cannot capture: local playback position is unknown")
             position = preview_position
         else:
             position = timestamp / 1_000_000
     elif preview_path == str(source):
         position = preview_position
     else:
-        raise CaptureError("Select and preview a film before capturing")
+        raise FramePositionError("Select and preview a film before capturing")
     if (isinstance(position, bool) or not isinstance(position, (int, float))
             or not math.isfinite(position) or position < 0):
-        raise CaptureError("Cannot capture: playback position is invalid")
+        raise FramePositionError("Cannot capture: playback position is invalid")
     return float(position)
 
 
@@ -145,7 +212,7 @@ def cover_art(source: Path, *, timeout: int = 8) -> bytes:
 
 
 def preview_frame(source: Path, position: float, *, timeout: int = 12,
-                  video_stream_index: int = 0) -> bytes:
+                  video_stream_index: int = 0, aspect_mode: str = "original") -> bytes:
     """Decode a small JPEG frame for the pre-cast scrubber, without writing files.
 
     This runs only in a worker thread. A bounded output resolution and timeout
@@ -167,7 +234,8 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12,
         "-ss", str(max(0.0, position)), "-i", str(source),
         "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",
-        "-vf", "scale=640:360:force_original_aspect_ratio=decrease",
+        "-vf", ",".join(aspect_override.filters(aspect_mode, width=640, height=360))
+        or "scale=640:360:force_original_aspect_ratio=decrease",
         "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
     ]
     try:

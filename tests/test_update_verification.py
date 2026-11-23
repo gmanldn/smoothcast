@@ -99,7 +99,8 @@ class RepoCase(unittest.TestCase):
         return git(repo or self.local, "rev-parse", "HEAD")
 
     def refresh(self, **kwargs):
-        return update_control.refresh_checkout(self.local, timeout=30, **kwargs)
+        return update_control.refresh_checkout(self.local, timeout=30,
+                                               enabled=True, **kwargs)
 
 
 class OptOutTests(RepoCase):
@@ -122,12 +123,107 @@ class OptOutTests(RepoCase):
 
     def test_settings_exist_with_the_documented_defaults_and_reach_the_updater(self):
         source = (ROOT / "src" / "cast_widgets.py").read_text("utf-8")
-        self.assertIn('"auto_update": True', source)
-        self.assertIn('"verify_updates": False', source)
+        self.assertIn('"check_release_updates": False', source)
+        self.assertIn('"release_check_verify": True', source)
         control = (ROOT / "src" / "cast_control.py").read_text("utf-8")
-        self.assertIn('enabled=bool(cfg.get("auto_update", True))', control)
-        self.assertIn('verify=bool(cfg.get("verify_updates", False))', control)
+        self.assertIn('enabled=bool(cfg.get("check_release_updates", False))', control)
+        self.assertIn('verify=bool(cfg.get("release_check_verify", True))', control)
+        self.assertIn("from update_control import check_release", control)
+        self.assertNotIn("from update_control import refresh_checkout", control)
+        self.assertNotIn('cfg.get("auto_update", True)', control)
+        self.assertNotIn('cfg.get("auto_update", False)', control)
+        self.assertNotIn('cfg.get("verify_updates", False)', control)
+        self.assertNotIn('cfg.get("verify_updates", True)', control)
 
+
+    def test_read_only_candidate_check_never_changes_running_checkout(self):
+        target = self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        original = self.head()
+        checked = []
+        original_run = update_control.subprocess.run
+
+        def observe(cmd, **kwargs):
+            if cmd[0] == "git":
+                checked.append(cmd[1:])
+            return original_run(cmd, **kwargs)
+
+        with mock.patch.object(update_control.subprocess, "run", side_effect=observe):
+            notice = update_control.check_release(
+                self.local, enabled=True, verify=False, timeout=30)
+        self.assertEqual(self.head(), original)
+        self.assertNotEqual(target, original)
+        self.assertIn("v1.0.2 is available", notice)
+        self.assertIn("No files were changed", notice)
+        self.assertFalse(any(cmd[0] in {"pull", "merge", "checkout", "reset"}
+                             for cmd in checked))
+        self.assertFalse(git(self.local, "status", "--porcelain"))
+        self.assertEqual(git(self.local, "rev-parse", "refs/remotes/origin/main"), target)
+
+    def test_read_only_check_does_nothing_until_explicitly_opted_in(self):
+        self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        with mock.patch.object(update_control.subprocess, "run",
+                               side_effect=AssertionError("no git or network")):
+            self.assertIsNone(update_control.check_release(self.local))
+            self.assertIsNone(update_control.check_release(
+                self.local, enabled=False, verify=True))
+
+    def test_unsigned_candidate_is_not_offered_as_trusted(self):
+        target = self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        before = self.head()
+        with mock.patch.object(update_control, "_signature_ok", return_value=False):
+            notice = update_control.check_release(
+                self.local, enabled=True, verify=True, timeout=30)
+        self.assertIn("signature could not be verified", notice)
+        self.assertEqual(self.head(), before)
+        self.assertNotEqual(self.head(), target)
+
+    def test_verification_is_pinned_to_release_branch_after_tag_fetch(self):
+        old = self.head(self.dev)
+        target = self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        # An unrelated annotated tag is deliberately fetched too; it must
+        # never change the SHA that the check verifies or announces.
+        git(self.dev, "tag", "-a", "-m", "unrelated", "v0.0.1", old)
+        git(self.dev, "push", "-q", "origin", "v0.0.1")
+        verified = []
+        with mock.patch.object(update_control, "_signature_ok",
+                               side_effect=lambda _repo, sha, _timeout:
+                               verified.append(sha) or True):
+            notice = update_control.check_release(
+                self.local, enabled=True, verify=True, timeout=30)
+        self.assertEqual(verified, [target])
+        self.assertIn("v1.0.2 is available", notice)
+        self.assertNotEqual(self.head(), target)
+
+    def test_dirty_and_developer_checkout_never_check_the_network(self):
+        self.commit(self.dev, 2)
+        git(self.dev, "push", "-q", "origin", "main")
+        (self.local / "scratch.txt").write_text("uncommitted user work")
+        with mock.patch.object(update_control, "_fetch_branch",
+                               side_effect=AssertionError("must not fetch")):
+            self.assertIsNone(update_control.check_release(
+                self.local, enabled=True, verify=False))
+            (self.local / "scratch.txt").unlink()
+            git(self.local, "checkout", "-q", "-b", "develop")
+            self.assertIsNone(update_control.check_release(
+                self.local, enabled=True, verify=False))
+
+    def test_same_version_and_invalid_remote_source_do_not_prompt(self):
+        (self.dev / "README.md").write_text("only source changed")
+        git(self.dev, "add", "-A")
+        git(self.dev, "commit", "-q", "-m", "no release bump")
+        git(self.dev, "push", "-q", "origin", "main")
+        self.assertIsNone(update_control.check_release(
+            self.local, enabled=True, verify=False, timeout=30))
+        (self.dev / "src" / "version.py").write_text("def broken(:\n")
+        git(self.dev, "add", "-A")
+        git(self.dev, "commit", "-q", "-m", "broken version")
+        git(self.dev, "push", "-q", "origin", "main")
+        self.assertIsNone(update_control.check_release(
+            self.local, enabled=True, verify=False, timeout=30))
 
 @unittest.skipUnless(HAVE_GPG, "gpg is needed for real signature verification")
 class VerifiedUpdateTests(RepoCase):

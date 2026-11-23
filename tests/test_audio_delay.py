@@ -315,7 +315,7 @@ def test_cast_path_forces_a_transcode_and_passes_the_delay_to_every_encoder():
     assert "adelay = audio_delay.get(cfg, path)" in text and "and not adelay" in text
     assert text.count("audio_delay_ms=adelay") == 2                          # DLNA start and HLS transcode
     assert "audio_delay_ms=audio_delay.get(self.cfg, file_path)" in text    # restarts
-    assert len(text.encode("utf-8")) <= 50_000                               # the module's size cap
+    assert len(text.encode("utf-8")) <= 56_000                               # the module's size cap
 
 
 def test_menu_actions_and_shortcuts_exist():

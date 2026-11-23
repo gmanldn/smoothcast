@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """SmoothCast desktop UI."""
 from __future__ import annotations
+
+import startup_timeline  # first: its clock starts the startup timeline (#463)
+import shutdown_plan
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -21,16 +24,16 @@ import streamer
 import smoothcast_assets
 import stream_watchdog
 import audio_monitor
+import ab_repeat
 import responsive_layout
 import gui_test_safety
-import update_control
 from cast_portal import PortalMixin
 from cast_portal_queue import PortalQueueMixin
 import version
 import error_log
+import desktop_failure_notice
 import local_playback
 import startup_cleanup
-import mpris
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
@@ -40,12 +43,13 @@ from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
 from cast_lifecycle import LifecycleMixin
 from cast_ui_timers import UiTimerMixin
+from find_ui import FindMixin
 from cast_subtitles import SubtitleMixin
 from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -74,6 +78,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self.now_playing: str | None = None
         self.selected_index: int | None = None
         self.tracker = PositionTracker()
+        self.ab_repeat = ab_repeat.ABRepeat()
         self._stream_watchdog = stream_watchdog.StreamWatchdog()
         self._volume_job: int | None = None
         self._volume_target: str | None = None
@@ -87,6 +92,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._timer_ids: dict[str, int] = {}
         self._timer_periods: dict[str, int | None] = {}
         self._reflow_source: int | None = None
+        self._seek_idle_source: int | None = None
         self.connect("realize", self._bind_surface_resize)
         self.connect("map", self._on_mapping_change)
         self.connect("unmap", self._on_mapping_change)
@@ -141,17 +147,6 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._install_shortcuts()
         self._apply_color_scheme()
         self._refresh_controls()
-        if not app.selftest:
-            self._refresh_portal()
-            GLib.timeout_add_seconds(15, self._refresh_portal)
-            GLib.timeout_add_seconds(15, self._refresh_network_activity)
-            # No GTK/receiver timers in the isolated GUI smoke test.
-            self._timers_enabled = True
-            self._sync_ui_timers()
-            GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
-            GLib.timeout_add(400, self._initial_scan)
-            GLib.timeout_add(600, self._adopt_session)
-            GLib.timeout_add_seconds(600, self._theme_tick)
 
 
 class CastControlApp(Adw.Application):
@@ -171,18 +166,25 @@ class CastControlApp(Adw.Application):
         # Set when the window could not be built: this process must then end
         # instead of holding the application id with nothing on screen.
         self.fatal = False
-        self._update_started = False
         self._startup_report: startup_cleanup.CleanupReport | None = None
         self._startup_reported = False
         self._pending_files: list[str] = []
         self._mpris = None
-        self._mpris_started = False
+        self._paint_handler: int | None = None
+        # Immutable identity captured before later checkout changes; never
+        # shell out or import replacement modules while the GUI is running.
+        self._run_revision = version.read_checkout_revision(
+            pathlib.Path(__file__).resolve().parents[1]
+        )
+        self._noticed_runtime_key: tuple[str | None, str | None] | None = None
+        self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         # Primary-only and before MainWindow; reactivation and --self-test must
         # never stop the active user's cast.
         if not self.selftest:
+            shutdown_plan.begin_ledger()  # previous exit clean? (#465)
             try:
                 self._startup_report = startup_cleanup.cleanup_before_window(
                     keep_streaming=bool(load_config().get("keep_streaming", True)),
@@ -213,6 +215,13 @@ class CastControlApp(Adw.Application):
         except Exception:
             pass
         error_log.install_excepthook()
+        # Preserve the private error log hooks, then schedule civil desktop
+        # failures on the GTK main context. Never touch widgets from workers.
+        self._failure_bridge = desktop_failure_notice.DesktopFailureBridge(
+            schedule=GLib.idle_add, present=self._present_unexpected_failure,
+            alive=self._failure_notice_available, log_glib=error_log.log,
+        )
+        self._failure_bridge.install_hooks()
         # Stop accepting queued work and discard callbacks after GTK exits.
         self.connect("shutdown", lambda _app: Async.shutdown())
         provider = Gtk.CssProvider()
@@ -271,6 +280,7 @@ class CastControlApp(Adw.Application):
         simple("open", lambda *a: self._window().action_open())
         simple("play-locally", lambda *a: self._window()._play_locally())
         simple("add-files", lambda *a: self._window().action_add_files())
+        simple("find-house", lambda *a: self._window().action_find_house())
         simple("stop-stream", lambda *a: self._window().action_stop())
         simple("fullscreen", lambda *a: self._window()._toggle_fullscreen())
         simple("loop", lambda *a: self._window()._toggle_loop())
@@ -302,6 +312,9 @@ class CastControlApp(Adw.Application):
         simple("clear-recents", lambda *a: self._window()._clear_recents())
         simple("favourite", lambda *a: self._window()._toggle_favourite())
         simple("bookmark-add", lambda *a: self._window()._add_bookmark())
+        chapter_action = Gio.SimpleAction.new("chapter-jump", GLib.VariantType.new("i"))
+        chapter_action.connect("activate", lambda _action, value: self._window()._jump_to_chapter(value.get_int32()))
+        self.add_action(chapter_action)
         simple("pin-receiver", lambda *a: self._window()._toggle_device_favourite())
         simple("clear-history", lambda *a: self._window()._clear_watch_history())
         simple("clear-favourites", lambda *a: self._window()._clear_favourites())
@@ -338,6 +351,31 @@ class CastControlApp(Adw.Application):
             save_config(window.cfg)
             window._apply_color_scheme()
 
+    def _failure_notice_available(self) -> bool:
+        window = self.window
+        return bool(window is not None and not window._closing and not self.fatal
+                    and hasattr(window, "toasts"))
+
+    def _present_unexpected_failure(self, failure) -> None:
+        window = self.window
+        if not self._failure_notice_available() or window is None:
+            return
+        toast = Adw.Toast.new(failure.message)
+        toast.set_timeout(8)
+        toast.set_priority(Adw.ToastPriority.HIGH)
+        toast.set_button_label("Copy details")
+        toast.connect(
+            "button-clicked",
+            lambda *_: window.get_clipboard().set(
+                desktop_failure_notice.copy_details(failure)
+            ),
+        )
+        window.toasts.add_toast(toast)
+
+    def _guard_glib(self, callback):
+        bridge = self._failure_bridge
+        return bridge.guard_glib(callback) if bridge is not None else callback
+
     def _window(self) -> MainWindow:
         window = self.window
         if window is None:
@@ -352,6 +390,8 @@ class CastControlApp(Adw.Application):
                 GLib.idle_add(self._quit_fatal)
                 raise
             self.window = window
+            window.connect("map", self._watch_first_paint)
+            startup_timeline.mark("window_built")
             self.scheme_action.set_state(GLib.Variant("s", window.cfg["color_scheme"]))
         return window
 
@@ -369,15 +409,46 @@ class CastControlApp(Adw.Application):
         return False
 
 
+    def _show_stale_runtime_notice(self, window: MainWindow) -> None:
+        """Do not misrepresent an updated checkout as a restarted process.
+
+        Running Python modules remain from this launch; an on-disk version
+        change is only effective after an orderly quit and relaunch.
+        """
+        if window._closing:
+            return
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        disk = version.read_checkout_version(repo / "src" / "version.py")
+        disk_revision = version.read_checkout_revision(repo)
+        stale_version = disk is not None and disk != version.__version__
+        stale_revision = (self._run_revision is not None
+                          and disk_revision is not None
+                          and disk_revision != self._run_revision)
+        if not (stale_version or stale_revision):
+            return
+        key = (disk if stale_version else None,
+               disk_revision if stale_revision else None)
+        if key == self._noticed_runtime_key:
+            return
+        self._noticed_runtime_key = key
+        if stale_version:
+            notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
+                      "Finish playback, then quit and reopen to use the installed version.")
+        else:
+            notice = (f"Checkout updated to {disk_revision[:8]}; this SmoothCast "
+                      f"process started at {self._run_revision[:8]}. Finish playback, "
+                      "then quit and reopen to load the new code.")
+        window._installed_version_stale = True
+        window.update_notice = notice
+        window._update_header_subtitle()
+        window.toast(notice, error=True)
+
     def do_activate(self) -> None:
+        startup_timeline.mark("activate")
         window = self._window()
         window.present()
-        if not self.selftest and not self._mpris_started:
-            # MPRIS2 media widget / media keys (Linux desktop bus, issue #266).
-            self._mpris_started = True
-            self._mpris = mpris.start(window)
-            if self._mpris is not None:
-                GLib.timeout_add_seconds(1, self._mpris_tick)
+        self._show_stale_runtime_notice(window)
+        startup_timeline.mark("presented")
         if not self._startup_reported:
             self._startup_reported = True
             report = self._startup_report
@@ -395,54 +466,116 @@ class CastControlApp(Adw.Application):
         if self._pending_files:
             window.open_paths(self._pending_files)
             self._pending_files = []
+    def _watch_first_paint(self, window: MainWindow) -> None:
+        clock = window.get_frame_clock()
+        if clock is not None and self._paint_handler is None:
+            self._paint_handler = clock.connect("after-paint", self._after_first_paint, window)
+
+    def _after_first_paint(self, clock, window: MainWindow) -> None:
+        clock.disconnect(self._paint_handler)
+        startup_timeline.mark("first_frame")
+        GLib.idle_add(self._guard_glib(self._after_paint_idle), window)
+
+    def _after_paint_idle(self, window: MainWindow) -> bool:
+        startup_timeline.mark_idle()
+        GLib.idle_add(self._guard_glib(self._start_optional_services), window,
+                      priority=GLib.PRIORITY_LOW)
+        return False
+
+    def _start_optional_services(self, window: MainWindow) -> bool:
         if self.selftest:
-            # The only permitted self-test display is the disposable Xvfb
-            # session. Exit promptly and avoid persistent user state.
-            GLib.timeout_add(1500, self._selftest_quit)
-        elif not self._update_started and not getattr(sys, "frozen", False):
-            self._update_started = True
-            # Never delay the first window while DNS/network/git is unresponsive.
+            return self._selftest_quit()
+        if window._closing:
+            return False
+        import mpris
+
+        window._start_window_timers()
+        # Benchmark FFmpeg only after first paint, off GTK and at low priority.
+        import low_end_policy
+        low_end_policy.schedule_probe(enabled=bool(window.cfg.get("quality_auto", True)))
+        self._mpris = mpris.start(window)
+        if self._mpris is not None:
+            window._sync_ui_timers()
+        if (not getattr(sys, "frozen", False)
+                and bool(window.cfg.get("check_release_updates", False))):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
-                daemon=False,
+                daemon=True,  # read-only probe must never delay GUI shutdown
             ).start()
+        return False
 
     def _background_update(self) -> None:
         cfg = getattr(self.window, "cfg", None) or {}
-        notice = update_control.refresh_checkout(
+        from update_control import check_release
+
+        notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
-            enabled=bool(cfg.get("auto_update", True)),
-            verify=bool(cfg.get("verify_updates", False)),
+            enabled=bool(cfg.get("check_release_updates", False)),
+            verify=bool(cfg.get("release_check_verify", True)),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
             # the title remains the imported *running* release until restart.
-            GLib.idle_add(self._present_update_notice, notice)
+            GLib.idle_add(self._guard_glib(self._present_update_notice), notice)
 
     def _present_update_notice(self, notice: str) -> bool:
         window = self.window
-        if window is not None:
-            window.update_notice = notice
-            window._update_header_subtitle()
+        if window is not None and not window._closing:
+            # A remote candidate cannot replace the higher-priority warning
+            # that this process is already using an older installed generation.
+            if not getattr(window, "_installed_version_stale", False):
+                window.update_notice = notice
+                window._update_header_subtitle()
             window._console(notice)
             window.toast(notice)
         return False
 
     def _selftest_quit(self) -> bool:
         try:
+            marks = startup_timeline.snapshot()["marks_ms"]
+            if not 0 <= marks.get("first_frame", -1) <= marks.get("interactive", -1):
+                raise RuntimeError("No painted, interactive window")
+            print(f"SELFTEST: startup {marks}")
             print("SELFTEST: window built successfully")
+            # Only the private Xvfb self-test reaches here. Prove the real
+            # Adw.Toast creation works, and repeated faults do not flood it.
+            bridge = self._failure_bridge
+            if bridge is None:
+                raise RuntimeError("desktop failure bridge not installed")
+            observed = []
+            original_present = bridge._present
+
+            def checked_present(failure):
+                original_present(failure)
+                observed.append(failure)
+
+            bridge._present = checked_present
+            injected = RuntimeError("private /home/agent/secret.mkv")
+            if not bridge.report(injected) or bridge.report(injected):
+                raise RuntimeError("failure notification was not rate limited")
+            GLib.idle_add(self._finish_selftest_failures, observed)
         except Exception as exc:  # pragma: no cover - defensive
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
+            self.quit()
+        return False
+
+    def _finish_selftest_failures(self, observed) -> bool:
+        try:
+            if len(observed) != 1 or "private" in observed[0].message:
+                raise RuntimeError("expected one civil desktop failure toast")
+            print("SELFTEST: desktop failure toast was civil and rate limited")
+        except Exception as exc:
+            self.selftest_failed = True
+            print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
         finally:
-            # A broken completion probe must never hang --self-test: always
-            # leave the main loop so the runner's deadline is not the only
-            # thing that can end it.
+            # Even a broken probe must exit under the isolated runner's bound.
             self.quit()
         return False
 
     def do_open(self, files, n_files, _hint) -> None:
+        startup_timeline.mark("activate")
         paths = []
         for index in range(n_files):
             path = files[index].get_path()
@@ -450,6 +583,8 @@ class CastControlApp(Adw.Application):
                 paths.append(path)
         window = self._window()
         window.present()
+        self._show_stale_runtime_notice(window)
+        startup_timeline.mark("presented")
         if paths:
             window.open_paths(paths)
 
@@ -492,7 +627,9 @@ class CastControlApp(Adw.Application):
         if paths:
             window.open_paths(paths)
         if action:
-            GLib.timeout_add(250, lambda: (window.perform_action(action), False)[1])
+            GLib.timeout_add(250, self._guard_glib(
+                lambda: (window.perform_action(action), False)[1]
+            ))
         return 0
 
 

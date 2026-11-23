@@ -91,10 +91,14 @@ def run_probe(seconds: int = 4, height: int = 1080, encoder: str = "libx264",
         )
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
+    # FFmpeg may report positive progress *before* a later encoder failure.
+    # Such a failed command is not evidence that this CPU sustains playback.
+    if getattr(result, "returncode", 1) != 0:
+        return None
     measured = parse_fps(getattr(result, "stderr", None))
     if measured is not None:
         return measured
     elapsed = time.monotonic() - start
-    if getattr(result, "returncode", 1) == 0 and elapsed > 0:
+    if elapsed > 0:
         return (SOURCE_RATE * seconds) / elapsed
     return None

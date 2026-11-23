@@ -61,13 +61,12 @@ class ProcScanTests(unittest.TestCase):
 
 class GuardBehaviourTests(unittest.TestCase):
     def guard(self, instances, activated, args):
-        calls = []
         with mock.patch.object(launch, "gui_instances", return_value=instances), \
                 mock.patch.object(launch, "activate_existing", return_value=activated), \
-                mock.patch.object(launch, "stop_instances",
-                                  side_effect=lambda pids: calls.append(list(pids)) or pids):
+                mock.patch.object(launch.os, "kill",
+                                  side_effect=AssertionError("never signal from a stale PID")):
             outcome = launch.ensure_single_instance(args)
-        return outcome, calls
+        return outcome, []
 
     def test_no_running_instance_launches_normally(self):
         self.assertEqual(self.guard([], None, []), (None, []))
@@ -81,20 +80,43 @@ class GuardBehaviourTests(unittest.TestCase):
         self.assertEqual(self.guard([101], True, ["/films/a.mkv"]), (None, []))
 
     @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
-    def test_unresponsive_instance_is_cleared_before_launch(self):
-        self.assertEqual(self.guard([101, 102], False, []), (None, [[101, 102]]))
+    def test_unresponsive_instance_refuses_duplicate_without_killing(self):
+        self.assertEqual(self.guard([101, 102], False, []), (3, []))
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc and session bus contract")
     def test_unprobeable_instance_is_left_alone(self):
-        # No session bus or no gdbus: never guess, let GApplication forward.
-        self.assertEqual(self.guard([101], None, []), (None, []))
+        # No session bus or no gdbus: fail closed, never spawn a second GUI.
+        self.assertEqual(self.guard([101], None, []), (3, []))
 
-    @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
-    def test_stop_instances_escalates_to_sigkill(self):
-        with mock.patch.object(launch, "_alive", return_value=True), \
-                mock.patch.object(launch.os, "kill") as kill:
-            self.assertEqual(launch.stop_instances([777], grace=0.01), [777])
-        self.assertEqual(kill.call_args_list[0], mock.call(777, launch.signal.SIGTERM))
-        self.assertEqual(kill.call_args_list[-1], mock.call(777, launch.signal.SIGKILL))
+    def test_no_pid_only_termination_helper_survives(self):
+        self.assertFalse(hasattr(launch, "stop_instances"))
+        self.assertFalse(hasattr(launch, "_alive"))
+
+
+class EarlyActivationTests(unittest.TestCase):
+    def test_canonical_launcher_checks_singleton_before_runtime_bootstrap(self):
+        source = (ROOT / "smoothcast").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        fn = next(node for node in tree.body
+                  if isinstance(node, ast.FunctionDef) and node.name == "main")
+        body = ast.get_source_segment(source, fn)
+        self.assertLess(body.index("launch.ensure_single_instance(args)"),
+                        body.index("launch.runtime_ready()"))
+        self.assertLess(body.index("launch.ensure_single_instance(args)"),
+                        body.index("_bootstrap(target)"))
+        self.assertIn("launch.main(args, prechecked=True)", body)
+
+    @unittest.skipIf(os.name == "nt", "POSIX exec launcher")
+    def test_secondary_launcher_skips_recheck_when_prechecked(self):
+        with mock.patch.object(launch, "python_path", return_value=Path("/fake/python")), \
+             mock.patch.object(launch, "media_arguments_from_caller", return_value=[]), \
+             mock.patch.object(launch, "runtime_environment", return_value={}), \
+             mock.patch.object(launch, "ensure_single_instance",
+                               side_effect=AssertionError("guard must run once")), \
+             mock.patch.object(launch.os, "chdir"), \
+             mock.patch.object(launch.os, "execvpe", side_effect=OSError("stubbed exec")):
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}):
+                self.assertEqual(launch.main([], prechecked=True), 1)
 
 
 class AppFailureTests(unittest.TestCase):

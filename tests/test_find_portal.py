@@ -70,7 +70,7 @@ def test_queue_add_key_refuses_unknown_remote_and_escaped_paths(tmp_path):
     host = Host(tmp_path)
     with pytest.raises(portal.PortalRequestError) as unknown:
         host._portal_queue_action("queue_add_key", {"key": "qh:" + "0" * 32})
-    assert unknown.value.status == 404 and "other computers" in unknown.value.message
+    assert unknown.value.status == 404 and "asleep" in unknown.value.message
     # a changed index row pointing outside the folder must be refused
     host._library_indexer._conn.execute(
         "UPDATE entries SET rel_path='../../../etc/passwd' WHERE content_key=?", (host.key,))
@@ -102,3 +102,9 @@ def test_queue_add_key_over_http_validates_key_and_requires_session():
         assert harness.calls[-1][0] == "queue_add_key" and harness.calls[-1][1]["key"] == body["key"]
     finally:
         harness.close()
+
+
+def test_add_button_is_enabled_for_any_online_copy_and_disabled_when_all_are_offline():
+    html = page()
+    assert 'if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}' in html
+    assert "coming soon" not in html.split('const input=$("findInput")')[1]

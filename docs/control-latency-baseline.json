@@ -1,0 +1,101 @@
+{
+  "clients": {
+    "1": {
+      "next": {
+        "ack_p50": 1.9,
+        "ack_p95": 7.2,
+        "confirm_p50": 36.7,
+        "confirm_p95": 44.3,
+        "samples": 15
+      },
+      "play_pause": {
+        "ack_p50": 2.0,
+        "ack_p95": 12.6,
+        "confirm_p50": 37.3,
+        "confirm_p95": 56.0,
+        "samples": 15
+      },
+      "seek": {
+        "ack_p50": 2.0,
+        "ack_p95": 8.7,
+        "confirm_p50": 37.1,
+        "confirm_p95": 49.9,
+        "samples": 15
+      },
+      "volume": {
+        "ack_p50": 1.9,
+        "ack_p95": 5.1,
+        "confirm_p50": 36.6,
+        "confirm_p95": 48.9,
+        "samples": 15
+      }
+    },
+    "32": {
+      "next": {
+        "ack_p50": 2.0,
+        "ack_p95": 27.2,
+        "confirm_p50": 39.1,
+        "confirm_p95": 98.6,
+        "samples": 15
+      },
+      "play_pause": {
+        "ack_p50": 2.7,
+        "ack_p95": 17.5,
+        "confirm_p50": 39.3,
+        "confirm_p95": 86.4,
+        "samples": 15
+      },
+      "seek": {
+        "ack_p50": 2.0,
+        "ack_p95": 13.7,
+        "confirm_p50": 38.1,
+        "confirm_p95": 57.8,
+        "samples": 15
+      },
+      "volume": {
+        "ack_p50": 2.2,
+        "ack_p95": 9.4,
+        "confirm_p50": 37.5,
+        "confirm_p95": 64.9,
+        "samples": 15
+      }
+    },
+    "8": {
+      "next": {
+        "ack_p50": 1.6,
+        "ack_p95": 7.8,
+        "confirm_p50": 36.6,
+        "confirm_p95": 44.6,
+        "samples": 15
+      },
+      "play_pause": {
+        "ack_p50": 1.7,
+        "ack_p95": 8.4,
+        "confirm_p50": 36.2,
+        "confirm_p95": 44.9,
+        "samples": 15
+      },
+      "seek": {
+        "ack_p50": 1.9,
+        "ack_p95": 10.0,
+        "confirm_p50": 37.0,
+        "confirm_p95": 46.9,
+        "samples": 15
+      },
+      "volume": {
+        "ack_p50": 1.8,
+        "ack_p95": 8.9,
+        "confirm_p50": 36.7,
+        "confirm_p95": 41.1,
+        "samples": 15
+      }
+    }
+  },
+  "profile": {
+    "machine": "x86_64",
+    "python": "3.13.5"
+  },
+  "receiver_ms": 30.0,
+  "rounds": 15,
+  "schema": 1
+}

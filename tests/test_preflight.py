@@ -70,8 +70,9 @@ class PreflightTests(unittest.TestCase):
                 preflight.subprocess, "run",
                 return_value=subprocess.CompletedProcess([], 1, "", "Unknown decoder"),
             ):
-                with self.assertRaisesRegex(preflight.PreflightError, "Unknown decoder"):
+                with self.assertRaisesRegex(preflight.PreflightError, "Unknown decoder") as failure:
                     preflight.check_media(media)
+                self.assertNotIn("Unknown decoder", failure.exception.user_message)
             with mock.patch.object(
                 preflight.subprocess, "run",
                 side_effect=subprocess.TimeoutExpired(["ffmpeg"], 2),

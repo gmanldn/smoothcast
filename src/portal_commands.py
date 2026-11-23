@@ -25,7 +25,10 @@ import threading
 import time
 from typing import Callable
 
-ACTIONS = frozenset({"play_pause", "stop", "seek", "volume", "mute", "music_autogain"})
+import actions
+import command_trace
+
+ACTIONS = actions.ENVELOPE_ACTIONS
 CLIENT_ID_MAX = 64
 COMMAND_ID_MAX = 128
 SESSION_HEX_LENGTH = 32
@@ -44,12 +47,13 @@ class CommandError(Exception):
     """A safe command rejection carrying the current fence position."""
 
     def __init__(self, status: int, message: str, *, revision: int | None = None,
-                 session_id: str | None = None) -> None:
+                 session_id: str | None = None, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
         self.revision = revision
         self.session_id = session_id
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -245,7 +249,8 @@ class CommandFence:
             if stale or foreign:
                 raise CommandError(
                     409, "Playback changed before your command. Refresh the room and retry.",
-                    revision=self._revision, session_id=self._session_id)
+                    revision=self._revision, session_id=self._session_id,
+                    code="cast.playback_changed")
 
 
 class ParticipantRateLimiter:
@@ -322,13 +327,21 @@ class CommandDispatcher:
 
     def execute(self, envelope: MutationEnvelope, *,
                 participant_key: str | None = None) -> CommandReceipt:
+        """Correlate the request without exposing the client command ID."""
+        with command_trace.scope("portal", envelope.action,
+                                 command_id=envelope.command_id,
+                                 client_id=envelope.client_id):
+            return self._execute(envelope, participant_key=participant_key)
+
+    def _execute(self, envelope: MutationEnvelope, *,
+                 participant_key: str | None = None) -> CommandReceipt:
         """Apply once; bound competing requests per authenticated participant."""
         key = (envelope.client_id, envelope.command_id)
         owner = participant_key or envelope.client_id
         fingerprint = envelope.fingerprint()
         with self._lock:
             if self._closed:
-                raise CommandError(503, "SmoothCast is shutting down")
+                raise CommandError(503, "SmoothCast is shutting down", code="app.shutting_down")
             self._prune_locked()
             entry = self._cache.get(key)
             if entry is not None:
@@ -342,7 +355,8 @@ class CommandDispatcher:
                 waiter = entry
             else:
                 if self._client_pending.get(owner, 0) >= self._per_client_cap:
-                    raise CommandError(429, "Too many commands; try again shortly")
+                    raise CommandError(429, "Too many commands; try again shortly",
+                                       code="room.rate_limited")
                 waiter = None
                 entry = _Entry(fingerprint=fingerprint, created=self._clock())
                 self._client_pending[owner] = self._client_pending.get(owner, 0) + 1
@@ -404,7 +418,7 @@ class CommandDispatcher:
             self._closed = True
             for entry in self._cache.values():
                 if not entry.completed:
-                    entry.error = CommandError(503, "SmoothCast is shutting down")
+                    entry.error = CommandError(503, "SmoothCast is shutting down", code="app.shutting_down")
                     entry.completed = True
                     entry.event.set()
             self._cache.clear()
@@ -414,7 +428,8 @@ class CommandDispatcher:
         if entry.error is not None:
             error = entry.error
             raise CommandError(error.status, error.message,
-                               revision=error.revision, session_id=error.session_id)
+                               revision=error.revision, session_id=error.session_id,
+                               code=error.code)
         if entry.receipt is None:
             raise CommandError(503, "Command result is unavailable")
         return entry.receipt
@@ -439,23 +454,27 @@ def precheck(controller: object, fence: CommandFence | None,
              envelope: MutationEnvelope) -> None:
     """Reject stale or foreign commands before marshalling to the GUI thread."""
     if getattr(controller, "_closing", False):
-        raise CommandError(503, "SmoothCast is shutting down")
+        raise CommandError(503, "SmoothCast is shutting down", code="app.shutting_down")
     if fence is None:
         raise CommandError(503, "The LAN portal is not ready")
     fence.check(envelope.expected_session_id, envelope.expected_revision,
                 owner=controller._device())
+    command_trace.stage("fenced")
 
 
 def run_mutation(controller: object, fence: CommandFence,
                  envelope: MutationEnvelope) -> CommandReceipt:
     """Check the fence and apply one action on the controller's own thread."""
     if getattr(controller, "_closing", False):
-        raise CommandError(503, "SmoothCast is shutting down")
+        raise CommandError(503, "SmoothCast is shutting down", code="app.shutting_down")
     fence.check(envelope.expected_session_id, envelope.expected_revision,
                 owner=controller._device())
+    command_trace.stage("fenced")
     revision = fence.snapshot()[1]
     if getattr(controller, "busy", False):
-        raise CommandError(409, "SmoothCast is finishing another command", revision=revision)
+        raise CommandError(409, "SmoothCast is finishing another command",
+                           revision=revision, code="cast.command_in_progress")
+    command_trace.stage("dispatched")
     action = envelope.action
     if action == "play_pause":
         if not controller.play_button.get_sensitive():

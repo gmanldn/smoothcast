@@ -8,6 +8,7 @@ from unittest import mock
 
 from gui_source import main_window_methods
 import reliability_metrics
+import shutdown_plan
 
 METHODS = main_window_methods()
 
@@ -44,6 +45,17 @@ def window(*, keep=False, mode="transcode"):
     class FakeWindow(lifecycle_type()):
         def _stop_ui_timers(self):
             pass
+
+        def _shutdown_plan(self):
+            if not hasattr(self, "plan"):
+                self.plan = shutdown_plan.ShutdownPlan()
+            return self.plan
+
+        def _finish_shutdown(self):
+            self.finished = getattr(self, "finished", 0) + 1
+
+        def _stop_house_services(self):
+            self.house_stopped = getattr(self, "house_stopped", 0) + 1
 
         def __init__(self):
             self.app = FakeApp()

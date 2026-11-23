@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 import subprocess
 
+from async_jobs import UserFacingError
+
 
 MINIMUM = (5, 0)
 _HEADER = re.compile(
@@ -20,7 +22,7 @@ _HEADER = re.compile(
 )
 
 
-class FFmpegVersionError(RuntimeError):
+class FFmpegVersionError(UserFacingError):
     """FFmpeg is missing, too old or reports an unrecognised build version."""
 
 
@@ -43,26 +45,31 @@ def require_supported_ffmpeg(*, run=subprocess.run) -> tuple[int, int]:
         )
     except subprocess.TimeoutExpired as exc:
         raise FFmpegVersionError(
-            "FFmpeg version check timed out; install FFmpeg 5.0 or newer"
+            "FFmpeg version check timed out; install FFmpeg 5.0 or newer",
+            code="ffmpeg.missing",
         ) from exc
     except OSError as exc:
         raise FFmpegVersionError(
-            "FFmpeg is unavailable or cannot start; install FFmpeg 5.0 or newer"
+            "FFmpeg is unavailable or cannot start; install FFmpeg 5.0 or newer",
+            code="ffmpeg.missing",
         ) from exc
     if result.returncode != 0:
         raise FFmpegVersionError(
-            "FFmpeg version check failed; install FFmpeg 5.0 or newer"
+            "FFmpeg version check failed; install FFmpeg 5.0 or newer",
+            code="ffmpeg.missing",
         )
     version = parse_version(result.stdout)
     if version is None:
         raise FFmpegVersionError(
             "Could not determine the FFmpeg release; install FFmpeg 5.0 or newer "
-            "with -readrate and scale:force_divisible_by support"
+            "with -readrate and scale:force_divisible_by support",
+            code="ffmpeg.too_old",
         )
     if version < MINIMUM:
         raise FFmpegVersionError(
             f"FFmpeg {version[0]}.{version[1]} is too old: "
             "SmoothCast requires FFmpeg 5.0 or newer (-readrate and "
-            "scale:force_divisible_by)"
+            "scale:force_divisible_by)",
+            code="ffmpeg.too_old",
         )
     return version

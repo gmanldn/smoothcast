@@ -79,10 +79,15 @@ class SelfTestHygieneTests(unittest.TestCase):
         init = next(node for node in _class("MainWindow").body
                     if isinstance(node, ast.FunctionDef) and node.name == "__init__")
         segment = ast.get_source_segment(MAIN_SOURCE, init)
-        self.assertIn("if not app.selftest:", segment)
-        guarded = segment[segment.index("if not app.selftest:"):]
-        for scheduled in ("_sync_ui_timers", "_poll_device", "_initial_scan", "_adopt_session"):
-            self.assertIn(scheduled, guarded)
+        self.assertNotIn("timeout_add", segment)
+        services = next(node for node in _class("CastControlApp").body
+                        if isinstance(node, ast.FunctionDef)
+                        and node.name == "_start_optional_services")
+        guard = services.body[0]
+        self.assertIsInstance(guard, ast.If)
+        self.assertEqual(ast.unparse(guard.test), "self.selftest")
+        self.assertEqual(ast.unparse(guard.body[-1]), "return self._selftest_quit()")
+        self.assertIn("window._start_window_timers()", ast.unparse(services))
 
     def test_selftest_failure_is_reported_as_nonzero(self):
         main_fn = next(node for node in CONTROL_TREE.body

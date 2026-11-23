@@ -10,16 +10,19 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 import pathlib
 
+from async_jobs import UserFacingError
 from utils import pretty_title
 import threading
 
 import time
 
 import castctl
+import command_trace
 
 import dlna
 
 import streamer
+import low_end_policy
 
 import audio_delay
 import subtitle_delay
@@ -34,10 +37,12 @@ import watch_history
 import progress_model
 
 import direct_probe
+import receiver_memory
 
 import stream_watchdog
 
 import hls_pause_recovery
+import fingerprint
 import hdr_tonemap
 
 import preflight
@@ -46,7 +51,7 @@ import reliability_metrics
 
 import url_control
 
-from cast_widgets import DEFAULTS, save_config, fmt_time, Async
+from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
 
 
 class SessionMixin:
@@ -72,7 +77,8 @@ class SessionMixin:
     def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
         # None resumes; zero rewinds.
         offset = playback_state.start_offset(
-            offset, watch_history.saved_position(self.cfg, path))
+            offset, watch_history.saved_position(
+                self.cfg, path, fingerprint.KEYS.get(path)))
         if self.busy:
             self.toast("Hold on — finishing the last command")
             return
@@ -120,10 +126,12 @@ class SessionMixin:
         )
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
+        aspect_mode = cfg.get("aspect_override", "original")
         saved_audio = cfg.get("audio_track_by_file")
         requested_audio = (saved_audio.get(str(path), -1)
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
+        learned = receiver_memory.ReceiverMemory(CONFIG_DIR / receiver_memory.STATE_NAME)
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
@@ -144,8 +152,9 @@ class SessionMixin:
             effective_subs_path, effective_burn = streamer.audio_cast_options(
                 media, subs_mode, subs_path, burn, dlna=renderer is not None)
             if audio_track >= 0 and streamer.preferred_audio_track(media, audio_track) is None:
-                raise streamer.StreamError(
-                    "The selected audio track is no longer in this film; choose Auto or another track"
+                raise UserFacingError(
+                    "The selected audio track is no longer in this film. Choose Auto or another track.",
+                    code="media.audio_track_missing",
                 )
             music_enabled = streamer.schedule_music_analysis(
                 path, media, audio_track, self, cfg)
@@ -155,8 +164,9 @@ class SessionMixin:
                 requested = saved.get(str(path), -1) if isinstance(saved, dict) and subs_mode == "embedded" else -1
                 embedded = streamer.preferred_embedded_subtitle(media, requested)
                 if subs_mode == "embedded" and embedded is None:
-                    raise streamer.StreamError(
-                        "Selected embedded subtitle track is unavailable or unsupported"
+                    raise UserFacingError(
+                        "The selected subtitle track is unavailable. Choose another track or turn subtitles off.",
+                        code="subtitle.unavailable",
                     )
             if path.suffix.lower() == ".mkv":
                 # Report caption/decoder failures before touching the receiver.
@@ -176,10 +186,17 @@ class SessionMixin:
                     self._preflight_ok.add(fingerprint)
             if renderer is not None:
                 if speed != 1.0 or rotation != 0:
-                    raise dlna.DlnaError(
-                        "DLNA currently supports normal speed and unrotated video; reset these settings"
+                    raise UserFacingError(
+                        "This receiver needs normal speed and unrotated video. Reset those settings and try again.",
+                        code="cast.settings_unsupported",
                     )
-                media_type = dlna.negotiate_media_type(renderer)
+                try:
+                    media_type = dlna.negotiate_media_type(renderer)
+                except dlna.DlnaError as exc:
+                    raise UserFacingError(
+                        "The receiver advertises no supported MP4 or MPEG-TS format. Choose another receiver.",
+                        code="cast.no_supported_format",
+                    ) from exc
                 if cancel.is_set():
                     raise dlna.DlnaError("DLNA preparation cancelled")
             if self._closing:
@@ -188,7 +205,7 @@ class SessionMixin:
                 raise streamer.StreamError("Cast cancelled before replacing current playback")
             if (prewarm_fingerprint is not None and
                     queue_metadata.file_fingerprint(path) != prewarm_fingerprint):
-                raise streamer.StreamError("The queued film changed after prewarming; retry the cast")
+                raise UserFacingError("The queued film changed. Try casting it again.", code="media.changed")
             if previous is not None:
                 previous.stop(device, send_stop=previous.mode == "dlna")
             if cancel.is_set():
@@ -214,18 +231,37 @@ class SessionMixin:
                         audio_track=audio_choice.index if audio_choice else 0,
                         subtitle_delay_ms=delay, audio_delay_ms=adelay,
                         cancel=cancel, audio_profile=cfg["audio"], media_type=media_type,
+                        **({"aspect_mode": aspect_mode} if aspect_mode != "original" else {}),
                     )
                     stop_if_cancelled_after_start()
                     return session, media
-                if (use_direct and media.direct_ok and not burn and embedded is None
-                        and not music_enabled):
+                receiver_key = codec_key = ""
+                if renderer is None:
+                    try:
+                        receiver_key = receiver_memory.receiver_key(
+                            uuid=str(cfg.get("device_uuid") or ""), host=device_ip, port=8009)
+                        codec_key = receiver_memory.media_signature(
+                            media, container=path.suffix.lower().lstrip("."),
+                            subtitle_kind=("sidecar" if effective_subs_path else
+                                           "embedded" if embedded else "none"))
+                    except ValueError:
+                        pass  # No stable identity/codec: retain normal direct decision.
+                direct_eligible = (
+                    use_direct and media.direct_ok and not burn
+                    and embedded is None and not music_enabled
+                    and (aspect_mode == "original" or getattr(media, "is_audio_only", False)))
+                if receiver_memory.should_try_direct(
+                        direct_eligible, learned, receiver_key, codec_key):
                     try:
                         session.start_direct(
                             media, device=device, subs_file=subs_path,
                             subs_disabled=(subs_mode == "off"), title=title,
                             offset=offset,
                         )
-                        if direct_probe.verify_direct_start(device, title) == "rejected":
+                        outcome = direct_probe.verify_direct_start(device, title)
+                        if outcome == "rejected":
+                            if receiver_key:
+                                learned.record(receiver_key, codec_key, "direct", False)
                             raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
                     except streamer.StreamError:
                         # The failed direct attempt can leave a catt subprocess.
@@ -233,9 +269,12 @@ class SessionMixin:
                         session = streamer.Session()
                     else:
                         stop_if_cancelled_after_start()
+                        if outcome == "accepted" and receiver_key:
+                            learned.record(receiver_key, codec_key, "direct", True)
                         return session, media
                 session.start_transcode(
-                    media, offset, device=device, quality=cfg["quality"],
+                    media, offset, device=device,
+                    quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=cfg["audio"], subs_file=effective_subs_path,
                     burn_subs=effective_burn, title=title,
                     audio_gain_db=float(cfg.get("audio_gain", DEFAULTS["audio_gain"])),
@@ -243,13 +282,18 @@ class SessionMixin:
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    **({"aspect_mode": aspect_mode} if aspect_mode != "original" else {}),
                     embedded_subtitle_index=embedded.index if embedded is not None else None,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
                     music_autogain=music_enabled,
                 )
+                # start_transcode returned only after verifying our HLS URL on
+                # the receiver; a successful FFmpeg/catt launch alone is not proof.
                 stop_if_cancelled_after_start()
+                if receiver_key:
+                    learned.record(receiver_key, codec_key, "hls", True)
                 return session, media
             except Exception:
                 # Clean up failed startup processes.
@@ -271,11 +315,15 @@ class SessionMixin:
                 self._finish_delayed_close()
                 return
             reliability_metrics.accept_attempt(self, session, Async.run)
+            if (getattr(self, "_preview_path", None) != str(path)
+                    and hasattr(self, "_reset_ab_repeat")):
+                self._reset_ab_repeat()
             self.session = session
             self.media = media
             self._update_embedded_choices(media)
             self._update_audio_choices(media)
             self.now_playing = str(path)
+            self.menu_button.set_menu_model(self._build_menu())
             if str(path) in self.queue:
                 self.selected_index = self.queue.index(str(path))
             self._finished_handled = False
@@ -334,7 +382,10 @@ class SessionMixin:
         Async.run(work, done=done, failed=failed, domain="media")
 
 
+    @command_trace.traced("desktop", "stop")
     def stop_stream(self) -> None:
+        if hasattr(self, "_reset_ab_repeat"):
+            self._reset_ab_repeat()
         pos = self.tracker.value()
         if self.media is not None and pos is not None:
             self.cfg.setdefault("positions", {})[str(self.media.path)] = pos
@@ -404,6 +455,7 @@ class SessionMixin:
         Async.run(work, done=done, failed=lambda msg: self._cast_failed(msg), domain="transport")
 
 
+    @command_trace.traced("desktop", "play_pause")
     def toggle_play(self) -> None:
         if self.busy:
             return
@@ -465,7 +517,9 @@ class SessionMixin:
         Async.run(work, done=done, failed=failed, domain="transport")
 
 
-    def seek_to(self, target: float) -> None:
+    @command_trace.traced("desktop", "seek")
+    def seek_to(self, target: float, *, feedback_label: str | None = None,
+                exact_source_time: bool = False) -> None:
         # Guard before seekbar moves.
         if self.busy:
             self.toast("Hold on — finishing the last command")
@@ -478,7 +532,11 @@ class SessionMixin:
         if self._preview_path and self.session is None and not self.external:
             duration = self.queue_durations.get(self._preview_path, duration)
         if duration:
-            target = min(target, max(0.0, duration - 1.0))
+            target = min(target, max(0.0, duration if exact_source_time
+                                     else duration - 1.0))
+        repeat = getattr(self, "ab_repeat", None)
+        if repeat is not None:
+            repeat.manual_seek(target)
         session = self.session
         if session is None and self._preview_path is not None:
             if self.seekbar is not None:
@@ -492,6 +550,8 @@ class SessionMixin:
                     self._local_start_pending = target
             else:
                 self._queue_preview(target)
+            if feedback_label:
+                self.toast(f"{feedback_label} — {fmt_time(target)} (local preview)")
             return
         if session is None or session.state is None:
             if self.now_playing:
@@ -531,7 +591,8 @@ class SessionMixin:
                 self.busy = False
                 ok, message = result
                 if ok:
-                    self.toast(f"Jumped to {fmt_time(target)}")
+                    self.toast(f"{feedback_label} — {fmt_time(target)}" if feedback_label
+                               else f"Jumped to {fmt_time(target)}")
                 else:
                     self.toast(message or "Seek failed", error=True)
                 self._refresh_controls()
@@ -550,13 +611,15 @@ class SessionMixin:
 
         self.busy = True
         self._refresh_controls()
-        self.toast(f"Restarting stream at {fmt_time(target)}…")
+        self.toast(f"{feedback_label} — seeking…" if feedback_label
+                   else f"Restarting stream at {fmt_time(target)}…")
         self.tracker.device_update(target, duration)
-        self._restart_at(session, target)
+        self._restart_at(session, target, feedback_label=feedback_label)
 
     def _restart_at(self, session, target: float, *, speed_override: float | None = None,
                     audio_track_override: int | None = None,
-                    resume_after_pause: bool = False) -> None:
+                    resume_after_pause: bool = False,
+                    feedback_label: str | None = None) -> None:
         if session.mode == "dlna":
             self.busy = False
             self._cast_path(pathlib.Path(session.state.file), target)
@@ -566,7 +629,7 @@ class SessionMixin:
         state = session.state
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
-        quality = self.cfg["quality"]
+        cfg = dict(self.cfg)  # frozen before background restart
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
@@ -574,6 +637,7 @@ class SessionMixin:
             else float(self.cfg.get("playback_speed", 1.0))
         )
         rotation = int(self.cfg.get("rotation", 0))
+        aspect_mode = getattr(state, "aspect_mode", "original")
         audio_track = (
             audio_track_override if audio_track_override is not None
             else state.audio_track_index if state else -1
@@ -594,7 +658,8 @@ class SessionMixin:
             session.stop(device, send_stop=False)
             try:
                 session.start_transcode(
-                    media, target, device=device, quality=quality,
+                    media, target, device=device,
+                    quality=low_end_policy.effective_quality(cfg, media),
                     audio_profile=audio, subs_file=captions.external,
                     burn_subs=captions.burn, title=title,
                     audio_gain_db=float(self.cfg.get("audio_gain", DEFAULTS["audio_gain"])),
@@ -602,6 +667,7 @@ class SessionMixin:
                     device_ip=device_ip,
                     speed=speed,
                     rotation=rotation,
+                    **({"aspect_mode": aspect_mode} if aspect_mode != "original" else {}),
                     embedded_subtitle_index=captions.embedded_index,
                     audio_track_index=audio_track,
                     subtitle_delay_ms=captions.delay_ms,
@@ -634,6 +700,11 @@ class SessionMixin:
             self._start_monitor(media_result.path, target, chain)
             self._set_levels_hint(hint)
             self.tracker.start(target, media_result.duration, not was_paused, rate=speed)
+            if self.session is _session and not self._closing:
+                if feedback_label:
+                    self.toast(f"{feedback_label} — {fmt_time(target)}")
+                elif speed_override is not None:
+                    self.toast(f"Speed {speed:g}x applied")
             self._refresh_controls()
             self._poll_device()
 
@@ -651,6 +722,46 @@ class SessionMixin:
 
     def _skip_back1(self) -> None:
         self._frame_step(-1)
+
+
+    def _ab_current_position(self) -> tuple[float | None, float]:
+        preview = self.session is None and self._preview_path is not None and not self.external
+        duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+        return (self._preview_position if preview else self.tracker.value(), duration)
+
+
+    def _mark_ab_start(self) -> None:
+        position, duration = self._ab_current_position()
+        if position is None or not self.ab_repeat.mark_start(position, duration):
+            self.toast("Move to a valid point before the end, then mark A", error=True)
+            return
+        self.mark_a_button.set_label(f"A · {fmt_time(position)}")
+        self.mark_b_button.set_label("Mark B")
+        self.toast(f"A–B loop starts at {fmt_time(position)}")
+
+
+    def _mark_ab_end(self) -> None:
+        position, duration = self._ab_current_position()
+        if position is None or not self.ab_repeat.mark_end(position, duration):
+            self.toast("Mark B after A and before the end of the file", error=True)
+            return
+        self.mark_b_button.set_label(f"B · {fmt_time(position)}")
+        start = self.ab_repeat.start
+        self.toast(f"A–B repeat set to {fmt_time(start if start is not None else 0.0)}–{fmt_time(position)}")
+
+
+    def _clear_ab_repeat(self) -> None:
+        self._reset_ab_repeat()
+        self.toast("A–B repeat cleared")
+
+
+    def _reset_ab_repeat(self) -> None:
+        repeat = getattr(self, "ab_repeat", None)
+        if repeat is not None:
+            repeat.clear()
+        if getattr(self, "mark_a_button", None) is not None:
+            self.mark_a_button.set_label("Mark A")
+            self.mark_b_button.set_label("Mark B")
 
 
     def _skip_back10(self) -> None:
@@ -714,8 +825,8 @@ class SessionMixin:
             duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
             self.tracker.device_update(position, duration)
             # Preserve source time when changing playback speed.
+            self.toast(f"Applying speed {speed:g}x…")
             self._restart_at(session, position, speed_override=speed)
-            self.toast(f"Speed {speed}x — stream restarted")
         else:
             self.cfg["playback_speed"] = speed
             save_config(self.cfg)
@@ -723,6 +834,8 @@ class SessionMixin:
 
 
     def _on_finished(self) -> None:
+        if hasattr(self, "_reset_ab_repeat"):
+            self._reset_ab_repeat()
         reliability_metrics.finish_active(self, "completed", Async.run)
         self._record_watch("completed")
         self._stop_monitor()
@@ -824,6 +937,16 @@ class SessionMixin:
         # Pure watchdog: no blocking I/O on the GTK tick.
         stream_watchdog.recover_window(self, snapshot, position)
         self.seekbar.set_state(position, duration, buffered)
+        if position is not None:
+            local_stream = self._local_stream() if previewing else None
+            playing = (bool(local_stream and local_stream.get_playing())
+                       if previewing else self.tracker.playing)
+            playing = playing and not self.busy and not self.external
+            target = self.ab_repeat.boundary_target(position, playing=playing)
+            if target is not None:
+                self.seek_to(target, feedback_label="A–B repeat", exact_source_time=True)
+            elif previewing and duration and position >= duration:
+                self._reset_ab_repeat()
         if not getattr(self.seekbar, "scrubbing", False):
             if position is not None:
                 self.elapsed_label.set_text(fmt_time(position))
@@ -1029,6 +1152,7 @@ class SessionMixin:
         dialog = Adw.AlertDialog.new("Open URL", "Paste a stream URL")
         entry = Gtk.Entry()
         entry.set_placeholder_text("https://...")
+        entry.update_property([Gtk.AccessibleProperty.LABEL], ["Stream URL"])
         dialog.set_extra_child(entry)
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("open", "Open")

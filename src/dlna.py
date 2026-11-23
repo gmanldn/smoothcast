@@ -8,11 +8,12 @@ explicit local file is served per session, under an unguessable URL.
 from __future__ import annotations
 
 import atexit
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
+import logging
 from pathlib import Path
 import re
 import secrets
@@ -22,17 +23,19 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import IO
+from typing import IO, Iterable
 from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+import command_trace
 import audio_delay
 import audio_downmix
 import cache_policy
 import process_priority
 import video_policy
 import hdr_tonemap
+import aspect_override
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -278,21 +281,34 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
         completed, waiting = wait(pending, timeout=max(0.0, deadline - time.monotonic()))
         for future in waiting:
             future.cancel()
-        devices: list[Renderer] = []
-        seen = set()
-        for future in completed:
-            try:
-                item = future.result()
-            except Exception:
-                continue  # An invalid LAN responder must not break discovery.
-            if item is not None and (item.host, item.transport_url) not in seen:
-                devices.append(item)
-                seen.add((item.host, item.transport_url))
-        return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
+        return _collect_responsive_renderers(completed)
     finally:
         # Do not wait for unresponsive receivers. Each outstanding GET still
         # has a bounded socket timeout; its result is deliberately discarded.
         pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _collect_responsive_renderers(completed: Iterable[Future[Renderer | None]]) -> list[Renderer]:
+    """Isolate broken LAN responders; report unexpected inspection failures once.
+
+    Never log responder-provided URLs, titles or XML (untrusted LAN data).
+    """
+    devices: list[Renderer] = []
+    seen: set[tuple[str, str]] = set()
+    failed = 0
+    for future in completed:
+        try:
+            item = future.result()
+        except Exception:
+            failed += 1
+            continue  # A broken responder cannot prevent others being discovered.
+        if item is not None and (item.host, item.transport_url) not in seen:
+            devices.append(item)
+            seen.add((item.host, item.transport_url))
+    if failed:
+        logging.getLogger(__name__).warning(
+            "DLNA discovery ignored %d failed renderer inspections", failed)
+    return sorted(devices, key=lambda x: (x.name.casefold(), x.host))
 
 
 def _upnp_fault(data: bytes) -> str:
@@ -432,8 +448,10 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
         "TRANSITIONING": "BUFFERING", "STOPPED": "IDLE",
         "NO_MEDIA_PRESENT": "IDLE",
     }
-    result: dict = {"player_state": mapped.get(raw, "IDLE"),
+    result: dict = {"player_state": mapped.get(raw, "UNKNOWN"),
                     "title": renderer.name}
+    command_trace.stage("status_observed")
+    command_trace.observe_receiver(renderer.key, result["player_state"])
     try:
         pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"})
         result["current_time"] = _seconds(_value(pos, "RelTime"))
@@ -461,6 +479,22 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
     return result
 
 
+def _traced_mutation(renderer: Renderer, action: str, params: dict[str, str],
+                     *, rendering: bool = False) -> None:
+    """Record SOAP command ACK/failure; verify playback only on a later status read."""
+    command_trace.clear_receiver_expectation()
+    command_trace.stage("receiver_call")
+    try:
+        _soap(renderer, action, params, rendering=rendering)
+    except Exception:
+        command_trace.stage("receiver_failed", code=502)
+        raise
+    command_trace.stage("receiver_ack")
+    expected = {"Play": "PLAYING", "Pause": "PAUSED", "Stop": "IDLE"}.get(action)
+    if expected is not None:
+        command_trace.expect_receiver(renderer.key, expected)
+
+
 def set_uri(renderer: Renderer, url: str, title: str, media_type: str = MEDIA_TYPE) -> None:
     # DIDL-Lite metadata is XML-escaped again by the SOAP envelope builder.
     metadata = (
@@ -473,36 +507,36 @@ def set_uri(renderer: Renderer, url: str, title: str, media_type: str = MEDIA_TY
         f'<res protocolInfo="http-get:*:{media_type}:*">{escape(url)}</res>'
         "</item></DIDL-Lite>"
     )
-    _soap(renderer, "SetAVTransportURI", {
+    _traced_mutation(renderer, "SetAVTransportURI", {
         "InstanceID": "0", "CurrentURI": url, "CurrentURIMetaData": metadata,
     })
 
 
 def play(renderer: Renderer) -> None:
-    _soap(renderer, "Play", {"InstanceID": "0", "Speed": "1"})
+    _traced_mutation(renderer, "Play", {"InstanceID": "0", "Speed": "1"})
 
 
 def pause(renderer: Renderer) -> None:
-    _soap(renderer, "Pause", {"InstanceID": "0"})
+    _traced_mutation(renderer, "Pause", {"InstanceID": "0"})
 
 
 def stop(renderer: Renderer) -> None:
-    _soap(renderer, "Stop", {"InstanceID": "0"})
+    _traced_mutation(renderer, "Stop", {"InstanceID": "0"})
 
 
 def seek(renderer: Renderer, position: float) -> None:
-    _soap(renderer, "Seek", {"InstanceID": "0", "Unit": "REL_TIME",
+    _traced_mutation(renderer, "Seek", {"InstanceID": "0", "Unit": "REL_TIME",
                               "Target": _clock(position)})
 
 
 def volume(renderer: Renderer, percent: float) -> None:
     level = max(0, min(100, int(round(percent))))
-    _soap(renderer, "SetVolume", {"InstanceID": "0", "Channel": "Master",
+    _traced_mutation(renderer, "SetVolume", {"InstanceID": "0", "Channel": "Master",
                                   "DesiredVolume": str(level)}, rendering=True)
 
 
 def set_muted(renderer: Renderer, muted: bool) -> None:
-    _soap(renderer, "SetMute", {"InstanceID": "0", "Channel": "Master",
+    _traced_mutation(renderer, "SetMute", {"InstanceID": "0", "Channel": "Master",
                                 "DesiredMute": "1" if muted else "0"}, rendering=True)
 
 
@@ -674,7 +708,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                 cancel: threading.Event | None = None,
                 scratch_lease_fd: int | None = None,
                 audio_delay_ms: int = 0, audio_profile: str = "original",
-                muxer: str = "mp4") -> Path:
+                muxer: str = "mp4", aspect_mode: str = "original") -> Path:
     """Prepare complete progressive MP4 or MPEG-TS; never expose partial output.
 
     Compatible MKVs are remuxed without video loss. Other codecs, subtitle
@@ -732,6 +766,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         and media.width <= 1920 and media.height <= 1080
         and media.fps <= 30.01
         and not hdr_tonemap.filter_for(media)
+        and aspect_override.normalize(aspect_mode) == "original"
         and subtitle_file is None and embedded_subtitle_index is None
     )
     try:
@@ -753,6 +788,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
                  "-pix_fmt", "yuv420p", "-profile:v", "high", "-level:v", "4.1"]
         vf = Session()._filter_args(
             subtitle_file is not None, subtitle_file, True, 1.0,
+            aspect_mode=aspect_mode,
             embedded_subtitle_index=embedded_subtitle_index,
             embedded_source=source if embedded_subtitle_index is not None else None,
             embedded_bitmap=bitmap_track is not None,
@@ -861,7 +897,7 @@ class Session:
               subtitle_delay_ms: int = 0,
               cancel: threading.Event | None = None,
               audio_delay_ms: int = 0, audio_profile: str = "original",
-              media_type: str = MEDIA_TYPE) -> None:
+              media_type: str = MEDIA_TYPE, aspect_mode: str = "original") -> None:
         from streamer import SessionState
         if media_type != MEDIA_TYPE and media_type not in MPEG_TS_TYPES:
             raise DlnaError("Unsupported DLNA media type")
@@ -885,6 +921,7 @@ class Session:
                 and audio_track == 0
                 and _downmix(_selected_audio(media, audio_track), audio_profile) is None
                 and audio_delay.normalize(audio_delay_ms) == 0
+                and aspect_override.normalize(aspect_mode) == "original"
             )
             if not direct:
                 suffix = ".mp4" if media_type == MEDIA_TYPE else ".ts"
@@ -897,6 +934,7 @@ class Session:
                     scratch_lease_fd=(self._scratch_lease.fileno()
                                       if self._scratch_lease is not None else None),
                     muxer="mp4" if media_type == MEDIA_TYPE else "mpegts",
+                    **({"aspect_mode": aspect_mode} if aspect_mode != "original" else {}),
                 )
             if cancel is not None and cancel.is_set():
                 raise DlnaError("DLNA preparation cancelled")
@@ -912,6 +950,7 @@ class Session:
                 file=str(media.path), mode="dlna", offset=max(0.0, offset),
                 duration=media.duration, device=renderer.key, title=title,
                 audio=audio_profile, audio_track_index=audio_track,
+                aspect_mode=aspect_override.normalize(aspect_mode),
                 subs=str(subtitle_file or ""),
                 burn_subs=subtitle_file is not None or embedded_subtitle_index is not None,
                 embedded_subtitle_index=(

@@ -16,6 +16,8 @@ from __future__ import annotations
 import math
 import os
 
+import fingerprint as content_identity
+
 EVENTS = frozenset({"start", "stop", "completed", "resumed"})
 SOURCES = frozenset({"preview", "cast"})
 LIMIT = 200
@@ -119,6 +121,7 @@ def clean_entry(entry: object) -> dict | None:
         "fingerprint": _fingerprint(entry.get("fingerprint")),
         "tracks": _tracks(entry.get("tracks")),
         "watched": _watched(position, duration),
+        "content_key": content_identity.valid_key(entry.get("content_key")),
     }
 
 
@@ -137,7 +140,7 @@ def clean(history: object, limit: int = LIMIT) -> list:
 
 
 def record(history, path, event, position, now, *, source="cast",
-           duration=None, fingerprint=None, tracks=None, limit=LIMIT):
+           duration=None, fingerprint=None, tracks=None, limit=LIMIT, content_key=None):
     """Return a new bounded history list with one entry prepended.
 
     Unknown events or a missing path leave the history unchanged. Optional
@@ -163,35 +166,41 @@ def record(history, path, event, position, now, *, source="cast",
         "fingerprint": _fingerprint(fingerprint),
         "tracks": _tracks(tracks),
         "watched": _watched(position_value, duration_value),
+        "content_key": content_identity.valid_key(content_key),
     }
     return ([entry] + current)[:limit]
 
 
-def latest(history, path, fingerprint=None) -> dict | None:
-    """Return the newest valid entry for ``path``, optionally fingerprint-matched."""
+def latest(history, path, fingerprint=None, content_key=None) -> dict | None:
+    """Return the newest valid entry for ``path`` - or, if the file was renamed or
+    moved, for the same ``content_key`` - optionally fingerprint-matched."""
     target = str(path)
+    key = content_identity.valid_key(content_key)
     for entry in clean(history):
-        if entry["path"] != target:
+        same_path = entry["path"] == target
+        same_content = key is not None and entry.get("content_key") == key
+        if not (same_path or same_content):
             continue
-        if fingerprint is not None and entry["fingerprint"] != fingerprint:
+        if same_path and not same_content and fingerprint is not None \
+                and entry["fingerprint"] != fingerprint:
             continue
         return entry
     return None
 
 
-def latest_position(history, path, fingerprint=None) -> float | None:
-    """Return the newest saved position for ``path``, or ``None``."""
-    entry = latest(history, path, fingerprint)
+def latest_position(history, path, fingerprint=None, content_key=None) -> float | None:
+    """Return the newest saved position for ``path`` (or its content), or ``None``."""
+    entry = latest(history, path, fingerprint, content_key)
     return None if entry is None else entry["position"]
 
 
-def saved_position(cfg, path):
+def saved_position(cfg, path, content_key=None):
     """Return a resumable position from the positions map or watch state."""
     saved = _finite((cfg.get("positions") or {}).get(str(path)))
     if saved is not None:
         return saved
     return latest_position(
-        cfg.get("watch_history"), str(path), fingerprint(path))
+        cfg.get("watch_history"), str(path), fingerprint(path), content_key)
 
 
 def clear():

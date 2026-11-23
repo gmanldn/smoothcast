@@ -36,6 +36,7 @@ DEFAULTS: dict = {
     "device_favourites": [],
     "device_last_used": {},
     "quality": "balanced",
+    "quality_auto": True,  # benchmark-derived software tier; explicit quality wins (#515)
     "audio": "dialogue",
     "audio_gain": 6.0,
     "audio_loudness": "off",  # EBU R128 programme/album (#139)
@@ -72,6 +73,7 @@ DEFAULTS: dict = {
     "shuffle_seed": 1,
     "playback_speed": 1.0,
     "rotation": 0,
+    "aspect_override": "original",
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).
@@ -79,8 +81,8 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
-    "auto_update": True,  # Startup git pull of a release checkout (#230).
-    "verify_updates": False,  # Require a GPG-verified commit or tag to update.
+    "check_release_updates": False,  # New opt-in; legacy auto_update is ignored (#138).
+    "release_check_verify": True,  # Fresh consent; legacy verify_updates is ignored (#138).
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
     "portal_port": 0,  # Choose one random high room port and persist it (#456).
     "lower_ffmpeg_priority": True,  # Run FFmpeg at below-normal priority (#247).

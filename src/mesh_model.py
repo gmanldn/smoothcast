@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
+from itertools import islice
 import hashlib
 import ipaddress
 import json
@@ -528,16 +529,21 @@ def would_exceed_mesh_limits(existing: Mapping[str, NodeRecord],
 
 
 def negotiate_protocol(local: Iterable[int], remote: Iterable[int]) -> int:
-    """Highest protocol version both sides speak, else :class:`MeshModelError`."""
-    try:
-        common = {int(v) for v in local} & {int(v) for v in remote}
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise _fail("protocol list is invalid") from exc
-    common = {v for v in common if 1 <= v <= 65535}
+    """Highest shared protocol, rejecting coercions and unbounded untrusted lists."""
+    def validated(values: Iterable[int]) -> set[int]:
+        try:
+            choices = list(islice(values, MAX_PROTOCOLS + 1))
+        except (TypeError, ValueError) as exc:
+            raise _fail("protocol list is invalid") from exc
+        if len(choices) > MAX_PROTOCOLS or any(
+                type(item) is not int or not 1 <= item <= 65535 for item in choices):
+            raise _fail("protocol list is invalid")
+        return set(choices)
+
+    common = validated(local) & validated(remote)
     if not common:
         raise _fail("no common mesh protocol version")
     return max(common)
-
 
 # ---------------------------------------------------------------------------
 # Building a record from local data without ever exceeding the caps

@@ -78,9 +78,24 @@ conflict in those lists: run it, `git add pyproject.toml`, continue.
 - **Keep `develop` green.** Trunk has no PR gate, so your local checks are the
   gate. If a push turns CI red, fixing it (or `git revert <sha>`) comes before
   new work, whoever caused it.
-- **Every push to `develop` gets its own CI run** (keyed by commit, never
-  cancelled), so a red commit is attributable to its author. Patch pushes use
-  the fast lane; MINOR/MAJOR bumps run the full matrix. Batch related commits.
+- **Continuous-push CI is coalesced (#539):** the Verify workflow
+  permits **one running** run plus **the newest pending** run per Git ref.
+  Old pending revisions are marked `cancelled` without running; the active run
+  is *never interrupted*. The newest tested `develop` SHA includes all older
+  commits. Use targeted local tests before each push and batch related commits.
+  Do not treat a superseded/cancelled SHA as green, or close its issue merely
+  because a newer run was queued. A confirmed failure on the current head
+  still blocks further work until fixed.
+- **Patch fast/full policy:** `develop` compares its version to the last
+  released `main`, not the immediately prior push. This prevents a cancelled
+  intermediate MINOR/MAJOR bump from silently losing the required full matrix.
+  Patch-only progress stays fast; MINOR/MAJOR changes since `main` get all
+  native, media and packaging contract checks.
+- **CI events:** contributor PRs **into `develop`** still run Verify and
+  relevant portal/package/CodeQL checks. The automated `develop → main`
+  release PR does *not* duplicate them: the latest `develop` push is already
+  verified at the exact commit. Package builds also run on packaging-relevant
+  `develop` pushes and real release tags; CodeQL retains weekly scans.
 - **No stray branches or worktrees.** Do not push topic branches. Remove your
   worktree after pushing. The prune workflow deletes any merged remote branch
   that slips through; do not leave stale ones.
@@ -92,8 +107,10 @@ conflict in those lists: run it, `git add pyproject.toml`, continue.
 
 1. On `develop`, once per release: `python3 scripts/ci/bump_version.py patch`
    (or `minor` / `major`), commit as `release: bump version to X.Y.Z`, push.
-2. *Verify SmoothCast* runs on that push (full matrix for MINOR/MAJOR, fast
-   lane for PATCH). Only if **every scheduled** job passes, the
+2. *Verify SmoothCast* eventually validates the **latest `develop` head**
+   (full matrix for any MINOR/MAJOR difference against `main`, fast lane
+   for patch-only progress). Earlier queued revisions may be cancelled and
+   must not be treated as tested. Only if **every scheduled** job passes, the
    final `promote-release` job runs `scripts/ci/promote_release.py`, which
    promotes only when the version is strictly newer than `main`'s **and** merging
    into `main` yields exactly `develop`'s tree. Then it opens (or reuses) the

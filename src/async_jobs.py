@@ -11,6 +11,8 @@ from queue import Empty, Full, Queue
 import threading
 from typing import Callable
 
+import command_trace
+
 # (workers, waiting jobs).  Short control/status work cannot queue behind
 # FFmpeg conversion or library scanning.  No new runtime dependency.
 DEFAULT_LIMITS = {
@@ -21,6 +23,13 @@ DEFAULT_LIMITS = {
     "background": (2, 8),
 }
 _STOP = object()
+_FAILURE_MESSAGES = {
+    "transport": "Check that the receiver is connected, then try again.",
+    "status": "Could not check the receiver. Check its power and network connection.",
+    "discovery": "Could not scan for receivers. Check your network and scan again.",
+    "media": "Check that the media file is available and try again.",
+}
+_DEFAULT_FAILURE = "SmoothCast could not complete the action. Try again."
 
 
 @dataclass(frozen=True)
@@ -29,10 +38,22 @@ class _Job:
     done: Callable | None
     failed: Callable | None
     valid: Callable[[], bool] | None
+    trace_id: str | None = None
 
 
 class WorkRejected(RuntimeError):
     """A bounded domain cannot accept another task right now."""
+
+
+class UserFacingError(RuntimeError):
+    """An expected failure with copy reviewed for display and optional private detail."""
+
+    default_code = "internal.unexpected"
+
+    def __init__(self, message: str, *, detail: str | None = None, code: str | None = None) -> None:
+        super().__init__(message if not detail else f"{message} {detail}")
+        self.user_message = message
+        self.code = code or self.default_code  # stable, untranslated (docs/ERRORS.md)
 
 
 class WorkDomains:
@@ -40,6 +61,8 @@ class WorkDomains:
 
     `dispatch(callback)` must enqueue onto the GTK main context in production.
     `valid()` is evaluated *on that context*, immediately before delivery.
+    Failure callbacks receive display-safe copy. Private exception details are
+    available to the error logger.
     Shutdown cancels queued jobs and discards late results, without blocking
     on media/receiver subprocesses that may still be running.
     """
@@ -106,8 +129,12 @@ class WorkDomains:
                 try:
                     value = job.work()
                 except Exception as exc:
-                    self._log(f"Async {domain} work failed", exc_info=True)
-                    self._schedule(job.failed, str(exc), job.valid)
+                    suffix = f" [command:{job.trace_id}]" if job.trace_id else ""
+                    self._log(f"Async {domain} work failed{suffix}", exc_info=True)
+                    expected = exc if isinstance(exc, UserFacingError) else exc.__cause__
+                    message = (expected.user_message if isinstance(expected, UserFacingError)
+                               else _FAILURE_MESSAGES.get(domain, _DEFAULT_FAILURE))
+                    self._schedule(job.failed, message, job.valid)
                 else:
                     self._schedule(job.done, value, job.valid)
             finally:
@@ -137,7 +164,14 @@ class WorkDomains:
                     thread.start()
                     self._workers[domain].append(thread)
             try:
-                queue.put_nowait(_Job(work, done, failed, valid))
+                queue.put_nowait(_Job(
+                    command_trace.propagate(work) or work,
+                    command_trace.propagate(done),
+                    command_trace.propagate(failed),
+                    valid,
+                    command_trace.current_id(),
+                ))
+                command_trace.stage("worker_queued")
             except Full:
                 rejection = f"{domain.capitalize()} work queue is busy; retry shortly"
         if rejection is not None:

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+    # Contributor PRs into develop only. The long-lived release PR targets main;
+    # its head is the very same develop SHA, already checked by the push lane.
+    branches: [develop]
 
 permissions:
   contents: read
@@ -13,14 +16,14 @@ permissions:
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
 
-# Every push to develop or main gets its own run (the group is the commit SHA),
-# so no integration commit is cancelled or replaced while queued. The scope job
-# picks the patch fast lane or the minor/major full matrix; release promotion
-# waits for that run. Pull requests share one group per branch and a newer push
-# cancels the superseded run.
+# Busy develop has one running verification plus its newest pending commit.
+# Do NOT cancel the running one: ongoing pushes must not starve validation.
+# GitHub replaces an older pending run with the latest; any release promotion
+# still requires all gates to pass for the EXACT tested SHA and checks HEAD.
+# Distinct refs (main and contributor PRs) do not cancel each other.
 concurrency:
-  group: smoothcast-verify-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: smoothcast-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   scope:
@@ -41,6 +44,13 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # Pending develop runs can be superseded. Compare against the last
+          # released main instead of the immediately previous push; otherwise
+          # a MINOR/MAJOR bump in a cancelled run could skip the full matrix.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/develop" ]; then
+            git fetch origin main
+            BASE="$(git rev-parse origin/main)"
+          fi
           lane="$(python scripts/ci/test_scope.py --base "$BASE" --head "$GITHUB_SHA")"
           echo "lane=$lane" >> "$GITHUB_OUTPUT"
           echo "Test lane: **$lane**" >> "$GITHUB_STEP_SUMMARY"
@@ -58,10 +68,68 @@ jobs:
         run: python -m compileall -q src scripts setup tests
       - name: Check canonical launcher syntax
         run: python -m py_compile smoothcast
+      - name: Verify release promotion race safety
+        run: python -m unittest discover -s tests -p test_release_automation.py
+      - name: Enforce bounded CI queue and exact-release contracts
+        run: python -m unittest discover -s tests -p test_ci_burst_policy.py
+      - name: Verify ticket digest selection and fallback
+        run: python -m unittest discover -s tests -p test_ticket_efficiency.py
       - name: Lint user-facing UX copy
         run: python scripts/ci/ux_copy_lint.py
       - name: Enforce safety invariant evidence links
         run: python scripts/ci/check_invariants.py
+      - name: Check the generated error catalogue is current
+        run: python scripts/ci/gen_errors_doc.py --check
+      - name: Block new silent broad playback exceptions
+        run: |
+          python scripts/ci/lint_silent_except.py
+          python -m unittest discover -s tests -p test_silent_except_lint.py
+      - name: Verify DLNA responder failures never break discovery or leak details
+        run: python -m unittest discover -s tests -p test_dlna_discovery_failures.py
+      - name: Verify bounded receiver-learning persistence
+        run: python -m unittest discover -s tests -p test_receiver_memory.py
+      - name: Verify code and issue-body budget contracts
+        run: |
+          python -m pip install 'pytest>=8,<10'
+          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py tests/test_desktop_failure_notice.py
+          python -m pytest -q tests/test_update_control.py tests/test_launch_singleton.py tests/test_version_integrity.py tests/test_stale_runtime_notice.py
+
+  mesh-protocol-contract:
+    name: Mesh protocol safety (headless)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Install pytest and mesh simulation dependencies
+        run: python -m pip install 'pytest>=8,<10' 'hypothesis>=6,<7'
+      - name: Verify v1 handshakes, schema safety and simulated mixed-version nodes
+        run: >-
+          python -m pytest -q
+          tests/test_peer_protocol.py
+          tests/test_mesh_protocol.py
+          tests/test_mesh_model.py::test_protocol_negotiation
+          tests/test_mesh_sync.py::test_steady_state_egress_and_event_rate_stay_within_budget_at_twenty_nodes
+          tests/test_mesh_sync.py::test_loss_and_a_partition_with_edits_on_both_sides_converge_after_healing
+          tests/test_mesh_sync.py::test_large_records_are_chunked_under_the_reply_cap
+      - name: Verify desktop playback and timer contracts
+        run: >-
+          python -m pytest -q
+          tests/test_chapter_navigation.py
+          tests/test_transport_feedback.py
+          tests/test_sparse_thumbnail_cache.py
+          tests/test_aspect_override.py
+          tests/test_idle_timers.py
+          tests/test_responsive_wiring.py
+          tests/test_mpris.py
+      - name: Verify low-end CPU adaptation and real 720p filter contracts
+        run: >-
+          python -m pytest -q
+          tests/test_low_end_policy.py
+          tests/test_low_end_encoding.py
+          tests/test_low_end_probe.py
 
   reliability-benchmark:
     name: Fake Cast reliability benchmark
@@ -111,6 +179,20 @@ jobs:
           SMOOTHCAST_PERF: '1'
           SMOOTHCAST_PERF_SLACK: '3'
         run: python -m pytest -q tests/perf -s -p no:cacheprovider
+
+  import-budget:
+    name: Startup import budget
+    needs: [scope]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK bindings (system Python)
+        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-psutil
+      - name: Heavy modules stay off the GUI startup path (no window is opened)
+        env:
+          SMOOTHCAST_IMPORT_SLACK: '2'
+        run: /usr/bin/python3 scripts/ci/import_budget.py
 
   lint:
     name: Ruff lint
@@ -362,10 +444,12 @@ jobs:
       always() &&
       github.event_name == 'push' && github.ref == 'refs/heads/develop' &&
       needs.scope.result == 'success' &&
+      needs.mesh-protocol-contract.result == 'success' &&
       needs.syntax.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.typecheck.result == 'success' &&
       needs.dependency-audit.result == 'success' &&
+      needs.import-budget.result == 'success' &&
       (needs.reliability-benchmark.result == 'success' || needs.reliability-benchmark.result == 'skipped') &&
       (needs.search-performance.result == 'success' || needs.search-performance.result == 'skipped') &&
       (needs.portable-tests.result == 'success' || needs.portable-tests.result == 'skipped') &&
@@ -373,7 +457,7 @@ jobs:
       (needs.media-integration.result == 'success' || needs.media-integration.result == 'skipped') &&
       (needs.setup-contract.result == 'success' || needs.setup-contract.result == 'skipped') &&
       (needs.installed-artifact.result == 'success' || needs.installed-artifact.result == 'skipped')
-    needs: [scope, syntax, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance]
+    needs: [scope, syntax, mesh-protocol-contract, reliability-benchmark, lint, typecheck, dependency-audit, portable-tests, portable-tests-native, media-integration, setup-contract, installed-artifact, search-performance, import-budget]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -413,16 +497,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.decide.outputs.tag }}
         run: |
+          git fetch origin develop
+          if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+            echo "::notice::develop advanced after release verification; a newer verified run will promote."
+            exit 0
+          fi
           number="$(gh pr list --head develop --base main --state open --json number --jq '.[0].number // empty')"
           if [ -z "$number" ]; then
             url="$(gh pr create --head develop --base main --title "Release $TAG" \
               --body "Automated promotion of verified develop commit $GITHUB_SHA ($TAG). All Verify jobs passed on this commit. Publishing is a separate, explicit tag step: see docs/agents/workflow.md.")" || {
+              git fetch origin develop || {
+                echo "::error::Cannot recheck develop after PR creation failure; release promotion refused."
+                exit 1
+              }
+              if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+                echo "::notice::develop advanced during release PR creation; a newer verified run will promote."
+                exit 0
+              fi
               echo "::error title=Release promotion needs a repository setting::Every verification job passed and $TAG is a new release, but GitHub refused to open the develop->main pull request. A repository admin must enable Settings > Actions > General > Workflow permissions > 'Allow GitHub Actions to create and approve pull requests'. This is configuration, not a code failure."
               exit 1
             }
             number="${url##*/}"
           fi
           gh pr merge "$number" --merge --match-head-commit "$GITHUB_SHA" || {
-            echo "::error title=Release promotion could not merge::The develop->main pull request #$number could not be merged at the verified commit $GITHUB_SHA. Either develop moved, or the MainProtector ruleset blocked it: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
+            git fetch origin develop || {
+              echo "::error::Cannot recheck develop after PR merge failure; release promotion refused."
+              exit 1
+            }
+            if [ "$(git rev-parse origin/develop)" != "$GITHUB_SHA" ]; then
+              echo "::notice::develop advanced during release PR merge; a newer verified run will promote."
+              exit 0
+            fi
+            echo "::error title=Release promotion could not merge::The verified develop head did not change, but release PR #$number could not be merged at $GITHUB_SHA. Check the MainProtector ruleset: its 'update' rule only lets bypass actors move main, so the GitHub Actions app must be on the ruleset bypass list (Settings > Rules > Rulesets > MainProtector > Bypass list > Add GitHub Actions, mode: always). See the log above."
             exit 1
           }

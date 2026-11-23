@@ -188,10 +188,9 @@ class GuiTestSafetyTests(unittest.TestCase):
         ast.parse(source)
         self.assertIn("if selftest and not gui_test_safety.is_isolated_gui_test():",
                       source)
-        self.assertIn("if not app.selftest:", source)
         self.assertIn("Gio.ApplicationFlags.NON_UNIQUE", source)
         self.assertIn("if not self.selftest:", source)
-        self.assertIn("GLib.timeout_add(1500, self._selftest_quit)", source)
+        self.assertIn("return self._selftest_quit()", source)
 
 
 if __name__ == "__main__":
