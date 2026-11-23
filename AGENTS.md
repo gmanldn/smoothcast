@@ -5,45 +5,31 @@ Python 3.10+, GTK4/libadwaita, Chromecast/DLNA. Read only the relevant
 `python3 scripts/agent_context.py route <task-or-path>`. The
 [archive](docs/AGENT_REFERENCE.md) is historical, not default context.
 
-## Branch and concurrent work
+## Fast agent lifecycle (P0)
 
-**Commit only to `develop`.** Never push, merge or open promotion PRs
-against `main`; only the owner manually promotes it. Work in a **private
-detached worktree**, never in the shared checkout:
-
-```sh
-git fetch origin develop
-git worktree add --detach ../smoothcast-N origin/develop
-# commit named files, mentioning Refs #N
-git fetch origin develop && git rebase origin/develop
-python3 scripts/agent.py ship --skip-checks  # mandatory version guard; other checks explicitly unverified
-```
-
-Rebase only your unpublished commits. Never force-push, reset user work or
-delete others' worktrees/stashes. See [workflow](docs/agents/workflow.md).
-
-## Ticket flow
-
-GitHub Issues are authoritative: [issues](docs/ISSUES.md). Start with:
+**Only develop receives agent code. Main is manually promoted by the owner.**
+Never push/merge/promote/tag main. Never reset another agent's work or force-push.
+Use a private detached worktree; one ticket per worktree.
 
 ```sh
-python3 scripts/agent.py board
-python3 scripts/agent.py next
-python3 scripts/agent.py claim N --files src/module.py
-python3 scripts/agent.py ship
-python3 scripts/agent.py progress N --done "..." --next "..." --commit SHA --release
-# OR when fully evidenced:
-python3 scripts/agent.py done N --why "..." --checklist "..."
+python3 scripts/agent.py start [ISSUE] [--lane mesh]
+# cd into the printed worktree; read the generated private task brief
+python3 scripts/agent.py ship --message "concise change" [--files src/new.py] [--next "remaining item"]
+python3 scripts/agent.py finish --done "actual work" --next "remaining work or none" --verification "actual tests"
+# To close: append --checklist "all acceptance criteria" --close; --next must be none
 ```
 
-Read the chosen issue, prior handovers, commits and recent comments **before**
-editing. Claims are 90-minute default leases, never permanent ownership;
-assignees or stale `in-flight` labels are not locks. Exit 3 from `claim`
-means another agent won: pick again. Post durable progress and remaining work
-then release promptly. Only close when acceptance criteria actually pass.
-[Coordination rules](docs/COORDINATION.md). The fallback
-`python3 scripts/ticket_digest.py --next --label agent-ready` is
-read-only and **not claim-aware**; never assume its result is unclaimed.
+`start` atomically claims a short lease, refreshes develop, creates an isolated
+worktree and leaves issue body + latest handover in that worktree's Git admin
+directory. Claims expire (90m default), but progress comments and pushed SHAs
+persist; read both before taking over. `ship` auto-commits tracked edits only
+inside a coordinator-created worktree; use `--files` for new files. Without
+`--message`, commit named files yourself first. It fetches, rebases only
+unpublished work, checks every version transition even with `--skip-checks`,
+pushes non-force and posts a durable handover. On conflicts, preserve the
+worktree and reconcile intentionally. Never claim unrun checks passed.
+`finish` records actual outcomes and releases the lease. Follow
+[coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
 
 ## Quality and safety
 
@@ -58,11 +44,7 @@ read-only and **not claim-aware**; never assume its result is unclaimed.
 - Keep context bounded: [efficiency](docs/agents/efficiency.md),
   [Ponytail](.kilo/skills/ponytail/SKILL.md),
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- `src/version.py` is canonical; bump PATCH once per completed ticket or
-  explicit request after refreshing `develop`. Never edit version numbers to
-  resolve a conflict without reconciling history. `agent.py ship` always
-  runs `scripts/ci/check_version_history.py`, even under `--skip-checks`.
-  Use `agent.py ship` rather than raw `git push` so every outgoing commit
-  is checked for regression and skipped version numbers. A GitHub
-  workflow independently reports version-integrity violations. Interim work
-  is identified by Git commit SHA; `smoothcast --version` is GUI-free. Packaging authority: `packaging/SmoothCast.spec`.
+- `src/version.py` is release SemVer, NOT a per-ticket counter. Routine
+  develop commits have unique SHAs (`smoothcast --build-id`); only the owner
+  explicitly authorises SemVer changes/releases. Guard remains mandatory for
+  any version modification. Packaging authority: `packaging/SmoothCast.spec`.
