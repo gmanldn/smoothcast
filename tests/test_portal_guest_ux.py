@@ -323,6 +323,9 @@ def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
     assert "House PIN only if the host requires it" in panel
     assert "Stop this screen without stopping the host TV" in panel
     assert "Screen command received; checking its state." in panel
+    assert 'play.setAttribute("aria-label","Play selected queue item on "+sc.name)' in panel
+    assert 'toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name)' in panel
+    assert 'stop.setAttribute("aria-label","Stop playback on "+sc.name)' in panel
 
 
 def test_play_pause_button_explains_actual_state_without_replacing_dom():
