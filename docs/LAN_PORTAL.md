@@ -338,6 +338,14 @@ contains only the local address, never a PIN or session credential. When a
 browser cannot use the clipboard on local HTTP, the link is selected for
 manual copying instead of silently failing.
 
+When a mesh is running, the section navigation adds **Network**. It is
+hidden when mesh discovery is unavailable, rather than linking to an empty
+panel. Network shows cooperating SmoothCast computers and the TV/speaker
+targets they can reach. The expandable help explains Ready, In use, Not seen
+lately and Can't be reached; the panel is read-only and does not start or
+stop a cast. The **Screens** section has its own touch-accessible help and
+only enables Play when a queued item is selected and the target responds.
+
 Help is available **next to the relevant action** using touch-, mouse- and
 keyboard-operable disclosure controls, with additional desktop hover titles.
 These explain side effects and unavailable actions; tooltips are not required
