@@ -518,9 +518,12 @@ class CastControlApp(Adw.Application):
 
     def _present_update_notice(self, notice: str) -> bool:
         window = self.window
-        if window is not None:
-            window.update_notice = notice
-            window._update_header_subtitle()
+        if window is not None and not window._closing:
+            # A remote candidate cannot replace the higher-priority warning
+            # that this process is already using an older installed generation.
+            if not getattr(window, "_installed_version_stale", False):
+                window.update_notice = notice
+                window._update_header_subtitle()
             window._console(notice)
             window.toast(notice)
         return False
