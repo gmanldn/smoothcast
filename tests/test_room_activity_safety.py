@@ -130,6 +130,12 @@ def test_revoke_all_purges_activity_and_titles_without_stopping_playback():
         assert server.room.votes == {}
         assert server.room.seq > seq
         assert server.session_participant(token) is None
+        assert server.room.participants == {} and server.room._dormant == {}
+        # An in-flight HTTP reply from the revoked guest cannot resurrect activity.
+        server.room.record(sam.id, "action", {"action": "seek",
+                                              "title": "Private film"},
+                           command_id="late-reply")
+        assert not server.room.events
         token2, _csrf2, _new = server.create_session("New guest")
         fresh = json.dumps(server.room.snapshot())
         assert "Sam" not in fresh and "Secret favourite" not in fresh
