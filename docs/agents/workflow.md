@@ -108,13 +108,10 @@ conflict in those lists: run it, `git add pyproject.toml`, continue.
 
 ## Releases: develop → main automatically
 
-A completed ticket receives one canonical PATCH bump on `develop`, not one
-version per intermediate commit. Publication to protected `main` requires
-the **exact verified develop SHA**; a version bump does not mean a release
-was published. See the [full release and promotion procedure](../RELEASE_FLOW.md)
-only when doing release engineering. MainProtector currently blocks promotion
-pending the administrator decision tracked by
-[#518](https://github.com/gmanldn/smoothcast/issues/518).
+One PATCH bump per completed ticket. `develop` stays unpublished until
+exact-SHA checks and protected `main` promotion pass.
+[Release procedure](../RELEASE_FLOW.md);
+[MainProtector blocker #518](https://github.com/gmanldn/smoothcast/issues/518).
 
 **Identifier caveat:** `[P0][SC-058]` contains a legacy issue ID; `SC-058`
 is **not** GitHub issue `#58`. Resolve the current GitHub issue by search.
