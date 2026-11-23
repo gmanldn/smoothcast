@@ -2324,8 +2324,15 @@ async function sendChunk(path,file,offset,end){
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
-      try{const state=await uploadRequest("GET",path);if(state.received===end)return state}
-      catch(statusError){if(statusError.status===404||statusError.status===401)throw statusError}
+      try{
+        const state=await uploadRequest("GET",path);
+        if(state.received===end)return state;
+        if(state.received!==offset){
+          throw Object.assign(Error("Upload position changed. Choose the file again to resume safely."),{status:409,offsetMismatch:true});
+        }
+      }catch(statusError){
+        if(statusError.offsetMismatch||statusError.status===404||statusError.status===401||statusError.status===403)throw statusError;
+      }
     }
   }
 }
