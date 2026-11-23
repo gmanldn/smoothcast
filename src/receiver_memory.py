@@ -6,6 +6,7 @@ Receiver keys and source codec signatures are SHA-256 digests, not user labels.
 """
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import hashlib
 import ipaddress
@@ -279,3 +280,35 @@ class ReceiverMemory:
                 return False
             del state[key]
             return self._write(state)
+
+
+def default_path() -> Path:
+    """Follow GLib's XDG config base, with APPDATA fallback on Windows."""
+    base = os.environ.get("XDG_CONFIG_HOME")
+    if not base and os.name == "nt":
+        base = os.environ.get("APPDATA")
+    return Path(base) / "cast-control" / STATE_NAME if base else (
+        Path.home() / ".config" / "cast-control" / STATE_NAME)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Explicit headless privacy control: forget one UUID or IP:port."""
+    parser = argparse.ArgumentParser(
+        prog="smoothcast --forget-receiver",
+        description="Forget learned receiver playback preferences without stopping playback.")
+    identity = parser.add_mutually_exclusive_group(required=True)
+    identity.add_argument("--uuid", help="the receiver's stable UUID")
+    identity.add_argument("--host", help="its LAN IPv4 or IPv6 address")
+    parser.add_argument("--port", type=int, default=8009, help="Cast port (default: 8009)")
+    parser.add_argument("--store", type=Path, default=default_path(),
+                        help="override receiver-memory path if using a custom config folder")
+    args = parser.parse_args(argv)
+    try:
+        key = receiver_key(uuid=args.uuid or "", host=args.host or "", port=args.port)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if ReceiverMemory(args.store).forget(key):
+        print("Learned preferences for that receiver were cleared.")
+    else:
+        print("No learned preferences for that receiver were found.")
+    return 0
