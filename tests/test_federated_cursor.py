@@ -21,7 +21,7 @@ def _record(number: int) -> dict:
 
 def _items(page: dict) -> list[str]:
     return [
-        item["content_key"] for group in page["groups"]
+        item["id"] for group in page["groups"]
         for item in group["items"]
     ]
 
