@@ -2081,7 +2081,7 @@ function cancelSeekPreview(){
 function commitSeekPreview(){
   const value=Number($("seek").value);
   editingControls.delete("seek");
-  if(seekCanceled){seekCanceled=false;return}
+  if(seekCanceled){cancelSeekPreview();seekCanceled=false;return}
   if(!Number.isFinite(value)||value<0)return;
   $("elapsed").textContent=clock(value);
   void act("seek",value); // zero is valid; exactly one mutation on commit
