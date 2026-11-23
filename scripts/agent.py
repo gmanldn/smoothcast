@@ -776,6 +776,16 @@ def cmd_ship(a: argparse.Namespace) -> int:
             if minted:
                 print(f"  assigned next develop PATCH at {minted[:12]} (unpublished until push)")
                 changed = sorted(set(changed) | {"src/version.py"})
+                # Recheck the full unpublished range including our generated
+                # version-only commit, not just the agent's original code.
+                guarded = subprocess.run(
+                    [sys.executable, "scripts/ci/check_version_history.py",
+                     "--before", remote_before, "--after", git("rev-parse", "HEAD").strip()],
+                    cwd=ROOT, capture_output=True, text=True)
+                if guarded.returncode:
+                    print("PATCH INTEGRITY FAILED; no push.")
+                    print((guarded.stdout + guarded.stderr)[-1200:])
+                    return 6
         push = subprocess.run(["git", "push", "origin", "HEAD:develop"],
                               cwd=ROOT, capture_output=True, text=True)
         sha = git("rev-parse", "HEAD").strip()
