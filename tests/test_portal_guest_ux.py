@@ -537,3 +537,47 @@ def test_optional_panels_are_dashboard_children_and_not_login_siblings():
     assert document.parents["login"] is None  # main has no id; login is outside dashboard
     assert '#dashboard>#screensPanel' in portal._HTML
     assert '#dashboard>#meshPanel' in portal._HTML
+
+
+def test_mesh_retry_timer_is_cancelled_on_room_exit_and_tab_resume():
+    """A hidden room must not retain an old 30s backoff for the next guest."""
+    import shutil
+    import subprocess
+    import pytest
+    from portal_mesh_panel import panel_html
+
+    panel = panel_html()
+    assert "cancelMeshRetry();backoff=3000;close();started=false" in panel
+    assert "else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}" in panel
+    script = panel.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function cancelMeshRetry(){")
+    end = script.index("async function boot(){", start)
+    functions = script[start:end]
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for timer lifecycle regression")
+    harness = r"""
+const assert = require("node:assert/strict");
+let retry = null,backoff=3000,tid=0;
+const scheduled=new Map(),cancellations=[];
+function setTimeout(callback,ms){const id=++tid;scheduled.set(id,{callback,ms});return id}
+function clearTimeout(id){cancellations.push(id);scheduled.delete(id)}
+function boot(){}
+schedule();
+const first=retry;
+assert.equal(scheduled.get(first).ms,3000);
+schedule();
+const second=retry;
+assert.equal(scheduled.has(first),false);
+assert.equal(scheduled.get(second).ms,6000);
+cancelMeshRetry();
+assert.equal(retry,null);
+assert.equal(scheduled.size,0);
+assert.equal(cancellations.includes(second),true);
+cancelMeshRetry();
+assert.equal(scheduled.size,0,"cancelling twice must be harmless");
+backoff=3000;
+schedule();
+assert.equal(scheduled.get(retry).ms,3000,"rejoining starts with short retry delay");
+"""
+    subprocess.run(["node", "-"], input=functions + harness,
+                   check=True, text=True, timeout=10)
