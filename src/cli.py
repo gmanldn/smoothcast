@@ -50,6 +50,14 @@ def _main() -> int:
         from gi.repository import Gtk, Adw  # noqa: F401
         print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
         return 0
+    if sys.argv[1:] == ["--build-id"]:
+        # Read the checkout revision once at command invocation. A packaged
+        # build without .git reports only the embedded semantic baseline.
+        from pathlib import Path
+        from version import build_label, read_checkout_revision
+        source_root = Path(__file__).resolve().parents[1]
+        print(f"SmoothCast {build_label(read_checkout_revision(source_root))}")
+        return 0
     if sys.argv[1:] in (["--version"], ["-V"]):
         from version import label
         print(f"SmoothCast {label()}")
