@@ -593,7 +593,10 @@ def cmd_heartbeat(a: argparse.Namespace) -> int:
         m = _MARK.search(c.get("body") or "")
         if m and m.group(1) == "claim":
             new = re.sub(r"beat=\d+", f"beat={int(time.time())}", c["body"])
-            gh("-X", "PATCH", f"repos/{REPO}/issues/comments/{c['id']}", "-f", f"body={new}")
+            updated = gh("-X", "PATCH", f"repos/{REPO}/issues/comments/{c['id']}",
+                         "-f", f"body={new}")
+            if not isinstance(updated, dict) or updated.get("id") != c["id"]:
+                raise td.DigestError(f"GitHub did not confirm heartbeat on #{a.number}")
             print(f"lease on #{a.number} refreshed")
             return 0
     print(f"no live claim by {me} on #{a.number}; claim again instead of reviving an expired lease")
@@ -602,11 +605,17 @@ def cmd_heartbeat(a: argparse.Namespace) -> int:
 
 def release(number: int, note: str) -> None:
     me = agent_id()
-    gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments", "-f",
-       f"body=Released: {me}. {note}\n<!-- sc-release v1 agent={me} -->")
+    posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments", "-f",
+                f"body=Released: {me}. {note}\n<!-- sc-release v1 agent={me} -->")
+    if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+        raise td.DigestError(f"GitHub did not confirm release on #{number}")
     # This issue's complete authoritative ledger is more reliable than the
     # globally bounded recent-comment feed when cleaning advisory labels.
-    left = active_claims(parse_events(issue_comments(number)), utcnow())
+    current = issue_comments(number)
+    if not any(c.get("id") == posted["id"] for c in current):
+        print(f"release {posted['id']} confirmed but not yet visible; advisory cleanup deferred")
+        return
+    left = active_claims(parse_events(current), utcnow())
     if not any(c["issue"] == number for c in left):
         subprocess.run(["gh", "api", "-X", "DELETE", f"repos/{REPO}/issues/{number}/labels/in-flight"],
                        capture_output=True)
