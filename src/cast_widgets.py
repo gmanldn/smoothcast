@@ -86,6 +86,7 @@ DEFAULTS: dict = {
     "window_height": 1000,
     "window_x": -1,
     "window_y": -1,
+    "update_channel": "develop",  # Source update channel; available choices: develop / main (#579).
     "check_release_updates": False,  # New opt-in; legacy auto_update is ignored (#138).
     "release_check_verify": True,  # Fresh consent; legacy verify_updates is ignored (#138).
     "hls_port": 8767,  # Preferred HLS port; a free one is used if taken (#231).
