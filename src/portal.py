@@ -1646,7 +1646,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 
 </style></head><body><main><header class="site-head"><span class="site-mark" aria-hidden="true">S</span><div><h1>SmoothCast</h1><p>Watch, listen and build the queue together — on your own Wi-Fi.</p></div></header>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
-<section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the room</h2>
+<section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
 <ol class="steps" aria-label="How SmoothCast works"><li><strong>1. Join</strong>Enter a name so everyone knows who's here.</li><li><strong>2. Add or find</strong>Choose something from the house or upload a file.</li><li><strong>3. Share the queue</strong>Vote, move items and control the room together.</li></ol>
 <form id="loginForm"><label for="name">Your display name</label><p class="field-hint" id="nameHint">Shown to others in this room. You can change it later.</p>
@@ -1654,7 +1654,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask the host for the six-digit House PIN shown in SmoothCast.</p>
 <input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" aria-describedby="pinHint" required></div>
 <p id="loginHint" class="field-hint">You must be on the same local network. A House PIN is required only if the host has enabled one.</p>
-<p id="error" role="alert" aria-live="polite"></p><button type="submit">Join room</button></form>
+<p id="error" role="alert" aria-live="polite"></p><button type="submit">Join</button></form>
 <details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
 </section>
 <div id="dashboard" hidden>
