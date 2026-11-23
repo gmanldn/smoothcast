@@ -99,7 +99,8 @@ def supports(profile: str, stream: object) -> bool:
     width = stream.get("width")
     height = stream.get("height")
     fps = stream.get("fps")
-    if not all(isinstance(value, int) and value > 0 for value in (width, height, fps)):
+    # bool is an int subclass in Python, but not valid probed media geometry.
+    if not all(type(value) is int and value > 0 for value in (width, height, fps)):
         return False
     for limit in capabilities.codecs:
         if codec != limit.codec:
