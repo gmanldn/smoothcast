@@ -246,6 +246,10 @@ def ensure_single_instance(args: list[str]) -> int | None:
 
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    # Direct shortcut/launcher calls must not bypass demo isolation (#523).
+    if any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
+        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
+        return 2
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
     if args[:1] == ["--diagnostics"]:
