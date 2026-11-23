@@ -28,6 +28,11 @@ def main() -> int:
 
 
 def _main() -> int:
+    # Before frozen helper dispatch or GTK imports: never launch an actual TV
+    # when a caller requested unfinished demo mode (#523).
+    if any(arg == "--demo" or arg.startswith("--demo=") for arg in sys.argv[1:]):
+        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
+        return 2
     from frozen_runtime import dispatch_frozen_helper, is_frozen
     child = dispatch_frozen_helper(sys.argv[1:])
     if child is not None:
@@ -45,11 +50,6 @@ def _main() -> int:
         from gi.repository import Gtk, Adw  # noqa: F401
         print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
         return 0
-    if sys.argv[1:2] == ["--demo"]:
-        # Never interpret an unfinished demo request as a normal GUI launch:
-        # the normal app could discover or control the user's actual TV.
-        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
-        return 2
     if sys.argv[1:] in (["--version"], ["-V"]):
         from version import label
         print(f"SmoothCast {label()}")
