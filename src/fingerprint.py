@@ -55,6 +55,7 @@ class KeyCache:
         self._cache: OrderedDict[str, tuple[tuple[int, int], str]] = OrderedDict()
         self._pending: set[str] = set()
         self._lock = threading.Lock()
+        self._closed = False
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="content-key")
 
     @staticmethod
@@ -75,11 +76,21 @@ class KeyCache:
             if hit and hit[0] == ident:
                 self._cache.move_to_end(name)
                 return hit[1]
-            if name in self._pending:
+            if name in self._pending or self._closed:
                 return None
             self._pending.add(name)
-        self._pool.submit(self._compute, name, ident)
+        try:
+            self._pool.submit(self._compute, name, ident)
+        except RuntimeError:                      # pool shut down during exit
+            with self._lock:
+                self._pending.discard(name)
         return None
+
+    def close(self) -> None:
+        """Stop the background hasher (application exit); later ``get`` calls just miss."""
+        with self._lock:
+            self._closed = True
+        self._pool.shutdown(wait=False, cancel_futures=True)
 
     def _compute(self, name: str, ident: tuple[int, int]) -> None:
         try:

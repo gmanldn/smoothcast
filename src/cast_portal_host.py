@@ -3,13 +3,43 @@ from __future__ import annotations
 
 from gi.repository import Adw, Gtk
 
+import error_log
 import library_folders
+import shutdown_plan
 import peer_discovery_ui
 import portal_uploads
 from cast_widgets import Async
 
 
 class PortalHostMixin:
+    def _shutdown_plan(self):
+        """The one ordered, deadline-bounded shutdown plan for this window (#465)."""
+        plan = self.__dict__.get("_shutdown_plan_obj")
+        if plan is None:
+            plan = shutdown_plan.ShutdownPlan(log=error_log.log)
+            self._shutdown_plan_obj = plan
+        return plan
+
+    def _finish_shutdown(self) -> None:
+        """Record that this exit completed; the next start counts it as clean."""
+        plan = self._shutdown_plan()
+        report = plan.report()
+        if not report["within_budget"]:
+            error_log.log(f"Shutdown took {report['total_ms']:.0f} ms (budget "
+                          f"{report['budget_ms']:.0f} ms); slow steps: {', '.join(report['overruns']) or 'none'}")
+        shutdown_plan.ShutdownLedger().end(report)
+
+    def _stop_house_services(self) -> None:
+        """Stop the library indexer and mesh-library threads; safe to call twice."""
+        mesh, self._mesh_library = getattr(self, "_mesh_library", None), None
+        indexer, self._library_indexer = getattr(self, "_library_indexer", None), None
+        if mesh is not None:
+            mesh.stop()
+        if indexer is not None:
+            indexer.stop(0.3)
+        import fingerprint
+        fingerprint.KEYS.close()
+
     def _ensure_library_indexer(self, folders=None) -> None:
         """Start the shared-library indexer once folders exist (#408)."""
         import library_index_v2          # sqlite + search stack: only when folders exist (#463)

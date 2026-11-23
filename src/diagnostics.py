@@ -157,6 +157,7 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
     """Assemble the redacted diagnostic document over known-safe inputs."""
     from version import __version__, label
     from reliability_metrics import recent as recent_reliability
+    import shutdown_plan
     import startup_timeline
 
     home_value = str(home) if home is not None else str(Path.home())
@@ -181,6 +182,8 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "command_traces": command_trace.recent(),
         # Milliseconds since SmoothCast code started: where the first second goes.
         "startup": startup_timeline.snapshot(),
+        # Clean vs unclean previous exits and how long the last shutdown took (#465).
+        "shutdown": shutdown_plan.ShutdownLedger().summary(),
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),

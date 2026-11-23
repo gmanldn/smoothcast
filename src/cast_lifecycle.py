@@ -43,16 +43,21 @@ class LifecycleMixin:
 
     def _on_close(self, _window) -> bool:
         self._closing = True
-        self._stop_ui_timers()
-        reliability_metrics.finish_active(self, "interrupted", Async.run)
-        getattr(self, "_cancel_music_import", lambda: None)()
-        self._cancel_queue_prewarm()
-        self._stop_portal()
-        watch = getattr(self, "_cast_status_watch", None)
-        if watch is not None:
-            watch.close()
-        if self._dlna_cancel is not None:
-            self._dlna_cancel.set()
+        plan = self._shutdown_plan()            # ordered steps, per-step deadlines, 1 s budget (#465)
+        plan.run("ui_timers", self._stop_ui_timers)
+        plan.run("metrics", lambda: reliability_metrics.finish_active(self, "interrupted", Async.run))
+        plan.run("background_work", lambda: (
+            getattr(self, "_cancel_music_import", lambda: None)(), self._cancel_queue_prewarm()))
+        plan.run("portal", self._stop_portal)
+        plan.run("house_services", self._stop_house_services, deadline=0.4, threaded=True)
+
+        def receiver_watch() -> None:
+            watch = getattr(self, "_cast_status_watch", None)
+            if watch is not None:
+                watch.close()
+            if self._dlna_cancel is not None:
+                self._dlna_cancel.set()
+        plan.run("receiver_watch", receiver_watch)
         if self._cast_starting:
             # Closing a GtkApplication while Async.run's daemon worker is
             # still running can terminate that worker before GLib.idle_add
@@ -66,17 +71,19 @@ class LifecycleMixin:
                     self._closing_hold = True
                 self.set_visible(False)
             return True
-        self._stop_monitor()
-        self._unload_local_video()
-        # Save the last *actual* normal allocation, not GTK's default size.
-        # Fullscreen/maximised allocations are never persisted as preferences.
-        self._remember_normal_geometry()
-        width, height = self._last_normal_size
-        if width > 0 and height > 0:
-            self.cfg["window_width"] = width
-            self.cfg["window_height"] = height
-        save_config(self.cfg)
-        flush_config()
+        plan.run("media", lambda: (self._stop_monitor(), self._unload_local_video()))
+
+        def save_settings() -> None:
+            # Save the last *actual* normal allocation, not GTK's default size.
+            # Fullscreen/maximised allocations are never persisted as preferences.
+            self._remember_normal_geometry()
+            width, height = self._last_normal_size
+            if width > 0 and height > 0:
+                self.cfg["window_width"] = width
+                self.cfg["window_height"] = height
+            save_config(self.cfg)
+            flush_config()
+        plan.run("settings", save_settings)
         # DLNA's local HTTP server is process-owned; unlike Chromecast's HLS
         # keep-streaming path it cannot survive closing this application.
         if self.session is not None and (
@@ -85,6 +92,7 @@ class LifecycleMixin:
             device = self._device()
             thread = threading.Thread(target=lambda: session.stop(device), daemon=False)
             thread.start()
+        self._finish_shutdown()
         return False
 
 

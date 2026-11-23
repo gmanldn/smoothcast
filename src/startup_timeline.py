@@ -38,6 +38,8 @@ def snapshot() -> dict:
 
 
 def reset() -> None:
-    """Forget all marks (tests only)."""
+    """Forget all marks and restart the clock (tests only)."""
+    global _T0
     with _lock:
         _marks.clear()
+        _T0 = time.monotonic()

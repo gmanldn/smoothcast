@@ -239,3 +239,9 @@ class MeshLibrary:
 
     def stop(self) -> None:
         self.manager.stop()
+        self.search_service.close()
+        with self._lock:
+            try:
+                self.store.close()
+            except Exception:
+                pass

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import startup_timeline  # first: its clock starts the startup timeline (#463)
+import shutdown_plan
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -175,6 +176,7 @@ class CastControlApp(Adw.Application):
         # Primary-only and before MainWindow; reactivation and --self-test must
         # never stop the active user's cast.
         if not self.selftest:
+            shutdown_plan.begin_ledger()  # previous exit clean? (#465)
             try:
                 self._startup_report = startup_cleanup.cleanup_before_window(
                     keep_streaming=bool(load_config().get("keep_streaming", True)),

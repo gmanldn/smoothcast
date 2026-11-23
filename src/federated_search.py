@@ -65,6 +65,10 @@ class FederatedSearch:
         self.fetch, self.clock, self.deadline = fetch, clock, deadline
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fanout")
 
+    def close(self) -> None:
+        """Stop the fan-out worker pool; pending live queries are dropped."""
+        self._pool.shutdown(wait=False, cancel_futures=True)
+
     def _targets(self, origins: dict[str, dict]) -> list[str]:
         return [oid for oid, info in origins.items()
                 if info.get("state") != "offline"
