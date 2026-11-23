@@ -22,7 +22,7 @@ GitHub Issues are the authoritative backlog:
 4. Post a durable `agent.py progress N --done "..." --next "..."` handover with
    the actual SHA and test status; then release the short-lived claim and take
    the next available task. Future agents inspect this record and `develop`
-   before repeating work. See [coordination](docs/agents/coordination.md).
+   before repeating work. See [coordination](docs/COORDINATION.md).
    Do not close an issue whose acceptance criteria are unverified.
 
 ```sh
