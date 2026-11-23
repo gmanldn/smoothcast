@@ -16,7 +16,7 @@ git fetch origin develop
 git worktree add --detach ../smoothcast-N origin/develop
 # commit named files, mentioning Refs #N
 git fetch origin develop && git rebase origin/develop
-git push origin HEAD:develop
+python3 scripts/agent.py ship --skip-checks  # mandatory version guard; other checks explicitly unverified
 ```
 
 Rebase only your unpublished commits. Never force-push, reset user work or
@@ -58,6 +58,11 @@ read-only and **not claim-aware**; never assume its result is unclaimed.
 - Keep context bounded: [efficiency](docs/agents/efficiency.md),
   [Ponytail](.kilo/skills/ponytail/SKILL.md),
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- `src/version.py` is canonical; bump PATCH on a completed ticket or
-  explicit request after refreshing `develop`. Interim work is identified
-  by commit SHA. Packaging authority: `packaging/SmoothCast.spec`.
+- `src/version.py` is canonical; bump PATCH once per completed ticket or
+  explicit request after refreshing `develop`. Never edit version numbers to
+  resolve a conflict without reconciling history. `agent.py ship` always
+  runs `scripts/ci/check_version_history.py`, even under `--skip-checks`.
+  Use `agent.py ship` rather than raw `git push` so every outgoing commit
+  is checked for regression, duplicate bumps and skipped versions. A GitHub
+  workflow independently reports version-integrity violations. Interim work
+  is identified by commit SHA. Packaging authority: `packaging/SmoothCast.spec`.
