@@ -246,13 +246,11 @@ def cmd_board(_a: argparse.Namespace) -> int:
         print(f"  #{c['issue']:<4} {c['agent']:<14} {mins:>3}m left  {', '.join(sorted(c['files'])[:3])}")
     hot = sorted(hot_files())
     print(f"hot files (develop, last {HOT_MINUTES}m): {', '.join(hot[:12]) or 'none'}")
-    verdict = subprocess.run([sys.executable, "scripts/ci/head_verdict.py", "--software-only", "--json"],
-                             cwd=ROOT, capture_output=True, text=True)
-    try:
-        v = json.loads(verdict.stdout)
-        print(f"develop head {str(v.get('head'))[:7]}: software={v.get('software')} (a red head outranks new work)")
-    except ValueError:
-        print("develop head: verdict unavailable")
+    # CI is deliberately lazy. Running head_verdict here consumes multiple
+    # GitHub requests and almost always reports unknown on rapid pushes.
+    # The board should be fast; invoke head_verdict explicitly when needed.
+    print(f"develop head {git('rev-parse', 'origin/develop', check=False)[:12]}: "
+          "CI deferred; use scripts/ci/head_verdict.py when verifying")
     return 0
 
 
