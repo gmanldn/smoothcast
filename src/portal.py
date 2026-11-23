@@ -1763,6 +1763,15 @@ keepScreenOn.addEventListener("change",()=>{
 });
 const PIN_REQUIRED="__PIN_REQUIRED__"!=="0";
 const loginButton=$("loginForm").querySelector("button");
+function configureOpenJoin(){
+  // This is presentation only; the host still decides whether a PIN is required.
+  $("pinRow").hidden=true;
+  $("pin").required=false;
+  $("pin").value="";
+  $("loginHint").textContent="Enter your name to join the house.";
+  loginButton.textContent="Join";
+}
+if(!PIN_REQUIRED)configureOpenJoin();
 $("loginForm").addEventListener("submit",async e=>{
   e.preventDefault();
   if(loginButton.disabled)return;
@@ -1802,9 +1811,6 @@ $("loginForm").addEventListener("submit",async e=>{
   }
   restoreSession().then(restored=>{
     if(restored||PIN_REQUIRED)return;
-    $("pinRow").hidden=true;$("pin").required=false;$("pin").value="";
-    $("loginHint").textContent="Enter your name to join the house.";
-    loginButton.textContent="Join";
     let saved="";try{saved=localStorage.getItem("sc_name")||""}catch(_){}
     if(saved){$("name").value=saved;loginButton.click()}
   });
