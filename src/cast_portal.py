@@ -17,7 +17,7 @@ import network_activity
 from cast_portal_host import PortalHostMixin
 from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
-from cast_widgets import save_config
+from cast_widgets import Async, save_config
 from gi.repository import Gdk, GLib, Gtk
 
 class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
@@ -179,6 +179,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         available = getattr(getattr(self, "_portal", None),
                             "peer_discovery_available", False)
         peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
+        mesh = getattr(self, "_mesh_library", None)
+        if mesh is not None:
+            Async.run(lambda: mesh.observe_peers(peer_list), domain="background")
         self._reconcile_portal_casts()
         return True
 

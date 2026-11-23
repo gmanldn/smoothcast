@@ -202,6 +202,12 @@ class LibraryIndexer:
         with self._lock:
             return search_engine.search(self._conn, text, limit, cursor)
 
+    def search_rows(self, text: object, limit: int = 50) -> list[dict]:
+        """Ranked local rows (shared folders only) for peers' live queries."""
+        with self._lock:
+            rows, _partial = search_engine.run(self._conn, text, limit)
+            return [r for r in rows[:limit] if self._is_shared(r["folder_id"])]
+
     # -- reads for replication / search ----------------------------------
     def entry(self, key: str) -> dict | None:
         with self._lock:

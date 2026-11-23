@@ -58,6 +58,27 @@ class PortalQueueMixin:
             raise portal.PortalRequestError(400, "Uploaded media is unavailable")
         return path
 
+    def _portal_library_path(self, key: object) -> pathlib.Path:
+        """Resolve a search result to a readable file inside a library folder."""
+        indexer = getattr(self, "_library_indexer", None)
+        entry = indexer.entry(key) if indexer is not None and isinstance(key, str) else None
+        if entry is None:
+            raise portal.PortalRequestError(
+                404, "That item isn't on this computer. Playing from other computers is coming soon.")
+        folder = next((f for f in indexer._folders if f.id == entry["folder_id"]), None)
+        if folder is None:
+            raise portal.PortalRequestError(404, "That item is no longer shared.")
+        root = pathlib.Path(os.path.realpath(folder.path))
+        path = pathlib.Path(os.path.realpath(root / entry["rel_path"]))
+        try:
+            path.relative_to(root)
+            info = path.stat()
+        except (OSError, ValueError):
+            raise portal.PortalRequestError(404, "That file is no longer available.") from None
+        if not stat.S_ISREG(info.st_mode) or not os.access(path, os.R_OK):
+            raise portal.PortalRequestError(404, "That file is no longer available.")
+        return path
+
     def _portal_queue_index(self, item_id: object) -> int:
         if not isinstance(item_id, str):
             raise portal.PortalRequestError(400, "Queue item is missing")
@@ -141,6 +162,12 @@ class PortalQueueMixin:
             self._rebuild_queue()
             self._portal_observe_queue()
             return "Queued next." if operation == "queue_next" else "Queue order updated."
+        if operation == "queue_add_key":
+            path = self._portal_library_path(payload.get("key"))
+            if self.busy:
+                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            self._enqueue([str(path)])
+            return "Added to the queue."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))
             if self.busy:

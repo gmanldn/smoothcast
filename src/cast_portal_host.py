@@ -6,6 +6,7 @@ from gi.repository import Adw
 import library_folders
 import library_index_v2
 import library_replication
+import mesh_library
 
 
 class PortalHostMixin:
@@ -28,8 +29,23 @@ class PortalHostMixin:
             current = getattr(self, "_portal", None)
             if current is not None:
                 current.server.library_search = indexer.search
+                self._ensure_mesh_library(indexer, current)
                 if current.server.library_replication is None:
                     current.server.library_replication = library_replication.Replication(indexer)
+
+    def _ensure_mesh_library(self, indexer, current) -> None:
+        """House-wide search: replicas of peers' shared libraries (#411, #412)."""
+        mesh = getattr(self, "_mesh_library", None)
+        if mesh is None:
+            try:
+                mesh = mesh_library.MeshLibrary(
+                    indexer, busy=lambda: bool(getattr(self, "session", None) and self.busy))
+            except Exception:
+                return
+            self._mesh_library = mesh
+            mesh.start()
+        current.server.library_search = mesh.search_service.search
+        current.server.library_search_stream = mesh.search_service.stream
 
     def on_library_folders_changed(self, folders) -> None:
         self._ensure_library_indexer(folders)
