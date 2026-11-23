@@ -89,7 +89,7 @@ def test_refresh_controls_wires_accessibility_without_gtk_import_in_helper():
                   for node in cls.body if isinstance(node, ast.FunctionDef)
                   and node.name == "_refresh_controls")
     text = ast.unparse(method)
-    assert 'hasattr(self, "queue_list")' in text
+    assert "hasattr(self, 'queue_list')" in text
     assert "queue_accessibility.sync_rows(self, Gtk)" in text
     helper = ast.parse((src / "queue_accessibility.py").read_text(encoding="utf-8"))
     imports = {node.module for node in ast.walk(helper)
