@@ -1,8 +1,8 @@
 """SmoothCast's single authoritative semantic version.
 
-Owner policy: one PATCH bump per completed GitHub ticket, not every transient
-commit. A bumped develop checkout is a development version; only the owner
-may manually integrate it into main. A running process keeps its imported version until
+Owner policy: normal agent commits never bump semantic versions. Commit SHA
+identifies each develop revision; the owner explicitly assigns release numbers
+and manually integrates selected revisions into main. A running process keeps its imported version until
 restart, even if asynchronous updates change the checkout.
 """
 from __future__ import annotations
@@ -65,6 +65,18 @@ def _read_small(path: Path, size: int = 4096) -> str | None:
         return raw.decode("ascii") if len(raw) <= size else None
     except (OSError, UnicodeError):
         return None
+
+
+def build_label(revision: str | None) -> str:
+    """Human-readable source build identity; retain canonical SemVer in metadata.
+
+    A process must supply the revision it captured at launch; do not read a
+    moving checkout HEAD and pretend it identifies running loaded code.
+    Frozen distributions without embedded source identity report SemVer only.
+    """
+    if revision and _SHA.fullmatch(revision):
+        return f"{label()}+g{revision[:12].lower()}"
+    return label()
 
 
 def read_checkout_revision(repo: Path) -> str | None:
