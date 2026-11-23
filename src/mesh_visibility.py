@@ -130,7 +130,7 @@ class LocalObserver:
         """Discovery saw an arrival/departure: refresh soon (bursts coalesce)."""
         if self._closed or self._timer is not None:
             return
-        self._timer = self._clock.call_later(self._coalesce, self.refresh)
+        self._timer = self._clock.call_later(self._coalesce, self._coalesced)
 
     # -- building the record sections --------------------------------------
     def observations(self) -> tuple[mm.TargetObservation, ...]:
@@ -169,6 +169,9 @@ class LocalObserver:
             out["node:" + node_id] = mm.EdgeObservation("node", node_id, quant)
         return tuple(sorted(out.values(), key=lambda e: (e.peer_kind, e.peer)))[:mm.MAX_EDGES]
 
+    def _coalesced(self) -> None:
+        self.refresh()
+
     def refresh(self) -> bool:
         """Recompute sections; publish only if something meaningful changed."""
         self._timer = None
@@ -194,9 +197,14 @@ class LocalObserver:
                 break
             self._probing.add(item.id)
             self.probes_started += 1
-            self._prober(item, lambda result, item=item: self._probed(item, result))
+            self._prober(item, self._probe_callback(item))
         self._probe_timer = self._clock.call_later(
             PROBE_INTERVAL_S * (0.8 + 0.4 * self._rng.random()), self._probe_round)
+
+    def _probe_callback(self, item: Discovered) -> Callable[[ProbeResult], None]:
+        def done(result: ProbeResult) -> None:
+            self._probed(item, result)
+        return done
 
     def _probed(self, item: Discovered, result: ProbeResult) -> None:
         self._probing.discard(item.id)
