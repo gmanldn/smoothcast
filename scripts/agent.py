@@ -819,6 +819,62 @@ def cmd_done(a: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_finish(a: argparse.Namespace) -> int:
+    """Durable, retry-safe ticket handover; closure only with explicit evidence."""
+    task = private_task()
+    number = a.number if a.number is not None else (task or {}).get("issue")
+    if not number:
+        print("finish needs an issue number or a worktree created by agent.py start")
+        return 2
+    if not a.done.strip() or not a.next.strip():
+        print("--done and --next must record actual outcome and remaining work")
+        return 2
+    if a.close and (not a.verification.strip()
+                    or "unverified" in a.verification.lower()
+                    or "not run" in a.verification.lower()
+                    or not a.checklist.strip()
+                    or a.next.strip().lower() not in {"none", "complete", "no remaining work"}):
+        print("closure requires --verification, --checklist, and --next none")
+        return 2
+    if git("status", "--porcelain", "--untracked-files=no").strip():
+        print("uncommitted tracked work; ship before finishing")
+        return 2
+    git("fetch", "-q", "origin", "develop")
+    head = git("rev-parse", "HEAD").strip()
+    remote = git("rev-parse", "origin/develop").strip()
+    if subprocess.run(["git", "merge-base", "--is-ancestor", head, remote],
+                      cwd=ROOT, capture_output=True).returncode:
+        print("local HEAD is not on develop; ship before finishing")
+        return 2
+    refs = ticket_commits(number)
+    if not refs:
+        print(f"no develop commit referencing #{number}; cannot finish")
+        return 2
+    latest = refs[0]
+    marker = f"<!-- sc-finish v1 issue={number} sha={latest} -->"
+    comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+    if not isinstance(comments, list):
+        raise td.DigestError("cannot verify prior handovers; refusing duplicate")
+    if not any(marker in str(c.get("body") or "") for c in comments):
+        body = (f"Progress: {a.done.strip()}\n"
+                f"Handover: {a.next.strip()}\n"
+                f"Commit: {latest}\n"
+                f"Verification: {a.verification.strip() or 'not run (unverified)'}\n"
+                f"Checklist: {a.checklist.strip() or 'not supplied'}\n"
+                f"{marker}")
+        posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments",
+                    "-f", f"body={body}")
+        if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+            raise td.DigestError("GitHub did not confirm finish handover")
+    if a.close:
+        close_issue(number)
+        print(f"closed #{number} with recorded acceptance evidence at {latest[:12]}")
+    release(number, "durable finish handover recorded.")
+    print(f"finished #{number} at {latest[:12]}; claim released")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -874,6 +930,14 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--verification", default="not run (unverified)")
     d.add_argument("--close", action="store_true")
     d.set_defaults(fn=cmd_done)
+    finish = sub.add_parser("finish", help="persist progress, release claim, optionally close with evidence")
+    finish.add_argument("number", nargs="?", type=int, help="defaults to issue in private worktree")
+    finish.add_argument("--done", required=True, help="completed work and acceptance evidence")
+    finish.add_argument("--next", required=True, help="precise remaining work; 'none' if complete")
+    finish.add_argument("--verification", default="", help="actual checks and outcomes")
+    finish.add_argument("--checklist", default="", help="acceptance criteria satisfied")
+    finish.add_argument("--close", action="store_true", help="close only with full explicit evidence")
+    finish.set_defaults(fn=cmd_finish)
     return p
 
 
