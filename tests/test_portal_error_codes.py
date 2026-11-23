@@ -91,7 +91,7 @@ def test_every_catalogue_style_code_literal_exists():
             if not isinstance(node, ast.Call):
                 continue
             for kw in node.keywords:
-                if (kw.arg == "code" and isinstance(kw.value, ast.Constant)
+                if (kw.arg in {"code", "catalogue_code"} and isinstance(kw.value, ast.Constant)
                         and isinstance(kw.value.value, str)
                         and "." in kw.value.value):
                     seen.add(kw.value.value)
