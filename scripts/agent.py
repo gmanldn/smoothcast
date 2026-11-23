@@ -557,13 +557,28 @@ def close_issue(number: int) -> None:
         raise td.DigestError(f"GitHub did not confirm closing #{number}")
 
 
+def ticket_commits(number: int) -> list[str]:
+    """Commits actually mentioning #N, excluding #N0 and other prefix matches."""
+    expression = f"(^|[^0-9])#{number}([^0-9]|$)"
+    return git("log", "--extended-regexp", f"--grep={expression}",
+               "--format=%H", "origin/develop").splitlines()
+
+
 def cmd_done(a: argparse.Namespace) -> int:
     head = git("rev-parse", "HEAD").strip()
     if subprocess.run(["git", "merge-base", "--is-ancestor", head, "origin/develop"], cwd=ROOT).returncode:
         print("HEAD is not on origin/develop yet: run `agent.py ship` first.")
         return 2
-    sha = head[:7]
-    files = sorted({f for f in git("log", "origin/develop", f"--grep=#{a.number}\\b", "--name-only", "--format=").split() if f})
+    if a.close and a.verification == "not run (unverified)":
+        print("Refusing to close without explicit --verification evidence.")
+        return 2
+    refs = ticket_commits(a.number)
+    if not refs:
+        print(f"No published develop commit references #{a.number}; cannot report completion.")
+        return 2
+    sha = refs[0][:7]
+    files = sorted({f for f in git("show", "--format=", "--name-only",
+                                   *refs[:8]).split() if f})
     body = (f"Implementation: {sha}. Why: {a.why}. Files: {', '.join(files[:12]) or 'see commits'}. "
             f"Checklist: {a.checklist}. Verification: {a.verification}.")
     gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments", "-f", f"body={body}")
