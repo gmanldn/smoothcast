@@ -1,19 +1,16 @@
 name: CodeQL
 
+# Weekly deep static analysis or an explicit security review.
+# CodeQL on every develop push duplicates work as agents commit rapidly.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    # The auto-release PR (develop -> main) already runs CodeQL on push.
-    branches: [develop]
+  workflow_dispatch:
   schedule:
     - cron: '23 4 * * 1'
 
 permissions:
   contents: read
 
-# Retain weekly scans and latest pending per branch without wasting runners
-# on queued superseded commit analyses. Running scans finish, not starve.
+# One scheduled/manual scan per ref; no repeated analysis per commit.
 concurrency:
   group: smoothcast-codeql-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
