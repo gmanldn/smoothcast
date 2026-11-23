@@ -75,7 +75,8 @@ def test_selecting_other_queue_row_does_not_change_cast_or_screenshot_target():
     w, jobs, capture = make_window()
     playing = w.media
     original_state = w.session.state
-    row = SimpleNamespace(get_tooltip_text=lambda: OTHER)
+    # Rows carry their path as source_path; tooltips no longer expose it (#449).
+    row = SimpleNamespace(source_path=OTHER, get_tooltip_text=lambda: None)
     w._on_queue_selected(None, row)
     assert w.selected_index == 1
     assert w.media is playing

@@ -50,21 +50,30 @@ class SelfTestHygieneTests(unittest.TestCase):
         self.assertIn("quit", attributes)
         self.assertNotIn("_debug_measure", SOURCE)
 
-    def test_selftest_quit_runs_in_a_finally_block(self):
+    def test_every_selftest_exit_path_quits(self):
         # An exception in the completion probe must not skip self.quit() and
         # hang --self-test; the runner deadline must not be the only exit.
-        quit_fn = next(node for node in _class("CastControlApp").body
-                       if isinstance(node, ast.FunctionDef) and node.name == "_selftest_quit")
-        finally_calls = [
-            call
-            for node in ast.walk(quit_fn) if isinstance(node, ast.Try)
-            for stmt in node.finalbody
-            for call in ast.walk(stmt)
-            if isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Attribute)
-            and call.func.attr == "quit"
-        ]
-        self.assertTrue(finally_calls, "self.quit() must run in a finally block")
+        # The probe runs in two steps: _selftest_quit quits from its except
+        # path and hands success to _finish_selftest_failures, which quits in a
+        # finally block (so even a broken second step still exits).
+        def function(name):
+            return next(node for node in _class("CastControlApp").body
+                        if isinstance(node, ast.FunctionDef) and node.name == name)
+
+        def quits(nodes):
+            return [call for stmt in nodes for call in ast.walk(stmt)
+                    if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "quit"]
+
+        first = function("_selftest_quit")
+        handlers = [h for node in ast.walk(first) if isinstance(node, ast.Try)
+                    for h in node.handlers]
+        self.assertTrue(handlers and all(quits(h.body) for h in handlers),
+                        "every except path of _selftest_quit must call self.quit()")
+        second = function("_finish_selftest_failures")
+        finals = [node.finalbody for node in ast.walk(second) if isinstance(node, ast.Try)]
+        self.assertTrue(finals and all(quits(body) for body in finals),
+                        "_finish_selftest_failures must call self.quit() in a finally block")
 
     def test_isolated_runner_seeds_and_verifies_private_state(self):
         # The opt-in Xvfb runner must plant a saved cast and an expired sleep

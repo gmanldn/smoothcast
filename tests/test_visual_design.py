@@ -49,7 +49,7 @@ class VisualDesignTests(unittest.TestCase):
             'card.add_css_class("settings-card")',
             'card.add_css_class("device-card")',
             'card.add_css_class("diagnostics-card")',
-            'self._set_device_badge("STREAMING", "online")',
+            'state_labels.present(self.device_state).short.upper()',  # #446 vocabulary
             'self.queue_scroller.set_visible(bool(visible))',
             'self.console_empty.set_visible(not has_activity)',
             'self.preview = PreviewScreen()',
@@ -116,7 +116,8 @@ class VisualDesignTests(unittest.TestCase):
         # A manual choice must disable the schedule so it actually applies.
         self.assertIn('window.cfg["auto_theme"] = False', control)
         # The schedule is re-evaluated while the app runs, not only at startup.
-        self.assertIn("self._theme_tick", control)
+        timers = (ROOT / "src/cast_ui_timers.py").read_text("utf-8")
+        self.assertIn("GLib.timeout_add_seconds(600, self._theme_tick)", timers)
         ui = (ROOT / "src/cast_ui.py").read_text("utf-8")
         self.assertIn("ui_theme.is_dark_hour(", ui)
         lifecycle = (ROOT / "src/cast_lifecycle.py").read_text("utf-8")

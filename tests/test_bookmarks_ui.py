@@ -40,6 +40,9 @@ class FakeEntry:
     def set_activates_default(self, _active):
         pass
 
+    def update_property(self, properties, values):
+        self.accessible = dict(zip(properties, values))
+
     def get_text(self):
         return self.value
 
@@ -83,7 +86,7 @@ def methods(*names):
              if isinstance(node, ast.FunctionDef)}
     body = "\n\n".join(textwrap.indent(textwrap.dedent(found[name]), "    ") for name in names)
     namespace = {
-        "bookmarks": bookmarks, "Async": ImmediateAsync, "Gtk": SimpleNamespace(Entry=FakeEntry),
+        "bookmarks": bookmarks, "Async": ImmediateAsync, "Gtk": SimpleNamespace(Entry=FakeEntry, AccessibleProperty=SimpleNamespace(LABEL="label")),
         "Adw": SimpleNamespace(AlertDialog=FakeDialog, ResponseAppearance=SimpleNamespace(SUGGESTED=1)),
         "fmt_time": lambda seconds: f"{int(seconds)}s", "save_config": mock.Mock(),
         "time": time, "FakeDialog": FakeDialog,
@@ -139,6 +142,7 @@ def test_named_bookmark_dialog_persists_marker_and_refreshes_menu(tmp_path):
     ui = window(media, digest)
     ui._prompt_bookmark_name(str(media), media.name, 24.5, digest)
     instance = ui.testing_globals["FakeDialog"].last
+    assert instance.entry.accessible == {"label": "Bookmark name"}  # screen readers
     instance.entry.value = "Key scene"
     instance.response(instance, "save")
     assert ui.cfg["bookmarks"][0]["name"] == "Key scene"

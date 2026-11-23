@@ -136,7 +136,10 @@ def test_gui_entry_records_the_timeline_marks_on_activation():
     assert text.index("import startup_timeline") < text.index("import gi")        # its clock starts first
     for needle in ('mark("activate")', 'mark("window_built")', 'mark("presented")',
                    'clock.connect("after-paint", self._after_first_paint, window)',
-                   'mark("first_frame")', "GLib.idle_add(self._after_paint_idle, window)",
+                   'mark("first_frame")',
+                   # Idle callbacks run inside the failure boundary (#512).
+                   "GLib.idle_add(self._guard_glib(self._after_paint_idle), window)",
                    "startup_timeline.mark_idle()",
-                   "GLib.idle_add(self._start_optional_services, window, priority=GLib.PRIORITY_LOW)"):
+                   "GLib.idle_add(self._guard_glib(self._start_optional_services), window,",
+                   "priority=GLib.PRIORITY_LOW)"):
         assert needle in text

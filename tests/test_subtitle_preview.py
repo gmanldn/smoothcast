@@ -105,7 +105,7 @@ def test_embedded_extraction_rejects_bad_indices_failures_and_output_limit(tmp_p
 
 def test_hover_wiring_is_opt_in_and_preserves_existing_scrub_preview():
     lifecycle = main_window_methods()["_on_hover"]
-    assert "self._queue_preview(value)" in lifecycle
+    assert "self._queue_preview(value, sparse=True)" in lifecycle
     assert "self._timed_subtitle_preview(value)" in lifecycle
     assert "self._timed_subtitle_preview(None)" in lifecycle
 
