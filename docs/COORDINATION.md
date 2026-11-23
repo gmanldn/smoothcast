@@ -61,3 +61,17 @@ mesh transfer behind #567/#568) stay `later`/`next` until the gate clears.
 6. If a regression is discovered, prioritise a corrective commit or safe revert. Untested changes must not be described as verified.
 
 Tests: `tests/test_agent_coordination.py` (pure core, no network).
+
+
+## Claim and completion safety
+
+Structured claim events replay in immutable GitHub comment-ID order. A heartbeat
+updates only an **active** lease; it cannot reopen an expired or released claim.
+Before assigning the shared GitHub user or marking `in-flight`, `claim` confirms
+its own comment is visible, retrying the issue's comment feed when the global
+feed lags. If confirmation fails, it withdraws and returns exit 3 rather than
+pretending it owns the ticket.
+
+`done --close` uses GitHub REST and checks the returned state. If GitHub does
+not confirm closure, it reports an error rather than claiming success. Agent
+coordination remains usable on Python 3.10 without a TOML dependency.
