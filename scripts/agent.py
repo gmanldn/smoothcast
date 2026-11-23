@@ -768,15 +768,17 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     paths = [p.strip() for p in a.files.split(",") if p.strip()]
     if a.files and (not paths or any(
             Path(p).is_absolute() or ".." in Path(p).parts
-            or p in {".", "./"} or p.startswith("-") for p in paths)):
-        print("--files requires safe, named repository-relative paths")
+            or p in {".", "./"} or p.startswith(("-", ":"))
+            or any(c in p for c in "*?[]\\x00")
+            or (ROOT / p).is_dir() for p in paths)):
+        print("--files requires literal, named repository-relative files, not directories or Git globs")
         return 2
     # Stage ALL tracked edits in this private worktree; --files additionally
     # includes named new files, never an uncontrolled untracked directory sweep.
     staged = subprocess.run(["git", "add", "-u"],
                             cwd=ROOT, capture_output=True, text=True)
     if staged.returncode == 0 and paths:
-        staged = subprocess.run(["git", "add", "-A", "--", *paths],
+        staged = subprocess.run(["git", "--literal-pathspecs", "add", "-A", "--", *paths],
                                 cwd=ROOT, capture_output=True, text=True)
     if staged.returncode:
         print("staging failed: " + staged.stderr.strip()[:500])
