@@ -207,3 +207,51 @@ def test_scrub_wiring_previews_without_network_and_cancels_escape():
     assert 'event.key==="Escape"' in html
     assert '"seek").addEventListener("change",commitSeekPreview)' in html
     assert 'void act("seek",value)' in html
+
+
+# Documented tolerance (#336): a phone's one-way network delay is the only
+# unknown, so its displayed source second may lag the authoritative clock by at
+# most ``delay * rate`` and must never run ahead of it.
+DELAYS_MS = [200, 400, 700, 1000]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+@pytest.mark.parametrize("rate", [0.5, 1.0, 2.0])
+def test_two_delayed_clients_stay_within_documented_tolerance_of_authority(rate):
+    """Two phones with 200-1000 ms delay track one fake authoritative clock."""
+    script = FUNCTION + """
+const rate=%s, delays=%s, sendAgeMs=120;
+const authority=t=>100+(t/1000)*rate;              // source second at fake time t (ms)
+const rows=[];
+for(const d of delays){
+  const sentAt=5000, snap={state:"PLAYING",position:authority(sentAt-sendAgeMs),duration:7200,rate};
+  for(const display of [sentAt+d, sentAt+d+1000, sentAt+d+30000, sentAt+d+600000]){
+    const shown=projectPosition(snap,sendAgeMs,display-(sentAt+d));
+    rows.push([d,display,authority(display)-shown]);
+  }
+}
+console.log(JSON.stringify(rows));
+""" % (rate, DELAYS_MS, )
+    rows = json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True,
+                                     text=True, timeout=8).stdout)
+    lag_by_delay = {}
+    for delay, _display, lag in rows:
+        assert -1e-6 <= lag <= delay / 1000 * rate + 1e-6, (delay, lag)  # never ahead
+        lag_by_delay.setdefault(delay, set()).add(round(lag, 6))
+    # The lag is a constant offset: it does not drift as the clients keep running.
+    assert all(len(values) == 1 for values in lag_by_delay.values())
+    # Two clients 200 ms and 1000 ms away differ by exactly the delay gap.
+    spread = abs(next(iter(lag_by_delay[1000])) - next(iter(lag_by_delay[200])))
+    assert spread == pytest.approx(0.8 * rate)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not installed")
+@pytest.mark.parametrize("state", ["PAUSED", "BUFFERING", "IDLE", "UNKNOWN", ""])
+def test_delayed_non_playing_snapshots_never_interpolate(state):
+    script = FUNCTION + """
+const out=[];for(const d of %s){for(const since of [0,d,60000,3600000])
+  out.push(projectPosition({state:%s,position:42,duration:7200,rate:2},d,since));}
+console.log(JSON.stringify(out));""" % (DELAYS_MS, json.dumps(state))
+    out = json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True,
+                                    text=True, timeout=8).stdout)
+    assert set(out) == {42}
