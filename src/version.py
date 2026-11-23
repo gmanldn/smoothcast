@@ -1,8 +1,8 @@
 """SmoothCast's single authoritative semantic version.
 
 Owner policy: one PATCH bump per completed GitHub ticket, not every transient
-commit. A bumped develop checkout is not a published release until protected
-promotion to main succeeds. A running process keeps its imported version until
+commit. A bumped develop checkout is a development version; only the owner
+may manually integrate it into main. A running process keeps its imported version until
 restart, even if asynchronous updates change the checkout.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import re
 
 MAJOR = 1
 MINOR = 2
-PATCH = 47
+PATCH = 48
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
