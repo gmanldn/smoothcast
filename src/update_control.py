@@ -13,7 +13,8 @@ import version
 
 # Only the released line may update itself. A detached HEAD, a developer
 # branch or a dirty tree is never pulled: that would rewrite someone's work.
-ELIGIBLE_BRANCHES = frozenset({"develop", "main", "master"})
+ELIGIBLE_BRANCHES = frozenset({"main", "master"})
+UPDATE_CHANNELS = frozenset({"develop", "main"})
 
 
 def _git(repo: Path, args: list[str], timeout: int) -> str | None:
@@ -97,7 +98,7 @@ def _fetch_branch(repo: Path, branch: str, timeout: int) -> str | None:
     Never rely on FETCH_HEAD after a tag fetch: that pseudo-ref may have been
     replaced by another fetch. A refspec pins the intended origin branch.
     """
-    if branch not in ELIGIBLE_BRANCHES:
+    if branch not in ELIGIBLE_BRANCHES | UPDATE_CHANNELS:
         return None
     ref = f"refs/remotes/origin/{branch}"
     if _git(repo, ["fetch", "--quiet", "--no-tags", "origin",
@@ -118,7 +119,7 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     probe is not reported as an installed update. Frozen/installed packages do
     not attempt source checkout updates.
     """
-    if (not enabled or channel not in {"develop", "main"}
+    if (not enabled or channel not in UPDATE_CHANNELS
             or getattr(sys, "frozen", False) or not (repo / ".git").exists()):
         return None
     branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
@@ -156,8 +157,8 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
             return (f"SmoothCast v{release} may be available, but its signature "
                     "could not be verified. No files were changed. Use a trusted "
                     "installer or review your update-signing keys.")
-    return (f"SmoothCast {channel} candidate {candidate[:12]} (v{release}) "
-            f"is available; running v{version.__version__}. No files were changed. "
+    return (f"SmoothCast v{release} is available on {channel} ({candidate[:12]}); "
+            f"running v{version.__version__}. No files were changed. "
             "Safe staged installation is not yet available.")
 
 
