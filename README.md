@@ -497,7 +497,7 @@ By default **SmoothCast makes no Git update request at startup**. Under **Prefer
 
 **Require a trusted signature** is enabled by default for update discovery. Verification uses `git verify-commit` or a matching signed release tag against keys **the user has explicitly imported** into their own GPG keyring. An unverifiable candidate is reported as **untrusted**, not installed. The target SHA comes from an explicitly fetched origin release-branch ref; unrelated fetched tags cannot substitute a different candidate. This is not an automatic update installer: install from your trusted distribution channel when playback has finished, then quit and relaunch. The transactional, signed, one-click install/restart workflow remains tracked in [#138](https://github.com/gmanldn/smoothcast/issues/138).
 
-The advanced configuration keys are `"check_release_updates": false` and `"verify_updates": true`. The old `"auto_update"` key is **ignored**, even if an older installation saved it as `true`: a new, explicit opt-in is required for any update-network check. An opted-in running app performs **discovery only**, not automatic installation. `--self-test` is isolated and never checks the network.
+The advanced configuration keys are `"check_release_updates": false` and `"release_check_verify": true`. The legacy `"auto_update"` and `"verify_updates"` keys are **ignored**, even if an older installation saved them as `true`/`false`: a new, explicit opt-in is required for any update-network check, and signature checks remain enabled by default. An opted-in running app performs **discovery only**, not automatic installation. `--self-test` is isolated and never checks the network.
 
 ## Runtime dependencies
 
