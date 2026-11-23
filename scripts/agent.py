@@ -412,6 +412,7 @@ def cmd_start(a: argparse.Namespace) -> int:
         folder.joinpath("sc-agent-id").write_text(identity + "\n", encoding="utf-8")
         head = git("rev-parse", "origin/develop").strip()
         metadata = {"issue": number, "title": issue.get("title") or "",
+                    "files": sorted(p for p in chosen_files.split(",") if p),
                     "source_head": head, "started_at": utcnow().isoformat()}
         folder.joinpath("sc-agent-task.json").write_text(
             json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -486,6 +487,32 @@ def cmd_claim(a: argparse.Namespace) -> int:
     if files & PLAN_FIRST:
         print("NOTE: plan-first module; comment a short plan before editing (CLAUDE.md).")
     return 0
+
+
+def ensure_live_task_claim(task: dict) -> bool:
+    """Refuse a successor's active lease; safely reclaim an expired task."""
+    number = task["issue"]
+    me = agent_id()
+    files = set(task.get("files") or [])
+    comments = gh(f"repos/{REPO}/issues/{number}/comments?per_page=100")
+    if not isinstance(comments, list):
+        raise td.DigestError(f"cannot inspect live claims on #{number}")
+    events = parse_events([dict(c, issue=number) for c in comments if isinstance(c, dict)])
+    live = active_claims(events, utcnow())
+    bad = conflicts(number, files, me, live)
+    if bad:
+        print("another agent now owns this scope: " + "; ".join(bad))
+        return False
+    mine = [c for c in live if c["issue"] == number and c["agent"] == me]
+    if mine:
+        remaining = (mine[-1]["at"] + timedelta(minutes=mine[-1]["ttl"]) - utcnow()).total_seconds()
+        if remaining < 900:
+            return cmd_heartbeat(argparse.Namespace(number=number)) == 0
+        return True
+    # Claim expiry grants no ownership. Existing race arbitration must win.
+    print(f"claim on #{number} expired; attempting a fresh short-lived lease")
+    return cmd_claim(argparse.Namespace(number=number, files=",".join(sorted(files)),
+                                        ttl=90)) == 0
 
 
 def cmd_progress(a: argparse.Namespace) -> int:
@@ -701,6 +728,9 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 return 3
             if not isinstance(state, dict) or state.get("state") != "open":
                 print(f"issue #{task['issue']} is no longer open; review latest state before shipping")
+                return 3
+            if not ensure_live_task_claim(task):
+                print("worktree preserved; review current claims before shipping")
                 return 3
         # A contested push may have left our own unpublished version commit.
         # Remove ONLY that verified generated commit before rebasing the code.
