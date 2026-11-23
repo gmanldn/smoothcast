@@ -328,7 +328,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "compatible video may start playing" in page
     assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
     assert "while(batchIndex<batchFiles.length" in page
-    assert "six-digit PIN" in page
+    assert "six-digit House PIN" in page
     assert 'inputmode="numeric"' in page
     assert 'pattern="[0-9]{6}"' in page
     assert page.index('div id="dashboard" hidden') < page.index('id="networkActivity"')
