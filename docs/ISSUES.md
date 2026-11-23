@@ -10,8 +10,8 @@ There is intentionally **no root `IMPROVEMENTS.md`**.
 GitHub Issues stay authoritative. Do **not** download every issue body to
 choose work.
 
-1. `python3 scripts/ticket_digest.py --next` prints one highest-priority
-   unclaimed issue. `--priority P0`, `--label`, `--limit` and `--search`
+1. `python3 scripts/ticket_digest.py --next` prints the highest-priority
+   eligible unclaimed issue. `--priority P0`, `--label`, `--limit` and `--search`
    narrow the output without fetching bodies.
 2. Read **only that issue**:
    `gh issue view N --json number,title,state,labels,assignees,body,url`.
@@ -85,10 +85,11 @@ choose new identifiers only deliberately (never reuse a legacy ID).
 
 ## Labels and the safe pick command
 
-Labels (legend and strategy: #511): `wave-1`, `wave-2`, `icebox`, `agent-ready`,
-`needs-split`, `needs-human`, `in-flight`, `verify-close`, `epic`. Less-capable
-agents use `python3 scripts/ticket_digest.py --next --label agent-ready --unclaimed`
-and read only the issue plus its **Agent brief** comment.
+Run `python3 scripts/ticket_digest.py --next --label agent-ready` and read
+the issue and its **Agent brief**. See #511 for the label legend. `--next`
+excludes epics (`epic`), deferred work (`icebox`), human checks (`needs-human`)
+and active work (`in-flight`). It prints the skipped count on stderr.
+Use `--include-skipped` to include these labels when triaging.
 
 ## Priorities, classification and status
 

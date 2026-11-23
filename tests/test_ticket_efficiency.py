@@ -1,10 +1,13 @@
 """Bounded issue workflow: no network, no GUI, no second backlog."""
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
+from io import StringIO
 import json
 from pathlib import Path
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 DIGEST = ROOT / "scripts" / "ticket_digest.py"
@@ -14,13 +17,13 @@ digest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(digest)
 
 
-def issue(number: int, title: str, claim=(), updated="2026-11-18T10:00:00Z"):
+def issue(number: int, title: str, claim=(), updated="2026-11-18T10:00:00Z", labels=("bug",)):
     return digest.normalize(
         {
             "number": number,
             "title": title,
             "state": "OPEN",
-            "labels": [{"name": "bug"}],
+            "labels": [{"name": name} for name in labels],
             "assignees": [{"login": name} for name in claim],
             "updatedAt": updated,
             "url": f"https://example.invalid/issues/{number}",
@@ -99,6 +102,56 @@ class DigestLogicTests(unittest.TestCase):
         self.assertNotIn('"body"', payload)
         self.assertNotIn("body", digest.LIST_FIELDS)
         self.assertNotIn("comments", digest.LIST_FIELDS)
+
+
+class NextIssueTests(unittest.TestCase):
+    def run_digest(self, rows, *args):
+        stdout, stderr = StringIO(), StringIO()
+        with (mock.patch.object(digest, "fetch_issues", return_value=rows),
+              redirect_stdout(stdout), redirect_stderr(stderr)):
+            self.assertEqual(digest.main(args), 0)
+        return stdout.getvalue(), stderr.getvalue()
+
+    def test_next_skips_excluded_labels_and_reports_one_count(self):
+        rows = [
+            issue(1, "[P0] Epic", labels=("Epic",)),
+            issue(2, "[P0] Later release", labels=("icebox",)),
+            issue(3, "[P0] Hardware check", labels=("needs-human",)),
+            issue(4, "[P0] In progress", labels=("in-flight",)),
+            issue(5, "[P1] Build a fix", labels=("agent-ready",)),
+            issue(6, "[P0] Assigned", ("alice",), labels=("epic",)),
+        ]
+        stdout, stderr = self.run_digest(rows, "--next")
+        self.assertTrue(stdout.startswith("#5 P1"))
+        self.assertEqual(stdout.count("\n"), 2)
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertIn("Skipped 4", stderr)
+        self.assertLess(len(stdout + stderr), 300)
+
+        stdout, stderr = self.run_digest(rows, "--next", "--include-skipped")
+        self.assertTrue(stdout.startswith("#1 P0"))
+        self.assertEqual(stderr, "")
+
+    def test_next_keeps_label_and_matching_and_json_output(self):
+        rows = [
+            issue(1, "[P0] Wrong wave", labels=("agent-ready", "wave-2")),
+            issue(2, "[P0] Needs hardware", labels=("agent-ready", "wave-1", "needs-human")),
+            issue(3, "[P1] Build a fix", labels=("agent-ready", "wave-1")),
+        ]
+        stdout, stderr = self.run_digest(rows, "--next", "--json",
+                                         "--label", "agent-ready", "--label", "wave-1")
+        self.assertEqual([row["number"] for row in json.loads(stdout)["issues"]], [3])
+        self.assertIn("Skipped 1", stderr)
+
+    def test_listing_includes_excluded_labels_and_next_can_run_out(self):
+        rows = [issue(1, "[P0] Hardware check", labels=("needs-human",))]
+        stdout, stderr = self.run_digest(rows)
+        self.assertIn("#1 P0", stdout)
+        self.assertEqual(stderr, "")
+
+        stdout, stderr = self.run_digest(rows, "--next")
+        self.assertEqual(stdout, "next=none unclaimed=0\n")
+        self.assertIn("Skipped 1", stderr)
 
 
 class TicketDocumentationTests(unittest.TestCase):
