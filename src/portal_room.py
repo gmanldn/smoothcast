@@ -24,10 +24,11 @@ COLORS = ("#6aa9ff", "#f2a65a", "#7ed6a5", "#d99cff", "#ff8d8d",
 
 
 class RoomError(Exception):
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 @dataclass
