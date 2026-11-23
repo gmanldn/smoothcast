@@ -263,9 +263,14 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self._event_streams.pop(participant_id, None)
 
     def server_close(self) -> None:
-        self.stopping.set()
+        # TCPServer.__init__ calls this when the bind fails, before the fields
+        # below exist. Guard them all, or the AttributeError replaces the
+        # EADDRINUSE that bind_room_server needs to fall back to a free port.
+        stopping = getattr(self, "stopping", None)
+        if stopping is not None:
+            stopping.set()
         try:
-            screens = getattr(self, "screens", None)  # absent if bind failed in __init__
+            screens = getattr(self, "screens", None)
             if screens is not None:
                 screens.close()
             commands = getattr(self, "commands", None)
