@@ -1,26 +1,30 @@
 # Testing SmoothCast
 
-## Test lanes
+## Optional manual validation
 
-Patch progress takes the fast lane; the full portable suite is required only
-when bumping MINOR or MAJOR. CI chooses the lane with
-`scripts/ci/test_scope.py`; run it locally with
-`--base origin/develop` to see the same decision.
+The project owner has opted for **fast, direct agent commits to `develop`**.
+Tests are not a push prerequisite, and the `Verify SmoothCast` workflow is
+launched by `workflow_dispatch` rather than on each push. This optimises
+commit throughput but increases the risk of regressions; an untested commit
+must be labelled **unverified** rather than green.
+
+When validation is requested, use targeted headless checks first:
 
 ```sh
-# Fast lane: every patch commit
 python3 -m compileall -q src scripts setup tests
-python -m py_compile smoothcast
+python3 -m py_compile smoothcast
 ruff check src scripts setup tests smoothcast setup.py
 mypy
-
-# Full lane: MINOR/MAJOR bumps only
+python3 -m pytest -q tests/test_relevant_feature.py
+# Optional large/manual verification run:
 python3 -m pytest -q tests -n auto
 ```
 
-Patch work should still run targeted tests for behavior it changes. Routine
-tests must not launch the real GUI, focus the desktop, or control a television.
-See [agent testing safety](agents/testing.md) for GUI and hardware limits.
+`python3 scripts/agent.py ship --skip-checks` performs a fast unverified
+fast-forward push; plain `ship` retains optional affected checks.
+Never open or focus the real GUI, control a television, or treat green
+automated tests as physical-device qualification. See
+[agent testing safety](agents/testing.md).
 
 ## Google Cast protocol fake
 
