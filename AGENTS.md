@@ -1,61 +1,58 @@
-# SmoothCast — essentials for coding agents
+# SmoothCast — agent essentials
 
-Python 3.10+, GTK4/libadwaita, Chromecast and DLNA. Read only the **relevant**
-topic in [agent handbook](docs/agents/README.md); run
-`python3 scripts/agent_context.py route <task-or-path>` for a short route.
-Do not load the [historical archive](docs/AGENT_REFERENCE.md) by default.
+Python 3.10+, GTK4/libadwaita, Chromecast/DLNA. Read only the relevant
+[handbook](docs/agents/README.md) topic. Use
+`python3 scripts/agent_context.py route <task-or-path>`. The
+[archive](docs/AGENT_REFERENCE.md) is historical, not default context.
 
-## Branch rule — read first
+## Branch and concurrent work
 
-**`develop` is the only branch anyone commits to.** Never use the shared
-checkout; push straight to `develop`, never with `--force`:
+**Commit only to `develop`.** Never push, merge or open promotion PRs
+against `main`; only the owner manually promotes it. Work in a **private
+detached worktree**, never in the shared checkout:
 
-    git worktree add --detach ../smoothcast-N origin/develop
-    # edit, test, commit, then:
-    git fetch origin && git rebase origin/develop   # own unpushed commits only
-    git push origin HEAD:develop
+```sh
+git fetch origin develop
+git worktree add --detach ../smoothcast-N origin/develop
+# commit named files, mentioning Refs #N
+git fetch origin develop && git rebase origin/develop
+git push origin HEAD:develop
+```
 
-No feature branches or agent PRs. **Never commit, push, merge, open a
-release PR against, or automatically promote `main`.** Only the owner may
-explicitly merge `develop` into `main`. A push to `develop` is independent
-of the state of `main`. See [workflow](docs/agents/workflow.md).
+Rebase only your unpublished commits. Never force-push, reset user work or
+delete others' worktrees/stashes. See [workflow](docs/agents/workflow.md).
 
-## Rules
+## Ticket flow
 
-- **GitHub Issues are authoritative:** use `python3 scripts/ticket_digest.py --next --label agent-ready`.
-  Pick unclaimed P0/P1 issues and self-contained older fixes; claim by assignment
-  and a short comment before editing, avoiding another agent's file scope.
-  Push each coherent change directly to `develop` with `Refs #N`; report
-  evidence honestly and close only when the issue's actual criteria are met.
-  [Issues](docs/ISSUES.md).
-- **Never lose work:** keep user changes, commits and stashes; no destructive cleanup.
-- **Smallest complete fix:** inspect callers, reuse code, keep validation, privacy,
-  device ownership and tests. [Ponytail](.kilo/skills/ponytail/SKILL.md).
-- **Precise output:** results, evidence, blockers; never hide errors.
+GitHub Issues are authoritative: [issues](docs/ISSUES.md). Start with:
+
+```sh
+python3 scripts/agent.py board
+python3 scripts/agent.py next
+python3 scripts/agent.py claim N --files src/module.py
+python3 scripts/agent.py ship
+python3 scripts/agent.py done N --why "..." --checklist "..."
+```
+
+Read the chosen issue and recent comments. Exit 3 from `claim` means
+another agent won: pick again. Release blocked claims promptly. Only close
+when acceptance criteria actually pass. The fallback
+`python3 scripts/ticket_digest.py --next --label agent-ready` is
+read-only and **not claim-aware**; never assume its result is unclaimed.
+
+## Quality and safety
+
+- Small, complete, well-scoped patches; explain real evidence and blockers.
+  Tests are optional on `develop`, but never assert unrun checks passed.
+- **Never launch the real GUI** or control real receivers during tests.
+  Read [testing](docs/agents/testing.md); use
+  `scripts/test_gui_isolated.py`. Full opt-in tests:
+  `python3 -m pytest -q tests`.
+- Respect playback ownership, privacy, compatibility and error paths.
+  See [architecture](docs/agents/architecture.md).
+- Keep context bounded: [efficiency](docs/agents/efficiency.md),
+  [Ponytail](.kilo/skills/ponytail/SKILL.md),
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- **Packaging authority:** `packaging/SmoothCast.spec` via `python3 scripts/build_release.py`; review [native packaging](docs/PACKAGING.md) before a release.
-- **Versions:** only `src/version.py` is canonical. Bump PATCH on a
-  completed ticket or explicit owner version request; refresh its current value
-  before editing so parallel agents cannot overwrite one another.
-  Git commit SHA identifies interim work.
-
-## Parallel agents — fast, independent commits
-
-**Do not hold a shared checkout, the index or a file-wide lock.** Use one
-detached worktree per task. Claims are short-lived; take a bounded issue slice,
-push it promptly, release the claim and take the next distinct issue. Fetch and
-rebase **only your own unpushed commits** if another agent advanced `develop`.
-Never force-push or rewrite published commits. Coordinate overlapping files.
-
-**Tests are not a push prerequisite by owner request.** The coordination
-helper supports `python3 scripts/agent.py ship --skip-checks` for an explicit
-unverified push, and `agent.py done` defaults to `not run (unverified)`.
-Do not start GTK or
-a receiver to test a change. CI is **lazy, not absent**: security checks run
-for risky changes; one nightly headless check batches many commits once the
-owner manually merges that workflow into `main`; full Verify and native
-packaging are on demand. None blocks routine `develop` commits or writes to
-`main`. Never claim unrun tests passed; protect user data and active media.
-
-[Architecture](docs/agents/architecture.md) ·
-[Token efficiency](docs/agents/efficiency.md)
+- `src/version.py` is canonical; bump PATCH on a completed ticket or
+  explicit request after refreshing `develop`. Interim work is identified
+  by commit SHA. Packaging authority: `packaging/SmoothCast.spec`.
