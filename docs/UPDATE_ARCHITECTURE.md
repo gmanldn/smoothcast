@@ -22,6 +22,24 @@ Status: **S0 safety baseline plus P0 channel selection on `develop`**; no live s
 
 
 
+### P0 offline generation staging (#580, first slice)
+
+`setup/managed_generations.py:stage_local_snapshot` is an **offline primitive**.
+Given a caller-authenticated manifest of relative paths, SHA-256 digests and
+byte sizes plus an immutable commit ID, it writes a private new generation
+under `releases/<commit>`. It enforces bounded file/total sizes, checks every
+file digest, rejects symlinks, path escapes, special files and portable-case
+collisions, and fsyncs content before publishing the final directory name.
+A failed validation or disk write cleans up the private temporary generation.
+It never reads or replaces `current`, `previous`, the user profile or
+running Python/GTK modules.
+
+**This does NOT yet fetch or authenticate manifests, construct a complete
+independent native GTK/Python environment, atomically activate a generation,
+or roll back a failed new primary.** Never call it automatically on an untrusted
+Git checkout or present the staged directory as ready to launch. Those
+remaining security and operational gates are tracked in #580–#582.
+
 ### P0 channel policy (#579, slice A)
 
 The validated persisted `update_channel` setting is `develop` by default,
