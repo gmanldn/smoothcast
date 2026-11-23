@@ -97,10 +97,11 @@ class PortalError(RuntimeError):
 class PortalRequestError(Exception):
     """A safe request rejection with an HTTP status and user-facing message."""
 
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 def new_pin(*, choice=secrets.choice) -> str:
