@@ -45,11 +45,11 @@ worktree and reconcile intentionally. Never claim unrun checks passed.
 - Keep context bounded: [efficiency](docs/agents/efficiency.md),
   [Ponytail](.kilo/skills/ponytail/SKILL.md),
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- Every coherent **private-worktree `agent.py ship`** atomically allocates the next
-  PATCH on `develop` (a version-only commit appended to the code slice). On a
-  contested push the tool discards **only its own unpublished version commit**,
-  rebases code and reallocates, then fast-forward pushes. `--skip-checks` skips
-  costly tests, **never** version safety. `smoothcast --build-id` also identifies
-  the exact source SHA; the owner alone merges `main` or publishes releases.
-  Raw `git push` bypasses the allocator, so prefer `agent.py ship` exclusively.
+- `src/version.py` is release SemVer; agent shipments do **not** automatically
+  bump it. Each develop revision has its Git commit SHA (`smoothcast
+  --build-id`). `smoothcast --version` retains stable SemVer.
+  `agent.py ship --assign-patch` is an **explicit opt-in**, requiring owner
+  authorisation, never the normal path. The version-history check runs on
+  every `ship` even with `--skip-checks`. Never bypass it via raw pushes.
+  No automatic merging, tagging or publishing to `main`.
   Packaging authority: `packaging/SmoothCast.spec`.
