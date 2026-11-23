@@ -1,0 +1,53 @@
+name: Agent control-plane fast checks
+
+# Headless checks only when coordinator or version authority changes.
+# Never merges, tags, releases, touches main, or starts GUI/receivers.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - scripts/agent.py
+      - scripts/ci/check_version_history.py
+      - src/version.py
+      - src/cli.py
+      - tests/test_agent_lifecycle.py
+      - tests/test_agent_coordination.py
+      - tests/test_ticket_versioning.py
+      - tests/test_version_history.py
+      - tests/test_version_integrity.py
+      - .github/workflows/agent-control-plane.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sc-agent-control-develop
+  cancel-in-progress: true
+
+jobs:
+  headless-coordinator:
+    name: Agent coordinator and version invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SMOOTHCAST_TEST_CONTEXT: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Python syntax
+        run: python -m compileall -q scripts/agent.py scripts/ci/check_version_history.py src/cli.py src/version.py tests/test_agent_lifecycle.py
+      - name: Focused dependencies
+        run: python -m pip install 'pytest>=8,<10'
+      - name: Regression tests (no GUI, offline Git remotes)
+        run: >
+          python -m pytest -q -p no:cacheprovider
+          tests/test_agent_lifecycle.py
+          tests/test_agent_coordination.py
+          tests/test_version_history.py
+          tests/test_ticket_versioning.py
+          tests/test_version_integrity.py
