@@ -101,36 +101,6 @@ class QueueRowMixin:
         return row
 
 
-    def _sync_queue_accessible_states(self) -> None:
-        """Announce playback handoffs without rebuilding the entire queue.
-
-        Only the previous and current media can change state.  When there is
-        no handoff, this is O(1), even for a thousand-item queue.
-        """
-        previous = getattr(self, "_queue_accessibility_current", None)
-        current = self.now_playing
-        if previous == current:
-            return
-        self._queue_accessibility_current = current
-        for index, path in enumerate(self.queue):
-            if path != previous and path != current:
-                continue
-            row = self.queue_list.get_row_at_index(index)
-            if row is None:
-                continue
-            if path == current:
-                row.add_css_class("current")
-                state = "Now playing"
-            else:
-                row.remove_css_class("current")
-                state = "Queued"
-            display_title = queue_metadata.display_title(path, self._media_cache)
-            row.update_property(
-                [Gtk.AccessibleProperty.LABEL],
-                [f"{display_title}, {index + 1} of {len(self.queue)}, {state}"],
-            )
-
-
     @staticmethod
     def _show_queue_moves(row, hovering: bool) -> None:
         visible = hovering or row.is_selected()
