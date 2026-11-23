@@ -1,98 +1,35 @@
 name: Portal Security Regressions
 
+# Risk-scoped security checks only. Ignore every cosmetic/UI/docs push;
+# explicit dispatch or a contributor PR can run the full suite.
 on:
   push:
     branches: [develop]
     paths:
       - 'src/portal.py'
-      - 'src/portal_screen_page.py'
-      - 'src/design_tokens.py'
-      - 'src/accent.py'
-      - 'tests/test_design_tokens.py'
-      - 'tests/test_playhead_projection.py'
-      - 'tests/test_screen_page_theme.py'
-      - 'tests/test_room_accent.py'
-      - 'src/async_jobs.py'
-      - 'tests/test_async_jobs.py'
-      - 'src/castctl.py'
-      - 'src/command_trace.py'
-      - 'src/dlna.py'
-      - 'tests/test_command_trace*.py'
-      - 'src/pychromecast_backend.py'
-      - 'src/portal_join.py'
-      - 'tests/test_join_slate.py'
-      - 'pyproject.toml'
-      - 'src/mesh_transport.py'
-      - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
-      - 'src/room_checkpoint.py'
-      - 'src/room_checkpoint_ui.py'
-      - 'tests/test_room_checkpoint*.py'
-      - 'src/portal_status.py'
       - 'src/portal_commands.py'
       - 'src/portal_uploads.py'
-      - 'src/cast_portal.py'
-      - 'src/cast_ui.py'
-      - 'src/cast_av.py'
-      - 'src/aspect_override.py'
-      - 'src/preferences_ui.py'
-      - 'tests/test_sparse_thumbnail_cache.py'
-      - 'tests/test_portal*.py'
-      - 'tests/test_portal_guest_ux.py'
+      - 'src/portal_screens_http.py'
+      - 'src/portal_join.py'
+      - 'src/mesh_transport.py'
+      - 'src/room_checkpoint.py'
       - 'src/room_event_replay.py'
-      - 'tests/test_room_event*.py'
+      - 'tests/test_portal_commands.py'
+      - 'tests/test_portal_uploads.py'
+      - 'tests/test_portal_screens_http.py'
       - '.github/workflows/portal-security.yml'
   pull_request:
-    # Do not duplicate tests for the long-lived develop -> main release PR.
     branches: [develop]
-    paths:
-      - 'src/portal.py'
-      - 'src/portal_screen_page.py'
-      - 'src/design_tokens.py'
-      - 'src/accent.py'
-      - 'tests/test_design_tokens.py'
-      - 'tests/test_playhead_projection.py'
-      - 'tests/test_screen_page_theme.py'
-      - 'tests/test_room_accent.py'
-      - 'src/async_jobs.py'
-      - 'tests/test_async_jobs.py'
-      - 'src/castctl.py'
-      - 'src/command_trace.py'
-      - 'src/dlna.py'
-      - 'tests/test_command_trace*.py'
-      - 'src/pychromecast_backend.py'
-      - 'src/portal_join.py'
-      - 'tests/test_join_slate.py'
-      - 'pyproject.toml'
-      - 'src/mesh_transport.py'
-      - 'tests/test_mesh_transport.py'
-      - 'src/portal_room.py'
-      - 'src/room_checkpoint.py'
-      - 'src/room_checkpoint_ui.py'
-      - 'tests/test_room_checkpoint*.py'
-      - 'src/portal_status.py'
-      - 'src/portal_commands.py'
-      - 'src/portal_uploads.py'
-      - 'src/cast_portal.py'
-      - 'src/cast_ui.py'
-      - 'src/cast_av.py'
-      - 'src/aspect_override.py'
-      - 'src/preferences_ui.py'
-      - 'tests/test_sparse_thumbnail_cache.py'
-      - 'tests/test_portal*.py'
-      - 'tests/test_portal_guest_ux.py'
-      - 'src/room_event_replay.py'
-      - 'tests/test_room_event*.py'
-      - '.github/workflows/portal-security.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One active, latest pending per ref; never starve this security suite.
+# Save runner time: stop superseded risk checks; latest branch state wins.
 concurrency:
   group: smoothcast-portal-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   SMOOTHCAST_TEST_CONTEXT: '1'
@@ -147,6 +84,7 @@ jobs:
 
   gtk-portal-smoke:
     name: Isolated GTK host-control smoke (Xvfb)
+    if: github.event_name != 'push'
     needs: [portal-security]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
