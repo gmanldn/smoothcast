@@ -253,6 +253,22 @@ class ReceiverMemory:
             return "Preferring direct play because it succeeded three times on this receiver."
         return "No reliable receiver playback preference has been learned."
 
+    def summary(self) -> dict[str, int]:
+        """Diagnostic counts only; never export receiver keys or codec hashes."""
+        now = self.clock()
+        if not math.isfinite(now):
+            return {"receivers": 0, "codec_signatures": 0, "direct_failures": 0}
+        with self._lock:
+            state = _trim(self._read(), now)
+        return {
+            "receivers": len(state),
+            "codec_signatures": sum(len(items) for items in state.values()),
+            "direct_failures": sum(
+                not row.ok for items in state.values() for rows in items.values()
+                for row in rows if row.mode == "direct"
+            ),
+        }
+
     def forget(self, key: str) -> bool:
         """Forget a receiver without affecting any current playback session."""
         if not _digest(key):
