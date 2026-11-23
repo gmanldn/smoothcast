@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import errors  # noqa: E402
+import cli_control  # noqa: E402
+import house_cli  # noqa: E402
 import portal  # noqa: E402
 import portal_commands as commands  # noqa: E402
 import portal_room  # noqa: E402
@@ -95,3 +97,51 @@ def test_every_catalogue_style_code_literal_exists():
                     seen.add(kw.value.value)
     assert seen
     assert seen <= errors.CATALOGUE.keys(), sorted(seen - errors.CATALOGUE.keys())
+
+
+def test_headless_cli_json_keeps_exit_status_and_adds_stable_code(monkeypatch, capsys):
+    def unreachable(_args):
+        raise cli_control.CliError(cli_control.EXIT_UNREACHABLE, "Receiver is offline",
+                                   catalogue_code="cast.receiver_offline")
+
+    monkeypatch.setitem(cli_control.HANDLERS, "status", unreachable)
+    assert cli_control.main(["status", "--json"]) == cli_control.EXIT_UNREACHABLE
+    import json
+    result = json.loads(capsys.readouterr().out)
+    assert result["message"] == "Receiver is offline"
+    assert result["error"] == "unreachable"
+    assert result["code"] == "cast.receiver_offline"
+
+
+def test_house_cli_preserves_server_code_and_original_message(monkeypatch):
+    import json
+
+    class Response:
+        status = 409
+
+        def read(self):
+            return json.dumps({"ok": False, "error": "Playback changed before your command.",
+                               "code": "cast.playback_changed"}).encode()
+
+        def getheader(self, _key):
+            return None
+
+    class Connection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(house_cli, "HTTPConnection", Connection)
+    with pytest.raises(house_cli.ApiError) as raised:
+        house_cli.Client("127.0.0.1:12345").get("/api/status")
+    assert raised.value.status == 409
+    assert raised.value.code == "cast.playback_changed"
+    assert str(raised.value) == "Playback changed before your command."
