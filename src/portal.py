@@ -24,6 +24,7 @@ import time
 from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
+import api_spec
 import lan_guard
 import mesh_files
 import library_replication
@@ -699,6 +700,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
+        if path == "/api/openapi.json":
+            return self._send(200, api_spec.spec())
         if path == "/silence.wav":
             return self._send(200, SILENT_WAV, content_type="audio/wav")
         if path in {"/", "/index.html"}:
