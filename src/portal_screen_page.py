@@ -5,6 +5,8 @@ Text reaches the DOM only through ``textContent``/attributes, never ``innerHTML`
 """
 from __future__ import annotations
 
+import design_tokens
+
 KNOWN_MIMES_JS = (
     '["video/mp4","video/webm","video/x-matroska","video/ogg","audio/mpeg",'
     '"audio/mp4","audio/aac","audio/flac","audio/ogg","audio/wav"]'
@@ -12,7 +14,8 @@ KNOWN_MIMES_JS = (
 
 
 def screen_page() -> bytes:
-    return _SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS).encode("utf-8")
+    return (_SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS)
+            .replace("/*TOKENS*/", design_tokens.css())).encode("utf-8")
 
 
 def panel_html() -> str:
@@ -23,44 +26,44 @@ def panel_html() -> str:
 _SCREEN_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b111a">
+<meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
 <title>SmoothCast Screen</title>
-<style>
-:root{font:16px system-ui,-apple-system,"Segoe UI",sans-serif;--bg:#0b111a;--card:#162131;--line:#ffffff1a;--ink:#f4f7fb;--mut:#aab8c7;--accent:#5aa9f0;--ok:#5fd3a0;--warn:#ffd166;--bad:#ff8a7a}
+<style>/*TOKENS*/
+:root{font:16px system-ui,-apple-system,"Segoe UI",sans-serif}
 *{box-sizing:border-box}html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);overflow:hidden;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 .stage{position:fixed;inset:0;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
-.card{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 60px #0008}
+.card{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#5aa9f0,#7d6cf0);display:grid;place-items:center;font-weight:800;color:#06101c;font-size:1.25rem}
-h1{font-size:1.35rem;margin:0;letter-spacing:-.02em}p{color:var(--mut);line-height:1.5;margin:.5rem 0}
-label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--mut)}
-input{width:100%;min-height:52px;font:inherit;color:var(--ink);background:#0d1623;border:1px solid #ffffff2e;border-radius:14px;padding:10px 14px}
+.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--vote-on));display:grid;place-items:center;font-weight:800;color:var(--on-accent);font-size:1.25rem}
+h1{font-size:1.35rem;margin:0;letter-spacing:-.02em}p{color:var(--muted);line-height:1.5;margin:.5rem 0}
+label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--muted)}
+input{width:100%;min-height:52px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--border);border-radius:14px;padding:10px 14px}
 #pin{letter-spacing:.3em;font-size:1.3rem;text-align:center}
-button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:#06101c;background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
-button.ghost{background:#27384d;color:var(--ink);width:auto;margin:0;min-height:44px;padding:0 16px}
-button:focus-visible,input:focus-visible{outline:3px solid var(--warn);outline-offset:3px}
-.err{color:var(--bad);min-height:1.4em;margin:.6rem 0 0}
+button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:var(--on-accent);background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
+button.ghost{background:var(--nav);color:var(--text);width:auto;margin:0;min-height:44px;padding:0 16px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
 .big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
 .slate{text-align:center;max-width:44rem}
-.dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 #5fd3a066;animation:pulse 2.4s infinite}
-.dot.bad{background:var(--bad);animation:none}.dot.warn{background:var(--warn);animation:none}
-@keyframes pulse{70%{box-shadow:0 0 0 12px #5fd3a000}100%{box-shadow:0 0 0 0 #5fd3a000}}
-#player{position:fixed;inset:0;background:#000}
-video{width:100%;height:100%;object-fit:contain;background:#000}
-#audioArt{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:18px;background:radial-gradient(circle at 50% 35%,#1b2c44,#0b111a 70%);padding:24px;text-align:center}
+.dot{display:inline-block;flex:none;width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 40%,transparent);animation:pulse 2.4s infinite}
+.dot.bad{background:var(--danger);animation:none}.dot.warn{background:var(--focus);animation:none}
+@keyframes pulse{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+#player{position:fixed;inset:0;background:rgb(0,0,0)}
+video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
+#audioArt{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:18px;background:radial-gradient(circle at 50% 35%,var(--vote),var(--bg) 70%);padding:24px;text-align:center}
 .bars{display:flex;gap:7px;align-items:flex-end;height:64px}.bars i{width:9px;border-radius:5px;background:var(--accent);height:20%;animation:eq 1.1s ease-in-out infinite}
 .bars i:nth-child(2){animation-delay:.15s}.bars i:nth-child(3){animation-delay:.3s}.bars i:nth-child(4){animation-delay:.45s}.bars i:nth-child(5){animation-delay:.6s}
 .paused .bars i{animation-play-state:paused}
 @keyframes eq{50%{height:100%}}
 @media(prefers-reduced-motion:reduce){.bars i,.dot{animation:none}}
-#hud{position:absolute;left:0;right:0;bottom:0;padding:44px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:linear-gradient(transparent,#000c);transition:opacity .3s}
+#hud{position:absolute;left:0;right:0;bottom:0;padding:44px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:linear-gradient(transparent,rgba(0,0,0,.8));transition:opacity .3s}
 #hud.hide{opacity:0;pointer-events:none}
 #hud .title{font-size:1.15rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#hud .meta{display:flex;justify-content:space-between;gap:12px;color:#cfd9e4;font-size:.9rem;margin-top:6px}
-.bar{height:6px;border-radius:3px;background:#ffffff33;margin-top:10px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent)}
-#banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#000b;border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
+#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.9rem;margin-top:6px}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:10px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent)}
+#banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--scrim);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
 #tools{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;transition:opacity .3s}
 #tools.hide{opacity:0;pointer-events:none}
 </style></head><body>
@@ -212,9 +215,9 @@ $("name").value=store.get("sc_screen_name");show("loginView");
 _PANEL_HTML = r"""
 <style>
 #screensList .queue-actions{width:100%}
-#screensList select{flex:1 1 100%;min-height:44px;max-width:100%;font:inherit;color:inherit;background:#121b27;border:1px solid #718096;border-radius:10px;padding:0 10px}
+#screensList select{flex:1 1 100%;min-height:44px;max-width:100%;font:inherit;color:inherit;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:0 10px}
 #screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
-#screensList .state-error{color:#ffb4a9}
+#screensList .state-error{color:var(--danger)}
 </style>
 <section id="screensPanel" hidden><div class="row"><h2>Screens</h2><span id="screensCount" class="muted"></span></div>
 <p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and pair it with the PIN.</p>
