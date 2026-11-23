@@ -131,13 +131,15 @@ def test_legacy_queue_request_and_replay_share_one_privacy_safe_trace():
         participant = server.room.join("Guest")
         body = {"action": "queue_clear", "queue_revision": 0,
                 "queue_command_id": "opaque-command-7"}
+        existing_ids = {row["id"] for row in command_trace.recent()}
         assert server.execute_queue_command(participant.id, body) == (202, "Queued")
         assert server.execute_queue_command(participant.id, body) == (202, "Queued")
         altered = {**body, "queue_revision": 1}
         assert server.execute_queue_command(participant.id, altered)[0] == 409
         assert calls == ["queue_clear"]
         rows = [row for row in command_trace.recent()
-                if row["action"] == "queue_clear" and row["source"] == "portal"]
+                if row["id"] not in existing_ids
+                and row["action"] == "queue_clear" and row["source"] == "portal"]
         assert len(rows) == 1
         stages = [entry["stage"] for entry in rows[0]["stages"]]
         assert "received" in stages and "dispatched" in stages
