@@ -141,10 +141,11 @@ def stale_early_casts(casting: dict, *, now: float, busy: bool,
 class UploadError(ValueError):
     """A safe rejection from the authenticated portal upload protocol."""
 
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 def default_upload_root() -> Path:
