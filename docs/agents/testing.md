@@ -6,21 +6,27 @@ GNOME dock pins, discover/control the user's TV, or touch real media. Never use
 `python3 src/cast_control.py`, or bare `--self-test` in a test loop.
 Do not use the user's live X11/Wayland display or desktop DBus (D-Bus).
 
-Headless lanes (`scripts/ci/test_scope.py`):
+**Owner policy:** rapid, coherent `develop` commits do not require tests.
+The Verify workflow runs manually, not on every push, and does not promote
+to `main`. Use `scripts/agent.py ship --skip-checks` for an explicitly
+unverified fast push; plain `ship` runs optional affected checks.
+
+When testing is requested, use the headless lanes (`scripts/ci/test_scope.py`):
 
 ```sh
 python3 -m compileall -q src scripts setup tests
 ruff check src scripts setup tests smoothcast setup.py && mypy
-python3 -m pytest -q tests -n auto  # minor/major only
+python3 -m pytest -q tests/test_relevant_feature.py
+python3 -m pytest -q tests -n auto  # optional comprehensive run
 ```
 
-Patch-only changes skip the full suite; use targeted tests. The test harness strips desktop
-display/session handles at collection; CI sets `SMOOTHCAST_TEST_CONTEXT=1`.
+The test harness strips desktop display/session handles at collection; manual
+Verify sets `SMOOTHCAST_TEST_CONTEXT=1`. An untested change is not green.
 Never remove these guards or run tests repeatedly to check whether the GUI
 raises a window. `tests/gui_source.py` is for source/AST UI assertions
 without importing GTK.
 
-**CI gates (#250-#255, #260, #262):** `ruff check src scripts setup tests smoothcast
+**Optional manual CI checks (#250-#255, #260, #262):** `ruff check src scripts setup tests smoothcast
 setup.py` fails on new violations; the 3.13 job gates `--cov-fail-under=38`
 (raise, never lower). **Types (#251):** `mypy` gates only `[tool.mypy] files`;
 widen by making `mypy src/<module>.py` clean, then listing it. `pip-audit`,
@@ -53,7 +59,7 @@ stopping previous streams; transcode paths recheck before launching an encoder.
 rejecting unknown/broken/older builds without sending Cast commands.
 
 **macOS/Windows (#258):** `portable-tests-native` runs this suite there
-(it gates, incl. release promotion). A test that cannot pass is listed by exact id, with a reason, in
+when the manual workflow is invoked (no automatic release promotion). A test that cannot pass is listed by exact id, with a reason, in
 `tests/platform_gaps.py` and skipped on that OS only; fix the cause and delete
 the entry. "PRODUCT BUG" marks a SmoothCast defect, not a test quirk.
 **CI FFmpeg integration:** `.github/workflows/verify.yml` runs actual
