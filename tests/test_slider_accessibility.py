@@ -88,3 +88,16 @@ def test_widgets_are_wired_to_the_helpers():
         ROOT / "src/cast_av.py").read_text()
     assert "slider_accessibility.sync_percent(self.volume_scale, Gtk, 50)" in (
         ROOT / "src/cast_ui.py").read_text()
+
+
+def test_seekbar_is_a_visible_tab_stop():
+    assert "self.set_focusable(True)" in (ROOT / "src/cast_widgets.py").read_text()
+    assert ".seekbar:focus-visible" in (ROOT / "src/ui_theme.py").read_text()
+
+
+def test_window_shortcuts_reach_a_focused_seekbar():
+    """Seeking keys must be window shortcuts, not seekbar key handlers."""
+    ui = (ROOT / "src/cast_ui.py").read_text()
+    for accel in ('"Left", self._skip_back10', '"Right", self._skip_forward10',
+                  '"Home", self._back_to_start', '"<Shift>Left"', '"<Shift>Right"'):
+        assert f"add({accel}" in ui

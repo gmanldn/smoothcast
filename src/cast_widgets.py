@@ -166,6 +166,8 @@ class SeekBar(Gtk.DrawingArea):
         self.set_size_request(-1, 30)
         self.set_draw_func(self._draw)
         self.add_css_class("seekbar")
+        # A Tab stop; arrows, Home and digits reach the window shortcuts.
+        self.set_focusable(True)
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", self._drag_begin)
         drag.connect("drag-update", self._drag_update)
