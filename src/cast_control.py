@@ -171,7 +171,12 @@ class CastControlApp(Adw.Application):
         self._pending_files: list[str] = []
         self._mpris = None
         self._paint_handler: int | None = None
-        self._noticed_disk_version: str | None = None
+        # Immutable identity captured before later checkout changes; never
+        # shell out or import replacement modules while the GUI is running.
+        self._run_revision = version.read_checkout_revision(
+            pathlib.Path(__file__).resolve().parents[1]
+        )
+        self._noticed_runtime_key: tuple[str | None, str | None] | None = None
         self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
 
     def do_startup(self) -> None:
@@ -410,14 +415,29 @@ class CastControlApp(Adw.Application):
         Running Python modules remain from this launch; an on-disk version
         change is only effective after an orderly quit and relaunch.
         """
-        disk = version.read_checkout_version(
-            pathlib.Path(__file__).resolve().parent / "version.py"
-        )
-        if not disk or disk == version.__version__ or disk == self._noticed_disk_version:
+        if window._closing:
             return
-        self._noticed_disk_version = disk
-        notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
-                  "Finish playback, then quit and reopen to use the installed version.")
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        disk = version.read_checkout_version(repo / "src" / "version.py")
+        disk_revision = version.read_checkout_revision(repo)
+        stale_version = disk is not None and disk != version.__version__
+        stale_revision = (self._run_revision is not None
+                          and disk_revision is not None
+                          and disk_revision != self._run_revision)
+        if not (stale_version or stale_revision):
+            return
+        key = (disk if stale_version else None,
+               disk_revision if stale_revision else None)
+        if key == self._noticed_runtime_key:
+            return
+        self._noticed_runtime_key = key
+        if stale_version:
+            notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
+                      "Finish playback, then quit and reopen to use the installed version.")
+        else:
+            notice = (f"Checkout updated to {disk_revision[:8]}; this SmoothCast "
+                      f"process started at {self._run_revision[:8]}. Finish playback, "
+                      "then quit and reopen to load the new code.")
         window._installed_version_stale = True
         window.update_notice = notice
         window._update_header_subtitle()
