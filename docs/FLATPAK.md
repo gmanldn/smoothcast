@@ -7,7 +7,7 @@ remains PyInstaller (see [PACKAGING.md](PACKAGING.md)).
 
 ## Sandboxed behaviour
 
-- Runtime/SDK: GNOME 49 with GTK4, libadwaita and PyGObject.
+- Runtime/SDK: GNOME 51 with GTK4, libadwaita and PyGObject.
 - Network: enabled for LAN discovery, Cast/DLNA and the room web portal.
 - Display: Wayland or fallback X11, shared IPC; PulseAudio socket and DRI for
   optional local preview/accelerated decoding.
@@ -20,10 +20,10 @@ remains PyInstaller (see [PACKAGING.md](PACKAGING.md)).
 ## Local build prerequisites
 
 On a disposable Linux build machine with matching GNOME runtime and SDK,
-install `flatpak-builder` and the GNOME 49 runtime/SDK. Run from the repo root:
+install `flatpak-builder` and the GNOME 51 runtime/SDK. Run from the repo root:
 
 ```sh
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install --user flathub org.gnome.Platform//51 org.gnome.Sdk//51
 python3 -m pip download --dest packaging/flatpak/wheelhouse .
 flatpak-builder --user --install-deps-from=flathub --force-clean \
   --repo=flatpak-repo flatpak-build \
