@@ -290,3 +290,23 @@ def test_done_requires_a_published_ticket_commit_and_explicit_close_evidence(mon
     assert agent.cmd_done(base) == 2  # no published commit for this exact issue
     base.close = True
     assert agent.cmd_done(base) == 2  # cannot close with default unverified evidence
+
+
+def test_doc_guard_runs_the_tests_that_pin_changed_docs_and_workflows():
+    tests = {"tests/test_quality_gates.py": 'read("AGENTS.md") and "verify.yml"',
+             "tests/test_unrelated.py": "nothing here",
+             "tests/test_complexity_budget.py": "", "tests/test_a11y_inventory.py": ""}
+    steps = agent.doc_guard_steps(["AGENTS.md", ".github/workflows/verify.yml"], tests)
+    assert len(steps) == 1 and steps[0][1][-1] == "tests/test_quality_gates.py"
+    assert "tests/test_unrelated.py" not in steps[0][1]
+    assert agent.doc_guard_steps(["src/widget.py", "tests/test_x.py"], tests) == []
+    assert agent.doc_guard_steps(["docs/NOBODY_MENTIONS_ME.md"], tests) == []
+
+
+def test_conflict_help_explains_ours_theirs_and_names_the_other_owner():
+    live = claims(marker_comment(1, 77, 5, "a-other", ["AGENTS.md"]))
+    text = agent.conflict_help(["AGENTS.md", "pyproject.toml"], live)
+    assert "rebase aborted" in text and "`--ours` is origin/develop" in text
+    assert "sync_pyproject.py" in text
+    assert "#77 (a-other)" in text
+    assert "Live claims" not in agent.conflict_help(["src/x.py"], live)

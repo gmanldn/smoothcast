@@ -586,6 +586,42 @@ def cmd_release(a: argparse.Namespace) -> int:
     return 0
 
 
+DOC_FILES = {"AGENTS.md", "CONTRIBUTING.md", "README.md", "CLAUDE.md"}
+
+
+def doc_guard_steps(changed: list[str], tests: dict[str, str]) -> list[tuple[str, list[str]]]:
+    """Tests that pin the wording/contract of changed docs and workflows.
+
+    These run even under --skip-checks: doc and workflow rewrites were the
+    commonest cause of a red develop because their contract tests assert exact
+    wording and nobody ran them. They take seconds.
+    """
+    docs = [f for f in changed if f in DOC_FILES or f.startswith(("docs/", ".github/workflows/"))]
+    chosen = tests_for(docs, tests) if docs else []
+    chosen = [t for t in chosen if t not in RATCHETS] or chosen
+    if not chosen:
+        return []
+    xdist = ["-n", "auto"] if len(chosen) > 3 else []
+    return [(f"doc-guard pytest ({len(chosen)} files)",
+             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *xdist, *chosen])]
+
+
+def conflict_help(conflicted: list[str], claims: list[dict]) -> str:
+    """Actionable text for a rebase conflict (the rebase has been aborted, nothing is lost)."""
+    owners = sorted({f"#{c['issue']} ({c['agent']})" for c in claims for f in conflicted if f in c["files"]})
+    lines = [f"REBASE CONFLICT in {', '.join(conflicted) or '?'}; your commits are untouched (rebase aborted).",
+             "To resolve: git rebase origin/develop ; edit or pick a side ; git add <file> ; "
+             "GIT_EDITOR=true git rebase --continue",
+             "Careful: during a rebase `--ours` is origin/develop and `--theirs` is YOUR commit.",
+             "Re-read the upstream text first; a doc/policy file usually means another agent is mid-rewrite, "
+             "so keep their wording and re-apply only your small change."]
+    if any(f == "pyproject.toml" for f in conflicted):
+        lines.append("pyproject.toml lists: python3 scripts/ci/sync_pyproject.py && git add pyproject.toml")
+    if owners:
+        lines.append("Live claims on these files: " + ", ".join(owners))
+    return "\n".join(lines)
+
+
 def mypy_gated() -> set[str]:
     """Read the simple list of mypy-gated files with Python 3.10 stdlib only."""
     contents = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -755,7 +791,11 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if r.returncode:
             conflicted = git("diff", "--name-only", "--diff-filter=U", check=False).split()
             git("rebase", "--abort", check=False)
-            print(f"REBASE CONFLICT in {', '.join(conflicted) or '?'}; resolve by hand, never force-push.")
+            try:
+                live = active_claims(parse_events(recent_comments()), utcnow())
+            except td.DigestError:
+                live = []
+            print(conflict_help(conflicted, live))
             return 4
         changed = [f for f in git("diff", "--name-only", "origin/develop...HEAD").split() if f]
         if not changed:
@@ -804,6 +844,21 @@ def cmd_ship(a: argparse.Namespace) -> int:
             checked_base = git("rev-parse", "origin/develop").strip()
         elif a.skip_checks:
             print("  checks skipped by request; this push is UNVERIFIED")
+            guard_tests = {str(p.relative_to(ROOT)): p.read_text(errors="replace")
+                           for p in (ROOT / "tests").glob("test_*.py")}
+            for label, cmd in doc_guard_steps(changed, guard_tests):
+                started = time.time()
+                res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+                print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
+                if res.returncode:
+                    ids = failing_ids(res.stdout)
+                    mine = set(ids) - failing_on_develop(ids) if ids else {"?"}
+                    if mine:
+                        print((res.stdout + res.stderr)[-1500:])
+                        print("  Your doc/workflow edit breaks contract tests that pin its wording: update those "
+                              f"tests in the SAME commit. Failing: {', '.join(sorted(mine))[:300]}")
+                        return 1
+                    print(f"  NOT yours: {len(ids)} doc test(s) already fail on origin/develop; pushing anyway")
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
