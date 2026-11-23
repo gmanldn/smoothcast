@@ -14,7 +14,7 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Concern | Module |
 | --- | --- |
 | Cards, menus, queue widgets, console, theme, UI controls | `src/cast_ui.py` (`UiMixin`) |
-| Header, side-panel tabs, reflow | `src/panel_ui.py` |
+| Header, player + tabbed side panel, reflow | `src/panel_ui.py` (`PanelMixin`) |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
@@ -116,9 +116,10 @@ URL in `SessionState.stream_url`: watchdog, receiver ownership and recovery
 compare that full URL. Finalised single-segment HLS recovery must verify
 every playlist segment belongs to its saved generation.
 
-`tests/test_hls_generation_identity.py` covers loopback GET/HEAD, stale
-cross-generation requests, allowlists, encoder arguments and recovery, using
-mocks only (never GTK or a real receiver).
+`tests/test_hls_generation_identity.py` checks real loopback GET/HEAD,
+cross-generation stale requests, narrow allowlists, encoder arguments and
+finalised recovery with mock encoders and ephemeral local servers; it never
+launches GTK or controls a real receiver.
 
 ## Cast diagnostics and workers
 
@@ -160,4 +161,5 @@ cancellation, retry policy and full physical receiver acceptance remain
 open there. The GTK-free tests live in `tests/test_transport_serialization.py`.
 
 Search symbols and callers before opening large files; follow runtime state
-ownership through the cast/cleanup lifecycle. Notes: [archive](../AGENT_REFERENCE.md).
+ownership through the whole cast/cleanup lifecycle. Historical notes:
+[archive](../AGENT_REFERENCE.md).
