@@ -12,18 +12,21 @@ to `main`. The owner manually decides when (and whether) to merge it.
    a high-priority unclaimed P0/P1 issue; prioritise high-impact fixes, then
    older small independent tickets. Inspect the latest issue comments before
    touching code. Avoid claiming a ticket or file set another agent owns.
-2. Claim with an issue assignment and **one short comment** identifying the
-   intended file scope. Claims are advisory leases, not indefinite ownership:
-   release when pushed or blocked. Split a large issue into clearly separate
-   file-level slices so other agents can work concurrently.
+2. Claim using `python3 scripts/agent.py claim N --files src/file.py`
+   (structured comment with a bounded TTL, not an assignee-only claim).
+   Agents commonly share one GitHub user identity, so assignees alone do not
+   prevent collisions. The earliest active structured claim wins; on exit 3,
+   choose another issue. Release via `agent.py release N` when done/blocked.
+   Split large issues into separate file-level scopes for concurrency.
 3. Work in one independent detached worktree per task (never the user's
    checkout), stage **named files only**, and make small cohesive commits with
    `Refs #N`. No feature branches or agent PRs.
-4. Push each finished coherent slice **directly to `origin/develop`**. If
-   another agent pushed first, fetch and rebase only YOUR unpublished commits,
-   reconcile overlapping code, and retry the fast-forward push. No `--force`,
-   `reset --hard` of user changes, rewriting published history, or deleting
-   other worktrees/stashes.
+4. Push each finished coherent slice **directly to `origin/develop`**.
+   Preferred command: `python3 scripts/agent.py ship --skip-checks` for
+   explicit unverified rapid delivery; plain `ship` runs affected checks.
+   On push rejection, fetch and rebase only YOUR unpublished commits.
+   Never force-push, reset away user changes, rewrite published history, or
+   delete other agents' worktrees/stashes.
 5. Report the exact SHA and any limitations in the issue. Close only when
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
    is not proof of functionality. Release the claim before selecting the next
