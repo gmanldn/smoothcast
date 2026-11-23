@@ -68,7 +68,7 @@ const showError=(...a)=>display.push(a);
  if(retried.received!==20||requests.join(",")!=="PUT,GET,PUT")
    throw Error("uncommitted chunk was not safely retried");
 })().catch(err=>{console.error(err);process.exitCode=1;});
-""";
+"""
     result = subprocess.run(
         ["node", "-e", js], capture_output=True, text=True, timeout=12, check=False,
     )
