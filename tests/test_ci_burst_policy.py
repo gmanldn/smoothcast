@@ -81,7 +81,8 @@ class BurstCiWorkflowTests(unittest.TestCase):
         for name in ("'packaging/**'", "'src/frozen_*'", "'src/streamer.py'",
                      "'scripts/build_release.py'", "'pyproject.toml'"):
             self.assertIn(name, push)
-        patterns = lambda block: re.findall(r"(?m)^      - ('[^']+')$", block)
+        def patterns(block: str) -> list[str]:
+            return re.findall(r"(?m)^      - ('[^']+')$", block)
         self.assertEqual(patterns(pull_request), patterns(push))
         self.assertGreater(len(patterns(push)), 5)
 
