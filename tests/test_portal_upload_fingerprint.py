@@ -20,47 +20,58 @@ def _js() -> str:
 
 def test_new_fingerprints_are_bounded_and_old_records_remain_supported():
     js = _js()
-    assert "hashVersion:2,hash:await firstChunkHash(file,chunkSize)" in SOURCE
-    assert "upload.hashVersion!==2" in js
-    assert "Math.min(file.size,legacy?chunkSize:UPLOAD_FINGERPRINT_BYTES)" in js
+    assert "hashVersion:3,hash:await firstChunkHash(file,chunkSize)" in SOURCE
+    assert "upload.hashVersion||1" in js
+    assert "new Set(offsets)" in js
     assert "offset+=16*1024" in js
     assert "await new Promise(resolve=>setTimeout(resolve,0))" in js
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
-def test_real_portal_javascript_hashes_only_64k_and_resumes_legacy_records():
+def test_real_js_samples_first_middle_last_and_accepts_existing_v1_v2():
     js = _js() + r"""
 (async()=>{
-  const sample=Buffer.alloc(8*1024*1024,0x61);
-  let maxRead=0;
-  const file={
-    size:sample.length,name:"film.mkv",lastModified:123,
+  const data=Buffer.alloc(8*1024*1024,0x61);
+  let read=0,maxRead=0;
+  const makeFile=(content)=>({
+    size:content.length,name:"film.mkv",lastModified:123,
     slice(start,end){
-      const length=Math.min(end===undefined?sample.length:end,sample.length)-start;
-      maxRead=Math.max(maxRead,length);
-      return new Blob([sample.subarray(start,start+length)]);
+      const span=content.subarray(start,end);
+      read+=span.length;
+      maxRead=Math.max(maxRead,span.length);
+      return new Blob([span]);
     },
-  };
-  const newHash=await firstChunkHash(file,8*1024*1024);
-  if(maxRead!==64*1024||newHash.length!==16)throw Error("new fingerprint exceeds budget");
-  if(await firstChunkHash({...file,size:64*1024},8*1024*1024)!==newHash)
-    throw Error("new hash depends on entire transfer chunk");
-  if(!await matchesPendingFile(file,{
-    name:file.name,size:file.size,lastModified:123,chunkSize:8*1024*1024,
-    hashVersion:2,hash:newHash
-  }))throw Error("new upload cannot resume");
-  const oldFile={...file,size:2048};
-  const oldHash=await firstChunkHash(oldFile,2048,true);
-  if(!await matchesPendingFile(oldFile,{
-    name:file.name,size:2048,lastModified:123,chunkSize:2048,hash:oldHash
-  }))throw Error("old upload cannot resume");
-  if(await matchesPendingFile(file,{
-    name:file.name,size:file.size,lastModified:123,chunkSize:8*1024*1024,
-    hashVersion:2,hash:"deadbeef"
-  }))throw Error("mismatched upload accepted");
-})().catch(err=>{console.error(err);process.exitCode=1;});
+  });
+  const file=makeFile(data);
+  const v3=await firstChunkHash(file,8*1024*1024);
+  if(read>3*64*1024||maxRead>64*1024||v3.length!==16)
+    throw Error("v3 fingerprint exceeded main-thread read budget");
+  const record={name:file.name,size:file.size,lastModified:123,
+                chunkSize:8*1024*1024,hashVersion:3,hash:v3};
+  if(!await matchesPendingFile(file,record))throw Error("v3 upload does not resume");
+  const replaced=Buffer.from(data);
+  replaced[4*1024*1024]=0x62;    // Preserve first 64 KiB and lastModified.
+  const changed=makeFile(replaced);
+  if(await matchesPendingFile(changed,record))
+    throw Error("same-size file changed in the middle was accepted");
+  replaced[4*1024*1024]=0x61;
+  replaced[replaced.length-1]=0x62;
+  if(await matchesPendingFile(changed,record))
+    throw Error("same-size file changed at the end was accepted");
+  const oldV2=await firstChunkHash(file,8*1024*1024,2);
+  if(!await matchesPendingFile(file,{...record,hashVersion:2,hash:oldV2}))
+    throw Error("v2 saved upload cannot resume");
+  const small=makeFile(Buffer.alloc(2048,0x61));
+  const oldV1=await firstChunkHash(small,2048,1);
+  if(!await matchesPendingFile(small,{name:small.name,size:small.size,
+      lastModified:123,chunkSize:2048,hash:oldV1}))
+    throw Error("v1 saved upload cannot resume");
+  if(await matchesPendingFile(file,{...record,hash:"deadbeef"}))
+    throw Error("wrong fingerprint accepted");
+})().catch(error=>{console.error(error);process.exitCode=1;});
 """
     result = subprocess.run(
-        ["node", "-e", js], capture_output=True, text=True, timeout=15, check=False,
+        ["node", "-e", js], capture_output=True, text=True,
+        timeout=15, check=False,
     )
     assert result.returncode == 0, result.stderr
