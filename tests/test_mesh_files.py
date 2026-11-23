@@ -176,3 +176,64 @@ def test_stream_concurrency_cap_returns_503(origin, monkeypatch):
     assert get(harness, f"/mesh/file/{key}")[0] == 503
     portal_media._streams.release()
     assert get(harness, f"/mesh/file/{key}")[0] == 200
+
+
+class _ResumeReply:
+    def __init__(self, status=206, start=100, end=199, total=1000,
+                 length=100, etag='"same"'):
+        self.status = status
+        self.values = {
+            "Content-Range": f"bytes {start}-{end}/{total}",
+            "Content-Length": str(length),
+            "ETag": etag,
+        }
+
+    def getheader(self, key):
+        return self.values.get(key)
+
+
+@pytest.mark.parametrize("change", [
+    {"status": 200},
+    {"start": 99},
+    {"start": 101},
+    {"end": 198},
+    {"end": 200},
+    {"total": 1001},
+    {"total": "*"},
+    {"length": 99},
+    {"length": 101},
+    {"etag": '"new"'},
+])
+def test_proxy_resume_rejects_changed_byte_identity(change):
+    reply = _ResumeReply(**change)
+    assert not mesh_files._valid_resume(reply, 100, 199, "1000", '"same"')
+
+
+def test_proxy_resume_accepts_identical_range_and_rejects_missing_etag():
+    reply = _ResumeReply()
+    assert mesh_files._valid_resume(reply, 100, 199, "1000", '"same"')
+    assert not mesh_files._valid_resume(reply, 101, 199, "1000", '"same"')
+    reply.values.pop("ETag")
+    assert not mesh_files._valid_resume(reply, 100, 199, "1000", '"same"')
+
+
+def test_proxy_initial_range_rejects_invalid_upstream_response():
+    """Invalid 206 is refused before committing downstream headers."""
+    class FakeConnection:
+        def close(self):
+            pass
+
+    class InvalidReply(_ResumeReply):
+        pass
+
+    fake = mesh_files.MeshFiles(lambda _k: None, lambda _k: [],
+                                lambda _k: None)
+    reply = InvalidReply(start=2, end=8, total=10, length=4)
+    fake._open = lambda *_args: (FakeConnection(), reply)
+    class Request:
+        headers = {"Range": "bytes=2-8"}
+    writes = []
+    assert not fake._proxy(Request(), "qh:" + "a" * 32,
+                           "http://127.0.0.1/", head=False,
+                           write_headers=lambda *args: writes.append(args))
+    assert writes == []
