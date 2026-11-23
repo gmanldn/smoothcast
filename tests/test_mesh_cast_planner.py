@@ -42,7 +42,7 @@ def cap(node="a", *, direct=("h264",), remux=(), transcode=(), **changes):
      (cap("b", link_measured=False),), None),
 ])
 def test_direct_proxy_remux_transcode_and_live_table(source_request, capacities, mode):
-    matrix = Matrix(*(Seen(n.node_id, "ready") for n in capacities))
+    matrix = Matrix(*(Seen(n.node_id, "ready", 0) for n in capacities))
     result = select(source_request, matrix, capacities)
     if mode is None:
         assert isinstance(result, NoRoute)
@@ -53,36 +53,36 @@ def test_direct_proxy_remux_transcode_and_live_table(source_request, capacities,
 
 
 def test_busy_foreign_and_missing_lease_fail_closed():
-    assert select(req(), Matrix(Seen("a", "busy")), (cap(),)).code == "target_busy"
-    assert select(req(), Matrix(Seen("a", "ready")),
+    assert select(req(), Matrix(Seen("a", "busy", 0)), (cap(),)).code == "target_busy"
+    assert select(req(), Matrix(Seen("a", "ready", 0)),
                   (cap(lease_approved=False),)).code == "lease_unverified"
-    assert select(req(), Matrix(Seen("a", "ready"), Seen("b", "busy")),
+    assert select(req(), Matrix(Seen("a", "ready", 0), Seen("b", "busy", 0)),
                   (cap("a", lease_approved=False), cap("b"))).code == "lease_unverified"
 
 
 def test_stale_unreachable_and_exhausted_nodes_excluded():
-    assert select(req(), Matrix(Seen("a", "stale")), (cap(),)).code == "target_unreachable"
-    assert select(req(), Matrix(Seen("a", "ready")),
+    assert select(req(), Matrix(Seen("a", "stale", 0)), (cap(),)).code == "target_unreachable"
+    assert select(req(), Matrix(Seen("a", "ready", 0)),
                   (cap(observed_age_ms=5001),)).code == "target_unreachable"
-    assert select(req(), Matrix(Seen("a", "ready")),
+    assert select(req(), Matrix(Seen("a", "ready", 0)),
                   (cap(spare_streams=0),)).code == "resource_exhausted"
-    assert select(req(), Matrix(Seen("a", "ready")),
+    assert select(req(), Matrix(Seen("a", "ready", 0)),
                   (cap(can_reach_source=False),)).code == "source_unreachable"
-    assert select(req(), Matrix(Seen("a", "ready")), (cap(),),
+    assert select(req(), Matrix(Seen("a", "ready", 0)), (cap(),),
                   ).mode == "direct"
-    assert select(req(), Matrix(Seen("a", "ready")), (cap(),),
+    assert select(req(), Matrix(Seen("a", "ready", 0)), (cap(),),
                   current=None).requires_preflight
 
 
 def test_unknown_link_does_not_claim_remote_offload():
-    matrix = Matrix(Seen("b", "ready"))
+    matrix = Matrix(Seen("b", "ready", 0))
     assert select(req(codec="av1"), matrix,
                   (cap("b", transcode=("av1",), link_measured=False),)).code == "format_unsupported"
     assert select(req(), matrix, (cap("b", link_measured=False),)).mode == "range_proxy"
 
 
 def test_stable_node_ties_and_retain_current():
-    matrix = Matrix(Seen("b", "ready"), Seen("c", "ready"))
+    matrix = Matrix(Seen("b", "ready", 0), Seen("c", "ready", 0))
     capacities = (cap("c", rtt_ms=1), cap("b", rtt_ms=3))
     best = select(req(), matrix, capacities)
     assert isinstance(best, Plan) and best.processing_node_id == "c"
@@ -97,7 +97,7 @@ def test_stable_node_ties_and_retain_current():
 
 
 def test_invalid_request_never_allocates_unbounded_candidates():
-    matrix = Matrix(Seen("a", "ready"))
+    matrix = Matrix(Seen("a", "ready", 0))
     for source_request, capacities in [
         (req(kind="something else"), (cap(),)),
         (req(codec=""), (cap(),)),
@@ -109,7 +109,7 @@ def test_invalid_request_never_allocates_unbounded_candidates():
     ]:
         assert select(source_request, matrix, capacities).code == "invalid_request"
     assert select(req(), matrix, (cap(),), current=None).mode == "direct"
-    assert select(req(), Matrix(Seen("a", "ready"), target_id="other"),
+    assert select(req(), Matrix(Seen("a", "ready", 0), target_id="other"),
                   (cap(),)).code == "target_missing"
 
 
