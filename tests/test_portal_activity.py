@@ -1,14 +1,17 @@
 """Portal early-cast reconciliation logic (no GTK window, no sockets)."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from queue import Queue
 from types import SimpleNamespace
 import os
 import pathlib
 import stat
 import sys
 import textwrap
+import threading
 import time
 
 import pytest
@@ -46,11 +49,11 @@ class _PortalRequestError(Exception):
         self.message = message
 
 
-def _build_window(tmp_path):
+def _build_window(tmp_path, *, idle_add=None):
     methods = main_window_methods()
     code = "\n".join(textwrap.indent(methods[name], "    ") for name in (
         "_portal_upload_path", "_portal_queue_action", "_portal_handle",
-        "_portal_dispatch",
+        "_portal_dispatch", "_publish_portal_status",
         "_portal_apply_music_autogain", "_reconcile_portal_casts",
         "_retry_portal_cast"))
     idle: list = []
@@ -61,7 +64,9 @@ def _build_window(tmp_path):
         "save_config": lambda cfg: saved.append(dict(cfg)),
         "pathlib": pathlib, "os": os, "stat": stat, "time": time,
         "PORTAL_CAST_GRACE_SECONDS": 5.0,
-        "GLib": SimpleNamespace(idle_add=lambda fn, *args: idle.append((fn, args))),
+        "threading": threading,
+        "GLib": SimpleNamespace(
+            idle_add=idle_add or (lambda fn, *args: idle.append((fn, args)))),
     }
     exec(compile("class Window:\n" + code, "<portal-handle-test>", "exec"), namespace)
     window = namespace["Window"]()
@@ -196,6 +201,39 @@ def test_status_dispatch_reads_snapshot_without_idle_callback(tmp_path):
     assert result["snapshot_version"] == 1
     assert isinstance(result["snapshot_age_ms"], int)
     assert idle == []
+
+
+def test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread(tmp_path):
+    callbacks = Queue()
+    window, uploads, _idle = _build_window(tmp_path, idle_add=callbacks.put)
+    window._portal_status = portal_status.PublishedStatus()
+    gtk_thread = threading.get_ident()
+    handle = window._portal_handle
+
+    def guarded_handle(operation, payload):
+        assert threading.get_ident() == gtk_thread
+        if operation == "status":
+            return {"music_autogain": window.cfg["music_autogain"]}
+        return handle(operation, payload)
+
+    window._portal_handle = guarded_handle
+    window._publish_portal_status()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            mutation = pool.submit(window._portal_dispatch, "music_autogain", {"value": True})
+            run_on_gtk = callbacks.get(timeout=1)
+            before = pool.submit(window._portal_dispatch, "status", {}).result(timeout=1)
+            assert before["music_autogain"] is False
+            assert before["snapshot_version"] == 1
+
+            assert run_on_gtk() is False
+            assert mutation.result(timeout=1) == "Music autogain enabled."
+            after = pool.submit(window._portal_dispatch, "status", {}).result(timeout=1)
+            assert after["music_autogain"] is True
+            assert after["snapshot_version"] == 2
+            assert callbacks.empty()
+    finally:
+        uploads.close()
 
 
 def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():

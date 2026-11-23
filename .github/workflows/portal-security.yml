@@ -9,6 +9,7 @@ on:
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
+      - 'src/portal_status.py'
       - 'src/portal_commands.py'
       - 'src/portal_uploads.py'
       - 'src/cast_portal.py'
@@ -22,6 +23,7 @@ on:
       - 'src/mesh_transport.py'
       - 'tests/test_mesh_transport.py'
       - 'src/portal_room.py'
+      - 'src/portal_status.py'
       - 'src/portal_commands.py'
       - 'src/portal_uploads.py'
       - 'src/cast_portal.py'
@@ -55,6 +57,9 @@ jobs:
           tests/test_portal_join.py
           tests/test_mesh_transport.py
           tests/test_portal_room.py
+          tests/test_portal_status.py
+          tests/test_portal_activity.py::test_portal_mutation_and_snapshot_publication_stay_on_gtk_thread
+          tests/test_portal_screens_http.py::test_status_http_reads_snapshot_while_gtk_dispatcher_is_blocked
           tests/test_portal_commands.py
           tests/test_portal_uploads.py
           tests/test_portal_queue.py
