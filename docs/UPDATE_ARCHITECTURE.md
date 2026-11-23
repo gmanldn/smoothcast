@@ -34,6 +34,17 @@ A failed validation or disk write cleans up the private temporary generation.
 It never reads or replaces `current`, `previous`, the user profile or
 running Python/GTK modules.
 
+`setup/managed_archive.py:unpack_archive` is the matching **offline archive
+gate**: it unpacks a `.tar`, `.tar.gz` or `.zip` candidate into a new private
+scratch directory and returns the manifest `stage_local_snapshot` consumes.
+It never uses `extract`/`extractall`; only ordinary files are written. It
+rejects traversal and absolute paths, symlinks, hardlinks, devices/FIFOs,
+encrypted zip members, duplicate/case/NFC collisions, file-vs-directory
+clashes, Windows-reserved or non-portable names, control/bidi characters,
+file-count/byte budgets, compression-ratio bombs and truncated/corrupt data
+(including a cut gzip trailer), and removes the scratch tree on any failure.
+It does not authenticate the archive; that must happen first.
+
 **This does NOT yet fetch or authenticate manifests, construct a complete
 independent native GTK/Python environment, atomically activate a generation,
 or roll back a failed new primary.** Never call it automatically on an untrusted
