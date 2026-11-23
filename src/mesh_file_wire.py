@@ -75,6 +75,32 @@ def _matches_request(requested: str | None, status: int, start: int,
     return start == max(0, size - suffix) and end == size - 1
 
 
+
+_UNSATISFIED_RANGE = re.compile(r"bytes \\*/([0-9]{1,19})\\Z")
+
+
+def valid_unsatisfied_range(requested: str | None, content_range: str | None) -> bool:
+    """Only forward a 416 that proves the client's byte range is unsatisfiable."""
+    if not isinstance(requested, str) or not isinstance(content_range, str):
+        return False
+    request = _SINGLE_RANGE.fullmatch(requested)
+    response = _UNSATISFIED_RANGE.fullmatch(content_range)
+    if request is None or response is None:
+        return False
+    total = parse_wire_uint(response.group(1))
+    if total is None:
+        return False
+    first, last = request.groups()
+    if first:
+        offset = parse_wire_uint(first)
+        limit = parse_wire_uint(last) if last else None
+        if offset is None or (last and (limit is None or limit < offset)):
+            return False
+        return offset >= total
+    suffix = parse_wire_uint(last)
+    return suffix is not None and (suffix == 0 or total == 0)
+
+
 def pump_stream(
     open_upstream: Callable,
     handler,
