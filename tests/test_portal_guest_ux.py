@@ -451,3 +451,18 @@ updateScreenPlayButton(play,pick,true);
 assert.equal(play.disabled,true,"cleared selection cannot play");
 """
     subprocess.run(["node", "-"], input=fn + harness, check=True, text=True, timeout=10)
+
+
+def test_mesh_network_help_defines_target_states_without_cast_permissions():
+    """The read-only mesh panel explains node/receiver meaning on touch and keyboard."""
+    from portal_mesh_panel import panel_html
+
+    panel = panel_html()
+    assert '<details class="help"><summary>What do the network devices and target states mean?</summary>' in panel
+    assert "Devices</strong> are SmoothCast computers" in panel
+    assert "Primary</strong> is the node coordinating the mesh" in panel
+    assert "Ready</strong> means" in panel
+    assert "In use</strong> means" in panel
+    assert "Can't be reached</strong> means" in panel
+    assert "It does not cast, claim receivers or upload files" in panel
+    assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
