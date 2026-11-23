@@ -73,6 +73,10 @@ def route(words: list[str]) -> list[str]:
         name: sum(_term_count(query, term) for term in terms)
         for name, (_, terms) in TOPICS.items()
     }
+    # An explicit handbook path is a stronger signal than other query words.
+    for name in TOPICS:
+        if f"docs/agents/{name}.md" in query:
+            scores[name] += 4
     return [name for name in sorted(scores, key=lambda k: (-scores[k], k))
             if scores[name] > 0]
 
