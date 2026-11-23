@@ -22,15 +22,11 @@ def label() -> str:
     return f"v{__version__}"
 
 
-def read_checkout_version(path: Path) -> str | None:
-    """Read a newer on-disk version.py *without executing it*.
-
-    Only top-level integer assignments of MAJOR, MINOR and PATCH are accepted.
-    This intentionally cannot mutate the imported/runtime version.
-    """
+def parse_version_text(source: str) -> str | None:
+    """Extract a semantic version from untrusted source without executing code."""
     try:
-        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeError, ValueError):
+        tree = ast.parse(source)
+    except (SyntaxError, UnicodeError, ValueError, TypeError):
         return None
     parts: dict[str, int] = {}
     for statement in tree.body:
@@ -46,6 +42,15 @@ def read_checkout_version(path: Path) -> str | None:
     if set(parts) != {"MAJOR", "MINOR", "PATCH"}:
         return None
     return f"{parts['MAJOR']}.{parts['MINOR']}.{parts['PATCH']}"
+
+
+def read_checkout_version(path: Path) -> str | None:
+    """Read on-disk version without importing it or mutating runtime state."""
+    try:
+        source = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return parse_version_text(source)
 
 
 if __name__ == "__main__":
