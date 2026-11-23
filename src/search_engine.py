@@ -6,6 +6,7 @@ BM25 ranking with deterministic boosts, and grouped results.
 from __future__ import annotations
 
 import base64
+import binascii
 import sqlite3
 import time
 
@@ -205,12 +206,30 @@ def group(rows: list[dict]) -> list[dict]:
 
 def search(conn: sqlite3.Connection, text: object, limit: int = 50, cursor: str | None = None,
            **kwargs) -> dict:
-    limit = max(1, min(int(limit), 100))
     try:
-        offset = int(base64.urlsafe_b64decode((cursor or "").encode()).decode()) if cursor else 0
-    except (ValueError, UnicodeError):
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError, OverflowError):
+        limit = 50
+    # The local fallback API receives the same untrusted cursor as federated
+    # search. Do not accept signed/ambiguous offsets or unbounded integers.
+    offset = 0
+    if isinstance(cursor, str) and 0 < len(cursor) <= 16:
+        try:
+            raw = base64.b64decode(cursor, altchars=b"-_", validate=True)
+            if (0 < len(raw) <= 6 and raw.isascii() and raw.isdigit()
+                    and (raw == b"0" or not raw.startswith(b"0"))
+                    and base64.urlsafe_b64encode(raw).decode() == cursor):
+                candidate = int(raw)
+                if candidate <= 200000:  # maximum indexed entries per node
+                    offset = candidate
+        except (ValueError, UnicodeError, binascii.Error):
+            pass
+    rows, partial = run(conn, text, limit, offset, **kwargs)
+    # An expired cursor from a changed index must not strand a user on an
+    # empty page; only retry when the search genuinely finished (not partial).
+    if offset and not rows and not partial:
         offset = 0
-    rows, partial = run(conn, text, limit, max(0, offset), **kwargs)
+        rows, partial = run(conn, text, limit, offset, **kwargs)
     more = len(rows) > limit
     page = rows[:limit]
     nxt = base64.urlsafe_b64encode(str(offset + limit).encode()).decode() if more else None
