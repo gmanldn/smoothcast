@@ -72,6 +72,10 @@ jobs:
         run: |
           python scripts/ci/lint_silent_except.py
           python -m unittest discover -s tests -p test_silent_except_lint.py
+      - name: Verify code and issue-body budget contracts
+        run: |
+          python -m pip install 'pytest>=8,<10'
+          python -m pytest -q tests/test_complexity_budget.py tests/test_issue_body_budget.py
 
   mesh-protocol-contract:
     name: Mesh protocol safety (headless)
