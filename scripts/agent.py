@@ -310,18 +310,42 @@ def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
     return slices, latest, remaining
 
 
+def all_open_issue_pool(tiers: set[str], max_pages: int = 20) -> tuple[dict, set[int]]:
+    """One paginated issue snapshot for both work selection and dependencies.
+
+    The earlier tier-filtered queries treated open issues in later/icebox
+    as if they were closed, so agents eagerly picked blocked tickets.
+    """
+    candidates: dict[int, dict] = {}
+    open_numbers: set[int] = set()
+    for page in range(1, max_pages + 1):
+        suffix = "" if page == 1 else f"&page={page}"
+        rows = gh(f"repos/{REPO}/issues?state=open&per_page=100{suffix}")
+        if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+            raise td.DigestError("cannot read complete open issue list for dependency checks")
+        for row in rows:
+            if "pull_request" in row:
+                continue
+            number = row.get("number")
+            if type(number) is not int or number <= 0:
+                raise td.DigestError("invalid issue number in open issue response")
+            open_numbers.add(number)
+            labels = {v.get("name") for v in row.get("labels") or [] if isinstance(v, dict)}
+            if tiers & labels:
+                candidates[number] = row
+        if len(rows) < 100:
+            return candidates, open_numbers
+    raise td.DigestError(
+        f"open issue list exceeded {max_pages * 100} records; "
+        "refusing incomplete dependency detection")
+
+
 def ranked_candidates(a: argparse.Namespace) -> tuple[list, list, list, set, str]:
     me, now = agent_id(), utcnow()
     claims = active_claims(parse_events(recent_comments()), now)
     hot = hot_files()
     tiers = ["now", "next"] + (["later"] if a.later else [])
-    pool = {}
-    for tier in tiers:
-        rows = gh(f"repos/{REPO}/issues?state=open&labels={tier}&per_page=100")
-        for r in rows if isinstance(rows, list) else []:
-            if "pull_request" not in r:
-                pool[r["number"]] = r
-    open_numbers = set(pool)
+    pool, open_numbers = all_open_issue_pool(set(tiers))
     ranked, skipped = [], []
     for n, raw in pool.items():
         issue = td.normalize(td._rest_issue(raw))
@@ -417,7 +441,14 @@ def cmd_start(a: argparse.Namespace) -> int:
         if not ranked:
             print("no available ticket; inspect agent.py board or supply an issue number")
             return 3
-        number = ranked[0][1]
+        # Explicit open prerequisites are not eligible for automatic pickup.
+        # The operator can still choose a specific issue to work on a safe
+        # independent slice, but don't assign blocked work to lesser agents.
+        available = [candidate for candidate in ranked if not candidate[4]]
+        if not available:
+            print("all candidate tickets have open prerequisites; inspect agent.py next")
+            return 3
+        number = available[0][1]
     else:
         number = a.number
     issue = load_issue(number)
