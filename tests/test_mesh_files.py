@@ -283,3 +283,27 @@ def test_proxy_closes_downstream_when_upstream_exhausts_retry_budget():
                 Connection(), FailingReply(), 0, 128, "128", None)
     assert client.close_connection is True
     assert client.wfile.getvalue() == b""
+
+
+@pytest.mark.parametrize("phase", ["request", "response"])
+def test_mesh_upstream_connection_closed_on_handshake_error(phase):
+    closed = []
+    class Connection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            if phase == "request":
+                raise OSError("send failure")
+
+        def getresponse(self):
+            raise OSError("headers failure")
+
+        def close(self):
+            closed.append(True)
+
+    proxy = mesh_files.MeshFiles(lambda _k: None, lambda _k: [],
+                                 lambda _k: None, connect=Connection)
+    with pytest.raises(OSError):
+        proxy._open("http://127.0.0.1:8080", "qh:" + "b" * 32, None, False)
+    assert closed == [True]
