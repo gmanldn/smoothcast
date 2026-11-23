@@ -84,7 +84,7 @@ video{width:100%;height:100%;object-fit:contain;background:#000}
 <div id="player" hidden><video id="video" playsinline preload="auto"></video>
 <div id="audioArt" hidden><div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><p class="big" id="audioTitle"></p></div>
 <div id="banner" role="status" aria-live="polite" hidden></div>
-<div id="tools"><button class="ghost" id="fsButton" type="button">Full screen</button></div>
+<div id="tools"><button class="ghost" id="fsButton" type="button">Full screen</button><button class="ghost" id="pipButton" type="button" hidden>Picture in picture</button></div>
 <div id="hud"><div class="title" id="hudTitle"></div><div class="bar"><i id="hudBar"></i></div>
 <div class="meta"><span id="hudState"></span><span id="hudTime"></span></div></div></div>
 
@@ -124,7 +124,10 @@ async function begin(){
   show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
 function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
-async function keepAwake(){if(!("wakeLock"in navigator))return;try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(_){}}
+const DIM_HINT="Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.";
+function dimHint(){if(store.get("sc_dim_hint"))return;store.set("sc_dim_hint","1");banner(DIM_HINT);setTimeout(()=>{if($("banner").textContent===DIM_HINT)banner("")},9000)}
+async function keepAwake(){if(!("wakeLock"in navigator)){dimHint();return}try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(_){dimHint()}}
+if(safe(()=>document.pictureInPictureEnabled&&video.requestPictureInPicture)){$("pipButton").hidden=false;$("pipButton").addEventListener("click",e=>{e.stopPropagation();safe(()=>document.pictureInPictureElement?document.exitPictureInPicture():video.requestPictureInPicture())})}
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&started&&!wakeLock)keepAwake()});
 async function loop(){
   if(polling)return;polling=true;
