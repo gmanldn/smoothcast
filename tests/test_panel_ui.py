@@ -75,3 +75,24 @@ def test_receiver_picker_sits_in_the_player_next_to_the_cast_button():
     assert player.index("self.device_dropdown") < player.index("self.cast_button")
     device_card = ui.split("def _build_device_card", 1)[1].split("def _build_portal_card", 1)[0]
     assert "device_dropdown" not in device_card
+
+
+def test_room_join_link_is_always_visible_above_player_and_is_copyable():
+    # This strip belongs to the toolbar, not the Room side-panel tab.
+    assert "self.room_join_strip = Gtk.Box" in PANEL
+    assert 'toolbar.add_top_bar(self.room_join_strip)' in PANEL
+    assert PANEL.index('toolbar.add_top_bar(self.room_join_strip)') < PANEL.index('self.page = Gtk.Box')
+    assert 'label="JOIN ROOM"' in PANEL
+    assert 'label="Copy join link", sensitive=False' in PANEL
+    assert 'self.room_join_copy_button.connect("clicked", self._copy_portal_link)' in PANEL
+    assert "Gtk.AccessibleProperty.LABEL" in PANEL
+    assert "Pango.EllipsizeMode.MIDDLE" in PANEL
+
+
+def test_room_join_link_tracks_portal_start_failure_and_shutdown():
+    src = (ROOT / "src" / "cast_portal.py").read_text(encoding="utf-8")
+    assert 'self._set_room_join_link(self._portal.url)' in src
+    assert 'self._set_room_join_link(None, "Room stopped")' in src
+    assert 'self._set_room_join_link(None, "Room unavailable — connect to a private LAN")' in src
+    assert 'self._set_room_join_link(None, "Room unavailable — check network settings")' in src
+    assert 'self.room_join_copy_button.set_sensitive(bool(url))' in PANEL
