@@ -171,6 +171,7 @@ class CastControlApp(Adw.Application):
         self._pending_files: list[str] = []
         self._mpris = None
         self._paint_handler: int | None = None
+        self._noticed_disk_version: str | None = None
         self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
 
     def do_startup(self) -> None:
@@ -403,10 +404,30 @@ class CastControlApp(Adw.Application):
         return False
 
 
+    def _show_stale_runtime_notice(self, window: MainWindow) -> None:
+        """Do not misrepresent an updated checkout as a restarted process.
+
+        Running Python modules remain from this launch; an on-disk version
+        change is only effective after an orderly quit and relaunch.
+        """
+        disk = version.read_checkout_version(
+            pathlib.Path(__file__).resolve().parent / "version.py"
+        )
+        if not disk or disk == version.__version__ or disk == self._noticed_disk_version:
+            return
+        self._noticed_disk_version = disk
+        notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
+                  "Finish playback, then quit and reopen to use the installed version.")
+        window._installed_version_stale = True
+        window.update_notice = notice
+        window._update_header_subtitle()
+        window.toast(notice, error=True)
+
     def do_activate(self) -> None:
         startup_timeline.mark("activate")
         window = self._window()
         window.present()
+        self._show_stale_runtime_notice(window)
         startup_timeline.mark("presented")
         if not self._startup_reported:
             self._startup_reported = True
@@ -452,7 +473,8 @@ class CastControlApp(Adw.Application):
         self._mpris = mpris.start(window)
         if self._mpris is not None:
             window._sync_ui_timers()
-        if not getattr(sys, "frozen", False):
+        if (not getattr(sys, "frozen", False)
+                and bool(window.cfg.get("auto_update", False))):
             threading.Thread(
                 target=self._background_update,
                 name="smoothcast-git-update",
@@ -462,12 +484,12 @@ class CastControlApp(Adw.Application):
 
     def _background_update(self) -> None:
         cfg = getattr(self.window, "cfg", None) or {}
-        from update_control import refresh_checkout
+        from update_control import check_release
 
-        notice = refresh_checkout(
+        notice = check_release(
             pathlib.Path(__file__).resolve().parent.parent,
-            enabled=bool(cfg.get("auto_update", True)),
-            verify=bool(cfg.get("verify_updates", False)),
+            enabled=bool(cfg.get("auto_update", False)),
+            verify=bool(cfg.get("verify_updates", True)),
         )
         if notice:
             # All GTK work stays on the main loop; the version displayed in
@@ -535,6 +557,7 @@ class CastControlApp(Adw.Application):
                 paths.append(path)
         window = self._window()
         window.present()
+        self._show_stale_runtime_notice(window)
         startup_timeline.mark("presented")
         if paths:
             window.open_paths(paths)
