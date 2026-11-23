@@ -1666,9 +1666,10 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
+<p id="uploadSelectionHint" class="field-hint">Choose a file to enable uploading. Select multiple files to send them in order.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
 <progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room">Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
+<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
@@ -2331,7 +2332,7 @@ function updateUploadControls(){
   const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
   if(audio)$("uploadQueue").checked=true;
   const resumeLabel=pendingUpload&&`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`;
-  $("uploadButton").disabled=uploading||!!pendingUpload&&!file;
+  $("uploadButton").disabled=uploading||!file;
   $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
