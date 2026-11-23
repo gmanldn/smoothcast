@@ -200,6 +200,7 @@ class SettingsCardMixin:
             save_config(self.cfg)
             self.toast("Music autogain enabled (applies on the next cast or restart)"
                        if active else "Music autogain disabled")
+            self._publish_portal_status()
 
 
     def _sleep_fade_tick(self) -> bool:

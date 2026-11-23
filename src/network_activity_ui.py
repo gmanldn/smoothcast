@@ -37,6 +37,7 @@ class NetworkActivityMixin:
             self._network_activity_entries = []
             self._network_activity_updated = time.monotonic()
             self._render_network_activity()
+            self._publish_portal_status()
             return True
         self._network_activity_busy = True
 
@@ -47,6 +48,7 @@ class NetworkActivityMixin:
             self._network_activity_entries = entries
             self._network_activity_updated = time.monotonic()
             self._render_network_activity()
+            self._publish_portal_status()
 
         def failed(_message):
             self._network_activity_busy = False
@@ -54,6 +56,7 @@ class NetworkActivityMixin:
                 self._network_activity_entries = []
                 self._network_activity_updated = time.monotonic()
                 self._render_network_activity()
+                self._publish_portal_status()
 
         Async.run(
             lambda: network_activity.snapshot(list(casts), list(renderers)),

@@ -836,6 +836,7 @@ class SessionMixin:
                 self.remaining_label.set_text("--:--")
         self._update_transport_icon()
         self._update_details(snapshot)
+        self._publish_portal_status()
         return True
 
 

@@ -9,6 +9,7 @@ import castctl
 import state_labels
 import lan_interfaces
 import portal
+import portal_status
 import portal_commands
 import portal_join
 import peer_discovery_ui
@@ -36,6 +37,10 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
             return True
         try:
+            snapshot = getattr(self, "_portal_status", None)
+            if snapshot is None:
+                snapshot = self._portal_status = portal_status.PublishedStatus()
+            self._publish_portal_status()
             fence = getattr(self, "_portal_fence", None)
             if fence is None:
                 fence = self._portal_fence = portal_commands.CommandFence(
@@ -43,6 +48,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
             self._portal = portal.Portal(address, self._portal_dispatch,
+                                         status_snapshot=snapshot.read,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
                                          preferred_port=int(self.cfg.get("portal_port", 0)))
@@ -74,6 +80,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         import cast_mesh
         cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
+        self._publish_portal_status()
         return True
 
     def _show_portal_qr(self, url: str | None) -> None:
@@ -205,7 +212,15 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             raise portal_commands.CommandError(exc.status, exc.message) from exc
 
     def _portal_dispatch(self, operation: str, payload: dict) -> object:
-        """Marshal web requests onto GTK's main thread; never read GTK off-thread."""
+        """Serve cached reads directly and marshal all GTK-owned work to GTK."""
+        if operation == "status":
+            if self._closing:
+                raise portal.PortalRequestError(503, "SmoothCast is shutting down")
+            snapshot = getattr(self, "_portal_status", None)
+            state = snapshot.read() if snapshot is not None else None
+            if state is None:
+                raise portal.PortalRequestError(503, "Status snapshot is not ready")
+            return state
         completed = threading.Event()
         cancelled = threading.Event()
         result: list[object] = []
@@ -218,6 +233,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             except Exception as exc:
                 result.append(exc)
             finally:
+                self._publish_portal_status()
                 completed.set()
             return False
 
@@ -232,6 +248,21 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if result and isinstance(result[0], Exception):
             raise result[0]
         return result[0] if result else {}
+
+    def _publish_portal_status(self) -> None:
+        """Publish GTK-owned status for HTTP threads without dispatch waits."""
+        snapshot = getattr(self, "_portal_status", None)
+        if snapshot is None or self._closing:
+            return
+        try:
+            state = self._portal_handle("status", {})
+        except Exception as exc:
+            console = getattr(self, "_console", None)
+            if console is not None:
+                console(f"Could not publish room status: {exc}")
+            return
+        if isinstance(state, dict):
+            snapshot.publish(state)
 
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:

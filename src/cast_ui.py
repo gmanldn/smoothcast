@@ -1318,6 +1318,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 self._set_chip("Ready to preview", "idle")
             else:
                 self._set_chip("Ready", "idle")
+        self._publish_portal_status()
         self._sync_ui_timers()
         self._update_panel_badges()
 

@@ -154,9 +154,11 @@ class _PortalHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
     allow_reuse_address = True
+    request_queue_size = 64
 
     def __init__(self, address, pin: str, dispatch: Callable, *, clock=time.monotonic,
                  pin_required: bool = True,
+                 status_snapshot: Callable[[], dict | None] | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
                  hostname: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
@@ -175,6 +177,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._apply_default_command, fence=self.fence, clock=clock)
         self.request_limiter = portal_commands.ParticipantRateLimiter(clock=clock)
         self.pin_required = bool(pin_required)
+        self.status_snapshot = status_snapshot
         self.library_search: Callable | None = None
         self.library_search_stream: Callable | None = None
         self.library_replication = None
@@ -746,7 +749,12 @@ class _Handler(BaseHTTPRequestHandler):
             if participant_id is None:
                 return self._error(401, "Session expired")
             try:
-                state = self.server.dispatch("status", {})
+                if self.server.status_snapshot is None:
+                    state = self.server.dispatch("status", {})
+                else:
+                    state = self.server.status_snapshot()
+                    if state is None:
+                        raise PortalRequestError(503, "Status snapshot is not ready")
             except Exception:
                 return self._error(503, "SmoothCast is not ready to report playback state")
             queue = state.get("queue") if isinstance(state.get("queue"), list) else []
@@ -1125,6 +1133,7 @@ class Portal:
 
     def __init__(self, bind_ip: str, dispatch: Callable, *, pin: str | None = None,
                  uploads: portal_uploads.UploadManager | None = None,
+                 status_snapshot: Callable[[], dict | None] | None = None,
                  name: str | None = None,
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
@@ -1154,6 +1163,7 @@ class Portal:
         self.server, self.port_fallback = bind_room_server(
             (self.bind_ip, requested), self.pin, dispatch,
             uploads=self.uploads, hostname=self.name,
+            status_snapshot=status_snapshot,
             commands=commands, fence=fence,
             room=self.room, pin_required=pin_required,
         )

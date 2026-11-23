@@ -45,6 +45,11 @@ responding, and refreshes again when you return to the tab. Votes are a
 visible signal and are preserved across refreshes; queue order remains under
 the room's control so nobody's film can be silently displaced.
 
+Status responses read a versioned snapshot published by the desktop's GTK
+thread, so a busy UI does not make phone polling wait for a UI callback. The
+response includes `snapshot_age_ms`; playback and control mutations publish a
+fresh snapshot, and progress is refreshed by the normal UI tick.
+
 The **On your network** card in the desktop app and dashboard lists currently
 playing, buffering or paused media reported by reachable Cast and DLNA
 receivers discovered on the LAN. It refreshes every 15 seconds, shows the
