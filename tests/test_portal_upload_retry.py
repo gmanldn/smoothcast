@@ -73,3 +73,42 @@ const showError=(...a)=>display.push(a);
         ["node", "-e", js], capture_output=True, text=True, timeout=12, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _upload_validation_js() -> str:
+    start = "const MAX_UPLOAD_CHUNK_BYTES=8*1024*1024;"
+    end = "async function clearPendingUpload(){"
+    assert SOURCE.count(start) == 1
+    return start + SOURCE.split(start, 1)[1].split(end, 1)[0]
+
+
+def test_upload_validation_guards_creation_restore_and_send_paths():
+    assert "if(!validSavedUpload(record))continue;" in SOURCE
+    assert "validUploadChunkSize(chunkSize)" in SOURCE
+    assert "validUploadProgress(state.received,file.size)" in SOURCE
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_actual_upload_validation_js_rejects_nonprogressing_and_corrupt_records():
+    js = _upload_validation_js() + r"""
+const id="a".repeat(32);
+const base={id,name:"film.mkv",chunkSize:8*1024*1024,size:20,received:0};
+const reject=[0,-1,1.5,NaN,Infinity,"2",8*1024*1024+1,Number.MAX_SAFE_INTEGER];
+for(const chunkSize of reject){
+  if(validUploadChunkSize(chunkSize))throw Error("bad chunk accepted: "+chunkSize);
+  if(validSavedUpload({...base,chunkSize}))throw Error("corrupt saved chunk accepted");
+}
+for(const received of [-1,21,Infinity,NaN,0.25,"0"]){
+  if(validSavedUpload({...base,received}))throw Error("bad offset accepted");
+}
+if(!validSavedUpload(base)||!validUploadChunkSize(2*1024*1024))
+  throw Error("valid or legacy chunk rejected");
+if(!validSavedUpload({...base,received:20}))
+  throw Error("completed upload metadata rejected");
+if(validSavedUpload({...base,id:"bad"})||validSavedUpload({...base,size:0}))
+  throw Error("malformed upload record accepted");
+"""
+    result = subprocess.run(
+        ["node", "-e", js], capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stderr
