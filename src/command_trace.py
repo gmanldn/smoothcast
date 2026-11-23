@@ -45,6 +45,9 @@ class Trace:
     action: str
     started: float = field(default_factory=time.monotonic)
     stages: list[dict] = field(default_factory=list)
+    # Only keyed fingerprints, state and monotonic ACK time; no raw device ID.
+    _expected: tuple[str, str, float] | None = field(default=None, repr=False)
+    _unconfirmed: bool = field(default=False, repr=False)
 
     def mark(self, name: str, *, code: int | None = None) -> None:
         if name not in _STAGE_NAMES:
@@ -68,6 +71,54 @@ def stage(name: str, *, code: int | None = None) -> None:
     record = _ACTIVE.get()
     if record is not None:
         record.mark(name, code=code)
+
+
+def clear_receiver_expectation() -> None:
+    """A newer receiver mutation invalidates an earlier unverified outcome."""
+    record = _ACTIVE.get()
+    if record is not None:
+        with _LOCK:
+            record._expected = None
+            record._unconfirmed = False
+
+
+def expect_receiver(target: str, state: str) -> None:
+    """Remember an ACKed transport outcome, never the receiver name/IP itself."""
+    record = _ACTIVE.get()
+    if record is None or not isinstance(target, str) or not target:
+        return
+    if state not in {"PLAYING", "PAUSED", "IDLE"}:
+        return
+    fingerprint = hmac.new(_ID_KEY, target.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
+    with _LOCK:
+        record._expected = (fingerprint, state, time.monotonic())
+        record._unconfirmed = False
+
+
+def observe_receiver(target: str, state: str) -> None:
+    """Confirm only a fresh state read from the exact receiver that ACKed.
+
+    An ACK alone, a different receiver, an unrecognised state or a stale
+    observation never proves that playback changed. No extra device IO occurs.
+    """
+    record = _ACTIVE.get()
+    if record is None or not isinstance(target, str) or not target:
+        return
+    fingerprint = hmac.new(_ID_KEY, target.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
+    with _LOCK:
+        expected = record._expected
+        if expected is None or expected[0] != fingerprint:
+            return
+        if time.monotonic() - expected[2] > 20:
+            record._expected = None
+            if not record._unconfirmed:
+                record.mark("unconfirmed")
+        elif state == expected[1]:
+            record._expected = None
+            record.mark("receiver_confirmed")
+        elif state not in {"BUFFERING", "UNKNOWN", "OFFLINE"} and not record._unconfirmed:
+            record._unconfirmed = True
+            record.mark("unconfirmed")
 
 
 @contextmanager

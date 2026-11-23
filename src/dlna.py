@@ -27,6 +27,7 @@ from urllib.parse import urljoin, urlsplit
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape
 
+import command_trace
 import audio_delay
 import audio_downmix
 import cache_policy
@@ -432,8 +433,10 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
         "TRANSITIONING": "BUFFERING", "STOPPED": "IDLE",
         "NO_MEDIA_PRESENT": "IDLE",
     }
-    result: dict = {"player_state": mapped.get(raw, "IDLE"),
+    result: dict = {"player_state": mapped.get(raw, "UNKNOWN"),
                     "title": renderer.name}
+    command_trace.stage("status_observed")
+    command_trace.observe_receiver(renderer.key, result["player_state"])
     try:
         pos = _soap(renderer, "GetPositionInfo", {"InstanceID": "0"})
         result["current_time"] = _seconds(_value(pos, "RelTime"))
@@ -461,6 +464,22 @@ def info(renderer: Renderer, *, include_volume: bool = True) -> dict | None:
     return result
 
 
+def _traced_mutation(renderer: Renderer, action: str, params: dict[str, str],
+                     *, rendering: bool = False) -> None:
+    """Record SOAP command ACK/failure; verify playback only on a later status read."""
+    command_trace.clear_receiver_expectation()
+    command_trace.stage("receiver_call")
+    try:
+        _soap(renderer, action, params, rendering=rendering)
+    except Exception:
+        command_trace.stage("receiver_failed", code=502)
+        raise
+    command_trace.stage("receiver_ack")
+    expected = {"Play": "PLAYING", "Pause": "PAUSED", "Stop": "IDLE"}.get(action)
+    if expected is not None:
+        command_trace.expect_receiver(renderer.key, expected)
+
+
 def set_uri(renderer: Renderer, url: str, title: str, media_type: str = MEDIA_TYPE) -> None:
     # DIDL-Lite metadata is XML-escaped again by the SOAP envelope builder.
     metadata = (
@@ -473,36 +492,36 @@ def set_uri(renderer: Renderer, url: str, title: str, media_type: str = MEDIA_TY
         f'<res protocolInfo="http-get:*:{media_type}:*">{escape(url)}</res>'
         "</item></DIDL-Lite>"
     )
-    _soap(renderer, "SetAVTransportURI", {
+    _traced_mutation(renderer, "SetAVTransportURI", {
         "InstanceID": "0", "CurrentURI": url, "CurrentURIMetaData": metadata,
     })
 
 
 def play(renderer: Renderer) -> None:
-    _soap(renderer, "Play", {"InstanceID": "0", "Speed": "1"})
+    _traced_mutation(renderer, "Play", {"InstanceID": "0", "Speed": "1"})
 
 
 def pause(renderer: Renderer) -> None:
-    _soap(renderer, "Pause", {"InstanceID": "0"})
+    _traced_mutation(renderer, "Pause", {"InstanceID": "0"})
 
 
 def stop(renderer: Renderer) -> None:
-    _soap(renderer, "Stop", {"InstanceID": "0"})
+    _traced_mutation(renderer, "Stop", {"InstanceID": "0"})
 
 
 def seek(renderer: Renderer, position: float) -> None:
-    _soap(renderer, "Seek", {"InstanceID": "0", "Unit": "REL_TIME",
+    _traced_mutation(renderer, "Seek", {"InstanceID": "0", "Unit": "REL_TIME",
                               "Target": _clock(position)})
 
 
 def volume(renderer: Renderer, percent: float) -> None:
     level = max(0, min(100, int(round(percent))))
-    _soap(renderer, "SetVolume", {"InstanceID": "0", "Channel": "Master",
+    _traced_mutation(renderer, "SetVolume", {"InstanceID": "0", "Channel": "Master",
                                   "DesiredVolume": str(level)}, rendering=True)
 
 
 def set_muted(renderer: Renderer, muted: bool) -> None:
-    _soap(renderer, "SetMute", {"InstanceID": "0", "Channel": "Master",
+    _traced_mutation(renderer, "SetMute", {"InstanceID": "0", "Channel": "Master",
                                 "DesiredMute": "1" if muted else "0"}, rendering=True)
 
 

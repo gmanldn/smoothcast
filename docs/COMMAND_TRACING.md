@@ -1,36 +1,42 @@
 # Correlated command diagnostics (#451)
 
-SmoothCast now keeps a **memory-only** ring of up to 96 command traces. Each
-trace records an opaque 24-hex-character identifier, a restricted origin and
-action, and at most 24 monotonic elapsed-time stages. The most recent 32 traces
-appear as \`command_traces\` in a redacted diagnostics bundle.
+SmoothCast retains a **memory-only** ring of up to 96 command traces, with up to
+24 monotonic elapsed-time stages each. The latest 32 appear as `command_traces`
+in the explicitly exported, redacted support bundle. Every trace has an opaque
+24-character hex ID. Web retries with the same `(client_id, command_id)` map
+to one HMAC-derived trace; desktop, CLI and control-API commands generate IDs.
+Errors inside the trace carry `[command:<id>]`.
 
-A web command receives a stable HMAC-derived trace ID from its
-\`(client_id, command_id)\`, so retries refer to one trace without exposing
-guest IDs. Desktop, CLI and local-control commands use random IDs.
-Log entries emitted during a traced command include \`[command:<id>]\`.
-No paths, media titles, receiver names, payloads or raw exception strings
-are stored in the trace records. Support bundles are bounded and require
-explicit export; nothing is sent automatically.
+The trace export **never** contains receiver names, IP addresses, device
+identities, media titles, paths, request payloads, client IDs or raw exceptions.
+Expected receiver state is held temporarily in memory with an HMAC-fingerprinted
+device identifier. No extra device polling, threads or network requests are
+introduced for tracing.
 
-Stages include \`received\`, \`fenced\`, \`dispatched\`, \`worker_queued\`,
-\`receiver_call\`, \`receiver_ack\`, \`receiver_failed\`, \`rejected\` and
-\`completed\`. Receiver command acknowledgement is **not** proof of playback.
-\`status_observed\` means a receiver status response was obtained, not that
-the requested transition was verified. The \`receiver_confirmed\` stage is
-reserved for future verification of the exact transition. Do not claim a
-remote success from a local HTTP receipt.
+A successful Google Cast command or UPnP/DLNA SOAP mutation records
+`receiver_ack`, **not** `receiver_confirmed`. For Play/Pause/Stop, the same
+trace waits for a later status observation of the **same receiver**, with
+the expected state within 20 seconds. Only that matching observation records
+`receiver_confirmed`. A mismatching explicit state records `unconfirmed`
+without precluding a later match. Foreign receivers, stale observations,
+unknown states, and missing status do not create false confirmations.
+Other operations (seeks, volume, metadata or toggles without a known desired
+state) remain ACK-only until their semantics can be verified.
 
-The portal request carries context explicitly to the GTK idle callback;
-\`Async.run\` preserves it through worker and completion callbacks, without
-introducing a new polling thread. Plain GTK controls generate their own
-trace context; a nested portal command reuses the portal trace.
+Stages also include `received`, `fenced`, `dispatched`, `worker_queued`,
+`receiver_call`, `receiver_failed`, `rejected`, `status_observed`,
+`replayed` and `completed`. The latter means the request handler returned,
+not that the receiver applied the command. A missing confirmation remains
+uncertain. Receiver status is not polled automatically, so traces whose
+handlers don't observe a later matching state remain ACK-only.
 
-Run the two targeted tests with:
-\`python3 -m pytest -q tests/test_command_trace.py tests/test_command_trace_integration.py\`
+The portal context is propagated through GTK idle callbacks and bounded async
+workers. Legacy Up Next queue edits and replays also carry one trace; guest
+identifiers are not exported. Do not interpret a local HTTP command receipt
+as proof of remote playback.
 
-Remaining qualification: correlation for legacy non-enveloped portal
-mutations; semantic receiver status confirmation across heterogeneous
-Cast/DLNA protocols, including device-specific fake-receiver and physical
-tests (#208). This is a diagnostic infrastructure increment, **not** a
-claim that all #451 acceptance criteria are complete.
+Headless targeted tests:
+`python3 -m pytest -q tests/test_command_trace.py tests/test_command_trace_integration.py tests/test_command_trace_receiver.py`
+
+Physical receiver qualification is tracked separately in #208. Tests use
+fake receiver responses, not the user's live desktop or TV.

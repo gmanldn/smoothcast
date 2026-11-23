@@ -349,11 +349,14 @@ def info(device: str, timeout: float = 8) -> ReceiverInfo | None:
     result = _backend.info(device, timeout)
     if result is not None:
         command_trace.stage("status_observed")
+        if isinstance(result, dict):
+            command_trace.observe_receiver(device, player_state(result))
     return result
 
 
 def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
     """Run a receiver command using the active Cast backend."""
+    command_trace.clear_receiver_expectation()
     command_trace.stage("receiver_call")
     try:
         accepted, response = _backend.command(device, *args, timeout=timeout)
@@ -362,6 +365,10 @@ def command(device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         raise
     command_trace.stage("receiver_ack" if accepted else "receiver_failed",
                         code=None if accepted else 502)
+    if accepted and len(args) == 1:
+        expected = {"play": "PLAYING", "pause": "PAUSED", "stop": "IDLE"}.get(args[0])
+        if expected is not None:
+            command_trace.expect_receiver(device, expected)
     return accepted, response
 
 
