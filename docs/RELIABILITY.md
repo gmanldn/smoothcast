@@ -99,3 +99,35 @@ guards keep it that way:
 - **Deferred startup** — Portal, discovery, receiver timers, MPRIS and the update
   check start at low idle priority after the first paint and interactive mark.
   Primary-instance cleanup still runs before window creation and session adoption.
+
+## Control latency (#466)
+
+How fast a tap feels, measured against the real portal with a fake receiver
+that confirms after 30 ms (a quick LAN Chromecast). One phone taps while the
+others poll status like the web remote does. **ack** is tap to "the portal
+accepted it"; **confirmed** is tap to the new receiver state showing in
+`/api/status` (browser push delivery and the real receiver's own delay are not
+included). SLOs: ack p95 under 100 ms, confirmed p95 under 1 s.
+
+| Phones in the room | Action | ack p50 / p95 (ms) | confirmed p50 / p95 (ms) |
+| --- | --- | --- | --- |
+| 1 | next | 1.9 / 7.2 | 36.7 / 44.3 |
+| 1 | play_pause | 2.0 / 12.6 | 37.3 / 56.0 |
+| 1 | seek | 2.0 / 8.7 | 37.1 / 49.9 |
+| 1 | volume | 1.9 / 5.1 | 36.6 / 48.9 |
+| 32 | next | 2.0 / 27.2 | 39.1 / 98.6 |
+| 32 | play_pause | 2.7 / 17.5 | 39.3 / 86.4 |
+| 32 | seek | 2.0 / 13.7 | 38.1 / 57.8 |
+| 32 | volume | 2.2 / 9.4 | 37.5 / 64.9 |
+| 8 | next | 1.6 / 7.8 | 36.6 / 44.6 |
+| 8 | play_pause | 1.7 / 8.4 | 36.2 / 44.9 |
+| 8 | seek | 1.9 / 10.0 | 37.0 / 46.9 |
+| 8 | volume | 1.8 / 8.9 | 36.7 / 41.1 |
+
+Baseline: `docs/control-latency-baseline.json` (15 rounds per action, Python
+3.13.5). The gate (`tests/perf/test_control_latency.py`, CI job
+*Search performance gates* in the full lane, slack 3 for shared runners) fails
+on an SLO breach or a p95 more than 20% over the baseline (never tighter than
++25 ms, which is timer noise). Run it with
+`python3 scripts/control_latency_benchmark.py --check docs/control-latency-baseline.json`;
+refresh the baseline after an intended change with `--write-baseline`.
