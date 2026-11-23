@@ -2328,16 +2328,33 @@ async function uploadStorage(mode, operation){
     }finally{db.close()}
   }catch(_){return undefined}
 }
-async function firstChunkHash(file,chunkSize){
-  // FNV-1a 64 works on plain HTTP LAN pages, where SubtleCrypto is unavailable.
-  const bytes=new Uint8Array(await file.slice(0,chunkSize).arrayBuffer());
+const UPLOAD_FINGERPRINT_BYTES=64*1024;
+async function firstChunkHash(file,chunkSize,legacy=false){
+  // Resume recognition is not a security digest. Never hash an 8 MiB upload
+  // chunk on the UI thread: two 32-bit integer hashes of 64 KiB are bounded.
+  const count=Math.min(file.size,legacy?chunkSize:UPLOAD_FINGERPRINT_BYTES);
+  if(!legacy){
+    const bytes=new Uint8Array(await file.slice(0,count).arrayBuffer());
+    let a=0x811c9dc5,b=0x9e3779b9;
+    for(const byte of bytes){
+      a=Math.imul(a^byte,0x01000193);
+      b=Math.imul(b^byte,0x85ebca6b);
+    }
+    return [a,b].map(value=>(value>>>0).toString(16).padStart(8,"0")).join("");
+  }
+  // Older IndexedDB records store FNV-1a 64 over the former full chunk.
+  // Preserve resumability but yield between bounded blocks to keep UI live.
   let hash=0xcbf29ce484222325n;
-  for(const byte of bytes)hash=BigInt.asUintN(64,(hash^BigInt(byte))*0x100000001b3n);
+  for(let offset=0;offset<count;offset+=16*1024){
+    const bytes=new Uint8Array(await file.slice(offset,Math.min(count,offset+16*1024)).arrayBuffer());
+    for(const byte of bytes)hash=BigInt.asUintN(64,(hash^BigInt(byte))*0x100000001b3n);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
   return hash.toString(16).padStart(16,"0");
 }
 async function matchesPendingFile(file,upload){
   return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
-    &&await firstChunkHash(file,upload.chunkSize)===upload.hash;
+    &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion!==2)===upload.hash;
 }
 async function clearPendingUpload(){
   const id=pendingUpload?.id;
@@ -2445,7 +2462,7 @@ $("uploadButton").addEventListener("click",async()=>{
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
-        const record={...pendingUpload,hash:await firstChunkHash(file,chunkSize)};
+        const record={...pendingUpload,hashVersion:2,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
       }
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
