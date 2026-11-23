@@ -17,8 +17,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "docs" / "complexity-baseline.json"
 LARGE_MODULE = 1200
-TOTAL_TOLERANCE = 0.20   # growth over baseline that fails --check
-MODULE_TOLERANCE = 0.30
+TOTAL_TOLERANCE = 0.10   # growth over baseline that fails --check
+MODULE_TOLERANCE = 0.10
 TOP = 10
 
 
