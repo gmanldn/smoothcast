@@ -57,6 +57,12 @@ amend commits that are already on `origin`.
    device checks are tracked in #208, not close gates. Push when green.
 6. Avoid deleting existing tickets or losing original research.
 
+### `pyproject.toml` module lists
+
+After adding a `src/` module run `python3 scripts/ci/sync_pyproject.py`
+(derives `py-modules`, sorts the mypy list, one entry per line). A rebase
+conflict in those lists: run it, `git add pyproject.toml`, continue.
+
 ## Repo hygiene — commit checklist
 
 - **Before every commit:** run focused tests covering changed behavior,
@@ -93,11 +99,12 @@ amend commits that are already on `origin`.
    into `main` yields exactly `develop`'s tree. Then it opens (or reuses) the
    develop→main PR and merges it with the head pinned to the verified commit,
    so code that was never verified, or that `develop` has already moved past,
-   cannot reach `main`. If `main` holds content `develop` lacks, it refuses
-   and fails loudly; merge `main` into `develop` to reconcile.
-3. Merges made with the workflow token do not start new workflow runs, so
-   `main` is not re-verified; its tree is identical to the verified `develop`
-   commit by construction.
+   cannot reach `main`. If `main` holds content `develop` lacks it refuses,
+   naming the files. `sync-main.yml` merges `main` back into `develop` when
+   `main` moves (writes only `develop`); a real conflict fails it with the
+   files to resolve by hand (`git merge origin/main` in a worktree).
+3. Workflow-token merges start no new runs; `main`'s tree equals the verified
+   `develop` commit by construction.
 4. **Publishing** is separate and explicit. **Dry run first:** run *Release SmoothCast* from
    Actions (`tag=vX.Y.Z`, *publish* off: builds the sdist and wheel, installs
    the wheel headlessly, writes `SHA256SUMS` and notes, uploads them as a
@@ -106,10 +113,9 @@ amend commits that are already on `origin`.
    disagrees with `src/version.py` or whose commit is not on `main`.
    Locally: `python3 scripts/ci/release_artifacts.py -h`.
 
-Prerequisite (a repository setting, not code): *Settings → Actions → General →
-Workflow permissions → "Allow GitHub Actions to create and approve pull
-requests"* must be enabled, or `promote-release` fails at PR creation. Repo
-auto-merge is not required.
+Prerequisite (repository setting): *Settings → Actions → General → Workflow
+permissions → "Allow GitHub Actions to create and approve pull requests"*, or
+`promote-release` fails at PR creation. Repo auto-merge is not required.
 
 CI success is not receiver, macOS or Windows qualification
 ([release qualification](../RELEASE_QUALIFICATION.md)).
@@ -117,20 +123,19 @@ CI success is not receiver, macOS or Windows qualification
 **Identifier caveat:** `[P0][SC-058]` contains a legacy issue ID; `SC-058`
 is **not** GitHub issue `#58`. Resolve the current GitHub issue by search.
 
-**Protect the user's work:** don't discard dirty files, local commits, stashes,
-or unmerged branches; never force-reset without explicit permission. A
-diverged checkout requires backup/reconciliation, not `git reset --hard`.
+**Protect the user's work:** never discard dirty files, local commits, stashes
+or unmerged branches, or force-reset without permission; reconcile a diverged
+checkout, don't `git reset --hard`.
 
-**Merged-branch cleanup:** `.github/workflows/prune-merged-branches.yml`
-prunes only merged same-repository source branches still at their recorded
-head SHA and unused by open PRs; `scripts/ci/prune_merged_branches.py`
-defaults to dry-run. The trusted `develop` workflow uses Git ref leases;
-never delete active branches, worktrees, or protected refs.
+**Merged-branch cleanup:** `prune-merged-branches.yml` prunes only merged
+same-repository branches still at their recorded head and unused by open PRs
+(`scripts/ci/prune_merged_branches.py` defaults to dry-run). Never delete
+active branches, worktrees or protected refs.
 
 **Version authority:** `src/version.py` only. Bump semantic versions at an
 intentional release boundary, **not** for each commit. Distinguish loaded
 runtime release, on-disk version and Git SHA in diagnostics.
 `./smoothcast --version` is safe: it does not open GTK.
 
-Use `git diff --stat` and targeted file ranges first. Avoid entire repository
-or log dumps by default; preserve and surface exact failed traces when needed.
+Use `git diff --stat` and targeted file ranges first; avoid whole-repo or log
+dumps, but keep exact failed traces.

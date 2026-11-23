@@ -13,12 +13,11 @@ import portal_status
 import portal_commands
 import portal_join
 import peer_discovery_ui
-import portal_uploads
 import network_activity
 from cast_portal_host import PortalHostMixin
 from portal_upload_recovery import PortalUploadRecoveryMixin
 from network_activity_ui import NetworkActivityMixin
-from cast_widgets import Async, save_config
+from cast_widgets import save_config
 from gi.repository import Gdk, GLib, Gtk
 
 class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMixin):
@@ -140,65 +139,6 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             GLib.source_remove(current)
         self._portal_activity_period = period
         self._portal_activity_timer = GLib.timeout_add(period, self._refresh_portal_activity)
-
-    def _refresh_portal_activity(self) -> bool:
-        """Show what LAN clients are sending or casting, refreshed every second."""
-        label = getattr(self, "portal_activity_label", None)
-        if label is None or getattr(self, "_closing", False):
-            self._portal_activity_timer = None
-            return False
-        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
-        try:
-            activity = uploads.snapshot() if uploads is not None else []
-        except Exception:
-            activity = []
-        room = getattr(getattr(getattr(self, "_portal", None), "server", None), "room", None)
-        participants = room.snapshot().get("participants", []) if room is not None else []
-        names = [person["name"] for person in participants if isinstance(person, dict)
-                 and isinstance(person.get("name"), str)]
-        roster = ", ".join(names[:4])
-        if len(names) > 4:
-            roster += f", +{len(names) - 4} more"
-        ids = tuple(person["id"] for person in participants
-                    if isinstance(person, dict) and isinstance(person.get("id"), str))
-        if hasattr(self, "portal_guest_dropdown") and ids != getattr(self, "portal_guest_ids", ()):
-            prior = getattr(self, "portal_guest_ids", ())
-            selected = self.portal_guest_dropdown.get_selected()
-            chosen = prior[selected] if selected < len(prior) else None
-            labels = [str(person.get("name", "Guest")) for person in participants
-                      if isinstance(person, dict) and isinstance(person.get("id"), str)]
-            self.portal_guest_ids = ids
-            self.portal_guest_dropdown.set_model(
-                Gtk.StringList.new(labels if labels else ["No guests connected"]))
-            self.portal_guest_dropdown.set_selected(
-                ids.index(chosen) if chosen in ids else 0)
-            self.portal_guest_dropdown.set_sensitive(bool(ids))
-            self.portal_revoke_button.set_sensitive(bool(ids))
-        summary = portal_uploads.format_portal_activity(activity)
-        presence = f"In room: {roster}" if roster else "No guests connected"
-        screens = getattr(getattr(self._portal, "server", None), "screens", None)
-        try:
-            screen_rows = screens.snapshot() if screens is not None else []
-        except Exception:
-            screen_rows = []
-        ready = [f"{row['name']} ({row['state']})" for row in screen_rows[:3]
-                 if isinstance(row, dict) and row.get("ready")]
-        shown = f" · Screens: {', '.join(ready)}" if ready else ""
-        label.set_text(f"{presence} · {summary}{shown}")
-        peers = getattr(getattr(self, "_portal", None), "peers", None)
-        peer_list = peers.snapshot() if peers is not None else []
-        available = getattr(getattr(self, "_portal", None),
-                            "peer_discovery_available", False)
-        peer_discovery_ui.refresh_peer_links(self, peer_list, available=available)
-        if getattr(self, "_portal", None) is not None:
-            self._portal.server.nodes_provider = lambda: peer_list
-        mesh = getattr(self, "_mesh_library", None)
-        if mesh is not None:
-            Async.run(lambda: mesh.observe_peers(peer_list), domain="background")
-        self._reconcile_portal_casts()
-        import cast_mesh
-        cast_mesh.push_clients(self)
-        return True
 
     def _portal_apply_music_autogain(self, value: bool) -> str:
         self.cfg["music_autogain"] = value

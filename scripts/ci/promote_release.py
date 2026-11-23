@@ -60,9 +60,33 @@ def _git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def merge_conflicts(repo: Path, sha: str, main: str) -> tuple[str, list[str]]:
+    """Run a dry-run merge; return (merged tree id, conflicting paths). Never touches the tree."""
+    try:
+        result = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "--name-only", main, sha],
+            cwd=repo, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PromoteError(f"git merge-tree could not run: {exc}") from exc
+    lines = result.stdout.splitlines()
+    if result.returncode == 0 and lines:
+        return lines[0], []
+    if result.returncode == 1 and lines:            # conflicts: tree id, then paths, then messages
+        paths = []
+        for line in lines[1:]:
+            if not line.strip():
+                break
+            paths.append(line.strip())
+        return lines[0], paths
+    raise PromoteError(f"git merge-tree failed: {result.stderr.strip() or result.stdout.strip()}")
+
+
 def merge_is_clean_fast_forward_of_content(repo: Path, sha: str, main: str) -> bool:
     """True if merging *sha* into *main* yields exactly *sha*'s tree."""
-    merged = _git(repo, "merge-tree", "--write-tree", main, sha).splitlines()[0]
+    merged, conflicts = merge_conflicts(repo, sha, main)
+    if conflicts:
+        shown = ", ".join(conflicts[:8]) + (" ..." if len(conflicts) > 8 else "")
+        raise PromoteError(f"main and develop both changed: {shown}")
     return merged == _git(repo, "rev-parse", f"{sha}^{{tree}}")
 
 
@@ -75,11 +99,13 @@ def decide(repo: Path, sha: str, main: str = "origin/main") -> str:
     try:
         clean = merge_is_clean_fast_forward_of_content(repo, sha, main)
     except PromoteError as exc:
-        raise PromoteError(f"develop cannot merge cleanly into main: {exc}") from exc
+        raise PromoteError(f"develop cannot merge cleanly into main: {exc}. Merge origin/main "
+                           "into develop and resolve (docs/agents/workflow.md).") from exc
     if not clean:
         raise PromoteError(
-            "main holds changes that develop does not; reconcile by merging main into "
-            "develop first. Refusing to promote.")
+            "main holds changes that develop does not. The 'Sync main into develop' "
+            "workflow merges them automatically when clean; otherwise merge origin/main into "
+            "develop yourself (see docs/agents/workflow.md). Refusing to promote.")
     return label(develop_v)
 
 

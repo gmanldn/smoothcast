@@ -1,0 +1,46 @@
+name: Sync main into develop
+
+# `main` is release-only, but owners sometimes merge a pull request straight
+# into it. Until develop has those commits the release promotion refuses (it
+# will not mix histories). This job merges main back into develop as soon as
+# main moves, so the next verified release promotes without anyone noticing.
+# It only ever writes to develop, never to main. A real conflict fails the job
+# with the files to resolve.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: smoothcast-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge main into develop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: develop
+          fetch-depth: 0
+      - name: Merge main into develop when main is ahead
+        run: |
+          git config user.name "smoothcast-sync[bot]"
+          git config user.email "smoothcast-sync@users.noreply.github.com"
+          git fetch origin main develop
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main; nothing to do."
+            exit 0
+          fi
+          if ! git merge --no-ff --no-edit -m "Merge main into develop (keep the release branch reconciled)" origin/main; then
+            echo "::error title=main cannot be merged into develop automatically::Conflicting files: $(git diff --name-only --diff-filter=U | tr '\n' ' '). Merge origin/main into develop by hand (docs/agents/workflow.md), then pyproject lists can be fixed with python3 scripts/ci/sync_pyproject.py."
+            git merge --abort || true
+            exit 1
+          fi
+          git push origin HEAD:develop
