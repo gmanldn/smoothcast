@@ -767,7 +767,9 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
-        if task is not None:
+        if task is not None and a.assign_patch:
+            # Explicit owner-authorised version assignment only. Ordinary
+            # agent shipments use immutable Git SHAs as development identities.
             try:
                 minted = ship_patch.assign_private_patch(ROOT, remote_before, task["issue"])
             except (ship_patch.PatchAllocationError, OSError) as exc:
@@ -960,6 +962,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--message", default="", help="commit tracked edits in a private worktree with this message")
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
+    s.add_argument("--assign-patch", action="store_true",
+                   help="explicit owner-authorised release-number allocation; never automatic")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)
