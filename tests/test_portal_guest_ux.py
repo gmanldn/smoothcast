@@ -146,3 +146,42 @@ assert.equal(el.uploadButton.disabled,true,"in-flight upload cannot be started t
 """
     subprocess.run(["node", "-"], input=harness + controls + scenario,
                    check=True, text=True, timeout=10)
+
+
+def test_open_room_login_hides_pin_before_session_request():
+    """No transient PIN requirement should be shown to a first-time open-room guest."""
+    import shutil
+    import subprocess
+    import pytest
+
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("function configureOpenJoin(){")
+    end = script.index('$("loginForm").addEventListener("submit",', start)
+    setup = script[start:end]
+    assert "if(!PIN_REQUIRED)configureOpenJoin();" in setup
+    assert start < script.index("restoreSession().then(")
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for the PIN-free join browser regression")
+    harness = r"""
+const assert = require("node:assert/strict");
+function simulate(pinRequired){
+  const PIN_REQUIRED=pinRequired;
+  const elements={
+    pinRow:{hidden:false},pin:{required:true,value:""},
+    loginHint:{textContent:"PIN needed"},loginButton:{textContent:"Join room"}
+  };
+  const $=id=>elements[id],loginButton=elements.loginButton;
+"""
+    finish = r"""
+  return elements;
+}
+const open=simulate(false),locked=simulate(true);
+assert.equal(open.pinRow.hidden,true);
+assert.equal(open.pin.required,false);
+assert.equal(open.loginButton.textContent,"Join");
+assert.equal(locked.pinRow.hidden,false);
+assert.equal(locked.pin.required,true);
+assert.equal(locked.loginButton.textContent,"Join room");
+"""
+    subprocess.run(["node", "-"], input=harness + setup + finish,
+                   check=True, text=True, timeout=10)
