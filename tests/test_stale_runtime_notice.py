@@ -137,3 +137,45 @@ def test_update_candidate_does_not_hide_stale_installed_generation():
     calls.clear()
     assert presenter(SimpleNamespace(window=window), "later") is False
     assert not calls
+
+
+
+def test_rollback_to_running_generation_clears_stale_header_and_allows_rewarning():
+    """A safe rollback must not leave a false restart-required notice."""
+    app = SimpleNamespace(_run_revision="a" * 40, _noticed_runtime_key=None)
+    headers = []
+    window, messages = fake_window()
+    window._update_header_subtitle = lambda: headers.append(window.update_notice)
+    revisions = iter(["b" * 40, "a" * 40, "b" * 40])
+    with mock.patch.object(version, "read_checkout_version",
+                           return_value=version.__version__), \
+         mock.patch.object(version, "read_checkout_revision",
+                           side_effect=lambda _repo: next(revisions)):
+        fn = handler()
+        fn(app, window)
+        assert window._installed_version_stale is True
+        assert window.update_notice is not None
+        fn(app, window)
+        assert window._installed_version_stale is False
+        assert window.update_notice is None
+        assert app._noticed_runtime_key is None
+        fn(app, window)
+    assert window._installed_version_stale is True
+    assert len(messages) == 2
+    assert len(headers) == 3
+
+
+def test_returning_to_running_version_clears_stale_notice_without_git_metadata():
+    app = SimpleNamespace(_run_revision=None, _noticed_runtime_key=None)
+    window, messages = fake_window()
+    disk_versions = iter(["9.9.9", version.__version__])
+    with mock.patch.object(version, "read_checkout_version",
+                           side_effect=lambda _path: next(disk_versions)), \
+         mock.patch.object(version, "read_checkout_revision", return_value=None):
+        fn = handler()
+        fn(app, window)
+        assert window._installed_version_stale is True
+        fn(app, window)
+    assert len(messages) == 1
+    assert window._installed_version_stale is False
+    assert window.update_notice is None
