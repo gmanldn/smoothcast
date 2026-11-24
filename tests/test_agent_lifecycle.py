@@ -155,6 +155,24 @@ def test_prune_removes_merged_clean_worktrees_and_preserves_dirty_ones(monkeypat
     assert dirty.exists() and (dirty / "wip.txt").exists()
 
 
+def test_prune_never_touches_kilo_or_manual_worktrees(monkeypatch, tmp_path):
+    """Only agent.py's own smoothcast-issue-<n>-* worktrees may ever be removed."""
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    monkeypatch.setattr(agent, "recent_comments", lambda *a, **k: [])
+    pool = tmp_path / "worktrees"
+    pool.mkdir()
+    kilo = pool / "chartreuse-impala"  # Kilo Agent Manager worktree, no issue number
+    manual = pool / "smoothcast-reconcile"
+    ours = pool / "smoothcast-issue-3-cccc3333"
+    for target in (kilo, manual, ours):
+        run(first, "worktree", "add", "--detach", str(target), "origin/develop")
+    assert agent.cmd_prune(agent.build_parser().parse_args(["prune"])) == 0
+    assert kilo.exists() and manual.exists()
+    assert not ours.exists()
+
+
 def test_claim_freshness_rejects_rival_and_reclaims_expired(monkeypatch):
     from datetime import datetime, timedelta, timezone
     now = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)

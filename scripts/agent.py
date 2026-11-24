@@ -1451,16 +1451,18 @@ def _worktree_issue(path: Path) -> int | None:
 
 
 def cmd_prune(a: argparse.Namespace) -> int:
-    """Remove agent worktrees already merged into develop that hold no local work.
+    """Remove agent.py worktrees already merged into develop that hold no local work.
 
-    Only worktrees whose HEAD is an ancestor of ``origin/develop`` and whose
-    working tree is clean are removed; unmerged, dirty, currently leased, or
-    the caller's own worktree are always preserved. This keeps the pool (and any
-    legacy siblings created before the pool existed) from growing without bound.
+    Only ``smoothcast-issue-<n>-*`` worktrees outside the checkout and Kilo's own
+    pool are considered, whose HEAD is an ancestor of ``origin/develop`` and whose
+    working tree is clean; unmerged, dirty, currently leased, or the caller's own
+    worktree are always preserved. Kilo/Claude/manual worktrees are never touched.
     """
     git("fetch", "-q", "origin", "develop")
     remote = git("rev-parse", "origin/develop").strip()
     here = Path.cwd().resolve()
+    root = ROOT.resolve()
+    kilo_pool = (Path.home() / ".local" / "share" / "kilo").resolve()
     live = {c["issue"] for c in active_claims(parse_events(recent_comments()), utcnow())}
     removed: list[str] = []
     kept = 0
@@ -1474,10 +1476,14 @@ def cmd_prune(a: argparse.Namespace) -> int:
         except OSError:
             kept += 1
             continue
-        if resolved in {ROOT.resolve(), here} or not (path / ".git").exists():
+        if (resolved in {root, here} or root in resolved.parents
+                or kilo_pool in resolved.parents or not (path / ".git").exists()):
             kept += 1
             continue
         issue = _worktree_issue(path)
+        if issue is None:  # never touch Kilo/Claude/manual worktrees, only agent.py's own
+            kept += 1
+            continue
         if issue in live:
             kept += 1
             continue
