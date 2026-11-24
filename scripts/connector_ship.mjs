@@ -16,8 +16,11 @@ function validate(p){
     check(typeof c.content==="string"&&c.content.length<=500000,"bounded text only");
     paths.add(c.path);
   }
-  for(const k of ["message","verification","next"])check(typeof p[k]==="string"&&p[k].trim()&&!/[\r\n]/.test(p[k]),"missing or multiline "+k);
-  check(p.next!=="none","progress only; no closure");
+  for(const k of ["message","verification","next"]){
+    check(typeof p[k]==="string"&&p[k].trim()&&!/[\x00-\x1f\x7f]/.test(p[k]),"missing or multiline "+k);
+    check(!/<!--\s*sc-/i.test(p[k]),"reserved protocol marker in "+k);
+  }
+  check(!["none","complete","no remaining work"].includes(p.next.trim().toLowerCase()),"progress only; no closure");
 }
 
 function leaseCheck(rows,p,now){
@@ -129,12 +132,15 @@ async function checkBase(api,p){
   return {sha:b.tree.sha,entries};
 }
 
+function candidateMessage(p){return p.message+" (Refs #"+p.issue+")"}
+
 async function verifyCandidate(api,p,candidate){
   validate(p);
   check(isSha(candidate),"invalid candidate");
   const before=await checkBase(api,p);
   const c=await api.get("/git/commits/"+candidate);
   check(c.sha===candidate&&isSha(c.tree?.sha)&&c.parents?.length===1&&c.parents[0].sha===p.base,"candidate parent/tree mismatch");
+  check(c.message===candidateMessage(p),"candidate message/issue mismatch");
   const after=await treeSnapshot(api,c.tree.sha);
   const v=after.get("src/version.py");
   check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
@@ -180,7 +186,7 @@ async function createCandidate(api,p){
   const baseTree=await checkBase(api,p);
   const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
-  const candidate=await api.commit(tree,p.base,p.message+" (Refs #"+p.issue+")");
+  const candidate=await api.commit(tree,p.base,candidateMessage(p));
   check(isSha(candidate),"invalid candidate");
   return candidate;
 }

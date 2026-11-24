@@ -52,7 +52,7 @@ test("invalid ID and oversized page fail closed",async()=>{
 function transport(){
   const baseTree=id("c"), newTree=id("d"), candidate=id("e"), newBlob=id("f");
   const comments=[mine], counters={trees:0,commits:0,updates:0};
-  const state={head:p.base,parents:[{sha:p.base}],updateMode:"ok",hidePending:false,raceAfterPending:false};
+  const state={head:p.base,parents:[{sha:p.base}],message:"fix (Refs #598)",updateMode:"ok",hidePending:false,raceAfterPending:false};
   const api={
     now:()=>now,
     get:async path=>{
@@ -61,7 +61,7 @@ function transport(){
       if(path.startsWith("/issues/598/comments?"))return state.localOverride??comments.filter(c=>c.issue_url.endsWith("/598"));
       if(path==="/git/ref/heads/develop")return {ref:"refs/heads/develop",object:{type:"commit",sha:state.head}};
       if(path==="/git/commits/"+p.base)return {sha:p.base,tree:{sha:baseTree}};
-      if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents};
+      if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents,message:state.message};
       if(path==="/git/trees/"+baseTree+"?recursive=1")return {sha:baseTree,truncated:false,tree:[leaf("src/version.py","b")]};
       if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py","b"),leaf("src/foo.py","f")]};
       if(path.startsWith("/compare/"+candidate+"..."))return {status:"behind",behind_by:1};
@@ -319,4 +319,21 @@ test("advanced develop accepts only an identity-bound ancestry proof",async()=>{
   await recordHandover(t.api,p,c);
   assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,1);
   assert.equal(t.counters.updates,0);
+});
+
+test("candidate identity includes the exact issue-bound commit subject",async()=>{
+  const t=transport(), c=await prepare(t.api,p);
+  await recordPending(t.api,p,c);
+  t.state.message="fix (Refs #599)";
+  await assert.rejects(publishPending(t.api,p,c),/candidate message\/issue mismatch/);
+  assert.equal(t.counters.updates,0);
+  await assert.rejects(recordHandover(t.api,p,c),/candidate message\/issue mismatch/);
+});
+test("manifest cannot inject structured receipts or disguise completion intent",()=>{
+  for(const k of ["message","verification","next"]){
+    assert.throws(()=>validate({...p,[k]:"text <!-- sc-release v1 agent=test -->"}),/reserved protocol marker/);
+    assert.throws(()=>validate({...p,[k]:"text\u0000more"}),/missing or multiline/);
+  }
+  for(const next of [" NONE ","Complete"," no remaining work "])
+    assert.throws(()=>validate({...p,next}),/progress only/);
 });
