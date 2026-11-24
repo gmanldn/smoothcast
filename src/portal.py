@@ -1762,8 +1762,9 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <div><dt>Last host response</dt><dd id="transferResponse">—</dd></div>
 <div><dt>Room action</dt><dd id="transferDelivery">Not submitted</dd></div>
 <div><dt>Last confirmed offset</dt><dd id="transferAck">—</dd></div>
+<div><dt>Current room receiver (independent of upload)</dt><dd id="transferRoomState">Awaiting room status</dd></div>
 </dl>
-<details open><summary>Transfer activity</summary><pre id="transferEvents" aria-label="Recent transfer activity" tabindex="0">Choose a file to begin. Events appear here as they happen.</pre></details>
+<details open><summary>Transfer activity · newest first</summary><pre id="transferEvents" aria-label="Recent transfer activity" tabindex="0">Choose a file to begin. Events appear here as they happen.</pre></details>
 </div>
 <p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
@@ -2142,7 +2143,7 @@ function showJoinedRoom(){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No receiver selected")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);
@@ -2407,7 +2408,7 @@ function transferEvent(message){
   const stamp=new Date().toLocaleTimeString();
   transferEvents.push(stamp+"  "+message);
   if(transferEvents.length>24)transferEvents.shift();
-  monitorText("transferEvents",transferEvents.join("\n"));
+  monitorText("transferEvents",transferEvents.slice().reverse().join("\n"));
 }
 function resetTransferMonitor(){
   transferEvents=[];
@@ -2418,6 +2419,7 @@ function resetTransferMonitor(){
   monitorText("transferResponse","—");
   monitorText("transferDelivery","Not submitted");
   monitorText("transferAck","—");
+  monitorText("transferRoomState","Awaiting room status");
   monitorText("transferEvents","Choose a file to begin. Events appear here as they happen.");
 }
 function transferOperationName(method,path){
@@ -2477,7 +2479,7 @@ async function uploadRequest(method,path,body,headers={}){
     }
     if(data?.code==="client_reload_required")showUpdateNotice();
     if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
-    if(Number.isSafeInteger(data.received)&&data.received>=0)monitorText("transferAck",fileUnits(data.received));
+    if(validUploadProgress(data.received,data.size))monitorText("transferAck",fileUnits(data.received));
     if(method==="PUT")monitorText("transferInFlight","Chunk acknowledged by host");
     else transferEvent(operation+" · HTTP "+response.status);
     monitorText("transferOperation","Host response received");
