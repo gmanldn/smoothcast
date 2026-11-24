@@ -793,11 +793,18 @@ def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp
     incomplete = agent.build_parser().parse_args(
         ["finish", "--done", "implementation", "--next", "still testing", "--close"])
     assert agent.cmd_finish(incomplete) == 2
+    partial = agent.build_parser().parse_args(
+        ["finish", "--done", "implementation", "--next", "still testing"])
+    assert agent.cmd_finish(partial) == 0
+    assert len(state) == 1 and "sc-close v1" not in state[0]
     complete = agent.build_parser().parse_args(
         ["finish", "--done", "completed", "--next", "none",
          "--verification", "tests: 10 passed", "--checklist", "all criteria", "--close"])
     assert agent.cmd_finish(complete) == 0
     assert agent.cmd_finish(complete) == 0
-    assert len(state) == 1
+    assert len(state) == 2
+    assert "sc-close v1" in state[1]
+    assert "Verification: tests: 10 passed" in state[1]
+    assert "Checklist: all criteria" in state[1]
     assert closed == [584, 584]  # REST closure itself is idempotent
-    assert released == [584, 584]
+    assert released == [584, 584, 584]

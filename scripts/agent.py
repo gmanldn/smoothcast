@@ -1422,16 +1422,19 @@ def cmd_finish(a: argparse.Namespace) -> int:
               "update/review the ticket before finishing")
         return 3
     marker = f"<!-- sc-finish v1 issue={number} sha={latest} -->"
+    # A partial handover at the same SHA is not final acceptance evidence.
+    close_marker = f"<!-- sc-close v1 issue={number} sha={latest} -->"
+    receipt = close_marker if a.close else marker
     comments = issue_comments(number)
     if not isinstance(comments, list):
         raise td.DigestError("cannot verify prior handovers; refusing duplicate")
-    if not any(marker in str(c.get("body") or "") for c in comments):
+    if not any(receipt in str(c.get("body") or "") for c in comments):
         body = (f"Progress: {a.done.strip()}\n"
                 f"Handover: {a.next.strip()}\n"
                 f"Commit: {latest}\n"
                 f"Verification: {a.verification.strip() or 'not run (unverified)'}\n"
                 f"Checklist: {a.checklist.strip() or 'not supplied'}\n"
-                f"{marker}")
+                f"{marker}" + (f"\n{close_marker}" if a.close else ""))
         posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments",
                     "-f", f"body={body}")
         if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
