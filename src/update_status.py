@@ -93,7 +93,7 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     if f.fault in FAULTS:
         retry = ("check_now",) if f.fault == "bad_signature" else ("retry", "check_now")
         return make("fault", "Update not installed", FAULTS[f.fault], *retry)
-    if f.journal_state == "rolled_back":
+    if f.journal_state == "rolled_back" and f.phase == "idle":
         # active.json's previous is the pre-existing rollback reference,
         # not necessarily the generation that was just restored.
         detail = (
@@ -102,7 +102,7 @@ def describe(f: UpdateFacts) -> UpdateStatus:
             else "The previous generation was selected, but its running build is not confirmed."
         )
         return make("rolled_back", "Update rolled back", detail, "check_now")
-    if f.journal_state == "aborted":
+    if f.journal_state == "aborted" and f.phase == "idle":
         return make("aborted", "Update cancelled", "Nothing was changed. The current version keeps running.",
                     "check_now")
     if f.journal_state in {"planned", "probed"}:
@@ -115,7 +115,11 @@ def describe(f: UpdateFacts) -> UpdateStatus:
         if active_id is not None and active_id != running_id:
             return make("activation_mismatch", "Running build differs from the activated build",
                         "The activated generation is not the one reporting this status.", "check_now")
-        if active_id is not None and active_id == running_id and previous_id and previous_id != running_id:
+        # A durable terminal journal outlives its transaction; it must not
+        # mask a newer check, download or staged candidate.
+        if (f.phase == "idle" and candidate_id in (None, running_id)
+                and active_id is not None and active_id == running_id
+                and previous_id and previous_id != running_id):
             return make("running_new", "Updated",
                         f"SmoothCast is running {short(running_id)}.", "rollback", "check_now", new=True)
     if not f.checks_enabled:
