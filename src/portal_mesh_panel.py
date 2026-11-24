@@ -178,7 +178,7 @@ _PANEL = r"""
       const signature=JSON.stringify(observed.map(item=>[item.receiver,item.title,item.protocol,item.state,item.position,item.duration,item.is_local]));
       if(streamList.dataset.sig!==signature){
         streamList.dataset.sig=signature;
-        const timing=value=>{if(!Number.isFinite(value)||value<0)return "";const s=Math.floor(value),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?h+":"+String(m).padStart(2,"0")+":"+r:m+":"+r};
+        live=[];
         const rows=observed.map(item=>{
           const row=document.createElement("li");row.className="mesh-stream";
           const title=document.createElement("strong");title.textContent=item.title||"Media title unavailable";
@@ -190,6 +190,7 @@ _PANEL = r"""
             progress.setAttribute("aria-label","Reported playback position");
             const time=document.createElement("span");time.className="muted";time.textContent=timing(item.position)+" / "+timing(item.duration);
             row.append(progress,time);
+            if(item.state==="PLAYING"){const age=Number(item.observed_age_ms);live.push({progress,time,duration:item.duration,base:item.position+(Number.isFinite(age)&&age>0?Math.min(age,600000)/1000:0),at:Date.now()})}
           }else if(Number.isFinite(item.duration)&&item.duration>0){
             const total=document.createElement("span");total.className="muted";total.textContent="Total runtime "+timing(item.duration);
             row.append(total);
@@ -200,6 +201,10 @@ _PANEL = r"""
       }
     }
   };
+  let live=[];
+  const timing=value=>{if(!Number.isFinite(value)||value<0)return "";const s=Math.floor(value),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?h+":"+String(m).padStart(2,"0")+":"+r:m+":"+r};
+  // Receivers are polled every 15 s; advance playing streams between polls so the position stays current.
+  if(typeof setInterval==="function")setInterval(()=>{const now=Date.now();for(const s of live){const at=Math.min(s.duration,s.base+(now-s.at)/1000);s.progress.value=at;s.time.textContent=timing(at)+" / "+timing(s.duration)}},1000);
   function model(){
     const list=[...nodes.values()].sort((a,b)=>(a.node_id===local?-1:b.node_id===local?1:a.name.localeCompare(b.name)||a.node_id.localeCompare(b.node_id)));
     const versions=list.map(n=>n.version).filter(v=>semver(v));

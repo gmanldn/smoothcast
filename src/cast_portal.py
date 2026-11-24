@@ -276,6 +276,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "network_activity": network_activity.portal_entries(
                     getattr(self, "_network_activity_entries", []),
                     self._device_host(self._device()),
+                    getattr(self, "_network_activity_updated", None),
                 ),
             }
             fence = getattr(self, "_portal_fence", None)

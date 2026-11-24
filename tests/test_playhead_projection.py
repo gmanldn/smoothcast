@@ -105,7 +105,8 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
 
     from gui_source import main_window_methods
 
-    method = main_window_methods()["_portal_handle"]
+    methods = main_window_methods()
+    method = methods["_portal_handle"] + "\n" + methods["_portal_timing"]
     state_label = SimpleNamespace(label="Playing", short="Playing",
                                   accessible="Playing", icon="play")
     namespace = {
@@ -123,6 +124,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     window.tracker = SimpleNamespace(value=lambda: 18.0, duration=120.0,
                                      rate=2.0, known=True)
     window.media = None
+    window._external_runtime = (7.0, 300.0)
     window.np_title = SimpleNamespace(get_text=lambda: "Film")
     window.now_playing = None
     window._portal_queue_status = lambda: []
@@ -145,6 +147,14 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     assert window._portal_handle("status", {})["rate"] == 1.0
     window.tracker.rate = float("nan")
     assert window._portal_handle("status", {})["rate"] == 1.0
+
+    # An external stream (not ours) reports the receiver's own runtime and position.
+    window.tracker = SimpleNamespace(value=lambda: None, duration=0.0, rate=1.0, known=False)
+    window.session, window.external = None, True
+    snapshot = window._portal_handle("status", {})
+    assert (snapshot["position"], snapshot["duration"]) == (7.0, 300.0)
+    window.external = False  # once the receiver is idle again the runtime must not linger
+    assert window._portal_handle("status", {})["duration"] == 0.0
 
 
 

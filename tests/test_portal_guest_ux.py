@@ -758,3 +758,11 @@ def test_mesh_stream_rows_show_total_runtime_even_without_a_position():
     html = portal_mesh_panel.panel_html()
     assert '"Total runtime "+timing(item.duration)' in html
     assert "h?h+" in html  # long films show hours rather than 125:30
+
+
+def test_mesh_stream_rows_advance_a_playing_position_between_receiver_polls():
+    import portal_mesh_panel
+
+    html = portal_mesh_panel.panel_html()
+    assert "item.observed_age_ms" in html or "observed_age_ms" in html
+    assert 'if(item.state==="PLAYING")' in html and "setInterval" in html
