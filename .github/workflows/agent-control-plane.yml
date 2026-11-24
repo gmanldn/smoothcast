@@ -6,6 +6,10 @@ on:
   push:
     branches: [develop]
     paths:
+      - AGENTS.md
+      - docs/COORDINATION.md
+      - docs/agents/workflow.md
+      - docs/ISSUES.md
       - scripts/agent.py
       - scripts/ci/check_version_history.py
       - scripts/ci/ship_patch.py
