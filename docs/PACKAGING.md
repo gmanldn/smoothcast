@@ -90,6 +90,42 @@ that point at the build machine (MSYS2). The CI step is advisory until the first
 native run confirms the system-DLL allow-list in `scripts/ci/windows_payload.py`.
 The tools staged by #529 will be covered by the same manifest.
 
+## Windows MSI build (issue #534)
+
+On Windows x64, from the MSYS2 UCRT64 Python that built the payload:
+
+```sh
+dotnet tool install --global wix --version 6.0.2   # once per build machine
+python scripts/build_windows_msi.py --check
+python scripts/build_windows_msi.py                # unsigned test MSI + SHA-256
+```
+
+The one command validates the UCRT64/GTK/PyInstaller/WiX prerequisites, calls
+`scripts/build_release.py` once, optionally stages approved media sidecars
+(`--media-dir` with `ffmpeg.exe`, `ffprobe.exe`, `ffplay.exe` from #529),
+freezes and verifies `dist/SmoothCast/payload-manifest.json`, generates
+`build/msi/Payload.wxs`, runs pinned WiX v6 against
+`packaging/windows/Product.wxs`, reads the result back with
+`wix msi decompile`, and writes exactly `dist/SmoothCast-<version>-x64.msi`
+plus a standard `sha256sum`-format `.sha256` file. The MSI carries the
+verified Git commit in `SMOOTHCAST_SOURCE_REVISION`; a dirty tracked tree
+fails the build. Failures and failed verification delete the temporary MSI
+and leave any existing canonical MSI untouched.
+
+`--skip-pyinstaller` reuses `dist/SmoothCast` only after verifying its
+manifest version and every hash, so CI can build the MSI after the normal
+native package step. `--json` prints one machine-readable summary; `--check`
+builds nothing. The default Manufacturer is `SmoothCast`; the owner-approved
+publisher identity replaces it at signing (#536). WiX v6's Open Source
+Maintenance Fee terms need the owner's review before any revenue-generating
+use.
+
+The output is an **unsigned CI test artefact**. The `Package SmoothCast`
+workflow builds and uploads it on manual dispatch or a version tag, but does
+not sign it, install it, test upgrades or publish it: those remain #535,
+#536, #537 and #538. Until #529 is approved, the MSI contains no bundled
+FFmpeg sidecars and is not a qualified public installer.
+
 ## Unsigned macOS disk image (issue #556)
 
 The native `macos-15` package job produces `dist/SmoothCast.app` with
