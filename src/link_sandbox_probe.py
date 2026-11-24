@@ -1,0 +1,238 @@
+"""Qualify an owner-configured link-acquisition launcher by attacking it (#588).
+
+``CommandProvider`` cannot see an arbitrary launcher's OS policy, so it never
+claims isolation. This module *tests* it: the launcher runs a tiny probe that
+tries to (1) connect to a loopback service, (2) connect to a service bound on
+this computer's private LAN address, (3) read a canary file in the owner's home
+directory and (4) leave a detached child process behind. The evidence is
+collected host-side (connection counts at the listeners, the canary's content
+echoed back, whether the child outlived the launcher), not trusted from the
+probe's own report. Only a launcher that denies all four is "verified".
+
+It contacts no external host, downloads nothing and starts no media tool. The
+canary is created and removed by this module. GTK-free.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import json
+import os
+from pathlib import Path
+import secrets
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+CHECKS = ("probe_ran", "loopback_denied", "private_lan_denied", "home_denied", "process_tree_terminated")
+
+_PROBE = r"""
+import json, os, socket, subprocess, sys
+spec = json.loads(sys.argv[1])
+out = {"ran": True}
+def reach(host, port):
+    try:
+        socket.create_connection((host, port), timeout=2).close()
+        return True
+    except OSError:
+        return False
+out["loopback"] = reach("127.0.0.1", spec["loopback"])
+out["lan"] = reach(spec["lan_ip"], spec["lan"]) if spec.get("lan_ip") else None
+try:
+    out["home"] = open(spec["canary"], "r").read(64)
+except OSError:
+    out["home"] = None
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)  # " + spec["tag"]],
+                         start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+out["child"] = True
+print("QUALIFY " + json.dumps(out), flush=True)
+"""
+
+
+@dataclass
+class Qualification:
+    verified: bool
+    checks: dict[str, str] = field(default_factory=dict)
+    detail: str = ""
+
+    def as_dict(self) -> dict:
+        return {"verified": self.verified, "checks": dict(self.checks), "detail": self.detail}
+
+
+class _Listener:
+    """Counts connection attempts: the host-side proof that egress was (not) denied."""
+
+    def __init__(self, host: str) -> None:
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind((host, 0))
+        self.sock.listen(4)
+        self.sock.settimeout(0.2)
+        self.port = self.sock.getsockname()[1]
+        self.count = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                continue
+            self.count += 1
+            conn.close()
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(1)
+        self.sock.close()
+
+
+def lan_address() -> str | None:
+    """A private IPv4 address of this computer (no packet is sent), or None."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("10.255.255.255", 1))
+        ip = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    parts = ip.split(".")
+    private = (parts[0] == "10" or (parts[0] == "192" and parts[1] == "168")
+               or (parts[0] == "172" and 16 <= int(parts[1]) <= 31))
+    return ip if private else None
+
+
+def _tagged(tag: str) -> list[int]:
+    """Live host processes whose command line carries *tag*. Matching by tag, not by
+    the PID the probe reports, keeps this correct inside PID namespaces."""
+    found: list[int] = []
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return found
+    for entry in proc.iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            if tag.encode() not in (entry / "cmdline").read_bytes():
+                continue
+            if (entry / "stat").read_text().split(")")[-1].split()[0] == "Z":
+                continue
+        except (OSError, IndexError):
+            continue
+        found.append(int(entry.name))
+    return found
+
+
+def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0,
+            python: str | None = None) -> Qualification:
+    """Run the probe through *launcher* (``launcher EXECUTABLE ARGV...``)."""
+    path = Path(launcher) if launcher else None
+    if path is None or not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
+        return Qualification(False, {name: "not_run" for name in CHECKS}, "launcher missing or not executable")
+    python = python or sys.executable
+    lan = lan_address() if lan_ip == "auto" else lan_ip
+    canary = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
+    secret = secrets.token_hex(16)
+    loop = _Listener("127.0.0.1")
+    private = _Listener(lan) if lan else None
+    tag = "smoothcast-qualify-" + secrets.token_hex(6)
+    try:
+        canary.write_text(secret)
+        canary.chmod(0o600)
+        spec = {"loopback": loop.port, "lan": private.port if private else 0,
+                "lan_ip": lan, "canary": str(canary), "tag": tag}
+        with tempfile.TemporaryDirectory(prefix="smoothcast-qualify-") as staging:
+            try:
+                done = subprocess.run([str(path), python, "-c", _PROBE, json.dumps(spec)],
+                                      cwd=staging, stdin=subprocess.DEVNULL, capture_output=True,
+                                      text=True, timeout=timeout, env={"PATH": os.environ.get("PATH", "")})
+            except subprocess.TimeoutExpired:
+                return Qualification(False, {n: "not_run" for n in CHECKS}, "probe timed out")
+            except OSError as exc:
+                return Qualification(False, {n: "not_run" for n in CHECKS}, f"launcher failed to start: {exc}")
+        report = None
+        for line in done.stdout.splitlines():
+            if line.startswith("QUALIFY "):
+                try:
+                    report = json.loads(line[8:])
+                except ValueError:
+                    report = None
+        if not isinstance(report, dict) or report.get("ran") is not True:
+            return Qualification(False, {n: "not_run" for n in CHECKS},
+                                 f"launcher did not run the probe (exit {done.returncode})")
+        time.sleep(0.4)  # let a well-behaved launcher finish tearing the tree down
+        checks = {"probe_ran": "pass"}
+        checks["loopback_denied"] = "pass" if loop.count == 0 and not report.get("loopback") else "FAIL"
+        if private is None:
+            checks["private_lan_denied"] = "skipped"
+        else:
+            checks["private_lan_denied"] = "pass" if private.count == 0 and not report.get("lan") else "FAIL"
+        checks["home_denied"] = "FAIL" if report.get("home") == secret[:64] else "pass"
+        checks["process_tree_terminated"] = "FAIL" if _tagged(tag) else "pass"
+        verified = all(value == "pass" for value in checks.values())
+        failed = [name for name, value in checks.items() if value == "FAIL"]
+        detail = ("isolation verified" if verified else
+                  "NOT isolated: " + ", ".join(failed) if failed else
+                  "not fully verified: " + ", ".join(n for n, v in checks.items() if v != "pass"))
+        return Qualification(verified, checks, detail)
+    finally:
+        for pid in _tagged(tag):
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+        loop.close()
+        if private is not None:
+            private.close()
+        try:
+            canary.unlink()
+        except OSError:
+            pass
+
+
+# -- cached result, tied to the exact launcher file ---------------------------------------
+def cache_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "cast-control" / "link-qualification.json"
+
+
+def _identity(launcher: str) -> dict | None:
+    try:
+        info = Path(launcher).stat()
+    except OSError:
+        return None
+    return {"path": str(launcher), "size": info.st_size, "mtime_ns": info.st_mtime_ns}
+
+
+def save(launcher: str, result: Qualification) -> bool:
+    """Remember a result only for this exact launcher file (path, size, mtime)."""
+    identity = _identity(launcher)
+    if identity is None:
+        return False
+    target = cache_path()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_text(json.dumps({"launcher": identity, **result.as_dict()}, sort_keys=True))
+        os.replace(tmp, target)
+        return True
+    except OSError:
+        return False
+
+
+def is_verified(launcher: str) -> bool:
+    """True only if the saved qualification passed for the *current* launcher file."""
+    identity = _identity(launcher) if launcher else None
+    if identity is None:
+        return False
+    try:
+        data = json.loads(cache_path().read_text())
+    except (OSError, ValueError):
+        return False
+    return (isinstance(data, dict) and data.get("verified") is True
+            and data.get("launcher") == identity)

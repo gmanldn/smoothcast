@@ -421,6 +421,14 @@ class CommandProvider:
         self.probe = media_tools.find_media_tool("ffprobe")
         self.kinds = frozenset(kinds)
 
+    def _isolation_verified(self) -> bool:
+        """A passing ``--link-check --qualify`` for this exact launcher file (#588)."""
+        try:
+            import link_sandbox_probe
+            return bool(self.launcher) and link_sandbox_probe.is_verified(self.launcher)
+        except Exception:
+            return False
+
     def readiness(self) -> dict:
         """Cheap local prerequisites only; never runs programs or contacts a source."""
         return {kind: {
@@ -428,11 +436,13 @@ class CommandProvider:
             "engine_present": bool(self.tools[kind]),
             "probe_present": bool(self.probe),
             "launcher_configured": bool(self.launcher),
-            "isolation_verified": False,
+            "isolation_verified": self._isolation_verified(),
             "missing": [name for name, present in (
                 ("yt-dlp" if kind == "youtube" else "aria2c", self.tools[kind]),
                 ("ffprobe", self.probe), ("owner-configured isolation launcher", self.launcher),
-            ) if not present],
+            ) if not present] + (["qualified isolation (run smoothcast --link-check --qualify)"]
+                                 if os.environ.get("SMOOTHCAST_LINK_REQUIRE_QUALIFIED") == "1"
+                                 and self.launcher and not self._isolation_verified() else []),
         } for kind in ("youtube", "magnet")}
 
     def capabilities(self) -> dict:
@@ -1050,6 +1060,9 @@ def diagnostics_main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Check local link acquisition prerequisites")
     parser.add_argument("--tools-only", action="store_true",
                         help="Check engine binaries without requiring an isolation launcher")
+    parser.add_argument("--qualify", action="store_true",
+                        help="Attack-test the configured launcher (loopback, LAN, home, leftover "
+                             "processes); saves the result for this exact launcher file")
     args = parser.parse_args(argv)
     provider = CommandProvider()
     tools = {}
@@ -1070,21 +1083,31 @@ def diagnostics_main(argv=None) -> int:
         except OSError:
             tools[name] = "probe_failed"
     ready = all(status == "executable" for status in tools.values())
+    qualification = None
+    if args.qualify:
+        import link_sandbox_probe
+        qualification = link_sandbox_probe.qualify(provider.launcher)
+        if provider.launcher:
+            link_sandbox_probe.save(provider.launcher, qualification)
     report = {
         "tools": tools,
         "launcher_configured": bool(provider.launcher),
-        "isolation_verified": False,
+        "isolation_verified": bool(qualification.verified) if qualification else provider._isolation_verified(),
+        **({"isolation_checks": qualification.checks, "isolation_detail": qualification.detail}
+           if qualification else {}),
         "javascript_runtime_present": {
             name: bool(shutil.which(name)) for name in ("deno", "node", "qjs")},
         "notes": [
             "No network or media acquisition was attempted.",
             "The YouTube engine may also need a compatible JavaScript runtime and local EJS package.",
             "Executable presence does not prove supported versions or functioning downloads.",
-            "An owner-configured isolation launcher is required; its policy is not attested by this check.",
+            "An owner-configured isolation launcher is required; use --qualify to attack-test it.",
             "Enable providers in Preferences only after qualifying the isolated worker.",
         ],
     }
     print(json.dumps(report, indent=2, sort_keys=True))
+    if qualification is not None and not qualification.verified:
+        return 1
     return 0 if ready and (args.tools_only or provider.launcher) else 1
 
 
