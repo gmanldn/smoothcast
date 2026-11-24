@@ -28,6 +28,26 @@ def test_screen_page_serves_shared_dark_light_and_high_contrast_tokens():
         assert design_tokens.contrast_ratio(colors["on_accent"], colors["accent"]) >= 4.5
 
 
+def _literal_css_colours(css: str) -> list[str]:
+    """Inspect declaration values, not selector IDs or issue-number comments.
+
+    This generated stylesheet has ordinary flat declaration blocks nested in
+    @media rules. Search all values, including shorthand and gradient stops.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    values = (
+        declaration.partition(":")[2]
+        for block in re.findall(r"\{([^{}]*)\}", css)
+        for declaration in block.split(";")
+        if ":" in declaration
+    )
+    return [
+        match
+        for value in values
+        for match in re.findall(r"#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b", value)
+    ]
+
+
 def test_screen_css_has_no_independent_literal_palette():
     html = portal_screen_page.screen_page().decode("utf-8")
     css = html.split("<style>", 1)[1].split("</style>", 1)[0]
@@ -35,7 +55,7 @@ def test_screen_css_has_no_independent_literal_palette():
     # The only literal colour values are inside design_tokens.css().
     token_end = css.index("@media(prefers-contrast:more) and (prefers-color-scheme:light)")
     body = css[css.index("}}", token_end) + 2:]
-    assert not re.search(r"(?<=:)\s*#[0-9a-fA-F]{3,8}\b", body), "Use shared semantic colour tokens"
+    assert not _literal_css_colours(body), "Use shared semantic colour tokens"
     assert "var(--accent)" in body and "var(--text)" in body
     assert "var(--qr-paper)" in body
     assert "--qr-paper:#ffffff" in css
@@ -58,9 +78,12 @@ def test_screen_palette_has_no_credential_or_network_side_effects():
     assert b"sc_portal_session=" not in html
 
 def test_theme_colour_audit_distinguishes_numeric_ids_from_literal_values():
-    # A CSS selector may legitimately be '#420'; its digits are not a colour.
-    value_colour = re.compile(r"(?<=:)\\s*#[0-9a-fA-F]{3,8}\\b")
-    assert not value_colour.search("#420{display:block}")
-    assert not value_colour.search("#fff{background:var(--card)}")
-    assert value_colour.search(".screen{background: #123abc;}")
-    assert value_colour.search(".screen{border-color:#fff;}")
+    assert not _literal_css_colours("#420{display:block}")
+    assert not _literal_css_colours("#fff{background:var(--card)}")
+    assert not _literal_css_colours("/* Issue #420 */ .screen{color:var(--text)}")
+    assert _literal_css_colours(".screen{background: #123abc;}") == ["#123abc"]
+    assert _literal_css_colours(".screen{border:1px solid #fff;}") == ["#fff"]
+    assert _literal_css_colours(".screen{background:linear-gradient(#1234,#12345678)}") == [
+        "#1234", "#12345678",
+    ]
+    assert _literal_css_colours("@media(prefers-color-scheme:light){.screen{color:#abc}}") == ["#abc"]
