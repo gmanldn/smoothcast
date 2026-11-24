@@ -29,7 +29,12 @@ inside a coordinator-created worktree; use `--files` for new files. Without
 unpublished work, checks every version transition even with `--skip-checks`,
 pushes non-force and posts a durable handover. On conflicts, preserve the
 worktree and reconcile intentionally. Never claim unrun checks passed.
-`finish` records actual outcomes and releases the lease. Follow
+`finish` records actual outcomes and releases the lease. A `ship` exit
+code **7** means the code **already reached develop** but GitHub handover is
+pending: rerun `agent.py ship` from the SAME worktree to replay the saved
+SHA receipt; **do not recommit**. Newly touched production files trigger
+race-arbitrated lease expansion before push. Missing optional checks are
+reported as unverified, never as passing. Follow
 [coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
 GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 `scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
