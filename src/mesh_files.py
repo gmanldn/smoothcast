@@ -7,7 +7,7 @@ to one nearby node. Bounded buffers, bounded concurrency, resume on hiccups.
 """
 from __future__ import annotations
 
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPException
 import mimetypes
 import re
 from pathlib import Path
@@ -85,7 +85,7 @@ class MeshFiles:
         range_header = handler.headers.get("Range")
         try:
             conn, reply = self._open(url, key, range_header, head)
-        except OSError:
+        except (OSError, HTTPException):
             return False
         try:
             if reply.status not in (200, 206):
