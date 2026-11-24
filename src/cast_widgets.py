@@ -52,6 +52,7 @@ DEFAULTS: dict = {
     "burn_subs": False,
     "direct": True,
     "autonext": False,
+    "idle_join_slate": False,  # opt-in join QR on the TV after playback ends (#420)
     "auto_shutdown": False,
     "notifications": True,  # In-app toasts and console; no OS dock counters (#543)
     "portal_screens": True,
@@ -60,7 +61,6 @@ DEFAULTS: dict = {
     # External acquisition is explicitly owner-authorised, never guest-enabled.
     "portal_link_youtube": False,
     "portal_link_magnet": False,
-    "idle_join_slate": False,  # opt-in: cast the join QR slate to an idle Cast TV (#420)
     "library_indexer": True,
     "library_folders": [],
     "keep_streaming": True,
