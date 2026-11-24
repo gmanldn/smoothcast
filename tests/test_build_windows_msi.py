@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -119,6 +120,32 @@ class WixTests(unittest.TestCase):
     def test_product_embeds_the_verified_source_revision(self):
         product = (ROOT / "packaging" / "windows" / "Product.wxs").read_text(encoding="utf-8")
         self.assertIn('Id="SMOOTHCAST_SOURCE_REVISION" Value="$(SourceRevision)"', product)
+
+    def test_workflow_exports_the_wix_override_for_the_msys2_step(self):
+        workflow = (ROOT / ".github" / "workflows" / "package.yml").read_text(encoding="utf-8")
+        self.assertIn('SMOOTHCAST_WIX=$env:USERPROFILE\\.dotnet\\tools\\wix.exe', workflow)
+
+    def test_wix_exe_prefers_an_existing_smoothcast_wix_override(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fake = Path(folder) / "wix.exe"
+            fake.write_bytes(b"")
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_WIX": str(fake)}):
+                self.assertEqual(msi.wix_exe(), str(fake))
+
+    def test_wix_exe_falls_back_to_path_when_override_is_missing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            gone = Path(folder) / "gone.exe"
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_WIX": str(gone)}):
+                with mock.patch.object(msi.shutil, "which", return_value="C:/tools/wix.exe"):
+                    self.assertEqual(msi.wix_exe(), "C:/tools/wix.exe")
+
+    def test_wix_exe_fails_with_the_install_hint_when_missing(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SMOOTHCAST_WIX", None)
+            with mock.patch.object(msi.shutil, "which", return_value=None):
+                with self.assertRaises(msi.PrereqError) as raised:
+                    msi.wix_exe()
+        self.assertIn("dotnet tool install", str(raised.exception))
 
     def test_build_command_is_a_list_with_stable_inputs(self):
         with tempfile.TemporaryDirectory() as folder:

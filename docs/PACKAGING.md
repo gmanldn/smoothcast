@@ -100,6 +100,9 @@ python scripts/build_windows_msi.py --check
 python scripts/build_windows_msi.py                # unsigned test MSI + SHA-256
 ```
 
+CI exports `SMOOTHCAST_WIX` to the absolute `wix.exe` path because the msys2
+shell does not inherit runner PATH additions; the script also accepts `wix`
+from PATH.
 The one command validates the UCRT64/GTK/PyInstaller/WiX prerequisites, calls
 `scripts/build_release.py` once, optionally stages approved media sidecars
 (`--media-dir` with `ffmpeg.exe`, `ffprobe.exe`, `ffplay.exe` from #529),

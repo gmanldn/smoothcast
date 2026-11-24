@@ -71,6 +71,9 @@ def parse_wix_version(text: str) -> tuple[int, int, int]:
 
 
 def wix_exe() -> str:
+    override = os.environ.get("SMOOTHCAST_WIX")
+    if override and Path(override).is_file():
+        return override
     found = shutil.which("wix")
     if not found:
         raise PrereqError("WiX v6 'wix' is not on PATH; install with: "
