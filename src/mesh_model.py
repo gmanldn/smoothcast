@@ -57,6 +57,8 @@ MAX_MODEL = 64
 MAX_EXTRA_FIELDS = 16
 MAX_EXTRA_TOTAL_BYTES = 4096
 MAX_EXTRA_DEPTH = 4
+MAX_ITEM_EXTRA_FIELDS = 4          # per nested item (target/client/source/edge)
+MAX_ITEM_EXTRA_BYTES = 256
 _MAX_EXTRA_NODES = 128
 _MAX_EXTRA_TEXT = 256
 
@@ -66,6 +68,11 @@ _KNOWN_RECORD_KEYS = frozenset({
     "version", "protocols", "capabilities", "status", "mesh_port", "room_port",
     "addresses", "targets", "clients", "sources", "edges", "truncated",
 })
+
+_KNOWN_TARGET_KEYS = frozenset({"id", "kind", "name", "state", "model", "formats", "age_ms", "owner"})
+_KNOWN_CLIENT_KEYS = frozenset({"id", "role", "flags", "age_s", "name"})
+_KNOWN_SOURCE_KEYS = frozenset({"kind", "count", "formats"})
+_KNOWN_EDGE_KEYS = frozenset({"peer_kind", "peer", "last_ok_ms", "rtt_ms", "reason"})
 
 TARGET_KINDS =frozenset({"cast", "dlna", "screen", "smoothcast"})
 TARGET_STATES = frozenset({"ready", "busy", "stale", "unreachable"})
@@ -197,6 +204,15 @@ def is_lan_address(value: object) -> bool:
 # Records
 
 
+def _with_extra(wire: dict[str, Any], extra: tuple[tuple[str, str], ...],
+                known: frozenset[str]) -> dict[str, Any]:
+    """Add relayed unknown fields to *wire*; a known key is never shadowed."""
+    for key, text in extra:
+        if key not in known:
+            wire[key] = json.loads(text)
+    return wire
+
+
 @dataclass(frozen=True)
 class TargetObservation:
     """A playback target one node currently sees (never a command channel)."""
@@ -209,12 +225,14 @@ class TargetObservation:
     formats: tuple[str, ...] = ()
     age_ms: int = 0                 # how long ago this node last saw it
     owner: str = ""                 # advisory node id currently using it
+    extra: tuple[tuple[str, str], ...] = ()   # unknown fields from a newer peer
 
-    def to_wire(self) -> dict[str, Any]:
-        return {"id": self.id, "kind": self.kind, "name": self.name,
-                "state": self.state, "model": self.model,
-                "formats": list(_unique_sorted(self.formats)),
-                "age_ms": self.age_ms, "owner": self.owner}
+    def to_wire(self, include_extra: bool = True) -> dict[str, Any]:
+        return _with_extra({"id": self.id, "kind": self.kind, "name": self.name,
+                            "state": self.state, "model": self.model,
+                            "formats": list(_unique_sorted(self.formats)),
+                            "age_ms": self.age_ms, "owner": self.owner},
+                           self.extra if include_extra else (), _KNOWN_TARGET_KEYS)
 
 
 @dataclass(frozen=True)
@@ -226,11 +244,13 @@ class ClientSummary:
     flags: tuple[str, ...] = ()
     age_s: int = 0
     name: str = ""                  # display name; omitted from some tiers
+    extra: tuple[tuple[str, str], ...] = ()
 
-    def to_wire(self) -> dict[str, Any]:
-        return {"id": self.id, "role": self.role,
-                "flags": list(_unique_sorted(self.flags)),
-                "age_s": self.age_s, "name": self.name}
+    def to_wire(self, include_extra: bool = True) -> dict[str, Any]:
+        return _with_extra({"id": self.id, "role": self.role,
+                            "flags": list(_unique_sorted(self.flags)),
+                            "age_s": self.age_s, "name": self.name},
+                           self.extra if include_extra else (), _KNOWN_CLIENT_KEYS)
 
 
 @dataclass(frozen=True)
@@ -240,10 +260,12 @@ class SourceSummary:
     kind: str
     count: int
     formats: tuple[str, ...] = ()
+    extra: tuple[tuple[str, str], ...] = ()
 
-    def to_wire(self) -> dict[str, Any]:
-        return {"kind": self.kind, "count": self.count,
-                "formats": list(_unique_sorted(self.formats))}
+    def to_wire(self, include_extra: bool = True) -> dict[str, Any]:
+        return _with_extra({"kind": self.kind, "count": self.count,
+                            "formats": list(_unique_sorted(self.formats))},
+                           self.extra if include_extra else (), _KNOWN_SOURCE_KEYS)
 
 
 @dataclass(frozen=True)
@@ -255,11 +277,13 @@ class EdgeObservation:
     last_ok_ms: int | None = None   # age of the last success; None = never
     rtt_ms: int | None = None
     reason: str = ""
+    extra: tuple[tuple[str, str], ...] = ()
 
-    def to_wire(self) -> dict[str, Any]:
-        return {"peer_kind": self.peer_kind, "peer": self.peer,
-                "last_ok_ms": self.last_ok_ms, "rtt_ms": self.rtt_ms,
-                "reason": self.reason}
+    def to_wire(self, include_extra: bool = True) -> dict[str, Any]:
+        return _with_extra({"peer_kind": self.peer_kind, "peer": self.peer,
+                            "last_ok_ms": self.last_ok_ms, "rtt_ms": self.rtt_ms,
+                            "reason": self.reason},
+                           self.extra if include_extra else (), _KNOWN_EDGE_KEYS)
 
 
 @dataclass(frozen=True)
@@ -364,7 +388,9 @@ def _extra_value_ok(value: object) -> bool:
     return True
 
 
-def _preserved_extras(data: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+def _preserved_extras(data: Mapping[str, Any], known: frozenset[str] = _KNOWN_RECORD_KEYS,
+                      max_fields: int = MAX_EXTRA_FIELDS,
+                      max_bytes: int = MAX_EXTRA_TOTAL_BYTES) -> tuple[tuple[str, str], ...]:
     """Unknown top-level fields worth relaying, as sorted ``(key, JSON)`` pairs.
 
     Anything that does not meet the bounds is dropped rather than failing the
@@ -374,16 +400,16 @@ def _preserved_extras(data: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
     kept: list[tuple[str, str]] = []
     spent = 0
     for key in sorted(k for k in data if type(k) is str):
-        if key in _KNOWN_RECORD_KEYS or _EXTRA_KEY.fullmatch(key) is None:
+        if key in known or _EXTRA_KEY.fullmatch(key) is None:
             continue
-        if len(kept) >= MAX_EXTRA_FIELDS or not _extra_value_ok(data[key]):
+        if len(kept) >= max_fields or not _extra_value_ok(data[key]):
             continue
         try:
             text = canonical_json(data[key]).decode("ascii")
         except (TypeError, ValueError, RecursionError):
             continue
         cost = len(key) + len(text) + 4
-        if spent + cost > MAX_EXTRA_TOTAL_BYTES:
+        if spent + cost > max_bytes:
             continue
         kept.append((key, text))
         spent += cost
@@ -404,6 +430,7 @@ def _parse_target(raw: object) -> TargetObservation:
         formats=_tokens(data.get("formats", []), "target formats", MAX_FORMATS, _FORMAT),
         age_ms=_int(data.get("age_ms", 0), "target age", 0, _MAX_REL_MS),
         owner=owner,
+        extra=_preserved_extras(data, _KNOWN_TARGET_KEYS, MAX_ITEM_EXTRA_FIELDS, MAX_ITEM_EXTRA_BYTES),
     )
 
 
@@ -415,6 +442,7 @@ def _parse_client(raw: object) -> ClientSummary:
         flags=_tokens(data.get("flags", []), "client flags", MAX_FLAGS, _TOKEN),
         age_s=_int(data.get("age_s", 0), "client age", 0, _MAX_REL_S),
         name=_text(data.get("name", ""), "client name", MAX_NAME, allow_empty=True),
+        extra=_preserved_extras(data, _KNOWN_CLIENT_KEYS, MAX_ITEM_EXTRA_FIELDS, MAX_ITEM_EXTRA_BYTES),
     )
 
 
@@ -424,6 +452,7 @@ def _parse_source(raw: object) -> SourceSummary:
         kind=_enum(data.get("kind"), SOURCE_KINDS, "source kind"),
         count=_int(data.get("count"), "source count", 0, 10_000_000),
         formats=_tokens(data.get("formats", []), "source formats", MAX_FORMATS, _FORMAT),
+        extra=_preserved_extras(data, _KNOWN_SOURCE_KEYS, MAX_ITEM_EXTRA_FIELDS, MAX_ITEM_EXTRA_BYTES),
     )
 
 
@@ -437,6 +466,7 @@ def _parse_edge(raw: object) -> EdgeObservation:
         last_ok_ms=_opt_int(data.get("last_ok_ms"), "edge last ok", 0, _MAX_REL_MS),
         rtt_ms=_opt_int(data.get("rtt_ms"), "edge rtt", 0, 600_000),
         reason=_enum(data.get("reason", ""), EDGE_REASONS, "edge reason"),
+        extra=_preserved_extras(data, _KNOWN_EDGE_KEYS, MAX_ITEM_EXTRA_FIELDS, MAX_ITEM_EXTRA_BYTES),
     )
 
 
@@ -501,10 +531,26 @@ def parse_record(raw: object) -> NodeRecord:
         truncated=truncated,
         extra=_preserved_extras(data),
     )
-    if record.extra and encoded_size(record) > MAX_RECORD_BYTES:
+    if _has_extras(record) and encoded_size(record) > MAX_RECORD_BYTES:
         # Relaying extras must never turn an acceptable record unencodable.
-        record = replace(record, extra=())
+        record = _strip_extras(record)
     return record
+
+
+def _has_extras(record: NodeRecord) -> bool:
+    return bool(record.extra) or any(
+        item.extra for group in (record.targets, record.clients, record.sources, record.edges)
+        for item in group)
+
+
+def _strip_extras(record: NodeRecord) -> NodeRecord:
+    """The same record without any relayed unknown fields, top level or nested."""
+    return replace(
+        record, extra=(),
+        targets=tuple(replace(t, extra=()) for t in record.targets),
+        clients=tuple(replace(c, extra=()) for c in record.clients),
+        sources=tuple(replace(x, extra=()) for x in record.sources),
+        edges=tuple(replace(e, extra=()) for e in record.edges))
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -666,6 +712,9 @@ def fit_record(record: NodeRecord, *, limit: int = MAX_RECORD_BYTES) -> NodeReco
                       sources=sources, capabilities=capabilities, addresses=addresses,
                       truncated=record.truncated or changed)
     while encoded_size(current) > limit:
+        if _has_extras(current):
+            current = _strip_extras(current)  # never trade known data for relayed extras
+            continue
         if current.edges:
             ordered = sorted(current.edges, key=lambda e: (
                 e.last_ok_ms is None, e.last_ok_ms or 0, e.peer))
@@ -715,7 +764,7 @@ def guest_tier(record: NodeRecord) -> dict[str, Any]:
     No client names or ids, no edges, no sources, no addresses.
     """
     wire = _identity_wire(record)
-    wire["targets"] = [item.to_wire() for item in
+    wire["targets"] = [item.to_wire(include_extra=False) for item in
                        sorted(record.targets, key=lambda item: item.id)]
     wire["client_count"] = len(record.clients)
     return wire

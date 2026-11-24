@@ -57,11 +57,13 @@ canonical JSON)` pairs). They are bounded (16 fields, 4 KiB total, depth 4,
 integers only, lowercase `[a-z][a-z0-9_]{0,31}` keys), never shadow a known
 key, never reach the public or guest tiers, and are dropped first if they would
 push a record over `MAX_RECORD_BYTES`. Out-of-bounds extras are skipped, not
-fatal. Unknown fields *inside* nested items (targets, clients, sources, edges)
-are still normalised away, so do not add nested fields without a capability.
-Migrate each persistent shared store to the lossless document wrapper before
-enabling its sync capability. Nested-item preservation and Network UI messaging
-remain outstanding on #387.
+fatal. Unknown fields *inside* nested items (targets, clients, sources,
+edges) are relayed the same way in each item's own `extra` (4 fields, 256 bytes
+per item, same key/value rules), never exposed in the guest tier, and dropped
+before any known data when a record must shrink. Migrate each persistent shared
+store to the lossless document wrapper before enabling its sync capability.
+`peer_status_text()` holds the user-facing copy for older or incompatible peers;
+a Network/health row should render it (not yet wired into `mesh_ui.py`).
 
 ## Rollout and testing
 

@@ -79,3 +79,14 @@ def test_newer_schema_is_read_only_on_downgrade():
         parse_store({"schema": True})
     with pytest.raises(PeerCompatibilityError):
         parse_store({"schema": 1, "future": "X" * (128 * 1024)})
+
+
+def test_peer_status_text_uses_the_exact_ticket_copy():
+    from peer_protocol import (INCOMPATIBLE_TEXT, OLDER_VERSION_TEXT, Agreement, peer_status_text)
+    assert OLDER_VERSION_TEXT == "Older version — some features unavailable with this computer."
+    full = Agreement(1, frozenset({"resume.v1", "catalogue.v1"}))
+    assert peer_status_text(full, {"resume.v1"}) == ""                      # everything wanted works
+    assert peer_status_text(full) == ""
+    assert peer_status_text(full, {"rooms.v2"}) == OLDER_VERSION_TEXT        # missing a wanted capability
+    assert peer_status_text(Agreement(1, frozenset(), legacy=True)) == OLDER_VERSION_TEXT
+    assert peer_status_text(None) == INCOMPATIBLE_TEXT                       # refused handshake

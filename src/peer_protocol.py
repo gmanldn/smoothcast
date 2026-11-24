@@ -93,6 +93,23 @@ def negotiate(local: Handshake, remote: Handshake, *,
                      legacy=legacy)
 
 
+OLDER_VERSION_TEXT = "Older version — some features unavailable with this computer."
+INCOMPATIBLE_TEXT = "Incompatible version — update the older computer to use it with this one."
+
+
+def peer_status_text(agreement: "Agreement | None", wanted: "frozenset[str] | set[str]" = frozenset()) -> str:
+    """Plain-language status for a peer row; empty when everything wanted works.
+
+    ``None`` means the handshake was refused as incompatible. A legacy (pre
+    negotiation) peer, or one missing a capability we want, is "older version".
+    """
+    if agreement is None:
+        return INCOMPATIBLE_TEXT
+    if agreement.legacy or not frozenset(wanted) <= agreement.caps:
+        return OLDER_VERSION_TEXT
+    return ""
+
+
 def legacy_handshake() -> Handshake:
     """Old v1 peers understand base records only, never opt-in features."""
     return Handshake(1, 1, "0.0.0", ())
