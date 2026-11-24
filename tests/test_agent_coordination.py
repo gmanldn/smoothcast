@@ -567,6 +567,31 @@ def test_history_preview_is_id_ordered_and_does_not_reuse_stale_handover():
     assert handover == ""  # never pair older pending work with newer implementation
 
 
+def test_next_reads_paginated_history_not_stale_first_comment_page(monkeypatch, capsys):
+    ticket = {"title": "[P1] Review transport", "priority": "P1", "labels": ["now"]}
+    monkeypatch.setattr(agent, "ranked_candidates",
+                        lambda args: ([(250, 42, ticket, set(), ())], [], [], set(), "ours"))
+    old = [comment(i, 42, 70, "Progress: historical work\nHandover: stale") 
+           for i in range(1, 101)]
+    latest = comment(101, 42, 2, "Progress: just landed\nHandover: verify reconnect")
+    fetched = []
+
+    def fake_gh(*args):
+        fetched.append(args[0])
+        if args[0].endswith("comments?per_page=100"):
+            return old
+        if args[0].endswith("comments?per_page=100&page=2"):
+            return [latest]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    assert agent.cmd_next(agent.build_parser().parse_args(["next"])) == 0
+    out = capsys.readouterr().out
+    assert "just landed" in out and "verify reconnect" in out
+    assert "stale" not in out
+    assert len(fetched) == 2
+
+
 def test_history_preview_preserves_latest_progress_and_remaining_work():
     comments = [
         comment(1, 42, 20, "Progress: basic transport landed\nHandover: untested cancellation"),
