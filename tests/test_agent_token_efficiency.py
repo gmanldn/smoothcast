@@ -42,7 +42,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             ROOT / "AGENTS.md",
             *(ROOT / "docs" / "agents").glob("*.md"),
         ]
-        self.assertEqual(len(files), 9, "Expected root plus eight focused handbook pages")
+        self.assertEqual(len(files), 10, "Expected root plus nine focused handbook pages")
         index = (ROOT / "docs/agents/README.md").read_text("utf-8")
         for page in ("workflow.md", "testing.md", "architecture.md",
                      "efficiency.md", "preferences.md", "fake_receivers.md", "peer-protocol.md"):
