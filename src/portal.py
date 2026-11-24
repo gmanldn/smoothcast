@@ -1725,6 +1725,12 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #playback #volume{margin-top:5px}
 #findChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
+#queuePanel{border-top:3px solid var(--accent)}
+#queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
+#queuePanel .queue-destination .eyebrow{margin:0 0 4px}
+#queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
+#queuePanel .queue-add-links{margin:0 0 12px}
+#queuePanel #linkAcquisition{margin-top:16px;min-width:0}
 #queuePanel #clearQueue{margin:8px 0 4px}
 #queuePanel #queue{margin:12px 0 0}
 #queuePanel .queue-actions button{min-height:44px;min-width:44px}
@@ -1785,7 +1791,8 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
   #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
-  #findPanel,#queuePanel{grid-column:2}
+  #findPanel{grid-column:2}
+  #queuePanel{grid-column:1/-1}
   #peoplePanel{grid-column:1/-1}
   .advanced-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
@@ -1894,7 +1901,32 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
+<div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
+<div class="quick-links queue-add-links" aria-label="Contribute media"><a href="#linkAcquisition">Add YouTube or magnet link</a><a href="#findPanel">Find shared media</a><a href="#uploadCard">Add files</a></div>
+<p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
+<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
+
+<button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
+<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<section id="linkAcquisition" aria-labelledby="linkHeading">
+<h3 id="linkHeading">Add a link to Up Next</h3>
+<p id="linkAvailability" class="field-hint">Checking whether downloads are available…</p>
+<form id="linkForm">
+<label for="linkInput">YouTube video or magnet link</label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I am authorised to download this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
+</form>
+<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
+<h4>Downloads</h4>
+<p class="field-hint">Downloads are handled by eligible SmoothCast workers. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
+<ul id="linkJobs" aria-label="Room downloads"><li class="empty">No downloads yet</li></ul>
+</section>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+
 <div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
@@ -1960,27 +1992,6 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
-</section>
-<section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
-<p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
-<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
-<section id="linkAcquisition" aria-labelledby="linkHeading">
-<h3 id="linkHeading">Add a link to Up Next</h3>
-<p id="linkAvailability" class="field-hint">Checking whether downloads are available…</p>
-<form id="linkForm">
-<label for="linkInput">YouTube video or magnet link</label>
-<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required disabled>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required disabled><span>I am authorised to download this media.</span></label>
-<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
-</form>
-<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<h4>Downloads</h4>
-<p class="field-hint">Downloads run on the SmoothCast computer. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
-<ul id="linkJobs" aria-label="Room downloads"><li class="empty">No downloads yet</li></ul>
-</section>
-<button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
-<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
-<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
 <p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
@@ -2342,7 +2353,7 @@ function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   $("dashboard").hidden=false;
   $("uploadCard").hidden=false;
-  if(entering)$("playbackHeading").focus({preventScroll:true});
+  if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
 let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
@@ -2355,7 +2366,7 @@ function updateLinkControls(){
   const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return;
-  input.disabled=!enabled||linkPosting;consent.disabled=!enabled||linkPosting;
+  input.disabled=linkPosting;consent.disabled=linkPosting;
   button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
   label.textContent=enabled?"Turned on: "+sources.join(" and ")+".":linkStorageAvailable===false?"Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.":"Downloads from links are off until whoever runs SmoothCast turns them on.";
@@ -2397,7 +2408,7 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
   $("linkAuthorised").addEventListener("change",updateLinkControls);
   linkForm.addEventListener("submit",async event=>{
-    event.preventDefault();if(linkPosting||!$("linkAuthorised").checked)return;
+    event.preventDefault();if(linkPosting||!(linkCapabilities.youtube||linkCapabilities.magnet)||!$("linkAuthorised").checked)return;
     const url=$("linkInput").value.trim();if(!url)return;
     if(!linkAttempt||linkAttempt.url!==url)linkAttempt={url,id:"link-"+Date.now()+"-"+Math.random().toString(36).slice(2)};
     linkPosting=true;updateLinkControls();showError("linkFeedback","Sending to the SmoothCast computer…");
@@ -2409,13 +2420,20 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
     finally{linkPosting=false;updateLinkControls()}
   });
 }
+function renderQueueDestination(state){
+  const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
+  if(target)target.textContent=state.receiver||"No casting target selected";
+  if(playing)playing.textContent=(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  // The mesh panel owns visibility. Never infer remote readiness from room selection.
+  if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
     const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueue(s.queue);renderLinkJobs(s);
+renderQueueDestination(s);renderQueue(s.queue);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
