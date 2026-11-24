@@ -126,6 +126,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
     def set_selection(self, path: str) -> None:
         if path not in self.queue:
             self.queue.append(path)
+            record = getattr(self, "_portal_record_contribution", None)
+            if callable(record):
+                record(path, "Host", "local")
             self._rebuild_queue()
         index = self.queue.index(path)
         self.selected_index = index
@@ -246,6 +249,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         for path in paths:
             if path not in self.queue:
                 self.queue.append(path)
+                record = getattr(self, "_portal_record_contribution", None)
+                if callable(record):
+                    record(path, "Host", "local")
                 added += 1
                 fingerprint.KEYS.get(path)         # warm the content key in the background
         if not added:
@@ -286,6 +292,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
 
     def _rebuild_queue(self) -> None:
+        prune = getattr(self, "_portal_prune_queue_provenance", None)
+        if callable(prune):
+            prune()
         # GTK emits row-selected(None) while clearing; preserve the source
         # row index so a rebuild does not change the file selected for casting.
         selected = (

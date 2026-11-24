@@ -413,6 +413,21 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self._expire_sessions(self.clock())
             return key in self._sessions
 
+    def session_display_name(self, key: object) -> str | None:
+        """Resolve a contributor from an internal authenticated session key."""
+        if not isinstance(key, str) or len(key) != 64:
+            return None
+        with self._lock:
+            now = self.clock()
+            self._expire_sessions(now)
+            session = self._sessions.get(key)
+            if session is None:
+                return None
+            try:
+                return self.room.touch(session.participant_id, now=now).name
+            except portal_room.RoomError:
+                return None
+
     def session_csrf(self, token: str | None) -> str | None:
         if not token:
             return None
@@ -1156,6 +1171,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
                             "path": str(media_path), "name": name,
                             "upload_id": upload_id, "early": False,
+                            "_portal_source": "upload",
                             "client": self.client_address[0],
                             "_portal_auth_key": key,
                         })
@@ -1539,6 +1555,7 @@ class Portal:
             def deliver(owner, path):
                 # Existing authenticated GTK queue authority; never cast now.
                 self.server.dispatch("queue_add", {"path": str(path), "name": path.name,
+                                                   "_portal_source": "link",
                                                    "_portal_auth_key": owner})
             self.server.link_jobs = link_acquisition.LinkJobs(
                 self.uploads.root / "link-acquisitions", provider, deliver,
@@ -2219,7 +2236,7 @@ function renderQueue(items){
   if(queuePressed){deferredQueue=rows;return}
   queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
-    item.id,item.title,item.duration,item.votes,item.voted,
+    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,
   ]));
   if(key===queueRenderKey)return;
   const focused=document.activeElement;
@@ -2259,7 +2276,9 @@ function renderQueue(items){
     li.setAttribute("aria-setsize",String(rows.length));
     li.children[0].children[0].textContent=itemTitle;
     li.children[0].children[1].textContent="Position "+(index+1)+" of "+rows.length+" · "+(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
-      +(item.duration?" · "+clock(item.duration):"");
+      +(item.duration?" · "+clock(item.duration):"")
+      +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
+      +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
     const buttons=li.children[1].children;
     const labels=[
       (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
