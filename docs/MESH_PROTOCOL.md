@@ -209,3 +209,12 @@ the download already finished. A stale-generation cancel changes nothing. After
 a successful, verified collection the host sends the same cancel (best effort)
 so the worker frees the file immediately instead of waiting for the 15 minute
 ticket expiry.
+
+### Worker disk reaper (#589)
+
+A verified copy that the host never collects or cancels (host vanished, crashed
+or lost its ledger) is deleted after 30 minutes (`RESULT_TTL`, twice the ticket
+lifetime), together with its ticket. The check piggybacks on the periodic
+telemetry poll (at most every 30 s), and any working directory that no live job
+or verified result owns, including a previous run's leftovers at startup, is
+removed. Symbolic links are never followed or deleted.

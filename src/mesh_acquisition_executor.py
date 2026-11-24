@@ -23,6 +23,8 @@ import mesh_acquisition_assignment as core
 import mesh_acquisition_rpc as wire
 
 REPORT_INTERVAL = 1.0
+RESULT_TTL = 1800.0  # a verified copy nobody collected is dropped (ticket lasts 900 s)
+REAP_EVERY = 30.0
 FINAL_ATTEMPTS = 3
 FINAL_RETRY_SECONDS = 1.0
 
@@ -39,10 +41,43 @@ class RemoteExecutor:
         self._cancel: dict[str, threading.Event] = {}
         self._threads: dict[str, threading.Thread] = {}
         self.live: dict[str, dict] = {}  # job -> {kind, stage, received, total, rate}
+        self.finished_at: dict[str, float] = {}
+        self._last_reap = 0.0
         self.results: dict[str, tuple[int, Path, str, int]] = {}  # job -> (gen, file, sha256, size)
+
+    def sweep_orphans(self) -> int:
+        """Delete working directories no live job or verified result owns (e.g. left by
+        a crash, or by a room host that vanished). Safe at startup and from reap()."""
+        removed = 0
+        try:
+            entries = list(self.root.iterdir())
+        except OSError:
+            return 0
+        with self._lock:
+            owned = set(self.live) | set(self.results) | set(self._threads)
+        for entry in entries:
+            if entry.name not in owned and entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
+                removed += 1
+        return removed
+
+    def reap(self) -> list[str]:
+        """Drop uncollected verified copies older than RESULT_TTL and any orphans."""
+        now = self._clock()
+        with self._lock:
+            if now - self._last_reap < REAP_EVERY:
+                return []
+            self._last_reap = now
+            stale = [job for job, at in self.finished_at.items()
+                     if now - at > RESULT_TTL and job in self.results]
+        for job in stale:
+            self.discard(job)
+        self.sweep_orphans()
+        return stale
 
     def rows(self) -> list[dict]:
         """Redacted telemetry rows for jobs this node is running for another room."""
+        self.reap()  # piggyback on the periodic telemetry poll: no extra thread
         with self._lock:
             return [{"id": job, "kind": data["kind"], "stage": data["stage"],
                      "received": data["received"], "total": data["total"],
@@ -83,6 +118,7 @@ class RemoteExecutor:
         self.stop(job)
         with self._lock:
             result = self.results.pop(job, None)
+            self.finished_at.pop(job, None)
         if result is not None:
             shutil.rmtree(self.root / job, ignore_errors=True)
 
@@ -163,6 +199,7 @@ class RemoteExecutor:
             if cancelled():
                 raise links.LinkError(409, "Acquisition cancelled.")
             self.results[job] = (gen, path, digest, path.stat().st_size)
+            self.finished_at[job] = self._clock()
             self._notify(sender, wire.build("finished", job=job, gen=gen, content=digest), final=True)
         except Exception as exc:  # noqa: BLE001
             self.results.pop(job, None)

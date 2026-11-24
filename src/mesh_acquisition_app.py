@@ -66,6 +66,7 @@ class RemoteAcquisition:
                                                  discard=self.executor.discard,
                                                  ticket=self.executor.ticket)
                 self.executor.bind(self.worker)
+                self.executor.sweep_orphans()  # a previous run's leftovers own nothing now
             except (OSError, ValueError):
                 self.server = self.executor = self.worker = None
 
