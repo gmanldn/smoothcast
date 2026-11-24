@@ -39,11 +39,11 @@ CASES = [
 ]
 
 
-def test_page_wires_projection_to_animation_frames_without_overwriting_scrubs():
+def test_page_wires_projection_to_a_timer_without_overwriting_scrubs():
     html = portal._HTML
     assert "function trackPlayhead(" in html and "function paintPlayhead(" in html
-    assert "requestAnimationFrame(playheadFrame)" in html and "typeof requestAnimationFrame" in html
-    assert "if(!document.hidden)paintPlayhead()" in html  # hidden tabs do not paint
+    assert "function schedulePlayhead(" in html and "playheadTimer=setTimeout(" in html
+    assert "if(document.hidden||!csrf||stalePage)return;" in html  # hidden tabs do not paint
     paint = next(line for line in html.splitlines() if line.startswith("function paintPlayhead("))
     assert 'if(!editingControls.has("seek"))$("seek").value' in paint
     assert "trackPlayhead(s)" in html
@@ -128,6 +128,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     window.np_title = SimpleNamespace(get_text=lambda: "Film")
     window.now_playing = None
     window._portal_queue_status = lambda: []
+    window._portal_copy_status = lambda: []
     window.device_info = None
     window.session = object()
     window.external = False
@@ -279,7 +280,7 @@ def _js_function(name: str) -> str:
             return html[start:i]
 
 
-@pytest.mark.parametrize("name", ["playheadFrame", "paintPlayhead", "trackPlayhead"])
+@pytest.mark.parametrize("name", ["schedulePlayhead", "paintPlayhead", "trackPlayhead"])
 def test_animation_path_creates_no_network_or_command_traffic(name):
     """#336: painting the playhead each frame is pure DOM arithmetic."""
     body = _js_function(name)

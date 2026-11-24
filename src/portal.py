@@ -820,7 +820,7 @@ class _Handler(BaseHTTPRequestHandler):
             # Fixed prerequisite flags, not paths or environment values.
             state["link_local_prerequisites"] = {
                 kind: {"engine": bool(provider.tools.get(kind)),
-                       "ffprobe": bool(provider.probe),
+                       "probe": bool(provider.probe),
                        "isolation": bool(provider.launcher)}
                 for kind in ("youtube", "magnet")
             }
@@ -2424,7 +2424,7 @@ function updateLinkControls(){
     if(owner?.[kind]===false)return "Ask the host to enable guest downloads in desktop Preferences → Queue.";
     const local=prerequisites?.[kind],missing=[];
     if(local?.engine===false)missing.push(kind==="youtube"?"yt-dlp":"aria2c");
-    if(local?.ffprobe===false)missing.push("FFprobe");
+    if(local?.probe===false)missing.push("FFprobe");
     if(local?.isolation===false)missing.push("isolated worker launcher");
     if(missing.length)return "No eligible worker is currently available. Host prerequisites missing at startup: "+missing.join(", ")+". Ask the host to check desktop Preferences → Queue and restart after repair.";
     return "Ask the host to check the acquisition worker in desktop Preferences → Queue. You can keep the link here.";

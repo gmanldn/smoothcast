@@ -267,19 +267,26 @@ def test_joined_room_and_open_expiry_return_focus_to_visible_content():
     import pytest
 
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
-    start = script.index("function showJoinedRoom(){")
-    end = script.index("function applyStatus(d){", start)
-    joined = script[start:end]
-    start = script.index("function expireSession(){")
-    end = script.index("function clock(s){", start)
-    expired = script[start:end]
-    assert 'id="playbackHeading" tabindex="-1"' in portal._HTML
+
+    def _fn(name):
+        start = script.index(f"function {name}(")
+        depth, i = 0, script.index("{", start)
+        while True:
+            depth += script[i] == "{"
+            depth -= script[i] == "}"
+            i += 1
+            if depth == 0:
+                return script[start:i]
+
+    joined = _fn("showJoinedRoom")
+    expired = _fn("expireSession")
+    assert 'id="queueHeading" tabindex="-1"' in portal._HTML
     if not shutil.which("node"):
         pytest.skip("Node.js required to test focus transitions")
     harness = r"""
 const assert=require("node:assert/strict");
 const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
- playbackHeading:{focusCount:0,focus(){this.focusCount++}},
+ queueHeading:{focusCount:0,focus(){this.focusCount++}},
  login:{hidden:true},loginButton:{disabled:false},
  pin:{focusCount:0,focus(){this.focusCount++}},
  name:{focusCount:0,focus(){this.focusCount++}},
@@ -287,6 +294,8 @@ const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
 const $=id=>elements[id];
 const loginButton=elements.loginButton;
 let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null;
+let playhead=null,playheadTimer=null;
+function stopPlayhead(){}
 const pendingControls={clear(){}};const roomEvents={stop(){}};
 function syncRemoteWakeLock(){}
 function resetUploadBatch(){}
@@ -294,10 +303,10 @@ function showError(id,msg){$(id).textContent=msg}
 """
     scenario = r"""
 showJoinedRoom();
-assert.equal(elements.playbackHeading.focusCount,1);
+assert.equal(elements.queueHeading.focusCount,1);
 assert.equal(elements.dashboard.hidden,false);
 showJoinedRoom();
-assert.equal(elements.playbackHeading.focusCount,1,"polls must not steal focus");
+assert.equal(elements.queueHeading.focusCount,1,"polls must not steal focus");
 const PIN_REQUIRED=false;
 expireSession();
 assert.equal(elements.name.focusCount,1);
@@ -350,7 +359,7 @@ def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
     assert 'aria-labelledby="screensPanelHeading"' in panel
     assert "House PIN only if one has been set" in panel
     assert "Stop this screen without stopping the host TV" in panel
-    assert "Screen command received; checking its state." in panel
+    assert "command received; checking its state." in panel
     assert 'play.setAttribute("aria-label","Play selected queue item on "+sc.name)' in panel
     assert 'toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name)' in panel
     assert 'stop.setAttribute("aria-label","Stop playback on "+sc.name)' in panel
@@ -492,8 +501,8 @@ def test_mesh_network_help_defines_target_states_without_cast_permissions():
     assert '<details class="help"><summary>What do the network devices and target states mean?</summary>' in panel
     assert "Devices</strong> are SmoothCast computers" in panel
     assert "Primary</strong> is the node coordinating the mesh" in panel
-    assert "Ready</strong> means" in panel
-    assert "In use</strong> means" in panel
+    assert "Reported ready</strong> means" in panel
+    assert "Reported in use</strong> means" in panel
     assert "Can't be reached</strong> means" in panel
     assert "It does not cast, claim receivers or upload files" in panel
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
@@ -521,11 +530,15 @@ def test_network_navigation_only_appears_when_mesh_is_available():
         pytest.skip("Node.js required for conditional navigation test")
     harness = r"""
 const assert=require("node:assert/strict");
+const queueLink={hidden:true};
+const document={getElementById(id){assert.equal(id,"queueMeshLink");return queueLink}};
 let navLink={hidden:true};
 showNetworkNavigation(true);
 assert.equal(navLink.hidden,false);
+assert.equal(queueLink.hidden,false);
 showNetworkNavigation(false);
 assert.equal(navLink.hidden,true);
+assert.equal(queueLink.hidden,true);
 navLink=null;
 assert.doesNotThrow(()=>showNetworkNavigation(true));
 """

@@ -127,5 +127,7 @@ def test_page_wires_the_stream_into_the_existing_poll_and_lifecycle():
     assert "function applyStatus(d){" in html and "if(applyStatus(d)===false)return;" in html
     assert "roomEvents.healthy())return;" in html  # polling pauses while the stream is healthy
     assert 'statusRequest?.abort("superseded");roomEvents.stop();return}' in html
-    assert "function expireSession(){\n  csrf=\"\";\n  roomEvents.stop();" in html
+    assert "function expireSession(){" in html
+    expired = html.split("function expireSession(){", 1)[1].split("function clock(s){", 1)[0]
+    assert 'csrf="";' in expired and "roomEvents.stop();" in expired
     assert "apply:d=>{if(!busy)applyStatus(d)}" in html
