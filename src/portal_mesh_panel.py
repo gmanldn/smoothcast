@@ -204,7 +204,7 @@ _PANEL = r"""
   let live=[];
   const timing=value=>{if(!Number.isFinite(value)||value<0)return "";const s=Math.floor(value),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?h+":"+String(m).padStart(2,"0")+":"+r:m+":"+r};
   // Receivers are polled every 15 s; advance playing streams between polls so the position stays current.
-  if(typeof setInterval==="function")setInterval(()=>{const now=Date.now();for(const s of live){const at=Math.min(s.duration,s.base+(now-s.at)/1000);s.progress.value=at;s.time.textContent=timing(at)+" / "+timing(s.duration)}},1000);
+  if(typeof setInterval==="function"){const timer=setInterval(()=>{const now=Date.now();for(const s of live){const at=Math.min(s.duration,s.base+(now-s.at)/1000);s.progress.value=at;s.time.textContent=timing(at)+" / "+timing(s.duration)}},1000);if(timer&&typeof timer.unref==="function")timer.unref()}
   function model(){
     const list=[...nodes.values()].sort((a,b)=>(a.node_id===local?-1:b.node_id===local?1:a.name.localeCompare(b.name)||a.node_id.localeCompare(b.node_id)));
     const versions=list.map(n=>n.version).filter(v=>semver(v));
