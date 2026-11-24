@@ -1164,29 +1164,43 @@ def ticket_commits(number: int) -> list[str]:
 
 
 def cmd_done(a: argparse.Namespace) -> int:
-    head = git("rev-parse", "HEAD").strip()
-    if subprocess.run(["git", "merge-base", "--is-ancestor", head, "origin/develop"], cwd=ROOT).returncode:
-        print("HEAD is not on origin/develop yet: run `agent.py ship` first.")
+    """Legacy evidence-only handover; finish is the sole closure authority."""
+    if a.close:
+        print("legacy done cannot close tickets: use 'agent.py finish --close' "
+              "from the ticket's private worktree, with acceptance evidence")
         return 2
-    if a.close and a.verification == "not run (unverified)":
-        print("Refusing to close without explicit --verification evidence.")
+    if not a.why.strip() or not a.checklist.strip():
+        print("legacy done requires a concrete --why and --checklist")
+        return 2
+    git("fetch", "-q", "origin", "develop")
+    head = git("rev-parse", "HEAD").strip()
+    if subprocess.run(["git", "merge-base", "--is-ancestor", head, "origin/develop"],
+                      cwd=ROOT, capture_output=True).returncode:
+        print("HEAD is not on origin/develop yet: run `agent.py ship` first.")
         return 2
     refs = ticket_commits(a.number)
     if not refs:
         print(f"No published develop commit references #{a.number}; cannot report completion.")
         return 2
-    sha = refs[0][:7]
+    sha = refs[0][:12]
     files = sorted({f for f in git("show", "--format=", "--name-only",
                                    *refs[:8]).split() if f})
-    body = (f"Implementation: {sha}. Why: {a.why}. Files: {', '.join(files[:12]) or 'see commits'}. "
-            f"Checklist: {a.checklist}. Verification: {a.verification}.")
-    gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments", "-f", f"body={body}")
-    release(a.number, "work complete.")
-    if a.close:
-        close_issue(a.number)
-        print(f"closed #{a.number} (confirmed by GitHub REST)")
+    body = (f"Implementation: {sha}. Why: {a.why.strip()}. "
+            f"Files: {', '.join(files[:12]) or 'see commits'}. "
+            f"Checklist: {a.checklist.strip()}. "
+            f"Verification: {a.verification.strip() or 'not run (unverified)'}.")
+    posted = gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments",
+                "-f", f"body={body}")
+    if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
+        raise td.DigestError(f"GitHub did not confirm legacy handover on #{a.number}")
+    # A shared-worktree reporter must not silently revoke a successor's
+    # temporary lease. Only release this agent's own live claim, if any.
+    live = active_claims(parse_events(issue_comments(a.number)), utcnow())
+    if any(c["issue"] == a.number and c["agent"] == agent_id() for c in live):
+        release(a.number, f"evidence recorded in comment {posted['id']}.")
+        print(f"evidence recorded and own claim released on #{a.number}")
     else:
-        print(f"evidence posted on #{a.number}; add --close once every acceptance item passes")
+        print(f"evidence recorded on #{a.number}; no live claim by this agent to release")
     return 0
 
 
