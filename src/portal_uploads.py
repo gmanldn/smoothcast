@@ -189,6 +189,9 @@ class _Upload:
     queue_only: bool = False
     audio_only: bool = False
     media_validated: bool = False
+    # A successful rename and directory fsync are separate steps. If fsync
+    # fails, retain the final path and retry durability without re-uploading.
+    directory_synced: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -303,27 +306,35 @@ class UploadManager:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
-                    "received": upload.received, "complete": upload.complete_path is not None,
+                    "received": upload.received,
+                    "complete": upload.complete_path is not None and upload.directory_synced,
                     "ready_to_cast": upload.early_cast in {"requested", "active"}}
 
     def _summary(self, upload: _Upload, now: float) -> dict:
-        """A display-only snapshot of one upload; caller holds ``upload.lock``."""
-        complete = upload.complete_path is not None
+        """Best-effort display only; never wait for a network chunk on GTK.
+
+        The immutable file identity and published, fsynced offset are safe to
+        sample independently. Capture the offset once so all displayed values
+        agree. Authoritative status, cancellation and mutations retain locks.
+        """
+        received = upload.received
+        complete = upload.complete_path is not None and (
+            upload.keep_partial or upload.directory_synced)
         if complete:
             phase = "complete"
         elif upload.early_cast in {"requested", "active"}:
             phase = "casting"
-        elif upload.received >= upload.size:
+        elif received >= upload.size:
             phase = "finalizing"
         else:
             phase = "receiving"
         elapsed = max(0.001, now - upload.created_at)
         return {
             "id": upload.upload_id, "name": upload.name, "size": upload.size,
-            "received": upload.received, "complete": complete,
+            "received": received, "complete": complete,
             "client": upload.client, "phase": phase,
-            "percent": (100 * upload.received // upload.size) if upload.size else 0,
-            "bytes_per_second": int(upload.received / elapsed),
+            "percent": (100 * received // upload.size) if upload.size else 0,
+            "bytes_per_second": int(received / elapsed),
         }
 
     def by_id(self, upload_id: str) -> dict | None:
@@ -332,19 +343,14 @@ class UploadManager:
             upload = self._uploads.get(upload_id)
         if upload is None:
             return None
-        with upload.lock:
-            return self._summary(upload, self._clock())
+        return self._summary(upload, self._clock())
 
     def snapshot(self) -> list[dict]:
         """Every tracked upload, newest last, for the desktop activity display."""
         now = self._clock()
         with self._lock:
             uploads = list(self._uploads.values())
-        summaries = []
-        for upload in uploads:
-            with upload.lock:
-                summaries.append(self._summary(upload, now))
-        return summaries
+        return [self._summary(upload, now) for upload in uploads]
 
     def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
         """Record whether the GUI accepted an early-cast request for an upload."""
@@ -457,19 +463,24 @@ class UploadManager:
                     # (and Windows refuses to rename an open file), so keep it
                     # stable instead of moving it to the final name.
                     upload.complete_path = upload.partial_path
+                    upload.directory_synced = True
                 else:
                     destination = self.root / f"{upload.upload_id}{upload.suffix}"
                     os.replace(upload.partial_path, destination)
-                    try:
-                        dir_fd = os.open(self.root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-                        try:
-                            os.fsync(dir_fd)
-                        finally:
-                            os.close(dir_fd)
-                    except OSError:
-                        if os.name != "nt":
-                            raise
                     upload.complete_path = destination
+            if not upload.directory_synced:
+                # Persist the rename before acknowledging finalisation. If a
+                # directory sync fails, retry this step at the existing path.
+                try:
+                    dir_fd = os.open(self.root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:
+                    if os.name != "nt":
+                        raise
+                upload.directory_synced = True
             if upload.queue_only and not upload.media_validated:
                 try:
                     import streamer
