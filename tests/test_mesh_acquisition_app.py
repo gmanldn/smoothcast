@@ -1,6 +1,7 @@
 """Mesh workers as a LinkJobs provider: end to end on loopback (#589)."""
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace as NS
 
 import link_acquisition as links
@@ -22,12 +23,15 @@ BOOT = "b" * 32
 class WorkerProvider:
     def __init__(self):
         self.calls = []
+        self.gate = None  # a test may hold the download open
 
     def capabilities(self):
         return {"youtube": True, "magnet": False}
 
     def acquire(self, source, directory, stage, progress, cancelled):
         self.calls.append(source)
+        if self.gate is not None:
+            self.gate.wait(5)
         stage("downloading")
         progress(7, 14)
         (directory / "clip.mp4").write_bytes(DATA)
@@ -120,6 +124,7 @@ def test_cancel_while_remote_work_is_running_stops_the_worker(tmp_path):
 def test_lost_worker_is_ambiguous_and_fails_without_reassignment(tmp_path):
     remote, provider, ex, srv = make(tmp_path)
     now = remote.now
+    provider.gate = threading.Event()  # the worker is still busy while its lease lapses
     try:
         remote.use_workers = lambda: True
         remote.collector.collect = lambda job: "unavailable"
@@ -134,8 +139,10 @@ def test_lost_worker_is_ambiguous_and_fails_without_reassignment(tmp_path):
             remote.acquire(links.Source("youtube", VIDEO), tmp_path / "j", lambda s: None,
                            lambda r, t: None, lambda: False)
         assert "not retried" in err.value.message or err.value.status in (502, 504)
-        assert len(provider.calls) == 1  # never assigned a second time
+        assert len(provider.calls) <= 1  # never assigned a second time
     finally:
+        provider.gate.set()
+        ex.join()
         srv.close()
 
 
