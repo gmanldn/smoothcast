@@ -19,6 +19,10 @@ on:
       - 'src/mesh_transport.py'
       - 'src/room_checkpoint.py'
       - 'src/room_event_replay.py'
+      - 'tests/test_portal.py'
+      - 'tests/test_portal_guest_ux.py'
+      - 'tests/test_portal_transfer_journey.py'
+      - 'tests/test_screen_page_theme.py'
       - 'tests/test_portal_commands.py'
       - 'tests/test_portal_uploads.py'
       - 'tests/test_portal_screens_http.py'
@@ -55,6 +59,7 @@ jobs:
           python -m pytest -q
           tests/test_portal.py
           tests/test_portal_guest_ux.py
+          tests/test_portal_transfer_journey.py
           tests/test_portal_cast_entry.py
           tests/test_portal_screen_page.py
           tests/test_portal_join.py
