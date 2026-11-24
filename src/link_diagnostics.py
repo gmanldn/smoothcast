@@ -26,7 +26,10 @@ _INSTALL = {
 }
 _LAUNCHER_HELP = ("set SMOOTHCAST_LINK_SANDBOX to the absolute path of an executable launcher "
                   "that blocks local and private network access and limits files, disk, "
-                  "processes and time; SmoothCast cannot supply or verify one yet")
+                  "processes and time; a reference Linux launcher ships as scripts/link_sandbox_bwrap.py "
+                  "and 'smoothcast --link-check --qualify' attack-tests it before it is trusted")
+_QUALIFY = "qualified isolation (run smoothcast --link-check --qualify)"
+_QUALIFY_STEP = "run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"
 
 
 def _platform(name: str | None) -> str:
@@ -45,6 +48,7 @@ def rows(readiness: dict, *, running: dict | None = None, platform: str | None =
         info = readiness.get(kind, {})
         missing = list(info.get("missing", ()))
         enabled = bool(info.get("enabled_by_owner"))
+        verified = bool(info.get("isolation_verified"))
         live = bool(running and running.get(kind))
         if missing:
             status = "missing"
@@ -54,7 +58,11 @@ def rows(readiness: dict, *, running: dict | None = None, platform: str | None =
             summary = "Ready to enable. Owner permission is off."
         elif live:
             status = "ready"
-            summary = "Available. Isolation is set by your launcher; SmoothCast cannot verify it."
+            if verified:
+                summary = "Available. Isolation passed the attack-test probe (smoothcast --link-check --qualify)."
+            else:
+                summary = ("Available. Isolation is set by your launcher; SmoothCast cannot verify it. "
+                           "Run 'smoothcast --link-check --qualify' to attack-test it.")
         elif running is None:
             status = "restart"
             summary = "Enabled; restart the room to start the worker."
@@ -63,8 +71,14 @@ def rows(readiness: dict, *, running: dict | None = None, platform: str | None =
             summary = "Enabled but the room could not start the worker (check disk space and storage)."
         steps = []
         for name in missing:
-            steps.append(_LAUNCHER_HELP if name == LAUNCHER
-                         else _INSTALL[system].get(name, "install " + name))
+            if name == LAUNCHER:
+                steps.append(_LAUNCHER_HELP)
+            elif name == _QUALIFY:
+                steps.append(_QUALIFY_STEP)
+            else:
+                steps.append(_INSTALL[system].get(name, "install " + name))
+        if enabled and not verified and _QUALIFY not in missing:
+            steps.append(_QUALIFY_STEP)
         out.append({"kind": kind, "label": LABELS[kind], "status": status,
                     "summary": summary, "repair": steps})
     return out
