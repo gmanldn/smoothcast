@@ -386,7 +386,7 @@ def test_lost_push_ack_is_not_a_failed_or_duplicated_commit(monkeypatch, tmp_pat
     assert run(b, "rev-parse", "HEAD") == run(b, "rev-parse", "origin/develop")
 
 
-def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tmp_path):
+def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tmp_path, capsys):
     """Two consecutive transport failures must not strand a shipped SHA."""
     _, _seed, worker = seed_git(tmp_path)
     commit(worker, "delivered.txt", "the code actually landed\n")
@@ -409,9 +409,10 @@ def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tm
             assert result.returncode == 0
             return subprocess.CompletedProcess(
                 command, 1, stdout="", stderr="push ack lost") if len(pushes) == 1 else result
-        if command[:2] == ["git", "fetch"] and pushes and not failed_fetch:
+        if command[:2] == ["git", "fetch"] and pushes and len(failed_fetch) < 2:
             failed_fetch.append(1)
-            return subprocess.CompletedProcess(command, 1, stdout="", stderr="fetch network down")
+            return subprocess.CompletedProcess(
+                command, 128, stdout="", stderr="Could not resolve host: https://user:secret@example.org")
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(agent.subprocess, "run", lost_ack_and_fetch)
@@ -423,6 +424,14 @@ def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tm
     assert "pending_push" in (admin / "sc-agent-task.json").read_text()
     assert handovers == []
 
+    # The first retry also fails before reconciliation: preserve the same
+    # journal and exit 5 rather than reporting success or losing attribution.
+    assert agent.cmd_ship(args) == 5
+    assert task["pending_push"]["sha"] == sha
+    assert len(pushes) == 1
+    output = capsys.readouterr()
+    assert "Native Git fetch failed (dns)" in output.out
+    assert "secret" not in output.out + output.err
     # Connectivity returns. Remote ancestry confirms the exact SHA and
     # delivery evidence is replayed, with no second code push or commit.
     assert agent.cmd_ship(args) == 0

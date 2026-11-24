@@ -14,6 +14,13 @@ package installation or interactive credential prompts):
 python3 scripts/agent_network.py
 ```
 
+The agent's remote fetch/push operations now use a bounded noninteractive
+transport call and emit a sanitised failure category, never raw remote stderr.
+No additional network probe runs on the healthy path. A timeout during push
+leaves the exact pending receipt for ancestry reconciliation; if a later
+fetch also fails, exit 5 remains uncertain (exit 7 retains confirmed-push
+handover recovery). Run the doctor once, then retry ship in the same worktree.
+
 Exit 0 means native Git can read develop; exit 1 means it cannot be verified.
 Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
 `python3 -m unittest discover -s tests -p test_agent_network.py`.
