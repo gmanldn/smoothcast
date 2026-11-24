@@ -65,12 +65,13 @@ def _installed_root(target: str) -> Path | None:
     # for discovery. Check the remembered path before interpreting that gap
     # as a missing installation.
     pointer = install_location.config_path(target)
+    saved: Path | None = None
     try:
         saved = Path(pointer.read_text(encoding="utf-8").strip()).expanduser()
-        if saved.is_absolute():
-            install_location.check_install_idle(saved)
-    except FileNotFoundError:
-        pass
+    except (OSError, ValueError):
+        pass  # Missing, unreadable or non-UTF-8 pointer: treat as "no saved location".
+    if saved is not None and saved.is_absolute():
+        install_location.check_install_idle(saved)  # a busy installer must propagate
     install_location.check_install_idle(install_location.default_directory(target))
     remembered = install_location.previous_directory(target)
     if remembered is not None:
@@ -96,13 +97,26 @@ def _launch_installed(root: Path, args: list[str]) -> int:
         return 1
     print(f"SmoothCast: using installed application at {root}", file=sys.stderr, flush=True)
     try:
-        return subprocess.call([sys.executable, str(script), *args])
+        # Mark the hand-off so two launchers can never bounce between each other.
+        return subprocess.call([sys.executable, str(script), *args],
+                               env={**os.environ, "SMOOTHCAST_HANDOFF": "1"})
     except OSError as exc:
         print(f"SmoothCast could not start installed application: {exc}", file=sys.stderr)
         return 1
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the launcher; expected environment failures end in one civil line, not a traceback."""
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        return 130
+    except OSError as exc:  # includes InstallBusy: another setup is copying the install
+        print(f"SmoothCast could not start: {exc}", file=sys.stderr)
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if sys.version_info < (3, 10):
         print("SmoothCast needs Python 3.10+; run the platform setup script first.",
@@ -145,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         import install_location
 
         install_location.check_install_idle(ROOT)
-        if target is not None and not portable:
+        if target is not None and not portable and not os.environ.get("SMOOTHCAST_HANDOFF"):
             installed = _installed_root(target)
     except (OSError, ValueError) as exc:
         print(f"SmoothCast: installation unavailable: {exc}", file=sys.stderr)

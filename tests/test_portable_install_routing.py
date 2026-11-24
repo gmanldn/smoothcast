@@ -131,7 +131,9 @@ def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monk
     cwd = Path.cwd()
     args = ["relative.mkv", "--action", "queue"]
     assert module._launch_installed(installed, args) == 3
-    call.assert_called_once_with([sys.executable, str(script), *args])
+    call.assert_called_once_with([sys.executable, str(script), *args],
+                                 env=mock.ANY)
+    assert call.call_args.kwargs["env"]["SMOOTHCAST_HANDOFF"] == "1"
     assert Path.cwd() == cwd
     assert str(installed) in capsys.readouterr().err
     script.unlink()
@@ -161,6 +163,7 @@ def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch
     locations = mock.Mock()
     locations.previous_directory.return_value = saved if remembered else None
     locations.default_directory.return_value = default
+    locations.config_path.return_value = tmp_path / "no-pointer"  # absent: no saved path
     monkeypatch.setitem(sys.modules, "install_location", locations)
     assert actual._installed_root("linux") == (tmp_path / expected if expected else None)
 
@@ -194,7 +197,8 @@ def test_new_install_handoff_uses_canonical_script(entry, tmp_path, monkeypatch)
     call = mock.Mock(return_value=0)
     monkeypatch.setattr(actual.subprocess, "call", call)
     assert actual._launch_installed(tmp_path, ["relative.mkv"]) == 0
-    call.assert_called_once_with([sys.executable, str(tmp_path / "sc.py"), "relative.mkv"])
+    call.assert_called_once_with([sys.executable, str(tmp_path / "sc.py"), "relative.mkv"],
+                                 env=mock.ANY)
 
 
 def test_registered_root_repairs_missing_runtime_in_place(entry):
@@ -238,3 +242,61 @@ def test_refreshed_shortcut_restarts_new_launcher(entry, tmp_path):
     assert module.main(["film.mkv"]) == 0
     module._launch_installed.assert_called_once_with(ROOT, ["film.mkv"])
     runtime.main.assert_not_called()
+
+
+def _real_sc():
+    loader = importlib.machinery.SourceFileLoader("sc_real_launcher", str(ROOT / "sc.py"))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("payload", [b"\xff\xfe\x00bad", b"", b"relative/path"])
+def test_unreadable_or_odd_install_pointer_is_not_fatal(tmp_path, monkeypatch, payload):
+    pointer = tmp_path / "install-location"
+    pointer.write_bytes(payload)
+    locations = mock.Mock()
+    locations.config_path.return_value = pointer
+    locations.previous_directory.return_value = None
+    locations.default_directory.return_value = tmp_path / "default"
+    monkeypatch.setitem(sys.modules, "install_location", locations)
+    assert _real_sc()._installed_root("linux") is None
+    locations.check_install_idle.assert_called_once_with(tmp_path / "default")
+
+
+def test_busy_installer_is_reported_civilly_not_as_a_traceback(monkeypatch, capsys):
+    module = _real_sc()
+    monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
+    monkeypatch.setitem(sys.modules, "launch", mock.Mock())
+    monkeypatch.setattr(module, "_target", lambda: "linux")
+    busy = OSError("Another setup is active for /x; retry when it finishes.")
+    monkeypatch.setattr(module, "_installed_root", mock.Mock(side_effect=busy))
+    assert module.main([]) == 1
+    err = capsys.readouterr().err
+    assert "Another setup is active" in err and "Traceback" not in err
+
+
+def test_ctrl_c_during_launch_is_quiet(monkeypatch, capsys):
+    module = _real_sc()
+    monkeypatch.setattr(module, "_main", mock.Mock(side_effect=KeyboardInterrupt))
+    assert module.main([]) == 130
+    assert capsys.readouterr().err == ""
+
+
+def test_handoff_marker_prevents_launcher_ping_pong(entry, monkeypatch, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = tmp_path / "elsewhere"
+    monkeypatch.setenv("SMOOTHCAST_HANDOFF", "1")
+    module.main([])
+    module._launch_installed.assert_not_called()
+
+
+def test_handoff_child_receives_marker_and_arguments(monkeypatch, tmp_path):
+    module = _real_sc()
+    (tmp_path / "sc.py").write_text("")
+    calls = []
+    monkeypatch.setattr(module.subprocess, "call",
+                        lambda cmd, **kw: calls.append((cmd, kw)) or 0)
+    assert module._launch_installed(tmp_path, ["a b.mkv"]) == 0
+    cmd, kw = calls[0]
+    assert cmd[-1] == "a b.mkv" and kw["env"]["SMOOTHCAST_HANDOFF"] == "1"
