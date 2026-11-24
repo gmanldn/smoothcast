@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def install_linux() -> None:
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "install_desktop.py")],
+        [sys.executable, str(ROOT / "scripts" / "install_desktop.py"), "--installer-target"],
         check=True, timeout=30,
     )
 

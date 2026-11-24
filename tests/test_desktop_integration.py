@@ -21,6 +21,13 @@ class DesktopIntegrationTests(unittest.TestCase):
         (self.root / "data").mkdir(parents=True)
         (self.root / "data/cast-control.png").write_bytes(b"PNG-fixture")
         self.data_home = Path(self.tmp.name) / "xdg"
+        self.home = Path(self.tmp.name) / "home"
+        self.config = self.home / ".config"
+        environment = mock.patch.dict(os.environ, {"HOME": str(self.home),
+                                                    "USERPROFILE": str(self.home),
+                                                    "XDG_CONFIG_HOME": str(self.config)})
+        environment.start()
+        self.addCleanup(environment.stop)
         patcher = mock.patch.object(desktop, "ROOT", self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -79,11 +86,11 @@ class DesktopIntegrationTests(unittest.TestCase):
         with mock.patch("sys.argv", ["install_desktop.py", "--quiet"]), \
              mock.patch.object(desktop, "install", return_value=False) as install:
             self.assertEqual(desktop.main(), 0)
-        install.assert_called_once_with(repair_pins=True, pin=False)
+        install.assert_called_once_with(repair_pins=True, pin=False, installer_target=False)
         with mock.patch("sys.argv", ["install_desktop.py", "--quiet", "--pin"]), \
              mock.patch.object(desktop, "install", return_value=True) as install:
             self.assertEqual(desktop.main(), 0)
-        install.assert_called_once_with(repair_pins=True, pin=True)
+        install.assert_called_once_with(repair_pins=True, pin=True, installer_target=False)
 
     @unittest.skipIf(os.name == "nt", "Linux freedesktop CLI installer")
     def test_actual_cli_install_twice_then_check_from_spaced_checkout(self):
@@ -113,6 +120,58 @@ class DesktopIntegrationTests(unittest.TestCase):
         for name in ("local.cast-control.desktop", "smoothcast.desktop"):
             entry = (xdg / "applications" / name).read_text(encoding="utf-8")
             self.assertIn(expected, entry)
+
+    def _installation(self, root):
+        (root / "setup").mkdir(parents=True)
+        (root / "setup/bootstrap.py").touch()
+        (root / "smoothcast").touch()
+        (root / "smoothcast").chmod(0o755)
+        (root / "pyproject.toml").write_text('name = "smoothcast"\n')
+        (root / "data").mkdir()
+        (root / "data/cast-control.png").write_bytes(b"installed-icon")
+        return root
+
+    def _remember(self, root):
+        pointer = self.config / "smoothcast/install-location"
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        pointer.write_text(str(root) + "\n")
+
+    def test_checkout_repair_targets_remembered_install_and_both_legacy_ids(self):
+        target = self._installation(self.home / "Custom installed SmoothCast")
+        self._remember(target)
+        self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
+        for name in ("local.cast-control.desktop", *desktop.LEGACY_IDS):
+            entry = (self.data_home / "applications" / name).read_bytes()
+            self.assertEqual(entry, desktop.desktop_entry(target / "smoothcast", legacy=name in desktop.LEGACY_IDS))
+        icon = self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png"
+        self.assertEqual(icon.read_bytes(), b"installed-icon")
+        self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.data_home)}), \
+             mock.patch("sys.argv", ["install_desktop.py", "--check", "--quiet"]):
+            self.assertEqual(desktop.main(), 0)
+            (self.data_home / "applications/cast-control.desktop").unlink()
+            self.assertEqual(desktop.main(), 1)
+
+    def test_default_install_wins_when_no_saved_location(self):
+        target = self._installation(self.home / ".local/opt/SmoothCast")
+        self.assertEqual(desktop.registration_root(), target)
+
+    def test_installer_explicit_new_target_wins_before_pointer_commit(self):
+        old = self._installation(self.home / "Old installation")
+        self._remember(old)
+        desktop.install(data_home=self.data_home, repair_pins=False, installer_target=True)
+        entry = (self.data_home / "applications/local.cast-control.desktop").read_bytes()
+        self.assertEqual(entry, desktop.desktop_entry(self.root / "smoothcast"))
+        self.assertEqual(desktop.registration_root(), old)
+
+    def test_broken_saved_install_does_not_overwrite_existing_dock(self):
+        desktop.install(data_home=self.data_home, repair_pins=False)
+        path = self.data_home / "applications/local.cast-control.desktop"
+        before = path.read_bytes()
+        self._remember(self.home / "missing install")
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            desktop.install(data_home=self.data_home, repair_pins=False)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_quotes_desktop_exec_field(self):
         result = desktop.exec_argument(Path('/tmp/a $"%'+chr(96)+'b/smoothcast'))
