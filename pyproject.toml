@@ -206,6 +206,7 @@ py-modules = [
     "queue_prewarm_ui",
     "queue_row_ui",
     "receiver_memory",
+    "receiver_profiles",
     "reliability_metrics",
     "replica_manager",
     "replica_store",
