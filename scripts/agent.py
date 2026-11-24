@@ -790,6 +790,14 @@ def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, li
     return steps
 
 
+def run_headless_check(cmd: list[str]) -> tuple[subprocess.CompletedProcess | None, str]:
+    """An unavailable optional checker must not crash the shipping process."""
+    try:
+        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True), ""
+    except (FileNotFoundError, PermissionError) as exc:
+        return None, f"{cmd[0]} unavailable: {exc}"
+
+
 def failing_ids(output: str) -> list[str]:
     """Node ids of failed tests from pytest -q output."""
     return sorted({line.split()[1] for line in output.splitlines()
@@ -943,6 +951,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
         return 2
     checked_base = ""  # origin/develop at the moment our checks last passed
     checks_run: list[str] = []
+    unverified_checks: list[str] = []
     for attempt in range(1, 6):
         git("fetch", "-q", "origin", "develop")
         remote_before = git("rev-parse", "origin/develop").strip()
@@ -1012,7 +1021,11 @@ def cmd_ship(a: argparse.Namespace) -> int:
                      for p in (ROOT / "tests").glob("test_*.py")}
             for label, cmd in plan_checks(changed, tests):
                 started = time.time()
-                res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+                res, unavailable = run_headless_check(cmd)
+                if res is None:
+                    unverified_checks.append(label)
+                    print(f"  {label}: UNVERIFIED ({unavailable})")
+                    continue
                 print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} "
                       f"({time.time() - started:.1f}s)")
                 if res.returncode:
@@ -1034,7 +1047,11 @@ def cmd_ship(a: argparse.Namespace) -> int:
                            for p in (ROOT / "tests").glob("test_*.py")}
             for label, cmd in doc_guard_steps(changed, guard_tests):
                 started = time.time()
-                res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+                res, unavailable = run_headless_check(cmd)
+                if res is None:
+                    print(f"  MANDATORY {label} cannot run: {unavailable}; "
+                          "install pytest or hold this documentation change")
+                    return 1
                 print(f"  {label}: {'ok' if res.returncode == 0 else 'FAIL'} ({time.time() - started:.1f}s)")
                 if res.returncode:
                     ids = failing_ids(res.stdout)
@@ -1093,6 +1110,8 @@ def cmd_ship(a: argparse.Namespace) -> int:
             print("remote contains the commit: treating failed push acknowledgement as success")
         verification = ("not run (unverified)" if a.skip_checks else
                         (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
+        if unverified_checks:
+            verification += "; unverified tools: " + ", ".join(sorted(set(unverified_checks)))
         handover_recorded = True
         if task is not None:
             # Persist before a possibly failing GitHub comment request. On a
