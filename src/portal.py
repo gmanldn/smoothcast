@@ -813,6 +813,10 @@ class _Handler(BaseHTTPRequestHandler):
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
         state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
+        provider = getattr(self.server, "link_readiness_provider", None)
+        if provider is not None:
+            # Only fixed prerequisite flags, never executable paths or environment values.
+            state["link_owner_enabled"] = {kind: kind in provider.kinds for kind in ("youtube", "magnet")}
         state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         state["mesh_link_activity"] = (activity.snapshot() if activity is not None else
@@ -1551,6 +1555,7 @@ class Portal:
         self.port = int(self.server.server_address[1])
         self.server.status_peek = status_peek
         provider = link_acquisition.CommandProvider(link_sources)
+        self.server.link_readiness_provider = provider
         if any(provider.capabilities().values()):
             def deliver(owner, path):
                 # Existing authenticated GTK queue authority; never cast now.
@@ -1747,7 +1752,12 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #queuePanel .queue-destination .eyebrow{margin:0 0 4px}
 #queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
 #queuePanel .queue-add-links{margin:0 0 12px}
-#queuePanel #linkAcquisition{margin-top:16px;min-width:0}
+#queuePanel #linkAcquisition{margin-top:12px;min-width:0;box-shadow:none;border:1px solid var(--line);padding:12px}
+#linkAcquisition>summary{font-weight:750;cursor:pointer;min-height:44px;align-content:center}
+#linkForm{display:grid;gap:8px}#linkForm label{margin:0}#linkForm input[type="text"]{min-width:0}#linkForm button{justify-self:start;max-width:100%}
+#linkForm .toggle{border-top:1px solid var(--line);padding-top:10px}#linkAvailability{margin:8px 0;overflow-wrap:anywhere}
+#libraryCopiesPanel,#linkJobPanel{margin:12px 0 0;padding:10px;border:1px solid var(--line);border-radius:12px;box-shadow:none}
+#libraryCopiesPanel h3,#linkJobPanel h4{margin:0 0 8px;font-size:.95rem}
 #queuePanel #clearQueue{margin:8px 0 4px}
 #queuePanel #queue{margin:12px 0 0}
 #queuePanel .queue-actions button{min-height:44px;min-width:44px}
@@ -1921,27 +1931,24 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
-<div class="quick-links queue-add-links" aria-label="Contribute media"><a href="#linkAcquisition">Add YouTube or magnet link</a><a href="#findPanel">Find shared media</a><a href="#uploadCard">Add files</a></div>
+<div class="quick-links queue-add-links" aria-label="Contribute media"><a href="#linkAcquisition" id="openLinkAcquisition">Add YouTube or magnet link</a><a href="#findPanel">Find shared media</a><a href="#uploadCard">Add files</a></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
-<section aria-labelledby="libraryCopiesHeading"><h3 id="libraryCopiesHeading">Shared-library transfers</h3><p class="field-hint">Copied media joins Up Next only after the host verifies it. Recent transfer outcomes are shown separately from playable items.</p><ul id="libraryCopyRows" aria-label="Shared library transfer activity"><li class="empty">No library transfers reported</li></ul></section>
-<section id="linkAcquisition" aria-labelledby="linkHeading">
-<h3 id="linkHeading">Add a link to Up Next</h3>
-<p id="linkAvailability" class="field-hint">Checking whether downloads are available…</p>
+<section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
+<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
+<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
 <form id="linkForm">
 <label for="linkInput">YouTube video or magnet link</label>
-<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I am authorised to download this media.</span></label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
 <button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
 </form>
 <p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<h4>Downloads</h4>
-<p class="field-hint">Downloads are handled by eligible SmoothCast workers. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
-<ul id="linkJobs" aria-label="Room downloads"><li class="empty">No downloads yet</li></ul>
-</section>
+<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
+</details>
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
 </section>
 
@@ -2384,7 +2391,12 @@ function showJoinedRoom(){
   if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
-let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
+let linkCapabilities={},linkOwnerEnabled=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
+const linkShortcut=$("openLinkAcquisition");
+function openLinkAcquisition(){const panel=$("linkAcquisition");if(panel)panel.open=true}
+if(linkShortcut)linkShortcut.addEventListener("click",()=>{openLinkAcquisition();$("linkInput").focus()});
+if(location.hash==="#linkAcquisition")openLinkAcquisition();
+window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
@@ -2408,25 +2420,27 @@ function updateLinkControls(){
   }else if(value&&!kind){
     label.textContent="Paste one HTTPS YouTube video or BitTorrent magnet link.";
   }else if(kind&&!allowed){
-    label.textContent=sourceName+" unavailable in this room. Keep the link here and ask the host to enable an eligible worker.";
+    label.textContent=sourceName+" unavailable in this room. "+(typeof linkOwnerEnabled!=="undefined"&&linkOwnerEnabled?.[kind]===false?"Ask the host to enable guest downloads in desktop Preferences → Queue.":"Ask the host to check the acquisition worker in desktop Preferences → Queue. You can keep the link here.");
   }else if(kind){
     label.textContent=sourceName+" available. Confirm permission to download and add to Up Next.";
   }else{
-    label.textContent=sources.length?"Available: "+sources.join(" and ")+".":"Paste a link; downloads require an enabled acquisition worker.";
+    label.textContent=sources.length?"Available: "+sources.join(" and ")+".":"Downloads are not ready. Ask the host to enable or check the acquisition worker in desktop Preferences → Queue. You can still add files or use shared libraries.";
   }
   return !button.disabled;
 }
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
+  linkOwnerEnabled=state.link_owner_enabled||null;
   linkStorageAvailable=state.link_storage_available;
   updateLinkControls();
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
+  const panel=$("linkJobPanel");if(panel)panel.hidden=!jobs.length;
+  if(jobs.some(job=>["pending","resolving","downloading","verifying","queueing"].includes(job.stage)))openLinkAcquisition();
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
   const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
   const rows=[];
-  if(!jobs.length){const row=document.createElement("li");row.className="empty";row.textContent="No downloads yet";rows.push(row)}
   for(const job of jobs.slice().reverse()){
     const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
     heading.textContent=job.title||"Download";
@@ -2470,8 +2484,9 @@ let libraryCopySignature="";
 function renderLibraryCopies(state){
   const list=$("libraryCopyRows");if(!list)return;
   const rows=Array.isArray(state.library_copies)?state.library_copies.slice(-24).reverse():null;
+  const panel=$("libraryCopiesPanel");if(panel)panel.hidden=!rows?.length;
   const signature=JSON.stringify(rows);if(signature===libraryCopySignature)return;libraryCopySignature=signature;
-  if(!rows||!rows.length){const li=document.createElement("li");li.className="empty";li.textContent=rows?"No library transfers yet":"Library transfer status unavailable";list.replaceChildren(li);return}
+  if(!rows||!rows.length){list.replaceChildren();return}
   const labels={copying:"Copying and verifying media",ready:"Queue accepted",failed:"Copy failed — try again from Find",cancelled:"Cancelled",uncertain:"Queue acceptance uncertain — check Up Next"};
   list.replaceChildren(...rows.map(row=>{
     const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p");
