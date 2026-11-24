@@ -291,6 +291,15 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
         return 2
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
+    if args[:1] == ["--link-check"]:
+        # Use the recorded native runtime PATH, but never start the application.
+        try:
+            env = runtime_environment()
+        except (OSError, RuntimeError) as exc:
+            print(f"SmoothCast native runtime unavailable: {exc}", file=sys.stderr)
+            return 1
+        return subprocess.call([sys.executable, str(ROOT / "src" / "link_acquisition.py"),
+                                *args[1:]], env=env)
     if args[:1] == ["--diagnostics"]:
         # GTK-free support bundle: works even when the runtime is broken.
         return subprocess.call(
