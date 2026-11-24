@@ -17,6 +17,14 @@ os.environ["SMOOTHCAST_TEST_CONTEXT"] = "1"
 # the cache dir (session.json, server.log) and the error log all live under HOME.
 # Set before any test imports modules that compute paths from Path.home().
 _HOME = tempfile.mkdtemp(prefix="smoothcast-test-home-")
+# Opt-in browser smoke tests need the developer's installed Playwright browsers,
+# which live under the real HOME; point at them (read-only) before HOME is swapped.
+if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:
+    _real_pw = os.path.join(
+        os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache"),
+        "ms-playwright")
+    if os.path.isdir(_real_pw):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _real_pw
 os.environ["HOME"] = _HOME
 os.environ["XDG_CONFIG_HOME"] = os.path.join(_HOME, ".config")
 os.environ["XDG_CACHE_HOME"] = os.path.join(_HOME, ".cache")
