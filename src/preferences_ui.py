@@ -177,6 +177,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
             "For plain-text subtitles only; applies on the next cast or encoder restart. "
             "ASS/SSA keep their authored styling.",
         )
+        self._build_subtitle_search(captions)
 
         general = self._page("Appearance", "preferences-desktop-theme-symbolic")
         visual = self._group(
@@ -227,6 +228,9 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
                 import link_diagnostics
                 link_diagnostics.describe_switches(self.owner, cfg, self._switches)
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
+            refresh_search = getattr(self, "_refresh_subtitle_search_rows", None)
+            if callable(refresh_search):
+                refresh_search()
             audio_tracks = media.audio_streams if media is not None else []
             audio_labels = ["Auto (file default)"] + [track.label for track in audio_tracks]
             if audio_labels != self._audio_labels:

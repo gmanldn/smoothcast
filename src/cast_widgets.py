@@ -46,6 +46,7 @@ DEFAULTS: dict = {
     "subs_path": "",
     "subtitle_track_by_file": {},
     "subtitle_delay_by_file": {},
+    "subtitle_search_folders": [],  # bounded local sidecar search (#51)
     "audio_delay_by_file": {},  # per-film lip-sync delay in ms, +/-5000 (#113)
     "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},

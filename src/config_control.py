@@ -25,6 +25,7 @@ import audio_delay
 import bookmarks
 import cache_policy
 import subtitle_delay
+import subtitle_search
 import accent
 import density
 import subtitle_style
@@ -93,6 +94,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             cfg[key] = bookmarks.clean(value)
         elif key == "library_folders":
             cfg[key] = library_folders.to_config(library_folders.load({key: value}))
+        elif key == "subtitle_search_folders":
+            cfg[key] = subtitle_search.clean_folders(value)
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (
