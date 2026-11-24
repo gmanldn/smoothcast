@@ -85,13 +85,29 @@ def release_version() -> str:
     return source_version.__version__
 
 
+def git_exe() -> str:
+    # The MSYS2 CI shell does not inherit the Git-for-Windows PATH entry, so
+    # fall back to its standard locations before giving up.
+    override = os.environ.get("SMOOTHCAST_GIT")
+    if override and Path(override).is_file():
+        return override
+    found = shutil.which("git")
+    if found:
+        return found
+    for candidate in (r"C:\Program Files\Git\cmd\git.exe",
+                      r"C:\Program Files\Git\bin\git.exe"):
+        if Path(candidate).is_file():
+            return candidate
+    raise PrereqError("git is required to bind the MSI to a source commit; install Git "
+                      "for Windows or set SMOOTHCAST_GIT")
+
+
 def source_revision() -> str:
-    if not shutil.which("git"):
-        raise PrereqError("git is required to bind the MSI to a source commit")
-    revision = _run(["git", "-C", str(ROOT), "rev-parse", "--verify", "HEAD"]).stdout.strip()
+    git = git_exe()
+    revision = _run([git, "-C", str(ROOT), "rev-parse", "--verify", "HEAD"]).stdout.strip()
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise BuildError(f"cannot resolve the source commit (got {revision!r})")
-    dirty = _run(["git", "-C", str(ROOT), "status", "--porcelain",
+    dirty = _run([git, "-C", str(ROOT), "status", "--porcelain",
                   "--untracked-files=no"]).stdout.strip()
     if dirty:
         raise BuildError("tracked files are modified; commit them before building an MSI")

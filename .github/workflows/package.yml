@@ -105,6 +105,7 @@ jobs:
           dotnet tool install --global wix --version 6.0.2
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
           "SMOOTHCAST_WIX=$env:USERPROFILE\.dotnet\tools\wix.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SMOOTHCAST_GIT=$((Get-Command git).Source)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build and smoke native package without a desktop
         shell: msys2 {0}
         run: |

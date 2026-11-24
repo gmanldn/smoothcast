@@ -32,7 +32,7 @@ hid imm32 iphlpapi kernel32 kernelbase mf mfplat mfreadwrite mmdevapi mpr msctf 
 mswsock ncrypt netapi32 normaliz ntdll ole32 oleaut32 opengl32 powrprof profapi propsys psapi
 rpcrt4 sechost secur32 setupapi shcore shell32 shlwapi ucrtbase urlmon user32 userenv usp10
 uxtheme version wevtapi wininet winhttp winmm winspool wintrust wldap32 ws2_32 wsock32
-windowscodecs wtsapi32 avrt dcomp
+windowscodecs wtsapi32 avrt dcomp d3d12 gdiplus pdh
 """.split())
 SYSTEM_PREFIXES = ("api-ms-win-", "ext-ms-win-")
 
@@ -135,7 +135,9 @@ class PE:
 
 def _is_system(name: str) -> bool:
     folded = name.casefold()
-    return folded.startswith(SYSTEM_PREFIXES) or folded.removesuffix(".dll") in SYSTEM_DLLS
+    # WINSPOOL.DRV is a system .drv, not a .dll; strip either suffix.
+    stem = folded.removesuffix(".dll").removesuffix(".drv")
+    return folded.startswith(SYSTEM_PREFIXES) or stem in SYSTEM_DLLS
 
 
 def verify(dist: Path, version: str | None = None) -> list[str]:

@@ -147,6 +147,26 @@ class WixTests(unittest.TestCase):
                     msi.wix_exe()
         self.assertIn("dotnet tool install", str(raised.exception))
 
+    def test_workflow_exports_the_git_override_for_the_msys2_step(self):
+        workflow = (ROOT / ".github" / "workflows" / "package.yml").read_text(encoding="utf-8")
+        self.assertIn("SMOOTHCAST_GIT=$((Get-Command git).Source)", workflow)
+
+    def test_git_exe_prefers_an_existing_smoothcast_git_override(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fake = Path(folder) / "git.exe"
+            fake.write_bytes(b"")
+            with mock.patch.dict(os.environ, {"SMOOTHCAST_GIT": str(fake)}):
+                self.assertEqual(msi.git_exe(), str(fake))
+
+    def test_git_exe_falls_back_to_the_git_for_windows_installation(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SMOOTHCAST_GIT", None)
+            with mock.patch.object(msi.shutil, "which", return_value=None):
+                with mock.patch.object(msi.Path, "is_file", return_value=False):
+                    with self.assertRaises(msi.PrereqError) as raised:
+                        msi.git_exe()
+        self.assertIn("SMOOTHCAST_GIT", str(raised.exception))
+
     def test_build_command_is_a_list_with_stable_inputs(self):
         with tempfile.TemporaryDirectory() as folder:
             product = Path(folder) / "Product.wxs"
