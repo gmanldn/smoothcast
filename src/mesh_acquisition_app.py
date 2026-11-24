@@ -51,6 +51,7 @@ class RemoteAcquisition:
         self.collector: transfer.TransferHost | None = None
         self.store = store_mod.LedgerStore(self.state_dir)
         self.paths: dict[str, Path] = {}
+        self.executors: dict[str, str] = {}  # LinkJobs job id -> mesh node doing the work
         self._lock = threading.Lock()
         self.server: transfer.TransferServer | None = None
         self.executor: executor_mod.RemoteExecutor | None = None
@@ -124,9 +125,9 @@ class RemoteAcquisition:
         host, ledger, collector = self.host, self.ledger, self.collector
         if host is None or ledger is None or collector is None:
             raise links.LinkError(503, "No trusted worker is available.")
-        job_id = "r" + secrets.token_hex(10)
+        job_id = secrets.token_hex(12)  # 24 hex: also a valid telemetry row id
         with self._lock:
-            _, _selection, outcome = host.submit(
+            _, selection, outcome = host.submit(
                 job_id, source.kind, source.identity, self.offers(source.kind), 0, self._clock())
             self.store.save(ledger)
         if outcome != "accepted":
@@ -138,6 +139,8 @@ class RemoteAcquisition:
                 raise links.LinkError(503, "No trusted worker is free right now.")
             raise links.LinkError(502, "The worker did not confirm the assignment.")
         deadline, shown, last = self._clock() + MAX_WAIT_SECONDS, "", None
+        room_job = Path(directory).name  # LinkJobs names each job's directory by its id
+        self.executors[room_job] = selection.node_id
         try:
             while True:
                 if cancelled():
@@ -172,8 +175,24 @@ class RemoteAcquisition:
                     raise links.LinkError(504, "The remote acquisition took too long.")
                 self._sleep(POLL_SECONDS)
         finally:
+            self.executors.pop(room_job, None)
             with self._lock:
                 self.store.save(ledger)
+
+    def activity(self, rows: list) -> list:
+        """Telemetry for this node: rows handed to a mesh worker are shown as
+        waiting here (the worker publishes the real progress, marked remote),
+        plus whatever this node is executing for other rooms."""
+        delegated = set(self.executors)
+        out = []
+        for row in rows:
+            if isinstance(row, dict) and row.get("id") in delegated and row.get("stage") in {
+                    "resolving", "downloading", "verifying"}:
+                row = {**row, "stage": "pending", "received": None, "total": None, "rate": None}
+            out.append(row)
+        if self.executor is not None:
+            out.extend(self.executor.rows())
+        return out
 
     def _adopt(self, job_id: str, directory: Path) -> Path:
         """Move the verified incoming file into the job's own directory."""

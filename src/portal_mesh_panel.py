@@ -159,7 +159,7 @@ _PANEL = r"""
             const row=el("li","mesh-stream");
             const label=job.kind==="youtube"?"YouTube video":"BitTorrent media";
             const stage={pending:"Waiting for worker",resolving:"Resolving metadata",downloading:"Downloading",verifying:"Verifying media",queueing:"Submitting to queue"}[job.stage]||"Unknown";
-            row.append(el("strong","",host+" · "+label),el("span","muted",freshness+" · "+stage));
+            row.append(el("strong","",host+" · "+label),el("span","muted",freshness+" · "+stage+(job.remote===true?" · running for another room":"")));
             if(Number.isSafeInteger(job.received)&&Number.isSafeInteger(job.total)&&job.total>0&&job.received>=0&&job.received<=job.total){
               const meter=el("progress");meter.max=job.total;meter.value=job.received;meter.setAttribute("aria-label",peer.freshness==="live"?"Reported acquisition progress":"Last reported acquisition progress");row.append(meter);
               const size=n=>(n/1048576).toFixed(1)+" MiB";

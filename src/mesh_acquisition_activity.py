@@ -61,8 +61,11 @@ def clean_jobs(value, *, strict=False):
         rate = _integer(row.get("rate"), MAX_RATE)
         if total == 0 or (received is not None and total is not None and received > total):
             total = None
-        rows.append({"id": ident, "kind": kind, "stage": stage, "received": received,
-                     "total": total, "rate": rate})
+        clean = {"id": ident, "kind": kind, "stage": stage, "received": received,
+                 "total": total, "rate": rate}
+        if row.get("remote") is True:  # executing for another room (#589)
+            clean["remote"] = True
+        rows.append(clean)
         if not strict and len(rows) >= MAX_JOBS:
             break
     return rows

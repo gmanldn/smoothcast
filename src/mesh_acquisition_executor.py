@@ -38,7 +38,21 @@ class RemoteExecutor:
         self._lock = threading.Lock()
         self._cancel: dict[str, threading.Event] = {}
         self._threads: dict[str, threading.Thread] = {}
+        self.live: dict[str, dict] = {}  # job -> {kind, stage, received, total, rate}
         self.results: dict[str, tuple[int, Path, str, int]] = {}  # job -> (gen, file, sha256, size)
+
+    def rows(self) -> list[dict]:
+        """Redacted telemetry rows for jobs this node is running for another room."""
+        with self._lock:
+            return [{"id": job, "kind": data["kind"], "stage": data["stage"],
+                     "received": data["received"], "total": data["total"],
+                     "rate": data["rate"], "remote": True}
+                    for job, data in self.live.items()]
+
+    def _set_live(self, job: str, kind: str, stage: str, received=None, total=None, rate=None) -> None:
+        with self._lock:
+            self.live[job] = {"kind": kind, "stage": stage, "received": received,
+                              "total": total, "rate": rate}
 
     def bind(self, worker: wire.WorkerService) -> None:
         self.worker = worker
@@ -97,6 +111,10 @@ class RemoteExecutor:
             return cancel.is_set()
 
         def report(stage: str, received: int = 0, total: int = 0) -> None:
+            shown = {"resolving": "resolving", "metadata": "resolving", "downloading": "downloading",
+                     "verifying": "verifying"}.get(stage)
+            if shown:
+                self._set_live(job, kind, shown, received or None, total or None)
             clean = lambda v: v if type(v) is int and 0 <= v <= core.MAX_BYTES else 0  # noqa: E731
             self._notify(sender, wire.build("report", job=job, gen=gen, stage=stage,
                                             received=clean(received), total=clean(total)))
@@ -109,6 +127,9 @@ class RemoteExecutor:
                 report(value)
 
         def progress(received, total) -> None:
+            if type(received) is int and 0 <= received <= core.MAX_BYTES:
+                ok_total = total if type(total) is int and received <= total <= core.MAX_BYTES and total else None
+                self._set_live(job, kind, "downloading", received, ok_total)  # local view is not throttled
             now = self._clock()
             if now - last[0] >= REPORT_INTERVAL:
                 last[0] = now
@@ -147,3 +168,4 @@ class RemoteExecutor:
             with self._lock:
                 self._cancel.pop(job, None)
                 self._threads.pop(job, None)
+                self.live.pop(job, None)

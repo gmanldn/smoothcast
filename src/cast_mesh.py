@@ -37,7 +37,8 @@ def start(window: object, address: str) -> None:
             version=__version__, room_port=getattr(portal, "port", None),
             strict=settings["strict"], seeds=settings["seeds"],
             link_acquisition_sources=sources,
-            link_activity=getattr(jobs, "snapshot", lambda: []),
+            link_activity=(lambda: remote.activity(jobs.snapshot() if jobs is not None else []))
+            if remote is not None else getattr(jobs, "snapshot", lambda: []),
             acquisition_worker=getattr(remote, "worker", None),
             acquisition_accept=lambda: bool(mesh_service.load_settings()["accept_acquisition"]),
             acquisition_attach=remote.attach if remote is not None else None)

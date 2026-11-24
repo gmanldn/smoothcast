@@ -190,3 +190,13 @@ not advertised. This is trusted-LAN, not cryptographic.
 Limitation: the room only creates `LinkJobs` when this host has a local worker
 (or the portal is changed to also create it when `mesh_remote_acquisition` is
 on), so a host with no local tools cannot yet submit remotely.
+
+### Live Mesh routing for remote work (#589)
+
+A worker publishes the jobs it runs for other rooms in its own
+`acquisition_status` rows with `remote: true` (true-only flag; ids are the
+24-hex job ids; no URL, title, path, owner or peer address). The Live Mesh panel
+labels them "running for another room", so the executing node and its real
+progress are what peers see. The room that delegated the job publishes it as
+`pending` ("Waiting for worker") instead of mirroring the worker's progress, so
+one download is never shown twice or counted as two.
