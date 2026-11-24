@@ -265,3 +265,30 @@ console.log(JSON.stringify(out));""" % (DELAYS_MS, json.dumps(state))
     out = json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True,
                                     text=True, timeout=8).stdout)
     assert set(out) == {42}
+
+
+def _js_function(name: str) -> str:
+    html = portal._HTML
+    start = html.index(f"function {name}(")
+    depth, i = 0, html.index("{", start)
+    while True:
+        depth += html[i] == "{"
+        depth -= html[i] == "}"
+        i += 1
+        if depth == 0:
+            return html[start:i]
+
+
+@pytest.mark.parametrize("name", ["playheadFrame", "paintPlayhead", "trackPlayhead"])
+def test_animation_path_creates_no_network_or_command_traffic(name):
+    """#336: painting the playhead each frame is pure DOM arithmetic."""
+    body = _js_function(name)
+    for forbidden in ("fetch(", "XMLHttpRequest", "sendBeacon", "post(", "EventSource", "command(", "WebSocket"):
+        assert forbidden not in body, f"{name} must not call {forbidden}"
+
+
+def test_playhead_sources_never_probe_media():
+    """The host derives source position from its tracker: no ffprobe on the status/playhead path."""
+    root = Path(__file__).resolve().parents[1] / "src"
+    for name in ("portal.py", "position_tracker.py", "playback_state.py", "progress_model.py"):
+        assert "ffprobe" not in (root / name).read_text("utf-8"), name
