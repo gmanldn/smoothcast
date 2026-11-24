@@ -11,6 +11,8 @@ import base64
 from collections import OrderedDict
 from dataclasses import dataclass, field
 import hashlib
+import json
+import math
 import os
 from pathlib import Path
 import re
@@ -19,7 +21,9 @@ import shutil
 import signal
 import stat
 import subprocess
+import tempfile
 import threading
+import unicodedata
 import time
 from urllib.parse import parse_qs, urlsplit
 from typing import Callable
@@ -40,6 +44,10 @@ MEDIA_SUFFIXES = frozenset({
 TERMINAL = frozenset({"ready", "failed", "cancelled", "delivery_uncertain"})
 VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 REQUEST_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
+SEARCH_LIMIT = 10
+SEARCH_OUTPUT_LIMIT = 512 * 1024
+SEARCH_SECONDS = 20
+_SEARCH_SLOT = threading.BoundedSemaphore(1)
 
 
 class LinkError(ValueError):
@@ -302,6 +310,97 @@ def _safe_media(root: Path, path: Path) -> Path:
     return path
 
 
+def _search_text(value: object) -> str:
+    if (not isinstance(value, str) or not 1 <= len(value.strip()) <= 200
+            or any(unicodedata.category(ch).startswith("C") for ch in value)):
+        raise LinkError(400, "Enter a YouTube search of 1 to 200 characters.")
+    return value.strip()
+
+
+def _search_label(value: object, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(ch for ch in value[:limit] if not unicodedata.category(ch).startswith("C")).strip()
+
+
+def youtube_results(raw: bytes) -> list[dict]:
+    """Project flat metadata onto a small, safe, single-video result contract."""
+    if len(raw) > SEARCH_OUTPUT_LIMIT:
+        raise LinkError(502, "YouTube returned too much search data.")
+    results: list[dict] = []
+    seen: set[str] = set()
+    for line in raw.splitlines():
+        try:
+            row = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        identity = row.get("id")
+        if (not isinstance(identity, str) or not VIDEO_ID.fullmatch(identity)
+                or identity in seen or row.get("_type") in ("playlist", "multi_video")
+                or row.get("ie_key") not in (None, "Youtube")
+                or row.get("is_live") is True or row.get("live_status") in ("is_live", "is_upcoming")):
+            continue
+        title = _search_label(row.get("title"), 200)
+        if not title:
+            continue
+        channel = _search_label(row.get("channel") or row.get("uploader"), 100)
+        duration = row.get("duration")
+        seconds = (int(duration) if type(duration) in (int, float)
+                   and 0 < duration <= MAX_SECONDS * 48 and math.isfinite(duration) else None)
+        results.append({"id": identity, "title": title, "channel": channel, "duration": seconds})
+        seen.add(identity)
+        if len(results) >= SEARCH_LIMIT:
+            break
+    return results
+
+
+def _youtube_search_command(launcher: str, executable: str, text: str, cancelled) -> list[dict]:
+    """Metadata only, bounded by a global slot, time and output budget."""
+    if not _SEARCH_SLOT.acquire(blocking=False):
+        raise LinkError(429, "YouTube search is busy. Try again shortly.")
+    try:
+        with tempfile.TemporaryDirectory(prefix="smoothcast-search-") as directory:
+            with tempfile.TemporaryFile(dir=directory) as output:
+                command = [launcher, executable, "--ignore-config", "--no-cache-dir",
+                           "--no-cookies", "--no-cookies-from-browser", "--flat-playlist",
+                           "--skip-download", "--dump-json", "--no-warnings",
+                           "--socket-timeout", "8", "--retries", "0", "--extractor-retries", "0",
+                           "--", f"ytsearch{SEARCH_LIMIT}:{text}"]
+                kwargs = {"start_new_session": True} if os.name == "posix" else {}
+                process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                                           stdout=output, stderr=subprocess.DEVNULL, **kwargs)
+                deadline = time.monotonic() + SEARCH_SECONDS
+                try:
+                    while process.poll() is None:
+                        if cancelled():
+                            raise LinkError(403, "Room access was revoked.")
+                        if time.monotonic() >= deadline:
+                            raise LinkError(504, "YouTube search timed out. Try again.")
+                        if os.fstat(output.fileno()).st_size > SEARCH_OUTPUT_LIMIT:
+                            raise LinkError(502, "YouTube returned too much search data.")
+                        time.sleep(0.05)
+                    if process.returncode:
+                        raise LinkError(502, "YouTube search is unavailable right now.")
+                    output.seek(0)
+                    return youtube_results(output.read(SEARCH_OUTPUT_LIMIT + 1))
+                finally:
+                    if process.poll() is None:
+                        try:
+                            if os.name == "posix":
+                                os.killpg(process.pid, signal.SIGKILL)
+                            else:
+                                process.kill()
+                        except OSError:
+                            pass
+                        process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        raise LinkError(503, "The isolated YouTube search worker is unavailable.") from None
+    finally:
+        _SEARCH_SLOT.release()
+
+
 class CommandProvider:
     """Real command adapters; only an owner-configured isolation launcher may run them.
 
@@ -337,6 +436,12 @@ class CommandProvider:
     def capabilities(self) -> dict:
         return {kind: row["enabled_by_owner"] and not row["missing"]
                 for kind, row in self.readiness().items()}
+
+    def search_youtube(self, value: object, cancelled) -> list[dict]:
+        text = _search_text(value)
+        if not self.capabilities().get("youtube"):
+            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+        return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
 
     def readiness_text(self, kind: str) -> str:
         row = self.readiness()[kind]
@@ -633,6 +738,22 @@ class LinkJobs:
         if self._journal_error or self._closed:
             return {"youtube": False, "magnet": False}
         return self.provider.capabilities()
+
+    def search_youtube(self, owner: str, value: object) -> list[dict]:
+        text = _search_text(value)
+        search = getattr(self.provider, "search_youtube", None)
+        if not self.capabilities().get("youtube") or not callable(search):
+            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+
+        def cancelled():
+            return self._closed or not self.owner_active(owner)
+
+        if cancelled():
+            raise LinkError(403, "Room access was revoked.")
+        results = search(text, cancelled)
+        if cancelled():
+            raise LinkError(403, "Room access was revoked.")
+        return results
 
     def storage_available(self):
         return not self._journal_error and not self._closed
