@@ -466,6 +466,124 @@ class _Job:
     cancel: threading.Event = field(default_factory=threading.Event)
 
 
+JOURNAL_SCHEMA = 1
+JOURNAL_BYTES = 64 * 1024
+JOB_ID = re.compile(r"[0-9a-f]{24}\Z")
+
+
+class _JobJournal:
+    """Private single-writer receipt log; a restart never replays delivery.
+
+    Hold the OS lock until the previous worker exits, not merely until its
+    room closes. No session keys, requests, titles or file paths are stored.
+    """
+    def __init__(self, root: Path):
+        import cache_privacy
+
+        self.path = root / "acquisition-journal.json"
+        self.fd = None
+        cache_privacy.ensure_private_directory(root)
+        lock = root / ".acquisition.lock"
+        if lock.is_symlink():
+            raise ValueError("Unsafe acquisition lock")
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0), 0o600)
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise ValueError("Invalid acquisition lock")
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                if metadata.st_uid != os.getuid():
+                    raise ValueError("Acquisition lock belongs to another user")
+                os.fchmod(fd, 0o600)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BaseException:
+            os.close(fd)
+            raise
+        self.fd = fd
+
+    def close(self):
+        if self.fd is not None:
+            fd, self.fd = self.fd, None
+            os.close(fd)
+
+    def load(self):
+        import json
+
+        if self.path.is_symlink():
+            raise ValueError("Unsafe acquisition journal")
+        try:
+            fd = os.open(self.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                         | getattr(os, "O_NONBLOCK", 0))
+        except FileNotFoundError:
+            return []
+        try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                    or metadata.st_size > JOURNAL_BYTES):
+                raise ValueError("Invalid acquisition journal file")
+            if os.name != "nt":
+                if metadata.st_uid != os.getuid():
+                    raise ValueError("Acquisition journal belongs to another user")
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "rb") as stream:
+                fd = -1
+                content = stream.read(JOURNAL_BYTES + 1)
+            if len(content) > JOURNAL_BYTES:
+                raise ValueError("Acquisition journal exceeds limit")
+            data = json.loads(content)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        if (not isinstance(data, dict) or type(data.get("schema")) is not int
+                or data["schema"] != JOURNAL_SCHEMA or not isinstance(data.get("jobs"), list)
+                or len(data["jobs"]) > MAX_RECORDS):
+            raise ValueError("Unsupported acquisition journal")
+        jobs = []
+        seen = set()
+        for record in data["jobs"]:
+            if not isinstance(record, dict):
+                raise ValueError("Invalid acquisition receipt")
+            ident, kind, identity, stage = (record.get(k) for k in ("id", "kind", "identity", "stage"))
+            if (not isinstance(ident, str) or not JOB_ID.fullmatch(ident) or ident in seen
+                    or not isinstance(kind, str) or kind not in {"youtube", "magnet"}
+                    or not isinstance(identity, str) or not isinstance(stage, str)
+                    or stage not in TERMINAL | {"pending", "resolving", "downloading", "verifying", "queueing"}):
+                raise ValueError("Invalid acquisition receipt")
+            source = Source(kind, identity)
+            if parse_link(source.url) != source:
+                raise ValueError("Noncanonical acquisition source")
+            seen.add(ident)
+            error = ""
+            if stage in {"queueing", "delivery_uncertain"}:
+                stage = "delivery_uncertain"
+                error = "Previous queue delivery was not confirmed. Check recovered Up Next; not replayed."
+            elif stage == "ready":
+                error = "Previously accepted by the room; check recovered Up Next."
+            elif stage not in TERMINAL:
+                stage = "failed"
+                error = "Interrupted by a room restart. Submit a new authorised request to retry."
+            elif stage == "failed":
+                error = "Previous acquisition failed. Submit a new authorised request to retry."
+            jobs.append(_Job(ident, "", "", source, stage=stage, title=source.label, error=error))
+        return jobs
+
+    def save(self, jobs):
+        import cache_privacy
+
+        if self.fd is None:
+            raise OSError("Acquisition journal is closed")
+        cache_privacy.write_private_json_atomic(self.path, {
+            "schema": JOURNAL_SCHEMA,
+            "jobs": [{"id": job.id, "kind": job.source.kind, "identity": job.source.identity,
+                      "stage": job.stage} for job in jobs],
+        })
+
+
 class LinkJobs:
     """One bounded worker per room; snapshots expose no URL, hash or path."""
     def __init__(self, root: Path, provider, deliver: Callable, owner_active: Callable):
@@ -479,9 +597,40 @@ class LinkJobs:
         self._worker: threading.Thread | None = None
         self._closed = False
         self._revision = 0
+        self._journal = None
+        self._journal_error = False
+        try:
+            self._journal = _JobJournal(self.root)
+            self._jobs.update((job.id, job) for job in self._journal.load())
+        except (OSError, ValueError, RecursionError):
+            # Preserve damaged or busy storage; never start another writer.
+            self._journal_error = True
+            self._release_journal()
 
     def capabilities(self):
+        if self._journal_error or self._closed:
+            return {"youtube": False, "magnet": False}
         return self.provider.capabilities()
+
+    def storage_available(self):
+        return not self._journal_error and not self._closed
+
+    def _save(self):
+        """Caller holds _lock. A failed write prevents new external work."""
+        if self._journal_error or self._journal is None:
+            return False
+        try:
+            self._journal.save(self._jobs.values())
+            return True
+        except (OSError, ValueError):
+            self._journal_error = True
+            self._revision += 1
+            return False
+
+    def _release_journal(self):
+        if self._journal is not None:
+            self._journal.close()
+            self._journal = None
 
     def submit(self, owner: str, value: object, request: object) -> str:
         source = parse_link(value)
@@ -494,6 +643,8 @@ class LinkJobs:
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
+            if self._journal_error:
+                raise LinkError(503, "Acquisition recovery storage is unavailable.")
             receipt = self._requests.get((owner, request))
             if receipt is not None:
                 job = self._jobs.get(receipt)
@@ -507,8 +658,12 @@ class LinkJobs:
                     return job.id
             if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
                 raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
+            previous_jobs = self._jobs.copy()
+            previous_requests = self._requests.copy()
             while len(self._jobs) >= MAX_RECORDS:
-                expired = next((j for j in self._jobs.values() if j.stage in TERMINAL), None)
+                # Never forget an ambiguous dispatch merely to free a slot.
+                expired = next((j for j in self._jobs.values()
+                                if j.stage in TERMINAL - {"delivery_uncertain"}), None)
                 if expired is None:
                     raise LinkError(429, "The room acquisition queue is full.")
                 self._jobs.pop(expired.id)
@@ -518,6 +673,9 @@ class LinkJobs:
             job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
             self._jobs[job.id] = job
             self._remember_request(owner, request, job.id)
+            if not self._save():
+                self._jobs, self._requests = previous_jobs, previous_requests
+                raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
             self._revision += 1
             if self._worker is None:
                 self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
@@ -554,10 +712,15 @@ class LinkJobs:
         while True:
             with self._lock:
                 job = next((j for j in self._jobs.values() if j.stage == "pending"), None)
-                if job is None or self._closed:
+                if job is None or self._closed or self._journal_error:
                     self._worker = None
+                    if self._closed:
+                        self._release_journal()
                     return
                 self._change(job, stage="resolving")
+                if not self._save():
+                    self._change(job, stage="failed", error="Acquisition receipt could not be saved.")
+                    continue
             directory = self.root / job.id
             delivered = False
 
@@ -587,11 +750,18 @@ class LinkJobs:
                     title = title.replace(job.source.identity, "[source]") or job.source.label
                     self._change(job, stage="queueing", title=title,
                                  received=path.stat().st_size, total=path.stat().st_size, rate=None)
+                    # Durable intent precedes the irreversible queue call.
+                    if not self._save():
+                        raise LinkError(503, "Queue delivery receipt could not be saved.")
                     delivered = True
                 # Keep the file if a dispatch may have happened. A lost
                 # response must not remove media already in the queue.
                 self.deliver(job.owner, path)
-                self._change(job, stage="ready")
+                with self._lock:
+                    self._change(job, stage="ready")
+                    if not self._save():
+                        self._change(job, stage="delivery_uncertain",
+                                     error="Queue accepted media but its receipt could not be saved. Check Up Next.")
             except LinkError as exc:
                 self._change(job, stage="cancelled" if cancelled() and not delivered else
                              "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
@@ -603,13 +773,16 @@ class LinkJobs:
             finally:
                 if not delivered:
                     shutil.rmtree(directory, ignore_errors=True)
+                with self._lock:
+                    if job.stage != "ready":
+                        self._save()
 
     def snapshot(self, owner=None):
         with self._lock:
             return [{"id": j.id, "kind": j.source.kind, "title": j.title, "stage": j.stage,
                      "received": j.received, "total": j.total, "rate": j.rate, "error": j.error,
                      "executor": "room host",
-                     "can_cancel": j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
+                     "can_cancel": bool(j.owner) and j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
                     for j in self._jobs.values()]
 
     def revision(self):
@@ -626,6 +799,7 @@ class LinkJobs:
             job.cancel.set()
             if job.stage == "pending":
                 self._change(job, stage="cancelled", error="Acquisition cancelled.")
+                self._save()
 
     def revoke(self, owners):
         with self._lock:
@@ -634,6 +808,7 @@ class LinkJobs:
                     job.cancel.set()
                     if job.stage == "pending":
                         self._change(job, stage="cancelled", error="Room access was revoked.")
+            self._save()
 
     def close(self):
         with self._lock:
@@ -643,6 +818,9 @@ class LinkJobs:
                     job.cancel.set()
                     if job.stage == "pending":
                         self._change(job, stage="cancelled")
+            self._save()
+            if self._worker is None:
+                self._release_journal()
 
 
 def diagnostics_main(argv=None) -> int:
