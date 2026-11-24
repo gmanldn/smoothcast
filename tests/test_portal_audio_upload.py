@@ -57,6 +57,7 @@ class PortalAudioUploadTests(unittest.TestCase):
             self.assertTrue(dispatch)
             self.assertTrue(media.is_audio_only)
             self.assertEqual(media.title, "Guest track")
+            uploads.finish_dispatch("guest", created["id"], accepted=True)
             replayed_path, replayed_name, replay_dispatch = uploads.finalize(
                 "guest", created["id"],
             )
@@ -124,5 +125,7 @@ class PortalAudioUploadTests(unittest.TestCase):
             self.assertEqual(denied.exception.status, 404)
             self.assertNotEqual(completed[0][0], completed[1][0])
             self.assertTrue(all(result[2] for result in completed))
+            for owner, record, _source in pairs:
+                uploads.finish_dispatch(owner, record["id"], accepted=True)
             self.assertFalse(uploads.finalize("guest-one", created[0]["id"])[2])
             uploads.close()
