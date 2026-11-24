@@ -1304,6 +1304,8 @@ def test_streamable_upload_starts_casting_before_it_finishes(tmp_path):
             content_type="application/octet-stream")
         body = decode(raw)
         assert status == 200 and body["ready_to_cast"] is True
+        assert body["early_cast_accepted"] is True
+        assert "cast_path" not in body  # host-only staged path must stay private
         action, payload = rig.calls[-1]
         assert action == "cast_upload" and payload["early"] is True
         assert payload["upload_id"] == upload_id
@@ -1584,3 +1586,36 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     assert "retry-me" in host._portal_accepted_uploads
     handle(host, "cast_upload", payload)
     assert cast.call_count == 2
+
+
+def test_upload_receipt_reports_declined_early_cast_without_leaking_path(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads", early_cast_min_bytes=1)
+    rig = PortalRig(uploads)
+    try:
+        _, guest, cookie = login(rig)
+        auth = {"cookie": cookie, "csrf": guest["csrf"], "origin": f"http://{rig.host}"}
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 6, "queue": False}, **auth)
+        assert status == 201
+        path = "/api/uploads/" + decode(raw)["id"]
+        with mock.patch.object(rig.server, "dispatch", side_effect=portal.PortalRequestError(409, "Busy")):
+            status, raw, _ = rig.request(
+                "PUT", path, b"abc", **auth,
+                extra_headers={"Content-Range": "bytes 0-2/6"},
+                content_type="application/octet-stream")
+        receipt = decode(raw)
+        assert status == 200 and receipt["received"] == 3
+        assert receipt["early_cast_accepted"] is False
+        assert "cast_path" not in receipt
+        assert uploads.by_id(receipt["id"])["phase"] == "receiving"
+        status, raw, _ = rig.request("PUT", path, b"def", **auth,
+                                     extra_headers={"Content-Range": "bytes 3-5/6"},
+                                     content_type="application/octet-stream")
+        assert status == 200 and decode(raw)["received"] == 6
+        assert rig.request("POST", path + "/complete", {}, **auth)[0] == 202
+        assert rig.calls[-1][0] == "cast_upload"
+    finally:
+        rig.close()
+        uploads.close()
