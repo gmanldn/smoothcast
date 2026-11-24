@@ -359,3 +359,19 @@ def test_accepted_upload_cannot_report_a_different_room_action(tmp_path):
         uploads.finalize("owner", upload_id, queue_only=True)
     assert uploads.finalize("owner", upload_id, queue_only=False)[2] is False
     uploads.close()
+
+
+def test_rejected_media_does_not_exhaust_guest_upload_slots(tmp_path):
+    uploads = manager(tmp_path)
+    with patch("streamer.ffprobe", side_effect=RuntimeError("invalid media")):
+        for index in range(portal_uploads.MAX_ACTIVE_UPLOADS + 2):
+            upload_id = uploads.create(
+                "owner", f"broken-{index}.mkv", 3, queue_only=True)["id"]
+            uploads.append("owner", upload_id, "bytes 0-2/3", 3, BytesIO(b"bad"))
+            with pytest.raises(portal_uploads.UploadError) as error:
+                uploads.finalize("owner", upload_id)
+            assert error.value.status == 422
+    good = uploads.create("owner", "good.mp4", 3)
+    assert good["received"] == 0
+    assert len(uploads.snapshot()) == 1
+    uploads.close()
