@@ -60,6 +60,62 @@ python3 scripts/agent.py ship --message "fix: completed behaviour" --next "remai
 python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
 
+## Agent sandbox networking preflight
+
+On a network-related fetch, push or dependency failure, diagnose the agent
+environment once before retrying. Some hosted ChatGPT execution sandboxes
+have returned temporary DNS resolution failures for GitHub and PyPI
+(for example with resolver `168.63.129.16`); this is not evidence of a
+SmoothCast runtime defect. The GitHub connector may use independent
+networking and remain available.
+
+In a terminal with Python and Git, run this bounded, read-only check
+from the repository (no GUI, package installation or credential prompts):
+
+```sh
+python3 - <<'PY'
+import os, subprocess, sys
+for host in ("github.com", "api.github.com", "pypi.org"):
+    try:
+        subprocess.run([sys.executable, "-c",
+            "import socket,sys; socket.getaddrinfo(sys.argv[1],443,type=socket.SOCK_STREAM)",
+            host], check=True, timeout=5)
+        print(host, "DNS OK", flush=True)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        print(host, "DNS FAILED or TIMED OUT", flush=True)
+try:
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", "origin", "refs/heads/develop"],
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"},
+        timeout=15, check=False)
+    print("Git remote exit:", result.returncode)
+except (OSError, subprocess.TimeoutExpired) as exc:
+    print("Git probe unavailable:", type(exc).__name__)
+PY
+```
+
+- Interpret DNS, transport/TLS, authentication/authorisation and missing-ref
+  failures separately. DNS success alone does not prove Git access;
+  a connector read does not prove native Git works. Proxy-backed Git may work
+  despite direct DNS failures. Inspect actual stderr; do not print credentials.
+- If native Git is unavailable, use the connected GitHub API for read-only
+  triage, current develop source and issue/handover inspection. Do not keep
+  repeating network-dependent commands or treat every task as blocked.
+  Connector access does not waive claim, version-history, ship or closure
+  safeguards; do not bypass them with unguarded writes. If the normal
+  shipment cannot be verified, preserve the work and hand over to a
+  network-enabled agent or the owner.
+- If connectivity failed during shipment, follow the
+  [pending-push recovery rules](../COORDINATION.md#recovery-and-exit-statuses)
+  in the original worktree. Never create duplicate commits or assume an
+  unacknowledged push failed.
+- Record the failed operation, actual error, whether connector access worked,
+  affected SHA/worktree and remaining verification. Run offline checks if
+  possible; label skipped network-dependent checks UNVERIFIED.
+- Do not rewrite host DNS, disable TLS, hard-code GitHub IP addresses,
+  change SmoothCast networking, or alter the user's virtual environment
+  merely to work around an agent sandbox outage.
+
 ## Concurrency and token efficiency
 
 - Never lock the entire repository for an agent or run a long task in the
