@@ -156,3 +156,52 @@ def test_browser_panel_is_self_contained_parses_and_is_in_the_dashboard():
         finally:
             out.unlink(missing_ok=True)
         assert result.returncode == 0, result.stderr
+
+
+def test_host_web_live_mesh_uses_authoritative_unique_targets_and_room_state():
+    """Execute the real browser model against mixed-version, overlapping observations."""
+    import shutil
+    import subprocess
+    import pytest
+    import portal_mesh_panel
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for browser mesh model")
+    html = portal_mesh_panel.panel_html()
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    helpers = script[script.index("const TEXT="):script.index("  function sync(")]
+    harness = """
+const assert=require("node:assert/strict");
+const elements={};const $=id=>elements[id]||=( {textContent:""} );
+const window={};
+const local="host",primary="peer";
+const nodes=new Map([
+ ["host",{node_id:"host",name:"Local PC",version:"1.2.9",client_count:2,protocols:[1],
+   capabilities:["range"],targets:[{id:"a",name:"Lounge TV",state:"ready",kind:"cast"},
+     {id:"b",name:"Kitchen",state:"busy",kind:"dlna",owner:"peer"}]}],
+ ["peer",{node_id:"peer",name:"Laptop",version:"1.2.10",client_count:3,protocols:[1],
+   targets:[{id:"a",name:"Lounge TV",state:"stale",kind:"cast"},
+     {id:"b",name:"Kitchen",state:"busy",kind:"dlna",owner:"peer"}]}]
+]);
+"""
+    scenario = """
+const out=model();
+assert.equal(out.rows.length,2);
+assert.equal(out.trows.length,2,"overlapping target observations must not inflate totals");
+assert.equal(out.newest,"1.2.10","compare numeric version components");
+assert(out.rows[0].why.includes("Older than v1.2.10"));
+assert(out.rows[0].sub.includes("2 clients"));
+assert(out.rows[0].badges.includes("This device"));
+assert(out.trows.find(t=>t.title==="Kitchen").why.includes("Laptop"));
+window.scRenderMeshRoom({title:"Film",receiver:"Lounge TV",state_label:"Playing",
+ queue:[{id:"a"},{id:"b"}],network_activity:[{}],busy:false});
+assert.equal($("meshRoomTitle").textContent,"Film");
+assert.equal($("meshRoomReceiver").textContent,"Lounge TV · Playing");
+assert.equal($("meshRoomQueue").textContent,"2 waiting items");
+assert.equal($("meshRoomStreams").textContent,"1 reported active receiver stream");
+window.scRenderMeshRoom({});
+assert.equal($("meshRoomQueue").textContent,"Queue status unavailable");
+assert.equal($("meshRoomStreams").textContent,"Receiver activity unavailable");
+"""
+    subprocess.run(["node", "-"], input=harness + helpers + scenario,
+                   text=True, check=True, timeout=10)
