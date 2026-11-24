@@ -233,6 +233,11 @@ class UploadManager:
             if not upload.lock.acquire(blocking=False):
                 continue
             try:
+                if upload.cancelled:
+                    # Rejected media has already been discarded. Do not let
+                    # dead records consume one of the three active slots.
+                    self._uploads.pop(upload_id, None)
+                    continue
                 if upload.complete_path is None and upload.last_at <= cutoff:
                     try:
                         upload.partial_path.unlink(missing_ok=True)
@@ -255,7 +260,7 @@ class UploadManager:
         with self._lock:
             self._expire_uploads()
             pending = [upload for upload in self._uploads.values()
-                       if upload.complete_path is None]
+                       if not upload.cancelled and upload.complete_path is None]
             if len(pending) >= MAX_ACTIVE_UPLOADS:
                 raise UploadError(429, "Too many uploads are already in progress", code="room.rate_limited")
             reserved = sum(upload.size - upload.received for upload in pending)
