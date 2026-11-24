@@ -495,8 +495,9 @@ def run_mutation(controller: object, fence: CommandFence,
         controller.stop_stream()
         message = "Stop requested; the dashboard will refresh with receiver state."
     elif action == "seek":
-        if (controller.session is None or controller.external or not controller.tracker.known
-                or controller.busy or not controller.tracker.duration):
+        if not action_state.can_seek(controller.session, controller.external,
+                                     controller.tracker.known, controller.busy,
+                                     controller.tracker.duration):
             raise CommandError(409, "Seeking is not available for this stream", revision=revision)
         controller.seek_to(envelope.payload["value"])
         message = "Seek requested; the dashboard will refresh with receiver state."

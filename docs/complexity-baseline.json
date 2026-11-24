@@ -4,8 +4,8 @@
  "modules": {
   "ab_repeat.py": 53,
   "accent.py": 112,
-  "action_state.py": 44,
-  "actions.py": 60,
+  "action_state.py": 50,
+  "actions.py": 96,
   "api_spec.py": 160,
   "aspect_override.py": 35,
   "async_jobs.py": 197,
@@ -28,7 +28,7 @@
   "cast_portal.py": 329,
   "cast_portal_host.py": 199,
   "cast_portal_queue.py": 304,
-  "cast_queue.py": 877,
+  "cast_queue.py": 793,
   "cast_recovery.py": 203,
   "cast_retry_ui.py": 52,
   "cast_session.py": 1281,
@@ -153,8 +153,9 @@
   "picture_check.py": 53,
   "playback_state.py": 189,
   "playlist_control.py": 170,
+  "playlist_ui.py": 96,
   "portal.py": 3700,
-  "portal_commands.py": 520,
+  "portal_commands.py": 521,
   "portal_join.py": 67,
   "portal_media.py": 251,
   "portal_mesh_http.py": 74,
@@ -219,6 +220,6 @@
   "video_policy.py": 281,
   "watch_history.py": 208
  },
- "src_lines": 50220,
- "src_modules": 216
+ "src_lines": 50275,
+ "src_modules": 217
 }
