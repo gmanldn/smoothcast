@@ -316,7 +316,7 @@ class StartupCleanupTests(unittest.TestCase):
         startup = source.split("    def do_startup(self)", 1)[1].split(
             "    def _register_actions(self)", 1
         )[0]
-        self.assertIn("if not self.selftest:", startup)
+        self.assertIn("if not self.selftest and not demo_mode.active():", startup)
         self.assertIn("startup_cleanup.cleanup_before_window(", startup)
         self.assertIn('keep_streaming=bool(load_config().get("keep_streaming", True))', startup)
         self.assertIn("self._startup_reported = True", source)
