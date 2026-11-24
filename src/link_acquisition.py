@@ -400,12 +400,16 @@ class CommandProvider:
             selected = inspect_torrent(metadata.read_bytes(), source.identity)
             clean = directory / "verified-source.torrent"
             clean.write_bytes(b"d4:info" + selected.info + b"e")
+            payload = directory / "payload"
+            payload.mkdir(mode=0o700)
             stage("downloading")
             progress(0, selected.size)
-            self._run(tool, [*common, "--select-file=" + str(selected.index),
+            download_options = [opt for opt in common if not opt.startswith("--dir=")]
+            self._run(tool, [*download_options, "--dir=" + str(payload),
+                             "--select-file=" + str(selected.index),
                              "--check-integrity=true", "--", str(clean)],
                       directory, cancelled, progress, deadline)
-            path = _safe_media(directory, directory / selected.relative)
+            path = _safe_media(payload, payload / selected.relative)
             if path.stat().st_size != selected.size:
                 raise LinkError(422, "Torrent media size does not match verified metadata.")
         stage("verifying")
@@ -537,7 +541,9 @@ class LinkJobs:
                     raise LinkError(409, "Acquisition cancelled.")
                 # Keep the file if a dispatch may have happened. A lost
                 # response must not remove media already in the queue.
-                self._change(job, stage="queueing", title=path.name[:120],
+                title = "".join(c for c in path.name if c.isprintable())[:120]
+                title = title.replace(job.source.identity, "[source]") or job.source.label
+                self._change(job, stage="queueing", title=title,
                              received=path.stat().st_size, total=path.stat().st_size, rate=None)
                 delivered = True
                 self.deliver(job.owner, path)
@@ -554,11 +560,13 @@ class LinkJobs:
                 if not delivered:
                     shutil.rmtree(directory, ignore_errors=True)
 
-    def snapshot(self):
+    def snapshot(self, owner=None):
         with self._lock:
             return [{"id": j.id, "kind": j.source.kind, "title": j.title, "stage": j.stage,
                      "received": j.received, "total": j.total, "rate": j.rate, "error": j.error,
-                     "executor": "room host"} for j in self._jobs.values()]
+                     "executor": "room host",
+                     "can_cancel": j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
+                    for j in self._jobs.values()]
 
     def revision(self):
         with self._lock:
