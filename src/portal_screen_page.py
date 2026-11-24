@@ -141,18 +141,34 @@ const store={get:k=>safe(()=>localStorage.getItem(k))||"",set:(k,v)=>safe(()=>lo
 function show(...ids){for(const id of["loginView","startView","slate","player"])$(id).hidden=!ids.includes(id)}
 function clock(s){s=Math.max(0,Math.floor(Number(s)||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")}
 function capabilities(){return MIMES.filter(m=>{const el=m.startsWith("video")?video:document.createElement("audio");return !!safe(()=>el.canPlayType(m))})}
-async function api(method,path,body,signal){
+const REQUEST_TIMEOUT=8000,POLL_TIMEOUT=12000;
+async function requestJSON(path,options,timeout=REQUEST_TIMEOUT){
+  const controller=new AbortController();
+  let timer;
+  const deadline=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+      reject(Error("The room did not respond. Check your connection and try again."));
+      controller.abort();
+    },timeout);
+  });
+  try{return await Promise.race([deadline,(async()=>{
+    const r=await fetch(path,{...options,signal:controller.signal});
+    let d={};try{d=await r.json()}catch(err){if(r.ok)throw err}
+    if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
+    return d;
+  })()])}
+  finally{clearTimeout(timer)}
+}
+async function api(method,path,body,timeout=REQUEST_TIMEOUT){
   const headers={};if(body!==undefined)headers["Content-Type"]="application/json";if(method!=="GET")headers["X-CSRF-Token"]=csrf;
-  const r=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body),signal});
-  let d={};try{d=await r.json()}catch(_){}
-  if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
-  return d}
+  return requestJSON(path,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body)},timeout)
+}
 async function login(e){
   e.preventDefault();if(joining)return;joining=true;
   const button=$("loginSubmit");button.disabled=true;button.textContent="Joining…";
   $("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
-  try{const r=await fetch("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
-    const d=await r.json();if(!r.ok)throw Error(d.error||"Could not join");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
+  try{const d=await requestJSON("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
+    if(!d.csrf)throw Error("Invalid room response. Please try again.");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
   catch(err){$("loginError").textContent=err.message||"Could not join. Please try again."}
   finally{joining=false;button.disabled=false;button.textContent="Join the room"}}
 async function enter(name){
@@ -184,14 +200,14 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&started&&
 async function loop(){
   if(polling)return;polling=true;
   while(started&&!stopped){
-    try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`);
+    try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`,undefined,POLL_TIMEOUT);
       if(failures){failures=0;banner("");if(!current)setSlate(READY,"ok")}
       for(const o of d.orders){if(o.seq>seq){seq=o.seq;apply(o)}}
       slateLayout(d.queue_empty)
     }catch(err){
       if(err.status===401||err.status===403){polling=false;return relogin()}
-      if(err.status===404){try{await register();continue}catch(_){}}
-      failures++;if(failures>1){banner("Reconnecting to the room…");if(!current)setSlate("Reconnecting to the room…","warn")}
+      if(err.status===404){try{await register();continue}catch(registerError){if(registerError.status===401||registerError.status===403){polling=false;return relogin()}}}
+      failures++;banner("Reconnecting to the room…");if(!current)setSlate("Reconnecting to the room…","warn");
       await new Promise(r=>setTimeout(r,Math.min(10000,500*2**Math.min(failures,5))))}}
   polling=false}
 function banner(text){const b=$("banner");b.textContent=text;b.hidden=!text}
@@ -228,7 +244,7 @@ async function report(force,ack){
   const body={state:s,position:position(),duration:(current&&current.duration)||(isFinite(video.duration)&&!transcoded?video.duration:0),volume:Math.round(video.volume*100),play_seq:playSeq};
   if(ack!==undefined)body.ack=ack;
   if(s==="error")body.error=errorText();
-  try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(err.status===401||err.status===403)relogin()}}
+  const session=csrf;try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(csrf===session&&(err.status===401||err.status===403))relogin()}}
 function errorText(){const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
 let beat=null;function heartbeat(){if(!beat)beat=setInterval(()=>{if(started)report(false);hud()},1000)}
 function hud(){

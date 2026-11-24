@@ -196,7 +196,11 @@ const document={getElementById:node,createElement:node,listeners:{},hidden:false
 const location={host:"127.0.0.1"};
 const navigator={},window={addEventListener(){}};
 const localStorage={getItem(){return ""},setItem(){}},sessionStorage=localStorage;
-const setInterval=()=>{beats++},setTimeout=()=>1,clearTimeout=()=>{};
+const setInterval=()=>{beats++},timers=new Map();let timerId=0;
+const setTimeout=(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId};
+const clearTimeout=id=>timers.delete(id);
+function expire(ms){const match=[...timers].find(([,t])=>t.ms===ms);if(!match)throw Error("No timer "+ms);timers.delete(match[0]);match[1].fn()}
+class AbortController {constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}}
 const requests=[],pending=[];
 const fetch=(url,options)=>new Promise((resolve,reject)=>{
   requests.push({url,options});pending.push({resolve,reject});
@@ -228,6 +232,27 @@ const event={preventDefault(){}};
   key({tagName:"INPUT"});key({tagName:"DIV",isContentEditable:true});key({tagName:"DIV"},{ctrlKey:true});key({tagName:"DIV"},{repeat:true});
   check(fullscreens===0,"typing/modified keys must not fullscreen");
   key({tagName:"DIV"});check(fullscreens===1,"fullscreen shortcut remains available");
+  check(timers.size>0,"poll deadline exists");
+  expire(POLL_TIMEOUT);
+  for(let i=0;i<12;i++)await Promise.resolve();
+  check(requests[5].options.signal.aborted,"stalled poll aborted");
+  check(node("slateText").textContent.includes("Reconnecting"),"first failure shown");
+  expire(1000);
+  for(let i=0;i<12;i++)await Promise.resolve();
+  check(requests.length===7,"poll retried after backoff");
+  pending[6].resolve(response(200,{orders:[],queue_empty:true}));
+  for(let i=0;i<20;i++)await Promise.resolve();
+  check(node("slateText").textContent===READY,"recovery shown");
+  check(requests.length===8,"next poll started");
+  const slow=requestJSON("/slow",{method:"GET"});
+  let timedOut=false;const observed=slow.catch(err=>{timedOut=err.message.includes("did not respond")});
+  pending[8].resolve({ok:true,status:200,json:()=>new Promise(()=>{})});
+  expire(REQUEST_TIMEOUT);await observed;
+  check(timedOut&&requests[8].options.signal.aborted,"deadline includes response body");
+  const noReply=requestJSON("/no-reply",{method:"GET"});
+  const rejected=noReply.catch(err=>err.message);
+  expire(REQUEST_TIMEOUT);
+  check((await rejected).includes("did not respond"),"deadline rejects even if transport ignores abort");
 })()
 .catch(error=>{console.error(error);process.exitCode=1});
 """
