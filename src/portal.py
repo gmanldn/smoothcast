@@ -1970,7 +1970,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
 <p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
 <ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
-<details id="libraries" class="help"><summary>Browse libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details>
+<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
 <details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
 </section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
@@ -3318,7 +3318,7 @@ function syncMediaSession(s){
 (()=>{
   const input=$("findInput"),out=$("findResults"),status=$("findStatus");
   if(!input||!out||!status)return;
-  let timer=null,source=null,controller=null;
+  let timer=null,source=null,controller=null,searchGeneration=0;
   const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
   const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
   function where(copies){
@@ -3345,12 +3345,21 @@ function syncMediaSession(s){
     meta.textContent=bits.join(" - ");
     const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
     text.append(title,meta,where_);li.append(text);
-    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
+    const feedback=document.createElement("p");feedback.className="field-hint";feedback.setAttribute("role","status");text.append(feedback);
+    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";add.setAttribute("aria-label","Add "+(it.title||it.name||"media")+" to Up Next");
     if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}
     add.addEventListener("click",async()=>{
-      add.disabled=true;
-      try{const d=await post("/api/action",{action:"queue_add_key",key:it.id});showError("errorDash",d.message||"Added to Up Next");add.textContent="Added"}
-      catch(err){showError("errorDash",err.message);add.disabled=false}
+      if(add.disabled)return;
+      add.disabled=true;feedback.textContent="Submitting request…";
+      const session=csrf;
+      try{
+        const d=await post("/api/action",{action:"queue_add_key",key:it.id});
+        if(csrf!==session)return;
+        // A remote copy may still be transferring. Acknowledgement is not queue confirmation.
+        feedback.textContent=d.message||"Request accepted; check Up Next for confirmation.";
+        add.textContent=d.message==="Added to the queue."?"Added":"Requested";
+        void refresh();
+      }catch(err){if(csrf===session){feedback.textContent=err.message||"Could not add media. Retry.";add.disabled=false}}
     });
     const a=document.createElement("div");a.className="queue-actions";a.append(add);li.append(a);return li;
   }
@@ -3368,23 +3377,29 @@ function syncMediaSession(s){
     status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
       (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
   }
-  function stop(){if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
+  function stop(){searchGeneration++;if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
   async function run(){
-    stop();const typed=input.value.trim();
+    clearTimeout(timer);stop();const typed=input.value.trim();
+    const generation=searchGeneration,session=csrf;
+    const current=()=>generation===searchGeneration&&csrf===session;
+    if(!session)return;
     if(!typed&&!kind){out.replaceChildren();status.textContent="";return}
     const q=(typed+(kind?" kind:"+kind:"")).trim();
     const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
+    out.replaceChildren();status.textContent="Searching shared libraries…";
     if(typeof EventSource==="function"){
-      source=new EventSource(url);
-      source.addEventListener("results",e=>render(JSON.parse(e.data)));
-      source.addEventListener("more",e=>render(JSON.parse(e.data)));
-      source.addEventListener("done",()=>stop());
-      source.onerror=()=>stop();
+      const stream=new EventSource(url);source=stream;
+      const accept=e=>{if(!current()||source!==stream)return;try{render(JSON.parse(e.data))}catch(_){status.textContent="Search update could not be read.";stop()}};
+      stream.addEventListener("results",accept);
+      stream.addEventListener("more",accept);
+      stream.addEventListener("done",()=>{if(current()&&source===stream)stop()});
+      stream.onerror=()=>{if(current()&&source===stream){status.textContent="Search connection interrupted. Change the query or filter to retry.";stop()}};
       return;
     }
-    controller=new AbortController();
-    try{const r=await fetch(url,{credentials:"same-origin",signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error||"Search failed");render(d)}
-    catch(err){if(err.name!=="AbortError")status.textContent=err.message}
+    const request=new AbortController();controller=request;
+    try{const r=await fetch(url,{credentials:"same-origin",signal:request.signal});const d=await r.json();if(!current()||request.signal.aborted)return;if(!r.ok)throw Error(d.error||"Search failed");render(d)}
+    catch(err){if(current()&&err.name!=="AbortError")status.textContent=err.message}
+    finally{if(controller===request)controller=null}
   }
 
   let kind="",availableOnly=false;
@@ -3397,7 +3412,9 @@ function syncMediaSession(s){
     });
   }
   const lib=$("libraries"),body=$("libBody");
-  let libLoaded=false;
+  let libLoaded=false,libraryGeneration=0,libraryBusy=false;
+  const libStatus=$("libStatus"),libRefresh=$("libRefresh");
+  const libraryStatus=message=>{if(libStatus)libStatus.textContent=message};
   const crumb=(parts)=>{const p=document.createElement("p");p.className="muted";p.textContent=parts.join(" / ");return p};
   async function getJSON(url){const r=await fetch(url,{credentials:"same-origin"});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
   function showOrigins(d){
@@ -3419,9 +3436,15 @@ function syncMediaSession(s){
     }
   }
   async function browse(origin,name,folder,path,cursor){
+    if(cursor&&libraryBusy)return;
+    const generation=++libraryGeneration,session=csrf;
+    if(!session)return;
+    const current=()=>generation===libraryGeneration&&csrf===session;
+    libraryBusy=true;libraryStatus(cursor?"Loading more media…":"Opening shared folder…");
     try{
       const url="/api/libraries/"+encodeURIComponent(origin)+"/"+encodeURIComponent(folder)+"?path="+encodeURIComponent(path)+(cursor?"&cursor="+encodeURIComponent(cursor):"");
       const d=await getJSON(url);
+      if(!current())return;
       if(!cursor)body.replaceChildren();
       else{const old=body.querySelector(".more");if(old)old.remove()}
       if(!cursor){
@@ -3443,11 +3466,22 @@ function syncMediaSession(s){
       body.append(ul);
       if(d.next){const more=document.createElement("button");more.type="button";more.className="tiny more";more.textContent="Load more";
         more.addEventListener("click",()=>browse(origin,name,folder,path,d.next));body.append(more)}
-    }catch(err){body.textContent=err.message}
+      libraryStatus(!(d.dirs||[]).length&&!(d.items||[]).length&&!cursor?"No media in this folder.":"");
+    }catch(err){if(current())libraryStatus(err.message||"Could not open this folder.")}
+    finally{if(generation===libraryGeneration)libraryBusy=false}
   }
-  async function showAll(){try{showOrigins(await getJSON("/api/libraries"))}catch(err){body.textContent=err.message}}
-  lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded){libLoaded=true;showAll()}});
-  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+  async function showAll(){
+    const generation=++libraryGeneration,session=csrf;
+    if(!session)return;
+    const current=()=>generation===libraryGeneration&&csrf===session;
+    libraryBusy=true;libraryStatus("Refreshing shared libraries…");
+    try{const d=await getJSON("/api/libraries");if(current()){showOrigins(d);libLoaded=true;libraryStatus("")}}
+    catch(err){if(current()){libLoaded=false;libraryStatus(err.message||"Could not load libraries.")}}
+    finally{if(generation===libraryGeneration)libraryBusy=false}
+  }
+  if(libRefresh)libRefresh.addEventListener("click",showAll);
+  lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded)showAll()});
+  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();status.textContent="";timer=setTimeout(run,120)});
 })();
 (()=>{
   const input=$("findInput"),search=$("youtubeSearch"),panel=$("youtubeResultsPanel"),
