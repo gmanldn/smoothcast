@@ -291,15 +291,37 @@ class CommandProvider:
     """
     def __init__(self, kinds=(), *, launcher=None):
         raw = launcher or os.environ.get("SMOOTHCAST_LINK_SANDBOX", "")
-        self.launcher = str(raw) if raw and Path(raw).is_absolute() and os.access(raw, os.X_OK) else ""
+        self.launcher = (str(raw) if raw and Path(raw).is_absolute()
+                         and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
         self.probe = shutil.which("ffprobe")
         self.kinds = frozenset(kinds)
 
+    def readiness(self) -> dict:
+        """Cheap local prerequisites only; never runs programs or contacts a source."""
+        return {kind: {
+            "enabled_by_owner": kind in self.kinds,
+            "engine_present": bool(self.tools[kind]),
+            "probe_present": bool(self.probe),
+            "launcher_configured": bool(self.launcher),
+            "isolation_verified": False,
+            "missing": [name for name, present in (
+                ("yt-dlp" if kind == "youtube" else "aria2c", self.tools[kind]),
+                ("ffprobe", self.probe), ("owner-configured isolation launcher", self.launcher),
+            ) if not present],
+        } for kind in ("youtube", "magnet")}
+
     def capabilities(self) -> dict:
-        return {kind: bool(kind in self.kinds and self.launcher and self.tools[kind] and self.probe)
-                for kind in ("youtube", "magnet")}
+        return {kind: row["enabled_by_owner"] and not row["missing"]
+                for kind, row in self.readiness().items()}
+
+    def readiness_text(self, kind: str) -> str:
+        row = self.readiness()[kind]
+        if row["missing"]:
+            return "Missing: " + ", ".join(row["missing"]) + "."
+        return ("Worker configured; OS isolation is not verified. "
+                + ("Enabled on next room restart." if row["enabled_by_owner"] else "Owner permission is off."))
 
     def _run(self, executable, args, directory, cancelled, progress, deadline):
         if cancelled():
@@ -621,3 +643,53 @@ class LinkJobs:
                     job.cancel.set()
                     if job.stage == "pending":
                         self._change(job, stage="cancelled")
+
+
+def diagnostics_main(argv=None) -> int:
+    """Explicit local executable probes. Does not start the sandbox or download."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Check local link acquisition prerequisites")
+    parser.add_argument("--tools-only", action="store_true",
+                        help="Check engine binaries without requiring an isolation launcher")
+    args = parser.parse_args(argv)
+    provider = CommandProvider()
+    tools = {}
+    for name, executable, flag in (
+            ("yt-dlp", provider.tools["youtube"], "--version"),
+            ("aria2c", provider.tools["magnet"], "--version"),
+            ("ffprobe", provider.probe, "-version")):
+        if executable is None:
+            tools[name] = "missing"
+            continue
+        try:
+            result = subprocess.run([executable, flag], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    timeout=5, check=False)
+            tools[name] = "executable" if result.returncode == 0 else "probe_failed"
+        except subprocess.TimeoutExpired:
+            tools[name] = "probe_timed_out"
+        except OSError:
+            tools[name] = "probe_failed"
+    ready = all(status == "executable" for status in tools.values())
+    report = {
+        "tools": tools,
+        "launcher_configured": bool(provider.launcher),
+        "isolation_verified": False,
+        "javascript_runtime_present": {
+            name: bool(shutil.which(name)) for name in ("deno", "node", "qjs")},
+        "notes": [
+            "No network or media acquisition was attempted.",
+            "The YouTube engine may also need a compatible JavaScript runtime and local EJS package.",
+            "Executable presence does not prove supported versions or functioning downloads.",
+            "An owner-configured isolation launcher is required; its policy is not attested by this check.",
+            "Enable providers in Preferences only after qualifying the isolated worker.",
+        ],
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if ready and (args.tools_only or provider.launcher) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(diagnostics_main())
