@@ -94,6 +94,7 @@ class SessionMixin:
             reason = "Choose a room receiver before casting"
             self.toast(reason, error=True)
             return reason
+        self._last_cast_path = path  # for the failure toast's one-click retry
         if str(path) == self._local_video_path and self.session is None:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -1232,12 +1233,32 @@ class SessionMixin:
         if self.session is None:
             self.tracker.clear()
             self._finished_handled = False
-        self.toast(f"Cast failed: {message}", error=True)
+        retry = self._retry_action()
+        self.toast(f"Cast failed: {message}", error=True, **({"action": retry} if retry else {}))
         self._console(f"Cast failed: {message}")
         if self._recovery_plan is not None:
             self._console(cast_recovery.summary_line(self._recovery_plan))
         self._notify("error", message)
         self._refresh_controls()
+
+
+    def _retry_action(self):
+        """('Try again', callback) when the plan's first option is a plain retry."""
+        plan, path = getattr(self, "_recovery_plan", None), getattr(self, "_last_cast_path", None)
+        if plan is None or path is None or plan.primary is None or plan.primary.kind != "retry":
+            return None
+        self._cast_failure_id = getattr(self, "_cast_failure_id", 0) + 1
+        token, position = self._cast_failure_id, plan.position
+        return "Try again", lambda: self._retry_cast(token, path, position)
+
+    def _retry_cast(self, token: int, path, position: float) -> None:
+        """Re-run the normal cast entry at the saved place, only if nothing else began."""
+        if (getattr(self, "_closing", False) or token != getattr(self, "_cast_failure_id", 0)
+                or self.busy or (self.session is not None and self.session.active())):
+            self.toast("Playback changed; not retrying automatically")
+            return
+        self._console(f"Retrying cast at {fmt_time(position)}")
+        self._cast_path(pathlib.Path(path), position)
 
 
     def _skip(self, delta: float) -> None:

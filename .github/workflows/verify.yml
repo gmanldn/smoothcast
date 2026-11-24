@@ -112,7 +112,7 @@ jobs:
       - name: Verify receiver capability planning
         run: python -m pytest -q tests/test_capability_plan.py tests/test_receiver_memory.py tests/test_receiver_profiles.py
       - name: Verify cast failure recovery planning
-        run: python -m pytest -q tests/test_cast_recovery.py tests/test_cast_preflight_preservation.py
+        run: python -m pytest -q tests/test_cast_recovery.py tests/test_cast_preflight_preservation.py tests/test_cast_retry_action.py
       - name: Verify mesh Range resume integrity
         run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py tests/test_mesh_range_resume.py tests/test_mesh_acquisition_assignment.py tests/test_mesh_acquisition_store.py
       - name: Verify source-second playheads and lock-screen controls
