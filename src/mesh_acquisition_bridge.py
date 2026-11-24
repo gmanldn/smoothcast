@@ -26,7 +26,7 @@ HINT = "acquisition-assign-v1"
 CAPABILITY = "mesh.acquisition.assign.v1"
 RPC_KIND = "acquisition_job"
 TIMEOUT = 3.0
-_WORKER_TYPES = frozenset({"offer", "cancel"})
+_WORKER_TYPES = frozenset({"offer", "cancel", "ticket"})
 _HOST_TYPES = frozenset({"report", "finished", "failed"})
 
 

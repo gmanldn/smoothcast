@@ -29,8 +29,9 @@ FINAL_RETRY_SECONDS = 1.0
 
 class RemoteExecutor:
     def __init__(self, root: Path, provider, send_to_host: Callable[[str, dict], object], *,
-                 clock: Callable[[], float] = time.monotonic,
+                 server=None, clock: Callable[[], float] = time.monotonic,
                  retry_wait: Callable[[float], None] = time.sleep) -> None:
+        self.server = server  # mesh_acquisition_transfer.TransferServer or None
         self.root = Path(root) / "remote"
         self.provider, self._send, self._clock, self._wait = provider, send_to_host, clock, retry_wait
         self.worker: wire.WorkerService | None = None
@@ -52,7 +53,18 @@ class RemoteExecutor:
             self._threads[job] = thread
         thread.start()
 
+    def ticket(self, job: str, gen: int) -> dict | None:
+        """One-job download ticket for the host, only for the current verified result."""
+        result = self.results.get(job)
+        if self.server is None or result is None or result[0] != gen:
+            return None
+        _, path, _digest, size = result
+        return {"port": self.server.port, "token": self.server.register(job, path, size),
+                "size": size, "ext": path.suffix.lower()}
+
     def stop(self, job: str) -> None:
+        if self.server is not None:
+            self.server.revoke(job)
         with self._lock:
             event = self._cancel.get(job)
         if event is not None:
@@ -109,6 +121,7 @@ class RemoteExecutor:
             if not self.provider.capabilities().get(kind):
                 raise links.LinkError(503, "This node has not enabled that worker.")
             report("resolving")
+            self.root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             links._reserve_cache_capacity(self.root.parent)
             shutil.rmtree(directory, ignore_errors=True)  # an earlier generation's leftovers
             directory.mkdir(parents=True, mode=0o700)

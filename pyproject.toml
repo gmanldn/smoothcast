@@ -145,6 +145,7 @@ py-modules = [
     "mesh_acquisition_executor",
     "mesh_acquisition_rpc",
     "mesh_acquisition_store",
+    "mesh_acquisition_transfer",
     "mesh_beacon",
     "mesh_cache",
     "mesh_cast_planner",

@@ -26,6 +26,7 @@ _FIELDS = {
     "report": {"job", "gen", "stage", "received", "total"},
     "finished": {"job", "gen", "content"},
     "failed": {"job", "gen"},
+    "ticket": {"job", "gen"},  # host asks the worker for a one-job download ticket
 }
 
 
@@ -81,9 +82,10 @@ class WorkerService:
     """Executor side: fences offers/cancels and starts or stops the real worker."""
 
     def __init__(self, start: Callable[..., None],
-                 stop: Callable[[str], None], slots: int = 1) -> None:
+                 stop: Callable[[str], None], slots: int = 1,
+                 ticket: Callable[[str, int], dict | None] | None = None) -> None:
         self.guard = core.ExecutorGuard(slots)
-        self._start, self._stop = start, stop
+        self._start, self._stop, self._ticket = start, stop, ticket
 
     def handle(self, message: object, sender: str | None = None) -> dict:
         try:
@@ -101,6 +103,9 @@ class WorkerService:
             if self.guard.cancel(msg["job"], msg["gen"]):
                 self._stop(msg["job"])
             return {"ok": True, "verdict": "cancelled"}
+        if msg["t"] == "ticket":
+            result = self._ticket(msg["job"], msg["gen"]) if self._ticket else None
+            return {"ok": bool(result), "verdict": "ticket" if result else "none", **(result or {})}
         return {"ok": False, "verdict": "invalid"}
 
 

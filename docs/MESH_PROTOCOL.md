@@ -154,3 +154,17 @@ the same isolated provider as the local room, reports stages and measured bytes
 (retried a bounded number of times) or `failed`. Cancel stops it without a
 failure report and removes its files. The room host still performs the single
 queue add; pulling the verified file from the worker is the remaining step.
+
+### Verified file transfer (#589)
+
+When a worker's `finished` arrives the host calls `TransferHost.collect(job)`:
+it sends a `ticket` message (authenticated RPC), which makes the worker's
+`TransferServer` (LAN-only, `GET /acq/<job>/<token>`) offer **only** that
+verified file under a fresh random token that expires in 15 minutes and is
+revoked on cancel. The host streams it to a private `.part` file (size bound,
+time bound, `Range` resume, bounded retries) and publishes it atomically only
+when both the byte count and SHA-256 equal the executor's report. Then, and
+only then, `AssignmentLedger.enqueue_once` admits one queue add and the verified
+local copy is delivered. Wrong token, unknown job, expiry, swapped file,
+oversize stream and non-LAN endpoints all fail closed; a failed transfer leaves
+nothing queued and can be retried. A worker never sends a path, URL or address.
