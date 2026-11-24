@@ -24,10 +24,14 @@ def start(window: object, address: str) -> None:
         if not settings["enabled"]:
             return
         portal = getattr(window, "_portal", None)
+        jobs = getattr(getattr(portal, "server", None), "link_jobs", None)
+        capabilities = jobs.capabilities() if jobs is not None else {}
+        sources = tuple(kind for kind in ("youtube", "magnet") if capabilities.get(kind) is True)
         config = mesh_service.MeshConfig(
             bind_ip=address, name=getattr(portal, "name", "") or "SmoothCast",
             version=__version__, room_port=getattr(portal, "port", None),
-            strict=settings["strict"], seeds=settings["seeds"])
+            strict=settings["strict"], seeds=settings["seeds"],
+            link_acquisition_sources=sources)
         adapter = mesh_discovery.DiscoveryAdapter()
         config.discovery = adapter.snapshot
         window._mesh_discovery = adapter             # type: ignore[attr-defined]
