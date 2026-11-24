@@ -459,7 +459,9 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
             assert json.loads(journal.read_text())["pending_push"]["sha"] == sha
             result = real_run(command, **kwargs)
             assert result.returncode == 0
-            raise KeyboardInterrupt
+            if len(pushes) == 1:
+                raise KeyboardInterrupt
+            return result
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(agent.subprocess, "run", interrupted)
@@ -470,12 +472,41 @@ def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp
 
     # Reconstruct memory from disk as a fresh agent process would.
     task = json.loads(journal.read_text())
-    monkeypatch.setattr(agent.subprocess, "run", real_run)
     assert agent.cmd_ship(args) == 0
     assert len(pushes) == 1
     assert [item[1] for item in handovers] == [sha]
     assert "pending_push" not in json.loads(journal.read_text())
     assert "pending_handover" not in json.loads(journal.read_text())
+
+
+def test_corrupted_managed_task_marker_never_becomes_unowned_ship(monkeypatch, tmp_path):
+    import pytest
+
+    _, first, _ = seed_git(tmp_path)
+    target = tmp_path / "private"
+    run(first, "worktree", "add", "--detach", str(target), "origin/develop")
+    monkeypatch.setattr(agent, "ROOT", target)
+    admin = Path(run(target, "rev-parse", "--absolute-git-dir"))
+    journal = admin / "sc-agent-task.json"
+    for malformed in ("{broken", "[]", '{"issue": false}', '{"issue": 584, "files": "src/a.py"}',
+                      '{"issue": 584, "pending_handover": null}',
+                      '{"issue": 584, "pending_push": {}, "pending_handover": {}}'):
+        journal.write_text(malformed, encoding="utf-8")
+        with pytest.raises(agent.td.DigestError, match="private task journal"):
+            agent.private_task()
+        # No actual push should ever be attempted with corrupt ownership state.
+        with pytest.raises(agent.td.DigestError, match="private task journal"):
+            agent.cmd_ship(agent.build_parser().parse_args(["ship", "--skip-checks"]))
+    journal.write_text('{"issue": 584, "files": ["src/a.py"]}', encoding="utf-8")
+    assert agent.private_task() == {"issue": 584, "files": ["src/a.py"]}
+
+
+def test_malformed_receipt_blocks_recovery_instead_of_being_ignored(monkeypatch):
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: (_ for _ in ()).throw(
+        AssertionError("invalid delivery evidence must not be discarded")))
+    for bad in (None, "", [], 123):
+        assert not agent.recover_uncertain_push({"issue": 584, "pending_push": bad})
+        assert not agent.recover_pending_handover({"issue": 584, "pending_handover": bad})
 
 
 def test_ship_does_not_push_when_write_ahead_journal_cannot_be_saved(monkeypatch, tmp_path):
