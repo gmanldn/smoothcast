@@ -132,7 +132,7 @@ class SharedRoomMachine(RuleBasedStateMachine):
         item = self.model_queue[index % len(self.model_queue)]
         assert self.host._portal_queue_action("queue_play", {
             "id": portal_queue_id(item),
-        }) == "Playing now."
+        }) == "Playback requested; waiting for the room receiver."
         assert self.host.played[-1] == (item, 0.0)
 
     @precondition(lambda self: bool(self.participants) and bool(self.model_queue))
