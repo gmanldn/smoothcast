@@ -112,7 +112,7 @@ def test_room_home_sits_in_the_sticky_app_bar_and_returns_focus_to_the_top():
     assert 'top.focus({preventScroll:true})' in script
     assert 'prefers-reduced-motion: reduce' in script
     # Section nav docks under the bar instead of under the viewport top.
-    assert "#dashboard nav{top:var(--bar-h)" in page
+    assert "#dashboard nav{top:calc(var(--bar-h) + 6px)" in page
 
 
 def test_screen_home_returns_to_the_room_and_only_fades_during_untouched_playback():
