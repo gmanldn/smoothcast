@@ -159,3 +159,35 @@ test("wrong issue in local comment feed prevents preparation",async()=>{
   const t=transport();t.state.localOverride=[mine,row(2,599,"ordinary comment")];
   await assert.rejects(prepare(t.api,p),/wrong issue comment feed/);
 });
+
+test("successor cannot prepare while predecessor receipt is unresolved",async()=>{
+  const t=transport();
+  t.comments.push(row(2,598,"<!-- sc-connector-pending v1 sha="+id("7")+" base="+p.base+" agent=predecessor -->"));
+  await assert.rejects(prepare(t.api,p),/recover pending candidate/);
+  assert.equal(t.counters.commits,0);
+});
+test("receipt resolution must follow the pending receipt",async()=>{
+  const t=transport();
+  t.comments.push(row(2,598,"<!-- sc-ship v1 sha="+id("7")+" -->"),row(3,598,"<!-- sc-connector-pending v1 sha="+id("7")+" base="+p.base+" agent=predecessor -->"));
+  await assert.rejects(prepare(t.api,p),/recover pending candidate/);
+  t.comments.push(row(4,598,"<!-- sc-connector-abandoned v1 sha="+id("7")+" -->"));
+  assert.equal(await prepare(t.api,p),t.candidate);
+});
+test("competing pending receipt after prepare prevents shipment",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  t.comments.push(row(2,598,"<!-- sc-connector-pending v1 sha="+id("7")+" base="+p.base+" agent=predecessor -->"));
+  await assert.rejects(ship(t.api,p,c),/recover pending candidate/);
+  assert.equal(t.counters.updates,0);
+});
+test("receipt disappearing before ref update prevents shipment",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  const get=t.api.get;
+  let reads=0;
+  t.api.get=async path=>{
+    if(path.startsWith("/issues/598/comments?")&&++reads===4)
+      t.comments.splice(1);
+    return get(path);
+  };
+  await assert.rejects(ship(t.api,p,c),/pending receipt disappeared|inconsistent comment snapshots/);
+  assert.equal(t.counters.updates,0);
+});

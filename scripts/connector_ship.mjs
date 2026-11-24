@@ -151,13 +151,25 @@ async function landed(api,candidate){
   return d.behind_by===0&&(d.status==="ahead"||d.status==="identical");
 }
 
+// A pending receipt belongs to the issue, not a disposable agent identity.
+// Successors must reconcile its exact candidate before preparing another.
+function checkPending(comments,candidate=null){
+  const pending=new Map(), resolved=new Set();
+  for(const c of [...comments].sort((a,b)=>a.id-b.id)){
+    const body=c.body||"";
+    const m=body.match(/<!-- sc-connector-pending v1 sha=([0-9a-f]{40}) base=([0-9a-f]{40}) agent=([A-Za-z0-9-]+) -->/);
+    if(m)pending.set(m[1],m[2]);
+    for(const r of body.matchAll(/<!-- sc-(?:ship|connector-abandoned) v1 sha=([0-9a-f]{40}) -->/g)){
+      if(pending.has(r[1]))resolved.add(r[1]);
+    }
+  }
+  for(const sha of pending.keys())
+    check(resolved.has(sha)||sha===candidate,"recover pending candidate "+sha+" first");
+}
+
 async function prepare(api,p){
   validate(p);const comments=await checkClaims(api,p);
-  // A prior unresolved pending candidate must be reconciled, not duplicated.
-  for(const c of comments){
-    const m=(c.body||"").match(/<!-- sc-connector-pending v1 sha=([0-9a-f]{40}) base=[0-9a-f]{40} agent=([A-Za-z0-9-]+) -->/);
-    if(m&&m[2]===p.agent&&!comments.some(x=>(x.body||"").includes("<!-- sc-ship v1 sha="+m[1]+" -->")||(x.body||"").includes("<!-- sc-connector-abandoned v1 sha="+m[1]+" -->")))throw Error("recover pending candidate "+m[1]+" first");
-  }
+  checkPending(comments);
   check(await tip(api)===p.base,"stale base");
   const baseTree=await checkBase(api,p);
   const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
@@ -171,7 +183,7 @@ async function ship(api,p,candidate){
   validate(p);await verifyCandidate(api,p,candidate);
   const marker="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent="+p.agent+" -->";
   if(!await landed(api,candidate)){
-    await checkClaims(api,p);check(await tip(api)===p.base,"base moved; do not overwrite");
+    const initial=await checkClaims(api,p);checkPending(initial,candidate);check(await tip(api)===p.base,"base moved; do not overwrite");
     let comments=await pages(api,"/issues/"+p.issue+"/comments",10);
     if(!comments.some(c=>(c.body||"").includes(marker))){
       const id=await api.comment(p.issue,"Pending connector shipment; reconcile exact SHA before retry.\n"+marker);
@@ -179,7 +191,9 @@ async function ship(api,p,candidate){
       comments=await pages(api,"/issues/"+p.issue+"/comments",10);
       check(comments.some(c=>c.id===id&&(c.body||"").includes(marker)),"pending receipt not visible");
     }
-    await checkClaims(api,p);check(await tip(api)===p.base,"base moved before ref update");
+    const latest=await checkClaims(api,p);checkPending(latest,candidate);
+    check(latest.some(c=>(c.body||"").includes(marker)),"pending receipt disappeared");
+    check(await tip(api)===p.base,"base moved before ref update");
     try{await api.update(p.base,candidate)}catch(e){/* acknowledgement may be lost; reconcile */}
     check(await landed(api,candidate),"shipment unconfirmed; preserve pending candidate");
   }
