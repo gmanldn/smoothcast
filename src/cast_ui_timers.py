@@ -7,9 +7,14 @@ gi.require_version("Gtk", "4.0")
 
 from gi.repository import GLib
 
+import time
+
+import castctl
 import idle_timers
+import playback_state
 import sleep_fade
 import stream_watchdog
+from cast_widgets import Async, save_config
 
 
 class UiTimerMixin:
@@ -146,3 +151,73 @@ class UiTimerMixin:
         if self._reflow_source is not None:
             GLib.source_remove(self._reflow_source)
             self._reflow_source = None
+
+    def _sleep_timer(self, minutes: int) -> None:
+        minutes = max(0, int(minutes))
+        self.cfg["sleep_timer_minutes"] = minutes
+        self.cfg["sleep_timer_deadline"] = playback_state.sleep_deadline(
+            time.time(), minutes,
+        )
+        save_config(self.cfg)
+        self.toast(
+            f"Sleep timer armed: {minutes} min" if minutes
+            else "Sleep timer cancelled"
+        )
+        self._sync_ui_timers()
+
+    def _sleep_tick(self) -> bool:
+        deadline = self.cfg.get("sleep_timer_deadline", 0.0)
+        if not playback_state.timer_expired(deadline, time.time()):
+            return True
+        if self.busy:
+            return True  # Do not interrupt an in-flight cast command.
+        self.cfg["sleep_timer_deadline"] = 0.0
+        self.cfg["sleep_timer_minutes"] = 0
+        save_config(self.cfg)
+        if self.session is not None:
+            self.toast("Sleep timer expired — stopping cast")
+            self.stop_stream()
+        elif self._url_cast_url is not None:
+            self._sleep_stop_url_cast()
+        else:
+            self.toast("Sleep timer expired")
+        return True
+
+    def _sleep_stop_url_cast(self) -> None:
+        """Stop our own URL cast at the deadline, never a replacement.
+
+        A URL cast has no local Session. Re-check the receiver off the GTK
+        thread at command time and stop only if it still reports the exact URL
+        we sent; if another app replaced it, leave that content playing.
+        """
+        device = self._device()
+        saved_url = self._url_cast_url or ""
+        self.busy = True
+        self._refresh_controls()
+
+        def work():
+            try:
+                observed = castctl.info(device)
+            except (OSError, ValueError, TypeError):
+                observed = None
+            if not playback_state.url_cast_matches(observed, saved_url):
+                return False
+            ok, _ = castctl.stop(device)
+            return ok
+
+        def done(stopped):
+            self.busy = False
+            self._url_cast_url = None
+            self._url_cast_seen = False
+            if stopped:
+                self.external = False
+                self.tracker.clear()
+                self.now_playing = None
+                self._finished_handled = False
+                self.toast("Sleep timer expired — stopped the URL cast")
+            else:
+                self.toast("Sleep timer expired; left the current TV content playing")
+            self._refresh_controls()
+            self._poll_device()
+
+        Async.run(work, done=done, failed=self._cast_failed, domain="transport")
