@@ -12,7 +12,6 @@ import re
 import threading
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
 
 import mesh_membership as membership
 import mesh_model as model
