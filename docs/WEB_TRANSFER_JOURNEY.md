@@ -69,3 +69,52 @@ Existing integration coverage: `tests/test_portal.py`,
 `tests/test_portal_guest_ux.py`. Visual and touch qualification at
 320/768/1440 px, two-phone reconnect and real mesh route reporting remain
 open in #570/#569. Do not mark those tickets completed on this UI slice alone.
+
+
+## Guest upload smoke (P0 #586)
+
+The fast test exercises the actual HTTP listener, open join, browser-compatible
+build/CSRF headers, chunk upload, an injected storage error, status/resume,
+exact staged SHA-256, forced audio queueing and idempotent completion. It
+stubs the media probe only to keep the transport check independent of the
+machine's codec installation. It is included in the manual Verify workflow.
+
+```sh
+python3 -m pytest -q tests/test_portal_guest_upload_smoke.py
+```
+
+For the real-browser qualification, install the optional test-only Playwright
+package and its Chromium runtime into the development environment (FFmpeg and
+FFprobe must also be installed). The following runs the actual served page,
+mobile-width viewport, open join, native browser file selection, XHR transfer,
+automatic retry, real audio validation, queue and video-playback requests,
+and exact stored-byte checks. Desktop dispatch is a recording fake: no actual
+receiver or GTK session is started.
+
+```sh
+python3 -m pip install playwright
+python3 -m playwright install chromium
+SMOOTHCAST_BROWSER_SMOKE=1 python3 -m pytest -q tests/test_portal_guest_upload_smoke.py
+```
+
+The browser test is deliberately skipped unless explicitly opted in; a missing
+browser or FFmpeg dependency fails the opted-in test rather than silently
+passing. Neither test needs a router, mDNS, UPnP, a TV, external network
+access, or personal files. Actual TV playback and another device's access to
+the running host remain separate acceptance checks.
+
+### LAN diagnosis (no UPnP router mapping)
+
+* If the guest cannot open the room, use the host's numeric private LAN URL
+  (including the advertised port), check same-network Wi-Fi, guest/AP/client
+  isolation, VPN routing, and host firewall rules for the LAN listener.
+* If the page opens but a transfer fails, inspect Live transfer monitor:
+  HTTP status, current operation, last host-confirmed offset, elapsed time,
+  and newest-first events. Check storage capacity and permissions. Browser
+  bytes sent do not prove that the host has durably received them.
+* If upload completes but playback does not, distinguish queue admission,
+  cast dispatch and receiver confirmation. Check receiver selection and
+  host-to-receiver/media-stream reachability; UPnP/DLNA SSDP discovery can
+  matter to renderer discovery, not the HTTP upload.
+* Never open internet-facing router ports automatically. See the authoritative
+  LAN trust boundary in docs/VISION.md.
