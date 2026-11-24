@@ -54,7 +54,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                                          status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
                                          pin_required=bool(self.cfg.get("house_pin_enabled", False)),
-                                         preferred_port=int(self.cfg.get("portal_port", 0)))
+                                         preferred_port=int(self.cfg.get("portal_port", 0)),
+                                         link_sources=tuple(kind for kind in ("youtube", "magnet")
+                                                            if self.cfg.get("portal_link_" + kind) is True))
         except (OSError, portal.PortalError):
             self._portal = None
             self._portal_ip = None
