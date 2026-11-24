@@ -292,6 +292,8 @@ def test_comment_ledger_paginates_and_detects_live_successor(monkeypatch):
 
     def fake_gh(*args):
         requested.append(args[0])
+        if "/issues/comments?" in args[0]:
+            return []  # Complete global feed; rival is in issue page 2.
         if args[0].endswith("/comments?per_page=100"):
             return earlier
         if args[0].endswith("/comments?per_page=100&page=2"):
@@ -302,8 +304,9 @@ def test_comment_ledger_paginates_and_detects_live_successor(monkeypatch):
     monkeypatch.setattr(agent, "agent_id", lambda: "ours")
     monkeypatch.setattr(agent, "utcnow", lambda: NOW)
     assert not agent.ensure_live_task_claim({"issue": 584, "files": ["src/a.py"]})
-    assert len(requested) == 2
+    assert len(requested) == 3  # Two issue pages and one global scan.
     assert any("page=2" in path for path in requested)
+    assert any("/issues/comments?" in path for path in requested)
 
 
 def test_comment_ledger_refuses_truncated_or_unavailable_history(monkeypatch):
