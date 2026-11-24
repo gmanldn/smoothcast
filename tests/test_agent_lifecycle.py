@@ -433,6 +433,73 @@ def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tm
     assert "pending_push" not in (admin / "sc-agent-task.json").read_text()
 
 
+def test_write_ahead_receipt_survives_process_death_during_push(monkeypatch, tmp_path):
+    import json
+    import pytest
+
+    _, _seed, worker = seed_git(tmp_path)
+    commit(worker, "crash.txt", "delivered despite process death\n")
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    handovers = []
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args:
+                        handovers.append(args) or True)
+    real_run = subprocess.run
+    sha = run(worker, "rev-parse", "HEAD")
+    admin = Path(run(worker, "rev-parse", "--absolute-git-dir"))
+    journal = admin / "sc-agent-task.json"
+    pushes = []
+
+    def interrupted(command, **kwargs):
+        if command[:2] == ["git", "push"]:
+            pushes.append(1)
+            assert json.loads(journal.read_text())["pending_push"]["sha"] == sha
+            result = real_run(command, **kwargs)
+            assert result.returncode == 0
+            raise KeyboardInterrupt
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(agent.subprocess, "run", interrupted)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    with pytest.raises(KeyboardInterrupt):
+        agent.cmd_ship(args)
+    assert handovers == []
+
+    # Reconstruct memory from disk as a fresh agent process would.
+    task = json.loads(journal.read_text())
+    monkeypatch.setattr(agent.subprocess, "run", real_run)
+    assert agent.cmd_ship(args) == 0
+    assert len(pushes) == 1
+    assert [item[1] for item in handovers] == [sha]
+    assert "pending_push" not in json.loads(journal.read_text())
+    assert "pending_handover" not in json.loads(journal.read_text())
+
+
+def test_ship_does_not_push_when_write_ahead_journal_cannot_be_saved(monkeypatch, tmp_path):
+    _, _seed, worker = seed_git(tmp_path)
+    commit(worker, "unsent.txt", "preserve unpublished work\n")
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: False)
+    real_run = subprocess.run
+
+    def no_push(command, **kwargs):
+        assert command[:2] != ["git", "push"]
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(agent.subprocess, "run", no_push)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 5
+    assert run(worker, "rev-parse", "HEAD") != run(worker, "rev-parse", "origin/develop")
+    assert (worker / "unsent.txt").read_text() == "preserve unpublished work\n"
+
+
 def test_failed_push_and_failed_fetch_retries_unpublished_code(monkeypatch, tmp_path):
     """Never publish a handover for an SHA the remote does not contain."""
     _, _seed, worker = seed_git(tmp_path)
