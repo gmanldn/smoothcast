@@ -114,6 +114,15 @@ def main(argv: list[str] | None = None) -> int:
     if target is not None and not portable:
         installed = _installed_root(target)
         if installed is not None and installed != ROOT.resolve():
+            if not _headless(args):
+                import checkout_refresh
+
+                code = checkout_refresh.refresh(
+                    ROOT, installed, target,
+                    lambda: launch.gui_instances(all_installations=True),
+                )
+                if code:
+                    return code
             return _launch_installed(installed, args)
     if _headless(args):
         return launch.main(args)

@@ -24,6 +24,9 @@ def entry(monkeypatch):
     runtime.runtime_ready.return_value = True
     runtime.main.return_value = 0
     monkeypatch.setitem(sys.modules, "launch", runtime)
+    refresher = mock.Mock()
+    refresher.refresh.return_value = 0
+    monkeypatch.setitem(sys.modules, "checkout_refresh", refresher)
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
     monkeypatch.setattr(module, "_target", lambda: "linux")
@@ -157,3 +160,21 @@ def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch
     locations.default_directory.return_value = default
     monkeypatch.setitem(sys.modules, "install_location", locations)
     assert actual._installed_root("linux") == (tmp_path / expected if expected else None)
+
+
+def test_stale_install_refresh_failure_prevents_handoff(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = tmp_path
+    refresher = sys.modules["checkout_refresh"]
+    refresher.refresh.return_value = 3
+    assert module.main([]) == 3
+    refresher.refresh.assert_called_once()
+    module._launch_installed.assert_not_called()
+    runtime.main.assert_not_called()
+
+
+def test_version_query_never_refreshes_installed_files(entry, tmp_path):
+    module, _runtime = entry
+    module._installed_root.return_value = tmp_path
+    assert module.main(["--version"]) == 0
+    sys.modules["checkout_refresh"].refresh.assert_not_called()
