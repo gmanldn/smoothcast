@@ -3418,11 +3418,9 @@ function syncMediaSession(s){
 // of the room and moves keyboard/screen-reader focus there; the now-playing pill
 // mirrors the playback card so the current item is visible from any section.
 (()=>{
-  const home=document.getElementById("homeButton"),top=document.getElementById("roomTop");
-  const pill=document.getElementById("barNow"),pillTitle=document.getElementById("barNowTitle");
-  const title=document.getElementById("title"),state=document.getElementById("state");
-  const dash=document.getElementById("dashboard");
-  if(!home||!top||!pill||!title||!state||!dash)return;
+  const home=$("homeButton"),top=$("roomTop"),pill=$("barNow"),pillTitle=$("barNowTitle");
+  const title=$("title"),state=$("state"),dash=$("dashboard");
+  if(!home||!top||!pill||!pillTitle||!title||!state||!dash||!home.addEventListener)return;
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   home.addEventListener("click",event=>{
     event.preventDefault();
