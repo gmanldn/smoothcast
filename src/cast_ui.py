@@ -140,6 +140,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         section.append("Play locally", "app.play-locally")
         section.append("Add videos to queue…", "app.add-files")
         section.append("Find in the house…", "app.find-house")
+        section.append("Add from YouTube…", "app.add-youtube")
         section.append("Open URL…", "app.open-url")
         recents = Gio.Menu()
         for index, path in enumerate(self.cfg["recents"][:8]):

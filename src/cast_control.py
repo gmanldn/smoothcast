@@ -308,6 +308,7 @@ class CastControlApp(Adw.Application):
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("report-problem", lambda *a: self._window().action_report_problem())
         simple("open-url", lambda *a: self._window()._open_url())
+        simple("add-youtube", lambda *a: self._window()._add_youtube())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("benchmark", lambda *a: self._window().action_benchmark())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
