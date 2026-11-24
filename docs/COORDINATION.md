@@ -31,10 +31,13 @@ python3 scripts/agent.py prune                 # delete merged, clean worktrees 
 directory (`$SC_WORKTREE_POOL`, else `$XDG_DATA_HOME/smoothcast/worktrees`, else
 `~/.local/share/smoothcast/worktrees`), never beside the checkout: a worktree
 per ticket must not bury the project directory under dozens of siblings.
-`prune` removes only worktrees whose HEAD is already merged into
-`origin/develop` and whose working tree is clean; unmerged, dirty, currently
-leased, and the caller's own worktree are always preserved. Run it after
-finishing tickets to keep the pool small.
+`prune` removes only `smoothcast-issue-<n>-*` worktrees whose HEAD is already
+merged into `origin/develop` and whose working tree is clean. It never deletes
+the shared checkout, a worktree inside it, Kilo/Claude/manual worktrees,
+unmerged or dirty trees, a live lease, or the caller's own worktree. Run it
+after finishing tickets. Long-lived branches are `develop` (all agent code)
+and `main` (owner promotion only). Do not create feature branches or agent PRs;
+delete a local branch only after it is fully merged into `develop`.
 
 ## Recovery and exit statuses
 

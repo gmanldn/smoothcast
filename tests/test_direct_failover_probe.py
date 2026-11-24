@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import audio_delay
 import direct_probe
+import idle_slate
 import playback_state
 import queue_metadata
 import reliability_metrics
@@ -125,6 +126,7 @@ def cast_worker(status="rejected", *, path="/film.mp4", cfg_extra=None):
     probe = mock.Mock(return_value=status)
     namespace = {
         "playback_state": playback_state,
+        "idle_slate": idle_slate,
         "watch_history": watch_history,
         "queue_metadata": queue_metadata,
         "reliability_metrics": reliability_metrics,

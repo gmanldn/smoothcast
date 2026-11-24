@@ -379,6 +379,16 @@ class PyChromecastBackend:
         elif cast_status is not None:
             status["player_state"] = "IDLE"
         if cast_status is not None:
+            # Receiver-level facts let callers prove the TV is on its backdrop
+            # before showing anything unprompted (#420); absent means unknown.
+            if hasattr(cast_status, "app_id"):
+                status["app_id"] = cast_status.app_id
+            stand_by = getattr(cast_status, "is_stand_by", None)
+            if isinstance(stand_by, bool):
+                status["is_stand_by"] = stand_by
+            active_input = getattr(cast_status, "is_active_input", None)
+            if isinstance(active_input, bool):
+                status["is_active_input"] = active_input
             level = getattr(cast_status, "volume_level", None)
             muted = getattr(cast_status, "volume_muted", None)
             if level is not None:
