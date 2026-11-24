@@ -72,41 +72,58 @@ async function tip(api){
   return h.object.sha;
 }
 
-async function treeEntry(api,root,path){
-  const parts=path.split("/");let tree=root;
-  for(let i=0;i<parts.length;i++){
-    const t=await api.get("/git/trees/"+tree);
-    check(t.sha===tree&&t.truncated===false&&Array.isArray(t.tree),"incomplete tree");
-    const x=t.tree.find(e=>e.path===parts[i]);
-    if(!x)return null;
-    if(i===parts.length-1)return x;
-    check(x.type==="tree"&&isSha(x.sha),"not a directory");tree=x.sha;
+async function treeSnapshot(api,root){
+  const t=await api.get("/git/trees/"+root+"?recursive=1");
+  check(t.sha===root&&t.truncated===false&&Array.isArray(t.tree),"incomplete tree");
+  const entries=new Map();
+  for(const e of t.tree){
+    check(typeof e.path==="string"&&e.path&&!entries.has(e.path)&&isSha(e.sha),"invalid tree entry");
+    check(["blob","tree","commit"].includes(e.type)&&typeof e.mode==="string","invalid tree entry type/mode");
+    entries.set(e.path,e);
+  }
+  return entries;
+}
+
+function verifyTreeDelta(before,after,changes){
+  // Directory IDs naturally change with their contents. Compare all leaf
+  // identities, including symlinks and submodules, not a paginated diff.
+  const leaves=map=>new Map([...map].filter(([,e])=>e.type!=="tree"));
+  const a=leaves(before), b=leaves(after), changed=[];
+  for(const path of new Set([...a.keys(),...b.keys()])){
+    const x=a.get(path), y=b.get(path);
+    if(x?.sha!==y?.sha||x?.type!==y?.type||x?.mode!==y?.mode)changed.push(path);
+  }
+  check(JSON.stringify(changed.sort())===JSON.stringify(changes.map(x=>x.path).sort()),"unexpected candidate tree changes");
+  for(const x of changes){
+    const e=b.get(x.path);
+    check(e?.type==="blob"&&e.mode==="100644","candidate missing or invalid mode: "+x.path);
   }
 }
 
 async function checkBase(api,p){
   const b=await api.get("/git/commits/"+p.base);
   check(b.sha===p.base&&isSha(b.tree?.sha),"invalid base");
-  const v=await treeEntry(api,b.tree.sha,"src/version.py");
+  const entries=await treeSnapshot(api,b.tree.sha);
+  const v=entries.get("src/version.py");
   check(v?.sha===p.versionBlob&&v.mode==="100644","version does not match offline AST proof");
   for(const c of p.changes){
-    const x=await treeEntry(api,b.tree.sha,c.path);
+    const x=entries.get(c.path)??null;
     check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
   }
-  return b.tree.sha;
+  return {sha:b.tree.sha,entries};
 }
 
 async function verifyCandidate(api,p,candidate){
   check(isSha(candidate),"invalid candidate");
-  await checkBase(api,p);
+  const before=await checkBase(api,p);
   const c=await api.get("/git/commits/"+candidate);
   check(c.sha===candidate&&isSha(c.tree?.sha)&&c.parents?.length===1&&c.parents[0].sha===p.base,"candidate parent/tree mismatch");
-  const v=await treeEntry(api,c.tree.sha,"src/version.py");
+  const after=await treeSnapshot(api,c.tree.sha);
+  const v=after.get("src/version.py");
   check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
-  const diff=await api.get("/compare/"+p.base+"..."+candidate);
-  check(diff.ahead_by===1&&diff.behind_by===0&&Array.isArray(diff.files)&&JSON.stringify(diff.files.map(f=>f.filename).sort())===JSON.stringify(p.changes.map(x=>x.path).sort()),"unexpected candidate changes");
+  verifyTreeDelta(before.entries,after,p.changes);
   for(const x of p.changes){
-    const t=await treeEntry(api,c.tree.sha,x.path), file=await api.file(candidate,x.path);
+    const t=after.get(x.path), file=await api.file(candidate,x.path);
     check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content,"candidate content/mode mismatch: "+x.path);
   }
 }
@@ -127,7 +144,7 @@ async function prepare(api,p){
   }
   check(await tip(api)===p.base,"stale base");
   const baseTree=await checkBase(api,p);
-  const tree=await api.tree(baseTree,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
+  const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
   const candidate=await api.commit(tree,p.base,p.message+" (Refs #"+p.issue+")");
   await verifyCandidate(api,p,candidate);
@@ -174,4 +191,4 @@ function connectorAdapter(tools){
   };
 }
 
-export {validate,leaseCheck,pages,prepare,ship,connectorAdapter};
+export {validate,leaseCheck,pages,prepare,ship,connectorAdapter,treeSnapshot,verifyTreeDelta};
