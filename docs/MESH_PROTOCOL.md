@@ -49,3 +49,39 @@ Add fields, never repurpose them; unknown fields must be ignored and preserved
 when re-serving. Gate new behaviour on a capability name (e.g. `search.v1`) in
 `/mesh/library/generation`, and bump the epoch rather than changing the meaning
 of an existing row. Version negotiation across the wider mesh is tracked in #387.
+
+
+## Acquisition observations (mesh.acquisition.telemetry.v1)
+
+Read-only cross-node progress, independent of the v1 record digest and queue
+authority (#589). A node advertises the **acquisition-telemetry-v1** discovery
+hint; this is not permission to submit, cancel or fetch media. The separate
+protected `acquisition_status` RPC exchanges bounded hello objects and requires
+both peers to negotiate `mesh.acquisition.telemetry.v1`. The responder checks
+the requester's current membership, source IP, node and boot IDs, intended
+recipient node and boot, and the per-peer capability kill switch. This is
+the existing trusted-LAN transport, **not** cryptographic authentication;
+remote mutations must use stronger explicit peer authorisation.
+
+A reply carries the responder's node/boot IDs, hello, and at most four active
+jobs, each with an opaque job ID, source kind, stage, received bytes, total
+bytes and measured rate (null when unknown). No titles, source URLs, infohashes,
+filesystem paths, session tokens, peer IPs or external-tool messages are sent.
+No job control or content transfer is exposed by this RPC.
+
+Polling is bounded to two in-flight requests across the node, with a
+one-second scheduler, two-second successful refresh interval and five-second
+failure backoff. Responses must match the current peer endpoint and boot.
+A failed or more than 12-second-old observation is stale, not counted as live;
+last measurements are retained for at most 40 seconds. Departures, boot
+changes, endpoint changes and disabled capabilities discard old observations.
+The authenticated room status/SSE includes the separate `mesh_link_activity`
+field with per-node freshness, at most 32 displayed jobs, and an explicit
+omission count. An unavailable observation is never treated as an empty
+successful report. Legacy peers remain compatible without this capability.
+
+Headless real loopback verification is in
+`tests/test_mesh_acquisition_activity.py`. Remote worker assignment, persistent
+job fencing, remote cancellation and verified file delivery remain separate
+work on #589; telemetry alone does not establish that a remote download can be
+assigned or that a file is playable.
