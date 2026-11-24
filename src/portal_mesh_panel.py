@@ -26,6 +26,9 @@ _PANEL = r"""
 #meshPanel .mesh-metric span{font-size:.76rem;color:var(--muted)}
 #meshPanel .mesh-room{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
 #meshPanel .mesh-room strong,#meshPanel .mesh-room p{overflow-wrap:anywhere;margin:.3rem 0}
+#meshPanel .mesh-stream{display:grid;gap:4px;padding:9px 0;border-top:1px solid var(--line)}
+#meshPanel .mesh-stream strong{font-size:.88rem}#meshPanel .mesh-stream span{font-size:.76rem}#meshPanel .mesh-stream progress{height:6px;width:100%}
+#meshPanel .mesh-columns .why{color:var(--muted)}
 #meshPanel .mesh-columns{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
 #meshPanel .mesh-columns>div{min-width:0}
 #meshPanel .mesh-columns .t{white-space:normal;overflow-wrap:anywhere}
@@ -63,6 +66,7 @@ _PANEL = r"""
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
 <p id="meshRoomQueue" class="muted">Waiting for queue status</p><p id="meshRoomStreams" class="muted">Waiting for network activity</p>
+<ul id="meshStreamList" aria-label="Reported live receiver streams"></ul>
 <div class="mesh-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Up Next</a><a href="#uploadCard">Transfer files</a><a href="#networkActivity">Receiver activity</a></div>
 </div>
 <div class="mesh-columns"><div><h3>Nodes · version and capability</h3><ul id="meshNodes" aria-label="Mesh nodes"></ul></div>
@@ -103,6 +107,30 @@ _PANEL = r"""
     put("meshRoomQueue",queued===null?"Queue status unavailable":plural(queued,"waiting item")+(state.busy?" · Playback command pending":""));
     const streams=Array.isArray(state.network_activity)?state.network_activity.length:null;
     put("meshRoomStreams",streams===null?"Receiver activity unavailable":plural(streams,"reported active receiver stream"));
+    const streamList=$("meshStreamList");
+    if(streamList&&typeof streamList.replaceChildren==="function"){
+      const observed=Array.isArray(state.network_activity)?state.network_activity.slice(0,64):[];
+      const signature=JSON.stringify(observed.map(item=>[item.receiver,item.title,item.protocol,item.state,item.position,item.duration,item.is_local]));
+      if(streamList.dataset.sig!==signature){
+        streamList.dataset.sig=signature;
+        const timing=value=>Number.isFinite(value)&&value>=0?Math.floor(value/60)+":"+String(Math.floor(value%60)).padStart(2,"0"):"";
+        const rows=observed.map(item=>{
+          const row=document.createElement("li");row.className="mesh-stream";
+          const title=document.createElement("strong");title.textContent=item.title||"Media title unavailable";
+          const detail=document.createElement("span");detail.className="muted";
+          detail.textContent=[item.receiver||"Unknown receiver",item.protocol,item.state||"State unavailable",item.is_local?"This host":""].filter(Boolean).join(" · ");
+          row.append(title,detail);
+          if(Number.isFinite(item.duration)&&item.duration>0&&Number.isFinite(item.position)&&item.position>=0){
+            const progress=document.createElement("progress");progress.max=item.duration;progress.value=Math.min(item.position,item.duration);
+            progress.setAttribute("aria-label","Reported playback position");
+            const time=document.createElement("span");time.className="muted";time.textContent=timing(item.position)+" / "+timing(item.duration);
+            row.append(progress,time);
+          }
+          return row;
+        });
+        streamList.replaceChildren(...rows);
+      }
+    }
   };
   function model(){
     const list=[...nodes.values()].sort((a,b)=>(a.node_id===local?-1:b.node_id===local?1:a.name.localeCompare(b.name)||a.node_id.localeCompare(b.node_id)));
