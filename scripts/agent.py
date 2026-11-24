@@ -922,6 +922,55 @@ def persist_private_task(task: dict) -> bool:
         return False
 
 
+def shipment_verification(skip_checks: bool, checks_run: list[str],
+                          unverified_checks: list[str]) -> str:
+    """Stable evidence for a pushed SHA, including an uncertain push result."""
+    detail = ("not run (unverified)" if skip_checks else
+              (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
+    if unverified_checks:
+        detail += "; unverified tools: " + ", ".join(sorted(set(unverified_checks)))
+    return detail
+
+
+def recover_uncertain_push(task: dict) -> bool:
+    """Fence a lost push acknowledgement before rebase or another shipment.
+
+    If the remote contains the exact SHA, convert the durable private receipt
+    into a replayable GitHub handover. If it does not, preserve the unpublished
+    work and resume the ordinary non-force push path. Git errors fail closed.
+    """
+    pending = task.get("pending_push")
+    if pending is None:
+        return True
+    if not isinstance(pending, dict):
+        print("invalid pending push receipt; manual review required")
+        return False
+    sha = pending.get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[a-fA-F0-9]{40,64}", sha):
+        print("invalid pending push SHA; manual review required")
+        return False
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, "origin/develop"],
+        cwd=ROOT, capture_output=True,
+    )
+    if ancestry.returncode not in (0, 1):
+        print("cannot establish remote ancestry for uncertain push; retry later")
+        return False
+    newer = dict(task)
+    newer.pop("pending_push", None)
+    if ancestry.returncode == 0:
+        newer["pending_handover"] = pending
+    if not persist_private_task(newer):
+        return False
+    task.clear()
+    task.update(newer)
+    if ancestry.returncode == 0:
+        print(f"remote contains previously uncertain SHA {sha[:12]}; replaying handover")
+    else:
+        print(f"remote does not contain uncertain SHA {sha[:12]}; retrying unpublished code")
+    return True
+
+
 def recover_pending_handover(task: dict) -> bool:
     """Retry a previously pushed SHA, never describe an unpublished SHA as shipped."""
     pending = task.get("pending_handover")
@@ -988,6 +1037,9 @@ def cmd_ship(a: argparse.Namespace) -> int:
     for attempt in range(1, 6):
         git("fetch", "-q", "origin", "develop")
         remote_before = git("rev-parse", "origin/develop").strip()
+        if task is not None and not recover_uncertain_push(task):
+            print("push outcome remains uncertain; worktree preserved")
+            return 5
         if task is not None and not recover_pending_handover(task):
             print("previous pushed slice has an unrecorded handover; retry later")
             return 7
@@ -1128,7 +1180,26 @@ def cmd_ship(a: argparse.Namespace) -> int:
             fetch = subprocess.run(["git", "fetch", "-q", "origin", "develop"],
                                    cwd=ROOT, capture_output=True, text=True)
             if fetch.returncode:
-                print("push outcome uncertain; remote fetch failed. Do not reset or retry blindly.")
+                # The push may actually have landed. Persist an explicit
+                # uncertain-outcome receipt BEFORE returning: without it a
+                # later rebase can yield 'nothing to ship' and lose the
+                # corresponding GitHub handover entirely.
+                print(f"push outcome uncertain for {sha[:12]}; remote fetch failed.")
+                if task is not None:
+                    pending = {
+                        "sha": sha, "files": changed,
+                        "verification": shipment_verification(
+                            a.skip_checks, checks_run, unverified_checks),
+                        "next": a.next,
+                    }
+                    newer = dict(task, pending_push=pending)
+                    if persist_private_task(newer):
+                        task.update(newer)
+                        print("uncertain push saved; rerun 'agent.py ship' to verify "
+                              "remote ancestry and complete its handover")
+                    else:
+                        print(f"CRITICAL: could not save uncertain SHA {sha}; "
+                              "record this commit and verify remote before retrying")
                 print((push.stderr + fetch.stderr)[-700:])
                 return 5
             remote_now = git("rev-parse", "origin/develop").strip()
@@ -1141,10 +1212,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 print(f"remote advanced; safely retrying [{attempt}/5]")
                 continue
             print("remote contains the commit: treating failed push acknowledgement as success")
-        verification = ("not run (unverified)" if a.skip_checks else
-                        (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
-        if unverified_checks:
-            verification += "; unverified tools: " + ", ".join(sorted(set(unverified_checks)))
+        verification = shipment_verification(a.skip_checks, checks_run, unverified_checks)
         handover_recorded = True
         if task is not None:
             # Persist before a possibly failing GitHub comment request. On a
@@ -1256,6 +1324,12 @@ def cmd_finish(a: argparse.Namespace) -> int:
         print("uncommitted tracked work; ship before finishing")
         return 2
     git("fetch", "-q", "origin", "develop")
+    # A lost push acknowledgement may also have lost its follow-up fetch.
+    # Resolve that exact SHA before completion; never release an unrecorded
+    # delivery or treat the remote's new HEAD as sufficient evidence.
+    if not recover_uncertain_push(task):
+        print("finish blocked by uncertain push; rerun 'agent.py ship'")
+        return 5
     # A prior push may have landed before GitHub accepted its delivery
     # evidence. Never release the claim or close the ticket while the
     # durable local receipt is still pending.
