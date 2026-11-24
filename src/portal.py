@@ -1090,10 +1090,12 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         path = self._path()
-        if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel"}
+        if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+                     "/api/search/youtube"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
-        if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel"}
+        if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
+                     "/api/search/youtube"}
                 or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
@@ -1203,6 +1205,17 @@ class _Handler(BaseHTTPRequestHandler):
                 "room": self.server.room.snapshot(participant.id),
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path == "/api/search/youtube":
+            if not self._authenticated(csrf=True):
+                return self._error(403, "Session expired or request token invalid")
+            jobs = self.server.link_jobs
+            if jobs is None:
+                return self._error(503, "Ask the host to enable an isolated YouTube worker.")
+            owner = self.server._session_key(self._cookie_token() or "")
+            try:
+                return self._send(200, {"results": jobs.search_youtube(owner, body.get("q"))})
+            except link_acquisition.LinkError as exc:
+                return self._error(exc.status, exc.message)
         if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
@@ -1780,11 +1793,16 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 </section>
 <section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
-<label for="findInput">Search films, shows and music</label><input id="findInput" type="search" placeholder="Search the house" autocomplete="off" maxlength="200">
+<label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
+<div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
+<p id="youtubeAvailability" class="field-hint">YouTube search needs an enabled isolated host worker.</p>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
-<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="Search results"></div>
+<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
+<section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
+<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to acquire the selected media.</span></label>
+<ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
 <details id="libraries" class="help"><summary>Browse libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details>
-<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds media advertised by SmoothCast hosts on your network. <strong>Available now</strong> limits results to items that can currently be reached; an unavailable host may return later.</p><p>Use the result's action to play or add it to Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds media advertised by SmoothCast hosts on your network. <strong>Available now</strong> limits results to items that can currently be reached; an unavailable host may return later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are acquired and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
 </section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
@@ -2207,8 +2225,13 @@ function showJoinedRoom(){
   if(entering)$("playbackHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
-let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="";
+let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
 function updateLinkControls(){
+  const search=$("youtubeSearch"),availability=$("youtubeAvailability");
+  if(search&&availability){
+    search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
+    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask the host to enable an isolated YouTube worker.";
+  }
   const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return;
@@ -3250,6 +3273,57 @@ function syncMediaSession(s){
   async function showAll(){try{showOrigins(await getJSON("/api/libraries"))}catch(err){body.textContent=err.message}}
   lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded){libLoaded=true;showAll()}});
   input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+})();
+(()=>{
+  const input=$("findInput"),search=$("youtubeSearch"),panel=$("youtubeResultsPanel"),
+    status=$("youtubeSearchStatus"),out=$("youtubeResults"),consent=$("youtubeAuthorised");
+  if(!input||!search||!panel||!status||!out||!consent)return;
+  let generation=0;
+  input.addEventListener("input",()=>{
+    generation++;panel.hidden=true;out.replaceChildren();consent.checked=false;
+  });
+  search.addEventListener("click",async()=>{
+    const q=input.value.trim();
+    if(youtubeSearchBusy||!linkCapabilities.youtube)return;
+    panel.hidden=false;out.replaceChildren();consent.checked=false;
+    if(!q){status.textContent="Type something to search on YouTube.";input.focus();return}
+    const current=++generation;
+    youtubeSearchBusy=true;updateLinkControls();status.textContent="Searching YouTube…";
+    try{
+      const response=await post("/api/search/youtube",{q});
+      if(current!==generation)return;
+      const results=Array.isArray(response.results)?response.results.slice(0,10):[];
+      for(const result of results){
+        if(!result||typeof result.id!=="string"||!/^[A-Za-z0-9_-]{11}$/.test(result.id))continue;
+        const row=document.createElement("li");row.className="queue-item";
+        const info=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+        title.textContent=result.title||"YouTube video";meta.className="muted";
+        meta.textContent=[result.channel,Number.isFinite(result.duration)&&result.duration>0?clock(result.duration):""].filter(Boolean).join(" · ");
+        info.append(title,meta);
+        const actions=document.createElement("div");actions.className="queue-actions";
+        const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
+        add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
+        const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+        add.addEventListener("click",async()=>{
+          if(!linkCapabilities.youtube){status.textContent="The host's YouTube worker is unavailable.";return}
+          if(!consent.checked){status.textContent="Confirm that you are authorised to acquire this media.";consent.focus();return}
+          add.disabled=true;add.textContent="Submitting…";
+          try{
+            const receipt=await post("/api/link-jobs",{url:"https://www.youtube.com/watch?v="+result.id,request_id,authorised:true});
+            add.textContent="Acquisition requested";
+            if(current===generation)status.textContent=receipt.message||"Acquisition accepted; follow its progress below.";
+            void refresh();
+          }catch(err){
+            if(current===generation)status.textContent=err.message;
+            add.disabled=false;add.textContent="Retry add to Up Next";
+          }
+        });
+        actions.append(add);row.append(info,actions);out.append(row);
+      }
+      status.textContent=out.children.length?out.children.length+" YouTube results. Select a video to acquire.":"No YouTube videos found.";
+    }catch(err){if(current===generation)status.textContent=err.message}
+    finally{youtubeSearchBusy=false;updateLinkControls()}
+  });
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())
