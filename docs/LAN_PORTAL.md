@@ -211,11 +211,18 @@ Available workers advertise `acquire-youtube-local` and/or
 `acquire-magnet-local` in existing mesh node capabilities. These mean the
 node can run the indicated local provider, not that it accepts remote jobs.
 
-**Remaining work:** authenticated remote assignment, mesh-wide job telemetry
-and verified node-to-node delivery,
-restart-safe leases/resume, owner settings and worker provisioning. Follow
-[#587](https://github.com/gmanldn/smoothcast/issues/587). Do not interpret the
-room-local live view as proof of remote execution.
+Other compatible hosts also report their active acquisition jobs in Live Mesh.
+Peer observations use the separate negotiated read-only telemetry protocol
+([Mesh protocol](MESH_PROTOCOL.md#acquisition-observations-meshacquisitiontelemetryv1));
+unknown or stale progress is explicitly labelled. This is observation of
+jobs initiated in each room, not remote assignment.
+
+**Remaining work:** authenticated remote assignment and verified node-to-node
+delivery, restart-safe leases/resume, secure worker provisioning. Follow
+[#587](https://github.com/gmanldn/smoothcast/issues/587),
+[#588](https://github.com/gmanldn/smoothcast/issues/588),
+[#589](https://github.com/gmanldn/smoothcast/issues/589) and
+[#590](https://github.com/gmanldn/smoothcast/issues/590).
 
 ## Recovering a room queue
 
