@@ -271,7 +271,7 @@ def _tree_bytes(root: Path) -> int:
 def _safe_media(root: Path, path: Path) -> Path:
     try:
         info = path.lstat()
-        if (not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_BYTES
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= MAX_BYTES
                 or not path.resolve().is_relative_to(root.resolve())
                 or path.suffix.lower() not in MEDIA_SUFFIXES):
             raise ValueError
@@ -453,6 +453,7 @@ class LinkJobs:
         self.owner_active = owner_active
         self._lock = threading.RLock()
         self._jobs: OrderedDict[str, _Job] = OrderedDict()
+        self._requests: OrderedDict[tuple[str, str], str] = OrderedDict()
         self._worker: threading.Thread | None = None
         self._closed = False
         self._revision = 0
@@ -471,12 +472,16 @@ class LinkJobs:
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
-            for job in self._jobs.values():
-                if job.owner == owner and job.request == request:
+            receipt = self._requests.get((owner, request))
+            if receipt is not None:
+                job = self._jobs.get(receipt)
+                if job is not None:
                     if job.source != source:
                         raise LinkError(409, "Submission identifier was already used for another link.")
                     return job.id
+            for job in self._jobs.values():
                 if job.source == source and job.stage not in {"failed", "cancelled"}:
+                    self._remember_request(owner, request, job.id)
                     return job.id
             if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
                 raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
@@ -485,13 +490,26 @@ class LinkJobs:
                 if expired is None:
                     raise LinkError(429, "The room acquisition queue is full.")
                 self._jobs.pop(expired.id)
+                for key, value in tuple(self._requests.items()):
+                    if value == expired.id:
+                        self._requests.pop(key)
             job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
             self._jobs[job.id] = job
+            self._remember_request(owner, request, job.id)
             self._revision += 1
             if self._worker is None:
                 self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
                 self._worker.start()
             return job.id
+
+    def _remember_request(self, owner, request, job_id):
+        # Keep bounded replay aliases even when another guest originally
+        # submitted the canonical source.
+        key = (owner, request)
+        self._requests[key] = job_id
+        self._requests.move_to_end(key)
+        while len(self._requests) > 256:
+            self._requests.popitem(last=False)
 
     def _change(self, job, **values):
         with self._lock:
@@ -537,15 +555,19 @@ class LinkJobs:
                 path = self.provider.acquire(job.source, directory, stage,
                                              lambda n, total: self._progress(job, n, total), cancelled)
                 path = _safe_media(directory, Path(path))
-                if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                # Crossing the queue-delivery boundary and accepting cancel
+                # are mutually exclusive. The queue authority checks the
+                # owner's live session again when it receives the request.
+                with self._lock:
+                    if cancelled() or self._closed:
+                        raise LinkError(409, "Acquisition cancelled.")
+                    title = "".join(c for c in path.name if c.isprintable())[:120]
+                    title = title.replace(job.source.identity, "[source]") or job.source.label
+                    self._change(job, stage="queueing", title=title,
+                                 received=path.stat().st_size, total=path.stat().st_size, rate=None)
+                    delivered = True
                 # Keep the file if a dispatch may have happened. A lost
                 # response must not remove media already in the queue.
-                title = "".join(c for c in path.name if c.isprintable())[:120]
-                title = title.replace(job.source.identity, "[source]") or job.source.label
-                self._change(job, stage="queueing", title=title,
-                             received=path.stat().st_size, total=path.stat().st_size, rate=None)
-                delivered = True
                 self.deliver(job.owner, path)
                 self._change(job, stage="ready")
             except LinkError as exc:
