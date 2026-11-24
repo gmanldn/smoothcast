@@ -91,7 +91,7 @@ class PreferenceChoiceTests(unittest.TestCase):
             self.assertIn(item, package)
 
     def test_settings_are_searchable_and_reuse_original_handlers(self):
-        ui = source("preferences_ui.py")
+        ui = source("preferences_ui.py") + source("preferences_tracks_ui.py")
         for snippet in (
             "Adw.PreferencesWindow",
             "self.set_search_enabled(True)",

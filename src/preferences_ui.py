@@ -6,17 +6,18 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 import join_slate_ui
 import library_folders_ui
 import preference_choices
 import picture_adjustments
 from preferences_picture_ui import PicturePreferencesMixin
+from preferences_tracks_ui import TrackPreferencesMixin
 from cast_widgets import save_config
 
 
-class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
+class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.PreferencesWindow):
     def __init__(self, owner) -> None:
         super().__init__(transient_for=owner, modal=True)
         self.owner = owner
@@ -32,17 +33,6 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
         self._build()
         self.library_page = library_folders_ui.LibraryFoldersPage(self)
         self.sync_from_owner()
-
-    def _page(self, title: str, icon: str):
-        page = Adw.PreferencesPage(title=title, icon_name=icon)
-        self.add(page)
-        return page
-
-    @staticmethod
-    def _group(page, title: str, description: str):
-        group = Adw.PreferencesGroup(title=title, description=description)
-        page.add(group)
-        return group
 
     def _choice(self, group, key: str, title: str, help_text: str):
         row = Adw.ComboRow(title=title, subtitle=help_text)
@@ -332,39 +322,9 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
             getattr(owner, toggles[key])()
         self.sync_from_owner()
 
-    def _change_portal_port(self, spin) -> None:
-        if self._syncing:
-            return
-        value = int(spin.get_value())
-        if not 49152 <= value <= 65535:
-            return
-        self.owner.cfg["portal_port"] = value
-        save_config(self.owner.cfg)
-
     def _change_gain(self, spin) -> None:
         if not self._syncing:
             self.owner.gain_spin.set_value(spin.get_value())
-
-    def _change_audio_track(self, row, _pspec) -> None:
-        if not self._syncing:
-            self.owner.audio_track_dropdown.set_selected(row.get_selected())
-            self.sync_from_owner()
-
-    def _change_embedded_track(self, row, _pspec) -> None:
-        if not self._syncing:
-            self.owner.embedded_dropdown.set_selected(row.get_selected())
-            self.sync_from_owner()
-
-    def _choose_subtitle_file(self) -> None:
-        dialog = Gtk.FileDialog(title="Choose a subtitle file")
-        subtitle_filter = Gtk.FileFilter()
-        subtitle_filter.set_name("Supported subtitles")
-        for extension in ("*.srt", "*.vtt", "*.ttml", "*.ass", "*.ssa"):
-            subtitle_filter.add_pattern(extension)
-        filters = Gio.ListStore.new(Gtk.FileFilter)
-        filters.append(subtitle_filter)
-        dialog.set_filters(filters)
-        dialog.open(self, None, self._subtitle_selected)
 
     def _subtitle_selected(self, dialog, result) -> None:
         # Reuse the existing file validation, cancel path and persistence code.

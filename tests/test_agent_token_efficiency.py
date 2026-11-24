@@ -138,7 +138,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         for handler in ("_picture_spin", "_picture_changed", "_reset_picture",
                         "_build_picture_preferences"):
             self.assertIn("def " + handler + "(", picture)
-        self.assertIn("class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow)", prefs)
+        self.assertIn("class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.PreferencesWindow)", prefs)
         self.assertIn("self._build_picture_preferences(playback, output)", prefs)
         self.assertLess(len(prefs.encode("utf-8")), 18_000)
 
