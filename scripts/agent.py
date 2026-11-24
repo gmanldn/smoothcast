@@ -589,10 +589,14 @@ def ensure_live_task_claim(task: dict) -> bool:
     me = agent_id()
     files = set(task.get("files") or [])
     comments = issue_comments(number)
-    if not isinstance(comments, list):
-        raise td.DigestError(f"cannot inspect live claims on #{number}")
-    events = parse_events([dict(c, issue=number) for c in comments if isinstance(c, dict)])
-    live = active_claims(events, utcnow())
+    # An issue-specific ledger catches same-ticket successors; the global
+    # comment feed also fences other tickets claiming the SAME source files.
+    # Ignore neither feed: a recent cross-issue claimant can otherwise race
+    # a worker still holding an apparently valid own-ticket lease.
+    global_comments = recent_comments()
+    by_id = {c.get("id"): c for c in global_comments}
+    by_id.update({c.get("id"): dict(c, issue=number) for c in comments})
+    live = active_claims(parse_events(list(by_id.values())), utcnow())
     bad = conflicts(number, files, me, live)
     if bad:
         print("another agent now owns this scope: " + "; ".join(bad))
