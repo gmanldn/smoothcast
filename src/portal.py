@@ -44,6 +44,7 @@ import portal_mesh_http
 import portal_mesh_panel
 import portal_screens_http
 import portal_uploads
+import link_acquisition
 import shortcut_map
 import version
 
@@ -190,6 +191,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.pin = pin
         self.dispatch = dispatch
         self.uploads = uploads
+        self.link_jobs = None
         self.room = room or portal_room.PortalRoom(clock=clock)
         self.peer_directory = peer_directory
         self.clock = clock
@@ -270,6 +272,9 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         if stopping is not None:
             stopping.set()
         try:
+            jobs = getattr(self, "link_jobs", None)
+            if jobs is not None:
+                jobs.close()
             screens = getattr(self, "screens", None)
             if screens is not None:
                 screens.close()
@@ -343,6 +348,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
                 self.mesh_feed.close_keys(keys)
         if keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(set(keys))
+        if keys and self.link_jobs is not None:
+            self.link_jobs.revoke(set(keys))
         return len(keys)
 
     def revoke_all(self) -> str:
@@ -371,6 +378,8 @@ class _PortalHTTPServer(ThreadingHTTPServer):
             self.mesh_feed.close_keys(owner_keys)
         if owner_keys and self.uploads is not None:
             self.uploads.revoke_owner_keys(owner_keys)
+        if self.link_jobs is not None:
+            self.link_jobs.revoke(owner_keys)
         return new_pin_value
 
     def create_session(self, name: object = "Guest") -> tuple[str, str, portal_room.Participant]:
@@ -781,6 +790,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.room.prune(live_ids)
         state["queue"] = merged
         state["room"] = self.server.room.snapshot(participant_id)
+        jobs = self.server.link_jobs
+        state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
+        state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
         directory = self.server.peer_directory
         state["screens"] = self.server.screens.snapshot()
         state["peers"] = directory.snapshot() if directory is not None else []
@@ -799,7 +811,8 @@ class _Handler(BaseHTTPRequestHandler):
         fields = tuple(state.get(k) for k in (
             "title", "state", "receiver", "duration", "volume", "can_seek", "active", "busy",
             "session_id", "revision", "queue_revision", "music_autogain"))
-        return fields, items, self.server.room.seq
+        jobs = self.server.link_jobs
+        return fields, items, self.server.room.seq, jobs.revision() if jobs is not None else 0
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
@@ -1070,10 +1083,11 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         path = self._path()
-        if (path in {"/api/login", "/api/action", "/api/profile"}
+        if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
-        if (path in {"/api/action", "/api/profile"} or path.startswith("/api/uploads")):
+        if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel"}
+                or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
                 return
@@ -1182,6 +1196,24 @@ class _Handler(BaseHTTPRequestHandler):
                 "room": self.server.room.snapshot(participant.id),
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
+            if not self._authenticated(csrf=True):
+                return self._error(403, "Session expired or request token invalid")
+            jobs = self.server.link_jobs
+            if jobs is None:
+                return self._error(503, "The host has not enabled external media acquisition")
+            owner = self.server._session_key(self._cookie_token() or "")
+            try:
+                if path.endswith("/cancel"):
+                    jobs.cancel(owner, body.get("id"))
+                    return self._send(202, {"ok": True, "message": "Cancellation requested"})
+                if body.get("authorised") is not True:
+                    return self._error(400, "Confirm that you are authorised to acquire this media")
+                job_id = jobs.submit(owner, body.get("url"), body.get("request_id"))
+                return self._send(202, {"ok": True, "id": job_id,
+                                        "message": "Acquisition accepted; Up Next updates when media is ready"})
+            except link_acquisition.LinkError as exc:
+                return self._error(exc.status, exc.message)
         if path == "/api/profile":
             if not self._authenticated(csrf=True):
                 return self._error(403, "Session expired or request token invalid")
@@ -1446,7 +1478,8 @@ class Portal:
                  commands: portal_commands.CommandDispatcher | None = None,
                  fence: portal_commands.CommandFence | None = None,
                  pin_required: bool = True,
-                 preferred_port: int = 0) -> None:
+                 preferred_port: int = 0,
+                 link_sources: tuple[str, ...] = ()) -> None:
         if not isinstance(bind_ip, str):
             raise PortalError("A private IPv4 address is required")
         try:
@@ -1477,6 +1510,15 @@ class Portal:
         )
         self.port = int(self.server.server_address[1])
         self.server.status_peek = status_peek
+        provider = link_acquisition.CommandProvider(link_sources)
+        if any(provider.capabilities().values()):
+            def deliver(owner, path):
+                # Existing authenticated GTK queue authority; never cast now.
+                self.server.dispatch("queue_add", {"path": str(path), "name": path.name,
+                                                   "_portal_auth_key": owner})
+            self.server.link_jobs = link_acquisition.LinkJobs(
+                self.uploads.root / "link-acquisitions", provider, deliver,
+                self.server.session_key_active)
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
         self._zeroconf = None
