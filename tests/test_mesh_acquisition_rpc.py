@@ -131,3 +131,43 @@ def test_nothing_sensitive_crosses_the_wire_or_the_public_view():
     rig.submit()
     blob = repr(rig.sent) + repr(rig.host.ledger.public_view(1.0))
     assert URL not in blob and "example.invalid" not in blob and CONTENT not in blob
+
+
+@pytest.mark.parametrize("kind, fields", [
+    ("offer", {"job": 123, "key": "a" * 64, "kind": "youtube"}),
+    ("offer", {"job": JOB, "key": 123, "kind": "youtube"}),
+    ("offer", {"job": JOB, "key": "z" * 64, "kind": "youtube"}),
+    ("cancel", {"job": 123}),
+    ("cancel", {"job": "../invalid"}),
+    ("cancel", {"job": JOB, "gen": 1 << 63}),
+    ("finished", {"job": JOB, "content": 123}),
+    ("finished", {"job": JOB, "content": "g" * 64}),
+    ("report", {"job": JOB, "stage": "downloading", "received": "5", "total": 10}),
+    ("report", {"job": JOB, "stage": "downloading", "received": -1, "total": 10}),
+    ("report", {"job": JOB, "stage": "downloading", "received": 5, "total": core.MAX_BYTES + 1}),
+    ("report", {"job": JOB, "stage": "queued", "received": 5, "total": 10}),
+])
+def test_acquisition_wire_rejects_invalid_field_schema(kind, fields):
+    rig = Rig()
+    rig.submit()
+    before = rig.host.ledger.snapshot()
+    fence = dict(rig.worker.guard.highest)
+    cancelled = dict(rig.worker.guard.cancelled)
+    running = dict(rig.worker.guard.running)
+    message = rpc.build(kind, **{"gen": 1, **fields})
+    with pytest.raises(rpc.WireError):
+        rpc.parse(message)
+    assert not rig.worker.handle(message)["ok"]
+    assert not rig.host.on_message("remote-a", message, 100.0)
+    assert rig.host.ledger.snapshot() == before
+    assert rig.worker.guard.highest == fence
+    assert rig.worker.guard.cancelled == cancelled
+    assert rig.worker.guard.running == running
+    assert len(rig.started) == 1 and not rig.stopped
+
+
+def test_acquisition_wire_accepts_counter_boundaries():
+    for received, total in ((0, 0), (core.MAX_BYTES, core.MAX_BYTES)):
+        message = rpc.build("report", job=JOB, gen=1, stage="downloading",
+                            received=received, total=total)
+        assert rpc.parse(message) == message

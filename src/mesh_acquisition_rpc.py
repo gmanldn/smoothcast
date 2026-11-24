@@ -12,6 +12,7 @@ provider kind and the source *digest*; never a URL, infohash, path or address.
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 import mesh_acquisition_assignment as core
@@ -49,10 +50,23 @@ def parse(message: object) -> dict:
             raise WireError("bad field type")
         if isinstance(value, str) and len(value) > MAX_FIELD:
             raise WireError("field too long")
-    if "gen" in message and (type(message["gen"]) is not int or message["gen"] < 1):
+    if not isinstance(message["job"], str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{8,64}", message["job"]):
+        raise WireError("invalid job identity")
+    if type(message["gen"]) is not int or not 1 <= message["gen"] <= (1 << 63) - 1:
         raise WireError("bad generation")
     if kind == "offer" and message["kind"] not in KINDS:
         raise WireError("unknown provider")
+    for name in ("key", "content"):
+        if name in message and (not isinstance(message[name], str)
+                                or not re.fullmatch(r"[0-9a-f]{64}", message[name])):
+            raise WireError("invalid digest")
+    if kind == "report":
+        if message["stage"] not in core.STAGES[1:6]:
+            raise WireError("invalid stage")
+        for name in ("received", "total"):
+            if type(message[name]) is not int or not 0 <= message[name] <= core.MAX_BYTES:
+                raise WireError("invalid byte counter")
     return message
 
 
