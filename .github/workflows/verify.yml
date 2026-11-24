@@ -58,7 +58,7 @@ jobs:
       - name: Check Python syntax without GTK
         run: python -m compileall -q src scripts setup tests
       - name: Check canonical launcher syntax
-        run: python -m py_compile smoothcast
+        run: python -m py_compile sc.py smoothcast
       - name: Verify release promotion race safety
         run: python -m unittest discover -s tests -p test_release_automation.py
       - name: Enforce bounded CI queue and exact-release contracts
@@ -253,7 +253,7 @@ jobs:
       - name: Install Ruff
         run: python -m pip install 'ruff==0.16.9'
       - name: Lint (configuration in pyproject.toml)
-        run: ruff check src scripts setup tests smoothcast setup.py
+        run: ruff check src scripts setup tests sc.py smoothcast setup.py
 
   typecheck:
     name: Type check (mypy)
@@ -324,7 +324,7 @@ jobs:
         run: python -m compileall -q src scripts setup tests
 
       - name: Check canonical launcher syntax
-        run: python -m py_compile smoothcast
+        run: python -m py_compile sc.py smoothcast
 
       - name: Install portable test dependencies
         run: python -m pip install 'pytest>=8,<10' 'pytest-cov>=5' 'pytest-xdist>=3,<4' 'hypothesis>=6,<7' 'PyChromecast>=13.1.0,<15' 'catt>=0.12,<0.14'
@@ -424,9 +424,9 @@ jobs:
         run: python -m pytest -q tests/test_subtitle_encoding.py tests/test_preflight.py tests/test_dlna.py tests/test_video_policy_ffmpeg.py tests/test_audio_delay_ffmpeg.py
 
   setup-contract:
+    # A manually requested patch verification must also catch first-run
+    # failures on Windows/macOS; this is headless and never installs GTK.
     name: Setup contract (${{ matrix.os }})
-    needs: [scope]
-    if: needs.scope.outputs.lane == 'full'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -443,13 +443,18 @@ jobs:
             pyproject.toml
             .github/workflows/verify.yml
       - name: Check Python syntax
-        run: python -m compileall -q setup
+        run: |
+          python -m compileall -q setup
+          python -m py_compile sc.py smoothcast
       - name: Exercise Python-only setup contracts without installing packages
         run: python -m unittest discover -s tests -p "test_setup_bootstrap.py" -v
       - name: Install portable test dependencies
         run: python -m pip install 'pytest>=8,<10'
-      - name: Verify persisted native runtime on this operating system
-        run: python -m pytest -q tests/test_native_runtime_manifest.py
+      - name: Verify persisted native runtime and canonical launcher routing
+        run: python -m pytest -q tests/test_native_runtime_manifest.py tests/test_portable_install_routing.py tests/test_block_gui_launch.py
+      - name: Verify Linux checkout refresh without launching a GUI
+        if: runner.os == 'Linux'
+        run: python -m pytest -q tests/test_checkout_refresh.py
       - name: Verify pinned Homebrew installer rejection and execution gating
         run: python -m pytest -q tests/test_homebrew_verify.py
 
