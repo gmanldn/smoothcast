@@ -2479,7 +2479,10 @@ async function uploadRequest(method,path,body,headers={}){
     }
     if(data?.code==="client_reload_required")showUpdateNotice();
     if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
-    if(validUploadProgress(data.received,data.size))monitorText("transferAck",fileUnits(data.received));
+    const validReceipt=validUploadProgress(data.received,data.size);
+    if(method==="PUT"&&!validReceipt)
+      throw Error("Host returned an invalid upload receipt. Resume to check the saved position.");
+    if(validReceipt)monitorText("transferAck",fileUnits(data.received));
     if(method==="PUT")monitorText("transferInFlight","Chunk acknowledged by host");
     else transferEvent(operation+" · HTTP "+response.status);
     monitorText("transferOperation","Host response received");
