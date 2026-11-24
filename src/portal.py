@@ -1337,7 +1337,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return upload_id
         return None
 
-    def _start_early_cast(self, upload_id: str, result: dict) -> None:
+    def _start_early_cast(self, upload_id: str, result: dict) -> bool:
         """Ask SmoothCast to cast the growing file before it finishes arriving.
 
         Best-effort: a rejection (busy, unsupported) declines early casting and
@@ -1354,6 +1354,7 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             accepted = False
         self.server.uploads.mark_early_cast(upload_id, accepted=accepted)
+        return accepted
 
     def do_PUT(self) -> None:  # noqa: N802
         if self._path().startswith("/api/uploads") and not self._client_compatible():
@@ -1384,7 +1385,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self._cookie_token() or "", upload_id,
                 self.headers.get("Content-Range", ""), length, self.rfile)
             if result.get("ready_to_cast"):
-                self._start_early_cast(upload_id, result)
+                result["early_cast_accepted"] = self._start_early_cast(upload_id, result)
+            # The staged path is an internal dispatch detail, never part of
+            # the browser's diagnostic or transfer receipt.
+            result.pop("cast_path", None)
             return self._send(200, {"ok": True, **result})
         except portal_uploads.UploadError as exc:
             self.close_connection = True
@@ -2456,7 +2460,8 @@ async function uploadRequest(method,path,body,headers={}){
   if(stalePage)throw Error("Reload required");
   if(!csrf)throw Object.assign(Error("Room access expired"),{status:401});
   const controller=new AbortController();activeUploadController=controller;
-  const deadline=setTimeout(()=>controller.abort(),60000);
+  let timedOut=false;
+  const deadline=setTimeout(()=>{timedOut=true;controller.abort();},60000);
   const operation=transferOperationName(method,path),started=Date.now();
   monitorText("transferOperation",operation);
   monitorText("transferInFlight",method==="PUT"?"Sending…":"—");
@@ -2478,6 +2483,7 @@ async function uploadRequest(method,path,body,headers={}){
     monitorText("transferOperation","Host response received");
     return data;
   }catch(error){
+    if(timedOut)error=Object.assign(Error("Host did not respond within 60 seconds"),{status:408});
     const message=error?.message||"Unknown upload failure";
     monitorText("transferOperation","Request interrupted");
     monitorText("transferResponse",(error?.status?"HTTP "+error.status+": ":"")+message);
@@ -2792,17 +2798,31 @@ $("uploadButton").addEventListener("click",async()=>{
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
         throw Error("Upload progress is invalid. Reload and choose the file again.");
       casting=!!state.ready_to_cast;
+      if(casting)monitorText("transferDelivery","Early playback requested — not confirmed");
       transferView("transfer",state.received,file.size);
       pendingUpload.received=state.received;
+      let milestone=Math.floor(state.received*4/file.size);
       while(state.received<file.size&&!cancelUpload){
         const end=Math.min(state.received+chunkSize,file.size);
         state=await sendChunk(path,file,state.received,end);
+        if(!validUploadProgress(state.received,file.size)||state.received!==end)
+          throw Error("Host returned an unexpected upload offset. Resume to check the saved position.");
         pendingUpload.received=state.received;
         transferView("transfer",state.received,file.size);
         if(state.ready_to_cast&&!casting){
-          casting=true;
-          monitorText("transferDelivery","Early playback requested — not confirmed");
-          transferEvent("Early playback requested; continuing transfer");
+          if(state.early_cast_accepted===false){
+            monitorText("transferDelivery","Early cast declined — retry after upload");
+            transferEvent("Early playback declined; continuing the upload");
+          }else{
+            casting=true;
+            monitorText("transferDelivery","Early playback requested — not confirmed");
+            transferEvent("Early playback request sent; continuing transfer");
+          }
+        }
+        const reached=Math.floor(state.received*4/file.size);
+        if(reached>milestone){
+          milestone=reached;
+          transferEvent("Host acknowledged "+Math.floor(state.received*100/file.size)+"% · "+fileUnits(state.received));
         }
         const percent=Math.floor(state.received*100/file.size);
         showError("uploadStatus",(casting?"Early playback requested; ":"")+
@@ -2815,6 +2835,7 @@ $("uploadButton").addEventListener("click",async()=>{
       await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Playback requested — receiver not confirmed");
+      monitorText("transferAck",fileUnits(file.size));
       transferEvent(queueOnly?"Host accepted queue addition":"Host accepted playback request; receiver confirmation is separate");
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
       for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
