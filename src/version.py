@@ -1,10 +1,10 @@
 """SmoothCast's single authoritative semantic version.
 
-Owner policy: each coherent private-worktree agent ship assigns a new
-monotonic develop PATCH after rebasing, then pushes with normal Git CAS. The
-Git SHA identifies exact source revision. Only the owner may integrate develop
-into main and publish release tags. A running process keeps its imported
-version until restart, even if the checkout changes asynchronously.
+Owner policy: normal agent ships identify each develop revision by Git SHA
+without changing SemVer. Only explicit owner-authorised release operations
+assign release numbers; main integration and publication remain owner-manual.
+A running process retains its imported version until restart, even if the
+checkout changes asynchronously.
 """
 from __future__ import annotations
 
@@ -31,20 +31,40 @@ def parse_version_text(source: str) -> str | None:
     except (SyntaxError, UnicodeError, ValueError, TypeError):
         return None
     parts: dict[str, int] = {}
+    names = {"MAJOR", "MINOR", "PATCH"}
+    permitted: set[int] = set()
     for statement in tree.body:
         if not isinstance(statement, ast.Assign):
             continue
         if len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             continue
         name = statement.targets[0].id
+        if name not in names:
+            continue
         value = statement.value
-        if name in {"MAJOR", "MINOR", "PATCH"} and isinstance(value, ast.Constant):
-            if type(value.value) is int and value.value >= 0:
-                parts[name] = value.value
-    if set(parts) != {"MAJOR", "MINOR", "PATCH"}:
+        if (name in parts or not isinstance(value, ast.Constant)
+                or type(value.value) is not int or not 0 <= value.value <= 2_147_483_647):
+            return None
+        parts[name] = value.value
+        permitted.add(id(statement.targets[0]))
+    if set(parts) != names:
         return None
+    # A candidate may contain code we must never execute. Refuse ambiguous
+    # rebinding rather than reporting a version that differs from runtime.
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Name) and node.id in names
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                and id(node) not in permitted):
+            return None
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in names:
+                return None
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            if any((alias.asname or alias.name.split(".", 1)[0]) in names
+                   for alias in node.names):
+                return None
     return f"{parts['MAJOR']}.{parts['MINOR']}.{parts['PATCH']}"
-
 
 def read_checkout_version(path: Path) -> str | None:
     """Read on-disk version without importing it or mutating runtime state."""
