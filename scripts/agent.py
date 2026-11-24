@@ -375,8 +375,10 @@ def ranked_candidates(a: argparse.Namespace) -> tuple[list, list, list, set, str
 def cmd_next(a: argparse.Namespace) -> int:
     ranked, skipped, claims, hot, me = ranked_candidates(a)
     for _base, n, issue, files, wait in ranked[: a.limit]:
-        comments = gh(f"repos/{REPO}/issues/{n}/comments?per_page=100")
-        slices, progress, handover = summarize_history(comments if isinstance(comments, list) else [])
+        # Older issue comments can span multiple pages. Showing only page
+        # one hides the latest handover and makes successors repeat work.
+        comments = issue_comments(n)
+        slices, progress, handover = summarize_history(comments)
         total, why = score(issue, files, hot, any(c["issue"] == n and c["agent"] == me for c in claims), slices, wait)
         print(f"#{n:<4} {total:>4}  {td.display_title(issue['title'])[:70]}\n       {', '.join(why)}"
               f"\n       files: {', '.join(sorted(files)[:4]) or '(none named; read the brief)'}")
