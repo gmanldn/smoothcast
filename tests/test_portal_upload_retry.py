@@ -28,7 +28,7 @@ def test_upload_retry_reconciles_exact_offsets():
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
 def test_real_browser_retry_js_handles_committed_uncommitted_and_conflicting_offsets():
     js = """
-let cancelUpload=false,csrf="session",requests=[],display=[];
+let cancelUpload=false,pauseRequested=false,csrf="session",requests=[],display=[];
 let uploadRequest=async()=>{throw Error("not configured")};
 const showError=(...a)=>display.push(a);
 """ + _retry_js() + r"""
