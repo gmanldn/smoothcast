@@ -292,3 +292,50 @@ def test_small_legacy_chunks_resume_and_oversized_chunk_is_rejected(tmp_path):
                        size + 1, BytesIO(b""))
     assert uploads.status("owner", created["id"])["received"] == legacy
     uploads.close()
+
+
+def test_activity_snapshot_never_waits_for_inflight_chunk(tmp_path):
+    """GTK must not wait for the lock held while reading a browser chunk."""
+    import threading
+
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "clip.mkv", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    upload = uploads._get("owner", upload_id)
+    results = []
+    done = threading.Event()
+
+    def read_activity():
+        try:
+            results.extend((uploads.snapshot()[0], uploads.by_id(upload_id)))
+        finally:
+            done.set()
+
+    with upload.lock:
+        thread = threading.Thread(target=read_activity, daemon=True)
+        thread.start()
+        completed_without_waiting = done.wait(1.0)
+    thread.join(timeout=2.0)
+    assert completed_without_waiting, "activity refresh blocked behind a live HTTP chunk"
+    assert len(results) == 2
+    assert all(row["received"] == 3 and row["percent"] == 50 for row in results)
+    uploads.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not require directory fsync")
+def test_finalize_retry_preserves_file_after_directory_sync_failure(tmp_path):
+    """A rename that succeeds before fsync fails must remain recoverable."""
+    import errno
+
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "clip.mp4", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-5/6", 6, BytesIO(b"abcdef"))
+    with patch.object(portal_uploads.os, "fsync", side_effect=OSError(errno.EIO, "sync failed")):
+        with pytest.raises(OSError, match="sync failed"):
+            uploads.finalize("owner", upload_id)
+        assert uploads.status("owner", upload_id)["complete"] is False
+    final, name, dispatch = uploads.finalize("owner", upload_id)
+    assert (final.read_bytes(), name, dispatch) == (b"abcdef", "clip.mp4", True)
+    assert uploads.status("owner", upload_id)["complete"] is True
+    assert uploads.finalize("owner", upload_id)[2] is False
+    uploads.close()
