@@ -31,7 +31,8 @@ def start(window: object, address: str) -> None:
             bind_ip=address, name=getattr(portal, "name", "") or "SmoothCast",
             version=__version__, room_port=getattr(portal, "port", None),
             strict=settings["strict"], seeds=settings["seeds"],
-            link_acquisition_sources=sources)
+            link_acquisition_sources=sources,
+            link_activity=getattr(jobs, "snapshot", lambda: []))
         adapter = mesh_discovery.DiscoveryAdapter()
         config.discovery = adapter.snapshot
         window._mesh_discovery = adapter             # type: ignore[attr-defined]
@@ -47,7 +48,10 @@ def start(window: object, address: str) -> None:
         def run() -> None:
             if service.start() and portal is not None:
                 try:
-                    portal.server.mesh_feed = service.feed
+                    # A delayed startup must not attach a replaced mesh service.
+                    if getattr(window, "_mesh", None) is service:
+                        portal.server.mesh_feed = service.feed
+                        portal.server.mesh_acquisition_activity = service.acquisition_activity
                 except Exception:
                     pass
 
@@ -70,6 +74,7 @@ def stop(window: object) -> None:
         portal = getattr(window, "_portal", None)
         if portal is not None:
             portal.server.mesh_feed = None
+            portal.server.mesh_acquisition_activity = None
         threading.Thread(target=service.stop, name="smoothcast-mesh-stop",
                          daemon=True).start()
     except Exception:
