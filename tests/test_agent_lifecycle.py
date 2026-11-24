@@ -395,6 +395,51 @@ def test_invalid_version_jump_is_blocked_even_with_skip_checks(monkeypatch, tmp_
     assert run(b, "rev-parse", "HEAD") != run(b, "rev-parse", "origin/develop")
 
 
+def test_finish_never_modifies_foreign_issue_from_private_worktree(monkeypatch):
+    args = agent.build_parser().parse_args([
+        "finish", "585", "--done", "work", "--next", "remaining tests"])
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("foreign issue must not be read or modified")))
+    assert agent.cmd_finish(args) == 2
+
+
+def test_finish_requires_private_worktree_even_with_explicit_issue(monkeypatch):
+    args = agent.build_parser().parse_args([
+        "finish", "584", "--done", "work", "--next", "remaining tests"])
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("non-owned finish must not contact GitHub")))
+    assert agent.cmd_finish(args) == 2
+
+
+def test_finish_does_not_release_when_previous_ship_handover_is_pending(monkeypatch):
+    args = agent.build_parser().parse_args([
+        "finish", "--done", "work", "--next", "remaining"])
+    monkeypatch.setattr(agent, "private_task",
+                        lambda: {"issue": 584, "pending_handover": {"sha": "a" * 40}})
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "")
+    monkeypatch.setattr(agent, "recover_pending_handover", lambda task: False)
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: (_ for _ in ()).throw(
+        AssertionError("should not refresh lease before recovering receipt")))
+    monkeypatch.setattr(agent, "release", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must not release while pending receipt exists")))
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must not finish ticket while receipt unresolved")))
+    assert agent.cmd_finish(args) == 7
+
+
+def test_finish_fences_stale_claim_even_when_not_closing(monkeypatch):
+    args = agent.build_parser().parse_args([
+        "finish", "--done", "work", "--next", "remaining"])
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "")
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: False)
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("stale agent must not create an authoritative handover")))
+    assert agent.cmd_finish(args) == 3
+
+
 def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "ROOT", tmp_path)
     monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
