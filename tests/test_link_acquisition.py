@@ -162,6 +162,8 @@ def test_room_jobs_progress_dedup_privacy_and_verified_queue_delivery(tmp_path):
         assert jobs.submit("owner-key", YOUTUBE, "request-1") == job_id
         assert jobs.submit("other-key", "https://youtu.be/abcdefghijk", "request-2") == job_id
         with pytest.raises(acquisition.LinkError):
+            jobs.submit("other-key", MAGNET, "request-2")
+        with pytest.raises(acquisition.LinkError):
             jobs.submit("owner-key", MAGNET, "request-1")
         row = jobs.snapshot("owner-key")[0]
         assert row["stage"] == "downloading" and row["received"] == 3 and row["total"] == 8
@@ -266,3 +268,68 @@ def test_host_disabled_by_default_has_truthful_capability_and_rejects_download(t
                            cookie=cookie, csrf=joined["csrf"], origin="http://" + rig.host)[0] == 503
     finally:
         rig.close()
+
+
+def test_torrent_adapter_authenticates_metadata_before_downloading_and_probes(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    root, digest, info = _torrent(_info())
+    source = acquisition.parse_link("magnet:?xt=urn:btih:" + digest + "&tr=http://127.0.0.1")
+    provider = acquisition.CommandProvider(("magnet",))
+    provider.launcher = "/trusted/sandbox"
+    provider.tools["magnet"] = "/trusted/aria2c"
+    provider.probe = "/trusted/ffprobe"
+    calls = []
+    stages = []
+
+    def fake_run(tool, args, directory, cancelled, progress, deadline):
+        calls.append((tool, args))
+        if "--bt-metadata-only=true" in args:
+            assert args[-1] == source.url
+            assert "127.0.0.1" not in " ".join(args)
+            (directory / (digest + ".torrent")).write_bytes(root)
+        else:
+            assert "--select-file=1" in args and "--check-integrity=true" in args
+            assert Path(args[-1]).read_bytes() == b"d4:info" + info + b"e"
+            assert "--dir=" + str(directory / "payload") in args
+            (directory / "payload" / "demo.mp4").write_bytes(b"testdata")
+            progress(8, 8)
+
+    def fake_probe(command, **kwargs):
+        assert command[:2] == [provider.launcher, provider.probe]
+        assert command[command.index("-protocol_whitelist") + 1] == "file,pipe"
+        assert kwargs["timeout"] == 30
+        return SimpleNamespace(returncode=0, stdout=b"video\n")
+
+    monkeypatch.setattr(provider, "_run", fake_run)
+    monkeypatch.setattr(acquisition.subprocess, "run", fake_probe)
+    path = provider.acquire(source, tmp_path, stages.append, lambda *args: None, lambda: False)
+    assert path == tmp_path / "payload" / "demo.mp4"
+    assert len(calls) == 2
+    assert stages == ["resolving", "downloading", "verifying"]
+
+
+def test_youtube_adapter_uses_canonical_video_not_playlist_or_user_options(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    provider = acquisition.CommandProvider(("youtube",))
+    provider.launcher = "/trusted/sandbox"
+    provider.tools["youtube"] = "/trusted/yt-dlp"
+    provider.probe = "/trusted/ffprobe"
+    calls = []
+    stages = []
+
+    def fake_run(tool, args, directory, cancelled, progress, deadline):
+        calls.append((tool, args))
+        assert args[-1] == YOUTUBE
+        assert "--ignore-config" in args and "--no-playlist" in args and "--no-cookies" in args
+        assert "--max-filesize" in args
+        (directory / "example.mp4").write_bytes(b"testdata")
+
+    monkeypatch.setattr(provider, "_run", fake_run)
+    monkeypatch.setattr(acquisition.subprocess, "run", lambda *args, **kw:
+                        SimpleNamespace(returncode=0, stdout=b"audio\nvideo\n"))
+    source = acquisition.parse_link("https://youtu.be/abcdefghijk?list=other")
+    assert provider.acquire(source, tmp_path, stages.append, lambda *args: None, lambda: False).name == "example.mp4"
+    assert len(calls) == 1
+    assert stages == ["downloading", "verifying"]
