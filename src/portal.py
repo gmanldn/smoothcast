@@ -2424,23 +2424,60 @@ function updateLinkControls(){
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return false;
   const value=String(input.value||"").trim();
-  // Classify only the source family for UI readiness; the server validates
-  // the full URL, video ID or infohash and enforces acquisition policy.
-  const kind=/^magnet:/i.test(value)?"magnet":
-    /^https:\/\/(?:(?:www\.|m\.)?youtube\.com|youtu\.be)(?=[:/?#]|$)/i.test(value)?"youtube":null;
+  // Advisory preflight only; the server remains the validation/policy authority.
+  function classify(text){
+    const fail=message=>({kind:null,message});
+    if(!text)return {kind:null,message:""};
+    if(text.length>1500)return fail("This link is too long. Copy the video's share link instead.");
+    if(/[\s\x00-\x1f\x7f]/.test(text))return fail("Paste just one link, without surrounding text or spaces. For a title, use Find.");
+    const queryValues=(query,key)=>{
+      const fields=query.split("&");
+      if(fields.length>80)throw Error("Too many link parameters");
+      return fields.filter(Boolean).map(field=>{
+        const i=field.indexOf("="),decode=x=>decodeURIComponent(x.replace(/\+/g," "));
+        return i<0?[decode(field),""]:[decode(field.slice(0,i)),decode(field.slice(i+1))];
+      }).filter(pair=>pair[0]===key&&pair[1]).map(pair=>pair[1]);
+    };
+    try{
+      if(/^magnet:/i.test(text)){
+        const match=/^magnet:\?([^#]+)$/.exec(text);
+        if(match){
+          const xt=queryValues(match[1],"xt");
+          if(xt.length===1&&/^urn:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})$/i.test(xt[0]))return {kind:"magnet"};
+        }
+        return fail("This magnet is incomplete or unsupported. Copy a single BitTorrent v1 magnet from its source.");
+      }
+      const match=/^https:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/.exec(text);
+      if(match){
+        const host=match[1].toLowerCase().replace(/:443$/,""),path=match[2],query=match[3]||"";
+        const youtube=["youtube.com","www.youtube.com","m.youtube.com","youtu.be"].includes(host);
+        if(youtube){
+          const ids=path==="/watch"&&host!=="youtu.be"?queryValues(query,"v"):[host==="youtu.be"?path.slice(1):path.startsWith("/shorts/")?path.slice(8):""];
+          if(ids.length===1&&/^[A-Za-z0-9_-]{11}$/.test(ids[0]))return {kind:"youtube"};
+          return fail("Choose one YouTube video or Short, then copy its Share link. Channel and playlist links are not supported.");
+        }
+        return fail("This website is not supported for downloads here. Use a YouTube video, magnet link, shared library or a file from your device.");
+      }
+      if(/^http:\/\//i.test(text))return fail("Use the secure HTTPS Share link from the video page.");
+      if(/^(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(text))return fail("Copy the complete YouTube Share link, including https://.");
+      return fail("Looking for a title? Use Find. To add a download, paste a YouTube video or magnet link.");
+    }catch(_){return fail("The link contains invalid parameters. Copy a fresh Share link and try again.")}
+  }
+  const intent=classify(value),kind=intent.kind;
   const sourceName=kind==="youtube"?"YouTube":"BitTorrent magnets";
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
   const allowed=!!(kind&&linkCapabilities[kind]&&linkStorageAvailable!==false);
   input.disabled=linkPosting;consent.disabled=linkPosting;
   button.disabled=!allowed||linkPosting||!consent.checked;
+  button.textContent=linkPosting?"Submitting…":kind==="youtube"?"Add YouTube video to Up Next":kind==="magnet"?"Add torrent media to Up Next":"Download and add to Up Next";
   if(linkStorageAvailable===false){
     label.textContent="Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.";
   }else if(value&&!kind){
-    label.textContent="Paste one HTTPS YouTube video or BitTorrent magnet link.";
+    label.textContent=intent.message;
   }else if(kind&&!allowed){
     label.textContent=sourceName+" unavailable in this room. "+linkWorkerExplanation(kind);
   }else if(kind){
-    label.textContent=sourceName+" available. Confirm permission to download and add to Up Next.";
+    label.textContent=sourceName+" recognised. "+(consent.checked?"Ready to request download; playback will not be interrupted.":"Confirm permission to download and add to Up Next.");
   }else{
     label.textContent=sources.length?"Available: "+sources.join(" and ")+".":"Downloads are not ready. Ask the host to enable or check the acquisition worker in desktop Preferences → Queue. You can still add files or use shared libraries.";
   }

@@ -38,6 +38,26 @@ linkStorageAvailable=true;
 $("linkAuthorised").checked=false;
 assert.equal(updateLinkControls(),false);
 $("linkAuthorised").checked=true;
+for(const [value,expected,hint] of [
+  ["https://www.youtube.com/playlist?list=abc",false,"Share link"],
+  ["https://youtube.com/watch?v=short",false,"Share link"],
+  ["https://youtube.com/watch?v=dQw4w9WgXcQ&v=abcdefghijk",false,"Share link"],
+  ["https://youtu.be/dQw4w9WgXcQ?t=42",true,"recognised"],
+  ["https://www.youtube.com/shorts/dQw4w9WgXcQ",true,"recognised"],
+  ["https://youtube.com:443/watch?v=dQw4w9WgXcQ",true,"recognised"],
+  ["magnet:?xt=urn%3Abtih%3A"+"a".repeat(40),true,"recognised"],
+  ["magnet:?xt=urn:btih:bad",false,"incomplete"],
+  ["https://example.org/video.mp4",false,"not supported"],
+  ["http://youtu.be/dQw4w9WgXcQ",false,"HTTPS"],
+  ["youtu.be/dQw4w9WgXcQ",false,"complete"],
+  ["some movie",false,"Find"],
+  ["https://user@youtube.com/watch?v=dQw4w9WgXcQ",false,"not supported"]
+]){
+  $("linkInput").value=value;
+  assert.equal(updateLinkControls(),expected,value);
+  assert($("linkAvailability").textContent.includes(hint),value);
+}
+$("linkInput").value="https://youtu.be/dQw4w9WgXcQ";
 linkPosting=true;
 assert.equal(updateLinkControls(),false);
 assert.equal($("linkInput").disabled,true);
