@@ -1652,6 +1652,16 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .transfer-meter,.transfer-stats{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .transfer-meter{margin:13px 0 7px}.transfer-stats{margin:8px 0 0;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem}
 #uploadStatus{overflow-wrap:anywhere;min-height:1.3em}
+.transfer-live{border-top:1px solid var(--line);margin-top:14px;padding-top:12px;min-width:0}
+.transfer-live h3{font-size:.95rem;margin:0 0 8px}
+.transfer-live-file{font-weight:650;overflow-wrap:anywhere;margin:0 0 8px}
+.transfer-live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px;margin:0}
+.transfer-live-grid div{border:1px solid var(--line);border-radius:9px;padding:8px;min-width:0}
+.transfer-live-grid dt{font-size:.72rem;color:var(--muted);margin-bottom:4px}
+.transfer-live-grid dd{margin:0;font-size:.84rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.transfer-live #transferEvents{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:8px 0 0;font-size:.76rem;line-height:1.55;font-family:inherit;color:var(--text)}
+.transfer-live details{margin-top:10px}
+.transfer-live summary{cursor:pointer;font-weight:650;min-height:44px;align-content:center}
 #uploadCard.drop-active{outline:3px dashed var(--focus);outline-offset:3px}
 #uploadCard .upload-view-queue{display:inline-flex;align-items:center;min-height:44px;padding:9px 10px;font-weight:650;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 #uploadCard .actions{align-items:center}
@@ -1738,7 +1748,20 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <div class="transfer-meter"><strong id="transferStage" aria-live="polite">Ready to choose</strong><span id="transferPercent">0%</span></div>
 <progress id="uploadProgress" max="1" value="0" aria-label="File transfer bytes received"></progress>
 <div class="transfer-stats"><span id="transferBytes">0 B of 0 B</span><span id="transferRate">—</span><span id="transferEta">—</span></div>
-<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
+<div class="transfer-live" aria-labelledby="transferLiveHeading">
+<h3 id="transferLiveHeading">Live transfer monitor</h3>
+<p id="transferFileName" class="transfer-live-file">No active file</p>
+<dl class="transfer-live-grid">
+<div><dt>Current operation</dt><dd id="transferOperation">Idle</dd></div>
+<div><dt>Time in operation</dt><dd id="transferElapsed">—</dd></div>
+<div><dt>Current chunk sent by browser</dt><dd id="transferInFlight">—</dd></div>
+<div><dt>Last host response</dt><dd id="transferResponse">—</dd></div>
+<div><dt>Room action</dt><dd id="transferDelivery">Not submitted</dd></div>
+<div><dt>Last confirmed offset</dt><dd id="transferAck">—</dd></div>
+</dl>
+<details open><summary>Transfer activity</summary><pre id="transferEvents" aria-label="Recent transfer activity" tabindex="0">Choose a file to begin. Events appear here as they happen.</pre></details>
+</div>
+<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
@@ -2372,21 +2395,99 @@ $("volume").addEventListener("change",()=>{
 });
 $("nameForm").addEventListener("submit",async e=>{e.preventDefault();try{const d=await post("/api/profile",{name:$("displayName").value});$("displayName").value=d.participant.name;showJoinedName(d.participant.name);showError("errorDash","Display name updated");refresh()}catch(err){showError("errorDash",err.message)}});
 $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAutogain").checked));
+// A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
+// or paths. Host ACKs and browser send progress are deliberately separate.
+let transferEvents=[];
+function monitorText(id,value){const node=$(id);if(node)node.textContent=value;}
+function transferEvent(message){
+  const stamp=new Date().toLocaleTimeString();
+  transferEvents.push(stamp+"  "+message);
+  if(transferEvents.length>24)transferEvents.shift();
+  monitorText("transferEvents",transferEvents.join("\n"));
+}
+function resetTransferMonitor(){
+  transferEvents=[];
+  monitorText("transferFileName","No active file");
+  monitorText("transferOperation","Idle");
+  monitorText("transferElapsed","—");
+  monitorText("transferInFlight","—");
+  monitorText("transferResponse","—");
+  monitorText("transferDelivery","Not submitted");
+  monitorText("transferAck","—");
+  monitorText("transferEvents","Choose a file to begin. Events appear here as they happen.");
+}
+function transferOperationName(method,path){
+  if(method==="PUT")return "Sending chunk / waiting for disk";
+  if(method==="GET")return "Checking saved host offset";
+  if(method==="DELETE")return "Cancelling upload";
+  return path.endsWith("/complete")?"Finalising media and submitting action":"Reserving host storage";
+}
+function uploadTransport(path,options){
+  // XHR exposes sender-side progress. Keep Fetch for headless/older clients.
+  if(options.method!=="PUT"||typeof XMLHttpRequest==="undefined")return fetch(path,options);
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open(options.method,path,true);
+    for(const [name,value] of Object.entries(options.headers))xhr.setRequestHeader(name,value);
+    const abort=()=>xhr.abort();
+    const finish=(callback,value)=>{
+      options.signal.removeEventListener("abort",abort);
+      callback(value);
+    };
+    xhr.upload.onprogress=event=>{
+      const total=event.lengthComputable?event.total:options.body.size;
+      monitorText("transferInFlight",fileUnits(event.loaded)+" of "+fileUnits(total)+" (not yet confirmed)");
+      if(event.lengthComputable&&event.loaded===event.total)
+        monitorText("transferOperation","Chunk sent — waiting for host storage");
+    };
+    xhr.onload=()=>finish(resolve,{
+      status:xhr.status,ok:xhr.status>=200&&xhr.status<300,
+      headers:{get:name=>xhr.getResponseHeader(name)},
+      json:async()=>JSON.parse(xhr.responseText),
+    });
+    xhr.onerror=()=>finish(reject,Error("Connection to SmoothCast interrupted"));
+    xhr.onabort=()=>finish(reject,Error("Upload request interrupted"));
+    if(options.signal.aborted){reject(Error("Upload request interrupted"));return;}
+    options.signal.addEventListener("abort",abort,{once:true});
+    xhr.send(options.body);
+  });
+}
 async function uploadRequest(method,path,body,headers={}){
   if(stalePage)throw Error("Reload required");
   if(!csrf)throw Object.assign(Error("Room access expired"),{status:401});
   const controller=new AbortController();activeUploadController=controller;
   const deadline=setTimeout(()=>controller.abort(),60000);
+  const operation=transferOperationName(method,path),started=Date.now();
+  monitorText("transferOperation",operation);
+  monitorText("transferInFlight",method==="PUT"?"Sending…":"—");
+  monitorText("transferElapsed","0 sec");
+  if(method!=="PUT")transferEvent(operation);
+  const tick=setInterval(()=>monitorText("transferElapsed",Math.floor((Date.now()-started)/1000)+" sec"),500);
   try{
-    const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
+    const response=await uploadTransport(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
+    monitorText("transferResponse","HTTP "+response.status);
     let data;
     try{data=await response.json()}catch(_){
       throw Object.assign(Error("The SmoothCast host returned an unreadable upload response."),{status:response.status, retryAfter:1});
     }
     if(data?.code==="client_reload_required")showUpdateNotice();
     if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
+    if(Number.isSafeInteger(data.received)&&data.received>=0)monitorText("transferAck",fileUnits(data.received));
+    if(method==="PUT")monitorText("transferInFlight","Chunk acknowledged by host");
+    else transferEvent(operation+" · HTTP "+response.status);
+    monitorText("transferOperation","Host response received");
     return data;
-  }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
+  }catch(error){
+    const message=error?.message||"Unknown upload failure";
+    monitorText("transferOperation","Request interrupted");
+    monitorText("transferResponse",(error?.status?"HTTP "+error.status+": ":"")+message);
+    transferEvent(operation+" · "+(error?.status?"HTTP "+error.status+" · ":"")+message);
+    throw error;
+  }finally{
+    clearTimeout(deadline);clearInterval(tick);
+    monitorText("transferElapsed",Math.floor((Date.now()-started)/1000)+" sec");
+    if(activeUploadController===controller)activeUploadController=null;
+  }
 }
 async function sendChunk(path,file,offset,end){
   const body=file.slice(offset,end),headers={"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`};
@@ -2397,6 +2498,7 @@ async function sendChunk(path,file,offset,end){
       if(pauseRequested)throw Error("Transfer paused");
       if(error.code==="upload.disk_full"||(error.status&&error.status<500&&![408,409,429].includes(error.status)))throw error;
       if(attempt===4||cancelUpload||!csrf)throw error;
+      if(typeof transferEvent==="function")transferEvent("Retry "+(attempt+1)+" of 4 — checking the saved host offset");
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
@@ -2574,6 +2676,9 @@ async function restoreUpload(){
           return;
         }
         pendingUpload={...record,received:state.received};
+        monitorText("transferFileName",record.name);
+        monitorText("transferDelivery",record.queueOnly?"Up Next requested":"Play now requested");
+        transferEvent("Interrupted upload found; choose the original file to resume");
         $("uploadQueue").checked=record.queueOnly;
         transferView("transfer",state.received,record.size,"Resumable");
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
@@ -2603,6 +2708,7 @@ function updateUploadControls(){
   $("cancelUpload").disabled=cancelUpload;
 }
 function resetUploadBatch(){
+  resetTransferMonitor();
   pendingUpload=null;
   batchFiles=null;
   batchIndex=0;
@@ -2628,6 +2734,9 @@ async function discardUpload(){
   }
   batchFiles=null;batchIndex=0;
   transferView("choose");
+  monitorText("transferOperation","Cancelled");
+  monitorText("transferDelivery","Not submitted");
+  transferEvent("Upload cancelled");
   showError("uploadStatus","Upload cancelled");
 }
 $("uploadButton").addEventListener("click",async()=>{
@@ -2657,6 +2766,10 @@ $("uploadButton").addEventListener("click",async()=>{
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
       const queueOnly=audio||batchQueueOnly;
+      monitorText("transferFileName",(batchIndex+1)+"/"+batchFiles.length+" · "+file.name);
+      monitorText("transferDelivery",queueOnly?"Up Next requested":"Play now requested");
+      monitorText("transferAck",pendingUpload?fileUnits(pendingUpload.received):"0 B");
+      transferEvent((pendingUpload?"Resuming file ":"Preparing file ")+(batchIndex+1)+" of "+batchFiles.length+" · "+fileUnits(file.size));
       let state;
       if(pendingUpload){
         transferView("prepare",pendingUpload.received,file.size,"Resuming");
@@ -2670,8 +2783,10 @@ $("uploadButton").addEventListener("click",async()=>{
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
+        monitorText("transferOperation","Reading local file fingerprint");
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
+        transferEvent("Host reserved storage; chunk size "+fileUnits(chunkSize));
       }
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
@@ -2684,7 +2799,11 @@ $("uploadButton").addEventListener("click",async()=>{
         state=await sendChunk(path,file,state.received,end);
         pendingUpload.received=state.received;
         transferView("transfer",state.received,file.size);
-        if(state.ready_to_cast)casting=true;
+        if(state.ready_to_cast&&!casting){
+          casting=true;
+          monitorText("transferDelivery","Early playback requested — not confirmed");
+          transferEvent("Early playback requested; continuing transfer");
+        }
         const percent=Math.floor(state.received*100/file.size);
         showError("uploadStatus",(casting?"Early playback requested; ":"")+
           `${batchIndex+1}/${batchFiles.length} · ${file.name}: ${percent}% received by host`);
@@ -2693,7 +2812,10 @@ $("uploadButton").addEventListener("click",async()=>{
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size);
       $("pauseUpload").hidden=true;
-      const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      monitorText("transferOperation","Transfer complete");
+      monitorText("transferDelivery",queueOnly?"Added to Up Next":"Playback requested — receiver not confirmed");
+      transferEvent(queueOnly?"Host accepted queue addition":"Host accepted playback request; receiver confirmation is separate");
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
       for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
       $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Playback requested — awaiting receiver";
@@ -2709,6 +2831,10 @@ $("uploadButton").addEventListener("click",async()=>{
       showError("uploadStatus",`${count} of ${total} files added`);
     }
   }catch(error){
+    if(!pauseRequested&&!cancelUpload){
+      monitorText("transferOperation","Upload needs attention");
+      transferEvent("Transfer paused by error: "+(error?.message||"Unknown upload failure"));
+    }
     if(error.status===404){
       await clearPendingUpload();
       showError("uploadStatus",error.message+" Select the upload button to start this file again.");
@@ -2720,6 +2846,8 @@ $("uploadButton").addEventListener("click",async()=>{
         showError("uploadStatus",`${error.message} No files remain in this batch.`);
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
     }else if(pauseRequested){
+      monitorText("transferOperation","Paused");
+      transferEvent("Paused; resume from the last host-confirmed offset");
       if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available");
       showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
     }else if(cancelUpload){
