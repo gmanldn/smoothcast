@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-API_VERSION = "1.1"  # bumped only when the HTTP contract changes
+API_VERSION = "1.2"  # bumped only when the HTTP contract changes
 
 JSON = "application/json"
 ERR = {"description": "Error", "content": {JSON: {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -55,6 +55,10 @@ PATHS: dict[str, dict] = {
     "/api/search": {"get": _op("Search every shared library in the house", params=[
         _p("q", required=True, desc="Query; filters kind: year: artist: album:"),
         _p("limit"), _p("cursor")], tag="search")},
+    "/api/search/youtube": {"post": {
+        **_op("Explicit metadata-only YouTube search through an enabled isolated worker",
+              csrf=True, method_body="YouTubeSearch", tag="search"),
+        "security": [{"session": [], "csrf": []}]}},
     "/api/search/stream": {"get": _op(
         "Same search as server-sent events: results, more, done", params=[_p("q", required=True)],
         content="text/event-stream", tag="search")},
@@ -122,6 +126,8 @@ SCHEMAS = {
         "action": {"type": "string"}, "value": {}, "id": {"type": "string"},
         "key": {"type": "string", "pattern": "^qh:[0-9a-f]{32}$"},
         "queue_revision": {"type": "integer"}, "queue_command_id": {"type": "string"}}},
+    "YouTubeSearch": {"type": "object", "required": ["q"], "properties": {
+        "q": {"type": "string", "minLength": 1, "maxLength": 200}}},
     "LinkStart": {"type": "object", "required": ["url", "request_id", "authorised"], "properties": {
         "url": {"type": "string", "maxLength": 1500},
         "request_id": {"type": "string", "maxLength": 80},
