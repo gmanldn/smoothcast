@@ -198,10 +198,10 @@ assert(out.rows[0].why.includes("Older than v1.2.10"));
 assert(out.rows[0].sub.includes("2 clients"));
 assert(out.rows[0].badges.includes("This device"));
 assert(out.trows.find(t=>t.title==="Kitchen").why.includes("Laptop"));
-window.scRenderMeshRoom({title:"Film",receiver:"Lounge TV",state_label:"Playing",
+window.scRenderMeshRoom({active:true,title:"Film",receiver:"Lounge TV",state_label:"Playing",
  queue:[{id:"a"},{id:"b"}],network_activity:[{receiver:"Lounge TV",title:"Film",protocol:"Cast",state:"PLAYING",position:30,duration:120,is_local:true}],busy:false});
 assert.equal($("meshRoomTitle").textContent,"Film");
-assert.equal($("meshRoomReceiver").textContent,"Lounge TV · Playing");
+assert.equal($("meshRoomReceiver").textContent,"Selected: Lounge TV · Playing");
 assert.equal($("meshRoomQueue").textContent,"2 waiting items");
 assert.equal($("meshRoomStreams").textContent,"1 reported active receiver stream");
 assert.equal(elements.meshStreamList.children[0].children[2].value,30);
