@@ -162,6 +162,56 @@ the same position. Seeking a converted stream restarts it at the new position.
 - The room still uses plain HTTP on a trusted LAN (see below). Media sent to a
   screen is visible to that LAN segment in the same way as the dashboard.
 
+## YouTube and BitTorrent link acquisition (#587)
+
+In **Up Next → Add a link to Up Next**, a paired guest can submit one YouTube
+video or BitTorrent v1 magnet, confirm their authority to acquire the media,
+and watch the acquisition in the same room feed as other guests. The network
+view shows the room host's active jobs as well. Pending acquisition is not
+playback: the ordinary queue changes only after the host validates the complete
+file and accepts the queue operation. The current receiver is never taken over.
+
+The initial executor is the **room host**, not a randomly chosen mesh node.
+One active worker and at most four outstanding jobs per room; the same
+canonical source is coalesced, and a retried browser request has a receipt.
+The list shows pending/resolving/downloading/verifying/queueing/ready or a
+failure/cancellation. Bytes and rates come from worker reports; unknown totals
+remain indeterminate. No source URL, tracker, infohash, host path or peer IP
+is published in the acquisition feed. The submitting guest can cancel before
+the file enters Up Next.
+
+External acquisition defaults to **off**. An owner can independently enable
+`portal_link_youtube` and `portal_link_magnet` in the host's local
+configuration and restart the room. Each enabled provider requires its
+host-installed executable (`yt-dlp` or `aria2c`), FFprobe, and an absolute
+executable path in the host environment variable `SMOOTHCAST_LINK_SANDBOX`.
+The launcher must enforce the local owner's egress and filesystem policy:
+deny internal/private/link-local destinations (including DNS rebinding),
+expose only the job staging directory and required read-only runtime,
+enforce a hard disk quota, and kill the entire descendant process tree.
+It receives the executable and individual arguments, never a shell command.
+**Do not use a pass-through launcher**. SmoothCast cannot attest an arbitrary
+launcher's OS-level restrictions. Automatic cross-platform sandbox setup and
+real-provider qualification are outstanding; unavailable workers are shown as
+unavailable instead of silently attempting unrestricted downloads.
+
+The first slice accepts HTTPS single-video YouTube links (not playlists or
+active live streams) and v1 public magnet infohashes. Guest tracker/webseed
+parameters are discarded. BitTorrent metadata is acquired first via DHT,
+matched to the requested infohash, checked for unsafe paths and aggregate
+size, and the largest supported audio/video file is selected. Private,
+v2-only, unsafe or oversized torrents are rejected. No post-download seeding
+is requested. The per-job maximum is 2 GiB, with a 512 MiB disk reserve and a
+30-minute time budget. Only completed readable audio/video is offered to Up
+Next; acquisition does not bypass DRM or access controls. Acquire only media
+you are entitled to download.
+
+**Remaining work:** advertise acquisition capability, authenticated remote
+assignment, mesh-wide job telemetry and verified node-to-node delivery,
+restart-safe leases/resume, owner settings and worker provisioning. Follow
+[#587](https://github.com/gmanldn/smoothcast/issues/587). Do not interpret the
+room-local live view as proof of remote execution.
+
 ## Recovering a room queue
 
 While a room is running, SmoothCast checkpoints the ordered queue into a
@@ -196,9 +246,9 @@ current room using its current access settings.
   written to SmoothCast logs.
 - Every state-changing request checks the allowed Host and Origin and requires
   a per-session CSRF token. Queue entries are addressed by opaque short hashes,
-  never by host filesystem paths. The room has no file browser, arbitrary
-  filesystem path or arbitrary URL cast; uploads are the only way to introduce
-  new media.
+  never by host filesystem paths. Guests cannot request arbitrary filesystem
+  paths or arbitrary URL fetches. New media can arrive from uploaded files,
+  shared libraries, or explicitly enabled, isolated link acquisition.
 - On the trusted home LAN, being on the Wi-Fi is the invitation. When the
   optional House PIN is enabled it becomes the room authority. Use the room
   only on a trusted LAN, keep the desktop screen and any House PIN private, and
