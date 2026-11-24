@@ -9,14 +9,17 @@ from __future__ import annotations
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 
 APP_DIRS = ("src", "setup", "scripts", "data")
 APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py",
              "README.md", "LICENSE")
-IGNORED = {".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
+BUILD_MARKER = ".smoothcast-build"
+IGNORED = {BUILD_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
            ".ruff_cache", ".tox", "build", "dist", ".coverage", ".DS_Store"}
 
 
@@ -112,6 +115,36 @@ def _source_items(source: Path):
             yield name, path
 
 
+def _clean_source_revision(source: Path) -> str | None:
+    """Best-effort provenance, not a signature or an activation credential."""
+    if not (source / ".git").exists():
+        return None
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(source), *args],
+            capture_output=True, text=True, timeout=8, check=True,
+        ).stdout.strip()
+
+    try:
+        revision = git("rev-parse", "--verify", "HEAD")
+        if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision):
+            return None
+        if git("status", "--porcelain", "--untracked-files=all"):
+            return None
+        return revision
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+
+
+def _record_source_revision(source: Path, destination: Path, before: str | None) -> None:
+    """Write only inside the newly copied src tree (covered by install rollback)."""
+    if before and _clean_source_revision(source) == before:
+        marker = destination / "src" / BUILD_MARKER
+        if marker.parent.is_dir():
+            marker.write_text(before + "\n", encoding="ascii")
+
+
 @contextmanager
 def installed_sources(source: Path, destination: Path):
     """Replace only app-managed sources; restore previous sources on failure.
@@ -121,6 +154,7 @@ def installed_sources(source: Path, destination: Path):
     the entire target. A separate randomly named backup is kept until commit.
     """
     validate_destination(source, destination)
+    revision = _clean_source_revision(source)
     first = not destination.exists()
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.mkdir(exist_ok=True)
@@ -143,6 +177,7 @@ def installed_sources(source: Path, destination: Path):
                 shutil.copytree(source_path, target_path, symlinks=False, ignore=_ignore)
             else:
                 shutil.copy2(source_path, target_path)
+        _record_source_revision(source, destination, revision)
         yield
     except BaseException:
         for name in reversed(created):

@@ -100,10 +100,20 @@ def build_label(revision: str | None) -> str:
     return label()
 
 
+def _installed_revision(repo: Path) -> str | None:
+    marker = repo / "src" / ".smoothcast-build"
+    if marker.is_symlink() or not marker.is_file():
+        return None
+    raw = _read_small(marker, 128)
+    sha = raw.strip() if raw else ""
+    return sha.lower() if _SHA.fullmatch(sha) else None
+
+
 def read_checkout_revision(repo: Path) -> str | None:
     """Read the checkout's HEAD without Git, network, import or app mutation.
 
-    Supports normal .git directories, detached worktrees and packed refs.
+    Supports normal .git directories, detached worktrees, packed refs and
+    installer-recorded source provenance for copied applications.
     Fail closed for malformed/missing refs; never infer a running SHA from a
     version number.
     """
@@ -118,7 +128,7 @@ def read_checkout_revision(repo: Path) -> str | None:
     elif dot_git.is_dir():
         gitdir = dot_git
     else:
-        return None
+        return _installed_revision(repo) if not dot_git.exists() else None
 
     head = _read_small(gitdir / "HEAD", 256)
     if head is None:
@@ -151,6 +161,16 @@ def read_checkout_revision(repo: Path) -> str | None:
             if separator and name == ref and _SHA.fullmatch(sha):
                 return sha.lower()
     return None
+
+
+# Freeze the identity when this module is loaded. A later installer copy
+# must never relabel an already-running process.
+RUNNING_REVISION = read_checkout_revision(Path(__file__).resolve().parents[1])
+
+
+def running_label() -> str:
+    """Display the source build loaded by this process, not the moving disk."""
+    return build_label(RUNNING_REVISION)
 
 
 if __name__ == "__main__":
