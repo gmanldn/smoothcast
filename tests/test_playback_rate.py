@@ -38,12 +38,13 @@ class PlaybackRateTests(unittest.TestCase):
             tracker = position_tracker.PositionTracker()
             tracker.start(20, 100, True, rate=2)
             tracker.device_update(42, 100, rate=2)
+        # Pausing freezes the extrapolated clock: 42 + 5 s x 2 (#336).
         with mock.patch.object(position_tracker.time, "monotonic", return_value=15):
             tracker.set_state(False)
-        self.assertEqual(tracker.value(now=27), 42)
+        self.assertEqual(tracker.value(now=27), 52)
         with mock.patch.object(position_tracker.time, "monotonic", return_value=27):
             tracker.set_state(True)
-        self.assertEqual(tracker.value(now=30), 48)  # only 3 real seconds played
+        self.assertEqual(tracker.value(now=30), 58)  # only 3 real seconds played
 
     def test_rebase_preserves_rate_and_clear_resets(self):
         with mock.patch.object(position_tracker.time, "monotonic", return_value=10):
