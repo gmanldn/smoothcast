@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 import re
 
 CHANNELS = ("develop", "main")
-_COMMIT = re.compile(r"[0-9a-f]{7,40}")
+_COMMIT = re.compile(r"[0-9a-f]{7,64}")
+_EXACT_COMMIT = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 # Faults map to a civil sentence plus the ordered next step (docs/UX_COPY.md).
 FAULTS = {
     "offline": "SmoothCast could not reach the update source. Check your network connection, then check again.",
@@ -39,6 +40,7 @@ class UpdateFacts:
     journal_state: str | None = None      # planned|probed|switched|acked|rolled_back|aborted
     playing: bool = False
     fault: str | None = None
+    staged_commit: str | None = None      # independently verified staged generation
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,12 @@ def short(commit: str | None) -> str:
     return text[:7] if _COMMIT.fullmatch(text) else "unknown"
 
 
+def _exact(commit: str | None) -> str | None:
+    """Only a complete object ID can establish build identity."""
+    value = (commit or "").strip().lower()
+    return value if _EXACT_COMMIT.fullmatch(value) else None
+
+
 def _channel(value: str) -> tuple[str, str]:
     if value == "main":
         return "main", "Channel: main (released builds only)"
@@ -74,6 +82,10 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     channel, channel_line = _channel(f.channel)
     version = f.running_version.strip() or "unknown version"
     running = f"SmoothCast {version} ({short(f.running_commit)}) on {channel}"
+    running_id, active_id, candidate_id, previous_id, staged_id = (
+        _exact(value) for value in
+        (f.running_commit, f.active_commit, f.candidate, f.previous_commit, f.staged_commit)
+    )
 
     def make(state: str, headline: str, detail: str, *actions: str, new: bool = False) -> UpdateStatus:
         return UpdateStatus(state, headline, detail, running, channel_line, actions, new)
@@ -82,9 +94,14 @@ def describe(f: UpdateFacts) -> UpdateStatus:
         retry = ("check_now",) if f.fault == "bad_signature" else ("retry", "check_now")
         return make("fault", "Update not installed", FAULTS[f.fault], *retry)
     if f.journal_state == "rolled_back":
-        return make("rolled_back", "Update rolled back",
-                    f"The new version did not confirm, so {short(f.previous_commit)} is running again. "
-                    "Your queue and settings are unchanged.", "check_now")
+        # active.json's previous is the pre-existing rollback reference,
+        # not necessarily the generation that was just restored.
+        detail = (
+            f"The previous build {short(running_id)} is running again."
+            if active_id is not None and active_id == running_id
+            else "The previous generation was selected, but its running build is not confirmed."
+        )
+        return make("rolled_back", "Update rolled back", detail, "check_now")
     if f.journal_state == "aborted":
         return make("aborted", "Update cancelled", "Nothing was changed. The current version keeps running.",
                     "check_now")
@@ -94,21 +111,37 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     if f.journal_state == "switched":
         return make("confirming", "Waiting for the new version to confirm…",
                     "If it does not confirm, SmoothCast returns to the previous version.")
-    if (f.journal_state == "acked" and f.active_commit and f.active_commit == f.running_commit
-            and f.previous_commit and f.previous_commit != f.running_commit):
-        return make("running_new", "Updated",
-                    f"SmoothCast is running {short(f.running_commit)}.", "rollback", "check_now", new=True)
+    if f.journal_state == "acked":
+        if active_id is not None and active_id != running_id:
+            return make("activation_mismatch", "Running build differs from the activated build",
+                        "The activated generation is not the one reporting this status.", "check_now")
+        if active_id is not None and active_id == running_id and previous_id and previous_id != running_id:
+            return make("running_new", "Updated",
+                        f"SmoothCast is running {short(running_id)}.", "rollback", "check_now", new=True)
     if not f.checks_enabled:
         return make("off", "Update checks are off",
                     "SmoothCast will not look for updates until you turn checks on.", "enable_checks")
     if f.phase == "checking":
         return make("checking", "Checking for updates…", "This does not interrupt playback.", "cancel")
-    untrusted = f.require_signature and f.candidate and f.candidate_signed is not True
-    if untrusted and f.phase != "idle":
+    # A relaxed read-only check policy never authorises an unsigned activation.
+    untrusted = (f.require_signature or f.phase == "staged") and f.candidate and f.candidate_signed is not True
+    if untrusted and (f.phase != "idle" or f.candidate_signed is False):
         if f.candidate_signed is False:
             return make("untrusted", "Update not trusted", FAULTS["bad_signature"], "check_now")
         return make("verifying", "Verifying the update signature…", "It stays unused until it is trusted.", "cancel")
-    if f.active_commit and f.active_commit != f.running_commit and f.phase in {"staged", "verified"}:
+    if f.phase == "staged":
+        # Staging never changes active.json. Bind the signature to the exact
+        # independently verified staged generation, not the active reference.
+        if candidate_id is None or staged_id != candidate_id or running_id is None:
+            return make("unconfirmed", "Staged update not confirmed",
+                        "The candidate, staged generation and running build must be identified before restarting.",
+                        "check_now")
+        if active_id is not None and active_id != running_id:
+            return make("activation_mismatch", "Running build differs from the activated build",
+                        "The activated generation is not the one reporting this status.", "check_now")
+        if staged_id == running_id:
+            return make("current", "SmoothCast is running the staged build",
+                        f"The running build is {short(running_id)}.", "check_now")
         if f.playing:
             return make("awaiting_idle", "Update staged, waiting for playback to end",
                         "It is downloaded and verified but not running. SmoothCast will not restart during "
@@ -122,8 +155,11 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     if f.phase == "verified":
         return make("verified", "Update verified, not yet staged",
                     "It will be prepared in the background. It is not running.", "cancel")
-    if f.candidate and short(f.candidate) != short(f.running_commit):
+    if candidate_id is None or running_id is None:
+        return make("unchecked", "Update status not confirmed",
+                    "Check for updates to compare the running build with the selected channel.", "check_now")
+    if candidate_id != running_id:
         return make("available", "Update available",
-                    f"Version {short(f.candidate)} is available on {channel}. Nothing is installed yet.",
+                    f"Build {short(candidate_id)} is available on {channel}. Nothing is installed yet.",
                     "check_now")
     return make("current", "SmoothCast is up to date", f"You are running the latest {channel} build.", "check_now")
