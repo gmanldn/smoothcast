@@ -322,7 +322,9 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
-    assert "setTimeout(()=>controller.abort(),60000)" in page
+    assert "setTimeout(()=>{timedOut=true;controller.abort();},60000)" in page
+    assert 'if(timedOut)error=Object.assign(Error("Host did not respond within 60 seconds"),{status:408})' in page
+    assert "clearTimeout(deadline);clearInterval(tick)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume to retry" in page
     assert "Audio always goes into Up Next" in page
