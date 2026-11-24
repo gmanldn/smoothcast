@@ -124,6 +124,17 @@ class CanonicalVersionTests(unittest.TestCase):
         self.assertIsNone(version.parse_version_text("def bad(:\n"))
         self.assertIsNone(version.parse_version_text("MAJOR = 1\nMINOR = 2\n"))
 
+    def test_candidate_version_rejects_shadowed_and_mutated_components(self):
+        base = "MAJOR = 2\nMINOR = 3\nPATCH = 4\n"
+        for extra in (
+            "PATCH = 5\n", "PATCH += 1\n", "PATCH: int = 5\n",
+            "if True:\n    MINOR = 7\n", "(PATCH := 7)\n",
+            "def MAJOR():\n    pass\n", "from math import pi as PATCH\n",
+        ):
+            with self.subTest(extra=extra):
+                self.assertIsNone(version.parse_version_text(base + extra))
+
+
     def test_checkout_version_parsing_never_executes_arbitrary_code(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
