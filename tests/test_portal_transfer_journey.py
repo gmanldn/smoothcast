@@ -189,6 +189,13 @@ const fetch=async()=>({status:503,ok:false,headers:{get:()=>null},
   assert.equal($("transferAck").textContent,"4.0 KiB");
   assert.equal($("transferInFlight").textContent,"Chunk acknowledged by host");
   assert.equal(activeUploadController,null);
+  const malformed=uploadRequest("PUT","/api/uploads/private-id",{size:4096});
+  request.status=200;
+  request.responseText=JSON.stringify({ok:true,received:9000,size:8192});
+  request.onload();
+  await assert.rejects(malformed,/invalid upload receipt/);
+  assert.equal($("transferAck").textContent,"4.0 KiB");
+  assert.notEqual($("transferInFlight").textContent,"Chunk acknowledged by host");
   const interrupted=uploadRequest("PUT","/api/uploads/private-id",{size:4096});
   activeUploadController.abort();
   await assert.rejects(interrupted,/interrupted/);
