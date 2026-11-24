@@ -1553,3 +1553,34 @@ def test_upload_storage_failure_is_actionable_and_preserves_resume(
     finally:
         rig.close()
         uploads.close()
+
+
+def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
+    """A synchronous cast failure must not become an accepted upload."""
+    from textwrap import dedent
+
+    from gui_source import main_window_methods
+
+    namespace = {"portal": portal, "time": time}
+    exec(dedent(main_window_methods()["_portal_handle"]), namespace)
+    handle = namespace["_portal_handle"]
+    path = tmp_path / "clip.mkv"
+    path.write_bytes(b"test")
+    cast = mock.Mock(side_effect=[RuntimeError("submission failed"), None])
+    host = SimpleNamespace(
+        _closing=False, busy=False, _portal_queue_action=lambda *_: None,
+        _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
+        _cast_path=cast,
+    )
+    payload = {"upload_id": "retry-me", "early": True}
+    with pytest.raises(RuntimeError, match="submission failed"):
+        handle(host, "cast_upload", payload)
+    assert "retry-me" not in host._portal_accepted_uploads
+    assert "retry-me" not in host._portal_cast_uploads
+    assert host._portal_early is False
+
+    payload["early"] = False
+    handle(host, "cast_upload", payload)
+    assert "retry-me" in host._portal_accepted_uploads
+    handle(host, "cast_upload", payload)
+    assert cast.call_count == 2
