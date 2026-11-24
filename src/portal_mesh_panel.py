@@ -67,6 +67,10 @@ _PANEL = r"""
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
 <p id="meshRoomQueue" class="muted">Waiting for queue status</p><p id="meshRoomStreams" class="muted">Waiting for network activity</p>
 <p id="meshAcquisitions" class="muted">Waiting for acquisition activity</p><ul id="meshAcquisitionRows" aria-label="Room host media acquisition activity"></ul>
+<h4>Other hosts · acquisition activity</h4>
+<p id="meshRemoteAcquisitionSummary" class="muted">Waiting for peer acquisition observations</p>
+<ul id="meshRemoteAcquisitionRows" aria-label="Reported acquisition activity on other SmoothCast hosts"></ul>
+<p class="field-hint">Peer reports are read-only. A stale report does not establish that a download is still running.</p>
 <ul id="meshStreamList" aria-label="Reported live receiver streams"></ul>
 <div class="mesh-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Up Next</a><a href="#linkAcquisition">Link acquisitions</a><a href="#uploadCard">Transfer files</a><a href="#networkActivity">Receiver activity</a></div>
 </div>
@@ -124,6 +128,48 @@ _PANEL = r"""
           }
           return row;
         }));
+      }
+    }
+    const remote=state.mesh_link_activity;
+    const peers=remote&&Array.isArray(remote.nodes)?remote.nodes:[];
+    const livePeers=peers.filter(peer=>peer.freshness==="live");
+    const liveCount=livePeers.reduce((n,peer)=>n+(Array.isArray(peer.jobs)?peer.jobs.length:0),0);
+    const missing=peers.length-livePeers.length;
+    put("meshRemoteAcquisitionSummary",!remote||!remote.available?"Peer acquisition observation unavailable":
+      !peers.length?"No compatible peer acquisition reports yet":
+      plural(liveCount,"reported active peer acquisition")+" · "+plural(livePeers.length,"live host")+
+      (missing?" · "+plural(missing,"unconfirmed host"):"")+
+      (remote.omitted_jobs?" · "+plural(remote.omitted_jobs,"additional job")+" omitted":""));
+    const remoteRows=$("meshRemoteAcquisitionRows");
+    if(remoteRows&&typeof remoteRows.replaceChildren==="function"){
+      const signature=JSON.stringify(peers);
+      if(remoteRows.dataset.sig!==signature){
+        remoteRows.dataset.sig=signature;
+        const rows=[];
+        for(const peer of peers){
+          const jobs=Array.isArray(peer.jobs)?peer.jobs:[];
+          const freshness=peer.freshness==="live"?"Live report":peer.freshness==="stale"?"Stale · last reported":peer.freshness==="waiting"?"Awaiting first report":"Report unavailable";
+          const host=peer.name||"SmoothCast host";
+          if(!jobs.length){
+            const row=el("li","mesh-stream");
+            row.append(el("strong","",host),el("span","muted",freshness+(peer.freshness==="live"?" · No active acquisitions reported":"")));
+            rows.push(row);
+          }
+          for(const job of jobs){
+            const row=el("li","mesh-stream");
+            const label=job.kind==="youtube"?"YouTube video":"BitTorrent media";
+            const stage={pending:"Waiting for worker",resolving:"Resolving metadata",downloading:"Downloading",verifying:"Verifying media",queueing:"Submitting to queue"}[job.stage]||"Unknown";
+            row.append(el("strong","",host+" · "+label),el("span","muted",freshness+" · "+stage));
+            if(Number.isSafeInteger(job.received)&&Number.isSafeInteger(job.total)&&job.total>0&&job.received>=0&&job.received<=job.total){
+              const meter=el("progress");meter.max=job.total;meter.value=job.received;meter.setAttribute("aria-label",peer.freshness==="live"?"Reported acquisition progress":"Last reported acquisition progress");row.append(meter);
+              const size=n=>(n/1048576).toFixed(1)+" MiB";
+              const rate=peer.freshness==="live"&&Number.isSafeInteger(job.rate)&&job.rate>0? " · "+size(job.rate)+"/s":"";
+              row.append(el("span","muted",size(job.received)+" / "+size(job.total)+rate));
+            }
+            rows.push(row);
+          }
+        }
+        remoteRows.replaceChildren(...rows);
       }
     }
     const streamList=$("meshStreamList");
