@@ -103,6 +103,7 @@ class MeshConfig:
     discovery: Callable[[], Iterable[mv.Discovered]] = lambda: ()
     prober: mv.Prober | None = None
     on_error: Callable[[BaseException], None] | None = None
+    link_acquisition_sources: tuple[str, ...] = ()
 
 
 class MeshService:
@@ -156,7 +157,10 @@ class MeshService:
                             name=mm.clean_text(cfg.name, mm.MAX_NAME, fallback="SmoothCast"),
                             version=cfg.version if _valid_version(cfg.version) else "0.0.0",
                             rev=1, boot_epoch=epoch, mesh_port=http.port,
-                            room_port=cfg.room_port, capabilities=("room", "screens"),
+                            room_port=cfg.room_port,
+                            capabilities=("room", "screens", *(
+                                "acquire-" + kind + "-local" for kind in ("youtube", "magnet")
+                                if kind in cfg.link_acquisition_sources)),
                             addresses=(cfg.bind_ip,))
         self.beacon = mb.Beacon(clock=loop, transport=self._transport, rng=rng, local=local,
                                 on_event=self._on_beacon,
