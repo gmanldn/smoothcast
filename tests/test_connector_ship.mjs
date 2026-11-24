@@ -248,3 +248,48 @@ test("standalone creation refuses stale branch before creating objects",async()=
   await assert.rejects(createCandidate(t.api,p),/stale base/);
   assert.deepEqual(t.counters,{trees:0,commits:0,updates:0});
 });
+
+test("stale post-update readback reconciles without a duplicate write",async()=>{
+  const t=transport(),c=await prepare(t.api,p),get=t.api.get;
+  let stale=0;
+  t.api.get=async path=>{
+    if(path==="/git/ref/heads/develop"&&t.counters.updates===1&&stale++===0)
+      return {ref:"refs/heads/develop",object:{type:"commit",sha:p.base}};
+    return get(path);
+  };
+  await ship(t.api,p,c);
+  assert.equal(t.counters.updates,1);
+  assert.equal(t.state.head,c);
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,1);
+});
+test("transient read error after update is reconciled without rewriting",async()=>{
+  const t=transport(),c=await prepare(t.api,p),get=t.api.get;
+  let failed=false;
+  t.api.get=async path=>{
+    if(path==="/git/ref/heads/develop"&&t.counters.updates===1&&!failed){
+      failed=true;throw Error("temporary connector read failure");
+    }
+    return get(path);
+  };
+  await ship(t.api,p,c);
+  assert.equal(failed,true);
+  assert.equal(t.counters.updates,1);
+});
+test("unavailable post-update reads remain uncertain and preserve receipt",async()=>{
+  const t=transport(),c=await prepare(t.api,p),get=t.api.get;
+  let reads=0;
+  t.api.get=async path=>{
+    if(path==="/git/ref/heads/develop"&&t.counters.updates===1){
+      reads++;throw Error("connector unavailable");
+    }
+    return get(path);
+  };
+  await assert.rejects(ship(t.api,p,c),/shipment unconfirmed/);
+  assert.equal(reads,3);
+  assert.equal(t.counters.updates,1);
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-pending")).length,1);
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,0);
+  t.api.get=get;
+  await ship(t.api,p,c);
+  assert.equal(t.counters.updates,1);
+});

@@ -218,8 +218,12 @@ async function publishPending(api,p,candidate){
   check(!latest.some(c=>(c.body||"").includes("<!-- sc-connector-abandoned v1 sha="+candidate+" -->")),"candidate abandoned");
   check(await tip(api)===p.base,"base moved before ref update");
   try{await api.update(p.base,candidate)}catch(e){/* acknowledgement may be lost; reconcile */}
-  check(await landed(api,candidate),"shipment unconfirmed; preserve pending candidate");
-  return candidate;
+  // A connector may briefly serve the old ref after accepting the update.
+  // Reconcile with bounded read-only probes; never repeat the write here.
+  for(let attempt=0;attempt<3;attempt++){
+    try{if(await landed(api,candidate))return candidate}catch(e){/* retry read only */}
+  }
+  throw Error("shipment unconfirmed; preserve pending candidate");
 }
 
 async function recordHandover(api,p,candidate){
