@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,prepare,ship} from "../scripts/connector_ship.mjs";
+import {validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,prepare,ship,recordPending,publishPending,recordHandover} from "../scripts/connector_ship.mjs";
 const p={issue:598,agent:"test",base:"a".repeat(40),versionBlob:"b".repeat(40),
   changes:[{path:"src/foo.py",old:null,content:"pass\n"}],message:"fix",verification:"not run",next:"integration"};
 const now=Date.parse("2026-11-24T07:00:00Z");
@@ -184,10 +184,43 @@ test("receipt disappearing before ref update prevents shipment",async()=>{
   const get=t.api.get;
   let reads=0;
   t.api.get=async path=>{
-    if(path.startsWith("/issues/598/comments?")&&++reads===4)
+    if(path.startsWith("/issues/598/comments?")&&++reads===3)
       t.comments.splice(1);
     return get(path);
   };
   await assert.rejects(ship(t.api,p,c),/pending receipt disappeared|inconsistent comment snapshots/);
   assert.equal(t.counters.updates,0);
+});
+
+test("separate guarded stages survive runner boundaries",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  await recordPending(t.api,p,c);
+  assert.equal(t.counters.updates,0);
+  await publishPending(t.api,p,c);
+  assert.equal(t.counters.updates,1);
+  await recordHandover(t.api,p,c);
+  await recordHandover(t.api,p,c);
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,1);
+});
+test("publish stage cannot skip durable receipt",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  await assert.rejects(publishPending(t.api,p,c),/pending receipt/);
+  assert.equal(t.counters.updates,0);
+});
+test("handover stage cannot claim unpublished work",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  await recordPending(t.api,p,c);
+  await assert.rejects(recordHandover(t.api,p,c),/shipment unconfirmed/);
+});
+test("abandoned candidate cannot be published",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  await recordPending(t.api,p,c);
+  t.comments.push(row(3,598,"<!-- sc-connector-abandoned v1 sha="+c+" -->"));
+  await assert.rejects(publishPending(t.api,p,c),/candidate abandoned/);
+  assert.equal(t.counters.updates,0);
+});
+test("landed candidate without receipt cannot acquire false handover",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  t.state.head=c;
+  await assert.rejects(recordHandover(t.api,p,c),/missing pending receipt/);
 });

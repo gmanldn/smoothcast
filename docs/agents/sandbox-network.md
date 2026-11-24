@@ -63,6 +63,10 @@ const p = {issue: 123, agent: "agent-unique", base: "<full develop SHA>",
   next: "remaining acceptance and native finish"};
 const candidate = await prepare(api, p);
 await ship(api, p, candidate);
+// Or in separate bounded runner calls, with the same exact manifest and SHA:
+// await recordPending(api, p, candidate);
+// await publishPending(api, p, candidate);
+// await recordHandover(api, p, candidate);
 ```
 
 Before preparing, fetch the exact version.py and canonical AST guard

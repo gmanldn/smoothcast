@@ -179,33 +179,62 @@ async function prepare(api,p){
   return candidate;
 }
 
-async function ship(api,p,candidate){
+function pendingMarker(p,candidate){
+  return "<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent="+p.agent+" -->";
+}
+
+// Each stage independently revalidates its immutable candidate. Runners with
+// a bounded tool-call budget can resume between stages without keeping a
+// mutable in-memory assertion or weakening the original ship checks.
+async function recordPending(api,p,candidate){
   validate(p);await verifyCandidate(api,p,candidate);
-  const marker="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent="+p.agent+" -->";
-  if(!await landed(api,candidate)){
-    const initial=await checkClaims(api,p);checkPending(initial,candidate);check(await tip(api)===p.base,"base moved; do not overwrite");
-    let comments=await pages(api,"/issues/"+p.issue+"/comments",10);
-    if(!comments.some(c=>(c.body||"").includes(marker))){
-      const id=await api.comment(p.issue,"Pending connector shipment; reconcile exact SHA before retry.\n"+marker);
-      check(Number.isSafeInteger(id),"pending receipt not acknowledged");
-      comments=await pages(api,"/issues/"+p.issue+"/comments",10);
-      check(comments.some(c=>c.id===id&&(c.body||"").includes(marker)),"pending receipt not visible");
-    }
-    const latest=await checkClaims(api,p);checkPending(latest,candidate);
-    check(latest.some(c=>(c.body||"").includes(marker)),"pending receipt disappeared");
-    check(await tip(api)===p.base,"base moved before ref update");
-    try{await api.update(p.base,candidate)}catch(e){/* acknowledgement may be lost; reconcile */}
-    check(await landed(api,candidate),"shipment unconfirmed; preserve pending candidate");
+  const marker=pendingMarker(p,candidate);
+  if(await landed(api,candidate))return candidate;
+  const initial=await checkClaims(api,p);checkPending(initial,candidate);
+  check(await tip(api)===p.base,"base moved; do not overwrite");
+  if(!initial.some(c=>(c.body||"").includes(marker))){
+    const id=await api.comment(p.issue,"Pending connector shipment; reconcile exact SHA before retry.\n"+marker);
+    check(Number.isSafeInteger(id),"pending receipt not acknowledged");
+    const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
+    check(confirmed.some(c=>c.id===id&&(c.body||"").includes(marker)),"pending receipt not visible");
   }
+  return candidate;
+}
+
+async function publishPending(api,p,candidate){
+  validate(p);await verifyCandidate(api,p,candidate);
+  if(await landed(api,candidate))return candidate;
+  const latest=await checkClaims(api,p);checkPending(latest,candidate);
+  check(latest.some(c=>(c.body||"").includes(pendingMarker(p,candidate))),"pending receipt disappeared or missing");
+  check(!latest.some(c=>(c.body||"").includes("<!-- sc-connector-abandoned v1 sha="+candidate+" -->")),"candidate abandoned");
+  check(await tip(api)===p.base,"base moved before ref update");
+  try{await api.update(p.base,candidate)}catch(e){/* acknowledgement may be lost; reconcile */}
+  check(await landed(api,candidate),"shipment unconfirmed; preserve pending candidate");
+  return candidate;
+}
+
+async function recordHandover(api,p,candidate){
+  validate(p);await verifyCandidate(api,p,candidate);
+  check(await landed(api,candidate),"shipment unconfirmed; cannot record handover");
   const shipped="<!-- sc-ship v1 sha="+candidate+" -->";
   const comments=await pages(api,"/issues/"+p.issue+"/comments",10);
   if(!comments.some(c=>(c.body||"").includes(shipped))){
+    // A successor may finish a landed shipment with its own identity, but
+    // the original issue must contain the exact SHA/base delivery intent.
+    const prefix="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent=";
+    check(comments.some(c=>(c.body||"").includes(prefix)),"missing pending receipt for landed candidate");
     const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+p.changes.map(x=>x.path).join(", ")+"\n"+shipped);
     check(Number.isSafeInteger(id),"handover not acknowledged; retry exact candidate");
     const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
     check(confirmed.some(c=>c.id===id&&(c.body||"").includes(shipped)),"handover not visible");
   }
   return candidate;
+}
+
+async function ship(api,p,candidate){
+  await recordPending(api,p,candidate);
+  await publishPending(api,p,candidate);
+  return recordHandover(api,p,candidate);
 }
 
 function connectorAdapter(tools){
@@ -221,4 +250,4 @@ function connectorAdapter(tools){
   };
 }
 
-export {validate,leaseCheck,pages,prepare,ship,connectorAdapter,treeSnapshot,verifyTreeDelta};
+export {validate,leaseCheck,pages,prepare,ship,recordPending,publishPending,recordHandover,connectorAdapter,treeSnapshot,verifyTreeDelta};
