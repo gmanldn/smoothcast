@@ -76,6 +76,16 @@ class RemoteExecutor:
         return {"port": self.server.port, "token": self.server.register(job, path, size),
                 "size": size, "ext": path.suffix.lower()}
 
+    def discard(self, job: str) -> None:
+        """Revoke the ticket and delete the verified file (cancel or host-finished)."""
+        if self.server is not None:
+            self.server.revoke(job)
+        self.stop(job)
+        with self._lock:
+            result = self.results.pop(job, None)
+        if result is not None:
+            shutil.rmtree(self.root / job, ignore_errors=True)
+
     def stop(self, job: str) -> None:
         if self.server is not None:
             self.server.revoke(job)

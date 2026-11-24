@@ -83,9 +83,11 @@ class WorkerService:
 
     def __init__(self, start: Callable[..., None],
                  stop: Callable[[str], None], slots: int = 1,
-                 ticket: Callable[[str, int], dict | None] | None = None) -> None:
+                 ticket: Callable[[str, int], dict | None] | None = None,
+                 discard: Callable[[str], None] | None = None) -> None:
         self.guard = core.ExecutorGuard(slots)
         self._start, self._stop, self._ticket = start, stop, ticket
+        self._discard = discard
 
     def handle(self, message: object, sender: str | None = None) -> dict:
         try:
@@ -100,8 +102,13 @@ class WorkerService:
                 self._start(msg["job"], msg["gen"], msg["key"], msg["kind"], msg["src"], sender)
             return {"ok": verdict in ("accepted", "duplicate"), "verdict": verdict}
         if msg["t"] == "cancel":
+            stale = msg["gen"] < self.guard.highest.get(msg["job"], 0)
             if self.guard.cancel(msg["job"], msg["gen"]):
                 self._stop(msg["job"])
+            if not stale and self._discard is not None:
+                # Current fence: also revoke any download ticket and drop the verified file,
+                # even when the download already finished (nothing is "running" then).
+                self._discard(msg["job"])
             return {"ok": True, "verdict": "cancelled"}
         if msg["t"] == "ticket":
             result = self._ticket(msg["job"], msg["gen"]) if self._ticket else None

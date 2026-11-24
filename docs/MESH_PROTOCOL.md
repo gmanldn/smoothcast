@@ -200,3 +200,12 @@ labels them "running for another room", so the executing node and its real
 progress are what peers see. The room that delegated the job publishes it as
 `pending` ("Waiting for worker") instead of mirroring the worker's progress, so
 one download is never shown twice or counted as two.
+
+### Cancel and release (#589)
+
+A `cancel` with the current fence makes the worker stop any running download
+**and** revoke its download ticket and delete the verified copy, including after
+the download already finished. A stale-generation cancel changes nothing. After
+a successful, verified collection the host sends the same cancel (best effort)
+so the worker frees the file immediately instead of waiting for the 15 minute
+ticket expiry.

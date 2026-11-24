@@ -270,4 +270,8 @@ class TransferHost:
         if not first:
             return "not_ready"
         self._deliver(job_id, path)
+        try:  # tell the worker it may revoke the ticket and free its copy; best effort
+            self.coordinator._send(job.node, wire.build("cancel", job=job_id, gen=job.generation))
+        except Exception:  # noqa: BLE001 - the ticket still expires on its own
+            pass
         return "queued"

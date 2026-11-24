@@ -63,6 +63,7 @@ class RemoteAcquisition:
                     self.state_dir / "worker", local_provider,
                     lambda node, message: self._bridge().send(node, message), server=self.server)
                 self.worker = wire.WorkerService(self.executor.start, self.executor.stop, 1,
+                                                 discard=self.executor.discard,
                                                  ticket=self.executor.ticket)
                 self.executor.bind(self.worker)
             except (OSError, ValueError):
