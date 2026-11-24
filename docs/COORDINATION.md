@@ -4,9 +4,10 @@
 
 One command, `python3 scripts/agent.py`, replaces the manual
 digest → comment-claim → push → evidence loop. It reads state from GitHub and
-git only; it never launches a GUI, never force-pushes and never closes a ticket
-unless you pass `--close`. Its `done` report defaults to **unverified**;
-pass explicit evidence when checks have actually been run.
+git only; it never launches a GUI or force-pushes. Ticket closure
+is exclusive to `finish --close` from the correct private worktree, after
+verification and acceptance evidence. Legacy `done` is evidence-only;
+it cannot close tickets or revoke another agent's lease.
 
 ```sh
 python3 scripts/agent.py start [N] [--lane mesh] # fresh ticket, lease, worktree + scoped brief
@@ -18,7 +19,7 @@ python3 scripts/agent.py claim 207             # atomic claim; exit 3 = pick ano
 python3 scripts/agent.py ship --skip-checks    # rebase + push quickly, UNVERIFIED
 python3 scripts/agent.py ship                  # optional affected checks + push
 python3 scripts/agent.py progress 207 --done "landed …" --next "remaining …" --commit SHA --verification "actual result" --release
-python3 scripts/agent.py done 207 --why "…" --checklist "…" [--close]
+python3 scripts/agent.py done 207 --why "…" --checklist "…" # legacy evidence-only; never closes
 python3 scripts/agent.py heartbeat 207         # extend the lease on long work
 python3 scripts/agent.py release 207 --note "…"
 ```
@@ -65,7 +66,7 @@ ran before pushing.
 | Fast direct commits | `ship --message "..."` commits tracked edits privately and fast-forward pushes. Use `--files` for new paths. Version history is mandatory; `--skip-checks` skips only optional focused tests. No default version bump. |
 | Push races | On rejection, `ship` verifies actual remote ancestry, fetches/rebases unpublished code and retries up to five times; never force-pushes or touches main. Only explicitly generated, unpublished version-only commits may be discarded during recovery. Real code conflicts stop for handover. |
 | Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
-| Evidence and closing | `done N` verifies HEAD is on `origin/develop`, derives the file list from commits mentioning `#N`, posts the compact comment from [ISSUES.md](ISSUES.md), releases the claim. Add `--close` only when every acceptance item passes. |
+| Evidence and closing | Legacy `done N` verifies published develop commits, requires a real `--why` and `--checklist`, posts confirmed evidence and releases **only its own live claim**. It refuses `--close`. Use `finish --close` in the matching agent worktree, with `--verification`, `--checklist` and `--next none`, to close after checking freshness and pending delivery receipts. |
 
 ## Build identity and release-number policy
 
@@ -112,6 +113,7 @@ its own comment is visible, retrying the issue's comment feed when the global
 feed lags. If confirmation fails, it withdraws and returns exit 3 rather than
 pretending it owns the ticket.
 
-`done --close` uses GitHub REST and checks the returned state. If GitHub does
-not confirm closure, it reports an error rather than claiming success. Agent
-coordination remains usable on Python 3.10 without a TOML dependency.
+`finish --close` uses GitHub REST and verifies the returned state;
+`done --close` is intentionally refused so an unowned or stale worktree
+cannot bypass closure invariants. If the evidence POST is not acknowledged,
+no release or closure follows. Python 3.10 remains supported.
