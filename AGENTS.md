@@ -50,7 +50,8 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 - Owner policy: **one PATCH per completed ticket**. Ship progress without
   bumps; use `agent.py ship --assign-patch` for the final acceptance slice.
   Retries reuse the existing issue assignment; never mint a second PATCH.
-  Git SHA identifies every build; `src/version.py` is SemVer. Mandatory
+  Git commit SHA identifies every build (`--build-id`); `src/version.py` is SemVer
+  (`smoothcast --version`). Mandatory
   version-history checks run on every ship, even with `--skip-checks`.
   Never bypass them via raw pushes.
   No automatic merging, tagging or publishing to `main`.

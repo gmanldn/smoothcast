@@ -21,8 +21,8 @@ to `main`. The owner manually decides when (and whether) to merge it.
    Agents commonly share one GitHub user identity, so assignees and stale
    `in-flight` labels are **not** locks. The earliest active structured claim
    wins; on exit 3, choose another issue. The default lease is 90 minutes
-   (configurable 30–180); renew only during real work with `agent.py heartbeat N`.
-   Release via `agent.py progress N ... --release` or `agent.py release N`.
+   (30–180); renew only during real work with `agent.py heartbeat N`.
+   Release via `agent.py progress N ... --release` or `release N`.
    Split large issues into separate file-level scopes for concurrency.
 3. Work in one independent detached worktree per task (never the user's
    checkout), stage **named files only**, and make small cohesive commits with
@@ -76,15 +76,13 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
 - Prefer completing small independent tickets rather than keeping many broad
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
-- Every coherent `agent.py ship` has an immutable Git commit SHA. Owner policy
-  (24 November 2026): **one PATCH per completed ticket**, using `--assign-patch`
-  for the final acceptance slice before closing. Intermediate progress ships
-  without a bump. The allocator checks complete fetched develop history for
-  the exact issue assignment and reuses it on retries/handovers; a losing
-  concurrent worker rebases and must not mint a second number. Historical
-  duplicates remain untouched. The version-history guard runs regardless of
-  `--skip-checks`, and `main` promotion remains manual. Raw-push enforcement
-  is still advisory; the server-side boundary remains #583.
+- Every coherent `agent.py ship` has an immutable Git commit SHA; `src/version.py`
+  is SemVer. Owner policy (24 Nov 2026): **one PATCH per completed ticket**, via
+  `--assign-patch` on the final slice; progress ships carry no bump. The allocator reuses
+  the issue's existing assignment on retries, and a losing concurrent worker
+  rebases rather than minting a second number. The version-history guard runs
+  regardless of `--skip-checks`; `main` promotion is manual; raw-push
+  enforcement stays advisory until #583.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
