@@ -440,6 +440,31 @@ def test_finish_fences_stale_claim_even_when_not_closing(monkeypatch):
     assert agent.cmd_finish(args) == 3
 
 
+def test_finish_refuses_stale_issue_specific_develop_revision(monkeypatch):
+    task = {"issue": 584}
+    args = agent.build_parser().parse_args(
+        ["finish", "--done", "all complete", "--next", "none",
+         "--verification", "pytest: passing", "--checklist", "all acceptance", "--close"])
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs:
+                        "" if args[0] == "status" else "a" * 40)
+    monkeypatch.setattr(agent, "recover_pending_handover", lambda task: True)
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "ticket_commits", lambda number: ["b" * 40])
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must not publish, close or release with stale ticket state")))
+    calls = []
+    def probe(command, **kwargs):
+        if command[:3] == ["git", "merge-base", "--is-ancestor"]:
+            calls.append(command[-2:])
+            # HEAD is on develop, but newer issue commit is not in our worktree.
+            return SimpleNamespace(returncode=0 if len(calls) == 1 else 1)
+        raise AssertionError(command)
+    monkeypatch.setattr(agent.subprocess, "run", probe)
+    assert agent.cmd_finish(args) == 3
+    assert calls == [["a" * 40, "a" * 40], ["b" * 40, "a" * 40]]
+
+
 def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp_path):
     monkeypatch.setattr(agent, "ROOT", tmp_path)
     monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
