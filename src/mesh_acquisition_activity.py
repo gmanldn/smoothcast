@@ -92,6 +92,7 @@ class AcquisitionActivity:
         self.disabled = disabled
         self.hello = protocol.local_handshake(version, caps=(CAPABILITY,))
         self._peers: dict[str, _Observation] = {}
+        self._inflight = 0
         self._lock = threading.Lock()
         self._snapshot: dict = {"available": True, "nodes": [], "omitted_jobs": 0}
         self._revision = 0
@@ -154,7 +155,9 @@ class AcquisitionActivity:
             if node not in self._peers:
                 self._peers[node] = _Observation(peer.boot_id, peer.endpoint)
         self._publish(eligible, now)
-        free = MAX_INFLIGHT - sum(row.inflight for row in self._peers.values())
+        # A departed/restarted peer can still have a transport request in
+        # flight. Keep the global budget until its callback actually returns.
+        free = MAX_INFLIGHT - self._inflight
         due = sorted((row.due, node) for node, row in self._peers.items()
                      if not row.inflight and row.due <= now
                      and eligible[node].status == membership.ALIVE)
@@ -165,10 +168,15 @@ class AcquisitionActivity:
     def _request(self, node, row):
         own = self.own()
         row.inflight = True
+        self._inflight += 1
         body = {"hello": self.hello.wire(), "node": own.node_id, "boot": own.boot_id,
                 "target": node, "target_boot": row.boot}
 
         def replied(value, _error):
+            if not row.inflight:
+                return
+            row.inflight = False
+            self._inflight -= 1
             if self._closed or self._peers.get(node) is not row:
                 return
             eligible = self._eligible()
@@ -176,7 +184,6 @@ class AcquisitionActivity:
             if (peer is None or (peer.boot_id, peer.endpoint) != (row.boot, row.endpoint)):
                 return
             now = self.clock.monotonic()
-            row.inflight = False
             row.due = now + REPEAT_SECONDS
             try:
                 if (peer.status != membership.ALIVE or not isinstance(value, dict)
@@ -191,7 +198,10 @@ class AcquisitionActivity:
                 row.due = now + 5.0
             self._publish(eligible, now)
 
-        self.rpc.call(row.endpoint, RPC_KIND, body, replied, timeout=2.0)
+        try:
+            self.rpc.call(row.endpoint, RPC_KIND, body, replied, timeout=2.0)
+        except Exception:
+            replied(None, "transport")
 
     def _publish(self, eligible, now):
         nodes = []
