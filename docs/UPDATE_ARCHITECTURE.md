@@ -45,6 +45,21 @@ file-count/byte budgets, compression-ratio bombs and truncated/corrupt data
 (including a cut gzip trailer), and removes the scratch tree on any failure.
 It does not authenticate the archive; that must happen first.
 
+`setup/managed_activation.py` is the **offline activation state machine** (#581).
+`activate()` re-hashes a staged `releases/<sha>` (dirty, extra, missing or linked
+files refuse), runs a caller-supplied GUI-free health probe, then replaces ONE
+owner-only file, `active.json` (`current`/`previous`/`seq`), via temp + fsync +
+`os.replace` + directory fsync. Release trees are never renamed or deleted. A
+journal (`planned -> probed -> switched -> acked`, or `rolled_back`/`aborted`)
+and an exclusive, expiring per-install lease (hard-link acquire; liveness is by
+expiry, never PID; another user's lease fails closed) make `recover()` replay
+idempotently after a crash at any step. The new primary must `acknowledge()` its
+exact commit before the lease expires; a wrong commit, late acknowledgement or
+explicit `rollback()` restores the previous reference. `staged_notice()` gives
+the "staged, not yet running" text. It signals no process and starts nothing.
+It is **not wired** into the launcher, and no zero-downtime claim is made until
+a real stream survives an update end to end.
+
 **This does NOT yet fetch or authenticate manifests, construct a complete
 independent native GTK/Python environment, atomically activate a generation,
 or roll back a failed new primary.** Never call it automatically on an untrusted
