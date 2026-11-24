@@ -50,9 +50,16 @@ def test_chunks_are_bounded_resumable_and_owner_private(tmp_path):
     assert result["complete"] and path.read_bytes() == b"abcdef"
     final, name, first_dispatch = uploads.finalize("session-one", created["id"])
     assert (name, final.read_bytes(), first_dispatch) == ("holiday.mp4", b"abcdef", True)
-    assert uploads.finalize("session-one", created["id"])[2] is False
+    with pytest.raises(portal_uploads.UploadError, match="still processing") as pending:
+        uploads.finalize("session-one", created["id"])
+    assert pending.value.status == 409
+    assert uploads.status("session-one", created["id"])["dispatch_state"] == "pending"
     uploads.finish_dispatch("session-one", created["id"], accepted=False)
+    assert uploads.status("session-one", created["id"])["dispatch_state"] == "not_submitted"
     assert uploads.finalize("session-one", created["id"])[2] is True
+    uploads.finish_dispatch("session-one", created["id"], accepted=True)
+    assert uploads.finalize("session-one", created["id"])[2] is False
+    assert uploads.status("session-one", created["id"])["dispatch_state"] == "accepted"
     uploads.close()
 
 
@@ -337,5 +344,18 @@ def test_finalize_retry_preserves_file_after_directory_sync_failure(tmp_path):
     final, name, dispatch = uploads.finalize("owner", upload_id)
     assert (final.read_bytes(), name, dispatch) == (b"abcdef", "clip.mp4", True)
     assert uploads.status("owner", upload_id)["complete"] is True
+    uploads.finish_dispatch("owner", upload_id, accepted=True)
     assert uploads.finalize("owner", upload_id)[2] is False
+    uploads.close()
+
+
+def test_accepted_upload_cannot_report_a_different_room_action(tmp_path):
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "clip.mp4", 3)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/3", 3, BytesIO(b"abc"))
+    assert uploads.finalize("owner", upload_id, queue_only=False)[2]
+    uploads.finish_dispatch("owner", upload_id, accepted=True)
+    with pytest.raises(portal_uploads.UploadError, match="different accepted room action"):
+        uploads.finalize("owner", upload_id, queue_only=True)
+    assert uploads.finalize("owner", upload_id, queue_only=False)[2] is False
     uploads.close()
