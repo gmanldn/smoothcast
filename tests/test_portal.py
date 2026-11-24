@@ -1621,3 +1621,64 @@ def test_upload_receipt_reports_declined_early_cast_without_leaking_path(tmp_pat
     finally:
         rig.close()
         uploads.close()
+
+
+def test_concurrent_upload_completion_never_acknowledges_unaccepted_action(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    entered, release = threading.Event(), threading.Event()
+    responses = []
+    calls = []
+    original = rig.server.dispatch
+
+    def dispatch(action, payload):
+        if action != "cast_upload":
+            return original(action, payload)
+        calls.append(action)
+        if len(calls) == 1:
+            entered.set()
+            if not release.wait(2):
+                raise RuntimeError("test did not release dispatch")
+            raise portal.PortalRequestError(503, "Receiver is temporarily unavailable")
+        return original(action, payload)
+
+    rig.server.dispatch = dispatch
+    worker = None
+    try:
+        _, guest, cookie = login(rig)
+        auth = {"cookie": cookie, "csrf": guest["csrf"], "origin": f"http://{rig.host}"}
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mp4", "size": 3, "queue": False}, **auth)
+        assert status == 201
+        path = "/api/uploads/" + decode(raw)["id"]
+        assert rig.request("PUT", path, b"abc", **auth,
+                           extra_headers={"Content-Range": "bytes 0-2/3"},
+                           content_type="application/octet-stream")[0] == 200
+
+        def complete():
+            responses.append(rig.request("POST", path + "/complete", {}, **auth))
+
+        worker = threading.Thread(target=complete, daemon=True)
+        worker.start()
+        assert entered.wait(1)
+        status, raw, _ = rig.request("POST", path + "/complete", {}, **auth)
+        assert status == 409 and "still processing" in decode(raw)["error"]
+        assert decode(rig.request("GET", path, cookie=cookie)[1])["dispatch_state"] == "pending"
+        release.set()
+        worker.join(3)
+        assert responses[0][0] == 503
+        assert decode(rig.request("GET", path, cookie=cookie)[1])["dispatch_state"] == "not_submitted"
+
+        for _ in range(2):
+            assert rig.request("POST", path + "/complete", {}, **auth)[0] == 202
+        assert calls == ["cast_upload", "cast_upload"]
+        assert decode(rig.request("GET", path, cookie=cookie)[1])["dispatch_state"] == "accepted"
+        assert rig.request("POST", path + "/complete", {"queue": True}, **auth)[0] == 409
+    finally:
+        release.set()
+        if worker is not None:
+            worker.join(3)
+        rig.close()
+        uploads.close()
