@@ -102,6 +102,12 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
         join_slate_ui.add_switch(self, queue)
         self._switch(queue, "house_pin_enabled", "Require a house PIN to join",
                      "Only needed if people you don't trust use your Wi-Fi. Applies the next time the room restarts.")
+        self._switch(queue, "portal_link_youtube", "Let guests acquire YouTube links",
+                     "Authorised single videos only. Requires yt-dlp, FFprobe and an isolated "
+                     "host worker. Takes effect after a room restart.")
+        self._switch(queue, "portal_link_magnet", "Let guests acquire BitTorrent magnets",
+                     "Authorised public torrents only. Requires aria2c, FFprobe and an isolated "
+                     "host worker with restricted network access. Takes effect after a room restart.")
         room_port_row = Adw.ActionRow(
             title="Room remote port",
             subtitle="High-range port used by phone links and QR codes. Change takes effect on the next launch.",
@@ -307,7 +313,8 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
         if key in widgets:
             getattr(owner, widgets[key]).set_active(active)
         elif key in ("auto_crop", "auto_deinterlace", "notifications", "portal_screens",
-                     "house_pin_enabled", "idle_join_slate", "show_cover_art", "check_release_updates",
+                     "house_pin_enabled", "portal_link_youtube", "portal_link_magnet",
+                     "idle_join_slate", "show_cover_art", "check_release_updates",
                      "release_check_verify", "quality_auto"):
             owner.cfg[key] = active  # read from config.json at the next transcode (#54)
             save_config(owner.cfg)
