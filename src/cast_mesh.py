@@ -27,6 +27,9 @@ def start(window: object, address: str) -> None:
             return
         portal = getattr(window, "_portal", None)
         jobs = getattr(getattr(portal, "server", None), "link_jobs", None)
+        if jobs is None and settings.get("remote_acquisition"):
+            # No local worker here: still let mesh workers serve the owner-enabled kinds.
+            jobs = mesh_acquisition_app.ensure_jobs(portal, getattr(window, "cfg", None) or {})
         capabilities = jobs.capabilities() if jobs is not None else {}
         sources = tuple(kind for kind in ("youtube", "magnet") if capabilities.get(kind) is True)
         remote = None

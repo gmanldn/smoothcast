@@ -119,7 +119,10 @@ class RemoteAcquisition:
     def capabilities(self) -> dict:
         local = self.local_provider.capabilities() if self.local_provider is not None else {}
         usable = self.host is not None
-        return {kind: bool(local.get(kind)) or (usable and bool(self.offers(kind)))
+        # The owner enables each kind explicitly; mesh workers never widen that.
+        allowed = getattr(self.local_provider, "kinds", None)
+        return {kind: bool(local.get(kind)) or (usable and (allowed is None or kind in allowed)
+                                                and bool(self.offers(kind)))
                 for kind in ("youtube", "magnet")}
 
     def acquire(self, source, directory: Path, stage, progress, cancelled) -> Path:
@@ -246,3 +249,31 @@ class CompositeProvider:
         if self.local is not None and self.local.capabilities().get(source.kind):
             return self.local.acquire(source, directory, stage, progress, cancelled)
         return self.remote.acquire(source, directory, stage, progress, cancelled)
+
+
+def ensure_jobs(portal, cfg: dict):
+    """Give a room whose owner enabled a link kind a ``LinkJobs`` even when this
+    machine has no local worker, so mesh workers can serve it (#587/#589).
+
+    Nothing external runs until a provider reports a capability. Returns the
+    room's ``LinkJobs`` or None; never raises."""
+    try:
+        server = getattr(portal, "server", None)
+        if server is None:
+            return None
+        if getattr(server, "link_jobs", None) is not None:
+            return server.link_jobs
+        kinds = tuple(k for k in ("youtube", "magnet") if cfg.get("portal_link_" + k) is True)
+        if not kinds:
+            return None
+
+        def deliver(owner, path):
+            server.dispatch("queue_add", {"path": str(path), "name": Path(path).name,
+                                          "_portal_auth_key": owner})
+
+        server.link_jobs = links.LinkJobs(Path(portal.uploads.root) / "link-acquisitions",
+                                          links.CommandProvider(kinds), deliver,
+                                          server.session_key_active)
+        return server.link_jobs
+    except Exception:  # noqa: BLE001 - optional convenience, never affects the room
+        return None

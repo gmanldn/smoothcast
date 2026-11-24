@@ -184,3 +184,66 @@ def test_composite_prefers_a_local_worker_and_otherwise_uses_the_mesh(tmp_path):
             composite.acquire(magnet, tmp_path / "m", lambda s: None, lambda r, t: None, lambda: False)
     finally:
         srv.close()
+
+
+class _Server:
+    def __init__(self):
+        self.link_jobs = None
+        self.dispatched = []
+
+    def dispatch(self, op, payload):
+        self.dispatched.append((op, payload))
+
+    def session_key_active(self, key):
+        return True
+
+
+def test_ensure_jobs_needs_an_owner_enabled_kind_and_is_idempotent(tmp_path):
+    portal = NS(server=_Server(), uploads=NS(root=tmp_path))
+    assert app.ensure_jobs(portal, {}) is None and portal.server.link_jobs is None
+    jobs = app.ensure_jobs(portal, {"portal_link_youtube": True})
+    try:
+        assert jobs is portal.server.link_jobs and app.ensure_jobs(portal, {}) is jobs
+        assert jobs.provider.kinds == frozenset({"youtube"})
+        assert app.ensure_jobs(NS(server=None), {"portal_link_youtube": True}) is None
+    finally:
+        jobs.close()
+
+
+def test_mesh_workers_never_widen_the_owner_enabled_kinds(tmp_path):
+    remote, *_ = make(tmp_path)
+    remote.local_provider = links.CommandProvider(("magnet",))   # owner enabled only magnets
+    remote.host = object()
+    assert remote.capabilities()["youtube"] is False
+    remote.local_provider = links.CommandProvider(("youtube",))
+    assert remote.capabilities()["youtube"] is True
+
+
+def test_gui_owner_without_a_local_worker_adds_a_video_through_a_mesh_worker(tmp_path):
+    """GUI add on a machine with no yt-dlp: mesh worker downloads, GUI queues it once."""
+    import time
+
+    import gui_link_add
+
+    remote, provider, ex, srv = make(tmp_path)
+    portal = NS(server=_Server(), uploads=NS(root=tmp_path / "room"))
+    jobs = app.ensure_jobs(portal, {"portal_link_youtube": True})
+    queued = []
+    try:
+        remote.local_provider = jobs.provider           # the owner-enabled, tool-less provider
+        jobs.provider = app.CompositeProvider(jobs.provider, remote)
+        assert jobs.capabilities()["youtube"] is True
+        assert gui_link_add.attach(jobs, queued.append)
+        result = gui_link_add.submit(jobs, "https://youtu.be/" + VIDEO)
+        assert result.ok
+        end = time.monotonic() + 8
+        while time.monotonic() < end and not gui_link_add.describe(jobs, result.job_id)[1]:
+            time.sleep(0.02)
+        ex.join()
+        assert gui_link_add.describe(jobs, result.job_id) == ("Added to Up Next", True)
+        assert len(queued) == 1 and queued[0].read_bytes() == DATA
+        assert provider.calls == [links.Source("youtube", VIDEO)]
+        assert portal.server.dispatched == []           # GUI owner never uses the guest path
+    finally:
+        jobs.close()
+        srv.close()
