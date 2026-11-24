@@ -299,12 +299,19 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     if casting is None:
                         casting = self._portal_cast_uploads = {}
                     casting[upload_id] = (str(path), time.monotonic())
-            self.set_selection(str(path))
-            # A partial file must not be direct-cast (catt would stream a
-            # truncated file); force the growing-file HLS transcode instead.
-            self._portal_early = early
             try:
+                self.set_selection(str(path))
+                # A partial file must not be direct-cast (catt would stream a
+                # truncated file); force the growing-file HLS transcode instead.
+                self._portal_early = early
                 self._cast_path(path, 0)
+            except Exception:
+                # A failed synchronous submission is not an accepted cast.
+                # Otherwise the same upload ID is silently ignored on retry.
+                if upload_id:
+                    accepted_uploads.discard(upload_id)
+                    getattr(self, "_portal_cast_uploads", {}).pop(upload_id, None)
+                raise
             finally:
                 self._portal_early = False
             return "Upload received; casting started."
