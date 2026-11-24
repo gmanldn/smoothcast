@@ -247,8 +247,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 raise portal.PortalRequestError(400, "Invalid command envelope")
             return portal_commands.run_mutation(self, fence, envelope)
         if operation == "status":
-            position = self.tracker.value()
-            duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+            position, duration = self._portal_timing()
             title = self.np_title.get_text()
             if not title and self.now_playing:
                 title = pathlib.Path(self.now_playing).name

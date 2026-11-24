@@ -750,3 +750,11 @@ def test_guest_visible_text_uses_plain_words():
     html = portal._page().decode("utf-8")
     assert '<details class="tech-details" id="transferTech"><summary>Technical details</summary>' in html
     assert 'id="transferTech" open' not in html  # collapsed by default
+
+
+def test_mesh_stream_rows_show_total_runtime_even_without_a_position():
+    import portal_mesh_panel
+
+    html = portal_mesh_panel.panel_html()
+    assert '"Total runtime "+timing(item.duration)' in html
+    assert "h?h+" in html  # long films show hours rather than 125:30

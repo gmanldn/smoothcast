@@ -163,3 +163,27 @@ def start_offset(requested: float | None, saved: object = None) -> float:
     except (ValueError, TypeError, OverflowError):
         return 0.0
     return max(0.0, value) if math.isfinite(value) else 0.0
+
+
+MAX_EXTERNAL_RUNTIME = 7 * 24 * 3600.0
+
+
+def external_runtime(info: dict | None) -> tuple[float, float] | None:
+    """Return ``(position, total runtime)`` seconds for media we did not start.
+
+    The receiver is the only source for an external stream's length. A live or
+    unknown-length stream reports no usable duration, so it yields ``None``
+    (the guest sees an unknown runtime, never a made-up one).
+    """
+    if not isinstance(info, dict):
+        return None
+    try:
+        total = float(info.get("duration") or 0.0)
+        position = float(info.get("current_time") or 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (math.isfinite(total) and 0 < total <= MAX_EXTERNAL_RUNTIME):
+        return None
+    if not math.isfinite(position) or position < 0:
+        position = 0.0
+    return min(position, total), total

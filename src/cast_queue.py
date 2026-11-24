@@ -813,6 +813,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         idle = (self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
                 or self._join_slate_showing(info))  # our own idle slate is not user playback (#420)
         if idle:
+            self._external_runtime = None
             if self.external:
                 self.external = False
             # An idle receiver must not leave an old URL cast marked as owned.
@@ -841,6 +842,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         # Without a matching saved stream the receiver is playing other media.
         self.external = True
         self.tracker.clear()
+        self._external_runtime = playback_state.external_runtime(info)
 
 
     def _device(self) -> str:

@@ -5,6 +5,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import playback_state
+
 from gui_source import combined_source
 
 from playback_state import absolute_encoded_position, playback_ended, direct_session_matches, start_offset
@@ -59,3 +61,19 @@ class PlaybackStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_external_runtime_reads_the_receivers_total_length():
+    runtime = playback_state.external_runtime({"duration": 5400.5, "current_time": 61})
+    assert runtime == (61.0, 5400.5)
+    # Position is clamped to the runtime and never negative.
+    assert playback_state.external_runtime({"duration": 100, "current_time": 250}) == (100.0, 100.0)
+    assert playback_state.external_runtime({"duration": 100, "current_time": -5}) == (0.0, 100.0)
+    assert playback_state.external_runtime({"duration": "90", "current_time": None}) == (0.0, 90.0)
+
+
+def test_external_runtime_is_unknown_for_live_or_malformed_reports():
+    for info in (None, {}, "x", {"duration": None}, {"duration": 0}, {"duration": -3},
+                 {"duration": float("inf")}, {"duration": float("nan")},
+                 {"duration": 10 ** 9}, {"duration": "soon"}, {"duration": [1]}):
+        assert playback_state.external_runtime(info) is None, info

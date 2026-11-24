@@ -178,7 +178,7 @@ _PANEL = r"""
       const signature=JSON.stringify(observed.map(item=>[item.receiver,item.title,item.protocol,item.state,item.position,item.duration,item.is_local]));
       if(streamList.dataset.sig!==signature){
         streamList.dataset.sig=signature;
-        const timing=value=>Number.isFinite(value)&&value>=0?Math.floor(value/60)+":"+String(Math.floor(value%60)).padStart(2,"0"):"";
+        const timing=value=>{if(!Number.isFinite(value)||value<0)return "";const s=Math.floor(value),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?h+":"+String(m).padStart(2,"0")+":"+r:m+":"+r};
         const rows=observed.map(item=>{
           const row=document.createElement("li");row.className="mesh-stream";
           const title=document.createElement("strong");title.textContent=item.title||"Media title unavailable";
@@ -190,6 +190,9 @@ _PANEL = r"""
             progress.setAttribute("aria-label","Reported playback position");
             const time=document.createElement("span");time.className="muted";time.textContent=timing(item.position)+" / "+timing(item.duration);
             row.append(progress,time);
+          }else if(Number.isFinite(item.duration)&&item.duration>0){
+            const total=document.createElement("span");total.className="muted";total.textContent="Total runtime "+timing(item.duration);
+            row.append(total);
           }
           return row;
         });
