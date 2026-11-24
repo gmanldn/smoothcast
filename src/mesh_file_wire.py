@@ -5,6 +5,7 @@ No sockets are created on import; open_upstream is supplied by the caller.
 """
 from __future__ import annotations
 
+from http.client import HTTPException
 import re
 from typing import Callable
 
@@ -45,7 +46,11 @@ def _valid_resume(reply, start: int, end: int, total: str | None,
         return False
     # An unvalidated resume may splice bytes from another file generation.
     # Weak ETags only promise semantic equivalence, not byte identity.
-    if generation is None and (etag is None or etag.startswith("W/")):
+    strong_etag = (
+        isinstance(etag, str)
+        and re.fullmatch(r'"[\x21\x23-\x7e\x80-\xff]*"', etag) is not None
+    )
+    if not generation and not strong_etag:
         return False
     if etag is not None and reply.getheader("ETag") != etag:
         return False
@@ -141,23 +146,28 @@ def pump_stream(
     sent, retries = 0, 0
     try:
         while sent < length:
+            wanted = min(chunk_size, length - sent)
             try:
-                chunk = reply.read(min(chunk_size, length - sent))
-                if not chunk:
-                    raise OSError("upstream ended early")
-            except OSError:
-                retries += 1
-                if retries > max_retries:
-                    return
+                chunk = reply.read(wanted)
+                if not chunk or len(chunk) > wanted:
+                    raise OSError("upstream returned an invalid body chunk")
+            except (OSError, HTTPException):
+                # Never read the old response after a failed reconnect.
                 conn.close()
+                conn = None
                 last = start + length - 1
-                try:
-                    conn, reply = open_upstream(
-                        url, key, f"bytes={start + sent}-{last}", False)
-                except OSError:
-                    continue
-                if not _valid_resume(
-                        reply, start + sent, last, total, etag, generation):
+                while retries < max_retries:
+                    retries += 1
+                    try:
+                        conn, reply = open_upstream(
+                            url, key, f"bytes={start + sent}-{last}", False)
+                    except (OSError, HTTPException):
+                        continue
+                    if not _valid_resume(
+                            reply, start + sent, last, total, etag, generation):
+                        return
+                    break
+                else:
                     return
                 continue
             try:
@@ -169,4 +179,5 @@ def pump_stream(
         if sent < length:
             # A partial HTTP body may not be reused as a successful response.
             handler.close_connection = True
-        conn.close()
+        if conn is not None:
+            conn.close()
