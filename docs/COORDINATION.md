@@ -23,6 +23,27 @@ python3 scripts/agent.py heartbeat 207         # extend the lease on long work
 python3 scripts/agent.py release 207 --note "…"
 ```
 
+## Recovery and exit statuses
+
+A successful push and a successful issue handover are **separate** operations.
+If `ship` exits **7**, its Git SHA has already reached `develop`, but
+the GitHub handover is not confirmed. The worktree contains an untracked
+`sc-agent-task.json` receipt in its private Git admin directory. **Rerun
+`python3 scripts/agent.py ship` from that same worktree**, without making a
+duplicate commit. It verifies remote ancestry, replays the original SHA
+idempotently, and clears the receipt only when GitHub confirms publication.
+
+A ticket's predicted files are an initial lease scope, not permission to
+overwrite arbitrary files. Before a push, `ship` detects new production paths,
+race-arbitrates an expanded claim, then persists the wider scope. If another
+agent owns a newly touched path, exit 3 preserves all local work. Stale or
+incomplete comment histories fail closed rather than silently granting a lease.
+
+Fast checks have bounded runtimes. A missing *optional* Ruff/mypy/pytest tool is
+recorded as **unverified**, not passed; mandatory version-history checks and
+documentation contract checks do not silently disappear. This is a throughput
+optimisation, not a production certification.
+
 ## Why collisions happened
 
 Historically, agents shared one GitHub identity and claimed with free-text
