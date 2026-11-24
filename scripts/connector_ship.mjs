@@ -46,11 +46,18 @@ function leaseCheck(rows,p,now){
 }
 
 async function pages(api,path,cap){
-  const out=[];
+  const out=[], seen=new Set();
   for(let i=1;i<=cap;i++){
     const page=await api.get(path+(path.includes("?")?"&":"?")+"per_page=100&page="+i);
-    check(Array.isArray(page)&&page.every(x=>x&&typeof x==="object"),"invalid page");
-    out.push(...page);if(page.length<100)return out;
+    check(Array.isArray(page)&&page.length<=100,"invalid page");
+    for(const row of page){
+      check(row&&Number.isSafeInteger(row.id)&&row.id>0,"invalid comment ID");
+      // A shifting/repeated page may omit a competing lease. Never silently
+      // deduplicate a paginated feed and treat the resulting view as complete.
+      check(!seen.has(row.id),"duplicate comment ID; incomplete comment feed");
+      seen.add(row.id);out.push(row);
+    }
+    if(page.length<100)return out;
   }
   throw Error("incomplete comment feed");
 }
