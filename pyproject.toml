@@ -135,6 +135,7 @@ py-modules = [
     "low_end_policy",
     "media_names",
     "mesh_acquisition_activity",
+    "mesh_acquisition_assignment",
     "mesh_beacon",
     "mesh_cache",
     "mesh_cast_planner",

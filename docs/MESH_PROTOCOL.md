@@ -85,3 +85,24 @@ Headless real loopback verification is in
 job fencing, remote cancellation and verified file delivery remain separate
 work on #589; telemetry alone does not establish that a remote download can be
 assigned or that a file is playable.
+
+### Assignment and fencing rules (#589, pure core)
+
+`src/mesh_acquisition_assignment.py` holds the transport-free rules; no RPC,
+no remote job mutation and no file transfer is wired to them yet.
+
+* **Selection:** only a trusted, live, opted-in node with the matching
+  provider, a free slot and storage headroom is eligible; remote nodes must
+  negotiate `PROTOCOL_VERSION` (0 or absent means no acquisition extension).
+  The local node is preferred, otherwise most free space, then node id.
+* **One download per source:** the ledger keys jobs by a digest of the
+  canonical source, so duplicate submissions share the live job.
+* **Fencing:** every assignment has a new generation. Executors reject lower
+  generations; the ledger rejects reports from a superseded one.
+* **Ambiguity:** an expired lease (or a restart) marks a running job
+  *ambiguous*. It is never reassigned until the old executor is confirmed
+  stopped or the host explicitly accepts the duplicate-download risk.
+* **Exactly once:** completed media is queued by `enqueue_once` only after the
+  transferred content key matches; replays and restarts cannot enqueue twice.
+* **Redaction:** the public view carries only job id, stage, executor, byte
+  counts and stale/ambiguous flags.
