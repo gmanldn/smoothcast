@@ -1505,3 +1505,51 @@ def test_status_refresh_does_not_overwrite_an_active_slider():
     assert 'if(!editingControls.has("seek")){' in source
     assert 'if(!editingControls.has("volume")){' in source
     assert 'queueElement.addEventListener("click",event=>' in source
+
+
+@pytest.mark.parametrize(
+    ("method", "stage", "expected_status", "expected_text"),
+    [
+        ("POST", "prepare", 507, "Not enough space"),
+        ("PUT", "store", 408, "Resume from the saved position"),
+        ("POST", "finalise", 503, "Host could not finalise"),
+    ],
+)
+def test_upload_storage_failure_is_actionable_and_preserves_resume(
+    tmp_path, method, stage, expected_status, expected_text
+):
+    import errno
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, login_result, cookie = login(rig)
+        auth = {"cookie": cookie, "csrf": login_result["csrf"], "origin": f"http://{rig.host}"}
+        metadata = {"name": "clip.mp4", "size": 3, "queue": False}
+        if stage == "prepare":
+            with mock.patch.object(uploads, "create", side_effect=OSError(errno.ENOSPC, "private path")):
+                status, raw, _ = rig.request(method, "/api/uploads", metadata, **auth)
+            assert decode(raw)["code"] == "upload.disk_full"
+        else:
+            status, raw, _ = rig.request("POST", "/api/uploads", metadata, **auth)
+            assert status == 201
+            path = "/api/uploads/" + decode(raw)["id"]
+            chunk = {"extra_headers": {"Content-Range": "bytes 0-2/3"},
+                     "content_type": "application/octet-stream"}
+            if stage == "store":
+                with mock.patch.object(uploads, "append", side_effect=TimeoutError("slow connection")):
+                    status, raw, _ = rig.request(method, path, b"abc", **auth, **chunk)
+                assert decode(rig.request("GET", path, cookie=cookie)[1])["received"] == 0
+            else:
+                assert rig.request("PUT", path, b"abc", **auth, **chunk)[0] == 200
+                with mock.patch.object(uploads, "finalize", side_effect=OSError(errno.EIO, "private path")):
+                    status, raw, _ = rig.request(method, path + "/complete", {}, **auth)
+                assert decode(rig.request("GET", path, cookie=cookie)[1])["received"] == 3
+            assert not any(action == "cast_upload" for action, _ in rig.calls)
+        assert status == expected_status
+        assert expected_text in decode(raw)["error"]
+        assert "private path" not in decode(raw)["error"]
+    finally:
+        rig.close()
+        uploads.close()
