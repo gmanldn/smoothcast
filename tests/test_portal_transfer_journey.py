@@ -28,7 +28,7 @@ def test_upload_journey_and_queue_accessibility():
                  "pauseUpload", "cancelUpload", "uploadProgress", "queueFeedback",
                  "transferLiveHeading", "transferFileName", "transferOperation",
                  "transferElapsed", "transferInFlight", "transferResponse",
-                 "transferDelivery", "transferAck", "transferEvents"):
+                 "transferDelivery", "transferAck", "transferEvents", "transferRoomState"):
         assert name in page.ids
     assert page.ids["queueFeedback"]["aria-live"] == "polite"
     assert page.ids["uploadProgress"]["aria-label"] == "File transfer bytes received"
@@ -152,6 +152,8 @@ def test_live_monitor_separates_sender_progress_from_host_ack_and_records_failur
                      script.index("async function sendChunk(")]
     formatter = script[script.index("function fileUnits("):
                        script.index("function transferView(")]
+    validator = script[script.index("function validUploadProgress("):
+                       script.index("function validSavedUpload(")]
     harness = """
 const assert=require("node:assert/strict");
 const elements={};
@@ -199,9 +201,10 @@ const fetch=async()=>({status:503,ok:false,headers:{get:()=>null},
   assert(!$("transferEvents").textContent.includes("secret"));
   for(let n=0;n<40;n++)transferEvent("event "+n);
   assert.equal(transferEvents.length,24);
+  assert($("transferEvents").textContent.split("\\n")[0].includes("event 39"));
   resetTransferMonitor();
   assert.equal(transferEvents.length,0);
 })().catch(e=>{console.error(e);process.exitCode=1});
 """
-    subprocess.run(["node", "-"], input=harness+formatter+monitor+checks,
+    subprocess.run(["node", "-"], input=harness+formatter+validator+monitor+checks,
                    check=True, timeout=10, text=True)
