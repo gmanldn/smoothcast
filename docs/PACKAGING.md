@@ -76,6 +76,20 @@ remain separate release gates. See GitHub issue #192.
 
 Reference: https://pyinstaller.org/en/stable/spec-files.html
 
+## Windows payload manifest (issue #528)
+
+After the Windows build, `scripts/ci/verify_windows_payload.py --dist dist/SmoothCast
+--write-manifest` writes `payload-manifest.json` (schema, `windows-x64`, release
+version, and each file's forward-slash path, size and SHA-256, in sorted order, so
+the same tree gives the same bytes) and verifies it. It reads files and PE headers
+only and never runs the application. It reports, by file name: changed, missing or
+unlisted files; links and case-duplicate paths; any binary that is not x64; a GUI
+`SmoothCast.exe` or console `SmoothCastCLI.exe` with the wrong subsystem; imported
+DLLs that are neither Windows system files nor in the payload; and launch files
+that point at the build machine (MSYS2). The CI step is advisory until the first
+native run confirms the system-DLL allow-list in `scripts/ci/windows_payload.py`.
+The tools staged by #529 will be covered by the same manifest.
+
 ## Unsigned macOS disk image (issue #556)
 
 The native `macos-15` package job produces `dist/SmoothCast.app` with
