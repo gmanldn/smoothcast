@@ -220,8 +220,22 @@ Peer observations use the separate negotiated read-only telemetry protocol
 unknown or stale progress is explicitly labelled. This is observation of
 jobs initiated in each room, not remote assignment.
 
+Acquisition receipts are checkpointed in the private link-acquisitions
+cache before a worker starts and again before queue submission. No session
+keys, request identifiers, filenames or raw submitted URLs are persisted.
+A single-writer OS lock prevents an overlapping room restart from opening
+the same cache while the old worker is still delivering. After a restart,
+unfinished jobs require a new authorised submission; ambiguous queue
+delivery is preserved and never automatically replayed. Previously accepted
+jobs are historical receipts, not proof that the recovered queue still
+contains the media. Damaged or busy recovery storage disables acquisition
+without disabling playback. The retained-cache budget is 8 GiB with a
+reservation for each new 2 GiB job and a bounded directory count. Files
+that might still be queued or playing are never automatically evicted;
+owner review is required when the cache is full.
+
 **Remaining work:** authenticated remote assignment and verified node-to-node
-delivery, restart-safe leases/resume, secure worker provisioning. Follow
+delivery, engine-verified resume and safe cache reuse/eviction, secure worker provisioning. Follow
 [#587](https://github.com/gmanldn/smoothcast/issues/587),
 [#588](https://github.com/gmanldn/smoothcast/issues/588),
 [#589](https://github.com/gmanldn/smoothcast/issues/589) and
