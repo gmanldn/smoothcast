@@ -491,6 +491,21 @@ def private_task() -> dict | None:
     return payload
 
 
+def worktree_pool() -> Path:
+    """Container for private agent worktrees, deliberately outside the checkout.
+
+    A worktree per ticket is required, but dropping them beside the repo (in the
+    user's project directory) buries the real checkout under dozens of siblings.
+    Keep every private worktree in one pool under the user data directory so the
+    project directory stays clean; override with ``SC_WORKTREE_POOL``.
+    """
+    override = os.environ.get("SC_WORKTREE_POOL")
+    if override:
+        return Path(override).expanduser()
+    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base).expanduser() / "smoothcast" / "worktrees"
+
+
 def cmd_start(a: argparse.Namespace) -> int:
     """Pick or resume a ticket with a fresh private checkout and durable context."""
     git("fetch", "-q", "origin", "develop")
@@ -519,7 +534,7 @@ def cmd_start(a: argparse.Namespace) -> int:
     previous = os.environ.get("SC_AGENT")
     identity = f"{previous or 'agent'}-{uuid.uuid4().hex[:8]}"
     os.environ["SC_AGENT"] = identity
-    target = ROOT.parent / f"smoothcast-issue-{number}-{uuid.uuid4().hex[:8]}"
+    target = worktree_pool() / f"smoothcast-issue-{number}-{uuid.uuid4().hex[:8]}"
     claimed = created = False
     try:
         code = cmd_claim(argparse.Namespace(number=number, files=chosen_files, ttl=a.ttl))
@@ -1426,6 +1441,66 @@ def cmd_finish(a: argparse.Namespace) -> int:
     return 0
 
 
+def _worktree_issue(path: Path) -> int | None:
+    """Issue number encoded in a worktree directory name, if any."""
+    match = re.search(r"issue-(\d+)-", path.name)
+    return int(match.group(1)) if match else None
+
+
+def cmd_prune(a: argparse.Namespace) -> int:
+    """Remove agent worktrees already merged into develop that hold no local work.
+
+    Only worktrees whose HEAD is an ancestor of ``origin/develop`` and whose
+    working tree is clean are removed; unmerged, dirty, currently leased, or
+    the caller's own worktree are always preserved. This keeps the pool (and any
+    legacy siblings created before the pool existed) from growing without bound.
+    """
+    git("fetch", "-q", "origin", "develop")
+    remote = git("rev-parse", "origin/develop").strip()
+    here = Path.cwd().resolve()
+    live = {c["issue"] for c in active_claims(parse_events(recent_comments()), utcnow())}
+    removed: list[str] = []
+    kept = 0
+    for block in git("worktree", "list", "--porcelain").split("\n\n"):
+        line = next((l for l in block.splitlines() if l.startswith("worktree ")), "")
+        if not line:
+            continue
+        path = Path(line.split(" ", 1)[1])
+        try:
+            resolved = path.resolve()
+        except OSError:
+            kept += 1
+            continue
+        if resolved in {ROOT.resolve(), here} or not (path / ".git").exists():
+            kept += 1
+            continue
+        issue = _worktree_issue(path)
+        if issue in live:
+            kept += 1
+            continue
+        head = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+        if not head or subprocess.run(["git", "merge-base", "--is-ancestor", head, remote],
+                                      cwd=ROOT, capture_output=True).returncode:
+            kept += 1
+            continue
+        dirty = subprocess.run(["git", "-C", str(path), "status", "--porcelain"],
+                               capture_output=True, text=True).stdout.strip()
+        if dirty:
+            kept += 1
+            continue
+        if subprocess.run(["git", "worktree", "remove", str(path)], cwd=ROOT,
+                          capture_output=True, text=True).returncode:
+            kept += 1
+            continue
+        removed.append(str(path))
+    subprocess.run(["git", "worktree", "prune"], cwd=ROOT, capture_output=True)
+    print(f"pruned {len(removed)} merged clean worktrees; preserved {kept}")
+    for path in removed:
+        print(f"  removed {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1491,6 +1566,8 @@ def build_parser() -> argparse.ArgumentParser:
     finish.add_argument("--checklist", default="", help="acceptance criteria satisfied")
     finish.add_argument("--close", action="store_true", help="close only with full explicit evidence")
     finish.set_defaults(fn=cmd_finish)
+    sub.add_parser("prune", help="remove merged, clean agent worktrees; keep unmerged, dirty or leased ones"
+                   ).set_defaults(fn=cmd_prune)
     return p
 
 
