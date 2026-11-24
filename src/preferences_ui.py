@@ -230,6 +230,16 @@ class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow):
                 spin.set_value(picture_adjustments.validated(
                     key, cfg.get(key, picture_adjustments.DEFAULTS[key])))
             self.gain.set_value(float(cfg.get("audio_gain", 6.0)))
+            # Only PATH/file checks here: GTK must not launch or probe engines.
+            if "portal_link_youtube" in self._switches and "portal_link_magnet" in self._switches:
+                import link_acquisition
+                provider = link_acquisition.CommandProvider(
+                    kind for kind in ("youtube", "magnet") if cfg.get("portal_link_" + kind) is True)
+                for kind, label in (("youtube", "Authorised single videos only."),
+                                    ("magnet", "Authorised public torrents only.")):
+                    self._switches["portal_link_" + kind].set_subtitle(
+                        label + " " + provider.readiness_text(kind) +
+                        " Changes apply after a room restart.")
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             media = self.owner.media
             audio_tracks = media.audio_streams if media is not None else []
