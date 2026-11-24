@@ -91,7 +91,7 @@ Demo mode starts the real app in a throwaway profile with generated sample
 media (FFmpeg) and an in-process fake Chromecast. It is **loopback-only**: it
 never discovers or contacts real receivers, never touches your settings or a
 running SmoothCast, and deletes everything when you quit. It needs FFmpeg and an
-X11/XWayland display. The Demo badge in the window is still to come.
+X11/XWayland display. A DEMO badge marks the window.
 
 ## Cast targets, MKV codecs and subtitle files
 

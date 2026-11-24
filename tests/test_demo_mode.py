@@ -120,3 +120,12 @@ def test_every_discovery_entry_point_consults_demo_mode(module):
     tree = ast.parse((ROOT / "src" / f"{module}.py").read_text())
     names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     assert "demo_mode" in names, f"{module} discovery is not demo-gated"
+
+
+def test_desktop_header_shows_demo_badge_only_under_the_demo_gate():
+    source = (ROOT / "src" / "panel_ui.py").read_text()
+    tree = ast.parse(source)
+    gated = [n for n in ast.walk(tree) if isinstance(n, ast.If)
+             and "demo_mode.active()" in ast.get_source_segment(source, n.test)
+             and '"DEMO"' in ast.get_source_segment(source, n)]
+    assert gated, "the DEMO badge must sit behind demo_mode.active()"
