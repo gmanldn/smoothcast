@@ -206,8 +206,10 @@ class PortalQueueMixin:
             index = self._portal_queue_index(payload.get("id"))
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
-            self._cast_path(pathlib.Path(self.queue[index]), 0.0)
-            return "Playing now."
+            reason = self._cast_path(pathlib.Path(self.queue[index]), 0.0)
+            if reason is not None:
+                raise portal.PortalRequestError(409, reason)
+            return "Playback requested; waiting for the room receiver."
         if operation in {"next", "previous"}:
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
