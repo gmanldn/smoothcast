@@ -27,6 +27,15 @@ class VersionHistoryTests(unittest.TestCase):
             "MAJOR = 1\nMINOR = -2\nPATCH = 1\n",
             "MAJOR = 1\nMINOR = 2\nPATCH = 2**8\n",
             "MAJOR = 1\nMINOR = 2\n",
+            source() + "PATCH += 1\n",
+            source() + "PATCH: int = 2\n",
+            source() + "if True:\n    PATCH = 3\n",
+            source() + "(PATCH := 7)\n",
+            source() + "for PATCH in range(2):\n    pass\n",
+            source() + "del PATCH\n",
+            source() + "def PATCH():\n    pass\n",
+            source() + "from math import pi as PATCH\n",
+            source() + "MAJOR, PATCH = (3, 4)\n",
         ):
             with self.subTest(candidate=candidate):
                 with self.assertRaises(guard.VersionHistoryError):
