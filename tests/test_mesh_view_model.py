@@ -173,6 +173,11 @@ def test_host_web_live_mesh_uses_authoritative_unique_targets_and_room_state():
     harness = """
 const assert=require("node:assert/strict");
 const elements={};const $=id=>elements[id]||=( {textContent:""} );
+function element(tag){return {tag,children:[],dataset:{},attrs:{},
+  append(...nodes){this.children.push(...nodes)},replaceChildren(...nodes){this.children=nodes},
+  setAttribute(k,v){this.attrs[k]=v}}}
+const document={createElement:element};
+elements.meshStreamList=element("ul");
 const window={};
 const local="host",primary="peer";
 const nodes=new Map([
@@ -194,11 +199,14 @@ assert(out.rows[0].sub.includes("2 clients"));
 assert(out.rows[0].badges.includes("This device"));
 assert(out.trows.find(t=>t.title==="Kitchen").why.includes("Laptop"));
 window.scRenderMeshRoom({title:"Film",receiver:"Lounge TV",state_label:"Playing",
- queue:[{id:"a"},{id:"b"}],network_activity:[{}],busy:false});
+ queue:[{id:"a"},{id:"b"}],network_activity:[{receiver:"Lounge TV",title:"Film",protocol:"Cast",state:"PLAYING",position:30,duration:120,is_local:true}],busy:false});
 assert.equal($("meshRoomTitle").textContent,"Film");
 assert.equal($("meshRoomReceiver").textContent,"Lounge TV · Playing");
 assert.equal($("meshRoomQueue").textContent,"2 waiting items");
 assert.equal($("meshRoomStreams").textContent,"1 reported active receiver stream");
+assert.equal(elements.meshStreamList.children[0].children[2].value,30);
+assert.equal(elements.meshStreamList.children[0].children[2].max,120);
+assert.equal(elements.meshStreamList.children[0].children[3].textContent,"0:30 / 2:00");
 window.scRenderMeshRoom({});
 assert.equal($("meshRoomQueue").textContent,"Queue status unavailable");
 assert.equal($("meshRoomStreams").textContent,"Receiver activity unavailable");
