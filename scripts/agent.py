@@ -1190,9 +1190,14 @@ def cmd_done(a: argparse.Namespace) -> int:
 def cmd_finish(a: argparse.Namespace) -> int:
     """Durable, retry-safe ticket handover; closure only with explicit evidence."""
     task = private_task()
-    number = a.number if a.number is not None else (task or {}).get("issue")
-    if not number:
-        print("finish needs an issue number or a worktree created by agent.py start")
+    # 'finish' is an ownership-sensitive lifecycle operation. Standalone
+    # historical evidence is still supported via the explicit 'done' command.
+    if task is None:
+        print("finish requires an agent.py start worktree; use 'done N' for manual reporting")
+        return 2
+    number = task["issue"]
+    if a.number is not None and a.number != number:
+        print(f"worktree belongs to issue #{number}; refusing finish on #{a.number}")
         return 2
     if not a.done.strip() or not a.next.strip():
         print("--done and --next must record actual outcome and remaining work")
@@ -1204,13 +1209,19 @@ def cmd_finish(a: argparse.Namespace) -> int:
                     or a.next.strip().lower() not in {"none", "complete", "no remaining work"}):
         print("closure requires --verification, --checklist, and --next none")
         return 2
-    if a.close and task is not None and not ensure_live_task_claim(task):
-        print("cannot close a ticket that a successor may currently own")
-        return 3
     if git("status", "--porcelain", "--untracked-files=no").strip():
         print("uncommitted tracked work; ship before finishing")
         return 2
     git("fetch", "-q", "origin", "develop")
+    # A prior push may have landed before GitHub accepted its delivery
+    # evidence. Never release the claim or close the ticket while the
+    # durable local receipt is still pending.
+    if not recover_pending_handover(task):
+        print("finish blocked by unrecorded pushed SHA; run agent.py ship to retry")
+        return 7
+    if not ensure_live_task_claim(task):
+        print("another agent owns this work or the lease could not be renewed")
+        return 3
     head = git("rev-parse", "HEAD").strip()
     remote = git("rev-parse", "origin/develop").strip()
     if subprocess.run(["git", "merge-base", "--is-ancestor", head, remote],
