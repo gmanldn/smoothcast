@@ -122,3 +122,23 @@ the running host remain separate acceptance checks.
   matter to renderer discovery, not the HTTP upload.
 * Never open internet-facing router ports automatically. See the authoritative
   LAN trust boundary in docs/VISION.md.
+
+## Upload failure recovery evidence (P0 #585)
+
+Headless, loopback only; no GTK, receiver or real browser:
+
+```sh
+python3 -m pytest -q tests/test_portal_upload_faults.py tests/test_portal_uploads.py \
+  tests/test_portal_upload_retry.py tests/test_portal_activity.py
+```
+
+Faults are injected at the real `os` layer. Creation (permission, disk full,
+read-only), chunk write (disk full after a partial write) and finalisation
+(rename or fsync failure) each return an actionable JSON error with no private
+path or traceback, keep the durable offset and uploaded bytes, and succeed on
+retry. A second finalise is an idempotent replay with exactly one playback or
+queue dispatch. A failed dispatch or an immediate receiver rejection does not
+poison the accepted-upload cache, so the same upload can be retried. Timeouts
+are resumable (408); unknown uploads and bad sessions give their own errors.
+If a failure still happens on an installed build, the live upload diagnostic
+pane reports the failing stage, HTTP status and durable offset (see #570).
