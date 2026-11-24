@@ -760,10 +760,10 @@ def test_start_packet_preserves_recent_completed_slices_not_just_latest():
     """A successor must see previous shipped work despite a newer partial handover."""
     records = [
         comment(1, 584, 60, "Progress: oldest fix\nHandover: old TODO"),
-        comment(2, 584, 50, "Progress: first shipped slice\\nCommit: aa11\nHandover: second stage"),
-        comment(3, 584, 40, "Progress: second shipped slice\\nCommit: bb22\nHandover: edge tests"),
+        comment(2, 584, 50, "Progress: first shipped slice\nCommit: aa11\nHandover: second stage"),
+        comment(3, 584, 40, "Progress: second shipped slice\nCommit: bb22\nHandover: edge tests"),
         comment(4, 584, 30, "Released: previous agent\\n<!-- sc-release v1 agent=other -->"),
-        comment(5, 584, 10, "Progress: edge tests implemented\\nCommit: cc33\nHandover: run CI"),
+        comment(5, 584, 10, "Progress: edge tests implemented\nCommit: cc33\nHandover: run CI"),
         comment(6, 584, 5, "Progress: CI reviewed\nHandover: monitor test flakiness"),
     ]
     packet = agent.issue_context_packet(
