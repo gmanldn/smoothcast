@@ -109,7 +109,47 @@ class GuardBehaviourTests(unittest.TestCase):
         self.assertFalse(hasattr(launch, "_alive"))
 
 
+class MediaArgumentForwardingTests(unittest.TestCase):
+    def test_remote_uris_keep_their_original_scheme_and_query(self):
+        caller = Path("/tmp/smoothcast-invoker")
+        args = [
+            "https://example.org/video?id=5&quality=high",
+            "magnet:?xt=urn:btih:0123456789abcdef&dn=clip",
+            "rtsp://example.org/stream",
+            "smb://example.org/share/film.mkv",
+            "file:///tmp/film%20name.mkv",
+            "--action", "queue", "relative-film.mkv",
+        ]
+        result = launch.media_arguments_from_caller(args, caller)
+        self.assertEqual(result[:-1], args[:-1])
+        self.assertEqual(result[-1], str((caller / "relative-film.mkv").resolve()))
+
+    def test_flags_and_action_value_are_not_rewritten_as_files(self):
+        caller = Path("/tmp/smoothcast-invoker")
+        result = launch.media_arguments_from_caller(
+            ["--action", "play", "--no-gui", "subfolder/film.mkv"], caller,
+        )
+        self.assertEqual(result[:3], ["--action", "play", "--no-gui"])
+        self.assertEqual(result[-1], str((caller / "subfolder/film.mkv").resolve()))
+
+    def test_windows_drive_style_is_not_mistaken_for_uri(self):
+        self.assertIsNone(launch._URI_ARGUMENT.match(r"C:\\Films\\video.mkv"))
+
+
 class EarlyActivationTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX launcher activates through D-Bus")
+    def test_existing_primary_is_checked_before_missing_runtime(self):
+        # A moved/broken venv must not prevent a live primary being activated,
+        # and a failed activation must not create a second competing GUI.
+        for outcome in (0, 3):
+            with self.subTest(outcome=outcome), \
+                 mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}), \
+                 mock.patch.object(launch, "ensure_single_instance", return_value=outcome), \
+                 mock.patch.object(launch, "python_path",
+                                   side_effect=AssertionError("do not probe missing venv")):
+                self.assertEqual(launch.main([], prechecked=False), outcome)
+
+
     def test_canonical_launcher_checks_singleton_before_runtime_bootstrap(self):
         source = (ROOT / "smoothcast").read_text(encoding="utf-8")
         tree = ast.parse(source)
