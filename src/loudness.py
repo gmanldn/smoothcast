@@ -22,6 +22,7 @@ import subprocess
 import threading
 
 import cache_privacy
+import media_tools
 
 # ``loudnorm`` measures integrated loudness, loudness range and true peak while
 # it runs, so a single pass is already EBU R128 based rather than a fixed gain.
@@ -179,7 +180,7 @@ def analyze(path: str | os.PathLike, track: int, profile: str,
     filters.append("loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json")
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "info", "-nostats", "-i", str(path), "-map",
+            [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-loglevel", "info", "-nostats", "-i", str(path), "-map",
              f"0:a:{track}", "-vn", "-sn", "-dn", "-af", ",".join(filters),
              "-f", "null", "-"],
             capture_output=True, text=True, timeout=max(1.0, min(float(timeout), 60.0)),

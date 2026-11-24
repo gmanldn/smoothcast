@@ -15,6 +15,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import media_tools
 
 MAX_SUBTITLE_BYTES = 16 * 1024 * 1024
 
@@ -253,7 +254,7 @@ def load_embedded_timed_cues(source: Path, subtitle_index: int) -> TimedCues:
         raise SubtitleEncodingError("Embedded subtitle source is unavailable") from exc
     if not stat.S_ISREG(info.st_mode):
         raise SubtitleEncodingError("Embedded subtitle source must be a regular file")
-    args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+    args = [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
             "-i", str(source), "-map", f"0:s:{subtitle_index}", "-c:s", "srt",
             "-fs", str(MAX_SUBTITLE_BYTES), "-f", "srt", "pipe:1"]
     try:

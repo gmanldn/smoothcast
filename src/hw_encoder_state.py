@@ -17,8 +17,8 @@ import json
 import os
 from pathlib import Path
 import platform
-import shutil
 import time
+import media_tools
 
 STATE_NAME = "hw_encoder.json"
 MAX_AGE_SECONDS = 14 * 24 * 3600
@@ -33,7 +33,7 @@ def ffmpeg_identity() -> str:
     raises.
     """
     try:
-        found = shutil.which("ffmpeg")
+        found = media_tools.find_media_tool("ffmpeg")
         if not found:
             return "missing"
         info = os.stat(found)

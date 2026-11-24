@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+import media_tools
 
 MODULE = Path(__file__).resolve().parents[1] / "src" / "library_index.py"
 spec = importlib.util.spec_from_file_location("library_index", MODULE)
@@ -203,7 +204,7 @@ def test_explicit_probe_is_offline_bounded_and_cached(tmp_path):
         calls.append((args, kwargs))
         kwargs["stdout"].write(b'{"format":{"duration":"12"},"streams":[]}')
         return mock.Mock(returncode=0)
-    with mock.patch.object(index.shutil, "which", return_value="/usr/bin/ffprobe"), mock.patch.object(index.subprocess, "run", side_effect=fake_run):
+    with mock.patch.object(media_tools.shutil, "which", return_value="/usr/bin/ffprobe"), mock.patch.object(index.subprocess, "run", side_effect=fake_run):
         first = index.scan(root, db, probe=True)
         second = index.scan(root, db, probe=True)
     assert first["probed"] == 1 and second["probed"] == 0
@@ -218,11 +219,11 @@ def test_failed_probe_keeps_content_hash_but_retries(tmp_path):
     root, db = tmp_path / "media", tmp_path / "idx.sqlite3"
     root.mkdir()
     (root / "a.mp4").write_bytes(b"contents")
-    with mock.patch.object(index.shutil, "which", return_value=None):
+    with mock.patch.object(media_tools.shutil, "which", return_value=None):
         first = index.scan(root, db, probe=True)
     assert first["hashed"] == 1 and first["probed"] == 0
     assert index.list_media(db)[0]["metadata"]["probe_error"]
-    with mock.patch.object(index.shutil, "which", return_value=None):
+    with mock.patch.object(media_tools.shutil, "which", return_value=None):
         second = index.scan(root, db, probe=True)
     assert second["hashed"] == 0 and second["reused"] == 1
 

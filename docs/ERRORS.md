@@ -112,6 +112,15 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Install FFmpeg 5.0 or newer.
   2. Restart SmoothCast.
 
+<a id="errors-ffmpeg-bundled-missing"></a>
+## `ffmpeg.bundled_missing`
+
+- Severity: error; retryable: no
+- Message: SmoothCast's built-in media tools are missing. Reinstall SmoothCast.
+- Try:
+  1. Reinstall SmoothCast with its installer.
+  2. Restart SmoothCast.
+
 <a id="errors-ffmpeg-decoder-failed"></a>
 ## `ffmpeg.decoder_failed`
 

@@ -26,6 +26,7 @@ import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
+import media_tools
 
 FLOOR_DB = -60.0
 # 4096 samples per window ~= 93 ms at 44.1 kHz: responsive without exploding the
@@ -200,7 +201,7 @@ class AudioMonitor:
             f"[b]{chain_str},asetnsamples={_WINDOW},astats=metadata=1:reset=1,"
             f"ametadata=mode=print:file={out_path}:direct=1[o2]"
         )
-        args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-vn"]
+        args = [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-vn"]
         if self._offset > 0:
             args += ["-ss", f"{self._offset:.3f}"]
         args += [

@@ -14,6 +14,7 @@ import sys
 from typing import Callable, Mapping
 
 import demo_runtime
+import media_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 # Never inherit another session's bus/portal: a bus would let this process
@@ -54,7 +55,7 @@ def run(args: list[str], python: str | None = None, base_env: Mapping[str, str] 
         print("Demo mode needs an X11 or XWayland display (DISPLAY is not set).", file=out)
         return 1
     import shutil
-    if shutil.which("ffmpeg") is None and media_run is None:
+    if media_tools.find_media_tool("ffmpeg") is None and media_run is None:
         print("Demo mode generates sample media with FFmpeg, which was not found.", file=out)
         return 1
     try:
@@ -71,7 +72,7 @@ def smoke(seconds: float = 8.0) -> int:
     """Isolated-GUI check: the demo app must stay up ``seconds`` without crashing."""
     import os
     import shutil
-    if shutil.which("ffmpeg") is None:
+    if media_tools.find_media_tool("ffmpeg") is None:
         print("demo smoke needs FFmpeg", file=sys.stderr)
         return 2
     with demo_runtime.demo_runtime() as runtime:

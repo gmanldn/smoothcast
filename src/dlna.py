@@ -36,6 +36,7 @@ import process_priority
 import video_policy
 import hdr_tonemap
 import aspect_override
+import media_tools
 
 
 SSDP_ADDRESS = ("239.255.255.250", 1900)
@@ -776,7 +777,7 @@ def prepare_mp4(media, output: Path, *, subtitle_file: Path | None = None,
         hdr_tonemap.require_available(media)
     except hdr_tonemap.TonemapUnavailable as exc:
         raise DlnaError(str(exc)) from exc
-    args = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+    args = [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
             "-y", "-i", str(source)]
     bitmap_track = next((t for t in media.subtitle_tracks
                          if embedded_subtitle_index is not None

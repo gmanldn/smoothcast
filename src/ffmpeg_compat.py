@@ -12,6 +12,7 @@ import re
 import subprocess
 
 from async_jobs import UserFacingError
+import media_tools
 
 
 MINIMUM = (5, 0)
@@ -37,7 +38,7 @@ def parse_version(output: str) -> tuple[int, int] | None:
 
 def require_supported_ffmpeg(*, run=subprocess.run) -> tuple[int, int]:
     """Query once before a cast starts an encoder; no GUI/network interaction."""
-    command = ["ffmpeg", "-version"]
+    command = [media_tools.resolve_media_tool("ffmpeg"), "-version"]
     try:
         result = run(
             command, stdin=subprocess.DEVNULL,

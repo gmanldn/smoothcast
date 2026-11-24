@@ -6,9 +6,9 @@ playback and casting never run at the same time.
 """
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
+import media_tools
 
 
 class LocalPlayback:
@@ -19,7 +19,7 @@ class LocalPlayback:
 
     @property
     def player(self) -> str | None:
-        return shutil.which("ffplay")
+        return media_tools.find_media_tool("ffplay")
 
     def is_active(self) -> bool:
         if self.proc is None:

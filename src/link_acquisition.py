@@ -28,6 +28,7 @@ import unicodedata
 import time
 from urllib.parse import parse_qs, urlsplit
 from typing import Callable
+import media_tools
 
 MAX_LINK = 1500
 MAX_BYTES = 2 * 1024**3
@@ -417,7 +418,7 @@ class CommandProvider:
                          and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
-        self.probe = shutil.which("ffprobe")
+        self.probe = media_tools.find_media_tool("ffprobe")
         self.kinds = frozenset(kinds)
 
     def readiness(self) -> dict:

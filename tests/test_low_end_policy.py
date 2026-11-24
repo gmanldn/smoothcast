@@ -14,6 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import low_end_policy as low  # noqa: E402
+import media_tools
 
 
 def source(fps=30.0, *, audio_only=False):
@@ -120,7 +121,7 @@ def test_machine_identity_is_hashed_and_state_has_no_host_or_path(tmp_path):
     cache = tmp_path / "state.json"
     with mock.patch.object(low.platform, "processor", return_value="Private CPU model"), \
             mock.patch.object(low.platform, "machine", return_value="x86_64"), \
-            mock.patch.object(low.shutil, "which", return_value=None):
+            mock.patch.object(media_tools.shutil, "which", return_value=None):
         identity = low.machine_key()
     assert len(identity) == 64
     assert "Private" not in identity

@@ -51,6 +51,11 @@ are ignored by Git.
   Packaging verification checks these, CATT `--help`, bundle icon hash, and
   importable GTK4/libadwaita **without creating a window or touching a TV**.
   The build script automatically fails on a broken artefact.
+- Windows media-tool layout (#530): a frozen Windows build runs only
+  `<folder with SmoothCast.exe>/ffmpeg/{ffmpeg,ffprobe,ffplay}.exe`, resolved by
+  `src/media_tools.py`, and never searches PATH. A missing or relocated tool
+  fails with `ffmpeg.bundled_missing`. Source checkouts and the Linux/macOS
+  bundles keep using PATH. Staging those files is #529's job.
 - FFmpeg, ffprobe and ffplay are **still native external executables**,
   not redistributed in the bundle. Install compatible versions on the host
   and ensure they are on PATH. This avoids silently changing FFmpeg's
