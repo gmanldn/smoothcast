@@ -10,7 +10,13 @@ Internet access and OS-native administrator approval may be necessary.
 |---|---|---|---|
 | Debian/Ubuntu/Fedora/Arch | `bash setup/linuxsetup.sh` | `~/.local/opt/SmoothCast` | apt/dnf/pacman |
 | macOS Intel/Apple Silicon | `bash setup/macsetup.sh` | `~/Applications/SmoothCast` | Homebrew |
-| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | `%LOCALAPPDATA%\Programs\SmoothCast` | PowerShell + MSYS2 UCRT64 |
+| Windows 10/11 x64 | Double-click `SmoothCast.bat` (setup and launch) or `setup/winsetup.bat` (setup only) | `%LOCALAPPDATA%\Programs\SmoothCast` | PowerShell + MSYS2 UCRT64 |
+
+### Windows: first launch
+
+After cloning and checking out `develop`, open the repository in File Explorer and double-click **SmoothCast.bat**. You do not need Python, MSYS2 or FFmpeg installed beforehand. Accept the suggested per-user install folder, or choose another writable location. The first run may take longer because native packages are provisioned. Once the app is installed, open **SmoothCast** from the Start Menu. A failed launch keeps the console open; copy its error message. To update a stale Windows install, close SmoothCast and run `setup\\winsetup.bat` from the updated checkout.
+
+For receiver discovery, use the same trusted home network as the receiver. If Windows Firewall asks, permit access on private networks only; do not disable the firewall or enable public-network access.
 
 **The installer prompts for an installation folder**, proposing the OS default
 or the last successful destination. Press Enter to accept or type another
@@ -36,6 +42,40 @@ packages or in-place Python package changes already made to an existing .venv.
 On macOS, the app bundle is assembled beside its registered path and replaced
 only after its icon, launcher and metadata are complete; setup refuses to
 replace a different or unrecognized `SmoothCast.app` bundle.
+
+### Starting from a checkout when SmoothCast is already installed
+
+`smoothcast`, `sc.py` and `SmoothCast.bat` in a checkout all use the same
+launcher. It looks for an installed copy in this order: the folder the
+installer remembered (its saved install location), then the OS default folder
+from the table above if it holds a recognisable SmoothCast. When one is found
+and it is not the checkout itself, the launcher hands off to the installed
+`sc.py` (or `setup/launch.py` for installations that predate `sc.py`), keeping
+your arguments and working directory, and prints
+`SmoothCast: using installed application at <path>` to stderr. A hand-off is
+marked so two launchers can never bounce between each other.
+
+- **No installation found:** the first start runs setup (a normal copy to the
+  per-user folder), then re-resolves the install location and launches the
+  installed copy, not the checkout. If setup reports success but no usable
+  runtime exists, the launcher stops and asks you to rerun the platform setup.
+- **Updates:** before a GUI start, the launcher compares the installed copy with
+  the checkout recorded as its source. It never downgrades a newer
+  installation, and it refuses to start a checkout that its own local
+  `origin/develop` tracking ref proves is behind (pull `develop`, then restart).
+  It makes no network request and no unsigned auto-pull. Windows and macOS need
+  an explicit rerun of setup to install a changed build; Linux may refresh
+  automatically only when no running SmoothCast would be disturbed.
+- **`--portable`:** `smoothcast --portable [args]` explicitly runs from the
+  checkout. It skips installed-copy discovery, uses or provisions the
+  checkout's own `.venv` (in-place, without shortcuts) and never registers or
+  overwrites desktop shortcuts, so it cannot repoint an installed app's dock
+  entry at the checkout.
+- **`--version`:** `smoothcast --version` (or `-V`) answers without starting the
+  GUI and reports the *selected* source: the installed copy normally, the
+  checkout with `--portable`. The stderr line above shows which one answered.
+- **`--demo` and test runs** (`--self-test`, `SMOOTHCAST_TEST_CONTEXT=1`) are
+  handled before any hand-off so they never touch a real installation.
 
 ## Dependency inventory
 
@@ -71,7 +111,7 @@ MSYS2 UCRT64). It checks both engines with bounded local version probes.
 Rerunning with `--check --link-tools` is read-only. Missing or broken optional
 engines cause an explicit failure when this option is requested.
 
-Run `smoothcast --link-check --tools-only` (or `./smoothcast` in a checkout)
+Run `smoothcast --link-check --tools-only` (or `./sc.py` in a checkout)
 to check the engines and FFprobe without requiring isolation.
 `smoothcast --link-check` additionally reports whether an owner-configured
 launcher exists. Neither command launches a GUI, contacts a receiver,
@@ -216,3 +256,7 @@ ruff check setup tests
 
 The `.github/workflows/verify.yml` setup-contract matrix runs those
 portable checks on Ubuntu, macOS and Windows without installing GTK.
+
+### Canonical launch
+
+All source and installed application launches use root `sc.py` (Linux/macOS: `python3 sc.py`, Windows: `py -3 sc.py`). Native shortcuts are registered against the installed copy. The extensionless `smoothcast` script is only a compatibility alias. `setup/launch.py` is the internal runtime handoff, not a second public launcher. Installed wheel/frozen CLI commands retain their separate distribution entry points.

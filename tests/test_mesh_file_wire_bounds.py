@@ -139,3 +139,26 @@ def test_bad_body_chunk_is_discarded_before_valid_resume(bad_chunk):
     opener.assert_called_once_with("url", "key", "bytes=4-7", False)
     first_conn.close.assert_called_once()
     next_conn.close.assert_called_once()
+
+@pytest.mark.parametrize("header,value", [
+    ("Transfer-Encoding", "chunked"),
+    ("Transfer-Encoding", "identity"),
+    ("Content-Encoding", "gzip"),
+    ("Content-Encoding", "br"),
+    ("Content-Encoding", "identity, gzip"),
+])
+def test_resume_rejects_ambiguous_or_transformed_media_bytes(header, value):
+    reply = HeaderReply(**{
+        "Content-Range": "bytes 4-7/8", "Content-Length": "4",
+        "ETag": '"same"', header: value,
+    })
+    assert not _valid_resume(reply, 4, 7, "8", '"same"')
+
+
+def test_resume_accepts_explicit_identity_content_encoding():
+    reply = HeaderReply(**{
+        "Content-Range": "bytes 4-7/8", "Content-Length": "4",
+        "ETag": '"same"', "Content-Encoding": "Identity",
+    })
+    assert _valid_resume(reply, 4, 7, "8", '"same"')
+

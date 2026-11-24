@@ -1262,9 +1262,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             self.play_image.set_from_icon_name(name)
 
 
-    def toast(self, message: str, *, error: bool = False) -> None:
+    def toast(self, message: str, *, error: bool = False, action=None) -> None:
         toast = Adw.Toast.new(message)
         toast.set_timeout(3 if not error else 5)
+        if action is not None:  # (label, callback): one explicit user-chosen button
+            label, callback = action
+            toast.set_button_label(label)
+            toast.set_timeout(10)
+            toast.connect("button-clicked", lambda _toast: callback())
         if error:
             toast.set_priority(Adw.ToastPriority.HIGH)
         self.toasts.add_toast(toast)

@@ -644,7 +644,7 @@ def main(argv: list[str] | None = None) -> int:
                          "--target", args.target], env=env)
         say(f"Verified Python/GTK4/libadwaita/catt/FFmpeg: {isolated}")
         if not args.check:
-            say(f"Installed. Launch with: {isolated} {ROOT / 'setup' / 'launch.py'}")
+            say(f"Installed. Launch with: {isolated} {ROOT / 'sc.py'}")
         return 0
     except (SetupError, ValueError, OSError) as exc:
         print(f"[SmoothCast setup] FAILED: {exc}", file=sys.stderr, flush=True)

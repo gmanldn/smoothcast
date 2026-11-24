@@ -38,7 +38,8 @@ def registration_root(*, installer_target: bool = False) -> Path:
     else:
         candidate = Path(saved).expanduser()
     if (not candidate.is_absolute()
-            or not (candidate / "smoothcast").is_file()
+            or not ((candidate / "sc.py").is_file()
+                    or (candidate / "smoothcast").is_file())
             or not (candidate / "setup" / "bootstrap.py").is_file()
             or not (candidate / "data" / "cast-control.png").is_file()
             or not (candidate / "pyproject.toml").is_file()
@@ -128,7 +129,10 @@ def repair_gnome_favourites(*, pin: bool = False) -> bool:
 def desktop_files(root: Path, base: Path) -> dict[Path, bytes]:
     """One source of truth for both installation and read-only verification."""
     apps = base / "applications"
-    launcher = root / "smoothcast"
+    # Keep existing pre-sc.py installations launchable until they are updated.
+    launcher = root / "sc.py"
+    if not launcher.is_file():
+        launcher = root / "smoothcast"
     icon = base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png"
     files = {icon: (root / "data" / "cast-control.png").read_bytes(),
              apps / f"{APP_ID}.desktop": desktop_entry(launcher)}

@@ -7,19 +7,23 @@ the source checkout, its worktrees and user data are not an install target.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 
 APP_DIRS = ("src", "setup", "scripts", "data")
-APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py",
+APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py", "SmoothCast.bat",
              "README.md", "LICENSE")
 BUILD_MARKER = ".smoothcast-build"
-IGNORED = {BUILD_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
+SOURCE_MARKER = ".smoothcast-source"
+IGNORED = {BUILD_MARKER, SOURCE_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
            ".ruff_cache", ".tox", "build", "dist", ".coverage", ".DS_Store"}
 
 
@@ -104,14 +108,24 @@ def validate_destination(source: Path, destination: Path) -> None:
                 raise ValueError("Refusing to overwrite non-SmoothCast directory")
 
 
-def _ignore(_directory: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in IGNORED or name.endswith(".pyc")}
+def _validate_copy_item(path: Path) -> None:
+    mode = path.lstat().st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise ValueError(f"Refusing linked or special installation item: {path}")
+
+
+def _ignore(directory: str, names: list[str]) -> set[str]:
+    ignored = {name for name in names if name in IGNORED or name.endswith(".pyc")}
+    for name in names:
+        if name not in ignored:
+            _validate_copy_item(Path(directory) / name)
+    return ignored
 
 
 def _source_items(source: Path):
     for name in APP_DIRS + APP_FILES:
         path = source / name
-        if path.exists():
+        if path.exists() or path.is_symlink():
             yield name, path
 
 
@@ -143,10 +157,82 @@ def _record_source_revision(source: Path, destination: Path, before: str | None)
         marker = destination / "src" / BUILD_MARKER
         if marker.parent.is_dir():
             marker.write_text(before + "\n", encoding="ascii")
+            # Local installation provenance only. It is not remote trust
+            # evidence and is never copied from another installed tree.
+            (marker.parent / SOURCE_MARKER).write_text(
+                json.dumps(str(source.resolve())) + "\n", encoding="utf-8",
+            )
+
+
+class InstallBusy(OSError):
+    """Another process owns the installation transaction."""
+
+
+def _lock_path(destination: Path) -> Path:
+    canonical = destination.resolve()
+    key = hashlib.sha256(os.fsencode(os.path.normcase(str(canonical)))).hexdigest()[:32]
+    return canonical.parent / (".smoothcast-install-" + key + ".lock")
+
+
+@contextmanager
+def _transaction_lock(destination: Path):
+    """Persistent sibling inode; the OS releases the lock on process exit.
+
+    Do not unlink the lock file: another process might already have opened it.
+    This serializes cooperating source-copy installers, not live GUI lifetimes.
+    """
+    path = _lock_path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise OSError(f"Refusing linked installation lock: {path}")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise OSError(f"Invalid installation lock: {path}")
+        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+            raise OSError(f"Installation lock belongs to another user: {path}")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise InstallBusy(
+                f"Another setup is active for {destination}; retry when it finishes."
+            ) from exc
+        yield
+    finally:
+        os.close(fd)
+
+
+def check_install_idle(destination: Path) -> None:
+    """Best-effort launch preflight; no claim of lifetime mutual exclusion."""
+    path = _lock_path(destination)
+    if path.exists() or path.is_symlink():
+        with _transaction_lock(destination):
+            pass
 
 
 @contextmanager
 def installed_sources(source: Path, destination: Path):
+    """Serialize the complete source transaction, including child bootstrap."""
+    if destination.is_symlink():
+        raise ValueError("Refusing to install through a symbolic link")
+    with _transaction_lock(destination):
+        with _installed_sources(source, destination):
+            yield
+
+
+@contextmanager
+def _installed_sources(source: Path, destination: Path):
     """Replace only app-managed sources; restore previous sources on failure.
 
     Existing .venv, saved state and all non-managed files are never removed.
@@ -157,16 +243,20 @@ def installed_sources(source: Path, destination: Path):
     revision = _clean_source_revision(source)
     first = not destination.exists()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.mkdir(exist_ok=True)
+    if first:
+        # Do not adopt a directory created by another installer after our check.
+        destination.mkdir()
     backup = Path(tempfile.mkdtemp(prefix=".smoothcast-install-backup-",
                                    dir=destination.parent))
     saved: list[str] = []
     created: list[str] = []
+    discard_backup = False
     try:
         for name, source_path in _source_items(source):
             target_path = destination / name
-            if source_path.is_symlink() or target_path.is_symlink():
-                raise ValueError(f"Refusing symbolic-link installation item: {name}")
+            _validate_copy_item(source_path)
+            if target_path.is_symlink():
+                raise ValueError(f"Refusing symbolic-link installation destination: {name}")
             if target_path.exists():
                 # Atomic rename on one filesystem: preserves the old source
                 # even when a later copy or package bootstrap fails.
@@ -179,23 +269,32 @@ def installed_sources(source: Path, destination: Path):
                 shutil.copy2(source_path, target_path)
         _record_source_revision(source, destination, revision)
         yield
+        discard_backup = True
     except BaseException:
-        for name in reversed(created):
-            path = destination / name
-            if path.is_symlink():
-                path.unlink()
-            elif path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
-        for name in saved:
-            (backup / name).rename(destination / name)
-        if first:
-            # Only delete a brand-new target if we created it.
-            shutil.rmtree(destination, ignore_errors=True)
+        try:
+            for name in reversed(created):
+                path = destination / name
+                if path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
+                    shutil.rmtree(path)
+                elif path.exists():
+                    path.unlink()
+            for name in saved:
+                (backup / name).rename(destination / name)
+            if first and not any(destination.iterdir()):
+                # Never recursively erase unrelated files created during setup.
+                destination.rmdir()
+        except OSError as exc:
+            raise OSError(
+                f"Installation rollback incomplete; recovery files retained at {backup}: {exc}"
+            ) from exc
+        discard_backup = True
         raise
     finally:
-        shutil.rmtree(backup, ignore_errors=True)
+        # A failed rollback must never destroy the last copy of the old sources.
+        if discard_backup:
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def remember_directory(target: str, destination: Path, *,

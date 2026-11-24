@@ -23,7 +23,11 @@ def test_large_issue_pickup_is_one_screen_and_keeps_checklist_and_latest_handove
     assert "Objective: fix the room." in packet
     assert "Acceptance: all room commands fenced" in packet
     assert "Handover: check final receiver path" in packet
-    assert "Handover: old next step" not in packet
+    # #584 keeps several recent handovers (oldest to newest) so a successor does
+    # not redo finished slices; the newest must come last and the packet stays bounded.
+    assert "Handover: old next step" in packet
+    assert packet.index("Handover: old next step") < packet.index("Handover: check final receiver path")
+    assert "Recent durable handovers (oldest to newest" in packet
     assert "https://github.com/gmanldn/smoothcast/issues/584" in packet
     assert "background abbreviated" in packet
 

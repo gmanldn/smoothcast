@@ -31,7 +31,8 @@ def test_runtime_points_profile_at_loopback_receiver_and_cleans_up(tmp_path):
         env = demo.environment()
         assert env[demo_runtime.DEMO_ENV] == "1"
         assert all(Path(v).is_relative_to(demo.session.root)
-                   for k, v in env.items() if k != demo_runtime.DEMO_ENV)
+                   for k, v in env.items()
+                   if k not in (demo_runtime.DEMO_ENV, "SMOOTHCAST_DEMO_TOKEN"))
         assert {p.suffix for p in demo.media} >= {".mp4", ".mkv", ".srt", ".mp3"}
         assert all(p.is_relative_to(demo.session.media_dir) for p in demo.media)
         root = demo.session.root

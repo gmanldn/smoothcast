@@ -47,19 +47,20 @@ def runtime_ready() -> bool:
     if runtime is None:
         return False
     try:
-        result = subprocess.run(
-            [str(runtime), "-c", RUNTIME_CHECK],
-            capture_output=True, text=True, timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
+        # MSYS2 DLLs and Homebrew typelibs must be available to the probe,
+        # not only to the final GUI process. An invalid manifest fails closed.
+        env = runtime_environment()
+        for check in (RUNTIME_CHECK, bootstrap.PROJECT_DEPENDENCIES_CHECK):
+            result = subprocess.run(
+                [str(runtime), "-c", check], env=env,
+                capture_output=True, text=True, timeout=20,
+            )
+            if result.returncode != 0:
+                return False
+    except (OSError, RuntimeError, subprocess.SubprocessError):
         return False
-    if result.returncode != 0:
-        return False
-    try:
-        path = runtime_environment().get("PATH")
-    except (OSError, RuntimeError):
-        path = os.environ.get("PATH")
-    return all(shutil.which(tool, path=path) for tool in ("ffmpeg", "ffprobe", "ffplay"))
+    return all(shutil.which(tool, path=env.get("PATH"))
+               for tool in ("ffmpeg", "ffprobe", "ffplay"))
 
 
 def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, str]:
@@ -83,6 +84,7 @@ def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, 
                 f"Selected MSYS2 runtime moved: {root}. Rerun Windows setup."
             )
         env["MSYS2_ROOT"] = str(root)
+        env["MSYSTEM"] = "UCRT64"
         env["PATH"] = os.pathsep.join(
             (str(ucrt / "bin"), str(root / "usr" / "bin"), env.get("PATH", "")),
         )
@@ -187,7 +189,9 @@ def is_gui_python_command(argv: list[str], target: str) -> bool:
     Bounded parsing avoids treating an arbitrary later file operand as our app.
     Unknown flags and -c/-m invocations deliberately fail closed; -W/-X\n    option values are consumed before identifying the real script operand.
     """
-    if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
+    name = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower() if argv else ""
+    if len(argv) < 2 or not re.fullmatch(
+            r"pythonw?(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?(?:\.exe)?", name):
         return False
     index = 1
     while index < len(argv):
@@ -221,13 +225,81 @@ def known_gui_script(candidate: str) -> bool:
         return False
 
 
+def _portable_processes() -> list[tuple[int, list[str]]]:
+    """Same-user (pid, argv) pairs where /proc does not exist (macOS, Windows).
+
+    psutil when it is importable, otherwise ``ps`` on macOS. Anything that
+    fails yields an empty list: unknown never means "a GUI is running".
+    """
+    found: list[tuple[int, list[str]]] = []
+    try:
+        import psutil  # type: ignore[import-not-found]
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        try:
+            me = psutil.Process(os.getpid()).username()
+            for process in psutil.process_iter(["pid", "cmdline", "username"]):
+                info = process.info
+                if info.get("username") == me and info.get("cmdline"):
+                    found.append((int(info["pid"]), list(info["cmdline"])))
+        except Exception:  # AccessDenied and platform errors must not block launch.
+            return []
+        return found
+    if sys.platform == "darwin" and hasattr(os, "getuid"):
+        try:
+            out = subprocess.run(["ps", "-ww", "-U", str(os.getuid()), "-o", "pid=,command="],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        for line in out.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[0].isdecimal():
+                # ps flattens argv; callers match by exact script path tokens.
+                found.append((int(parts[0]), ["\0flat", parts[1]]))
+    return found
+
+
+def _flat_argv(command: str, target: str) -> list[str] | None:
+    """Rebuild [python, ..., target] from a flattened ps command, or None."""
+    index = command.find(target)
+    while index > 0:
+        end = index + len(target)
+        if command[index - 1] == " " and (end == len(command) or command[end] == " "):
+            return command[:index].split() + [target] + command[end:].split()
+        index = command.find(target, index + 1)
+    return None
+
+
 def gui_instances(proc_root: Path = Path("/proc"),
                   exclude: set[int] | None = None, *,
                   all_installations: bool = False) -> list[int]:
     """Same-user GUI PIDs; optionally include recognised other installations."""
     target = str((ROOT / "src" / "cast_control.py").resolve())
-    skip = {os.getpid(), os.getppid()} | (exclude or set())
+    skip = {os.getpid()} | ({os.getppid()} if hasattr(os, "getppid") else set()) | (exclude or set())
     found: list[int] = []
+    if not proc_root.is_dir():  # not Linux: enumerate through psutil / ps
+        for pid, argv in _portable_processes():
+            if pid in skip:
+                continue
+            if argv[:1] == ["\0flat"]:
+                rebuilt = _flat_argv(argv[1], target)
+                argvs = [rebuilt] if rebuilt else []
+                if all_installations and not argvs:
+                    argvs = [a for a in (
+                        _flat_argv(argv[1], token) for token in argv[1].split()
+                        if token.endswith("cast_control.py")) if a]
+                argv_options = argvs
+            else:
+                argv_options = [argv]
+            for candidate in argv_options:
+                if is_gui_python_command(candidate, target) or (
+                    all_installations and any(
+                        is_gui_python_command(candidate, argument) and known_gui_script(argument)
+                        for argument in candidate[1:])):
+                    found.append(pid)
+                    break
+        return found
     try:
         entries = [entry for entry in proc_root.iterdir() if entry.name.isdecimal()]
     except OSError:
@@ -258,6 +330,8 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     True when it accepted (window raised), False when it refused or timed out,
     and None when the running instance cannot be probed safely.
     """
+    if sys.platform != "linux":
+        return None  # no session bus to ask: the caller reports the running copy
     app_id, object_path = app_identity()
     if shutil.which("gdbus") is None:
         return None
@@ -278,8 +352,6 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
 
 def ensure_single_instance(args: list[str]) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
-    if os.name != "posix":
-        return None
     pids = gui_instances(all_installations=True)
     if not pids:
         return None
@@ -318,10 +390,18 @@ def ensure_single_instance(args: list[str]) -> int | None:
 
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    # Direct shortcut/launcher calls must not bypass demo isolation (#523).
+    # Direct shortcut/launcher calls reach the same isolated demo as sc.py (#523):
+    # before any single-instance check, so a real running SmoothCast is untouched.
     if any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
-        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
-        return 2
+        sys.path.insert(0, str(ROOT / "src"))
+        import demo_launch
+        if args != ["--demo"]:
+            return demo_launch.run(args)
+        try:
+            return demo_launch.run(args, str(python_path()), runtime_environment())
+        except (OSError, RuntimeError) as exc:
+            print(f"SmoothCast demo could not start: {exc}", file=sys.stderr)
+            return 1
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
     if args[:1] == ["--link-check"]:

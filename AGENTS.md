@@ -47,11 +47,12 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 - Keep context bounded: [efficiency](docs/agents/efficiency.md),
   [Ponytail](.kilo/skills/ponytail/SKILL.md),
   [Caveman](.kilo/skills/caveman/SKILL.md).
-- `src/version.py` is release SemVer; agent shipments do **not** automatically
-  bump it. Each develop revision has its Git commit SHA (`smoothcast
-  --build-id`). `smoothcast --version` retains stable SemVer.
-  `agent.py ship --assign-patch` is an **explicit opt-in**, requiring owner
-  authorisation, never the normal path. The version-history check runs on
-  every `ship` even with `--skip-checks`. Never bypass it via raw pushes.
+- Owner policy: **one PATCH per completed ticket**. Ship progress without
+  bumps; use `agent.py ship --assign-patch` for the final acceptance slice.
+  Retries reuse the existing issue assignment; never mint a second PATCH.
+  Git commit SHA identifies every build (`--build-id`); `src/version.py` is SemVer
+  (`smoothcast --version`). Mandatory
+  version-history checks run on every ship, even with `--skip-checks`.
+  Never bypass them via raw pushes.
   No automatic merging, tagging or publishing to `main`.
   Packaging authority: `packaging/SmoothCast.spec`.

@@ -40,6 +40,13 @@ def _limit(
 
 PROFILES: dict[str, ReceiverProfile] = {
     "generic": ReceiverProfile("generic", ()),
+    # Google's table lists 1st and 2nd generation with identical video limits.
+    "chromecast-gen1": ReceiverProfile("chromecast-gen1", (
+        _limit("h264", "high", (4, 1), 1280, 720, 60),
+        _limit("h264", "high", (4, 1), 1920, 1080, 30),
+        _limit("vp8", None, None, 1280, 720, 60),
+        _limit("vp8", None, None, 1920, 1080, 30),
+    )),
     "chromecast-gen2": ReceiverProfile("chromecast-gen2", (
         _limit("h264", "high", (4, 1), 1280, 720, 60),
         _limit("h264", "high", (4, 1), 1920, 1080, 30),

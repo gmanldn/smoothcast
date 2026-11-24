@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def entry(monkeypatch):
-    loader = importlib.machinery.SourceFileLoader("portable_entry", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -24,6 +24,12 @@ def entry(monkeypatch):
     runtime.runtime_ready.return_value = True
     runtime.main.return_value = 0
     monkeypatch.setitem(sys.modules, "launch", runtime)
+    refresher = mock.Mock()
+    refresher.refresh.return_value = 0
+    refresher.read_version.return_value = (2, 0, 5)
+    refresher.installed_revision.return_value = "a" * 40
+    refresher.installed_source.return_value = None
+    monkeypatch.setitem(sys.modules, "checkout_refresh", refresher)
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
     monkeypatch.setattr(module, "_target", lambda: "linux")
@@ -112,7 +118,7 @@ def test_test_context_never_delegates_to_real_install(entry, monkeypatch):
 
 
 def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monkeypatch, capsys):
-    loader = importlib.machinery.SourceFileLoader("portable_entry_direct", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry_direct", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -125,7 +131,9 @@ def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monk
     cwd = Path.cwd()
     args = ["relative.mkv", "--action", "queue"]
     assert module._launch_installed(installed, args) == 3
-    call.assert_called_once_with([sys.executable, str(script), *args])
+    call.assert_called_once_with([sys.executable, str(script), *args],
+                                 env=mock.ANY)
+    assert call.call_args.kwargs["env"]["SMOOTHCAST_HANDOFF"] == "1"
     assert Path.cwd() == cwd
     assert str(installed) in capsys.readouterr().err
     script.unlink()
@@ -142,7 +150,7 @@ def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monk
 def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch,
                                                     remembered, default_manifest, expected):
     # Load the actual routing helper rather than the main() fixture's mock.
-    loader = importlib.machinery.SourceFileLoader("portable_entry_location", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry_location", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     actual = importlib.util.module_from_spec(spec)
     loader.exec_module(actual)
@@ -155,5 +163,140 @@ def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch
     locations = mock.Mock()
     locations.previous_directory.return_value = saved if remembered else None
     locations.default_directory.return_value = default
+    locations.config_path.return_value = tmp_path / "no-pointer"  # absent: no saved path
     monkeypatch.setitem(sys.modules, "install_location", locations)
     assert actual._installed_root("linux") == (tmp_path / expected if expected else None)
+
+
+def test_stale_install_refresh_failure_prevents_handoff(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = tmp_path
+    refresher = sys.modules["checkout_refresh"]
+    refresher.refresh.return_value = 3
+    assert module.main([]) == 3
+    refresher.refresh.assert_called_once()
+    module._launch_installed.assert_not_called()
+    runtime.main.assert_not_called()
+
+
+def test_version_query_never_refreshes_installed_files(entry, tmp_path):
+    module, _runtime = entry
+    module._installed_root.return_value = tmp_path
+    assert module.main(["--version"]) == 0
+    sys.modules["checkout_refresh"].refresh.assert_not_called()
+
+
+def test_new_install_handoff_uses_canonical_script(entry, tmp_path, monkeypatch):
+    loader = importlib.machinery.SourceFileLoader("canonical_direct", str(ROOT / "sc.py"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    actual = importlib.util.module_from_spec(spec)
+    loader.exec_module(actual)
+    (tmp_path / "sc.py").touch()
+    (tmp_path / "setup").mkdir()
+    (tmp_path / "setup" / "launch.py").touch()
+    call = mock.Mock(return_value=0)
+    monkeypatch.setattr(actual.subprocess, "call", call)
+    assert actual._launch_installed(tmp_path, ["relative.mkv"]) == 0
+    call.assert_called_once_with([sys.executable, str(tmp_path / "sc.py"), "relative.mkv"],
+                                 env=mock.ANY)
+
+
+def test_registered_root_repairs_missing_runtime_in_place(entry):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    runtime.runtime_ready.side_effect = [False, True]
+    assert module.main([]) == 0
+    module._bootstrap.assert_called_once_with("linux", in_place=True)
+    runtime.main.assert_called_once_with([], prechecked=True)
+
+
+def test_compatibility_wrapper_delegates_all_arguments(monkeypatch):
+    import runpy
+    canonical = mock.Mock()
+    canonical.main.return_value = 17
+    monkeypatch.setitem(sys.modules, "sc", canonical)
+    with pytest.raises(SystemExit) as result:
+        runpy.run_path(str(ROOT / "smoothcast"), run_name="__main__")
+    assert result.value.code == 17
+    canonical.main.assert_called_once_with()
+
+
+def test_installed_shortcut_rechecks_source_before_activating(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    refresher = sys.modules["checkout_refresh"]
+    refresher.installed_source.return_value = tmp_path
+    refresher.refresh.return_value = 3
+    assert module.main([]) == 3
+    refresher.refresh.assert_called_once()
+    runtime.ensure_single_instance.assert_not_called()
+    runtime.main.assert_not_called()
+
+
+def test_refreshed_shortcut_restarts_new_launcher(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    refresher = sys.modules["checkout_refresh"]
+    refresher.installed_source.return_value = tmp_path
+    refresher.installed_revision.side_effect = ["a" * 40, "b" * 40]
+    assert module.main(["film.mkv"]) == 0
+    module._launch_installed.assert_called_once_with(ROOT, ["film.mkv"])
+    runtime.main.assert_not_called()
+
+
+def _real_sc():
+    loader = importlib.machinery.SourceFileLoader("sc_real_launcher", str(ROOT / "sc.py"))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("payload", [b"\xff\xfe\x00bad", b"", b"relative/path"])
+def test_unreadable_or_odd_install_pointer_is_not_fatal(tmp_path, monkeypatch, payload):
+    pointer = tmp_path / "install-location"
+    pointer.write_bytes(payload)
+    locations = mock.Mock()
+    locations.config_path.return_value = pointer
+    locations.previous_directory.return_value = None
+    locations.default_directory.return_value = tmp_path / "default"
+    monkeypatch.setitem(sys.modules, "install_location", locations)
+    assert _real_sc()._installed_root("linux") is None
+    locations.check_install_idle.assert_called_once_with(tmp_path / "default")
+
+
+def test_busy_installer_is_reported_civilly_not_as_a_traceback(monkeypatch, capsys):
+    module = _real_sc()
+    monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
+    monkeypatch.setitem(sys.modules, "launch", mock.Mock())
+    monkeypatch.setattr(module, "_target", lambda: "linux")
+    busy = OSError("Another setup is active for /x; retry when it finishes.")
+    monkeypatch.setattr(module, "_installed_root", mock.Mock(side_effect=busy))
+    assert module.main([]) == 1
+    err = capsys.readouterr().err
+    assert "Another setup is active" in err and "Traceback" not in err
+
+
+def test_ctrl_c_during_launch_is_quiet(monkeypatch, capsys):
+    module = _real_sc()
+    monkeypatch.setattr(module, "_main", mock.Mock(side_effect=KeyboardInterrupt))
+    assert module.main([]) == 130
+    assert capsys.readouterr().err == ""
+
+
+def test_handoff_marker_prevents_launcher_ping_pong(entry, monkeypatch, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = tmp_path / "elsewhere"
+    monkeypatch.setenv("SMOOTHCAST_HANDOFF", "1")
+    module.main([])
+    module._launch_installed.assert_not_called()
+
+
+def test_handoff_child_receives_marker_and_arguments(monkeypatch, tmp_path):
+    module = _real_sc()
+    (tmp_path / "sc.py").write_text("")
+    calls = []
+    monkeypatch.setattr(module.subprocess, "call",
+                        lambda cmd, **kw: calls.append((cmd, kw)) or 0)
+    assert module._launch_installed(tmp_path, ["a b.mkv"]) == 0
+    cmd, kw = calls[0]
+    assert cmd[-1] == "a b.mkv" and kw["env"]["SMOOTHCAST_HANDOFF"] == "1"

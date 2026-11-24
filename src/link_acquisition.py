@@ -590,10 +590,28 @@ class _Job:
     rate: int | None = None
     measured_at: float = 0.0
     error: str = ""
+    # Verified retained media (#590): byte size and SHA-256 taken before the first
+    # queue dispatch. The file is found again by content, never by a stored name.
+    size: int = 0
+    digest: str = ""
+    home: str = ""  # id of the job whose directory holds the media (reuse jobs)
     cancel: threading.Event = field(default_factory=threading.Event)
 
 
 JOURNAL_SCHEMA = 1
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _sha256(path: Path, cancelled: Callable[[], bool]) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        while chunk := stream.read(1 << 20):
+            if cancelled():
+                raise LinkError(409, "Acquisition cancelled.")
+            digest.update(chunk)
+    return digest.hexdigest()
 JOURNAL_BYTES = 64 * 1024
 JOB_ID = re.compile(r"[0-9a-f]{24}\Z")
 
@@ -696,7 +714,13 @@ class _JobJournal:
                 error = "Interrupted by a room restart. Submit a new authorised request to retry."
             elif stage == "failed":
                 error = "Previous acquisition failed. Submit a new authorised request to retry."
-            jobs.append(_Job(ident, "", "", source, stage=stage, title=source.label, error=error))
+            job = _Job(ident, "", "", source, stage=stage, title=source.label, error=error)
+            size, digest, home = (record.get(k) for k in ("size", "sha256", "home"))
+            if (stage == "ready" and type(size) is int and 0 < size <= MAX_BYTES
+                    and isinstance(digest, str) and SHA256.fullmatch(digest)
+                    and (home is None or (isinstance(home, str) and JOB_ID.fullmatch(home)))):
+                job.size, job.digest, job.home = size, digest, home or ""
+            jobs.append(job)
         return jobs
 
     def save(self, jobs):
@@ -707,7 +731,11 @@ class _JobJournal:
         cache_privacy.write_private_json_atomic(self.path, {
             "schema": JOURNAL_SCHEMA,
             "jobs": [{"id": job.id, "kind": job.source.kind, "identity": job.source.identity,
-                      "stage": job.stage} for job in jobs],
+                      "stage": job.stage,
+                      # Content identity only: no file name or path is persisted.
+                      **({"size": job.size, "sha256": job.digest,
+                          **({"home": job.home} if job.home else {})}
+                         if job.digest else {})} for job in jobs],
         })
 
 
@@ -798,10 +826,17 @@ class LinkJobs:
                     if job.source != source:
                         raise LinkError(409, "Submission identifier was already used for another link.")
                     return job.id
-            for job in self._jobs.values():
-                if job.source == source and job.stage not in {"failed", "cancelled"}:
+            same = [j for j in self._jobs.values() if j.source == source]
+            for job in same:
+                if job.stage not in {"failed", "cancelled", "ready", "delivery_uncertain"}:
                     self._remember_request(owner, request, job.id)
-                    return job.id
+                    return job.id  # still working: one external download per source
+            retained = next((j for j in reversed(same) if j.stage == "ready" and j.digest), None)
+            if retained is None:
+                for job in same:
+                    if job.stage not in {"failed", "cancelled"}:
+                        self._remember_request(owner, request, job.id)
+                        return job.id
             if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
                 raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
             previous_jobs = self._jobs.copy()
@@ -817,6 +852,9 @@ class LinkJobs:
                     if value == expired.id:
                         self._requests.pop(key)
             job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
+            if retained is not None:  # deliberate re-queue: no second download (#590)
+                job.size, job.digest = retained.size, retained.digest
+                job.home = retained.home or retained.id
             self._jobs[job.id] = job
             self._remember_request(owner, request, job.id)
             if not self._save():
@@ -867,8 +905,9 @@ class LinkJobs:
                 if not self._save():
                     self._change(job, stage="failed", error="Acquisition receipt could not be saved.")
                     continue
-            directory = self.root / job.id
+            directory = self.root / (job.home or job.id)
             delivered = False
+            reused: Path | None = None
 
             def cancelled():
                 return job.cancel.is_set() or not self.owner_active(job.owner)
@@ -881,11 +920,21 @@ class LinkJobs:
             try:
                 if cancelled():
                     raise LinkError(409, "Acquisition cancelled.")
-                _reserve_cache_capacity(self.root)
-                directory.mkdir(mode=0o700)
-                path = self.provider.acquire(job.source, directory, stage,
-                                             lambda n, total: self._progress(job, n, total), cancelled)
-                path = _safe_media(directory, Path(path))
+                if job.home:
+                    reused = self._verified_retained(job, directory, cancelled)
+                if reused is not None:
+                    path = reused
+                else:
+                    if job.home:  # retained file failed verification: acquire afresh
+                        self._change(job, size=0, digest="", home="")
+                        directory = self.root / job.id
+                    _reserve_cache_capacity(self.root)
+                    directory.mkdir(mode=0o700)
+                    path = self.provider.acquire(job.source, directory, stage,
+                                                 lambda n, total: self._progress(job, n, total), cancelled)
+                    path = _safe_media(directory, Path(path))
+                    stage("verifying")
+                    self._change(job, size=path.stat().st_size, digest=_sha256(path, cancelled))
                 # Crossing the queue-delivery boundary and accepting cancel
                 # are mutually exclusive. The queue authority checks the
                 # owner's live session again when it receives the request.
@@ -919,11 +968,31 @@ class LinkJobs:
                              error="Queue delivery not confirmed; check Up Next." if delivered else
                              "Acquisition could not finish on this host.", rate=None)
             finally:
-                if not delivered:
+                if not delivered and reused is None and not job.home:
                     shutil.rmtree(directory, ignore_errors=True)
                 with self._lock:
                     if job.stage != "ready":
                         self._save()
+
+    def _verified_retained(self, job, directory: Path, cancelled) -> Path | None:
+        """The previously acquired file, found by size and content hash."""
+        try:
+            candidates = []
+            for index, (folder, _dirs, names) in enumerate(os.walk(directory)):
+                if index > MAX_FILES:
+                    break
+                candidates += [Path(folder) / name for name in names]
+            for path in candidates[:MAX_FILES]:
+                try:
+                    _safe_media(directory, path)
+                    if path.stat().st_size == job.size and _sha256(path, cancelled) == job.digest:
+                        return path
+                except LinkError:
+                    if cancelled():
+                        raise
+        except OSError:
+            pass
+        return None
 
     def snapshot(self, owner=None):
         with self._lock:

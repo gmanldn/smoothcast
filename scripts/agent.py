@@ -27,6 +27,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import agent_network  # noqa: E402
 import ticket_digest as td  # noqa: E402
 from ci import ship_patch  # noqa: E402
 
@@ -224,6 +225,14 @@ def agent_id() -> str:
 
 
 def git(*args: str, check: bool = True) -> str:
+    if args and args[0] in agent_network.REMOTE_OPERATIONS:
+        r = agent_network.remote_command(list(args), cwd=ROOT)
+        if r.returncode:
+            guidance = agent_network.failure_guidance(args[0], r)
+            if check:
+                raise SystemExit(guidance)
+            print(guidance, file=sys.stderr)
+        return r.stdout
     r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
     if check and r.returncode:
         raise SystemExit(f"git {' '.join(args)} failed: {(r.stderr or r.stdout).strip()[:300]}")
@@ -1056,7 +1065,15 @@ def cmd_ship(a: argparse.Namespace) -> int:
     checks_run: list[str] = []
     unverified_checks: list[str] = []
     for attempt in range(1, 6):
-        git("fetch", "-q", "origin", "develop")
+        try:
+            git("fetch", "-q", "origin", "develop")
+        except SystemExit as exc:
+            print(str(exc))
+            if task is not None and task.get("pending_push"):
+                return 5  # Unknown outcome; leave the original receipt intact.
+            if task is not None and task.get("pending_handover"):
+                return 7  # Confirmed push, handover still pending.
+            return 6
         remote_before = git("rev-parse", "origin/develop").strip()
         if task is not None and not recover_uncertain_push(task):
             print("push outcome remains uncertain; worktree preserved")
@@ -1205,19 +1222,18 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 print("PUSH REFUSED: could not durably record delivery intent; worktree preserved")
                 return 5
             task.update(newer)
-        push = subprocess.run(["git", "push", "origin", "HEAD:develop"],
-                              cwd=ROOT, capture_output=True, text=True)
+        push = agent_network.remote_command(["push", "origin", "HEAD:develop"], cwd=ROOT)
         if push.returncode:
             # A lost acknowledgement after a successful remote push is not a
             # reason to replay commits. Fetch and inspect ancestry first.
-            fetch = subprocess.run(["git", "fetch", "-q", "origin", "develop"],
-                                   cwd=ROOT, capture_output=True, text=True)
+            fetch = agent_network.remote_command(["fetch", "-q", "origin", "develop"], cwd=ROOT)
             if fetch.returncode:
                 print(f"push outcome uncertain for {sha[:12]}; remote fetch failed.")
                 if task is not None:
                     print("uncertain push saved; rerun 'agent.py ship' to verify "
                           "remote ancestry and complete its handover")
-                print((push.stderr + fetch.stderr)[-700:])
+                print(agent_network.failure_guidance("push", push))
+                print(agent_network.failure_guidance("fetch", fetch))
                 return 5
             remote_now = git("rev-parse", "origin/develop").strip()
             ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", sha, remote_now],
@@ -1227,7 +1243,8 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 return 5
             if ancestry == 1:
                 if remote_now == remote_before:
-                    print("push failed without a competing change: " + push.stderr.strip()[-800:])
+                    print("push failed without a competing change; worktree preserved.")
+                    print(agent_network.failure_guidance("push", push))
                     return 5
                 print(f"remote advanced; safely retrying [{attempt}/5]")
                 # The next attempt reconciles the write-ahead receipt before

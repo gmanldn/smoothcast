@@ -13,14 +13,16 @@ def blocked(command: str) -> bool:
 
 
 def test_real_launches_are_still_refused():
-    for command in ("./smoothcast", "smoothcast-gui", "gtk-launch local.cast-control",
+    for command in ("./smoothcast", "./sc.py", "python3 sc.py", "python3 -m sc",
+                    "smoothcast-gui", "gtk-launch local.cast-control",
                     "python3 src/cast_control.py", "cd x && ./smoothcast --self-test",
                     "python3 -m cast_control", "env FOO=1 ./smoothcast file.mkv"):
         assert blocked(command), command
 
 
 def test_safe_invocations_are_allowed():
-    for command in ("./smoothcast --version", "python3 scripts/agent.py board",
+    for command in ("./smoothcast --version", "./sc.py --version", "python3 sc.py --version",
+                    "python3 scripts/agent.py board",
                     "python3 -m pytest -q tests", "python3 scripts/test_gui_isolated.py"):
         assert not blocked(command), command
 

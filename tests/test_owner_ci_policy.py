@@ -29,6 +29,18 @@ class OwnerCIPolicyTests(unittest.TestCase):
         self.assertNotIn("  pull_request:", text)
         self.assertNotIn("  schedule:", text)
 
+    def test_manual_patch_verify_covers_canonical_launcher_and_windows_setup(self):
+        text = workflow("verify.yml")
+        self.assertIn("python -m py_compile sc.py smoothcast", text)
+        self.assertIn("ruff check src scripts setup tests sc.py smoothcast setup.py", text)
+        setup = text.split("\n  setup-contract:\n", 1)[1].split("\n  installed-artifact:", 1)[0]
+        self.assertNotIn("needs.scope.outputs.lane", setup)
+        self.assertIn("windows-2025", setup)
+        self.assertIn("test_setup_bootstrap.py", setup)
+        self.assertIn("test_portable_install_routing.py", setup)
+        self.assertIn("test_block_gui_launch.py", setup)
+        self.assertIn("test_checkout_refresh.py", setup)
+
     def test_native_packages_are_never_built_for_develop_pushes(self):
         text = triggers(workflow("package.yml"))
         self.assertIn("  workflow_dispatch:", text)

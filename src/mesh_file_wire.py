@@ -26,10 +26,22 @@ def parse_wire_uint(value: str | None) -> int | None:
     return number if number <= MAX_MEDIA_BYTES else None
 
 
+def identity_body(reply) -> bool:
+    """The mesh wire contract requires unencoded, fixed-length media bytes.
+
+    Transfer-Encoding alongside Content-Length is ambiguous; compressed
+    representations cannot be forwarded as the original media byte range.
+    """
+    encoding = reply.getheader("Content-Encoding")
+    return (reply.getheader("Transfer-Encoding") is None
+            and (encoding is None or
+                 (isinstance(encoding, str) and encoding.strip().lower() == "identity")))
+
+
 def _valid_resume(reply, start: int, end: int, total: str | None,
                   etag: str | None, generation: str | None = None) -> bool:
     """Only append bytes that continue the original range and object."""
-    if reply.status != 206:
+    if reply.status != 206 or not identity_body(reply):
         return False
     match = _CONTENT_RANGE.fullmatch(reply.getheader("Content-Range") or "")
     if match is None or total is None or total == "*":

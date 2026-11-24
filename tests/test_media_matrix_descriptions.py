@@ -127,8 +127,8 @@ class SourceShapeTests(unittest.TestCase):
                         self.assertFalse(accepted)
 
 
-    def test_48_sources_x_6_profiles_have_conservative_pure_playback_plans(self):
-        """Exercise 288 codec/container/audio/subtitle decisions without GTK/IO.
+    def test_48_sources_x_7_profiles_have_conservative_pure_playback_plans(self):
+        """Exercise 336 codec/container/audio/subtitle decisions without GTK/IO.
 
         This adapter deliberately declares ONLY the common H.264/AAC/MP4
         floor, plus each fake receiver's actual H.264 height limit. It does
@@ -136,7 +136,7 @@ class SourceShapeTests(unittest.TestCase):
         Actual Session/FFmpeg output and device acceptance are separate gates.
         """
         self.assertEqual(len(media_matrix.SHAPES), 48)
-        self.assertEqual(len(PROFILES), 6)
+        self.assertEqual(len(PROFILES), 7)
         for profile, spec in PROFILES.items():
             h264_heights = [
                 limit.max_height for limit in spec.codecs

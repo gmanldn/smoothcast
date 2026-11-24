@@ -335,7 +335,13 @@ def watch_status(owner, target: str, eligible: bool, dispatch, listener) -> bool
     return bool(watch and watch.select(target, enabled))
 
 
-if os.environ.get("SMOOTHCAST_CAST_BACKEND"):
+import demo_mode  # noqa: E402
+
+if demo_mode.active():
+    # Demo: only the profile's loopback fake receiver; never mDNS or catt (#454).
+    demo_mode.install_network_guard()
+    set_backend(demo_mode.backend())
+elif os.environ.get("SMOOTHCAST_CAST_BACKEND"):
     configure_backend()
 
 

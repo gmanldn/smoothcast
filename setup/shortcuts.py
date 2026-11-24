@@ -87,7 +87,7 @@ def install_macos(*, home: Path | None = None) -> Path:
         executable = staging / "Contents" / "MacOS" / "SmoothCast"
         executable.parent.mkdir(parents=True)
         executable.write_text(
-            app_launcher(Path(sys.executable), ROOT / "setup" / "launch.py"),
+            app_launcher(Path(sys.executable), ROOT / "sc.py"),
             encoding="utf-8",
         )
         executable.chmod(0o755)
@@ -196,7 +196,7 @@ def install_windows(*, appdata: Path | None = None) -> Path:
     write_windows_icon(ROOT / "data" / "cast-control.png", icon)
     script = windows_shortcut_command(
         executable=Path(sys.executable),
-        launcher=ROOT / "setup" / "launch.py",
+        launcher=ROOT / "sc.py",
         destination=shortcut,
         working_dir=ROOT,
         icon=icon,

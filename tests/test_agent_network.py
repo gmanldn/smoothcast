@@ -41,6 +41,31 @@ class NetworkTests(unittest.TestCase):
         run.side_effect = FileNotFoundError()
         self.assertEqual(network.probe(["git"], 15, git=True), "unavailable")
 
+    @patch.object(network.subprocess, "run")
+    def test_remote_command_is_bounded_noninteractive_and_timeout_safe(self, run):
+        run.side_effect = subprocess.TimeoutExpired(["git", "push"], 120)
+        result = network.remote_command(["push", "origin", "HEAD:develop"], cwd=Path.cwd())
+        self.assertEqual(result.returncode, 124)
+        self.assertEqual(run.call_args.kwargs["timeout"], 120)
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(run.call_args.kwargs["env"]["GCM_INTERACTIVE"], "never")
+        self.assertIn("(timeout)", network.failure_guidance("push", result))
+        run.side_effect = FileNotFoundError()
+        result = network.remote_command(["fetch", "origin"], cwd=Path.cwd())
+        self.assertIn("(unavailable)", network.failure_guidance("fetch", result))
+
+    def test_remote_guidance_never_leaks_credentials_or_mislabels_exit_two(self):
+        for code, raw, category in (
+            (128, "Could not resolve host https://user:secret@example.org", "dns"),
+            (128, "Authentication failed for https://token:secret@example.org", "authentication-or-access"),
+            (2, "secret arbitrary error", "other-git-failure"),
+        ):
+            message = network.failure_guidance("push", subprocess.CompletedProcess([], code, "", raw))
+            self.assertIn(f"({category})", message)
+            self.assertNotIn("secret", message)
+            self.assertNotIn("example.org", message)
+            self.assertIn("pending shipment receipt", message)
+
     @patch.object(network, "probe", side_effect=["dns-failed", "dns-failed", "dns-failed", "ok"])
     @patch("builtins.print")
     def test_proxy_git_success_is_authoritative(self, _print, _probe):

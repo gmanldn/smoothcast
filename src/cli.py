@@ -28,11 +28,11 @@ def main() -> int:
 
 
 def _main() -> int:
-    # Before frozen helper dispatch or GTK imports: never launch an actual TV
-    # when a caller requested unfinished demo mode (#523).
+    # Before frozen helper dispatch or GTK imports: demo runs in a throwaway
+    # loopback-only profile and never touches the user's SmoothCast (#523).
     if any(arg == "--demo" or arg.startswith("--demo=") for arg in sys.argv[1:]):
-        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
-        return 2
+        import demo_launch
+        return demo_launch.run(sys.argv[1:])
     from frozen_runtime import dispatch_frozen_helper, is_frozen
     child = dispatch_frozen_helper(sys.argv[1:])
     if child is not None:

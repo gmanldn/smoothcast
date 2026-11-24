@@ -180,13 +180,14 @@ class EarlyActivationTests(unittest.TestCase):
 
 
     def test_canonical_launcher_checks_singleton_before_runtime_bootstrap(self):
-        source = (ROOT / "smoothcast").read_text(encoding="utf-8")
+        source = (ROOT / "sc.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         fn = next(node for node in tree.body
-                  if isinstance(node, ast.FunctionDef) and node.name == "main")
+                  if isinstance(node, ast.FunctionDef) and node.name == "_main")
         body = ast.get_source_segment(source, fn)
+        # The demo branch also probes the runtime but never the real singleton.
         self.assertLess(body.index("launch.ensure_single_instance(args)"),
-                        body.index("launch.runtime_ready()"))
+                        body.rindex("launch.runtime_ready()"))
         self.assertLess(body.index("launch.ensure_single_instance(args)"),
                         body.index("_bootstrap(target)"))
         self.assertIn("launch.main(args, prechecked=True)", body)

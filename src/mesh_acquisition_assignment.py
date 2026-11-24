@@ -212,6 +212,7 @@ class AssignmentLedger:
             raise LedgerError("ownership unresolved: confirm the old executor stopped")
         job.ambiguous, job.state, job.node = False, "pending", None
         job.received = job.total = 0
+        job.content_key = None
         return job.generation  # next assign() fences this one out
 
     # -- completion ----------------------------------------------------------
@@ -220,6 +221,8 @@ class AssignmentLedger:
         self._fenced(job, node_id, generation)
         if not _KEY.fullmatch(content_key or ""):
             raise LedgerError("invalid content key")
+        if job.content_key is not None and job.content_key != content_key:
+            raise LedgerError("conflicting completion content key")
         job.state, job.content_key, job.seen_at = "transfer", content_key, now
 
     def enqueue_once(self, job_id: str, verified_content_key: str) -> bool:
@@ -305,6 +308,8 @@ class ExecutorGuard:
         running = self.running.get(job_id)
         if running and running == (generation, key):
             return "duplicate", []  # replayed request: idempotent
+        if not running and generation == self.highest.get(job_id, 0):
+            return "fenced", []  # completed generation must never restart
         if running and running[1] != key:
             return "invalid", []  # a job id can never change its source
         stop = [job_id] if running and generation > running[0] else []

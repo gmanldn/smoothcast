@@ -71,13 +71,13 @@ class ResponsiveLayoutTests(unittest.TestCase):
         self.assertEqual(original, again)
 
     def test_screen_size_limits_saved_giant_window(self):
-        self.assertEqual(window_size(1600, 1000, 1366, 768), (1294, 672))
-        self.assertEqual(window_size(2500, 1800, 1920, 1080), (1848, 984))
+        self.assertEqual(window_size(1600, 1000, 1366, 768), (1161, 652))
+        self.assertEqual(window_size(2500, 1800, 1920, 1080), (1632, 918))
 
     def test_bad_saved_geometry_uses_safe_defaults(self):
         self.assertEqual(window_size("NaN", None), (1180, 760))
         self.assertEqual(window_size(-5, "inf"), (1180, 760))
-        self.assertEqual(window_size(0, 0, 600, 500), (528, 404))
+        self.assertEqual(window_size(0, 0, 600, 500), (510, 404))
 
 
 if __name__ == "__main__":

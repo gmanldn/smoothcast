@@ -579,3 +579,27 @@ def test_missing_validator_on_retry_truncates_instead_of_mixing_bytes():
                 Connection(), First(), 0, 8, "8", None)
     assert client.wfile.getvalue() == b"ABCD"
     assert client.close_connection is True
+
+@pytest.mark.parametrize("status,request_range", [(200, None), (206, "bytes=100-199")])
+@pytest.mark.parametrize("header,value", [
+    ("Transfer-Encoding", "chunked"),
+    ("Content-Encoding", "gzip"),
+    ("Content-Encoding", "identity, br"),
+])
+def test_proxy_rejects_encoded_media_before_downstream_headers(
+        status, request_range, header, value):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    reply = _ResumeReply(status=status)
+    reply.values[header] = value
+    conn = Mock()
+    proxy = mesh_files.MeshFiles(lambda _k: None, lambda _k: [], lambda _k: None)
+    proxy._open = lambda *_args: (conn, reply)
+    client = SimpleNamespace(headers={"Range": request_range} if request_range else {})
+    write = Mock()
+    assert not proxy._proxy(client, "qh:" + "a" * 32,
+                            "http://127.0.0.1/", head=False, write_headers=write)
+    write.assert_not_called()
+    conn.close.assert_called_once()
+

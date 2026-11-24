@@ -22,6 +22,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Adw, Gtk, Pango
 
+import demo_mode
 import idle_chrome
 import responsive_layout
 import smoothcast_assets
@@ -49,10 +50,10 @@ class PanelMixin:
     def _build_ui(self) -> None:
         # Keep the *running* release in the prominent title, not an easily
         # truncated device/status subtitle or a live on-disk git lookup.
-        self.set_title(f"{APP_NAME} {version.running_label()}")
+        self.set_title(f"{APP_NAME} {version.label()}")
         header = Adw.HeaderBar()
         self.title_widget = Adw.WindowTitle(
-            title=f"{APP_NAME} {version.running_label()}",
+            title=f"{APP_NAME} {version.label()}",
             subtitle=self.cfg["device"] or "No receiver selected",
         )
         self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.running_label()}")
@@ -64,6 +65,17 @@ class PanelMixin:
             icon = Gtk.Image.new_from_icon_name(smoothcast_assets.ICON_NAME)
         icon.set_pixel_size(22)
         header.pack_start(icon)
+        if demo_mode.active():
+            # Unmistakable in screenshots: nothing here controls a real receiver (#454).
+            badge = Gtk.Label(label="DEMO")
+            badge.add_css_class("warning")
+            badge.add_css_class("caption-heading")
+            badge.set_tooltip_text("Demo mode: a fake receiver on this computer; no real devices are used")
+            badge.update_property([Gtk.AccessibleProperty.LABEL],
+                                  ["Demo mode, no real receivers are used"])
+            header.pack_start(badge)
+            self.set_title(f"{APP_NAME} {version.label()} — DEMO")
+        self.demo_badge_shown = demo_mode.active()
         menu_button = Gtk.MenuButton()
         menu_button.set_icon_name("open-menu-symbolic")
         menu_button.set_tooltip_text("Main menu")

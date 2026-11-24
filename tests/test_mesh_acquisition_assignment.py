@@ -256,3 +256,33 @@ def test_two_node_simulation_failover_without_duplicate_or_double_enqueue():
     assert guards["n1"].cancel(JOB, gen2) is True  # fence tells it to stop
     ledger.finished(JOB, node2, gen2, CONTENT, 120)
     assert [ledger.enqueue_once(JOB, CONTENT) for _ in range(3)] == [True, False, False]
+
+
+def test_completed_executor_generation_cannot_restart_on_delayed_offer():
+    guard = ExecutorGuard(slots=1)
+    assert guard.offer(JOB, 1, KEY) == ("accepted", [])
+    assert guard.done(JOB, 1)
+    assert guard.offer(JOB, 1, KEY) == ("fenced", [])
+    assert not guard.running
+    assert guard.offer(JOB, 2, KEY) == ("accepted", [])
+
+
+def test_completion_digest_cannot_change_within_one_generation():
+    ledger, node, gen = started()
+    ledger.finished(JOB, node, gen, CONTENT, 2)
+    ledger.finished(JOB, node, gen, CONTENT, 3)  # identical replay is safe
+    before = ledger.snapshot()
+    with pytest.raises(LedgerError, match="conflicting"):
+        ledger.finished(JOB, node, gen, "d" * 64, 4)
+    assert ledger.snapshot() == before
+    assert ledger.enqueue_once(JOB, CONTENT)
+
+
+def test_new_generation_can_finish_with_new_content_after_explicit_resolution():
+    ledger, node, gen = started()
+    ledger.finished(JOB, node, gen, CONTENT, 2)
+    ledger.tick(100)
+    ledger.resolve_ambiguous(JOB, executor_confirmed_stopped=True)
+    node2, gen2 = ledger.assign(JOB, "n2", 101)
+    ledger.finished(JOB, node2, gen2, "d" * 64, 102)
+    assert ledger.enqueue_once(JOB, "d" * 64)

@@ -9,21 +9,29 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import stat
 import tempfile
 
 FORMAT_VERSION = 1
+MAX_MANIFEST_BYTES = 128 * 1024
 
 
 def manifest_path(venv: Path) -> Path:
     return venv / ".smoothcast-native-runtime.json"
 
 
+def _absolute_path(value: object) -> bool:
+    return isinstance(value, str) and "\x00" not in value and Path(value).is_absolute()
+
+
 def save(venv: Path, *, target: str, native_python: Path, env: dict[str, str]) -> None:
     if target not in {"linux", "macos", "windows"}:
         raise ValueError("Unknown native runtime platform")
+    if not _absolute_path(str(native_python)):
+        raise ValueError("Selected native Python must have an absolute path")
     prefix = (env.get("SMOOTHCAST_NATIVE_PREFIX") if target == "macos"
               else env.get("MSYS2_ROOT") if target == "windows" else None)
-    if target != "linux" and not prefix:
+    if target != "linux" and not _absolute_path(prefix):
         raise ValueError("Selected native runtime prefix was not recorded")
     payload = {
         "format": FORMAT_VERSION,
@@ -52,19 +60,25 @@ def save(venv: Path, *, target: str, native_python: Path, env: dict[str, str]) -
 
 def load(venv: Path, *, target: str) -> dict[str, str | None] | None:
     path = manifest_path(venv)
-    if not path.exists():
-        return None  # Legacy installation; setup will write one on reinstall.
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if (not isinstance(raw, dict) or raw.get("format") != FORMAT_VERSION
-                or raw.get("target") != target
-                or not isinstance(raw.get("native_python"), str)
-                or not raw["native_python"]
-                or (target != "linux" and (
-                    not isinstance(raw.get("prefix"), str) or not raw["prefix"]))):
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            return None  # Legacy installation; setup writes one on reinstall.
+        if not stat.S_ISREG(mode):
+            raise ValueError("runtime manifest must be an ordinary file")
+        with path.open("rb") as handle:
+            data = handle.read(MAX_MANIFEST_BYTES + 1)
+        if len(data) > MAX_MANIFEST_BYTES:
+            raise ValueError("runtime manifest is too large")
+        raw = json.loads(data.decode("utf-8"))
+        if (not isinstance(raw, dict) or type(raw.get("format")) is not int
+                or raw["format"] != FORMAT_VERSION or raw.get("target") != target
+                or not _absolute_path(raw.get("native_python"))
+                or (target != "linux" and not _absolute_path(raw.get("prefix")))):
             raise ValueError("invalid runtime manifest")
         return raw
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         raise RuntimeError(
             f"SmoothCast native runtime record is invalid at {path}: {exc}. "
             "Rerun the platform setup script."
