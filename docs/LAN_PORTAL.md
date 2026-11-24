@@ -180,9 +180,10 @@ remain indeterminate. No source URL, tracker, infohash, host path or peer IP
 is published in the acquisition feed. The submitting guest can cancel before
 the file enters Up Next.
 
-External acquisition defaults to **off**. An owner can independently enable
-`portal_link_youtube` and `portal_link_magnet` in the host's local
-configuration and restart the room. Each enabled provider requires its
+External acquisition defaults to **off**. The owner can enable the YouTube
+and BitTorrent switches in **Preferences → Playback → Queue behaviour**,
+or set `portal_link_youtube` and `portal_link_magnet` in the local
+configuration. Restart the room for a change to take effect. Each enabled provider requires its
 host-installed executable (`yt-dlp` or `aria2c`), FFprobe, and an absolute
 executable path in the host environment variable `SMOOTHCAST_LINK_SANDBOX`.
 The launcher must enforce the local owner's egress and filesystem policy:
@@ -206,8 +207,12 @@ is requested. The per-job maximum is 2 GiB, with a 512 MiB disk reserve and a
 Next; acquisition does not bypass DRM or access controls. Acquire only media
 you are entitled to download.
 
-**Remaining work:** advertise acquisition capability, authenticated remote
-assignment, mesh-wide job telemetry and verified node-to-node delivery,
+Available workers advertise `acquire-youtube-local` and/or
+`acquire-magnet-local` in existing mesh node capabilities. These mean the
+node can run the indicated local provider, not that it accepts remote jobs.
+
+**Remaining work:** authenticated remote assignment, mesh-wide job telemetry
+and verified node-to-node delivery,
 restart-safe leases/resume, owner settings and worker provisioning. Follow
 [#587](https://github.com/gmanldn/smoothcast/issues/587). Do not interpret the
 room-local live view as proof of remote execution.
