@@ -189,7 +189,9 @@ def is_gui_python_command(argv: list[str], target: str) -> bool:
     Bounded parsing avoids treating an arbitrary later file operand as our app.
     Unknown flags and -c/-m invocations deliberately fail closed; -W/-X\n    option values are consumed before identifying the real script operand.
     """
-    if len(argv) < 2 or not re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?", Path(argv[0]).name):
+    name = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower() if argv else ""
+    if len(argv) < 2 or not re.fullmatch(
+            r"pythonw?(?:[0-9]+(?:\.[0-9]+)?)?(?:[a-z])?(?:\.exe)?", name):
         return False
     index = 1
     while index < len(argv):
@@ -223,13 +225,81 @@ def known_gui_script(candidate: str) -> bool:
         return False
 
 
+def _portable_processes() -> list[tuple[int, list[str]]]:
+    """Same-user (pid, argv) pairs where /proc does not exist (macOS, Windows).
+
+    psutil when it is importable, otherwise ``ps`` on macOS. Anything that
+    fails yields an empty list: unknown never means "a GUI is running".
+    """
+    found: list[tuple[int, list[str]]] = []
+    try:
+        import psutil  # type: ignore[import-not-found]
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        try:
+            me = psutil.Process(os.getpid()).username()
+            for process in psutil.process_iter(["pid", "cmdline", "username"]):
+                info = process.info
+                if info.get("username") == me and info.get("cmdline"):
+                    found.append((int(info["pid"]), list(info["cmdline"])))
+        except Exception:  # AccessDenied and platform errors must not block launch.
+            return []
+        return found
+    if sys.platform == "darwin" and hasattr(os, "getuid"):
+        try:
+            out = subprocess.run(["ps", "-ww", "-U", str(os.getuid()), "-o", "pid=,command="],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        for line in out.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[0].isdecimal():
+                # ps flattens argv; callers match by exact script path tokens.
+                found.append((int(parts[0]), ["\0flat", parts[1]]))
+    return found
+
+
+def _flat_argv(command: str, target: str) -> list[str] | None:
+    """Rebuild [python, ..., target] from a flattened ps command, or None."""
+    index = command.find(target)
+    while index > 0:
+        end = index + len(target)
+        if command[index - 1] == " " and (end == len(command) or command[end] == " "):
+            return command[:index].split() + [target] + command[end:].split()
+        index = command.find(target, index + 1)
+    return None
+
+
 def gui_instances(proc_root: Path = Path("/proc"),
                   exclude: set[int] | None = None, *,
                   all_installations: bool = False) -> list[int]:
     """Same-user GUI PIDs; optionally include recognised other installations."""
     target = str((ROOT / "src" / "cast_control.py").resolve())
-    skip = {os.getpid(), os.getppid()} | (exclude or set())
+    skip = {os.getpid()} | ({os.getppid()} if hasattr(os, "getppid") else set()) | (exclude or set())
     found: list[int] = []
+    if not proc_root.is_dir():  # not Linux: enumerate through psutil / ps
+        for pid, argv in _portable_processes():
+            if pid in skip:
+                continue
+            if argv[:1] == ["\0flat"]:
+                rebuilt = _flat_argv(argv[1], target)
+                argvs = [rebuilt] if rebuilt else []
+                if all_installations and not argvs:
+                    argvs = [a for a in (
+                        _flat_argv(argv[1], token) for token in argv[1].split()
+                        if token.endswith("cast_control.py")) if a]
+                argv_options = argvs
+            else:
+                argv_options = [argv]
+            for candidate in argv_options:
+                if is_gui_python_command(candidate, target) or (
+                    all_installations and any(
+                        is_gui_python_command(candidate, argument) and known_gui_script(argument)
+                        for argument in candidate[1:])):
+                    found.append(pid)
+                    break
+        return found
     try:
         entries = [entry for entry in proc_root.iterdir() if entry.name.isdecimal()]
     except OSError:
@@ -260,6 +330,8 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     True when it accepted (window raised), False when it refused or timed out,
     and None when the running instance cannot be probed safely.
     """
+    if sys.platform != "linux":
+        return None  # no session bus to ask: the caller reports the running copy
     app_id, object_path = app_identity()
     if shutil.which("gdbus") is None:
         return None
@@ -280,8 +352,6 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
 
 def ensure_single_instance(args: list[str]) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
-    if os.name != "posix":
-        return None
     pids = gui_instances(all_installations=True)
     if not pids:
         return None
