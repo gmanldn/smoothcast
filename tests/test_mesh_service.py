@@ -267,6 +267,33 @@ def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypa
     assert wait_for(lambda: not mesh_threads())
 
 
+def test_app_hook_advertises_only_enabled_local_link_workers(monkeypatch, tmp_path):
+    import cast_mesh
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": True, "strict": False, "seeds": ()})
+    monkeypatch.setattr(svc, "config_path", lambda: tmp_path / "config.json")
+    window = FakeWindow()
+    # Private fake server, not the shared class-level fixture.
+    window._portal = SimpleNamespace(
+        name="smoothcast-test", port=8123, room=FakeRoom(),
+        server=SimpleNamespace(mesh_feed=None, screens=FakeScreens(),
+                               link_jobs=SimpleNamespace(capabilities=lambda: {
+                                   "youtube": True, "magnet": False})))
+    cast_mesh.start(window, LOOP)
+    service = window._mesh
+    try:
+        assert service.config.link_acquisition_sources == ("youtube",)
+        assert wait_for(lambda: service.state == "running")
+        capabilities = service.view.node(service.node_id).capabilities
+        assert "acquire-youtube-local" in capabilities
+        assert "acquire-magnet-local" not in capabilities
+    finally:
+        cast_mesh.stop(window)
+        assert wait_for(lambda: not mesh_threads())
+
+
 def test_app_hook_feeds_scanned_receivers_into_the_mesh(monkeypatch, tmp_path):
     import cast_mesh
     from types import SimpleNamespace as NS
