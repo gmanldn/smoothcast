@@ -1803,7 +1803,8 @@ header.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;
 .brand{display:flex;align-items:center;gap:10px;flex:none}
 .brand h1{margin:0;font-size:1.12rem;letter-spacing:-.02em;white-space:nowrap}
 .sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
-.brand .site-mark{width:32px;height:32px;border-radius:10px;font-size:1rem;background:linear-gradient(135deg,var(--accent),var(--vote-on))}
+.brand .site-mark{width:44px;height:44px;border-radius:13px;font-size:1.2rem;text-decoration:none;background:linear-gradient(135deg,var(--accent),var(--vote-on));transition:transform .12s ease,box-shadow .12s ease}
+.brand .site-mark:hover{transform:translateY(-1px);box-shadow:0 6px 16px var(--shadow)}
 .bar-now{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:9px;min-width:0;max-width:min(44vw,360px);min-height:44px;padding:0 15px;
   border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);text-decoration:none;font-size:.88rem}
 .bar-now:hover{border-color:var(--accent)}
@@ -1845,11 +1846,25 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:999px}
 input[type="range"]{accent-color:var(--accent);background:transparent;border:0;padding:0}
 #playback .actions button[data-action="play_pause"]{flex-basis:100%;min-height:56px;font-size:1.05rem;border-radius:16px}
 @media(min-width:520px){#playback .actions button[data-action="play_pause"]{flex-basis:auto;flex-grow:2}}
+.invite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;max-width:660px;margin:0 auto 14px;padding:18px 20px}
+#login:not([hidden])~.invite{margin-top:4px}
+body:has(#dashboard:not([hidden])) .invite{max-width:none}
+.invite h2{margin:0 0 4px;font-size:1.15rem}
+.invite-how{margin:0 0 4px;color:var(--text)}
+.invite .room-link{border-top:0;margin-top:10px;padding-top:0}
+.invite #roomLinkStatus:empty{display:none}
+.invite #roomLinkHint{margin-bottom:0}
+.invite .room-link label{font-weight:600;color:var(--muted);font-size:.88rem}
+.invite-qr{margin:0;display:grid;justify-items:center}
+.invite-qr img{display:block;width:144px;height:144px;padding:8px;border-radius:14px;background:white;box-shadow:0 0 0 1px var(--line);image-rendering:pixelated}
+.invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
+@media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
+@media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
 @media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
-</style></head><body><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><span class="site-mark" aria-hidden="true">S</span><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
+</style></head><body><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
@@ -1862,9 +1877,10 @@ input[type="range"]{accent-color:var(--accent);background:transparent;border:0;p
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Join</button></form>
 <details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
 </section>
+<section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
@@ -3422,12 +3438,14 @@ function syncMediaSession(s){
   const title=$("title"),state=$("state"),dash=$("dashboard");
   if(!home||!top||!pill||!pillTitle||!title||!state||!dash||!home.addEventListener)return;
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
-  home.addEventListener("click",event=>{
+  const goHome=event=>{
     event.preventDefault();
     window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
     if(location.hash)history.replaceState(null,"",location.pathname+location.search);
     top.focus({preventScroll:true});
-  });
+  };
+  home.addEventListener("click",goHome);
+  const logo=$("homeLogo");if(logo&&logo.addEventListener)logo.addEventListener("click",goHome);
   const idle=new Set(["","Nothing playing","—"]);
   function syncPill(){
     const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
@@ -3443,6 +3461,15 @@ function syncMediaSession(s){
   for(const node of [title,state])watch.observe(node,{childList:true,characterData:true,subtree:true});
   watch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
   syncPill();
+})();
+// Ticket 592: invite QR from the same origin. Handlers are attached before src so
+// a fast or cached load is never missed; on failure the link remains the way in.
+(()=>{
+  const img=$("inviteQr"),fallback=$("inviteQrFallback");
+  if(!img||!fallback||!img.addEventListener)return;
+  img.addEventListener("load",()=>{img.hidden=false;fallback.hidden=true});
+  img.addEventListener("error",()=>{img.hidden=true;img.removeAttribute("src");fallback.hidden=false});
+  img.src="/join-qr.png";
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())

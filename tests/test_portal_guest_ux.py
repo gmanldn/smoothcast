@@ -633,3 +633,76 @@ assert.equal(joinedAs.textContent,"Joined as <img src=x onerror=alert(1)>");
 """
     subprocess.run(["node", "-"], input=harness + helper + scenarios,
                    check=True, text=True, timeout=10)
+
+
+def test_invite_and_home_logo_are_outside_login_and_dashboard():
+    """#592: the invite (QR + link) and the S home logo are usable before and after joining."""
+    from html.parser import HTMLParser
+
+    class Parents(HTMLParser):
+        void = {"meta", "input", "img", "br", "link", "source", "path"}
+
+        def __init__(self):
+            super().__init__()
+            self.stack, self.ancestors, self.attrs = [], {}, {}
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if attrs.get("id"):
+                self.ancestors[attrs["id"]] = [i for _, i in self.stack if i]
+                self.attrs[attrs["id"]] = attrs
+            if tag not in self.void:
+                self.stack.append((tag, attrs.get("id")))
+
+        def handle_endtag(self, tag):
+            for index in range(len(self.stack) - 1, -1, -1):
+                if self.stack[index][0] == tag:
+                    del self.stack[index:]
+                    break
+
+    html = portal._page().decode("utf-8")
+    page = Parents()
+    page.feed(html)
+    for element in ("roomInvite", "inviteQr", "roomLinkText", "roomLinkCopy", "homeLogo"):
+        assert html.count(f'id="{element}"') == 1
+        assert "login" not in page.ancestors[element]
+        assert "dashboard" not in page.ancestors[element]
+    assert "roomInvite" in page.ancestors["roomLinkText"]
+    logo = page.attrs["homeLogo"]
+    assert logo["href"] == "#roomTop" and logo["aria-label"] == "SmoothCast home"
+    assert 'id="roomTop" tabindex="-1"' in html
+    assert page.attrs["inviteQr"]["alt"] and "hidden" in page.attrs["inviteQr"]
+    assert "src" not in page.attrs["inviteQr"]  # assigned by script after handlers
+    assert "same Wi-Fi" in html[html.index('id="inviteHow"'):][:200]
+
+
+def test_invite_qr_registers_handlers_before_loading_and_falls_back_to_the_link():
+    import shutil
+    import subprocess
+    import pytest
+
+    if not shutil.which("node"):
+        pytest.skip("node required")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("// Ticket 592")
+    block = script[start:script.index("})();", start) + 5]
+    harness = r"""
+const assert=require("node:assert/strict");
+function make(){const log=[];const el={hidden:true,handlers:{},log,
+  addEventListener(n,f){log.push("on:"+n);this.handlers[n]=f},
+  removeAttribute(n){log.push("rm:"+n);delete this._src},
+  set src(v){log.push("src");this._src=v},get src(){return this._src}};return el}
+for(const outcome of ["load","error"]){
+  const img=make(),fallback={hidden:true};
+  const $=id=>({inviteQr:img,inviteQrFallback:fallback})[id];
+  eval(BLOCK);
+  assert.deepEqual(img.log.slice(0,3),["on:load","on:error","src"]);
+  assert.equal(img._src,"/join-qr.png");
+  img.handlers[outcome]();
+  if(outcome==="load"){assert.equal(img.hidden,false);assert.equal(fallback.hidden,true)}
+  else{assert.equal(img.hidden,true);assert.equal(fallback.hidden,false);assert.equal(img._src,undefined)}
+}
+"""
+    run = subprocess.run(["node", "-"], input=harness.replace("BLOCK", repr(block)),
+                         capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stderr
