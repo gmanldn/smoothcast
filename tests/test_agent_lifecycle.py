@@ -259,6 +259,72 @@ def test_push_success_handover_failure_is_partial_success_not_zero(monkeypatch, 
     assert task["pending_handover"]["sha"] == run(worker, "rev-parse", "HEAD")
 
 
+def test_start_ship_finish_complete_headless_cycle(monkeypatch, tmp_path):
+    """One real worktree/remote cycle, with only GitHub REST stubbed offline."""
+    _, first, _worker = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "load_issue", lambda n: {
+        "title": "Add a source module", "body": "Edit src/new_feature.py", "state": "open"})
+    comments = []
+    def fake_gh(*args):
+        if args == ("user",):
+            return {"login": "ci-agent"}
+        if len(args) == 1 and args[0].endswith("/issues/584"):
+            return {"state": "open"}
+        if len(args) == 1 and "/issues/584/comments?per_page=100" in args[0]:
+            return list(comments)
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            cid = len(comments) + 1
+            comments.append({
+                "id": cid, "issue": 584,
+                "created_at": agent.utcnow().isoformat(),
+                "body": args[-1].removeprefix("body="),
+            })
+            return {"id": cid}
+        if args[:2] == ("-X", "POST") and args[2].endswith(("/labels", "/assignees")):
+            return {}
+        raise AssertionError(f"unexpected GitHub operation: {args!r}")
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "recent_comments", lambda *args, **kwargs: list(comments))
+    real_subprocess = subprocess.run
+    def no_network(cmd, *args, **kwargs):
+        if isinstance(cmd, list) and cmd[:2] == ["gh", "api"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return real_subprocess(cmd, *args, **kwargs)
+    monkeypatch.setattr(subprocess, "run", no_network)
+
+    assert agent.cmd_start(agent.build_parser().parse_args(["start", "584"])) == 0
+    trees = list(tmp_path.glob("smoothcast-issue-584-*"))
+    assert len(trees) == 1
+    worktree = trees[0]
+    monkeypatch.setattr(agent, "ROOT", worktree)
+    (worktree / "src/new_feature.py").write_text("VALUE = 42\n", encoding="utf-8")
+    ship = agent.build_parser().parse_args([
+        "ship", "--message", "feat: add source", "--files", "src/new_feature.py",
+        "--next", "Review acceptance", "--skip-checks"])
+    assert agent.cmd_ship(ship) == 0
+    commit_sha = run(worktree, "rev-parse", "HEAD")
+    assert commit_sha == run(worktree, "rev-parse", "origin/develop")
+    assert "Refs #584" in run(worktree, "log", "-1", "--format=%s")
+    assert any("sc-ship v1 sha=" in c["body"] for c in comments)
+    assert any("Commit: " + commit_sha in c["body"] for c in comments)
+
+    finish = agent.build_parser().parse_args([
+        "finish", "--done", "Source slice delivered", "--next", "More testing",
+        "--verification", "not run (unverified)"])
+    assert agent.cmd_finish(finish) == 0
+    bodies = "\n".join(c["body"] for c in comments)
+    assert "Handover: More testing" in bodies
+    assert "<!-- sc-release v1" in bodies
+    assert not agent.active_claims(agent.parse_events(comments), agent.utcnow())
+    assert run(worktree, "show", "origin/develop:src/new_feature.py") == "VALUE = 42"
+    # An agent cycle must never create or promote main.
+    assert subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/main"],
+        cwd=worktree).returncode != 0
+
+
 def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_path):
     _remote, a, b = seed_git(tmp_path)
     commit(b, "b.txt", "B\n")
