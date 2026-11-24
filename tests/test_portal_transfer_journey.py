@@ -25,7 +25,10 @@ def test_upload_journey_and_queue_accessibility():
     page.feed(portal._HTML)
     for name in ("transferSteps", "transferStage", "transferBytes", "transferRate",
                  "transferEta", "transferDestination", "transferPercent",
-                 "pauseUpload", "cancelUpload", "uploadProgress", "queueFeedback"):
+                 "pauseUpload", "cancelUpload", "uploadProgress", "queueFeedback",
+                 "transferLiveHeading", "transferFileName", "transferOperation",
+                 "transferElapsed", "transferInFlight", "transferResponse",
+                 "transferDelivery", "transferAck", "transferEvents"):
         assert name in page.ids
     assert page.ids["queueFeedback"]["aria-live"] == "polite"
     assert page.ids["uploadProgress"]["aria-label"] == "File transfer bytes received"
@@ -138,4 +141,67 @@ assert.equal($("transferPercent").textContent,"50%");
 assert.equal($("uploadProgress").value,2);
 """
     subprocess.run(["node", "-"], input=harness + helper + checks,
+                   check=True, timeout=10, text=True)
+
+
+def test_live_monitor_separates_sender_progress_from_host_ack_and_records_failure():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for headless browser contract")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    monitor = script[script.index("let transferEvents=[];"):
+                     script.index("async function sendChunk(")]
+    formatter = script[script.index("function fileUnits("):
+                       script.index("function transferView(")]
+    harness = """
+const assert=require("node:assert/strict");
+const elements={};
+const $=id=>elements[id] ||= {textContent:""};
+let stalePage=false,csrf="secret",clientHeaders={"X-SmoothCast-Client-Build":"build"};
+let activeUploadController=null,abortCalls=0,request=null;
+const showUpdateNotice=()=>{};
+class XMLHttpRequest {
+  constructor(){this.upload={};this.headers={};request=this;}
+  open(method,path){this.method=method;this.path=path;}
+  setRequestHeader(name,value){this.headers[name]=value;}
+  getResponseHeader(){return null;}
+  send(body){this.upload.onprogress({lengthComputable:true,loaded:body.size,total:body.size});}
+  abort(){abortCalls++;this.onabort();}
+}
+const fetch=async()=>({status:503,ok:false,headers:{get:()=>null},
+  json:async()=>({ok:false,error:"Host storage unavailable",code:"upload.disk_full"})});
+"""
+    checks = """
+(async()=>{
+  resetTransferMonitor();
+  const pending=uploadRequest("PUT","/api/uploads/private-id",{size:4096},
+    {"Content-Range":"bytes 0-4095/8192"});
+  assert.equal(request.headers["X-CSRF-Token"],"secret");
+  assert.equal(request.headers["X-SmoothCast-Client-Build"],"build");
+  assert($("transferInFlight").textContent.includes("not yet confirmed"));
+  assert.equal($("transferAck").textContent,"—");
+  assert($("transferOperation").textContent.includes("waiting for host storage"));
+  request.status=200;
+  request.responseText=JSON.stringify({ok:true,received:4096,size:8192});
+  request.onload();
+  await pending;
+  assert.equal($("transferAck").textContent,"4.0 KiB");
+  assert.equal($("transferInFlight").textContent,"Chunk acknowledged by host");
+  assert.equal(activeUploadController,null);
+  const interrupted=uploadRequest("PUT","/api/uploads/private-id",{size:4096});
+  activeUploadController.abort();
+  await assert.rejects(interrupted,/interrupted/);
+  assert.equal(abortCalls,1);
+  await assert.rejects(uploadRequest("POST","/api/uploads/private-id/complete","{}"),
+    {status:503,code:"upload.disk_full"});
+  assert($("transferResponse").textContent.includes("HTTP 503"));
+  assert($("transferEvents").textContent.includes("Host storage unavailable"));
+  assert(!$("transferEvents").textContent.includes("private-id"));
+  assert(!$("transferEvents").textContent.includes("secret"));
+  for(let n=0;n<40;n++)transferEvent("event "+n);
+  assert.equal(transferEvents.length,24);
+  resetTransferMonitor();
+  assert.equal(transferEvents.length,0);
+})().catch(e=>{console.error(e);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness+formatter+monitor+checks,
                    check=True, timeout=10, text=True)
