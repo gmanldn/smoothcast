@@ -517,6 +517,9 @@ def cmd_start(a: argparse.Namespace) -> int:
 def cmd_claim(a: argparse.Namespace) -> int:
     me = agent_id()
     issue = load_issue(a.number)
+    if issue.get("state", "open") != "open":
+        print(f"issue #{a.number} is no longer open; refusing to claim stale work")
+        return 3
     files = set(a.files.split(",")) if a.files else predicted_files(issue["body"])
     ttl = min(max(a.ttl, TTL_MIN), TTL_MAX)
 
