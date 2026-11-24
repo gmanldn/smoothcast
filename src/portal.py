@@ -1627,6 +1627,22 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .advanced-grid h3{font-size:1rem;margin:0 0 8px}
 #dashboard #errorDash:not(:empty){background:var(--input);padding:12px;border-radius:10px}
 #uploadCard #videoFile{max-width:100%}
+.transfer-journey{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--input);min-width:0}
+.transfer-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:0;margin:0 0 14px;list-style:none}
+.transfer-steps li{display:grid;justify-items:center;text-align:center;align-content:start;gap:6px;font-size:.69rem;line-height:1.25;color:var(--muted);min-width:0}
+.stage-dot{display:grid;place-items:center;width:27px;height:27px;border:1px solid var(--line);border-radius:50%;font-weight:700;background:var(--card);color:var(--text)}
+.transfer-steps li.done .stage-dot{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.transfer-steps li.active{font-weight:750;color:var(--text)}.transfer-steps li.active .stage-dot{outline:2px solid var(--focus);outline-offset:2px}
+.transfer-route{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:7px;font-size:.78rem;padding:10px 6px;border-radius:10px;border:1px dashed var(--line);overflow-wrap:anywhere}
+.transfer-route strong{color:var(--text)}
+.transfer-meter,.transfer-stats{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.transfer-meter{margin:13px 0 7px}.transfer-stats{margin:8px 0 0;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem}
+#uploadStatus{overflow-wrap:anywhere;min-height:1.3em}
+#queuePanel .queue-position{display:inline-block;margin-right:8px;padding:2px 7px;border-radius:7px;background:var(--input);color:var(--muted);font-variant-numeric:tabular-nums}
+#queuePanel .queue-actions button[data-queue-action="play"]{background:var(--accent);color:var(--on-accent)}
+#queuePanel .queue-actions button[data-queue-action="remove"]{border:1px solid var(--line)}
+@media(max-width:380px){.transfer-journey{padding:10px}.transfer-steps{gap:2px}.transfer-steps li{font-size:.62rem}.stage-dot{width:23px;height:23px}}
+
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
   #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
@@ -1688,7 +1704,20 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose a file to enable uploading. Select multiple files to send them in order.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
-<progress id="uploadProgress" max="1" value="0" aria-label="Upload progress"></progress><p id="uploadStatus" role="status" aria-live="polite"></p>
+<div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
+<ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
+<li data-stage="choose" class="done"><span class="stage-dot">1</span><span>Choose file</span></li>
+<li data-stage="prepare"><span class="stage-dot">2</span><span>Prepare</span></li>
+<li data-stage="transfer"><span class="stage-dot">3</span><span>Transfer</span></li>
+<li data-stage="verify"><span class="stage-dot">4</span><span>Check media</span></li>
+<li data-stage="deliver"><span class="stage-dot">5</span><span>Queue / play</span></li>
+</ol>
+<div class="transfer-route" aria-label="Current file route"><span>Your device</span><span aria-hidden="true">→</span><strong id="transferHost">SmoothCast host</strong><span aria-hidden="true">→</span><strong id="transferDestination">Up Next</strong></div>
+<div class="transfer-meter"><strong id="transferStage" aria-live="polite">Ready to choose</strong><span id="transferPercent">0%</span></div>
+<progress id="uploadProgress" max="1" value="0" aria-label="File transfer bytes received"></progress>
+<div class="transfer-stats"><span id="transferBytes">0 B of 0 B</span><span id="transferRate">—</span><span id="transferEta">—</span></div>
+<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
+</div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
