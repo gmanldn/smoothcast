@@ -387,6 +387,45 @@ def test_heartbeat_requires_server_confirmation(monkeypatch):
         agent.cmd_heartbeat(agent.build_parser().parse_args(["heartbeat", "584"]))
 
 
+def test_scope_expansion_fences_new_source_files_and_persists_metadata(monkeypatch, tmp_path):
+    import json
+    task = {"issue": 584, "files": ["src/first.py"]}
+    acquired = []
+    monkeypatch.setattr(agent, "cmd_claim",
+                        lambda args: acquired.append(args) or 0)
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: str(tmp_path))
+    assert agent.ensure_task_scope(
+        task, ["src/first.py", "src/second.py", "tests/test_second.py"]
+    )
+    assert len(acquired) == 1
+    assert acquired[0].number == 584
+    assert acquired[0].files == "src/first.py,src/second.py"
+    assert task["files"] == ["src/first.py", "src/second.py"]
+    assert json.loads((tmp_path / "sc-agent-task.json").read_text())["files"] == task["files"]
+    # No duplicate lease or work when a subsequent ship touches the same files.
+    assert agent.ensure_task_scope(task, ["src/second.py"])
+    assert len(acquired) == 1
+
+
+def test_scope_expansion_collision_preserves_old_claim_and_worktree(monkeypatch, tmp_path):
+    task = {"issue": 584, "files": ["src/first.py"]}
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: 3)
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("should not write private state after losing a claim")))
+    assert agent.ensure_task_scope(task, ["src/first.py", "src/other.py"]) is False
+    assert task["files"] == ["src/first.py"]
+    assert not (tmp_path / "sc-agent-task.json").exists()
+
+
+def test_scope_expansion_does_not_claim_merge_friendly_tests_or_docs(monkeypatch):
+    monkeypatch.setattr(agent, "cmd_claim", lambda *args: (_ for _ in ()).throw(
+        AssertionError("tests and docs are merge-friendly shared paths")))
+    assert agent.ensure_task_scope(
+        {"issue": 584, "files": []},
+        ["tests/test_widget.py", "docs/COORDINATION.md", "pyproject.toml"]
+    )
+
+
 def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
     monkeypatch.setattr(agent, "mypy_gated", lambda: {"src/gated.py"})
     (agent.ROOT / "src").mkdir(exist_ok=True)
