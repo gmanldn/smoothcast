@@ -273,7 +273,7 @@ class SessionMixin:
                         # drop the half-built key so nothing is recorded under it later.
                         receiver_key = codec_key = ""
                 gate_ok, _gate_note = capability_gate.direct_allowed(
-                    media, path.suffix, next((d.model for d in self.devices if d.name == device), ""))
+                    media, path.suffix, next((d.model for d in getattr(self, "devices", ()) if d.name == device), ""))
                 direct_eligible = (
                     use_direct and media.direct_ok and not burn and gate_ok
                     and embedded is None and not music_enabled

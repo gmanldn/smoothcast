@@ -151,6 +151,7 @@ def handler_globals() -> dict:
     in one place. ``CONFIG_DIR`` is always a fresh temp directory so a test can
     never read or write a real SmoothCast config.
     """
+    import capability_gate
     import fingerprint
     import low_end_policy
     import picture_adjustments
@@ -159,6 +160,7 @@ def handler_globals() -> dict:
     config_dir = Path(tempfile.mkdtemp(prefix="smoothcast-test-config-"))
     atexit.register(shutil.rmtree, config_dir, ignore_errors=True)
     return {
+        "capability_gate": capability_gate,
         "fingerprint": fingerprint,
         "low_end_policy": low_end_policy,
         "picture_adjustments": picture_adjustments,
