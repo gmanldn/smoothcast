@@ -153,7 +153,13 @@ class SessionMixin:
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
             and not picture_adjustments.active(cfg)
             and not getattr(self, "_portal_early", False)
+            and not getattr(self, "_force_transcode_once", False)
         )
+        self._force_transcode_once = False  # one-shot override from the retry button
+        self._attempt_mode = "direct" if use_direct else "transcode"
+        if not getattr(self, "_retry_in_flight", False):
+            self._cast_tried = []  # a fresh user-initiated cast starts a new attempt history
+        self._retry_in_flight = False
         def work():
             media, prewarm_fingerprint = queue_metadata.media_for_cast(
                 prewarmed_entry, path, streamer.ffprobe,
@@ -1233,6 +1239,11 @@ class SessionMixin:
     def _cast_failed(self, message: str) -> None:
         # Observe before the tracker is cleared; never alters the failure path.
         self._recovery_plan = cast_recovery.plan_for_window(self, message)
+        try:  # remember this failed (receiver, mode) so the planner never re-offers it
+            self._cast_tried = [*getattr(self, "_cast_tried", [])[-15:],
+                                (self._device(), getattr(self, "_attempt_mode", "direct"))]
+        except Exception:  # noqa: BLE001 - bookkeeping must never break failure handling
+            pass
         self._dlna_cancel = None
         reliability_metrics.fail_attempt(self, Async.run)
         reliability_metrics.finish_active(self, "failed", Async.run)
@@ -1245,31 +1256,14 @@ class SessionMixin:
             self.tracker.clear()
             self._finished_handled = False
         retry = self._retry_action()
-        self.toast(f"Cast failed: {message}", error=True, **({"action": retry} if retry else {}))
+        option = self._recovery_plan.primary if retry and self._recovery_plan else None
+        why = f" — {option.reason}" if option is not None and option.kind != "retry" else ""
+        self.toast(f"Cast failed: {message}{why}", error=True, **({"action": retry} if retry else {}))
         self._console(f"Cast failed: {message}")
         if self._recovery_plan is not None:
             self._console(cast_recovery.summary_line(self._recovery_plan))
         self._notify("error", message)
         self._refresh_controls()
-
-
-    def _retry_action(self):
-        """('Try again', callback) when the plan's first option is a plain retry."""
-        plan, path = getattr(self, "_recovery_plan", None), getattr(self, "_last_cast_path", None)
-        if plan is None or path is None or plan.primary is None or plan.primary.kind != "retry":
-            return None
-        self._cast_failure_id = getattr(self, "_cast_failure_id", 0) + 1
-        token, position = self._cast_failure_id, plan.position
-        return "Try again", lambda: self._retry_cast(token, path, position)
-
-    def _retry_cast(self, token: int, path, position: float) -> None:
-        """Re-run the normal cast entry at the saved place, only if nothing else began."""
-        if (getattr(self, "_closing", False) or token != getattr(self, "_cast_failure_id", 0)
-                or self.busy or (self.session is not None and self.session.active())):
-            self.toast("Playback changed; not retrying automatically")
-            return
-        self._console(f"Retrying cast at {fmt_time(position)}")
-        self._cast_path(pathlib.Path(path), position)
 
 
     def _skip(self, delta: float) -> None:

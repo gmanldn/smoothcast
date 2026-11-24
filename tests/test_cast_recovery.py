@@ -26,7 +26,7 @@ def test_generic_launch_failure_offers_retry_then_encoding_then_targets():
     assert "12:34" in plan.headline and "saved" in plan.headline
     enc = plan.options[1]
     assert (enc.device, enc.mode) == ("Living Room", "remux")
-    assert "while starting" in enc.reason and "direct" in enc.reason
+    assert "while starting" in enc.reason and "converting" in enc.reason and "remux" not in enc.reason
     assert [o.device for o in plan.options[2:]] == ["Kitchen", "Den"]
     assert all(o.reason and o.label for o in plan.options)
 

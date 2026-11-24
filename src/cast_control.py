@@ -40,6 +40,7 @@ from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_con
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
+from cast_retry_ui import RetryMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
@@ -51,7 +52,7 @@ from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, RetryMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
