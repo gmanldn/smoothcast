@@ -33,6 +33,21 @@ def test_structured_claim_is_live_until_ttl_then_expires():
     assert claims(marker_comment(1, 10, 40, "a1", ["src/x.py"], ttl=30)) == []
 
 
+def test_malformed_claim_ttl_is_conservative_bounded_and_nonfatal():
+    """One malformed GitHub comment must not abort every agent pick/ship."""
+    assert agent.safe_claim_ttl(None) == 90
+    assert agent.safe_claim_ttl("garbled") == agent.TTL_MAX
+    assert agent.safe_claim_ttl("9" * 5000) == agent.TTL_MAX
+    assert agent.safe_claim_ttl("-999") == agent.TTL_MIN
+    malformed = marker_comment(1, 10, 150, "misconfigured", ["src/x.py"])
+    malformed["body"] = malformed["body"].replace("ttl=90", "ttl=not-a-number")
+    live = claims(malformed)
+    assert len(live) == 1 and live[0]["ttl"] == agent.TTL_MAX
+    expired = marker_comment(2, 10, 190, "misconfigured", ["src/x.py"])
+    expired["body"] = expired["body"].replace("ttl=90", "ttl=not-a-number")
+    assert claims(expired) == []
+
+
 def test_client_future_heartbeat_cannot_create_permanent_claim():
     stale = marker_comment(13, 584, 120, "clock-skewed", ["src/a.py"], ttl=90)
     future = int((NOW + timedelta(days=180)).timestamp())
