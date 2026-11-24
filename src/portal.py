@@ -166,6 +166,7 @@ def _page() -> bytes:
     markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
                            + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
+            .replace("__SC_VERSION__", version.label())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
             .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
@@ -710,10 +711,9 @@ class _Handler(BaseHTTPRequestHandler):
             f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
             for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
         mine = html.escape(self.server.hostname_label or "This computer")
-        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,"
-                "initial-scale=1'><title>SmoothCast computers</title><h1>SmoothCast in this house</h1>"
-                "<p>Open any computer to join the room.</p><ul><li><a href='/'>" + mine
-                + " (this one)</a></li>" + rows + "</ul>")
+        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
+                .replace("__MINE__", mine).replace("__ROWS__", rows)
+                .replace("__SC_VERSION__", version.label()))
         return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
 
     def _mesh_file(self, path: str, *, head: bool) -> None:
@@ -1623,6 +1623,31 @@ class Portal:
             self.server.uploads.close()
 
 
+# Fallback computer list (#591): same tokens and permanent Home control as the room.
+_NODES_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>SmoothCast computers</title>
+<style>/*TOKENS*/
+:root{font:16px ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+.app-bar{position:sticky;top:0;display:flex;align-items:center;gap:12px;height:64px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
+.home-btn svg{width:22px;height:22px;fill:currentColor}
+.app-bar strong{font-size:1.1rem;letter-spacing:-.02em}
+.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+main{max-width:640px;margin:auto;padding:24px 16px}
+h1{font-size:clamp(1.5rem,5vw,2rem);letter-spacing:-.025em;margin:8px 0}p{color:var(--muted);line-height:1.5}
+ul{list-style:none;padding:0;display:grid;gap:10px}
+li a{display:flex;align-items:center;min-height:56px;padding:0 18px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--text);font-weight:650;text-decoration:none;overflow-wrap:anywhere}
+li a:hover{border-color:var(--accent)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(forced-colors:active){.home-btn{border:2px solid ButtonText}}
+</style></head><body>
+<header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></header>
+<main><h1>SmoothCast in this house</h1><p>Open any computer to join its room.</p>
+<ul><li><a href="/">__MINE__ (this one)</a></li>__ROWS__</ul></main></body></html>"""
+
+
 _HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>SmoothCast</title>
@@ -1654,9 +1679,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 /* Guest-first room layout: semantic tokens, progressive disclosure and touch-safe help. */
 [hidden]{display:none!important}
 main{max-width:1120px;padding:clamp(12px,3vw,28px)}
-.site-head{display:flex;align-items:center;gap:14px;padding:18px 0 22px}
 .site-mark{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:1.6rem;font-weight:800}
-.site-head p{line-height:1.5}
 .eyebrow{font-size:.74rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 #login{max-width:660px;margin:24px auto}
 #login h2{font-size:clamp(1.4rem,4vw,1.85rem);letter-spacing:-.025em}
@@ -1760,7 +1783,73 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
   #dashboard nav{margin-inline:-4px}
 }
 
-</style></head><body><main><header class="site-head"><span class="site-mark" aria-hidden="true">S</span><div><h1>SmoothCast</h1><p>Watch, listen and build the queue together — on your own Wi-Fi.</p></div></header>
+/* Ticket 591 refresh: sticky app bar with a permanent Home control, rounded system
+   type, a clear surface hierarchy and Now Playing as the room's focal "screen".
+   Colours come only from the tested tokens above. */
+:root{--font:ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --bar-h:64px;--r-lg:22px;--r-md:14px;--r-sm:10px;font-family:var(--font)}
+body{font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  background:var(--bg);background-image:radial-gradient(120% 60% at 50% -10%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 60%);background-attachment:fixed}
+h1,h2,h3{color:var(--text);letter-spacing:-.018em;font-weight:720}
+h2{font-size:1.18rem}
+#elapsed,#duration,#volumeText,.transfer-stats,time{font-variant-numeric:tabular-nums}
+header.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;height:var(--bar-h);
+  padding:0 max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left));border-bottom:1px solid var(--line);
+  background:var(--bg);background:color-mix(in srgb,var(--bg) 84%,transparent);-webkit-backdrop-filter:saturate(1.5) blur(16px);backdrop-filter:saturate(1.5) blur(16px)}
+.home-btn{display:inline-flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:0 18px 0 13px;border-radius:999px;
+  background:var(--accent);color:var(--on-accent);font-weight:750;font-size:.98rem;text-decoration:none;box-shadow:0 6px 18px var(--shadow)}
+.home-btn svg{width:22px;height:22px;fill:currentColor}
+.home-btn:hover{filter:brightness(1.08)}.home-btn:active{transform:scale(.97)}
+.brand{display:flex;align-items:center;gap:10px;flex:none}
+.brand h1{margin:0;font-size:1.12rem;letter-spacing:-.02em;white-space:nowrap}
+.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.brand .site-mark{width:32px;height:32px;border-radius:10px;font-size:1rem;background:linear-gradient(135deg,var(--accent),var(--vote-on))}
+.bar-now{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:9px;min-width:0;max-width:min(44vw,360px);min-height:44px;padding:0 15px;
+  border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);text-decoration:none;font-size:.88rem}
+.bar-now:hover{border-color:var(--accent)}
+.bar-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
+.bar-now.paused .bar-dot{background:var(--dim);box-shadow:none}
+.bar-now-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-now-label{color:var(--muted)}
+#barNowTitle{font-weight:680}
+main{padding-top:6px}
+.site-intro:focus{outline:none}
+.site-intro{scroll-margin-top:var(--bar-h)}
+.site-intro{margin:14px 2px 4px;font-size:.95rem}
+#dashboard nav{top:var(--bar-h);z-index:20;margin-inline:-10px;padding:10px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
+#dashboard nav a:hover{background:var(--nav-hover)}
+#dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
+section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
+.advanced-grid>section,.transfer-journey,.help .help-body,#login .steps li{border-radius:var(--r-md)}
+input,select{border-radius:var(--r-sm)}
+input:focus-visible{border-color:var(--accent)}
+button{border-radius:12px;transition:filter .15s ease,transform .1s ease}
+button:hover:not(:disabled){filter:brightness(1.07)}button:active:not(:disabled){transform:scale(.98)}
+.tiny{border-radius:999px}
+.welcome h2{font-size:1.45rem}
+.quick-links a{border-radius:999px;border-color:var(--line);background:var(--card)}
+.quick-links a:hover{border-color:var(--accent);background:var(--nav-hover)}
+#login{border-radius:var(--r-lg)}
+#login h2{font-size:clamp(1.6rem,5vw,2.1rem)}
+/* The focal screen: Now Playing glows like the TV it controls. */
+#playback{position:relative;overflow:hidden;padding:22px;background:var(--card);
+  background-image:radial-gradient(90% 70% at 50% -20%,color-mix(in srgb,var(--accent) 26%,transparent),transparent 70%)}
+#playback::before{content:"";position:absolute;inset:0 18% auto;height:2px;border-radius:2px;background:var(--accent);opacity:.85;box-shadow:0 0 22px 4px color-mix(in srgb,var(--accent) 45%,transparent)}
+#playback #title{font-size:clamp(1.45rem,4.5vw,2rem);line-height:1.15;letter-spacing:-.025em;color:var(--text);margin:.4rem 0 .2rem}
+#playback #receiver{font-size:.9rem}
+progress{-webkit-appearance:none;appearance:none;height:8px;border:0;border-radius:999px;background:var(--input);overflow:hidden;margin-top:14px}
+progress::-webkit-progress-bar{background:var(--input);border-radius:999px}
+progress::-webkit-progress-value{background:var(--accent);border-radius:999px}
+progress::-moz-progress-bar{background:var(--accent);border-radius:999px}
+input[type="range"]{accent-color:var(--accent);background:transparent;border:0;padding:0}
+#playback .actions button[data-action="play_pause"]{flex-basis:100%;min-height:56px;font-size:1.05rem;border-radius:16px}
+@media(min-width:520px){#playback .actions button[data-action="play_pause"]{flex-basis:auto;flex-grow:2}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:340px){.brand .site-mark{display:none}}
+@media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
+@media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
+</style></head><body><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><span class="site-mark" aria-hidden="true">S</span><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
@@ -3324,6 +3413,38 @@ function syncMediaSession(s){
     }catch(err){if(current===generation)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
+})();
+// #591: the Home control is always in the sticky app bar. It returns to the top
+// of the room and moves keyboard/screen-reader focus there; the now-playing pill
+// mirrors the playback card so the current item is visible from any section.
+(()=>{
+  const home=document.getElementById("homeButton"),top=document.getElementById("roomTop");
+  const pill=document.getElementById("barNow"),pillTitle=document.getElementById("barNowTitle");
+  const title=document.getElementById("title"),state=document.getElementById("state");
+  const dash=document.getElementById("dashboard");
+  if(!home||!top||!pill||!title||!state||!dash)return;
+  const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+  home.addEventListener("click",event=>{
+    event.preventDefault();
+    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
+    if(location.hash)history.replaceState(null,"",location.pathname+location.search);
+    top.focus({preventScroll:true});
+  });
+  const idle=new Set(["","Nothing playing","—"]);
+  function syncPill(){
+    const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
+    const show=!dash.hidden&&!idle.has(text);
+    pill.hidden=!show;
+    if(!show)return;
+    pillTitle.textContent=text;
+    pill.classList.toggle("paused",!/play|buffer/i.test(mode));
+    pill.setAttribute("aria-label","Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls");
+  }
+  if(typeof MutationObserver!=="function"){syncPill();return}
+  const watch=new MutationObserver(syncPill);
+  for(const node of [title,state])watch.observe(node,{childList:true,characterData:true,subtree:true});
+  watch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
+  syncPill();
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())

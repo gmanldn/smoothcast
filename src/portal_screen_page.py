@@ -6,6 +6,7 @@ Text reaches the DOM only through ``textContent``/attributes, never ``innerHTML`
 from __future__ import annotations
 
 import design_tokens
+import version
 
 KNOWN_MIMES_JS = (
     '["video/mp4","video/webm","video/x-matroska","video/ogg","audio/mpeg",'
@@ -15,6 +16,7 @@ KNOWN_MIMES_JS = (
 
 def screen_page() -> bytes:
     return (_SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS)
+            .replace("__SC_VERSION__", version.label())
             .replace("/*TOKENS*/", design_tokens.css())).encode("utf-8")
 
 
@@ -76,7 +78,18 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 #banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--scrim);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
 #tools{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;transition:opacity .3s}
 #tools.hide{opacity:0;pointer-events:none}
+/* #591: Home back to the room on every view; during untouched video it fades
+   with the other tools and returns on any pointer, key or focus. */
+.home-link{position:fixed;z-index:40;top:max(14px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none;box-shadow:0 8px 22px rgba(0,0,0,.35);transition:opacity .3s}
+.home-link svg{width:22px;height:22px;fill:currentColor}
+.home-link.hide{opacity:0;pointer-events:none}.home-link:focus-visible{opacity:1;pointer-events:auto;outline:3px solid var(--focus);outline-offset:3px}
+.screen-version{position:fixed;z-index:40;top:max(24px,calc(env(safe-area-inset-top) + 10px));left:calc(max(14px,env(safe-area-inset-left)) + 118px);font-size:.74rem;font-weight:650;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;transition:opacity .3s}
+.screen-version.hide{opacity:0}
+/* Reserve the corner so Home and the version never cover a card or the slate. */
+.stage{padding-top:max(80px,calc(env(safe-area-inset-top) + 70px))}
+@media(forced-colors:active){.home-link{border:2px solid ButtonText}}
 </style></head><body>
+<a class="home-link" id="homeLink" href="/" title="Back to the SmoothCast room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><span class="sc-version screen-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span>
 <div class="stage" id="loginView" hidden><form class="card" id="loginForm" autocomplete="off">
 <div class="brand"><div class="logo" aria-hidden="true">S</div><h1>Make this a SmoothCast screen</h1></div>
 <p>Play movies and music from the room on this device. Nothing to install.</p>
@@ -218,8 +231,8 @@ video.addEventListener("error",()=>{
   if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
   report(true)});
 function recover(){if(!current||!transcoded)return;recoverAt=Date.now();const at=position();load(current.url,at,true)}
-function wake(){const hud=$("hud"),tools=$("tools");hud.classList.remove("hide");tools.classList.remove("hide");clearTimeout(hideTimer);
-  hideTimer=setTimeout(()=>{if(!video.paused){hud.classList.add("hide");tools.classList.add("hide")}},3500)}
+function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
 document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(e.key==="f"||e.key==="F")fullscreen()});
 function fullscreen(){const el=document.documentElement;if(document.fullscreenElement){document.exitFullscreen()}else if(el.requestFullscreen){el.requestFullscreen().catch(()=>{})}}
 $("fsButton").addEventListener("click",e=>{e.stopPropagation();fullscreen()});$("fsSlate").addEventListener("click",fullscreen);
