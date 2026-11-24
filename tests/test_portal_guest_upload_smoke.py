@@ -96,9 +96,11 @@ def test_guest_upload_http_smoke(guest_room, monkeypatch):
         if start == chunk_size:
             # Reject a chunk before storage, then consult the authoritative
             # offset exactly as the browser does after an interrupted request.
+            def reject_chunk(*_args):
+                raise OSError(errno.EIO, "injected smoke fault")
+
             with monkeypatch.context() as fault:
-                fault.setattr(uploads, "append", lambda *_: (_ for _ in ()).throw(
-                    OSError(errno.EIO, "injected smoke fault")))
+                fault.setattr(uploads, "append", reject_chunk)
                 status, raw, _ = rig.request("PUT", path, data[start:end],
                                              **auth, extra_headers=chunk_headers)
                 assert status == 503
@@ -172,8 +174,9 @@ def test_guest_upload_real_browser_smoke(guest_room, monkeypatch, tmp_path):
             expect(page.locator("#transferDelivery")).to_have_text("Added to Up Next")
             expect(page.locator("#transferPercent")).to_have_text("100%")
             expect(page.locator("#transferEvents")).to_contain_text("Retry 1 of 4")
+            expect(page.locator("#videoFile")).to_have_value("")
+            expect(page.locator("#videoFile")).to_be_enabled()
             expect(page.locator("#uploadButton")).to_be_disabled()
-            assert page.locator("#videoFile").evaluate("(el) => el.files.length") == 0
             assert failed_once
             assert deliveries == [("queue_add", audio.name,
                                    hashlib.sha256(audio.read_bytes()).hexdigest())]
@@ -183,6 +186,8 @@ def test_guest_upload_real_browser_smoke(guest_room, monkeypatch, tmp_path):
             page.locator("#uploadButton").click()
             expect(page.locator("#transferDelivery")).to_have_text(
                 "Playback requested — receiver not confirmed")
+            expect(page.locator("#videoFile")).to_have_value("")
+            expect(page.locator("#videoFile")).to_be_enabled()
             expect(page.locator("#uploadButton")).to_be_disabled()
             assert deliveries[-1] == ("cast_upload", video.name,
                                       hashlib.sha256(video.read_bytes()).hexdigest())
