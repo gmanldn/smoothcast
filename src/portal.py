@@ -2193,6 +2193,12 @@ function renderPlaybackToggle(state){
   button.title=description;
   button.setAttribute("aria-label",description);
 }
+function showJoinedRoom(){
+  const entering=$("dashboard").hidden;
+  $("dashboard").hidden=false;
+  $("uploadCard").hidden=false;
+  if(entering)$("playbackHeading").focus({preventScroll:true});
+}
 const linkForm=$("linkForm");
 let linkCapabilities={},linkPosting=false,linkAttempt=null,linkSignature="";
 function updateLinkControls(){
@@ -2251,12 +2257,6 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
     }catch(error){showError("linkFeedback",error.message)}
     finally{linkPosting=false;updateLinkControls()}
   });
-}
-function showJoinedRoom(){
-  const entering=$("dashboard").hidden;
-  $("dashboard").hidden=false;
-  $("uploadCard").hidden=false;
-  if(entering)$("playbackHeading").focus({preventScroll:true});
 }
 function applyStatus(d){
   if(!matchingBuild(d))return false;
