@@ -2479,7 +2479,7 @@ function fileUnits(bytes){
 function transferView(phase,received=0,total=0,note=""){
   const stage=TRANSFER_STAGES.includes(phase)?phase:"choose";
   const index=TRANSFER_STAGES.indexOf(stage);
-  for(const item of $("transferSteps").children){
+  for(const item of ($("transferSteps")?.children||[])){
     const offset=TRANSFER_STAGES.indexOf(item.dataset.stage);
     item.classList.toggle("done",offset<index);
     item.classList.toggle("active",offset===index);
