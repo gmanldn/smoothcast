@@ -13,7 +13,6 @@ from unittest import mock
 
 from gui_source import main_window_methods
 import castctl
-import idle_slate
 import playback_state
 import reliability_metrics
 import streamer
@@ -33,7 +32,6 @@ def extracted(*names, async_runs):
         "streamer": streamer,
         "playback_state": playback_state,
         "castctl": castctl,
-        "idle_slate": idle_slate,
         "reliability_metrics": reliability_metrics,
         "pathlib": pathlib,
         "time": time,

@@ -15,7 +15,6 @@ from unittest import mock
 
 from gui_source import handler_globals, main_window_methods
 import dlna
-import idle_slate
 import playback_state
 import queue_metadata
 import reliability_metrics
@@ -31,7 +30,7 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
         textwrap.indent(textwrap.dedent(methods[name]), "    ")
         for name in names
     )
-    ns = {"idle_slate": idle_slate, "playback_state": playback_state, "threading": threading, "pathlib": pathlib,
+    ns = {"playback_state": playback_state, "threading": threading, "pathlib": pathlib,
           "watch_history": watch_history, "queue_metadata": queue_metadata,
           "reliability_metrics": reliability_metrics,
           "hdr_tonemap": __import__("hdr_tonemap"),

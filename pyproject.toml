@@ -125,7 +125,6 @@ py-modules = [
     "house_fetch",
     "hw_encoder_state",
     "idle_chrome",
-    "idle_slate",
     "idle_timers",
     "issue_report",
     "join_slate_policy",

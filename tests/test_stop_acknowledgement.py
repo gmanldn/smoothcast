@@ -72,7 +72,6 @@ def make_window(stop_result):
             run=lambda work, done=None, failed=None, **_kwargs:
                 jobs.append((work, done, failed)),
         ),
-        "idle_slate": SimpleNamespace(arm=lambda _w: None),
         "playback_state": SimpleNamespace(hls_session_matches=lambda *_args: True),
         "castctl": SimpleNamespace(info=mock.Mock(), stop=mock.Mock(return_value=(True, ""))),
         "dlna": SimpleNamespace(stop=mock.Mock()),

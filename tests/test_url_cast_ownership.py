@@ -13,7 +13,6 @@ from unittest import mock
 
 from gui_source import main_window_methods
 import castctl
-import idle_slate
 import playback_state
 import streamer
 import url_control
@@ -31,7 +30,6 @@ def extracted(*names, async_runs):
         "streamer": streamer,
         "playback_state": playback_state,
         "castctl": castctl,
-        "idle_slate": idle_slate,
         "url_control": url_control,
         "time": time,
         "Async": SimpleNamespace(run=lambda work, done=None, failed=None, **_kwargs:
