@@ -15,7 +15,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import importlib.util
 import json
+import os
 from pathlib import Path
+import secrets
 from typing import Callable, Iterator
 
 from demo_session import DemoSession, isolated_demo_profile
@@ -41,10 +43,11 @@ class DemoRuntime:
     host: str
     port: int
     media: tuple[Path, ...]
+    token: str = ""
 
     def environment(self) -> dict[str, str]:
-        """Profile environment plus the demo marker the app must honour."""
-        return {**self.session.environment(), DEMO_ENV: "1"}
+        """Profile environment plus the marker and capability token demo_mode checks."""
+        return {**self.session.environment(), DEMO_ENV: "1", "SMOOTHCAST_DEMO_TOKEN": self.token}
 
 
 def _register_target(session: DemoSession, host: str, port: int) -> None:
@@ -73,6 +76,11 @@ def demo_runtime(parent: Path | None = None, *, run: Callable[..., object] | Non
             if receiver.host != "127.0.0.1":
                 raise RuntimeError("demo receiver must be loopback-only")
             _register_target(session, receiver.host, receiver.port)
-            yield DemoRuntime(session, receiver.host, receiver.port, tuple(media))
+            token = secrets.token_hex(32)
+            fd = os.open(session.runtime_dir / ".smoothcast-demo-token",
+                         os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="ascii") as marker:
+                marker.write(token)
+            yield DemoRuntime(session, receiver.host, receiver.port, tuple(media), token)
         finally:
             receiver.stop()

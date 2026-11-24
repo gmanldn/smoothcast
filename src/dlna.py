@@ -221,6 +221,9 @@ def discover(timeout: float = 4.0) -> list[Renderer]:
     In-flight GETs have individual socket timeouts and never publish results
     after the scan has returned.
     """
+    import demo_mode
+    if demo_mode.active():
+        return []  # demo: no SSDP multicast, no real renderers (#454)
     query = ("M-SEARCH * HTTP/1.1\r\n"
              "HOST: 239.255.255.250:1900\r\n"
              'MAN: "ssdp:discover"\r\n'
