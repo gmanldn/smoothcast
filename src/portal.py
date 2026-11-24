@@ -1626,7 +1626,7 @@ class Portal:
 
 # Fallback computer list (#591): same tokens and permanent Home control as the room.
 _NODES_HTML = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="light dark"><title>SmoothCast computers</title>
 <style>/*TOKENS*/
 :root{font:16px ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
@@ -1650,7 +1650,7 @@ li a:hover{border-color:var(--accent)}
 
 
 _HTML = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="light dark"><title>SmoothCast</title>
 <style>
 :root{font:16px system-ui,sans-serif;color-scheme:light dark}/*TOKENS*/
@@ -1867,7 +1867,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
-</style></head><body><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
+</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>

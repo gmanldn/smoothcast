@@ -125,3 +125,13 @@ def test_screen_home_returns_to_the_room_and_only_fades_during_untouched_playbac
     assert 'home.classList.remove("hide")' in wake
     assert '!video.paused&&!$("player").hidden' in wake  # never hidden on a slate or form
     assert ".home-link:focus-visible{opacity:1" in page  # keyboard always reveals it
+
+
+def test_room_and_nodes_pages_set_theme_colour_and_explain_missing_javascript():
+    import portal
+
+    room = portal._page().decode("utf-8")
+    nodes = portal._NODES_HTML
+    for html in (room, nodes):
+        assert 'name="theme-color"' in html
+    assert "<noscript>" in room and "Turn it on in your browser settings" in room
