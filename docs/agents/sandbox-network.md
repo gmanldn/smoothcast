@@ -29,13 +29,10 @@ Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
   failures separately. DNS success alone does not prove Git access;
   a connector read does not prove native Git works. Proxy-backed Git may work
   despite direct DNS failures. Inspect actual stderr; do not print credentials.
-- If native Git is unavailable, use the connected GitHub API for read-only
-  triage, current develop source and issue/handover inspection. Do not keep
-  repeating network-dependent commands or treat every task as blocked.
-  Connector access does not waive claim, version-history, ship or closure
-  safeguards; do not bypass them with unguarded writes. If the normal
-  shipment cannot be verified, preserve the work and hand over to a
-  network-enabled agent or the owner.
+- If native Git is unavailable, connector-hosted agents may use the guarded
+  **progress-only** transport in `scripts/connector_ship.mjs` (#598).
+  Do not use separate Contents API writes or force updates; no main,
+  version assignment or issue closure through this path.
 - If connectivity failed during shipment, follow the
   [pending-push recovery rules](../COORDINATION.md#recovery-and-exit-statuses)
   in the original worktree. Never create duplicate commits or assume an
@@ -46,3 +43,44 @@ Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
 - Do not rewrite host DNS, disable TLS, hard-code GitHub IP addresses,
   change SmoothCast networking, or alter the user's virtual environment
   merely to work around an agent sandbox outage.
+
+
+## Experimental connector shipment
+
+This is a connector code-runner fallback, not a local gh CLI or a DNS change.
+Read `scripts/connector_ship.mjs` at the current develop SHA and load its
+functions in a connector-capable runner (paste definitions without the ES
+module export when imports are unavailable). Confirm a structured claim
+covering all production paths. Build a manifest from immutable base files:
+
+```js
+const api = connectorAdapter(tools);
+const p = {issue: 123, agent: "agent-unique", base: "<full develop SHA>",
+  versionBlob: "<offline AST-validated version.py Git blob SHA>",
+  changes: [{path: "src/example.py", old: "<base blob SHA or null for new>",
+             content: "<complete reviewed new text>"}],
+  message: "fix: bounded result", verification: "actual tests or not run",
+  next: "remaining acceptance and native finish"};
+const candidate = await prepare(api, p);
+await ship(api, p, candidate);
+```
+
+Before preparing, fetch the exact version.py and canonical AST guard
+(`scripts/ci/check_version_history.py`) at the base. Verify Git blob hashes
+offline and run its parse_version on the pinned version source. The candidate
+must contain the identical version blob, and have one parent and precisely
+the reviewed changed paths. A normal version-preserving transition is thus
+checked without executing application code. No PATCH allocation, deletion,
+mode change, binary edit or closure is supported here.
+
+The coordinator reads complete global and issue lease feeds, creates an
+immutable Git tree/commit, verifies candidate contents and parent, records a
+pending issue receipt, then moves only develop non-force and verifies
+ancestry. Re-run ship with the same manifest/candidate after uncertain
+acknowledgement or handover; never recreate a pending candidate. If another
+agent advanced the base and the candidate is provably not reachable, record
+an explicit abandoned receipt with SHA after verifying ancestry and obtain
+fresh base blobs/version proof before preparing another. Release only your
+own lease after confirmed handover. Run `node --test tests/test_connector_ship.mjs`
+for guard regressions. Full transport qualification, version assignment and
+native closure integration remain open under #598.

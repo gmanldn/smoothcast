@@ -1,0 +1,177 @@
+// Connector-only, develop-only progress transport (#598). No version allocation or closure.
+// versionBlob MUST come from offline canonical AST validation of exact pinned bytes.
+function check(ok,why){if(!ok)throw Error(why)}
+
+function isSha(x){return typeof x==="string"&&/^[0-9a-f]{40}$/.test(x)}
+
+function validate(p){
+  check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
+  check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
+  check(Array.isArray(p.changes)&&p.changes.length>0&&p.changes.length<=30,"invalid change count");
+  const paths=new Set();
+  for(const c of p.changes){
+    check(typeof c.path==="string"&&/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(c.path)&&!c.path.split("/").some(x=>[".","..",".git"].includes(x)),"invalid path");
+    check(c.path!=="src/version.py"&&!paths.has(c.path),"version edit or duplicate path");
+    check(c.old===null||isSha(c.old),"invalid old blob");
+    check(typeof c.content==="string"&&c.content.length<=500000,"bounded text only");
+    paths.add(c.path);
+  }
+  for(const k of ["message","verification","next"])check(typeof p[k]==="string"&&p[k].trim()&&!/[\r\n]/.test(p[k]),"missing or multiline "+k);
+  check(p.next!=="none","progress only; no closure");
+}
+
+function leaseCheck(rows,p,now){
+  const live=new Map();
+  for(const c of [...rows].sort((a,b)=>a.id-b.id)){
+    const body=c.body||"", m=body.match(/<!--\s*sc-(claim|release)\s+v1\s+([^>]*?)\s*-->/);
+    const legacyClaim=/^\s*(?:\*\*)?claim\b/i.test(body)&&!/releas/i.test(body.slice(0,200));
+    const legacyRelease=/claim released|releasing the claim|release the claim|releasing my claim/i.test(body);
+    if(!m&&!legacyClaim&&!legacyRelease)continue;
+    const issue=Number((c.issue_url||"").split("/").pop()), at=Date.parse(c.created_at), updated=Date.parse(c.updated_at||c.created_at);
+    check(Number.isSafeInteger(c.id)&&Number.isSafeInteger(issue)&&issue>0&&Number.isFinite(at)&&Number.isFinite(updated),"incomplete claim metadata");
+    const f=m?Object.fromEntries(m[2].split(/\s+/).filter(x=>x.includes("=")).map(x=>{const i=x.indexOf("=");return [x.slice(0,i),x.slice(i+1)]})):null;
+    const agent=f?f.agent:"legacy", key=issue+"/"+agent;
+    check(typeof agent==="string"&&agent,"invalid agent marker");
+    if(m?m[1]==="release":legacyRelease){live.delete(key);continue}
+    const ttl=f?(f.ttl===undefined?90:/^\d+$/.test(f.ttl)?Math.min(180,Math.max(30,Number(f.ttl))):180):45;
+    const files=f?(f.files||"").split(",").filter(Boolean):(body.match(/(?:src|scripts|setup|packaging|fakecast|\.github)\/[\w./-]+\.[\w]+/g)||[]);
+    live.set(key,{issue,agent,files,until:(f?Math.max(at,updated):at)+ttl*60000});
+  }
+  const mine=live.get(p.issue+"/"+p.agent);
+  check(mine&&mine.until>now,"own lease missing or expired");
+  const shared=new Set(["pyproject.toml","docs/complexity-baseline.json",".github/workflows/verify.yml","docs/a11y-baseline.json","docs/silent-except-baseline.json"]);
+  const production=p.changes.map(c=>c.path).filter(x=>!shared.has(x)&&!x.startsWith("docs/")&&!x.startsWith("tests/"));
+  check(production.every(x=>mine.files.includes(x)),"lease scope incomplete");
+  for(const c of live.values())if(c.until>now&&c.agent!==p.agent)check(c.issue!==p.issue&&!production.some(x=>c.files.includes(x)),"conflicting active lease");
+}
+
+async function pages(api,path,cap){
+  const out=[];
+  for(let i=1;i<=cap;i++){
+    const page=await api.get(path+(path.includes("?")?"&":"?")+"per_page=100&page="+i);
+    check(Array.isArray(page)&&page.every(x=>x&&typeof x==="object"),"invalid page");
+    out.push(...page);if(page.length<100)return out;
+  }
+  throw Error("incomplete comment feed");
+}
+
+async function checkClaims(api,p){
+  const now=api.now(), issue=await api.get("/issues/"+p.issue);
+  check(Number.isFinite(now)&&issue.number===p.issue&&issue.state==="open"&&!issue.pull_request,"issue or clock invalid");
+  const since=new Date(now-3.5*3600000).toISOString();
+  const global=await pages(api,"/issues/comments?since="+since+"&sort=created",6), local=await pages(api,"/issues/"+p.issue+"/comments",10);
+  const rows=new Map(global.map(c=>[c.id,c]));
+  for(const c of local)rows.set(c.id,c);
+  leaseCheck([...rows.values()],p,now);
+  return local;
+}
+
+async function tip(api){
+  const h=await api.get("/git/ref/heads/develop");
+  check(h.ref==="refs/heads/develop"&&h.object?.type==="commit"&&isSha(h.object.sha),"bad develop ref");
+  return h.object.sha;
+}
+
+async function treeEntry(api,root,path){
+  const parts=path.split("/");let tree=root;
+  for(let i=0;i<parts.length;i++){
+    const t=await api.get("/git/trees/"+tree);
+    check(t.sha===tree&&t.truncated===false&&Array.isArray(t.tree),"incomplete tree");
+    const x=t.tree.find(e=>e.path===parts[i]);
+    if(!x)return null;
+    if(i===parts.length-1)return x;
+    check(x.type==="tree"&&isSha(x.sha),"not a directory");tree=x.sha;
+  }
+}
+
+async function checkBase(api,p){
+  const b=await api.get("/git/commits/"+p.base);
+  check(b.sha===p.base&&isSha(b.tree?.sha),"invalid base");
+  const v=await treeEntry(api,b.tree.sha,"src/version.py");
+  check(v?.sha===p.versionBlob&&v.mode==="100644","version does not match offline AST proof");
+  for(const c of p.changes){
+    const x=await treeEntry(api,b.tree.sha,c.path);
+    check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
+  }
+  return b.tree.sha;
+}
+
+async function verifyCandidate(api,p,candidate){
+  check(isSha(candidate),"invalid candidate");
+  await checkBase(api,p);
+  const c=await api.get("/git/commits/"+candidate);
+  check(c.sha===candidate&&isSha(c.tree?.sha)&&c.parents?.length===1&&c.parents[0].sha===p.base,"candidate parent/tree mismatch");
+  const v=await treeEntry(api,c.tree.sha,"src/version.py");
+  check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
+  const diff=await api.get("/compare/"+p.base+"..."+candidate);
+  check(diff.ahead_by===1&&diff.behind_by===0&&Array.isArray(diff.files)&&JSON.stringify(diff.files.map(f=>f.filename).sort())===JSON.stringify(p.changes.map(x=>x.path).sort()),"unexpected candidate changes");
+  for(const x of p.changes){
+    const t=await treeEntry(api,c.tree.sha,x.path), file=await api.file(candidate,x.path);
+    check(t?.mode==="100644"&&t.type==="blob"&&t.sha===file.sha&&file.content===x.content,"candidate content/mode mismatch: "+x.path);
+  }
+}
+
+async function landed(api,candidate){
+  const h=await tip(api);
+  if(h===candidate)return true;
+  const d=await api.get("/compare/"+candidate+"..."+h);
+  return d.behind_by===0&&(d.status==="ahead"||d.status==="identical");
+}
+
+async function prepare(api,p){
+  validate(p);const comments=await checkClaims(api,p);
+  // A prior unresolved pending candidate must be reconciled, not duplicated.
+  for(const c of comments){
+    const m=(c.body||"").match(/<!-- sc-connector-pending v1 sha=([0-9a-f]{40}) base=[0-9a-f]{40} agent=([A-Za-z0-9-]+) -->/);
+    if(m&&m[2]===p.agent&&!comments.some(x=>(x.body||"").includes("<!-- sc-ship v1 sha="+m[1]+" -->")||(x.body||"").includes("<!-- sc-connector-abandoned v1 sha="+m[1]+" -->")))throw Error("recover pending candidate "+m[1]+" first");
+  }
+  check(await tip(api)===p.base,"stale base");
+  const baseTree=await checkBase(api,p);
+  const tree=await api.tree(baseTree,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
+  check(isSha(tree),"invalid tree");
+  const candidate=await api.commit(tree,p.base,p.message+" (Refs #"+p.issue+")");
+  await verifyCandidate(api,p,candidate);
+  return candidate;
+}
+
+async function ship(api,p,candidate){
+  validate(p);await verifyCandidate(api,p,candidate);
+  const marker="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent="+p.agent+" -->";
+  if(!await landed(api,candidate)){
+    await checkClaims(api,p);check(await tip(api)===p.base,"base moved; do not overwrite");
+    let comments=await pages(api,"/issues/"+p.issue+"/comments",10);
+    if(!comments.some(c=>(c.body||"").includes(marker))){
+      const id=await api.comment(p.issue,"Pending connector shipment; reconcile exact SHA before retry.\n"+marker);
+      check(Number.isSafeInteger(id),"pending receipt not acknowledged");
+      comments=await pages(api,"/issues/"+p.issue+"/comments",10);
+      check(comments.some(c=>c.id===id&&(c.body||"").includes(marker)),"pending receipt not visible");
+    }
+    await checkClaims(api,p);check(await tip(api)===p.base,"base moved before ref update");
+    try{await api.update(p.base,candidate)}catch(e){/* acknowledgement may be lost; reconcile */}
+    check(await landed(api,candidate),"shipment unconfirmed; preserve pending candidate");
+  }
+  const shipped="<!-- sc-ship v1 sha="+candidate+" -->";
+  const comments=await pages(api,"/issues/"+p.issue+"/comments",10);
+  if(!comments.some(c=>(c.body||"").includes(shipped))){
+    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+p.changes.map(x=>x.path).join(", ")+"\n"+shipped);
+    check(Number.isSafeInteger(id),"handover not acknowledged; retry exact candidate");
+    const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
+    check(confirmed.some(c=>c.id===id&&(c.body||"").includes(shipped)),"handover not visible");
+  }
+  return candidate;
+}
+
+function connectorAdapter(tools){
+  const repo="gmanldn/smoothcast",url="https://api.github.com/repos/"+repo;
+  return {
+    now:()=>Date.now(),
+    get:async path=>JSON.parse((await tools.mcp__GitHub__fetch({url:url+path})).result.content),
+    file:async(ref,path)=>(await tools.mcp__GitHub__fetch_file({repository_full_name:repo,path,ref})).result,
+    tree:async(base,entries)=>(await tools.mcp__GitHub__create_tree({repository_full_name:repo,base_tree_sha:base,tree_elements:entries})).result.sha,
+    commit:async(tree,parent,message)=>(await tools.mcp__GitHub__create_commit({repository_full_name:repo,tree_sha:tree,parent_sha:parent,message})).result.sha,
+    update:async(base,candidate)=>{const x=await tools.mcp__GitHub__update_ref({repository_full_name:repo,branch_name:"develop",sha:candidate,expected_sha:base,force:false});check(x.result.success===true,"ref update rejected")},
+    comment:async(issue,comment)=>(await tools.mcp__GitHub__add_comment_to_issue({repo_full_name:repo,pr_number:issue,comment})).result.id
+  };
+}
+
+export {validate,leaseCheck,pages,prepare,ship,connectorAdapter};
