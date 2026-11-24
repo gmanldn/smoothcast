@@ -82,3 +82,34 @@ assert.equal(el.uploadProgress.value,0,"invalid byte count must never be display
 """
     subprocess.run(["node", "-"], input=harness+helper+checks,
                    check=True, timeout=10, text=True)
+
+def test_pause_aborts_chunk_retry_without_implicit_resend():
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for the headless JS contract")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    segment = script[script.index("async function sendChunk("):
+                     script.index("// Keep only upload metadata.", script.index("async function sendChunk("))]
+    harness = """
+const assert=require("node:assert/strict");
+let pauseRequested=false,cancelUpload=false,csrf="session";
+let calls=0;
+const file={size:12,slice:(a,b)=>({start:a,end:b})};
+async function uploadRequest(){
+  calls++;
+  if(calls===1){pauseRequested=true;throw Error("aborted by user");}
+  return {received:12};
+}
+function showError(){throw Error("Retry should not run after pause")}
+"""
+    checks = """
+(async()=>{
+ await assert.rejects(sendChunk("/api/uploads/example",file,0,12),/Transfer paused/);
+ assert.equal(calls,1,"must not retry a paused chunk");
+ pauseRequested=false;
+ const state=await sendChunk("/api/uploads/example",file,0,12);
+ assert.equal(state.received,12);
+ assert.equal(calls,2);
+})().catch(e=>{console.error(e);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness+segment+checks,
+                   check=True, timeout=10, text=True)
