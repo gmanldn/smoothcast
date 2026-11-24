@@ -98,11 +98,25 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    # Demo is intentionally disabled until every real-device path is isolated.
-    # Refuse before even importing the launcher or probing/installing a runtime.
+    # Demo runs the app against loopback-only fake receivers in a throwaway
+    # profile. Handle it before any installed-copy redirect, single-instance
+    # handoff or runtime install so it can never touch a real running SmoothCast.
     if any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
-        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
-        return 2
+        sys.path.insert(0, str(ROOT / "src"))
+        sys.path.insert(0, str(SETUP))
+        import demo_launch
+        if args != ["--demo"]:
+            return demo_launch.run(args)
+        import launch
+        if not launch.runtime_ready():
+            print("Demo mode needs the SmoothCast runtime; run SmoothCast once to set it up.",
+                  file=sys.stderr)
+            return 1
+        try:
+            return demo_launch.run(args, str(launch.python_path()), launch.runtime_environment())
+        except (OSError, RuntimeError) as exc:
+            print(f"SmoothCast demo could not start: {exc}", file=sys.stderr)
+            return 1
 
     portable = args[:1] == ["--portable"]
     if portable:

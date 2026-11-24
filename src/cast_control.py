@@ -34,6 +34,7 @@ import version
 import error_log
 import desktop_failure_notice
 import local_playback
+import demo_mode
 import startup_cleanup
 from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_config, LevelMeter, PreviewScreen, Async
 from cast_ui import UiMixin
@@ -157,8 +158,8 @@ class CastControlApp(Adw.Application):
         if selftest and not gui_test_safety.is_isolated_gui_test():
             raise RuntimeError(gui_test_safety.refusal())
         flags = Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.HANDLES_COMMAND_LINE
-        if selftest:
-            # Self-tests must not activate an already-running user instance.
+        if selftest or demo_mode.active():
+            # Self-tests and the demo must not activate an already-running user instance.
             flags |= Gio.ApplicationFlags.NON_UNIQUE
         super().__init__(application_id=APP_ID, flags=flags)
         self.window: MainWindow | None = None
@@ -182,7 +183,8 @@ class CastControlApp(Adw.Application):
         Adw.Application.do_startup(self)
         # Primary-only and before MainWindow; reactivation and --self-test must
         # never stop the active user's cast.
-        if not self.selftest:
+        if not self.selftest and not demo_mode.active():
+            # Demo skips recovery: it scans /proc and could stop the user's real helpers.
             shutdown_plan.begin_ledger()  # previous exit clean? (#465)
             try:
                 self._startup_report = startup_cleanup.cleanup_before_window(

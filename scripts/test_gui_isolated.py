@@ -99,6 +99,7 @@ def discard_scratch(folder: Path | str) -> None:
 
 
 def main() -> int:
+    demo = sys.argv[1:] == ["--demo"]
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
               file=sys.stderr)
@@ -123,6 +124,11 @@ def main() -> int:
             "-screen 0 1280x800x24 -nolisten tcp",
             sys.executable, str(ROOT / "src" / "cast_control.py"), "--self-test",
         ]
+        if demo:  # demo mode end to end inside the disposable display (#454)
+            import site
+            env.setdefault("PYTHONUSERBASE", site.getuserbase())
+            command[-2:] = ["-c", "import sys; sys.path.insert(0, 'src'); "
+                            "import demo_launch; sys.exit(demo_launch.smoke())"]
         try:
             # Separate process group: on timeout kill both the child UI and
             # its Xvfb server. subprocess.run(timeout=...) only kills the
@@ -138,6 +144,8 @@ def main() -> int:
                       file=sys.stderr)
                 return 124
             after = {name: path.read_bytes() for name, path in seeded.items()}
+            if demo:
+                return code
             changed = [name for name in before if before[name] != after[name]]
             if changed:
                 print("GUI self-test touched seeded state: " + ", ".join(changed),
