@@ -47,8 +47,13 @@ def test_flattened_ps_commands_with_spaces_in_paths():
 
 
 def test_enumeration_failure_means_no_instance_never_a_false_block():
-    with mock.patch.object(launch, "_portable_processes", return_value=[]):
-        assert launch.gui_instances(NO_PROC) == []
+    # Hermetic: always scan the fake non-Linux root, never this host's real /proc
+    # (a developer's own running SmoothCast must not turn this into a false block).
+    real = launch.gui_instances
+    with mock.patch.object(launch, "_portable_processes", return_value=[]), \
+         mock.patch.object(launch, "gui_instances",
+                           side_effect=lambda *_a, **kw: real(NO_PROC, **kw)):
+        assert launch.gui_instances() == []
         assert launch.ensure_single_instance([]) is None
 
 
