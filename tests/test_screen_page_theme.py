@@ -56,3 +56,11 @@ def test_screen_palette_has_no_credential_or_network_side_effects():
     assert b"<script>" in html and b"__MIMES__" not in html
     assert b"localStorage.getItem" in html
     assert b"sc_portal_session=" not in html
+
+def test_theme_colour_audit_distinguishes_numeric_ids_from_literal_values():
+    # A CSS selector may legitimately be '#420'; its digits are not a colour.
+    value_colour = re.compile(r"(?<=:)\\s*#[0-9a-fA-F]{3,8}\\b")
+    assert not value_colour.search("#420{display:block}")
+    assert not value_colour.search("#fff{background:var(--card)}")
+    assert value_colour.search(".screen{background: #123abc;}")
+    assert value_colour.search(".screen{border-color:#fff;}")
