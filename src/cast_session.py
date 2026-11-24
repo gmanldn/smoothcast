@@ -1246,7 +1246,7 @@ class SessionMixin:
             self._cast_tried = [*getattr(self, "_cast_tried", [])[-15:],
                                 (self._device(), getattr(self, "_attempt_mode", "direct"))]
         except Exception:  # noqa: BLE001 - bookkeeping must never break failure handling
-            pass
+            self._cast_tried = list(getattr(self, "_cast_tried", []))  # keep prior attempts
         self._dlna_cancel = None
         reliability_metrics.fail_attempt(self, Async.run)
         reliability_metrics.finish_active(self, "failed", Async.run)
