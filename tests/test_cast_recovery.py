@@ -136,3 +136,55 @@ def test_plan_is_pure_and_deterministic():
 ])
 def test_legacy_free_text_is_classified_conservatively(message, code):
     assert cr.classify_message(message) == code
+
+
+# -- live-window observation (#13) -------------------------------------------
+from types import SimpleNamespace  # noqa: E402
+
+
+def _window(**over):
+    base = dict(_device=lambda: "Living Room", tracker=SimpleNamespace(value=lambda: 90.0),
+                session=SimpleNamespace(mode="direct"),
+                devices=[SimpleNamespace(name="Living Room"), SimpleNamespace(name="Kitchen")],
+                device_info={"duration": 3600})
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_plan_for_window_reads_position_mode_and_other_receivers():
+    plan = cr.plan_for_window(_window(), "Receiver is offline")
+    assert plan.position == 90.0
+    assert [o.kind for o in plan.options] == ["retry", "alternate_target"]  # offline: no re-encode
+    assert plan.options[1].device == "Kitchen"
+    assert cr.summary_line(plan) == "Recovery: place 1:30 saved; options: retry, alternate_target"
+    assert "Kitchen" not in cr.summary_line(plan)  # console line carries no receiver names
+
+
+def test_plan_for_window_without_a_session_is_a_launch_failure():
+    plan = cr.plan_for_window(_window(session=None), "boom")
+    assert "while starting" in plan.options[1].reason
+
+
+@pytest.mark.parametrize("broken", [
+    dict(_device=lambda: ""), dict(_device=lambda: (_ for _ in ()).throw(RuntimeError("x"))),
+    dict(tracker=SimpleNamespace(value=lambda: 1 / 0)), dict(devices=5), dict(device_info=object()),
+])
+def test_plan_for_window_never_raises(broken):
+    result = cr.plan_for_window(_window(**broken), "failure")
+    assert result is None or isinstance(result, cr.RecoveryPlan)
+
+
+def test_plan_for_window_survives_a_bare_object():
+    assert cr.plan_for_window(object(), None) is None
+    assert cr.plan_for_window(None, None) is None
+
+
+def test_cast_failed_observes_before_the_tracker_is_cleared():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from gui_source import main_window_methods
+
+    body = main_window_methods()["_cast_failed"]
+    observe = body.index("cast_recovery.plan_for_window(self, message)")
+    assert observe < body.index("self.tracker.clear()") and observe < body.index("self._stop_monitor()")
+    assert "cast_recovery.summary_line(self._recovery_plan)" in body
+    assert body.count("toast(") == 1  # observation only: still exactly the original toast

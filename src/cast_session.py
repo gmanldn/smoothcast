@@ -16,6 +16,7 @@ import threading
 
 import time
 
+import cast_recovery
 import castctl
 import command_trace
 
@@ -1218,6 +1219,8 @@ class SessionMixin:
 
 
     def _cast_failed(self, message: str) -> None:
+        # Observe before the tracker is cleared; never alters the failure path.
+        self._recovery_plan = cast_recovery.plan_for_window(self, message)
         self._dlna_cancel = None
         reliability_metrics.fail_attempt(self, Async.run)
         reliability_metrics.finish_active(self, "failed", Async.run)
@@ -1231,6 +1234,8 @@ class SessionMixin:
             self._finished_handled = False
         self.toast(f"Cast failed: {message}", error=True)
         self._console(f"Cast failed: {message}")
+        if self._recovery_plan is not None:
+            self._console(cast_recovery.summary_line(self._recovery_plan))
         self._notify("error", message)
         self._refresh_controls()
 

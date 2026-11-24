@@ -168,3 +168,35 @@ def plan_recovery(ctx: FailureContext) -> RecoveryPlan:
                 break
     headline = f"{spec.message} Your place ({format_position(position)}) is saved."
     return RecoveryPlan(position, headline, spec.steps, tuple(options))
+
+
+def plan_for_window(window: object, message: str | None = None) -> RecoveryPlan | None:
+    """Recovery plan from a live main window; None on ANY problem.
+
+    Reads only (device, tracker position, session mode, discovered names) and
+    never raises, so calling it from failure handling cannot make a failure
+    worse. Call it before the tracker is cleared.
+    """
+    try:
+        device = str(window._device() or "")  # type: ignore[attr-defined]
+        if not device:
+            return None
+        tracker = getattr(window, "tracker", None)
+        position = tracker.value() if tracker is not None else None
+        session = getattr(window, "session", None)
+        mode = str(getattr(session, "mode", "") or "direct")
+        names = tuple(str(getattr(d, "name", "")) for d in (getattr(window, "devices", None) or ())[:64])
+        info = getattr(window, "device_info", None)
+        duration = info.get("duration") if isinstance(info, dict) else None
+        return plan_recovery(FailureContext(
+            device=device, mode=mode, stage="launch" if session is None else "transfer",
+            error_code=classify_message(message), position=position, duration=duration,
+            targets=tuple(n for n in names if n)))
+    except Exception:  # noqa: BLE001 - observation must never break failure handling
+        return None
+
+
+def summary_line(plan: RecoveryPlan) -> str:
+    """One console line: saved position and the option kinds, no receiver names."""
+    kinds = ", ".join(dict.fromkeys(o.kind for o in plan.options)) or "none"
+    return f"Recovery: place {format_position(plan.position)} saved; options: {kinds}"
