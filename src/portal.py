@@ -1641,6 +1641,11 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #queuePanel .queue-position{display:inline-block;margin-right:8px;padding:2px 7px;border-radius:7px;background:var(--input);color:var(--muted);font-variant-numeric:tabular-nums}
 #queuePanel .queue-actions button[data-queue-action="play"]{background:var(--accent);color:var(--on-accent)}
 #queuePanel .queue-actions button[data-queue-action="remove"]{border:1px solid var(--line)}
+#queuePanel .queue-actions{justify-content:flex-start;row-gap:6px}
+#queuePanel .queue-actions button{min-height:44px;padding:7px 11px;white-space:nowrap}
+#queueFeedback{min-height:1.4em;padding:7px 10px;border-radius:8px;background:var(--input)}
+#queuePanel .queue-item{padding:13px 0;gap:10px}
+@media(min-width:560px){#queuePanel .queue-item{grid-template-columns:minmax(0,1fr)}#queuePanel .queue-actions{justify-content:flex-start}}
 @media(max-width:380px){.transfer-journey{padding:10px}.transfer-steps{gap:2px}.transfer-steps li{font-size:.62rem}.stage-dot{width:23px;height:23px}}
 
 @media(min-width:820px){
@@ -1722,7 +1727,8 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
-<p class="section-desc">The shared waiting list. Everyone can contribute, vote or change the order; actions affect the whole room.</p>
+<p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
+<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here when accepted by the host.</p>
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the room receiver; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
@@ -1919,6 +1925,9 @@ function queueAction(button){
   const index=queueState.findIndex(item=>String(item.id)===id);
   if(index<0){showError("errorDash","That queue item is no longer here");return}
   const item=queueState[index];
+  const verb={vote:"Vote",play:"Requesting playback", "move-earlier":"Move earlier", "move-later":"Move later",next:"Move to play next",remove:"Remove"}[button.dataset.queueAction];
+  const feedback=$("queueFeedback");
+  if(feedback&&verb)feedback.textContent=verb+" · "+(item.title||"selected item")+" · sending request…";
   switch(button.dataset.queueAction){
     case "vote":return act("queue_vote",!item.voted,{id});
     case "play":return act("queue_play",undefined,{id});
@@ -1989,7 +1998,7 @@ function renderQueue(items){
     li.setAttribute("aria-posinset",String(index+1));
     li.setAttribute("aria-setsize",String(rows.length));
     li.children[0].children[0].textContent=itemTitle;
-    li.children[0].children[1].textContent=(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
+    li.children[0].children[1].textContent="Position "+(index+1)+" of "+rows.length+" · "+(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
       +(item.duration?" · "+clock(item.duration):"");
     const buttons=li.children[1].children;
     const labels=[
@@ -2000,7 +2009,7 @@ function renderQueue(items){
       "Play "+itemTitle+" next",
       "Remove "+itemTitle+" from Up Next",
     ];
-    const captions=[item.voted?"Voted":"Vote","Play now","↑","↓","Next","×"];
+    const captions=[item.voted?"Voted":"Vote","Play now","↑ Earlier","↓ Later","Play next","Remove"];
     Array.from(buttons).forEach((button,i)=>{
       button.textContent=captions[i];
       button.setAttribute("aria-label",labels[i]);
@@ -2263,7 +2272,8 @@ async function act(action,value,extra={}){
     if(value!==undefined)body.value=value;
     const result=await post("/api/action",body);
     showError("errorDash",result.message||"Command accepted");
-  }catch(err){showError("errorDash",err.message)}
+    if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted by the host; awaiting room refresh.";
+  }catch(err){showError("errorDash",err.message);if(action.startsWith("queue_"))$("queueFeedback").textContent="Queue action was not applied: "+err.message;}
   finally{
     busy=false;
     if(pendingControls.size&&csrf&&!stalePage){
