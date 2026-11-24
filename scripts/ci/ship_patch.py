@@ -81,6 +81,40 @@ def recover_private_patch(root: Path, remote_sha: str) -> bool:
     return True
 
 
+def published_assignment(root: Path, remote_sha: str, issue: int) -> str | None:
+    """Return the earliest verified assignment reachable from the fetched tip.
+
+    The exact subject is the durable issue key. Ignore substring/body matches;
+    reject forged or malformed assignments instead of guessing. Existing
+    historical duplicates are retained, never repaired by rewriting history.
+    """
+    if type(issue) is not int or issue < 1:
+        raise PatchAllocationError("positive GitHub issue number required")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", remote_sha):
+        raise PatchAllocationError("full fetched remote SHA required")
+    subject = f"chore(version): PATCH for issue #{issue} {MARKER}"
+    # Shallow history cannot establish that an issue was never assigned.
+    if run(root, "rev-parse", "--is-shallow-repository") != "false":
+        raise PatchAllocationError("complete remote history required; fetch --unshallow")
+    matches = run(root, "log", "--reverse", "--topo-order", "--format=%H%x09%s",
+                  "--fixed-strings", f"--grep={subject}", remote_sha, "--")
+    for line in matches.splitlines():
+        sha, sep, title = line.partition("\t")
+        if not sep or title != subject:
+            continue
+        parents = run(root, "rev-list", "--parents", "-n", "1", sha).split()
+        if len(parents) != 2:
+            raise PatchAllocationError("published assignment is not a single-parent commit")
+        if run(root, "diff-tree", "--no-commit-id", "--name-only", "-r", sha) != VERSION_PATH:
+            raise PatchAllocationError("published assignment changed non-version files")
+        before = run(root, "show", parents[1] + ":" + VERSION_PATH)
+        after = run(root, "show", sha + ":" + VERSION_PATH)
+        if after != patch_source(before):
+            raise PatchAllocationError("published assignment is not an exact one-step patch")
+        return sha
+    return None
+
+
 def assign_private_patch(root: Path, remote_sha: str, issue: int) -> str | None:
     """Append exactly one version-only commit to this pending shipment.
 
@@ -92,11 +126,18 @@ def assign_private_patch(root: Path, remote_sha: str, issue: int) -> str | None:
         raise PatchAllocationError("positive GitHub issue number required")
     if run(root, "status", "--porcelain"):
         raise PatchAllocationError("dirty worktree; cannot safely allocate a patch")
-    if is_generated_head(root):
-        raise PatchAllocationError("generated patch already present; recover before rebasing")
     remote = parsed(run(root, "show", remote_sha + ":" + VERSION_PATH))
     local_source = (root / VERSION_PATH).read_text(encoding="utf-8")
     local = parsed(local_source)
+    existing = published_assignment(root, remote_sha, issue)
+    if existing:
+        if local != remote:
+            raise PatchAllocationError(
+                f"issue #{issue} already assigned at {existing[:12]}; "
+                "preserve code and remove the unpublished extra version change")
+        return None
+    if is_generated_head(root):
+        raise PatchAllocationError("generated patch already present; recover before rebasing")
     if local != remote:
         if (local == (remote[0], remote[1], remote[2] + 1)
                 or local == (remote[0], remote[1] + 1, 0)

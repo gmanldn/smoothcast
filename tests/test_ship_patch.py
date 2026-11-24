@@ -77,6 +77,39 @@ class PatchShipTests(unittest.TestCase):
         self.assertTrue((self.worker2 / "first.txt").exists())
         self.assertTrue((self.worker2 / "second.txt").exists())
 
+    def test_same_issue_race_reuses_first_assignment_without_losing_code(self):
+        self.pending_code(self.worker1, "first")
+        self.pending_code(self.worker2, "second")
+        a = self.fetch(self.worker1)
+        b = self.fetch(self.worker2)
+        first = ship_patch.assign_private_patch(self.worker1, a, 583)
+        ship_patch.assign_private_patch(self.worker2, b, 583)
+        self.git(self.worker1, "push", "origin", "HEAD:develop")
+        rejected = subprocess.run(
+            ["git", "push", "origin", "HEAD:develop"], cwd=self.worker2,
+            capture_output=True, text=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        remote = self.fetch(self.worker2)
+        self.assertTrue(ship_patch.recover_private_patch(self.worker2, remote))
+        self.git(self.worker2, "rebase", "origin/develop")
+        self.assertIsNone(ship_patch.assign_private_patch(self.worker2, remote, 583))
+        self.git(self.worker2, "push", "origin", "HEAD:develop")
+        tip = self.fetch(self.worker2)
+        self.assertEqual(ship_patch.published_assignment(self.worker2, tip, 583), first)
+        self.assertEqual(ship_patch.parsed((self.worker2 / "src/version.py").read_text()),
+                         (1, 2, 52))
+        self.assertTrue((self.worker2 / "first.txt").exists())
+        self.assertTrue((self.worker2 / "second.txt").exists())
+        self.assertIsNone(ship_patch.published_assignment(self.worker2, tip, 58))
+
+    def test_published_marker_with_wrong_diff_fails_closed(self):
+        self.pending_code(self.worker1, "not-a-version")
+        self.git(self.worker1, "commit", "--amend", "-m",
+                 "chore(version): PATCH for issue #583 [sc-auto-patch]")
+        self.git(self.worker1, "push", "origin", "HEAD:develop")
+        with self.assertRaises(ship_patch.PatchAllocationError):
+            ship_patch.published_assignment(self.worker1, self.fetch(self.worker1), 583)
+
     def test_never_drop_a_patch_already_on_remote_after_ack_loss(self):
         self.pending_code(self.worker1, "safe")
         remote = self.fetch(self.worker1)
@@ -84,6 +117,8 @@ class PatchShipTests(unittest.TestCase):
         self.git(self.worker1, "push", "origin", "HEAD:develop")
         self.assertFalse(ship_patch.recover_private_patch(self.worker1, self.fetch(self.worker1)))
         self.assertEqual(self.git(self.worker1, "rev-parse", "HEAD"), sha)
+        self.assertIsNone(ship_patch.assign_private_patch(
+            self.worker1, self.fetch(self.worker1), 583))
 
     def test_fail_closed_on_dirty_or_malformed_staged_state(self):
         self.pending_code(self.worker1, "safe")
