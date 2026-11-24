@@ -34,6 +34,16 @@ paths trigger lease expansion. Missing optional checks are UNVERIFIED.
 GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 `scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
 
+## Product rule: effortless UX (P0)
+
+- User experience is paramount. SmoothCast handles discovery, dependencies,
+  routing, worker selection, recovery and cleanup; users choose media and targets.
+- Keep the happy path fast and obvious; disclose diagnostics progressively.
+  Never fake readiness or success, hide a real failure, or weaken consent/security.
+- Keep GTK/browser interaction responsive: bounded off-thread I/O, coalesced
+  updates, no duplicate pollers or needless redraws. Preserve input and playback.
+  See [UX and orchestration](docs/agents/architecture.md#ux-and-orchestration).
+
 ## Quality and safety
 
 - Small, complete, well-scoped patches; explain real evidence and blockers.
