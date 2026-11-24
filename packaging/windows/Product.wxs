@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SmoothCast per-user Windows installer, WiX Toolset v6 (issue #531).
+  Build inputs (wix build -d ...): ProductVersion (three numeric fields, from
+  src/version.py via scripts/packaging/wix_payload.py), Manufacturer (owner-approved
+  identity; never invented here), PayloadDir (the verified dist/SmoothCast tree),
+  IconFile (build/pyinstaller/icons/SmoothCast.ico). Payload.wxs is generated.
+
+  UpgradeCode is permanent. Never change it: it is how Windows recognises every
+  SmoothCast release as the same product.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="SmoothCast"
+           Manufacturer="$(Manufacturer)"
+           Version="$(ProductVersion)"
+           UpgradeCode="105B2A4E-3854-4080-A3D7-417F855E205A"
+           Scope="perUser"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer SmoothCast is already installed. Remove it first if you want to go back to an older release." />
+    <MediaTemplate EmbedCab="yes" />
+    <Launch Condition="VersionNT64" Message="SmoothCast needs a 64-bit version of Windows." />
+    <Launch Condition="VersionNT &gt;= 1000" Message="SmoothCast needs Windows 10 or newer." />
+
+    <Icon Id="SmoothCast.ico" SourceFile="$(IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="SmoothCast.ico" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="LocalProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SmoothCast" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="SmoothCastMenuFolder" Name="SmoothCast" />
+    </StandardDirectory>
+
+    <Component Id="StartMenuShortcut" Directory="SmoothCastMenuFolder" Guid="0C4D2E6B-5A10-4F7E-8E52-7B1F3A9C6D20" Bitness="always64">
+      <Shortcut Id="SmoothCastShortcut" Name="SmoothCast" Description="Cast your media to a TV or speaker"
+                Target="[INSTALLFOLDER]SmoothCast.exe" WorkingDirectory="INSTALLFOLDER" Icon="SmoothCast.ico" />
+      <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\SmoothCast\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="SmoothCast" Level="1">
+      <ComponentGroupRef Id="PayloadFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>
