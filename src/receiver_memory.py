@@ -177,7 +177,7 @@ class ReceiverMemory:
             return {}
         except OSError:
             return {}  # Unreadable state is not evidence against a receiver.
-        except (ValueError, TypeError, KeyError, UnicodeError):
+        except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, RecursionError):
             self._quarantine()
             return {}
 
