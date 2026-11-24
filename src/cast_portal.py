@@ -188,8 +188,13 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             except Exception as exc:
                 result.append(exc)
             finally:
-                self._publish_portal_status()
+                # A status-refresh fault must never hide the completed
+                # command's receipt or cause the guest to replay it.
                 completed.set()
+                try:
+                    self._publish_portal_status()
+                except Exception:
+                    pass
             return False
 
         # A GLib idle callback runs on a different context than the portal thread.
@@ -306,7 +311,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 # A partial file must not be direct-cast (catt would stream a
                 # truncated file); force the growing-file HLS transcode instead.
                 self._portal_early = early
-                self._cast_path(path, 0)
+                reason = self._cast_path(path, 0)
+                if reason is not None:
+                    raise portal.PortalRequestError(409, reason)
             except Exception:
                 # A failed synchronous submission is not an accepted cast.
                 # Otherwise the same upload ID is silently ignored on retry.
