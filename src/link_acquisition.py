@@ -30,6 +30,8 @@ FREE_RESERVE = 512 * 1024**2
 MAX_FILES = 128
 MAX_PENDING = 4
 MAX_RECORDS = 24
+MAX_CACHE_BYTES = 8 * 1024**3
+MAX_CACHE_DIRECTORIES = 128
 MAX_SECONDS = 1800
 MEDIA_SUFFIXES = frozenset({
     ".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi", ".ts",
@@ -266,6 +268,26 @@ def _tree_bytes(root: Path) -> int:
             elif not stat.S_ISDIR(info.st_mode):
                 raise LinkError(422, "Unsupported file in acquisition staging.")
     return total
+
+
+def _reserve_cache_capacity(root: Path) -> None:
+    """Bound retained staging without deleting a possibly queued/playing file.
+
+    One writer and one active job reserve their full maximum payload size.
+    Count even old, unindexed job directories; eviction of a journal receipt
+    never implies permission to unlink the corresponding media.
+    """
+    total = count = 0
+    for directory in root.iterdir():
+        if not JOB_ID.fullmatch(directory.name):
+            continue
+        count += 1
+        metadata = directory.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or count >= MAX_CACHE_DIRECTORIES:
+            raise LinkError(507, "Acquisition cache requires owner review before more downloads.")
+        total += _tree_bytes(directory)
+        if total + MAX_BYTES > MAX_CACHE_BYTES:
+            raise LinkError(507, "Acquisition cache is full. Existing media is preserved.")
 
 
 def _safe_media(root: Path, path: Path) -> Path:
@@ -624,6 +646,9 @@ class LinkJobs:
             return True
         except (OSError, ValueError):
             self._journal_error = True
+            for job in self._jobs.values():
+                if job.stage == "pending":
+                    self._change(job, stage="failed", error="Acquisition recovery storage is unavailable.")
             self._revision += 1
             return False
 
@@ -638,13 +663,13 @@ class LinkJobs:
             raise LinkError(400, "Submission identifier is invalid.")
         if not self.owner_active(owner):
             raise LinkError(401, "Room access was revoked.")
-        if not self.capabilities().get(source.kind):
-            raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
             if self._journal_error:
                 raise LinkError(503, "Acquisition recovery storage is unavailable.")
+            if not self.capabilities().get(source.kind):
+                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
             receipt = self._requests.get((owner, request))
             if receipt is not None:
                 job = self._jobs.get(receipt)
@@ -735,7 +760,7 @@ class LinkJobs:
             try:
                 if cancelled():
                     raise LinkError(409, "Acquisition cancelled.")
-                self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _reserve_cache_capacity(self.root)
                 directory.mkdir(mode=0o700)
                 path = self.provider.acquire(job.source, directory, stage,
                                              lambda n, total: self._progress(job, n, total), cancelled)
@@ -746,6 +771,8 @@ class LinkJobs:
                 with self._lock:
                     if cancelled() or self._closed:
                         raise LinkError(409, "Acquisition cancelled.")
+                    if self._journal_error:
+                        raise LinkError(503, "Acquisition recovery storage is unavailable.")
                     title = "".join(c for c in path.name if c.isprintable())[:120]
                     title = title.replace(job.source.identity, "[source]") or job.source.label
                     self._change(job, stage="queueing", title=title,
