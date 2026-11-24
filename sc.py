@@ -61,6 +61,17 @@ def _installed_root(target: str) -> Path | None:
     """Use the installer's saved destination, or a recognisable OS default."""
     import install_location
 
+    # A copy transaction can temporarily remove the bootstrap/manifest used
+    # for discovery. Check the remembered path before interpreting that gap
+    # as a missing installation.
+    pointer = install_location.config_path(target)
+    try:
+        saved = Path(pointer.read_text(encoding="utf-8").strip()).expanduser()
+        if saved.is_absolute():
+            install_location.check_install_idle(saved)
+    except FileNotFoundError:
+        pass
+    install_location.check_install_idle(install_location.default_directory(target))
     remembered = install_location.previous_directory(target)
     if remembered is not None:
         return remembered.resolve()
@@ -130,8 +141,16 @@ def main(argv: list[str] | None = None) -> int:
 
     target = _target()
     installed = None
+    try:
+        import install_location
+
+        install_location.check_install_idle(ROOT)
+        if target is not None and not portable:
+            installed = _installed_root(target)
+    except (OSError, ValueError) as exc:
+        print(f"SmoothCast: installation unavailable: {exc}", file=sys.stderr)
+        return 1
     if target is not None and not portable:
-        installed = _installed_root(target)
         if installed is not None and installed != ROOT.resolve():
             if not _headless(args):
                 import checkout_refresh
@@ -165,7 +184,11 @@ def main(argv: list[str] | None = None) -> int:
             return code
         if not portable:
             # Setup normally copies to a per-user install, not this checkout.
-            installed = _installed_root(target)
+            try:
+                installed = _installed_root(target)
+            except (OSError, ValueError) as exc:
+                print(f"SmoothCast: installation unavailable: {exc}", file=sys.stderr)
+                return 1
             if installed is not None and installed != ROOT.resolve():
                 return _launch_installed(installed, args)
         if not launch.runtime_ready():

@@ -7,6 +7,7 @@ the source checkout, its worktrees and user data are not an install target.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -156,8 +157,75 @@ def _record_source_revision(source: Path, destination: Path, before: str | None)
             marker.write_text(before + "\n", encoding="ascii")
 
 
+class InstallBusy(OSError):
+    """Another process owns the installation transaction."""
+
+
+def _lock_path(destination: Path) -> Path:
+    canonical = destination.resolve()
+    key = hashlib.sha256(os.fsencode(os.path.normcase(str(canonical)))).hexdigest()[:32]
+    return canonical.parent / (".smoothcast-install-" + key + ".lock")
+
+
+@contextmanager
+def _transaction_lock(destination: Path):
+    """Persistent sibling inode; the OS releases the lock on process exit.
+
+    Do not unlink the lock file: another process might already have opened it.
+    This serializes cooperating source-copy installers, not live GUI lifetimes.
+    """
+    path = _lock_path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise OSError(f"Refusing linked installation lock: {path}")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise OSError(f"Invalid installation lock: {path}")
+        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+            raise OSError(f"Installation lock belongs to another user: {path}")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise InstallBusy(
+                f"Another setup is active for {destination}; retry when it finishes."
+            ) from exc
+        yield
+    finally:
+        os.close(fd)
+
+
+def check_install_idle(destination: Path) -> None:
+    """Best-effort launch preflight; no claim of lifetime mutual exclusion."""
+    path = _lock_path(destination)
+    if path.exists() or path.is_symlink():
+        with _transaction_lock(destination):
+            pass
+
+
 @contextmanager
 def installed_sources(source: Path, destination: Path):
+    """Serialize the complete source transaction, including child bootstrap."""
+    if destination.is_symlink():
+        raise ValueError("Refusing to install through a symbolic link")
+    with _transaction_lock(destination):
+        with _installed_sources(source, destination):
+            yield
+
+
+@contextmanager
+def _installed_sources(source: Path, destination: Path):
     """Replace only app-managed sources; restore previous sources on failure.
 
     Existing .venv, saved state and all non-managed files are never removed.
