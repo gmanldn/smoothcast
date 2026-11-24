@@ -61,7 +61,10 @@ def load_settings(path: Path | None = None) -> dict[str, Any]:
     return {"enabled": raw.get("mesh_enabled") is True,
             "strict": raw.get("mesh_strict") is True,
             "seeds": mb.parse_seeds(raw.get("mesh_seeds", [])
-                                    if isinstance(raw.get("mesh_seeds"), list) else [])}
+                                    if isinstance(raw.get("mesh_seeds"), list) else []),
+            # Remote link acquisition (#589): both strictly opt-in, default off.
+            "remote_acquisition": raw.get("mesh_remote_acquisition") is True,
+            "accept_acquisition": raw.get("mesh_accept_acquisition") is True}
 
 
 def load_identity(path: Path) -> str:

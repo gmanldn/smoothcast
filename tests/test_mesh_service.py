@@ -73,12 +73,14 @@ def test_disabled_service_opens_nothing(tmp_path):
 
 def test_settings_default_off_and_are_validated(tmp_path):
     assert svc.load_settings(tmp_path / "missing.json") == {
-        "enabled": False, "strict": False, "seeds": ()}
+        "enabled": False, "strict": False, "seeds": (),
+        "remote_acquisition": False, "accept_acquisition": False}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"mesh_enabled": True, "mesh_strict": "yes",
                                 "mesh_seeds": ["192.168.1.4", "8.8.8.8", 5]}))
     got = svc.load_settings(path)
-    assert got == {"enabled": True, "strict": False, "seeds": ("192.168.1.4",)}
+    assert got == {"enabled": True, "strict": False, "seeds": ("192.168.1.4",),
+                   "remote_acquisition": False, "accept_acquisition": False}
     path.write_text("[1,2")
     assert svc.load_settings(path)["enabled"] is False
     path.write_text(json.dumps({"mesh_enabled": "true"}))
@@ -312,3 +314,42 @@ def test_app_hook_feeds_scanned_receivers_into_the_mesh(monkeypatch, tmp_path):
     cast_mesh.push_clients(window)
     cast_mesh.stop(window)
     assert wait_for(lambda: not mesh_threads())
+
+
+def test_app_hook_wires_remote_acquisition_only_when_opted_in_and_restores_on_stop(monkeypatch, tmp_path):
+    import cast_mesh
+    import mesh_acquisition_app
+    import mesh_acquisition_bridge
+    from types import SimpleNamespace
+
+    class Local:
+        def capabilities(self):
+            return {"youtube": True, "magnet": False}
+
+    def settings(remote):
+        flags = {"remote_acquisition": remote, "accept_acquisition": remote}
+        return lambda path=None: {"enabled": True, "strict": False, "seeds": (), **flags}
+
+    monkeypatch.setattr(svc, "config_path", lambda: tmp_path / "config.json")
+    for remote in (False, True):
+        monkeypatch.setattr(svc, "load_settings", settings(remote))
+        window = FakeWindow()
+        jobs = SimpleNamespace(capabilities=lambda: {"youtube": True, "magnet": False},
+                               provider=Local(), snapshot=lambda: [])
+        window._portal = SimpleNamespace(name="smoothcast-test", port=8123, room=FakeRoom(),
+                                         server=SimpleNamespace(mesh_feed=None, screens=FakeScreens(),
+                                                                link_jobs=jobs))
+        original = jobs.provider
+        cast_mesh.start(window, LOOP)
+        service = window._mesh
+        try:
+            assert wait_for(lambda: service.state == "running")
+            capabilities = service.view.node(service.node_id).capabilities
+            hint = mesh_acquisition_bridge.HINT in capabilities
+            assert hint is remote
+            assert (service.acquisition_bridge is not None) is remote
+            assert isinstance(jobs.provider, mesh_acquisition_app.CompositeProvider) is remote
+        finally:
+            cast_mesh.stop(window)
+            assert wait_for(lambda: not mesh_threads())
+        assert jobs.provider is original  # restored on stop

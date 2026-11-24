@@ -168,3 +168,21 @@ only then, `AssignmentLedger.enqueue_once` admits one queue add and the verified
 local copy is delivered. Wrong token, unknown job, expiry, swapped file,
 oversize stream and non-LAN endpoints all fail closed; a failed transfer leaves
 nothing queued and can be retried. A worker never sends a path, URL or address.
+
+### Using mesh workers from the room (#589, opt-in)
+
+Two settings in `config.json`, both **off by default**: `mesh_remote_acquisition`
+(this room may hand link downloads to trusted mesh workers) and
+`mesh_accept_acquisition` (this node will run downloads for the room host; read
+live, so turning it off makes the node answer `declined`). `src/cast_mesh.py`
+builds `mesh_acquisition_app.RemoteAcquisition` only when either is on. For the
+room host it wraps the local provider in a `CompositeProvider`: a local worker
+is used when this host has one for the kind, otherwise a live peer that
+advertises `acquisition-assign-v1` plus `acquire-<kind>-local`. `LinkJobs` is
+unchanged and keeps the journal, guest status and the one queue add; the remote
+path just returns a verified local file. A lost, restarted or unreachable worker
+makes the job fail as *ambiguous* and is never reassigned; after a restart
+`reconcile()` asks workers to stop and resolves a job only on an acknowledged
+stop. A damaged ledger disables remote use rather than guessing. Free space and
+slots of a worker are enforced by that worker (it refuses when full); they are
+not advertised. This is trusted-LAN, not cryptographic.
