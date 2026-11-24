@@ -192,8 +192,12 @@ def collect(*, error_log=None, activity=None, config=None, home=None, server_log
         "startup": startup_timeline.snapshot(),
         # Clean vs unclean previous exits and how long the last shutdown took (#465).
         "shutdown": shutdown_plan.ShutdownLedger().summary(),
-        # Last error codes shown to the user: codes and times only, no context (#207).
-        "error_codes": errors.recent(),
+        # Last error codes shown to the user, with clipped and redacted context (#207).
+        "error_codes": [
+            {**entry, **({"context": {k: redact(v, home=home_value)
+                                      for k, v in entry["context"].items()}}
+                         if entry.get("context") else {})}
+            for entry in errors.recent()],
     }
     for name, args in (
         ("ffmpeg", ("-version",)), ("ffprobe", ("-version",)),

@@ -123,17 +123,34 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
 
 FALLBACK = CATALOGUE["internal.unexpected"]
 
-_RECENT: "deque[tuple[float, str]]" = deque(maxlen=20)
+_RECENT: "deque[tuple[float, str, dict[str, str]]]" = deque(maxlen=20)
+_MAX_CONTEXT_KEYS = 6
+_MAX_CONTEXT_VALUE = 120
 
 
-def record(code: str) -> None:
-    """Remember that ``code`` reached a user (bounded; codes only, never context)."""
-    _RECENT.append((time.time(), code if code in CATALOGUE else FALLBACK.code))
+def _bounded_context(context: object) -> dict[str, str]:
+    """Clip structured context to a few short string facts (callers pre-redact)."""
+    if not isinstance(context, dict):
+        return {}
+    clean: dict[str, str] = {}
+    for key, value in context.items():
+        if len(clean) >= _MAX_CONTEXT_KEYS:
+            break
+        if isinstance(key, str) and isinstance(value, (str, int, float, bool)):
+            clean[key[:40]] = str(value)[:_MAX_CONTEXT_VALUE]
+    return clean
+
+
+def record(code: str, context: object = None) -> None:
+    """Remember that ``code`` reached a user (bounded ring; context is clipped)."""
+    _RECENT.append((time.time(), code if code in CATALOGUE else FALLBACK.code,
+                    _bounded_context(context)))
 
 
 def recent() -> list[dict]:
     """Last error codes shown, oldest first, for the diagnostics bundle."""
-    return [{"at": int(at), "code": code} for at, code in _RECENT]
+    return [{"at": int(at), "code": code, **({"context": ctx} if ctx else {})}
+            for at, code, ctx in _RECENT]
 
 
 def reset_recent() -> None:
