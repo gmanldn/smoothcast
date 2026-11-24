@@ -20,6 +20,7 @@ from version import __version__
 def start(window: object, address: str) -> None:
     """(Re)start the mesh on *address* in the background; never raises."""
     try:
+        window._mesh_address = address               # type: ignore[attr-defined]
         settings = mesh_service.load_settings()
         stop(window)
         if not settings["enabled"]:
@@ -77,6 +78,35 @@ def start(window: object, address: str) -> None:
         threading.Thread(target=run, name="smoothcast-mesh-start", daemon=True).start()
     except Exception:
         return
+
+
+ACQUISITION_KEYS = {"remote_acquisition": "mesh_remote_acquisition",
+                    "accept_acquisition": "mesh_accept_acquisition"}
+
+
+def set_acquisition(window: object, name: str, value: object, *, save=None, flush=None) -> bool:
+    """Persist one remote-acquisition opt-in and restart the mesh so it takes effect.
+
+    Both switches are off by default and only ever flipped by an explicit user
+    action in the Network popover. Never raises; returns whether it was applied.
+    """
+    key = ACQUISITION_KEYS.get(name) if isinstance(name, str) else None
+    cfg = getattr(window, "cfg", None)
+    if key is None or type(value) is not bool or not isinstance(cfg, dict):
+        return False
+    try:
+        if save is None or flush is None:
+            import config_persistence
+            save, flush = save or config_persistence.save_config, flush or config_persistence.flush_config
+        cfg[key] = value
+        save(cfg)
+        flush()  # start() reads the file, so it must be on disk first
+        address = getattr(window, "_mesh_address", None)
+        if address:
+            start(window, address)
+        return True
+    except Exception:
+        return False
 
 
 def _remote_acquisition(settings: dict, address: str, jobs: object):
