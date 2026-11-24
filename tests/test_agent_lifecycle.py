@@ -533,6 +533,22 @@ def test_finish_requires_private_worktree_even_with_explicit_issue(monkeypatch):
     assert agent.cmd_finish(args) == 2
 
 
+def test_finish_refuses_unknown_push_without_releasing_or_closing(monkeypatch):
+    task = {"issue": 584, "pending_push": {"sha": "a" * 40}}
+    args = agent.build_parser().parse_args([
+        "finish", "--done", "implemented", "--next", "more tests"])
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs: "")
+    monkeypatch.setattr(agent, "recover_uncertain_push", lambda task: False)
+    monkeypatch.setattr(agent, "recover_pending_handover", lambda task: (_ for _ in ()).throw(
+        AssertionError("must resolve uncertain push before handover")))
+    monkeypatch.setattr(agent, "release", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must never release a potentially unpublished SHA")))
+    monkeypatch.setattr(agent, "close_issue", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must never close a ticket while push is uncertain")))
+    assert agent.cmd_finish(args) == 5
+
+
 def test_finish_does_not_release_when_previous_ship_handover_is_pending(monkeypatch):
     args = agent.build_parser().parse_args([
         "finish", "--done", "work", "--next", "remaining"])
