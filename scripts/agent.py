@@ -1171,66 +1171,72 @@ def cmd_ship(a: argparse.Namespace) -> int:
                     print("PATCH INTEGRITY FAILED; no push.")
                     print((guarded.stdout + guarded.stderr)[-1200:])
                     return 6
+        sha = git("rev-parse", "HEAD").strip()
+        verification = shipment_verification(a.skip_checks, checks_run, unverified_checks)
+        receipt = {"sha": sha, "files": changed,
+                   "verification": verification, "next": a.next}
+        if task is not None:
+            # Write-ahead journal: once git push starts, a process kill,
+            # timeout or lost response can make the remote outcome unknown.
+            # Persist the exact attempted SHA *before* crossing that boundary.
+            newer = dict(task, pending_push=receipt)
+            if not persist_private_task(newer):
+                print("PUSH REFUSED: could not durably record delivery intent; worktree preserved")
+                return 5
+            task.update(newer)
         push = subprocess.run(["git", "push", "origin", "HEAD:develop"],
                               cwd=ROOT, capture_output=True, text=True)
-        sha = git("rev-parse", "HEAD").strip()
         if push.returncode:
             # A lost acknowledgement after a successful remote push is not a
             # reason to replay commits. Fetch and inspect ancestry first.
             fetch = subprocess.run(["git", "fetch", "-q", "origin", "develop"],
                                    cwd=ROOT, capture_output=True, text=True)
             if fetch.returncode:
-                # The push may actually have landed. Persist an explicit
-                # uncertain-outcome receipt BEFORE returning: without it a
-                # later rebase can yield 'nothing to ship' and lose the
-                # corresponding GitHub handover entirely.
                 print(f"push outcome uncertain for {sha[:12]}; remote fetch failed.")
                 if task is not None:
-                    pending = {
-                        "sha": sha, "files": changed,
-                        "verification": shipment_verification(
-                            a.skip_checks, checks_run, unverified_checks),
-                        "next": a.next,
-                    }
-                    newer = dict(task, pending_push=pending)
-                    if persist_private_task(newer):
-                        task.update(newer)
-                        print("uncertain push saved; rerun 'agent.py ship' to verify "
-                              "remote ancestry and complete its handover")
-                    else:
-                        print(f"CRITICAL: could not save uncertain SHA {sha}; "
-                              "record this commit and verify remote before retrying")
+                    print("uncertain push saved; rerun 'agent.py ship' to verify "
+                          "remote ancestry and complete its handover")
                 print((push.stderr + fetch.stderr)[-700:])
                 return 5
             remote_now = git("rev-parse", "origin/develop").strip()
-            contains = subprocess.run(["git", "merge-base", "--is-ancestor", sha, remote_now],
-                                      cwd=ROOT, capture_output=True).returncode == 0
-            if not contains and remote_now == remote_before:
-                print("push failed without a competing change: " + push.stderr.strip()[-800:])
+            ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", sha, remote_now],
+                                      cwd=ROOT, capture_output=True).returncode
+            if ancestry not in (0, 1):
+                print(f"cannot establish remote ancestry for {sha[:12]}; worktree preserved")
                 return 5
-            if not contains:
+            if ancestry == 1:
+                if remote_now == remote_before:
+                    print("push failed without a competing change: " + push.stderr.strip()[-800:])
+                    return 5
                 print(f"remote advanced; safely retrying [{attempt}/5]")
+                # The next attempt reconciles the write-ahead receipt before
+                # rebasing or replacing it with another attempted SHA.
                 continue
             print("remote contains the commit: treating failed push acknowledgement as success")
-        verification = shipment_verification(a.skip_checks, checks_run, unverified_checks)
         handover_recorded = True
         if task is not None:
-            # Persist before a possibly failing GitHub comment request. On a
-            # crash/retry, verify remote ancestry before replaying the record.
-            newer = dict(task, pending_handover={
-                "sha": sha, "files": changed, "verification": verification, "next": a.next})
-            if persist_private_task(newer):
-                task.update(newer)
-            else:
-                print("WARNING: pushed SHA is not durably journalled locally")
+            # Remote acknowledgement confirms the write-ahead receipt.
+            # If the transition fails, the on-disk pending_push is sufficient
+            # to recover. Do not delete it or pretend the handover succeeded.
+            newer = dict(task, pending_handover=receipt)
+            newer.pop("pending_push", None)
+            if not persist_private_task(newer):
+                print(f"PUSH SUCCEEDED at {sha[:12]} but journal transition failed; "
+                      "rerun 'agent.py ship' in this worktree")
+                return 7
+            task.clear()
+            task.update(newer)
             handover_recorded = publish_ship_handover(
                 task, sha, changed, verification, a.next)
             if handover_recorded:
-                if "pending_handover" in task:
-                    newer = dict(task)
-                    newer.pop("pending_handover", None)
-                    if persist_private_task(newer):
-                        task.pop("pending_handover", None)
+                newer = dict(task)
+                newer.pop("pending_handover", None)
+                if persist_private_task(newer):
+                    task.pop("pending_handover", None)
+                else:
+                    print("handover confirmed but journal cleanup failed; "
+                          "rerun 'agent.py ship' to reconcile it")
+                    return 7
         print(f"pushed {sha[:12]} to develop (attempt {attempt}); {verification}")
         if not handover_recorded:
             print("PUSH SUCCEEDED but ISSUE HANDOVER IS PENDING; run 'agent.py ship' again "
