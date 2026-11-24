@@ -64,6 +64,8 @@ const p = {issue: 123, agent: "agent-unique", base: "<full develop SHA>",
 const candidate = await prepare(api, p);
 await ship(api, p, candidate);
 // Or in separate bounded runner calls, with the same exact manifest and SHA:
+// const candidate = await createCandidate(api, p); // immutable objects only
+// await verifyCandidate(api, p, candidate);       // read-only validation
 // await recordPending(api, p, candidate);
 // await publishPending(api, p, candidate);
 // await recordHandover(api, p, candidate);

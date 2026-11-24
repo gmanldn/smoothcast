@@ -149,7 +149,10 @@ async function landed(api,candidate){
   const h=await tip(api);
   if(h===candidate)return true;
   const d=await api.get("/compare/"+candidate+"..."+h);
-  return d.behind_by===0&&(d.status==="ahead"||d.status==="identical");
+  // A status string alone is not proof of ancestry. Bind the comparison
+  // to the exact candidate and require a strictly newer descendant.
+  return d.base_commit?.sha===candidate&&d.merge_base_commit?.sha===candidate&&
+    d.behind_by===0&&d.status==="ahead"&&Number.isSafeInteger(d.ahead_by)&&d.ahead_by>0;
 }
 
 // A pending receipt belongs to the issue, not a disposable agent identity.

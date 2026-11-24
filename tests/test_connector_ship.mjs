@@ -293,3 +293,30 @@ test("unavailable post-update reads remain uncertain and preserve receipt",async
   await ship(t.api,p,c);
   assert.equal(t.counters.updates,1);
 });
+
+test("advanced develop accepts only an identity-bound ancestry proof",async()=>{
+  const t=transport(),c=await prepare(t.api,p);
+  await recordPending(t.api,p,c);
+  t.state.head=id("9");
+  const get=t.api.get;
+  const proof={status:"ahead",behind_by:0,ahead_by:1,base_commit:{sha:c},merge_base_commit:{sha:c}};
+  let response=proof;
+  t.api.get=async path=>path==="/compare/"+c+"..."+id("9")?response:get(path);
+  for(const bad of [
+    {status:"ahead",behind_by:0,ahead_by:1},
+    {...proof,base_commit:{sha:id("8")}},
+    {...proof,merge_base_commit:{sha:id("8")}},
+    {...proof,status:"identical",ahead_by:0},
+    {...proof,ahead_by:0},
+    {...proof,ahead_by:"1"},
+    {...proof,behind_by:1}
+  ]){
+    response=bad;
+    await assert.rejects(recordHandover(t.api,p,c),/shipment unconfirmed/);
+  }
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,0);
+  response=proof;
+  await recordHandover(t.api,p,c);
+  assert.equal(t.comments.filter(x=>x.body.includes("sc-ship v1")).length,1);
+  assert.equal(t.counters.updates,0);
+});
