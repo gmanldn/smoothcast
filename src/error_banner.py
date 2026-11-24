@@ -8,7 +8,7 @@ codes with their already-clipped context.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import desktop_failure_notice
 import errors
@@ -52,9 +52,9 @@ def diagnostics_text(failure: UserFailure, recent: list[dict] | None = None,
                      limit: int = RECENT_LIMIT) -> str:
     """Safe clipboard text: code, exception type, and the last *limit* codes."""
     spec = errors.CATALOGUE.get(failure.code, errors.FALLBACK)
-    lines = [desktop_failure_notice.copy_details(failure),
+    lines = [desktop_failure_notice.copy_details(replace(failure, code=spec.code)),
              f"Category: {spec.category}\nSeverity: {spec.severity}\nRetryable: {spec.retryable}"]
-    history = errors.recent() if recent is None else recent
+    history = (errors.recent() if recent is None else recent) if limit > 0 else []
     if history:
         lines.append("Recent error codes (oldest first):")
         for entry in history[-limit:]:

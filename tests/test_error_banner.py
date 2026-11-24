@@ -65,3 +65,18 @@ def test_ui_glue_never_touches_tracebacks_or_exception_arguments():
     source = (ROOT / "src" / "error_banner_ui.py").read_text(encoding="utf-8")
     import re
     assert "traceback" not in source and not re.search(r"failure\.detail\b", source)
+
+
+@pytest.mark.parametrize("limit", [0, -1, -20])
+def test_nonpositive_history_limit_omits_history(limit):
+    history = [{"code": "media.unavailable"} for _ in range(8)]
+    text = error_banner.diagnostics_text(_failure("media.unavailable"), recent=history, limit=limit)
+    assert "Recent error codes" not in text
+    assert "- media.unavailable" not in text
+
+
+def test_unknown_diagnostic_code_uses_catalogue_fallback():
+    failure = failure_boundary.UserFailure("Oops", (), "", False, "private.unknown")
+    text = error_banner.diagnostics_text(failure, recent=[])
+    assert f"Code: {errors.FALLBACK.code}" in text
+    assert "private.unknown" not in text
