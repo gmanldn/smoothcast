@@ -1638,6 +1638,9 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .transfer-meter,.transfer-stats{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .transfer-meter{margin:13px 0 7px}.transfer-stats{margin:8px 0 0;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem}
 #uploadStatus{overflow-wrap:anywhere;min-height:1.3em}
+#uploadCard.drop-active{outline:3px dashed var(--focus);outline-offset:3px}
+#uploadCard .upload-view-queue{display:inline-flex;align-items:center;min-height:44px;padding:9px 10px;font-weight:650;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+#uploadCard .actions{align-items:center}
 #queuePanel .queue-position{display:inline-block;margin-right:8px;padding:2px 7px;border-radius:7px;background:var(--input);color:var(--muted);font-variant-numeric:tabular-nums}
 #queuePanel .queue-actions button[data-queue-action="play"]{background:var(--accent);color:var(--on-accent)}
 #queuePanel .queue-actions button[data-queue-action="remove"]{border:1px solid var(--line)}
@@ -1707,7 +1710,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
-<p id="uploadSelectionHint" class="field-hint">Choose a file to enable uploading. Select multiple files to send them in order.</p>
+<p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
@@ -1723,7 +1726,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <div class="transfer-stats"><span id="transferBytes">0 B of 0 B</span><span id="transferRate">—</span><span id="transferEta">—</span></div>
 <p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
-<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button></div>
+<div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
@@ -2575,6 +2578,7 @@ function updateUploadControls(){
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
   const destination=$("transferDestination");
   if(destination&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
+  const pause=$("pauseUpload");if(pause){pause.hidden=!uploading||!pendingUpload;pause.disabled=cancelUpload;}
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
 }
@@ -2696,6 +2700,30 @@ $("uploadButton").addEventListener("click",async()=>{
       showError("uploadStatus",pendingUpload?error.message+" Select Resume to retry.":error.message);}
   }
   finally{finishUpload()}
+});
+$("pauseUpload").addEventListener("click",()=>{
+  if(!uploading||!pendingUpload||cancelUpload)return;
+  // Abort only the current HTTP chunk; the durable server offset remains
+  // authoritative, and Resume performs a fresh status GET before sending.
+  activeUploadController?.abort();
+  $("pauseUpload").disabled=true;
+  showError("uploadStatus","Transfer paused. Select Resume to continue from the saved position.");
+});
+const uploadPanel=$("uploadCard");
+uploadPanel.addEventListener("dragover",event=>{
+  if(uploading||!event.dataTransfer?.types?.includes("Files"))return;
+  event.preventDefault();event.dataTransfer.dropEffect="copy";
+  uploadPanel.classList.add("drop-active");
+});
+uploadPanel.addEventListener("dragleave",event=>{
+  if(!uploadPanel.contains(event.relatedTarget))uploadPanel.classList.remove("drop-active");
+});
+uploadPanel.addEventListener("drop",event=>{
+  uploadPanel.classList.remove("drop-active");
+  if(uploading||!event.dataTransfer?.files?.length)return;
+  event.preventDefault();
+  try{$("videoFile").files=event.dataTransfer.files;updateUploadControls();}
+  catch(_){showError("uploadStatus","This browser cannot accept dropped files. Use Choose files instead.");}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
 $("videoFile").addEventListener("change",()=>{updateUploadControls();const file=$("videoFile").files[0];if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));});
