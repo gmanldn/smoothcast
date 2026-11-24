@@ -57,6 +57,10 @@ class PositionTracker:
                 # extrapolation on resume rather than counting paused seconds.
                 self._device_epoch = now
         else:
+            if self._device_pos is not None:
+                # Freeze the extrapolated position before disabling playback.
+                self._device_pos = self.value(now)
+                self._device_epoch = now
             self._pause_started = now
         self._playing = playing
 
