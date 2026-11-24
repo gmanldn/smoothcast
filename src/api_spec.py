@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-API_VERSION = "1.0"  # bumped only when the HTTP contract changes
+API_VERSION = "1.1"  # bumped only when the HTTP contract changes
 
 JSON = "application/json"
 ERR = {"description": "Error", "content": {JSON: {"schema": {"$ref": "#/components/schemas/Error"}}}}
@@ -43,7 +43,11 @@ PATHS: dict[str, dict] = {
                                auth=False, method_body="Login")},
     "/api/session": {"get": _op("Resume an existing session after a reload")},
     "/api/profile": {"post": _op("Rename yourself in the room", csrf=True, method_body="Profile")},
-    "/api/status": {"get": _op("Playback, queue, room presence and receiver state")},
+    "/api/status": {"get": _op("Playback, queue, room presence, receiver state and link acquisitions")},
+    "/api/link-jobs": {"post": _op("Acquire an authorised YouTube video or magnet into Up Next",
+                                   csrf=True, method_body="LinkStart", tag="acquisition")},
+    "/api/link-jobs/cancel": {"post": _op("Cancel your pending or downloading acquisition",
+                                          csrf=True, method_body="LinkCancel", tag="acquisition")},
     "/api/action": {"post": _op(
         "Transport and queue commands (play_pause, stop, seek, volume, next, previous, "
         "queue_play, queue_remove, queue_move, queue_next, queue_clear, queue_vote, "
@@ -118,6 +122,12 @@ SCHEMAS = {
         "action": {"type": "string"}, "value": {}, "id": {"type": "string"},
         "key": {"type": "string", "pattern": "^qh:[0-9a-f]{32}$"},
         "queue_revision": {"type": "integer"}, "queue_command_id": {"type": "string"}}},
+    "LinkStart": {"type": "object", "required": ["url", "request_id", "authorised"], "properties": {
+        "url": {"type": "string", "maxLength": 1500},
+        "request_id": {"type": "string", "maxLength": 80},
+        "authorised": {"const": True}}},
+    "LinkCancel": {"type": "object", "required": ["id"], "properties": {
+        "id": {"type": "string"}}},
     "UploadStart": {"type": "object", "required": ["name", "size"], "properties": {
         "name": {"type": "string"}, "size": {"type": "integer"}, "queue": {"type": "boolean"}}},
 }
