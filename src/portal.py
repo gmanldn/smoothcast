@@ -2375,7 +2375,9 @@ async function sendChunk(path,file,offset,end){
   const body=file.slice(offset,end),headers={"Content-Type":"application/octet-stream","Content-Range":`bytes ${offset}-${end-1}/${file.size}`};
   for(let attempt=0;;attempt++){
     if(cancelUpload)throw Error("Upload cancelled");
+    if(pauseRequested)throw Error("Transfer paused");
     try{return await uploadRequest("PUT",path,body,headers)}catch(error){
+      if(pauseRequested)throw Error("Transfer paused");
       if(error.status&&error.status<500&&error.status!==409&&error.status!==429)throw error;
       if(attempt===4||cancelUpload||!csrf)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
@@ -2464,6 +2466,7 @@ async function matchesPendingFile(file,upload){
 }
 // Real host-ingest stages. Mesh forwarding is not claimed until #569 supplies a route.
 const TRANSFER_STAGES=["choose","prepare","transfer","verify","deliver"];
+let pauseRequested=false;
 let transferSample=null;
 function fileUnits(bytes){
   if(!Number.isFinite(bytes)||bytes<0)return "—";
@@ -2617,6 +2620,7 @@ $("uploadButton").addEventListener("click",async()=>{
   const session=csrf,json={"Content-Type":"application/json"};
   uploading=true;
   cancelUpload=false;
+  pauseRequested=false;
   updateUploadControls();
   try{
     if(!batchFiles){
@@ -2671,6 +2675,7 @@ $("uploadButton").addEventListener("click",async()=>{
       if(cancelUpload){await discardUpload();break}
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size);
+      $("pauseUpload").hidden=true;
       const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
       await clearPendingUpload();
@@ -2694,6 +2699,9 @@ $("uploadButton").addEventListener("click",async()=>{
         batchFiles=null;batchIndex=0;
         showError("uploadStatus",`${error.message} No files remain in this batch.`);
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
+    }else if(pauseRequested){
+      if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available");
+      showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
     }else {if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — resume available");
@@ -2705,6 +2713,7 @@ $("pauseUpload").addEventListener("click",()=>{
   if(!uploading||!pendingUpload||cancelUpload)return;
   // Abort only the current HTTP chunk; the durable server offset remains
   // authoritative, and Resume performs a fresh status GET before sending.
+  pauseRequested=true;
   activeUploadController?.abort();
   $("pauseUpload").disabled=true;
   showError("uploadStatus","Transfer paused. Select Resume to continue from the saved position.");
