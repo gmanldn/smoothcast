@@ -44,6 +44,7 @@ class RemoteExecutor:
         self.finished_at: dict[str, float] = {}
         self._last_reap = 0.0
         self.results: dict[str, tuple[int, Path, str, int]] = {}  # job -> (gen, file, sha256, size)
+        self.sweep_orphans()  # nothing runs yet: a previous run's directories own nothing
 
     def sweep_orphans(self) -> int:
         """Delete working directories no live job or verified result owns (e.g. left by
