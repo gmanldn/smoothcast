@@ -25,7 +25,9 @@ commits and handovers persist. `ship` commits tracked edits (name new files
 with `--files`), reconciles leases and unpublished commits, checks version
 integrity, pushes non-force and records progress. On conflict preserve work.
 **Exit 7 means the push succeeded but handover failed**: rerun `ship`
-in the **same** worktree to replay its SHA; never recommit. New production
+in the **same** worktree to replay its SHA; never recommit.
+**Exit 5 after push and failed fetch is UNCERTAIN**: retry `ship` in
+that worktree; its saved SHA is verified before any re-push. New production
 paths trigger lease expansion. Missing optional checks are UNVERIFIED.
 `finish` records evidence and releases the lease. See
 [coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
