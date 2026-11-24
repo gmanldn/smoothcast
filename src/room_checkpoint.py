@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import islice
 import json
 import os
 from pathlib import Path
@@ -26,17 +27,19 @@ class LoadResult:
 
 def write_checkpoint(path: Path, items: Iterable[str]) -> None:
     """Atomically save queue order without session or participant credentials."""
-    values = list(items)
+    values = list(islice(items, MAX_ITEMS + 1))
     if len(values) > MAX_ITEMS:
         raise ValueError(f"Room queue exceeds the {MAX_ITEMS} item checkpoint limit")
     if any(not isinstance(item, str) or not item or len(item) > MAX_PATH_CHARS
            or "\x00" in item or not Path(item).is_absolute()
            for item in values):
         raise ValueError("Room queue checkpoint accepts absolute local file paths only")
-    cache_privacy.write_private_json_atomic(path, {
-        "schema_version": SCHEMA_VERSION,
-        "items": values,
-    })
+    payload = {"schema_version": SCHEMA_VERSION, "items": values}
+    # Match the private writer's JSON encoding before replacing the last
+    # readable checkpoint: escaped Unicode may be much larger than its path.
+    if len(json.dumps(payload).encode("utf-8")) > MAX_CHECKPOINT_BYTES:
+        raise ValueError("Checkpoint is larger than the supported limit")
+    cache_privacy.write_private_json_atomic(path, payload)
 
 
 def load_checkpoint(path: Path) -> LoadResult:
@@ -69,7 +72,7 @@ def load_checkpoint(path: Path) -> LoadResult:
                 os.close(descriptor)
     except FileNotFoundError:
         return LoadResult()
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (OSError, ValueError, RecursionError):
         return LoadResult(error="Checkpoint could not be read")
 
     if (not isinstance(payload, dict)
