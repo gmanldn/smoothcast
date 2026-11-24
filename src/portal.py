@@ -817,6 +817,13 @@ class _Handler(BaseHTTPRequestHandler):
         if provider is not None:
             # Only fixed prerequisite flags, never executable paths or environment values.
             state["link_owner_enabled"] = {kind: kind in provider.kinds for kind in ("youtube", "magnet")}
+            # Fixed prerequisite flags, not paths or environment values.
+            state["link_local_prerequisites"] = {
+                kind: {"engine": bool(provider.tools.get(kind)),
+                       "ffprobe": bool(provider.probe),
+                       "isolation": bool(provider.launcher)}
+                for kind in ("youtube", "magnet")
+            }
         state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         state["mesh_link_activity"] = (activity.snapshot() if activity is not None else
@@ -2391,13 +2398,24 @@ function showJoinedRoom(){
   if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
-let linkCapabilities={},linkOwnerEnabled=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
+let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
 const linkShortcut=$("openLinkAcquisition");
 function openLinkAcquisition(){const panel=$("linkAcquisition");if(panel)panel.open=true}
 if(linkShortcut)linkShortcut.addEventListener("click",()=>{openLinkAcquisition();$("linkInput").focus()});
 if(location.hash==="#linkAcquisition")openLinkAcquisition();
 window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){
+  function linkWorkerExplanation(kind){
+    const owner=typeof linkOwnerEnabled==="undefined"?null:linkOwnerEnabled;
+    const prerequisites=typeof linkLocalPrerequisites==="undefined"?null:linkLocalPrerequisites;
+    if(owner?.[kind]===false)return "Ask the host to enable guest downloads in desktop Preferences → Queue.";
+    const local=prerequisites?.[kind],missing=[];
+    if(local?.engine===false)missing.push(kind==="youtube"?"yt-dlp":"aria2c");
+    if(local?.ffprobe===false)missing.push("FFprobe");
+    if(local?.isolation===false)missing.push("isolated worker launcher");
+    if(missing.length)return "No eligible worker is currently available. Host prerequisites missing at startup: "+missing.join(", ")+". Ask the host to check desktop Preferences → Queue and restart after repair.";
+    return "Ask the host to check the acquisition worker in desktop Preferences → Queue. You can keep the link here.";
+  }
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
     search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
@@ -2420,7 +2438,7 @@ function updateLinkControls(){
   }else if(value&&!kind){
     label.textContent="Paste one HTTPS YouTube video or BitTorrent magnet link.";
   }else if(kind&&!allowed){
-    label.textContent=sourceName+" unavailable in this room. "+(typeof linkOwnerEnabled!=="undefined"&&linkOwnerEnabled?.[kind]===false?"Ask the host to enable guest downloads in desktop Preferences → Queue.":"Ask the host to check the acquisition worker in desktop Preferences → Queue. You can keep the link here.");
+    label.textContent=sourceName+" unavailable in this room. "+linkWorkerExplanation(kind);
   }else if(kind){
     label.textContent=sourceName+" available. Confirm permission to download and add to Up Next.";
   }else{
@@ -2431,6 +2449,7 @@ function updateLinkControls(){
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
   linkOwnerEnabled=state.link_owner_enabled||null;
+  linkLocalPrerequisites=state.link_local_prerequisites||null;
   linkStorageAvailable=state.link_storage_available;
   updateLinkControls();
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
