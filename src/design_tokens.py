@@ -18,6 +18,8 @@ DARK = {
     "vote": "#1c3555", "vote_line": "#4d9de066", "on_vote": "#cfe6ff", "vote_on": "#2e6fae",
     "nav": "#26364a", "nav_hover": "#364b65", "on_nav": "#e2edff",
     "qr_paper": "#ffffff",
+    # Video overlays stay legible independently of the browser theme.
+    "media_surface": "#101722", "media_text": "#f4f7fb",
     "scrim": "#000b", "shadow": "#0002", "avatar_text": "#08101a",
 }
 LIGHT = {
@@ -28,6 +30,8 @@ LIGHT = {
     "vote": "#dbeafe", "vote_line": "#1d6fb866", "on_vote": "#1e3a8a", "vote_on": "#1d6fb8",
     "nav": "#e2e8f0", "nav_hover": "#cbd5e1", "on_nav": "#1e293b",
     "qr_paper": "#ffffff",
+    # Video overlays stay legible independently of the browser theme.
+    "media_surface": "#101722", "media_text": "#f4f7fb",
     "scrim": "#000b", "shadow": "#0f172a1a", "avatar_text": "#08101a",
 }
 SCHEMES = {"dark": DARK, "light": LIGHT}
@@ -45,6 +49,7 @@ FORCED = {
     "focus": "Highlight", "vote": "Canvas", "vote_line": "ButtonBorder",
     "on_vote": "CanvasText", "vote_on": "Highlight", "nav": "ButtonFace",
     "nav_hover": "ButtonFace", "on_nav": "ButtonText",
+    "media_surface": "Canvas", "media_text": "CanvasText",
 }
 
 

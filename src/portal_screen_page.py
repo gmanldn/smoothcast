@@ -35,7 +35,7 @@ _SCREEN_HTML = r"""<!doctype html>
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);overflow:hidden;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
-.stage{position:fixed;inset:0;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.stage{position:fixed;inset:0;display:grid;justify-items:center;align-items:start;align-items:safe center;overflow:auto;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
 .card{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 .logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--vote-on));display:grid;place-items:center;font-weight:800;color:var(--on-accent);font-size:1.25rem}
@@ -44,7 +44,7 @@ label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--muted)}
 input{width:100%;min-height:52px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--border);border-radius:14px;padding:10px 14px}
 #pin{letter-spacing:.3em;font-size:1.3rem;text-align:center}
 button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:var(--on-accent);background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
-button.ghost{background:var(--nav);color:var(--text);width:auto;margin:0;min-height:44px;padding:0 16px}
+button.ghost{background:var(--nav);color:var(--on-nav);width:auto;margin:0;min-height:44px;padding:0 16px}
 button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
 .big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
@@ -70,14 +70,14 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 .paused .bars i{animation-play-state:paused}
 @keyframes eq{50%{height:100%}}
 @media(prefers-reduced-motion:reduce){.bars i,.dot{animation:none}}
-#hud{position:absolute;left:0;right:0;bottom:0;padding:44px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:linear-gradient(transparent,rgba(0,0,0,.8));transition:opacity .3s}
+#hud{position:absolute;left:0;right:0;bottom:0;padding:16px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:var(--media-surface);color:var(--media-text);transition:opacity .3s}
 #hud.hide{opacity:0;pointer-events:none}
 #hud .title{font-size:1.15rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.9rem;margin-top:6px}
+#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--media-text);font-size:.9rem;margin-top:6px}
 .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:10px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent)}
-#banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--scrim);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
+#banner{position:absolute;top:max(76px,calc(env(safe-area-inset-top) + 62px));left:50%;transform:translateX(-50%);background:var(--media-surface);color:var(--media-text);border:1px solid var(--media-text);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
 #tools{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;transition:opacity .3s}
-#tools.hide{opacity:0;pointer-events:none}
+#tools.hide{opacity:0;pointer-events:none}#tools.hide:focus-within{opacity:1;pointer-events:auto}
 /* #591: Home back to the room on every view; during untouched video it fades
    with the other tools and returns on any pointer, key or focus. */
 .home-link{position:fixed;z-index:40;top:max(14px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none;box-shadow:0 8px 22px rgba(0,0,0,.35);transition:opacity .3s}
@@ -87,6 +87,13 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 .screen-version.hide{opacity:0}
 /* Reserve the corner so Home and the version never cover a card or the slate. */
 .stage{padding-top:max(80px,calc(env(safe-area-inset-top) + 70px))}
+/* On a phone, keep video tools clear of the Home/version strip. */
+@media(max-width:600px){
+  #tools{top:max(68px,calc(env(safe-area-inset-top) + 54px));flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 28px)}
+  #banner{top:max(172px,calc(env(safe-area-inset-top) + 158px));width:max-content;max-width:calc(100% - 28px);overflow-wrap:anywhere;border-radius:14px}
+  .card{padding:20px}
+}
+@media(prefers-reduced-motion:reduce){#hud,#tools,.home-link,.screen-version{transition:none}}
 @media(forced-colors:active){.home-link{border:2px solid ButtonText}}
 </style></head><body>
 <a class="home-link" id="homeLink" href="/" title="Back to the SmoothCast room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><span class="sc-version screen-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span>
