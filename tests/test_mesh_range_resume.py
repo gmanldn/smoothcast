@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 
 import pytest
 
@@ -266,3 +267,45 @@ def test_local_if_range_also_returns_the_whole_object(tmp_path):
         assert (status, body) == (200, DATA[:5000])
     finally:
         origin.close()
+
+
+class TrackedConnection(HTTPConnection):
+    opened: list = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.closed = False
+        TrackedConnection.opened.append(self)
+
+    def close(self):
+        self.closed = True
+        super().close()
+
+
+@pytest.mark.parametrize("read_before_abort", [1, 4096, MIB + 5])
+def test_client_abort_mid_stream_closes_upstream_handles_and_proxy_stays_healthy(read_before_abort):
+    import socket
+    TrackedConnection.opened = []
+    handler, server, proxy = run_origin()
+    proxy.server.mesh_files = mesh_files.MeshFiles(
+        lambda k: None, lambda k: ["o"],
+        lambda o: f"http://127.0.0.1:{server.server_address[1]}/", connect=TrackedConnection)
+    try:
+        port = proxy.server.server_address[1]
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        sock.sendall(f"GET /mesh/file/{KEY} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode())
+        got = b""
+        while len(got) < read_before_abort + 200:  # headers + part of the body
+            chunk = sock.recv(65536)
+            assert chunk
+            got += chunk
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b"\x01\x00\x00\x00\x00\x00\x00\x00")
+        sock.close()  # abrupt reset while the proxy is still writing
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not all(c.closed for c in TrackedConnection.opened):
+            time.sleep(0.02)
+        assert TrackedConnection.opened and all(c.closed for c in TrackedConnection.opened)
+        status, _h, body, short = fetch(proxy)  # the proxy still serves a complete, identical body
+        assert (status, short) == (200, False) and body == DATA
+    finally:
+        close(server, proxy)
