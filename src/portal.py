@@ -654,6 +654,17 @@ class _Handler(BaseHTTPRequestHandler):
         extra = {"code": code} if isinstance(code, str) and code else {}
         self._error(exc.status, exc.message, **extra)
 
+    def _upload_storage_error(self, exc: OSError, stage: str) -> None:
+        """Keep expected upload failures actionable and avoid disclosing paths."""
+        self.close_connection = True
+        if isinstance(exc, TimeoutError):
+            return self._error(408, "Upload timed out. Resume from the saved position.")
+        if exc.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)}:
+            return self._error(507, "Not enough space on the SmoothCast host.",
+                               code="upload.disk_full")
+        error_log.log(f"portal upload {stage} storage error: {type(exc).__name__}, errno={exc.errno}")
+        return self._error(503, f"Host could not {stage} the upload. Retry when storage is available.")
+
     def _safe_origin(self, *, required: bool) -> bool:
         host = self.headers.get("Host", "")
         if not self.server.host_allowed(host):
@@ -1087,6 +1098,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
                 return self._exception_error(exc)
+            except OSError as exc:
+                return self._upload_storage_error(exc, "prepare")
             return self._send(201, {"ok": True, **created})
         upload_id = self._upload_complete_route(path)
         if upload_id:
@@ -1133,6 +1146,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
                 return self._exception_error(exc)
+            except OSError as exc:
+                return self._upload_storage_error(exc, "finalise")
         if not self._safe_origin(required=True):
             return self._error(403, "Request origin is not allowed")
         try:
@@ -1374,9 +1389,8 @@ class _Handler(BaseHTTPRequestHandler):
         except portal_uploads.UploadError as exc:
             self.close_connection = True
             return self._exception_error(exc)
-        except OSError:
-            self.close_connection = True
-            return self._error(507, "Could not store this upload chunk")
+        except OSError as exc:
+            return self._upload_storage_error(exc, "store")
         finally:
             self.connection.settimeout(REQUEST_TIMEOUT)
 
@@ -2365,9 +2379,12 @@ async function uploadRequest(method,path,body,headers={}){
   const deadline=setTimeout(()=>controller.abort(),60000);
   try{
     const response=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers:{"X-CSRF-Token":csrf,...clientHeaders,...headers},body,signal:controller.signal});
-    const data=await response.json();
-    if(data.code==="client_reload_required")showUpdateNotice();
-    if(!response.ok)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data.error||"Upload request failed"),{status:response.status,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
+    let data;
+    try{data=await response.json()}catch(_){
+      throw Object.assign(Error("The SmoothCast host returned an unreadable upload response."),{status:response.status, retryAfter:1});
+    }
+    if(data?.code==="client_reload_required")showUpdateNotice();
+    if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
     return data;
   }finally{clearTimeout(deadline);if(activeUploadController===controller)activeUploadController=null}
 }
@@ -2378,7 +2395,7 @@ async function sendChunk(path,file,offset,end){
     if(pauseRequested)throw Error("Transfer paused");
     try{return await uploadRequest("PUT",path,body,headers)}catch(error){
       if(pauseRequested)throw Error("Transfer paused");
-      if(error.status&&error.status<500&&error.status!==409&&error.status!==429)throw error;
+      if(error.code==="upload.disk_full"||(error.status&&error.status<500&&![408,409,429].includes(error.status)))throw error;
       if(attempt===4||cancelUpload||!csrf)throw error;
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
