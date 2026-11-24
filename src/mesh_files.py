@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import lan_guard
 from mesh_file_wire import (_CONTENT_RANGE, _matches_request, _valid_resume as _valid_resume,
-                            drop_range_for_if_range, parse_wire_uint, pump_stream,
+                            drop_range_for_if_range, identity_body, parse_wire_uint, pump_stream,
                             valid_unsatisfied_range)
 import portal_media
 
@@ -96,6 +96,8 @@ class MeshFiles:
                     write_headers(416, {"Content-Length": "0",
                                         "Content-Range": content_range})
                     return True
+                return False
+            if not identity_body(reply):
                 return False
             headers = {"Content-Type": reply.getheader("Content-Type") or "application/octet-stream",
                        "Accept-Ranges": "bytes"}
