@@ -99,7 +99,7 @@ def test_upload_picker_has_actionable_disabled_state():
     text = portal._HTML
     assert 'id="uploadSelectionHint"' in text
     assert 'aria-describedby="uploadSelectionHint" disabled' in text
-    assert '$("uploadButton").disabled=uploading||!file;' in text
+    assert '$("uploadButton").disabled=uploading||!file||!!invalid;' in text
 
 
 def test_upload_button_state_transitions_in_headless_browser_js():
@@ -117,7 +117,9 @@ def test_upload_button_state_transitions_in_headless_browser_js():
     harness = r"""
 const assert = require("node:assert/strict");
 let uploading=false,pendingUpload=null,batchFiles=null,batchIndex=0,cancelUpload=false;
+let shortcutState={receiver:"Living room TV"};
 const el={
+ uploadSelectionSummary:{},transferDestination:{},
  videoFile:{files:[],disabled:false,multiple:true},
  uploadQueue:{checked:true,disabled:false},
  uploadButton:{disabled:false,textContent:""},
@@ -151,6 +153,21 @@ batchIndex=0;
 updateUploadControls();
 assert.equal(el.uploadQueue.checked,false,"audio item must not overwrite batch intent");
 batchFiles=null;
+el.videoFile.files=[{name:"video.mp4",size:0}];
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"empty file must not start upload");
+assert.ok(el.uploadSelectionSummary.textContent.includes("empty"));
+el.videoFile.files=[{name:"video.mp4",size:100},{name:"notes.pdf",size:200}];
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"invalid batch must not partially start");
+assert.ok(el.uploadSelectionSummary.textContent.includes("notes.pdf"));
+el.videoFile.files=[{name:"movie.MKV",size:100}];
+el.uploadQueue.checked=false;
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,false);
+assert.ok(el.uploadSelectionSummary.textContent.includes("Living room TV"));
+assert.ok(el.uploadSelectionSummary.textContent.includes("movie.MKV"));
+assert.equal(el.transferDestination.textContent,"Living room TV (requested)");
 uploading=true;
 updateUploadControls();
 assert.equal(el.uploadButton.disabled,true,"in-flight upload cannot be started twice");

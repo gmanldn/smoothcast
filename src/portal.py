@@ -1990,10 +1990,10 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
-<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
+<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
-<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
+<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
 <li data-stage="choose" class="done"><span class="stage-dot">1</span><span>Choose file</span></li>
@@ -3136,6 +3136,8 @@ async function restoreUpload(){
 function updateUploadControls(){
   const files=batchFiles?batchFiles.slice(batchIndex):Array.from($("videoFile").files);
   const file=files[0],audio=files.length>0&&files.every(item=>/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(item.name));
+  const invalid=files.find(item=>!Number.isSafeInteger(item.size)||item.size<=0||!/\.(mp4|m4v|mkv|mov|avi|webm|ts|mpeg|mpg|wmv|mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(item.name));
+  const target=typeof shortcutState!=="undefined"?shortcutState?.receiver:null;
   // Audio is always queued per file, but a mixed selection may still request
   // playback of video. Never overwrite a locked batch's requested intent.
   if(audio&&!batchFiles&&!pendingUpload)$("uploadQueue").checked=true;
@@ -3143,18 +3145,18 @@ function updateUploadControls(){
     ?"Retry queue / playback request":`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`);
   const summary=$("uploadSelectionSummary");
   if(summary){
-    summary.textContent=files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
+    summary.textContent=invalid?("Cannot add "+invalid.name+": "+(invalid.size<=0?"the file is empty.":"choose a supported video or audio file.")+" Select files again; nothing has been sent."):files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
       (typeof fileUnits==="function"?fileUnits(files.reduce((sum,item)=>sum+item.size,0)):"")+
-      (audio||$("uploadQueue").checked?" · Add to Up Next":" · Request playback for video; audio joins Up Next"):
+      (audio||$("uploadQueue").checked?" · Add to Up Next":" · Play video on "+(target||"the selected room receiver (not yet confirmed)")+"; audio joins Up Next")+(files.length===1?" · "+file.name:""):
       pendingUpload?"Choose the original file to resume.":"No files selected. Choose a video or audio file to begin.";
   }
-  $("uploadButton").disabled=uploading||!file;
+  $("uploadButton").disabled=uploading||!file||!!invalid;
   $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
   const destination=$("transferDestination");
-  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"TV or speaker (pending)";
+  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":target?target+" (requested)":"TV or speaker (pending)";
   const pause=$("pauseUpload");if(pause){pause.hidden=!uploading||!pendingUpload;pause.disabled=cancelUpload;}
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
@@ -3194,6 +3196,7 @@ async function discardUpload(){
 }
 $("uploadButton").addEventListener("click",async()=>{
   if(uploading)return;
+  updateUploadControls();if($("uploadButton").disabled)return;
   const selected=Array.from($("videoFile").files);
   if(!batchFiles&&!selected.length)return;
   const session=csrf,json={"Content-Type":"application/json"};
