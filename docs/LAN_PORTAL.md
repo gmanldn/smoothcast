@@ -164,6 +164,28 @@ the same position. Seeking a converted stream restarts it at the new position.
 
 ## YouTube and BitTorrent link acquisition (#587)
 
+### Search YouTube from Find (#593)
+
+Enter a song, artist or video title in **Find something to play** and select
+**Search YouTube**. House results remain separate; typing alone does not send
+a query to YouTube. Up to ten single-video results show the title, channel and
+duration when known. Confirm that you are authorised to acquire the media and
+select **Add to Up Next**. The existing acquisition activity reports actual
+progress and verified queue acceptance; search itself never downloads media.
+A guest never needs to install anything. The host must enable the isolated
+YouTube worker described below; otherwise the search control is unavailable.
+
+The authenticated CSRF-protected `POST /api/search/youtube` accepts
+`{"q":"search text"}` (1–200 characters), returns a bounded `results` array
+of `id`, `title`, `channel` and nullable `duration` in seconds, and does not
+change the queue. Results are projected from metadata-only yt-dlp output through
+the same owner-configured sandbox, with one concurrent search process per host,
+a 20-second deadline and 512 KiB output budget. No third-party thumbnails,
+arbitrary result URLs or raw tool output are forwarded. Selection submits the
+canonical video link to the existing `POST /api/link-jobs` endpoint. Live
+search/provider qualification on native installations remains #588.
+
+
 In **Up Next → Add a link to Up Next**, a paired guest can submit one YouTube
 video or BitTorrent v1 magnet, confirm their authority to acquire the media,
 and watch the acquisition in the same room feed as other guests. The network
