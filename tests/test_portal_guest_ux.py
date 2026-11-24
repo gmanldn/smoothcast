@@ -481,7 +481,7 @@ def test_network_navigation_only_appears_when_mesh_is_available():
     page = room_html()
     assert "meshNavLink" in page.ids and "meshPanel" in page.ids
     assert "meshPanel" in page.anchors
-    assert '<a id="meshNavLink" href="#meshPanel" hidden>Network</a>' in portal._HTML
+    assert '<a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a>' in portal._HTML
     panel = panel_html()
     assert 'panel.hidden=false;showNetworkNavigation(true)' in panel
     assert 'panel.hidden=true;showNetworkNavigation(false)' in panel
