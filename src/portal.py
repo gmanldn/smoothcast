@@ -2449,6 +2449,57 @@ async function matchesPendingFile(file,upload){
   return file.name===upload.name&&file.size===upload.size&&file.lastModified===upload.lastModified
     &&await firstChunkHash(file,upload.chunkSize,upload.hashVersion||1)===upload.hash;
 }
+// Real host-ingest stages. Mesh forwarding is not claimed until #569 supplies a route.
+const TRANSFER_STAGES=["choose","prepare","transfer","verify","deliver"];
+let transferSample=null;
+function fileUnits(bytes){
+  if(!Number.isFinite(bytes)||bytes<0)return "—";
+  if(bytes<1024)return Math.floor(bytes)+" B";
+  const units=["KiB","MiB","GiB","TiB"];
+  let size=bytes,index=-1;
+  do{size/=1024;index++}while(size>=1024&&index<units.length-1);
+  return size.toFixed(size<10?1:0)+" "+units[index];
+}
+function transferView(phase,received=0,total=0,note=""){
+  const stage=TRANSFER_STAGES.includes(phase)?phase:"choose";
+  const index=TRANSFER_STAGES.indexOf(stage);
+  for(const item of $("transferSteps").children){
+    const offset=TRANSFER_STAGES.indexOf(item.dataset.stage);
+    item.classList.toggle("done",offset<index);
+    item.classList.toggle("active",offset===index);
+    if(offset===index)item.setAttribute("aria-current","step");
+    else item.removeAttribute("aria-current");
+  }
+  const valid=Number.isSafeInteger(total)&&total>0&&Number.isSafeInteger(received)&&received>=0&&received<=total;
+  const pct=valid?Math.floor(received*100/total):0;
+  $("uploadProgress").max=valid?total:1;
+  $("uploadProgress").value=valid?received:0;
+  $("transferPercent").textContent=valid?pct+"%":"—";
+  $("transferBytes").textContent=valid?fileUnits(received)+" of "+fileUnits(total):"No file selected";
+  $("transferDestination").textContent=$("uploadQueue").checked?"Up Next":"Room receiver (pending)";
+  const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to SmoothCast host",verify:"Checking received media",deliver:"Submitting to shared room"};
+  $("transferStage").textContent=names[stage]+(note?" · "+note:"");
+  if(stage==="transfer"&&valid){
+    const now=performance.now();
+    if(!transferSample||received<transferSample.received||transferSample.total!==total)
+      transferSample={at:now,received,total,rate:0};
+    const elapsed=(now-transferSample.at)/1000,delta=received-transferSample.received;
+    if(elapsed>=0.5&&delta>0){
+      const instant=delta/elapsed;
+      transferSample.rate=transferSample.rate?transferSample.rate*0.65+instant*0.35:instant;
+      transferSample.at=now;transferSample.received=received;
+    }
+    const rate=transferSample.rate;
+    $("transferRate").textContent=rate>0?fileUnits(rate)+"/s":"Measuring speed…";
+    const seconds=rate>0?(total-received)/rate:Infinity;
+    $("transferEta").textContent=received===total?"Bytes received":Number.isFinite(seconds)&&seconds<86400
+      ?"About "+(seconds<60?Math.max(1,Math.ceil(seconds))+" sec":Math.ceil(seconds/60)+" min")+" remaining":"ETA calculating…";
+  }else{
+    if(stage==="choose"||stage==="prepare")transferSample=null;
+    $("transferRate").textContent="—";
+    $("transferEta").textContent=stage==="verify"?"Checking…":stage==="deliver"?"Awaiting result":"—";
+  }
+}
 const MAX_UPLOAD_CHUNK_BYTES=8*1024*1024;
 function validUploadChunkSize(size){
   return Number.isSafeInteger(size)&&size>0&&size<=MAX_UPLOAD_CHUNK_BYTES;
@@ -2490,8 +2541,7 @@ async function restoreUpload(){
           return;
         }
         pendingUpload={...record,received:state.received};
-        $("uploadProgress").max=record.size;
-        $("uploadProgress").value=state.received;
+        transferView("transfer",state.received,record.size,"Resumable");
         $("uploadQueue").checked=record.queueOnly;
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
         return;
@@ -2513,6 +2563,7 @@ function updateUploadControls(){
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
+  if(!uploading&&!pendingUpload&&!batchFiles)$("transferDestination").textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
 }
@@ -2521,7 +2572,7 @@ function resetUploadBatch(){
   batchFiles=null;
   batchIndex=0;
   $("videoFile").value="";
-  $("uploadProgress").value=0;
+  transferView("choose");
   showError("uploadStatus","");
   updateUploadControls();
 }
@@ -2541,6 +2592,7 @@ async function discardUpload(){
     await clearPendingUpload();
   }
   batchFiles=null;batchIndex=0;
+  transferView("choose");
   showError("uploadStatus","Upload cancelled");
 }
 $("uploadButton").addEventListener("click",async()=>{
@@ -2571,9 +2623,11 @@ $("uploadButton").addEventListener("click",async()=>{
       const queueOnly=audio||batchQueueOnly;
       let state;
       if(pendingUpload){
+        transferView("prepare",pendingUpload.received,file.size,"Resuming");
         showError("uploadStatus",`Checking ${file.name}…`);
         state=await uploadRequest("GET","/api/uploads/"+pendingUpload.id);
       }else{
+        transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
@@ -2587,20 +2641,23 @@ $("uploadButton").addEventListener("click",async()=>{
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
         throw Error("Upload progress is invalid. Reload and choose the file again.");
       casting=!!state.ready_to_cast;
-      $("uploadProgress").max=file.size;
-      $("uploadProgress").value=state.received;
+      transferView("transfer",state.received,file.size);
       pendingUpload.received=state.received;
       while(state.received<file.size&&!cancelUpload){
         const end=Math.min(state.received+chunkSize,file.size);
         state=await sendChunk(path,file,state.received,end);
-        $("uploadProgress").value=pendingUpload.received=state.received;
+        pendingUpload.received=state.received;
+        transferView("transfer",state.received,file.size);
         if(state.ready_to_cast)casting=true;
         const percent=Math.floor(state.received*100/file.size);
-        showError("uploadStatus",casting?`Casting ${file.name} — ${percent}% received`:`${batchIndex+1}/${batchFiles.length} · ${queueOnly?"Adding":"Uploading"} ${file.name}: ${percent}%`);
+        showError("uploadStatus",(casting?"Early playback requested; ":"")+
+          `${batchIndex+1}/${batchFiles.length} · ${file.name}: ${percent}% received by host`);
       }
       if(cancelUpload){await discardUpload();break}
       $("cancelUpload").disabled=true;
+      transferView("verify",file.size,file.size);
       const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
       await clearPendingUpload();
       batchIndex++;
       batchAdded++;
@@ -2624,12 +2681,13 @@ $("uploadButton").addEventListener("click",async()=>{
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
-    }else showError("uploadStatus",pendingUpload?error.message+" Select Resume to retry.":error.message);
+    }else {if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — resume available");
+      showError("uploadStatus",pendingUpload?error.message+" Select Resume to retry.":error.message);}
   }
   finally{finishUpload()}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
-$("videoFile").addEventListener("change",updateUploadControls);
+$("videoFile").addEventListener("change",()=>{updateUploadControls();const file=$("videoFile").files[0];if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));});
 $("cancelUpload").addEventListener("click",async()=>{
   cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
