@@ -125,3 +125,19 @@ from the transport, never a message field.
 Covered by an in-process two-node simulation in
 `tests/test_mesh_acquisition_rpc.py`. The real authenticated mesh RPC, verified
 file transfer and Live Mesh display are still to be wired.
+
+### Authenticated transport for assignment (#589, `mesh.acquisition.assign.v1`)
+
+`src/mesh_acquisition_bridge.py` carries the `mesh_acquisition_rpc` messages on
+the protected `acquisition_job` RPC kind. Trust model (LAN, **not**
+cryptographic): the sender must be a currently ALIVE member whose node id, boot
+id and *numeric source address* match, and both peers must negotiate the
+separate `mesh.acquisition.assign.v1` capability (advertised as the
+`acquisition-assign-v1` hint only when the app configures a worker or attach
+hook; the v1 telemetry token and node digest are untouched). Workers accept
+offers/cancels only while the operator's live opt-in (`acquisition_accept`) is
+true, otherwise they answer `declined` and the job returns to pending. Reports
+from workers are applied to the host ledger under the sender's authenticated
+node id. `send` blocks and is refused on the mesh loop thread; a lost or
+unverified reply raises, which the host treats as an ambiguous owner. Remote
+worker execution and verified file transfer are still to be connected.

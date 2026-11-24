@@ -27,6 +27,7 @@ from typing import Any
 
 import mesh_beacon as mb
 import mesh_acquisition_activity
+import mesh_acquisition_bridge
 import mesh_cache
 import mesh_clients
 import mesh_http
@@ -106,6 +107,11 @@ class MeshConfig:
     on_error: Callable[[BaseException], None] | None = None
     link_acquisition_sources: tuple[str, ...] = ()
     link_activity: Callable[[], list] = lambda: []
+    # Remote acquisition (#589). Off unless the app supplies a worker and/or an
+    # attach hook; ``acquisition_accept`` is the operator's live opt-in.
+    acquisition_worker: object | None = None
+    acquisition_accept: Callable[[], bool] = lambda: False
+    acquisition_attach: Callable[[object], None] | None = None
 
 
 class MeshService:
@@ -160,7 +166,10 @@ class MeshService:
                             version=cfg.version if _valid_version(cfg.version) else "0.0.0",
                             rev=1, boot_epoch=epoch, mesh_port=http.port,
                             room_port=cfg.room_port,
-                            capabilities=("room", "screens", mesh_acquisition_activity.HINT, *(
+                            capabilities=("room", "screens", mesh_acquisition_activity.HINT,
+                                          *((mesh_acquisition_bridge.HINT,)
+                                            if cfg.acquisition_worker is not None
+                                            or cfg.acquisition_attach is not None else ()), *(
                                 "acquire-" + kind + "-local" for kind in ("youtube", "magnet")
                                 if kind in cfg.link_acquisition_sources)),
                             addresses=(cfg.bind_ip,))
@@ -182,6 +191,17 @@ class MeshService:
             record=self.mesh_state.get, own=lambda: self.mesh_state.own,
             version=own.version, local_jobs=cfg.link_activity,
             disabled=lambda node: self.replicator.config.disabled_caps_by_peer.get(node, frozenset()))
+        self.acquisition_bridge = None
+        if cfg.acquisition_worker is not None or cfg.acquisition_attach is not None:
+            loop_thread = lambda: threading.current_thread() is getattr(loop, "_thread", None)  # noqa: E731
+            self.acquisition_bridge = mesh_acquisition_bridge.AcquisitionBridge(
+                clock=loop, rpc=self.rpc, members=self.membership.members,
+                record=self.mesh_state.get, own=lambda: self.mesh_state.own,
+                version=own.version, call_soon=loop.call_soon_threadsafe, on_loop=loop_thread,
+                disabled=lambda node: self.replicator.config.disabled_caps_by_peer.get(node, frozenset()),
+                accept=cfg.acquisition_accept, worker=cfg.acquisition_worker)  # type: ignore[arg-type]
+            if cfg.acquisition_attach is not None:
+                cfg.acquisition_attach(self.acquisition_bridge)
         self.roles = mesh_roles.PrimaryTracker(
             clock=loop, own_id=self.node_id, own_epoch=epoch,
             members=lambda: [(m.node_id, m.boot_id, m.boot_epoch, m.status == mem.SUSPECT)
@@ -250,6 +270,8 @@ class MeshService:
                 def shutdown() -> None:
                     try:
                         self.acquisition_activity.close()
+                        if self.acquisition_bridge is not None:
+                            self.acquisition_bridge.close()
                         self.observer.close()
                         self.roles.close()
                         self.replicator.close()

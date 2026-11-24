@@ -129,7 +129,7 @@ class HostCoordinator:
         verdict = reply.get("verdict") if isinstance(reply, dict) else None
         if verdict in ("accepted", "duplicate"):
             return job, selection, "accepted"
-        if verdict in ("busy", "fenced", "invalid"):
+        if verdict in ("busy", "fenced", "invalid", "declined"):
             self.ledger.refused(job, node, generation)
             return job, selection, "refused"
         self.ledger.mark_ambiguous(job, node, generation)
