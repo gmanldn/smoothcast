@@ -50,7 +50,7 @@ class PlayerActionSafetyTests(unittest.TestCase):
             "active = bool(self.session is not None and self.session.state is not None) or self.external",
             controls,
         )
-        self.assertIn("local_ready = self._preview_path is not None and self.session is None", controls)
+        self.assertIn("local_ready = action_state.local_preview_ready(", controls)
         self.assertIn(
             "if session is None or session.state is None:",
             self.methods["seek_to"],

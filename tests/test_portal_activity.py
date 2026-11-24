@@ -95,7 +95,11 @@ def _build_window(tmp_path, *, idle_add=None):
     window.saved_configs = saved
     window._portal_fence = portal_commands.CommandFence()
     window._device = lambda: "TV"
-    window.stop_button = SimpleNamespace(get_sensitive=lambda: True)
+    window.device_state = "PLAYING"
+    window.session = SimpleNamespace(state=object())
+    window.external = False
+    window._preview_path = None
+    window._dlna_cancel = None
     window.stop_calls = []
     window.stop_stream = lambda: window.stop_calls.append("stop")
     return window, uploads, idle

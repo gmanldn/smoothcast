@@ -37,19 +37,21 @@ class FakeWindow:
         self._portal_fence = fence
         self._closing = False
         self.busy = False
-        self.session = object()
+        self.session = SimpleNamespace(state=object())
         self.external = False
         self.tracker = SimpleNamespace(known=True, duration=100.0)
         self.device_state = "PLAYING"
+        self._preview_path = None
+        self._dlna_cancel = None
         self.calls = []
-        self.play_button = SimpleNamespace(get_sensitive=lambda: True)
-        self.stop_button = SimpleNamespace(get_sensitive=lambda: True)
         self.volume_scale = SimpleNamespace(
-            get_sensitive=lambda: True,
             set_value=lambda value: self.calls.append(("volume", value)))
 
     def _device(self):
         return "TV"
+
+    def _volume_control_available(self):
+        return True
 
     def toggle_play(self):
         self.calls.append("play_pause")
