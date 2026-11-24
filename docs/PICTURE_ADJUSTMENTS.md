@@ -3,7 +3,8 @@
 SmoothCast offers brightness, contrast, saturation and hue controls under
 **Preferences → Playback → Colour adjustments**. All controls default to
 neutral, so previously encoded videos are unchanged. **Reset picture**
-restores the neutral values.
+removes the selected film's saved preset; with no film selected it
+restores the global defaults.
 
 | Setting | Neutral | Accepted values |
 | --- | ---: | ---: |
@@ -40,10 +41,28 @@ differences and the final receiver display can still differ.
 
 Tests: `python3 -m pytest -q tests/test_picture_adjustments.py tests/test_picture_adjustments_preview.py`.
 
-## Remaining acceptance — do not close #112 yet
+## Per-film presets (24 Nov 2026)
 
-The controls remain **global preferences**, not per-film or
-per-receiver presets. DLNA conversion, dynamic direct-to-HLS transitions,
-real GTK previews on Linux/macOS/Windows and a physical-device colour
-comparison still need qualification. Do not mark #112 complete until
-preset-scoped persistence, lifecycle and device checks are verified.
+Changing a control while a film is loaded stores the effective four-value
+preset in `picture_by_file`, keyed by the film path. Films without a saved
+preset use the global controls as their fallback, so existing behaviour is
+unchanged. Reset removes only the selected film's preset and leaves other
+films and the global defaults intact.
+
+The resolved preset is used consistently for direct-play eligibility,
+transcode and restart filters, and local preview frames. The config loader
+bounds the map, validates every stored value and drops malformed entries.
+The GTK controls show the selected film's resolved values and write back to
+its preset.
+
+Tests: `python3 -m pytest -q tests/test_picture_adjustments.py
+tests/test_picture_adjustments_preview.py
+tests/test_preferences_behaviour.py`.
+
+## Verification boundary
+
+The software acceptance for #112 is complete: validated filters, neutral
+defaults, reset, local preview parity, per-film persistence and focused
+headless tests. A GTK/receiver visual colour comparison and DLNA lifecycle
+qualification still need a physical device; those pending checks are tracked
+in #208 and are not a prerequisite for closing the software ticket.

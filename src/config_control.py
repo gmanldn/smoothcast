@@ -48,6 +48,7 @@ _OPTIONS = {
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
     "device_last_used", "subtitle_delay_by_file", "audio_delay_by_file",
+    "picture_by_file",
 })
 _MAX_PATH = 4096
 _MAX_ITEMS = 512
@@ -121,6 +122,15 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                         if (type(selection) is int and selection != 0
                                 and -audio_delay.LIMIT_MS <= selection <= audio_delay.LIMIT_MS):
                             clean[path] = selection
+                    elif key == "picture_by_file":
+                        if isinstance(selection, dict):
+                            preset = {
+                                name: picture_adjustments.validated(name, item)
+                                for name, item in selection.items()
+                                if name in picture_adjustments.DEFAULTS
+                            }
+                            if preset:
+                                clean[path] = preset
                     elif type(selection) is int and -1 <= selection <= 1024:
                         clean[path] = selection
                 cfg[key] = clean

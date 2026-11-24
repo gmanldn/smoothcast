@@ -187,3 +187,45 @@ def test_subtitle_selection_is_opt_in_and_cancel_path_reuses_owner():
         preference_choices.selected_index("subs", "auto")
     )
     prefs.sync_from_owner.assert_called_once()
+
+
+def test_picture_changes_are_saved_per_film_and_reset_clears_only_that_film():
+    UI = extracted_preferences("_picture_changed", "_reset_picture")
+    prefs = UI()
+    prefs._syncing = False
+    prefs._refresh_picture_preview = mock.Mock()
+    prefs.sync_from_owner = mock.Mock()
+    prefs.owner = SimpleNamespace(
+        media=SimpleNamespace(path=Path("/films/a.mkv")),
+        cfg={**picture_adjustments.DEFAULTS, "picture_by_file": {}},
+    )
+    save = UI._picture_changed.__globals__["save_config"]
+    prefs._picture_changed(
+        "picture_brightness", SimpleNamespace(get_value=lambda: 0.3))
+    assert prefs.owner.cfg["picture_brightness"] == 0.0
+    assert prefs.owner.cfg["picture_by_file"] == {
+        "/films/a.mkv": {**picture_adjustments.DEFAULTS, "picture_brightness": 0.3},
+    }
+    save.assert_called_once_with(prefs.owner.cfg)
+
+    save.reset_mock()
+    prefs._refresh_picture_preview.reset_mock()
+    prefs._reset_picture(None)
+    assert prefs.owner.cfg["picture_by_file"] == {}
+    assert prefs.owner.cfg["picture_brightness"] == 0.0
+    prefs.sync_from_owner.assert_called_once_with()
+    prefs._refresh_picture_preview.assert_called_once_with()
+    save.assert_called_once_with(prefs.owner.cfg)
+
+
+def test_picture_changes_without_a_film_update_the_global_defaults():
+    UI = extracted_preferences("_picture_changed")
+    prefs = UI()
+    prefs._syncing = False
+    prefs._refresh_picture_preview = mock.Mock()
+    prefs.owner = SimpleNamespace(
+        media=None, cfg={**picture_adjustments.DEFAULTS})
+    prefs._picture_changed(
+        "picture_contrast", SimpleNamespace(get_value=lambda: 1.2))
+    assert prefs.owner.cfg["picture_contrast"] == 1.2
+    assert "picture_by_file" not in prefs.owner.cfg

@@ -29,6 +29,8 @@ import audio_monitor
 
 import screenshot
 
+import picture_adjustments
+
 from cast_widgets import save_config, Async, fmt_time
 
 
@@ -469,8 +471,8 @@ class AvMixin:
         aspect_mode = self.cfg.get("aspect_override", "original")
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
         # Snapshot settings for asynchronous decodes; do not read a changing GTK config
-        # from the worker after a user moves a colour control.
-        picture_config = dict(self.cfg)
+        # from the worker after a user moves a colour control. Per-film presets win.
+        picture_config = picture_adjustments.for_path(self.cfg, path)
         if sparse:
             cache = getattr(self, "_sparse_frame_cache", None)
             if cache is None:

@@ -149,10 +149,11 @@ class SessionMixin:
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         learned = receiver_memory.ReceiverMemory(CONFIG_DIR / receiver_memory.STATE_NAME)
+        picture_config = picture_adjustments.for_path(cfg, path)
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
-            and not picture_adjustments.active(cfg)
+            and not picture_adjustments.active(picture_config)
             and not getattr(self, "_portal_early", False)
             and not getattr(self, "_force_transcode_once", False)
         )
@@ -316,7 +317,7 @@ class SessionMixin:
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
                     music_autogain=music_enabled,
-                    picture_config=cfg,
+                    picture_config=picture_config,
                 )
                 # start_transcode returned only after verifying our HLS URL on
                 # the receiver; a successful FFmpeg/catt launch alone is not proof.
@@ -660,6 +661,7 @@ class SessionMixin:
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         cfg = dict(self.cfg)  # frozen before background restart
+        picture_config = picture_adjustments.for_path(cfg, file_path)
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
@@ -704,7 +706,7 @@ class SessionMixin:
                     subtitle_preset=subtitle_style.from_config(self.cfg),
                     audio_delay_ms=audio_delay.get(self.cfg, file_path),
                     music_autogain=bool(self.cfg.get("music_autogain", False)),
-                    picture_config=cfg,
+                    picture_config=picture_config,
                 )
             except Exception:
                 try:

@@ -57,6 +57,51 @@ def test_config_loader_rejects_malformed_picture_settings():
     assert config_control.sanitise_config(expected, defaults) == expected
 
 
+def test_per_film_preset_overrides_global_without_mutating_it():
+    cfg = {
+        "picture_brightness": 0.2,
+        "picture_by_file": {
+            "/films/a.mkv": {"picture_brightness": 0.4, "picture_contrast": 1.2},
+            "/films/neutral.mkv": {
+                "picture_brightness": 0.0, "picture_contrast": 1.0,
+                "picture_saturation": 1.0, "picture_hue": 0.0,
+            },
+        },
+    }
+    assert picture_adjustments.for_path(cfg, "/films/a.mkv") == {
+        "picture_brightness": 0.4, "picture_contrast": 1.2,
+        "picture_saturation": 1.0, "picture_hue": 0.0,
+    }
+    assert picture_adjustments.for_path(cfg, "/films/b.mkv")["picture_brightness"] == 0.2
+    assert not picture_adjustments.active(
+        picture_adjustments.for_path(cfg, "/films/neutral.mkv"))
+    assert picture_adjustments.for_path(cfg, None)["picture_brightness"] == 0.2
+
+
+def test_per_film_preset_rejects_hostile_values_and_missing_distribution():
+    cfg = {"picture_by_file": {"/films/a.mkv": {
+        "picture_brightness": "bogus", "picture_hue": 999,
+    }}}
+    assert picture_adjustments.for_path(cfg, "/films/a.mkv") == picture_adjustments.DEFAULTS
+    assert picture_adjustments.for_path("/not-a-mapping", "/films/a.mkv") == picture_adjustments.DEFAULTS
+
+
+def test_config_loader_bounds_per_film_presets():
+    import config_control
+    defaults = {"picture_by_file": {}}
+    cfg = config_control.sanitise_config({
+        "picture_by_file": {
+            "/films/a.mkv": {"picture_brightness": 0.25, "picture_hue": "bad"},
+            "/films/empty.mkv": {},
+            "x" * 5000: {"picture_contrast": 1.1},
+            7: {"picture_contrast": 1.1},
+        },
+    }, defaults)
+    assert cfg["picture_by_file"] == {
+        "/films/a.mkv": {"picture_brightness": 0.25, "picture_hue": 0.0},
+    }
+
+
 def test_transcode_filter_precedes_subtitle_overlay_and_handles_bitmap():
     import streamer
     config = {"picture_brightness": 0.1}
@@ -84,4 +129,6 @@ def test_session_cast_and_restart_pass_picture_config():
              and node.func.attr == "start_transcode"]
     assert len(calls) >= 2
     assert all("picture_config" in {kw.arg for kw in call.keywords} for call in calls)
-    assert "not picture_adjustments.active(cfg)" in text
+    assert "not picture_adjustments.active(picture_config)" in text
+    assert "picture_adjustments.for_path(cfg, path)" in text
+    assert "picture_adjustments.for_path(cfg, file_path)" in text

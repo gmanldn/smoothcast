@@ -83,6 +83,7 @@ DEFAULTS: dict = {
     "picture_contrast": 1.0,
     "picture_saturation": 1.0,
     "picture_hue": 0.0,
+    "picture_by_file": {},  # per-film colour preset; global controls are the fallback (#112)
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).

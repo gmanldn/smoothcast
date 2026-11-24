@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
+CONFIG_KEY = "picture_by_file"
+
 DEFAULTS = {
     "picture_brightness": 0.0,
     "picture_contrast": 1.0,
@@ -46,6 +48,24 @@ def settings(config: Mapping[str, object] | None) -> dict[str, float]:
 def active(config: Mapping[str, object] | None) -> bool:
     values = settings(config)
     return any(value != DEFAULTS[key] for key, value in values.items())
+
+
+def for_path(config: Mapping[str, object] | None, path: object | None) -> dict[str, float]:
+    """Return effective settings for one film, overriding the global values.
+
+    A per-film preset is optional; missing keys fall back to the global
+    controls, so an old preset never freezes unrelated settings.
+    """
+    values = settings(config)
+    if path is None or not isinstance(config, Mapping):
+        return values
+    presets = config.get(CONFIG_KEY)
+    preset = presets.get(str(path)) if isinstance(presets, Mapping) else None
+    if isinstance(preset, Mapping):
+        for key in DEFAULTS:
+            if key in preset:
+                values[key] = validated(key, preset[key])
+    return values
 
 
 def filters(config: Mapping[str, object] | None) -> list[str]:
