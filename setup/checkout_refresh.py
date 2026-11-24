@@ -6,6 +6,7 @@ The installer owns copying, dependency checks, and rollback.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -48,6 +49,35 @@ def installed_revision(root: Path) -> str | None:
     return value if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value) else None
 
 
+def installed_source(root: Path) -> Path | None:
+    """Resolve the installer-recorded local checkout; never discover arbitrary repos."""
+    marker = root / "src" / install_location.SOURCE_MARKER
+    try:
+        if marker.is_symlink() or not marker.is_file():
+            return None
+        with marker.open("rb") as stream:
+            raw = stream.read(16385)
+        if len(raw) > 16384:
+            return None
+        value = json.loads(raw)
+        if not isinstance(value, str) or not value or "\x00" in value:
+            return None
+        source = Path(value)
+        if not source.is_absolute():
+            return None
+        source = source.resolve()
+        destination = root.resolve()
+        if (source == destination or source in destination.parents
+                or destination in source.parents or not (source / ".git").exists()
+                or not (source / "setup" / "bootstrap.py").is_file()
+                or 'name = "smoothcast"' not in
+                (source / "pyproject.toml").read_text(encoding="utf-8")):
+            return None
+        return source
+    except (OSError, ValueError, RuntimeError, UnicodeError):
+        return None
+
+
 def git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run(["git", "-C", str(root), *args],
@@ -78,6 +108,20 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         return 0  # An old checkout must never downgrade a newer installation.
     head = git(root, "rev-parse", "--verify", "HEAD")
     revision = head.stdout.strip() if head is not None and head.returncode == 0 else None
+    # The local tracking ref is not a live remote check. But when it proves
+    # the checkout is behind, do not silently launch the outdated build.
+    tracked = git(root, "rev-parse", "--verify", "refs/remotes/origin/develop^{commit}")
+    tracked_sha = tracked.stdout.strip() if tracked is not None and tracked.returncode == 0 else None
+    if (revision and tracked_sha and tracked_sha != revision and tracked_sha != previous
+            and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", tracked_sha)):
+        behind = git(root, "merge-base", "--is-ancestor", revision, tracked_sha)
+        if behind is not None and behind.returncode == 0:
+            installed_ahead = (git(root, "merge-base", "--is-ancestor", tracked_sha, previous)
+                               if previous else None)
+            if installed_ahead is None or installed_ahead.returncode != 0:
+                print("SmoothCast: local checkout is behind known origin/develop; "
+                      f"pull develop in {root}, then restart.", file=sys.stderr)
+                return 3
     if source_version == installed_version and previous and previous == revision:
         announce(installed_version, previous, "Loading latest checked-out version")
         return 0
@@ -94,7 +138,8 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: installed build differs; automatic refresh requires a clean "
               "develop checkout. Pull develop or run setup explicitly.", file=sys.stderr)
         return 1
-    if source_version == installed_version and previous:
+    if previous:
+        # A higher version number alone cannot authorise an unrelated build.
         forward = git(root, "merge-base", "--is-ancestor", previous, clean)
         if forward is None or forward.returncode != 0:
             print("SmoothCast: cannot prove a forward build update; run setup explicitly.",
@@ -108,7 +153,7 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         return 3
     if running():
         print("SmoothCast: newer checkout available. Quit the existing SmoothCast "
-              "window normally, then rerun ./smoothcast to update it.",
+              "window normally, then rerun sc.py to update it.",
               file=sys.stderr)
         return 3
     print("SmoothCast: updating installed application from v"

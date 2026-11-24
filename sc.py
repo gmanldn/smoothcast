@@ -168,6 +168,24 @@ def main(argv: list[str] | None = None) -> int:
     if target is None:
         print("SmoothCast supports Linux, macOS and Windows 10/11 x64.", file=sys.stderr)
         return 1
+    if not portable and installed == ROOT.resolve():
+        # Native shortcuts start inside the copied install. Consult the same
+        # local source provenance as checkout launches before activating GTK.
+        import checkout_refresh
+
+        source = checkout_refresh.installed_source(ROOT)
+        if source is not None:
+            before = checkout_refresh.installed_revision(ROOT)
+            code = checkout_refresh.refresh(
+                source, ROOT, target,
+                lambda: launch.gui_instances(all_installations=True),
+            )
+            if code:
+                return code
+            if checkout_refresh.installed_revision(ROOT) != before:
+                # The install was replaced: never continue with old imported
+                # launcher/bootstrap modules. Start the newly copied entry.
+                return _launch_installed(ROOT, args)
     # Activating the already-running primary must not wait for dependency
     # probes, bootstrap, installs or desktop registration (#540).
     guarded = launch.ensure_single_instance(args)

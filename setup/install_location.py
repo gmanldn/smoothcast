@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -21,7 +22,8 @@ APP_DIRS = ("src", "setup", "scripts", "data")
 APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py", "SmoothCast.bat",
              "README.md", "LICENSE")
 BUILD_MARKER = ".smoothcast-build"
-IGNORED = {BUILD_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
+SOURCE_MARKER = ".smoothcast-source"
+IGNORED = {BUILD_MARKER, SOURCE_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",
            ".ruff_cache", ".tox", "build", "dist", ".coverage", ".DS_Store"}
 
 
@@ -155,6 +157,11 @@ def _record_source_revision(source: Path, destination: Path, before: str | None)
         marker = destination / "src" / BUILD_MARKER
         if marker.parent.is_dir():
             marker.write_text(before + "\n", encoding="ascii")
+            # Local installation provenance only. It is not remote trust
+            # evidence and is never copied from another installed tree.
+            (marker.parent / SOURCE_MARKER).write_text(
+                json.dumps(str(source.resolve())) + "\n", encoding="utf-8",
+            )
 
 
 class InstallBusy(OSError):

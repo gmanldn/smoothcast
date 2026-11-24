@@ -116,3 +116,48 @@ def test_failed_refresh_does_not_announce_latest(roots, monkeypatch, capsys):
     monkeypatch.setattr(refresh.subprocess, "call", Mock(return_value=0))
     assert refresh.refresh(source, installed, "linux", lambda: []) == 1
     assert "Loading latest" not in capsys.readouterr().err
+
+def test_recorded_source_resolves_only_separate_checkout(tmp_path):
+    import json
+    source = tmp_path / "My checkout"
+    installed = tmp_path / "Installed"
+    (source / ".git").mkdir(parents=True)
+    (source / "setup").mkdir()
+    (source / "setup" / "bootstrap.py").touch()
+    (source / "pyproject.toml").write_text('name = "smoothcast"')
+    (installed / "src").mkdir(parents=True)
+    marker = installed / "src" / refresh.install_location.SOURCE_MARKER
+    marker.write_text(json.dumps(str(source)))
+    assert refresh.installed_source(installed) == source.resolve()
+    for value in (str(installed), "relative", None, str(tmp_path / "missing")):
+        marker.write_text(json.dumps(value))
+        assert refresh.installed_source(installed) is None
+
+
+def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, capsys):
+    source, installed = roots
+    version(installed, 3)
+    (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
+    def git(_root, *args):
+        if args[0] == "rev-parse":
+            return Mock(returncode=0, stdout=("b" * 40 if "refs/remotes" in args[-1] else SHA))
+        if args == ("merge-base", "--is-ancestor", "b" * 40, SHA):
+            return Mock(returncode=1)
+        return Mock(returncode=0)
+    monkeypatch.setattr(refresh, "git", git)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 3
+    assert "behind known origin/develop" in capsys.readouterr().err
+
+
+def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
+    source, installed = roots
+    (installed / "src" / refresh.install_location.BUILD_MARKER).write_text("b" * 40)
+    def git(_root, *args):
+        if args[0] == "merge-base":
+            return Mock(returncode=1)
+        return Mock(returncode=0, stdout="develop" if args[0] == "symbolic-ref" else SHA)
+    monkeypatch.setattr(refresh, "git", git)
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 1
+    call.assert_not_called()

@@ -28,6 +28,7 @@ def entry(monkeypatch):
     refresher.refresh.return_value = 0
     refresher.read_version.return_value = (2, 0, 5)
     refresher.installed_revision.return_value = "a" * 40
+    refresher.installed_source.return_value = None
     monkeypatch.setitem(sys.modules, "checkout_refresh", refresher)
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
@@ -214,3 +215,26 @@ def test_compatibility_wrapper_delegates_all_arguments(monkeypatch):
         runpy.run_path(str(ROOT / "smoothcast"), run_name="__main__")
     assert result.value.code == 17
     canonical.main.assert_called_once_with()
+
+
+def test_installed_shortcut_rechecks_source_before_activating(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    refresher = sys.modules["checkout_refresh"]
+    refresher.installed_source.return_value = tmp_path
+    refresher.refresh.return_value = 3
+    assert module.main([]) == 3
+    refresher.refresh.assert_called_once()
+    runtime.ensure_single_instance.assert_not_called()
+    runtime.main.assert_not_called()
+
+
+def test_refreshed_shortcut_restarts_new_launcher(entry, tmp_path):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    refresher = sys.modules["checkout_refresh"]
+    refresher.installed_source.return_value = tmp_path
+    refresher.installed_revision.side_effect = ["a" * 40, "b" * 40]
+    assert module.main(["film.mkv"]) == 0
+    module._launch_installed.assert_called_once_with(ROOT, ["film.mkv"])
+    runtime.main.assert_not_called()
