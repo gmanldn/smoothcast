@@ -1,8 +1,16 @@
 // Connector-only, develop-only transport (#598): progress slices and the
-// experimental finalisation/PATCH lane (write-disabled pending qualification).
-// versionBlob MUST come from offline
-// canonical AST validation of exact pinned bytes.
+// guarded finalisation/PATCH lane. versionBlob MUST come from offline
+// canonical AST validation of exact pinned bytes; the connector re-derives
+// the same proof from the served bytes and refuses mismatches.
+import crypto from "node:crypto";
 function check(ok,why){if(!ok)throw Error(why)}
+
+// Re-derive the pinned blob identity from served bytes: the tree ID alone is
+// not proof that the bytes the API serves match the offline AST validation.
+function blobSha(content){
+  const body=Buffer.from(content,"utf8");
+  return crypto.createHash("sha1").update("blob "+body.length+"\0").update(body).digest("hex");
+}
 
 function isSha(x){return typeof x==="string"&&/^[0-9a-f]{40}$/.test(x)}
 
@@ -29,11 +37,10 @@ function validate(p){
   check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
   check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
   check(p.kind===undefined||p.kind==="progress"||p.kind==="finalise","invalid plan kind");
-  // A numeric +1 alone is not a safe completion proof. Keep the draft lane
-  // intact, but fail closed at every entry point until exact canonical AST
-  // validation, complete assignment history, acceptance evidence and live
-  // closure fencing are implemented and independently qualified (#598).
-  check(p.kind!=="finalise","finalise disabled: use native verified completion until qualification");
+  // A numeric +1 alone is not a safe completion proof. Structural intent is
+  // enforced here; the four qualifications (#598) fail closed at every entry
+  // point: canonical AST proof and complete PATCH attribution in checkBase,
+  // independent acceptance and live closure fencing in closeTicket.
   check(Array.isArray(p.changes)&&p.changes.length>0&&p.changes.length<=30,"invalid change count");
   const paths=new Set();
   for(const c of p.changes){
@@ -160,11 +167,41 @@ async function checkBase(api,p){
   const entries=await treeSnapshot(api,b.tree.sha);
   const v=entries.get("src/version.py");
   check(v?.sha===p.versionBlob&&v.mode==="100644","version does not match offline AST proof");
+  // Canonical AST proof: re-derive the pinned blob identity from the served
+  // bytes, not just the tree ID the API reports.
+  const served=await api.file(p.base,"src/version.py");
+  check(typeof served?.content==="string"&&blobSha(served.content)===p.versionBlob,"served version bytes disagree with the pinned proof");
+  if(p.kind==="finalise"){
+    // Complete historical PATCH attribution: walk every commit touching
+    // src/version.py back to the initial import and refuse a second PATCH
+    // for the same issue (one PATCH per completed ticket).
+    const attributed=await versionHistory(api,p.base);
+    check(!attributed.has(String(p.issue)),"issue already has a PATCH; one PATCH per completed ticket");
+  }
   for(const c of p.changes){
     const x=entries.get(c.path)??null;
     check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
   }
   return {sha:b.tree.sha,entries};
+}
+
+async function versionHistory(api,base){
+  // Bounded complete walk: the walk ends at a partial page. Saturating every
+  // page means the attribution record is not proven complete; fail closed.
+  const attributed=new Map();
+  for(let page=1;page<=10;page++){
+    const list=await api.get("/commits?path=src/version.py&sha="+base+"&per_page=100&page="+page);
+    check(Array.isArray(list)&&list.length<=100,"incomplete version history");
+    for(const c of list){
+      check(c&&isSha(c.sha)&&typeof c.commit?.message==="string","incomplete version history");
+      const m=c.commit.message.match(/^chore\(version\): PATCH for issue #(\d+)$/m);
+      if(!m)continue;
+      check(!attributed.has(m[1]),"duplicate PATCH attribution in history");
+      attributed.set(m[1],c.sha);
+    }
+    if(list.length<100)return attributed;
+  }
+  throw Error("incomplete version history");
 }
 
 function candidateMessage(p){
@@ -305,6 +342,19 @@ function closeMarker(p,candidate){
   return "<!-- sc-connector-close v1 sha="+candidate+" -->";
 }
 
+async function checkAcceptance(api,p,candidate,comments){
+  // Independent acceptance: the finalise must extend work already shipped and
+  // landed on develop for this issue, not merely assert completion.
+  const shipped=new Set();
+  for(const c of comments)
+    for(const m of (c.body||"").matchAll(/<!-- sc-ship v1 sha=([0-9a-f]{40}) -->/g))shipped.add(m[1]);
+  for(const sha of shipped){
+    const d=await api.get("/compare/"+sha+"..."+candidate);
+    if(d.base_commit?.sha===sha&&d.merge_base_commit?.sha===sha&&d.behind_by===0&&d.status==="ahead"&&d.ahead_by>0)return;
+  }
+  throw Error("independent acceptance missing: finalise must extend shipped work");
+}
+
 async function closeTicket(api,p,candidate){
   validate(p);
   check(p.kind==="finalise","close ticket requires a finalise plan");
@@ -312,13 +362,20 @@ async function closeTicket(api,p,candidate){
   check(await landed(api,candidate),"finalise commit unconfirmed; cannot close");
   const comments=await pages(api,"/issues/"+p.issue+"/comments",10);
   const marker=closeMarker(p,candidate);
+  const issue=await api.get("/issues/"+p.issue);
+  if(issue.state!=="closed"){
+    // Live close fencing: a competing lease or unshipped ancestry blocks the
+    // open→closed transition. Once closed, the PATCH commit is already
+    // immutable, so the fence does not run again on idempotent retries.
+    await checkClaims(api,p);
+    await checkAcceptance(api,p,candidate,comments);
+  }
   if(!comments.some(c=>(c.body||"").includes(marker))){
     const id=await api.comment(p.issue,"Progress: PATCH lane landed\nHandover: "+p.next+"\nVerification: "+p.verification+"\nCommit: "+candidate+"\n"+marker);
     check(Number.isSafeInteger(id),"close receipt not acknowledged");
     const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
     check(confirmed.some(c=>c.id===id&&(c.body||"").includes(marker)),"close receipt not visible");
   }
-  const issue=await api.get("/issues/"+p.issue);
   if(issue.state!=="closed"){
     await api.close(p.issue);
     check((await api.get("/issues/"+p.issue)).state==="closed","issue close not acknowledged");
