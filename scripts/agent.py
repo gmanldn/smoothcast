@@ -930,7 +930,7 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
         comments = issue_comments(number)
         if isinstance(comments, list) and any(
                 marker in str(c.get("body") or "") for c in comments):
-            return
+            return True
         body = (f"Progress: pushed a coherent develop slice at {sha[:12]}\n"
                 f"Handover: {next_action or 'Review remaining issue acceptance criteria against develop'}\n"
                 f"Commit: {sha}\nVerification: {verification}\n"
