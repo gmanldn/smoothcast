@@ -284,6 +284,8 @@ _PANEL_HTML = r"""
 #screensList select{flex:1 1 100%;min-height:44px;max-width:100%;font:inherit;color:inherit;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:0 10px}
 #screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
 #screensList .state-error{color:var(--danger)}
+#screensList li[aria-busy="true"] button{cursor:wait}
+#screensList button[aria-disabled="true"]{opacity:.65}
 </style>
 <section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading" tabindex="-1">Screens</h2><span id="screensCount" class="muted"></span></div>
 <p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if one has been set. Tap Start screen once to allow sound.</p>
@@ -300,25 +302,38 @@ _PANEL_HTML = r"""
   const pendingScreenCommands=new Map();
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const clock=s=>{s=Math.max(0,Math.floor(Number(s)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+  const COMMAND_TIMEOUT=8000;
   async function send(id,body){
     const key=String(id),session=csrf;
-    if(pendingScreenCommands.get(key)===session)return;
-    pendingScreenCommands.set(key,session);refreshScreenPending(key);
-    if(csrf===session)msg.textContent="Sending screen command…";
-    try{const r=await fetch(`/api/screens/${encodeURIComponent(key)}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session},
-      body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
-      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");
-      if(csrf===session)msg.textContent="Screen command received; checking its state.";
-    }catch(err){if(csrf===session)msg.textContent=err.message}
-    finally{if(pendingScreenCommands.get(key)===session){pendingScreenCommands.delete(key);refreshScreenPending(key)}}
+    if(pendingScreenCommands.get(key)?.session===session)return;
+    const controller=new AbortController(),command={session};let timer;
+    const owns=()=>csrf===session&&pendingScreenCommands.get(key)===command;
+    pendingScreenCommands.set(key,command);refreshScreenPending(key);
+    const name=screenById.get(key)?.name||"Screen";
+    msg.textContent="Sending command to "+name+"…";
+    try{
+      const deadline=new Promise((_,reject)=>{
+        timer=setTimeout(()=>{
+          reject(Error("No confirmation from "+name+". Check its current state before trying again."));
+          controller.abort();
+        },COMMAND_TIMEOUT);
+      });
+      await Promise.race([deadline,(async()=>{
+        const r=await fetch(`/api/screens/${encodeURIComponent(key)}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session},signal:controller.signal,
+          body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
+        const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");
+      })()]);
+      if(owns())msg.textContent=name+": command received; checking its state.";
+    }catch(err){if(owns())msg.textContent=err.message||"No confirmation. Check the screen state before trying again."}
+    finally{clearTimeout(timer);if(pendingScreenCommands.get(key)===command){pendingScreenCommands.delete(key);refreshScreenPending(key)}}
   }
   function updateScreenPlayButton(play,pick,ready){play.disabled=!ready||!pick.value}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
   const screenById=new Map();
   function markScreenPending(li,id){
-    const busy=pendingScreenCommands.get(id)===csrf;
+    const busy=pendingScreenCommands.get(id)?.session===csrf;
     li.setAttribute("aria-busy",String(busy));
-    for(const button of Array.from(li.children[1]?.children||[]).slice(1))button.setAttribute("aria-disabled",String(busy));
+    for(const button of Array.from(li.children[1]?.children||[]).slice(1))button.setAttribute("aria-disabled",String(busy||!!button.disabled));
   }
   function refreshScreenPending(id){
     const row=Array.from(list.children).find(li=>li.dataset?.screenId===id);
@@ -332,7 +347,7 @@ _PANEL_HTML = r"""
     const play=el("button","tiny","Play"),toggle=el("button","secondary tiny","Pause"),stop=el("button","secondary tiny","Stop");
     pick.addEventListener("change",()=>{
       choice[key]=pick.value;
-      updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready);
+      updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready);markScreenPending(li,key);
     });
     play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";
     play.addEventListener("click",()=>{

@@ -71,7 +71,11 @@ const document={
   createElement:tag=>new FakeNode(tag)
 };
 const window={};let csrf="session-fixture";
-const setInterval=()=>{};
+const setInterval=()=>{};let timerId=0;const timers=new Map();
+const setTimeout=(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId};
+const clearTimeout=id=>timers.delete(id);
+class AbortController{constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}}
+function expire(){const entry=[...timers].find(([,t])=>t.ms===8000);assert.ok(entry);timers.delete(entry[0]);entry[1].fn()}
 const requests=[];
 let fetch=async(url,options)=>{
   requests.push({url,body:JSON.parse(options.body)});
@@ -102,12 +106,12 @@ assert.equal(document.activeElement,pick);
 window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"resume","handler must use the latest state");
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],
   queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"pause","handler must not capture a stale state");
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],queue:[]});
 assert.equal(list.children[0],row,"queue changes must retain the screen row");
 assert.equal(pick.value,"");
@@ -136,7 +140,7 @@ const select=buttons[0],livePlay=buttons[1],liveToggle=buttons[2];
 select.value="track";select.listeners.change();
 const pending=[],before=requests.length;
 fetch=(url,options)=>new Promise(resolve=>{
-  requests.push({url,body:JSON.parse(options.body)});
+  requests.push({url,body:JSON.parse(options.body),signal:options.signal});
   pending.push(resolve);
 });
 liveToggle.listeners.click();livePlay.listeners.click();liveToggle.listeners.click();
@@ -152,22 +156,47 @@ otherToggle.listeners.click();
 assert.equal(requests.length,before+2,"another screen must not be blocked");
 assert.equal(otherRow.attrs["aria-busy"],"true");
 pending[0]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(liveRow.attrs["aria-busy"],"false");
 assert.equal(livePlay.attrs["aria-disabled"],"false");
 assert.equal(otherRow.attrs["aria-busy"],"true","other screen still waiting");
 otherToggle.listeners.click();
 assert.equal(requests.length,before+2,"duplicate on second screen suppressed");
 pending[1]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(otherRow.attrs["aria-busy"],"false");
 liveToggle.listeners.click();
 assert.equal(requests.length,before+3);
 csrf="replacement";
 elements.screensMsg.textContent="New room";
 pending[2]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(elements.screensMsg.textContent,"New room");
+assert.equal(timers.size,0,"completed commands must clear deadline");
+liveToggle.listeners.click();
+const timed=requests.length-1;
+assert.equal(liveRow.attrs["aria-busy"],"true");
+expire();
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(requests[timed].signal.aborted,true);
+assert.equal(liveRow.attrs["aria-busy"],"false");
+assert.match(elements.screensMsg.textContent,/No confirmation from Kitchen/);
+assert.equal(requests.length,timed+1,"never replay a timed-out mutation");
+liveToggle.listeners.click();
+const newer=requests.length-1;
+pending.at(-2)({ok:true,json:async()=>({})});
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(liveRow.attrs["aria-busy"],"true","late reply cannot unlock newer command");
+assert.match(elements.screensMsg.textContent,/Sending command to Kitchen/);
+pending.at(-1)({ok:true,json:()=>new Promise(()=>{})});
+for(let i=0;i<16;i++)await Promise.resolve();
+expire();
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(requests[newer].signal.aborted,true,"body stall bounded too");
+assert.equal(liveRow.attrs["aria-busy"],"false");
+window.scRenderScreens({screens:[{...one,ready:false}],queue:[{id:"track",title:"First"}]});
+assert.equal(liveToggle.attrs["aria-disabled"],"true","unavailable remains accessible as disabled");
+assert.equal(timers.size,0);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run(
