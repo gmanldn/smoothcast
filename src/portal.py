@@ -192,6 +192,7 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         self.dispatch = dispatch
         self.uploads = uploads
         self.link_jobs = None
+        self.mesh_acquisition_activity = None
         self.room = room or portal_room.PortalRoom(clock=clock)
         self.peer_directory = peer_directory
         self.clock = clock
@@ -793,6 +794,9 @@ class _Handler(BaseHTTPRequestHandler):
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
         state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
+        activity = getattr(self.server, "mesh_acquisition_activity", None)
+        state["mesh_link_activity"] = (activity.snapshot() if activity is not None else
+                                       {"available": False, "nodes": [], "omitted_jobs": 0})
         directory = self.server.peer_directory
         state["screens"] = self.server.screens.snapshot()
         state["peers"] = directory.snapshot() if directory is not None else []
@@ -812,7 +816,9 @@ class _Handler(BaseHTTPRequestHandler):
             "title", "state", "receiver", "duration", "volume", "can_seek", "active", "busy",
             "session_id", "revision", "queue_revision", "music_autogain"))
         jobs = self.server.link_jobs
-        return fields, items, self.server.room.seq, jobs.revision() if jobs is not None else 0
+        activity = getattr(self.server, "mesh_acquisition_activity", None)
+        return (fields, items, self.server.room.seq, jobs.revision() if jobs is not None else 0,
+                activity.revision() if activity is not None else 0)
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
