@@ -194,10 +194,10 @@ def test_ship_records_true_multiline_handover_only_once(monkeypatch):
         raise AssertionError(args)
     monkeypatch.setattr(agent, "gh", gh)
     sha = "a" * 40
-    agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
-                                "compile passed", "more tests")
-    agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
-                                "compile passed", "more tests")
+    assert agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
+                                       "compile passed", "more tests") is True
+    assert agent.publish_ship_handover({"issue": 584}, sha, ["src/a.py"],
+                                       "compile passed", "more tests") is True
     assert len(seen) == 1
     assert "\nHandover: more tests\nCommit: " in seen[0]
     assert f"<!-- sc-ship v1 sha={sha} -->" in seen[0]
