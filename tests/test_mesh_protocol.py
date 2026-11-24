@@ -84,3 +84,22 @@ def test_kill_switch_disables_capability_for_only_selected_peer():
     )
     assert not a.node.replicator._agree(hello, node_id=b.node_id).caps
     assert a.node.replicator._agree(hello, node_id="other").supports("mesh.records.v1")
+
+
+def test_additive_top_level_fields_survive_a_real_relay_hop():
+    """#387: a newer node's extra fields cross this (older) node intact."""
+    from dataclasses import replace
+    import mesh_model as mm
+    import mesh_sync as msync
+
+    world, a, b = two_nodes()
+    own = a.node.state.own
+    newer = replace(own, rev=own.rev + 1000)
+    wire = newer.to_wire()
+    wire["future_feature"] = {"mode": "x", "n": [1, 2]}
+    reply = b.node.replicator._on_push(
+        a.address, {"hello": a.node.replicator.hello.wire(), "records": [wire]})
+    # a's own record is never overwritten by a peer, but parsing must not fail
+    assert "error" not in reply
+    relayed, _more = msync._wire_records([mm.parse_record(wire)], 64 * 1024)
+    assert relayed[0]["future_feature"] == {"mode": "x", "n": [1, 2]}

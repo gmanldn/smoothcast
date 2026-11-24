@@ -52,8 +52,22 @@ MAX_FLAGS = 8
 MAX_PROTOCOLS = 8
 MAX_NAME = 48
 MAX_MODEL = 64
+# Additive top-level fields from a newer node are relayed, not dropped (#387).
+# They are bounded far below the record cap so they can never starve known data.
+MAX_EXTRA_FIELDS = 16
+MAX_EXTRA_TOTAL_BYTES = 4096
+MAX_EXTRA_DEPTH = 4
+_MAX_EXTRA_NODES = 128
+_MAX_EXTRA_TEXT = 256
 
-TARGET_KINDS = frozenset({"cast", "dlna", "screen", "smoothcast"})
+# Every top-level key this version understands; anything else is "extra".
+_KNOWN_RECORD_KEYS = frozenset({
+    "v", "node_id", "boot_id", "incarnation", "rev", "boot_epoch", "name",
+    "version", "protocols", "capabilities", "status", "mesh_port", "room_port",
+    "addresses", "targets", "clients", "sources", "edges", "truncated",
+})
+
+TARGET_KINDS =frozenset({"cast", "dlna", "screen", "smoothcast"})
 TARGET_STATES = frozenset({"ready", "busy", "stale", "unreachable"})
 CLIENT_ROLES = frozenset({"controller", "screen", "speaker"})
 SOURCE_KINDS = frozenset({"video", "audio", "mixed"})
@@ -66,6 +80,7 @@ _HEX32 = re.compile(r"^[a-f0-9]{32}$")
 _TARGET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_.-]{0,95}$")
 _CLIENT_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+_EXTRA_KEY = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _FORMAT = re.compile(r"^[a-z0-9][a-z0-9/.+-]{0,47}$")
 _VERSION = re.compile(r"^\d{1,4}\.\d{1,4}\.\d{1,4}$")
 _LAN_NETWORKS = tuple(ipaddress.ip_network(block) for block in (
@@ -269,6 +284,9 @@ class NodeRecord:
     sources: tuple[SourceSummary, ...] = ()
     edges: tuple[EdgeObservation, ...] = ()
     truncated: bool = False
+    # Unknown top-level fields from a newer peer, as sorted ``(key, canonical
+    # JSON text)`` pairs. Carried so a relay never strips them; never read.
+    extra: tuple[tuple[str, str], ...] = ()
 
     @property
     def key(self) -> tuple[str, int]:
@@ -284,7 +302,7 @@ def _canonical_wire(record: NodeRecord) -> dict[str, Any]:
     clients = sorted(record.clients, key=lambda item: item.id)
     sources = sorted(record.sources, key=lambda item: item.kind)
     edges = sorted(record.edges, key=lambda item: (item.peer_kind, item.peer))
-    return {
+    wire = {
         "v": PROTOCOL_VERSION,
         "node_id": record.node_id, "boot_id": record.boot_id,
         "incarnation": record.incarnation, "rev": record.rev,
@@ -301,10 +319,75 @@ def _canonical_wire(record: NodeRecord) -> dict[str, Any]:
         "edges": [item.to_wire() for item in edges],
         "truncated": bool(record.truncated),
     }
+    for key, text in record.extra:
+        # A known key can never be shadowed, even by a hand-built record.
+        if key not in _KNOWN_RECORD_KEYS:
+            wire[key] = json.loads(text)
+    return wire
 
 
 # ---------------------------------------------------------------------------
 # Strict parsing of untrusted data
+
+
+def _extra_value_ok(value: object) -> bool:
+    """Is *value* a small, plain, integers-only JSON tree?
+
+    Iterative with hard node and depth limits, so hostile nesting cannot recurse
+    or allocate. Floats are refused: the canonical encoding is integers only.
+    """
+    stack: list[tuple[object, int]] = [(value, 1)]
+    nodes = 0
+    while stack:
+        item, depth = stack.pop()
+        nodes += 1
+        if nodes > _MAX_EXTRA_NODES or depth > MAX_EXTRA_DEPTH + 1:
+            return False
+        if item is None or type(item) is bool:
+            continue
+        if type(item) is int:
+            if abs(item) > _MAX_COUNTER:
+                return False
+        elif type(item) is str:
+            if len(item) > _MAX_EXTRA_TEXT or not _clean_ok(item):
+                return False
+        elif type(item) is list:
+            stack.extend((child, depth + 1) for child in item)
+        elif type(item) is dict:
+            for key, child in item.items():
+                if (type(key) is not str or len(key) > 32
+                        or not key or not _clean_ok(key)):
+                    return False
+                stack.append((child, depth + 1))
+        else:
+            return False
+    return True
+
+
+def _preserved_extras(data: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Unknown top-level fields worth relaying, as sorted ``(key, JSON)`` pairs.
+
+    Anything that does not meet the bounds is dropped rather than failing the
+    record, so a newer node stays visible to older ones. Selection depends only
+    on the sorted keys, so every node keeps the same fields (idempotent hops).
+    """
+    kept: list[tuple[str, str]] = []
+    spent = 0
+    for key in sorted(k for k in data if type(k) is str):
+        if key in _KNOWN_RECORD_KEYS or _EXTRA_KEY.fullmatch(key) is None:
+            continue
+        if len(kept) >= MAX_EXTRA_FIELDS or not _extra_value_ok(data[key]):
+            continue
+        try:
+            text = canonical_json(data[key]).decode("ascii")
+        except (TypeError, ValueError, RecursionError):
+            continue
+        cost = len(key) + len(text) + 4
+        if spent + cost > MAX_EXTRA_TOTAL_BYTES:
+            continue
+        kept.append((key, text))
+        spent += cost
+    return tuple(kept)
 
 
 def _parse_target(raw: object) -> TargetObservation:
@@ -416,7 +499,11 @@ def parse_record(raw: object) -> NodeRecord:
         sources=tuple(sorted(sources, key=lambda item: item.kind)),
         edges=tuple(sorted(edges, key=lambda item: (item.peer_kind, item.peer))),
         truncated=truncated,
+        extra=_preserved_extras(data),
     )
+    if record.extra and encoded_size(record) > MAX_RECORD_BYTES:
+        # Relaying extras must never turn an acceptable record unencodable.
+        record = replace(record, extra=())
     return record
 
 
