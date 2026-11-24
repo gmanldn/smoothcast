@@ -56,7 +56,9 @@ qualification.
 |---|---|---|
 | Debian/Ubuntu, Fedora, Arch | `bash setup/linuxsetup.sh` | Linux application menu / GNOME dock |
 | macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
-| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | Windows Start Menu |
+| Windows 10/11 x64 | Double-click `SmoothCast.bat` | Windows Start Menu |
+
+**New Windows user:** clone the repository, select the `develop` branch and double-click `SmoothCast.bat` in File Explorer. It acquires Python if necessary, runs the canonical `sc.py`, prompts for the installation folder on first setup and launches the installed app. Allow Internet access and approve any genuine native installer prompts. If setup fails, the window stays open with its error. Use `setup/winsetup.bat` for installation/repair only, and the **SmoothCast** Start Menu entry for everyday use. Close SmoothCast before refreshing an older Windows installation from a pulled checkout.
 
 The three scripts delegate to the same stdlib-only `setup/bootstrap.py`. They **ask where to install** the application, defaulting to a per-user program folder (or the last successful choice), copy only application files and provision an isolated `.venv` there. Use `--install-dir "<path>"` for a specific location, `--yes` to skip the prompt, `--check` for read-only diagnostics or `--no-shortcuts` to skip desktop integration. Linux adds an XDG icon/menu entry; macOS registers `~/Applications/SmoothCast.app` with a real ICNS icon; Windows creates a branded Start Menu shortcut. See [setup/README.md](setup/README.md) for dependencies, recovery and limitations.
 

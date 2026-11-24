@@ -55,6 +55,56 @@ class SetupContractTests(unittest.TestCase):
         self.assertNotIn('if not errorlevel 1 (', batch)
         self.assertEqual(batch.count('exit /b %errorlevel%'), 2)
 
+    def test_windows_first_run_bootstrap_is_not_duplicated(self):
+        source = (ROOT / "setup" / "windows_python.ps1").read_text(encoding="utf-8")
+        self.assertEqual(source.count("function Install-Python {"), 1)
+        self.assertEqual(source.count("function Find-Python {"), 1)
+        self.assertNotIn("\n) {\n", source)
+        self.assertIn("& $python $entry @Forward", source)
+        batch = (ROOT / "SmoothCast.bat").read_text(encoding="utf-8")
+        self.assertIn("-Launch %*", batch)
+        self.assertIn('set "SC_EXIT=%errorlevel%"', batch)
+        self.assertIn("exit /b %SC_EXIT%", batch)
+        self.assertIn("pause", batch)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell parser required")
+    def test_windows_bootstrap_parses_without_running_installation(self):
+        # Parsing is read-only: never execute the installer or launch a GUI.
+        script = (
+            "$tokens = $null; $errors = $null; "
+            "[void][System.Management.Automation.Language.Parser]::ParseFile("
+            "$env:SC_PS_FILE, [ref]$tokens, [ref]$errors); "
+            "if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }"
+        )
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            env={**os.environ, "SC_PS_FILE": str(ROOT / "setup" / "windows_python.ps1")},
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_runtime_readiness_uses_native_env_and_checks_project_dependencies(self):
+        env = {"PATH": "selected-native-tools", "MSYSTEM": "UCRT64"}
+        with mock.patch.object(launch, "runtime_python", return_value=Path("python.exe")), \
+             mock.patch.object(launch, "runtime_environment", return_value=env), \
+             mock.patch.object(launch.subprocess, "run") as run, \
+             mock.patch.object(launch.shutil, "which", return_value="tool") as which:
+            run.return_value.returncode = 0
+            self.assertTrue(launch.runtime_ready())
+            self.assertEqual([c.args[0][-1] for c in run.call_args_list],
+                             [launch.RUNTIME_CHECK, bootstrap.PROJECT_DEPENDENCIES_CHECK])
+            self.assertTrue(all(c.kwargs["env"] == env for c in run.call_args_list))
+            self.assertTrue(all(c.kwargs["path"] == env["PATH"] for c in which.call_args_list))
+            run.side_effect = [mock.Mock(returncode=0), mock.Mock(returncode=1)]
+            self.assertFalse(launch.runtime_ready())
+
+    def test_runtime_readiness_never_uses_wrong_native_environment(self):
+        with mock.patch.object(launch, "runtime_python", return_value=Path("python.exe")), \
+             mock.patch.object(launch, "runtime_environment", side_effect=RuntimeError("moved")), \
+             mock.patch.object(launch.subprocess, "run") as run:
+            self.assertFalse(launch.runtime_ready())
+            run.assert_not_called()
+
     def test_dependency_matrix_explicit_on_all_three_platforms(self):
         self.assertIn("gir1.2-adw-1", bootstrap.LINUX_PACKAGES["apt-get"])
         self.assertIn("libadwaita", bootstrap.LINUX_PACKAGES["dnf"])

@@ -47,19 +47,20 @@ def runtime_ready() -> bool:
     if runtime is None:
         return False
     try:
-        result = subprocess.run(
-            [str(runtime), "-c", RUNTIME_CHECK],
-            capture_output=True, text=True, timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
+        # MSYS2 DLLs and Homebrew typelibs must be available to the probe,
+        # not only to the final GUI process. An invalid manifest fails closed.
+        env = runtime_environment()
+        for check in (RUNTIME_CHECK, bootstrap.PROJECT_DEPENDENCIES_CHECK):
+            result = subprocess.run(
+                [str(runtime), "-c", check], env=env,
+                capture_output=True, text=True, timeout=20,
+            )
+            if result.returncode != 0:
+                return False
+    except (OSError, RuntimeError, subprocess.SubprocessError):
         return False
-    if result.returncode != 0:
-        return False
-    try:
-        path = runtime_environment().get("PATH")
-    except (OSError, RuntimeError):
-        path = os.environ.get("PATH")
-    return all(shutil.which(tool, path=path) for tool in ("ffmpeg", "ffprobe", "ffplay"))
+    return all(shutil.which(tool, path=env.get("PATH"))
+               for tool in ("ffmpeg", "ffprobe", "ffplay"))
 
 
 def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, str]:
@@ -83,6 +84,7 @@ def _runtime_environment_for(target: str, initial: dict[str, str]) -> dict[str, 
                 f"Selected MSYS2 runtime moved: {root}. Rerun Windows setup."
             )
         env["MSYS2_ROOT"] = str(root)
+        env["MSYSTEM"] = "UCRT64"
         env["PATH"] = os.pathsep.join(
             (str(ucrt / "bin"), str(root / "usr" / "bin"), env.get("PATH", "")),
         )

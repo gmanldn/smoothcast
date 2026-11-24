@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 APP_DIRS = ("src", "setup", "scripts", "data")
-APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py",
+APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py", "SmoothCast.bat",
              "README.md", "LICENSE")
 BUILD_MARKER = ".smoothcast-build"
 IGNORED = {BUILD_MARKER, ".git", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache",

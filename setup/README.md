@@ -10,7 +10,13 @@ Internet access and OS-native administrator approval may be necessary.
 |---|---|---|---|
 | Debian/Ubuntu/Fedora/Arch | `bash setup/linuxsetup.sh` | `~/.local/opt/SmoothCast` | apt/dnf/pacman |
 | macOS Intel/Apple Silicon | `bash setup/macsetup.sh` | `~/Applications/SmoothCast` | Homebrew |
-| Windows 10/11 x64 | Double-click `setup/winsetup.bat` | `%LOCALAPPDATA%\Programs\SmoothCast` | PowerShell + MSYS2 UCRT64 |
+| Windows 10/11 x64 | Double-click `SmoothCast.bat` (setup and launch) or `setup/winsetup.bat` (setup only) | `%LOCALAPPDATA%\Programs\SmoothCast` | PowerShell + MSYS2 UCRT64 |
+
+### Windows: first launch
+
+After cloning and checking out `develop`, open the repository in File Explorer and double-click **SmoothCast.bat**. You do not need Python, MSYS2 or FFmpeg installed beforehand. Accept the suggested per-user install folder, or choose another writable location. The first run may take longer because native packages are provisioned. Once the app is installed, open **SmoothCast** from the Start Menu. A failed launch keeps the console open; copy its error message. To update a stale Windows install, close SmoothCast and run `setup\\winsetup.bat` from the updated checkout.
+
+For receiver discovery, use the same trusted home network as the receiver. If Windows Firewall asks, permit access on private networks only; do not disable the firewall or enable public-network access.
 
 **The installer prompts for an installation folder**, proposing the OS default
 or the last successful destination. Press Enter to accept or type another
