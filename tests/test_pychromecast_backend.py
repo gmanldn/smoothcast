@@ -354,3 +354,46 @@ def test_status_dict_exposes_standby_and_input_only_when_the_receiver_reports_th
     bare = backend._status_dict(None, SimpleNamespace(app_id="", volume_level=0.5, volume_muted=False))
     assert "is_stand_by" not in bare and "is_active_input" not in bare
     backend.close()
+
+
+@pytest.mark.parametrize("args, code", [
+    (("cast", "not-a-url"), "media.url_invalid"),
+    (("cast", "http://192.168.1.5/stream"), "media.type_unsupported"),
+    (("seek", "not-a-number"), "cast.command_invalid"),
+])
+def test_command_failures_carry_catalogue_code_and_copy(args, code):
+    """#521: each failure returns the reviewed catalogue copy and records its code."""
+    import errors
+
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    try:
+        errors.reset_recent()
+        assert backend.command("Living Room", *args) == (False, errors.CATALOGUE[code].message)
+        assert [entry["code"] for entry in errors.recent()][-1] == code
+    finally:
+        backend.close()
+
+
+def test_no_selectable_subtitle_track_and_unknown_receiver_codes():
+    import errors
+
+    cast = FakeCast()
+    cast.media_controller.status.subtitle_tracks = {}
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    try:
+        errors.reset_recent()
+        assert backend.command("Living Room", "subs") == (
+            False, errors.CATALOGUE["cast.no_subtitle_track"].message)
+        assert errors.recent()[-1]["code"] == "cast.no_subtitle_track"
+    finally:
+        backend.close()
+
+
+def test_receiver_failure_message_is_catalogued_and_unchanged():
+    import errors
+
+    assert errors.CATALOGUE["cast.command_failed"].message == (
+        "The receiver command failed. Check the receiver connection and try again.")

@@ -16,12 +16,19 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 from urllib.parse import unquote, urlsplit
 
+import errors
 from castctl import (
     CastError, Device, NO_DEVICE_MESSAGE, ReceiverInfo, log_backend_failure, validate_manual_target,
 )
 
 
 StatusListener = Callable[[ReceiverInfo], None]
+
+
+def _fail(code: str) -> tuple[bool, str]:
+    """Failure result carrying reviewed catalogue copy; records the code (#521)."""
+    errors.record(code)
+    return False, errors.CATALOGUE[code].message
 
 
 def _media_call(method: Callable[..., Any], *args: Any, timeout: float) -> Any:
@@ -263,7 +270,7 @@ class PyChromecastBackend:
         with self._lock:
             cast = self._casts.get(identifier)
         if cast is None:
-            return False, "Receiver is not connected. Scan the network and choose it again."
+            return _fail("cast.not_connected")
 
         media = cast.media_controller
         action = args[0].lower()
@@ -295,12 +302,12 @@ class PyChromecastBackend:
                     tracks = getattr(status, "subtitle_tracks", {}) or {}
                     track_ids = sorted(int(track_id) for track_id in tracks if str(track_id).isdigit())
                     if not track_ids:
-                        return False, "The receiver has no selectable subtitle track."
+                        return _fail("cast.no_subtitle_track")
                     _media_call(media.enable_subtitle, track_ids[0], timeout=timeout)
             elif action == "cast":
                 url = next((arg for arg in reversed(args[1:]) if arg.startswith(("http://", "https://"))), "")
                 if not url:
-                    return False, "A valid HTTP media URL is required."
+                    return _fail("media.url_invalid")
                 parsed = urlsplit(url)
                 content_type = mimetypes.guess_type(parsed.path)[0] or ""
                 if parsed.path.lower().endswith(".m3u8"):
@@ -308,7 +315,7 @@ class PyChromecastBackend:
                     # mimetypes databases (notably macOS' x-mpegurl alias).
                     content_type = "application/vnd.apple.mpegurl"
                 if not content_type:
-                    return False, "The media URL has no supported content type."
+                    return _fail("media.type_unsupported")
                 title = PurePosixPath(unquote(parsed.path)).name or "SmoothCast media"
                 media_info = None
                 if parsed.path.endswith("-fmp4.m3u8"):
@@ -326,10 +333,10 @@ class PyChromecastBackend:
             else:
                 return False, f"Unsupported Google Cast command: {action}"
         except (TypeError, ValueError):
-            return False, "The receiver command has invalid settings. Check the values and try again."
+            return _fail("cast.command_invalid")
         except Exception:
             log_backend_failure("Google Cast receiver command failed", exc_info=True)
-            return False, "The receiver command failed. Check the receiver connection and try again."
+            return _fail("cast.command_failed")
         return True, ""
 
     def subscribe(
