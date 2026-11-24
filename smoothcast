@@ -34,10 +34,11 @@ def _headless(args: list[str]) -> bool:
             or args[:1] in (["--diagnostics"], ["--link-check"]))
 
 
-def _bootstrap(target: str) -> int:
+def _bootstrap(target: str, *, portable: bool = False) -> int:
     print("SmoothCast: preparing the project runtime", file=sys.stderr)
     return subprocess.call(
-        [sys.executable, str(SETUP / "bootstrap.py"), "--target", target],
+        [sys.executable, str(SETUP / "bootstrap.py"), "--target", target,
+         *(["--in-place", "--no-shortcuts"] if portable else [])],
     )
 
 
@@ -55,6 +56,37 @@ def _install_desktop(target: str) -> None:
         pass  # Desktop registration is best-effort and never blocks a launch.
 
 
+def _installed_root(target: str) -> Path | None:
+    """Use the installer's saved destination, or a recognisable OS default."""
+    import install_location
+
+    remembered = install_location.previous_directory(target)
+    if remembered is not None:
+        return remembered.resolve()
+    default = install_location.default_directory(target)
+    try:
+        if ((default / "setup" / "bootstrap.py").is_file()
+                and 'name = "smoothcast"' in (default / "pyproject.toml").read_text(encoding="utf-8")):
+            return default.resolve()
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _launch_installed(root: Path, args: list[str]) -> int:
+    """Hand off once, preserving caller cwd, args and the installed runtime."""
+    script = root / "setup" / "launch.py"
+    if not script.is_file():
+        print(f"SmoothCast installation at {root} is incomplete; rerun setup.", file=sys.stderr)
+        return 1
+    print(f"SmoothCast: using installed application at {root}", file=sys.stderr, flush=True)
+    try:
+        return subprocess.call([sys.executable, str(script), *args])
+    except OSError as exc:
+        print(f"SmoothCast could not start installed application: {exc}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if sys.version_info < (3, 10):
@@ -68,13 +100,24 @@ def main(argv: list[str] | None = None) -> int:
         print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
         return 2
 
+    portable = args[:1] == ["--portable"]
+    if portable:
+        args = args[1:]
     sys.path.insert(0, str(SETUP))
     import launch
 
-    if _headless(args):
+    # Tests must remain isolated even when a real installation exists.
+    if "--self-test" in args or os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         return launch.main(args)
 
     target = _target()
+    if target is not None and not portable:
+        installed = _installed_root(target)
+        if installed is not None and installed != ROOT.resolve():
+            return _launch_installed(installed, args)
+    if _headless(args):
+        return launch.main(args)
+
     if target is None:
         print("SmoothCast supports Linux, macOS and Windows 10/11 x64.", file=sys.stderr)
         return 1
@@ -84,10 +127,20 @@ def main(argv: list[str] | None = None) -> int:
     if guarded is not None:
         return guarded
     if not launch.runtime_ready():
-        code = _bootstrap(target)
+        code = _bootstrap(target, portable=True) if portable else _bootstrap(target)
         if code:
             return code
-    _install_desktop(target)
+        if not portable:
+            # Setup normally copies to a per-user install, not this checkout.
+            installed = _installed_root(target)
+            if installed is not None and installed != ROOT.resolve():
+                return _launch_installed(installed, args)
+        if not launch.runtime_ready():
+            print("SmoothCast setup finished but no usable runtime was found. "
+                  "Rerun the platform setup script to repair the installation.", file=sys.stderr)
+            return 1
+    if not portable:
+        _install_desktop(target)
     return launch.main(args, prechecked=True)
 
 
