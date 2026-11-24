@@ -333,3 +333,60 @@ def test_youtube_adapter_uses_canonical_video_not_playlist_or_user_options(monke
     assert provider.acquire(source, tmp_path, stages.append, lambda *args: None, lambda: False).name == "example.mp4"
     assert len(calls) == 1
     assert stages == ["downloading", "verifying"]
+
+
+def test_readiness_does_not_treat_directory_as_launcher_or_execute_tools(monkeypatch, tmp_path):
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: None if name == "aria2c" else "/trusted/" + name)
+    monkeypatch.setattr(acquisition.subprocess, "run", lambda *args, **kwargs: pytest.fail("UI must not run probes"))
+    provider = acquisition.CommandProvider(("youtube", "magnet"), launcher=str(tmp_path))
+    assert provider.capabilities() == {"youtube": False, "magnet": False}
+    assert provider.readiness()["youtube"]["missing"] == ["owner-configured isolation launcher"]
+    assert provider.readiness()["magnet"]["missing"] == ["aria2c", "owner-configured isolation launcher"]
+    assert provider.readiness()["youtube"]["isolation_verified"] is False
+    assert "isolation launcher" in provider.readiness_text("youtube")
+
+
+def test_headless_worker_diagnostics_report_missing_and_failed_tools_without_paths(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: None if name == "aria2c" else "/private/" + name)
+    calls = []
+
+    def probe(command, **kwargs):
+        calls.append(command)
+        assert kwargs["timeout"] == 5
+        if command[0].endswith("ffprobe"):
+            raise acquisition.subprocess.TimeoutExpired(command, 5)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(acquisition.subprocess, "run", probe)
+    assert acquisition.diagnostics_main(["--tools-only"]) == 1
+    output = capsys.readouterr().out
+    report = json.loads(output)
+    assert report["tools"] == {"yt-dlp": "executable", "aria2c": "missing", "ffprobe": "probe_timed_out"}
+    assert report["launcher_configured"] is False and report["isolation_verified"] is False
+    assert "/private/" not in output
+    assert len(calls) == 2
+
+
+def test_tools_only_success_is_not_a_claim_of_isolation(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: "/trusted/" + name)
+    monkeypatch.setattr(acquisition.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
+    assert acquisition.diagnostics_main(["--tools-only"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["isolation_verified"] is False
+    assert acquisition.diagnostics_main([]) == 1
+
+
+def test_installed_cli_routes_link_check_before_gui(monkeypatch):
+    import cli
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["smoothcast", "--link-check", "--tools-only"])
+    monkeypatch.setattr(acquisition, "diagnostics_main",
+                        lambda args: 17 if args == ["--tools-only"] else 99)
+    assert cli.main() == 17
