@@ -2039,6 +2039,7 @@ const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortc
 let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
+  stopPlayhead();
   roomEvents.stop();
   void syncRemoteWakeLock();
   document.getElementById("updateNotice").hidden=false;
@@ -2170,6 +2171,7 @@ $("loginForm").addEventListener("submit",async e=>{
   });
 })();
 function expireSession(){
+  stopPlayhead();playhead=null;
   csrf="";
   roomEvents.stop();
   void syncRemoteWakeLock();
@@ -2190,10 +2192,16 @@ function expireSession(){
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
 function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const rate=s.rate,speed=typeof rate==="number"&&Number.isFinite(rate)&&rate>=0.05&&rate<=4?rate:1;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead*speed;return dur?Math.min(v,dur):v}
-let playhead=null,paintedAt=-1;
-function trackPlayhead(s){playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);if(Math.abs(pos-paintedAt)<0.2)return;paintedAt=pos;const dur=Number(playhead.s.duration)||0;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
-function playheadFrame(){if(!document.hidden)paintPlayhead();requestAnimationFrame(playheadFrame)}
+let playhead=null,paintedAt=-1,playheadTimer=null;
+function stopPlayhead(){if(playheadTimer!==null){clearTimeout(playheadTimer);playheadTimer=null}}
+function schedulePlayhead(){
+  if(playheadTimer!==null||!playhead||document.hidden||!csrf||stalePage||playhead.s.state!=="PLAYING")return;
+  const duration=Number(playhead.s.duration)||0;
+  if(duration>0&&paintedAt>=duration)return;
+  playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
+}
+function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -2480,6 +2488,13 @@ function renderQueueDestination(state){
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
   if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
 }
+let networkActivityKey=null;
+function renderNetworkActivity(entries){
+  const streams=Array.isArray(entries)?entries:[],activityRows=$("networkActivityRows");
+  const signature=JSON.stringify(streams.map(item=>[item.title,item.receiver,item.protocol,item.state,item.position,item.duration,item.is_local]));
+  if(signature===networkActivityKey)return;networkActivityKey=signature;
+  activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
@@ -2489,7 +2504,7 @@ $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
-const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+renderNetworkActivity(s.network_activity);
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
   return true;
 }
@@ -2521,7 +2536,10 @@ async function refresh(){
 }
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
-let lastRoom=null;function renderRoom(room){lastRoom=room;const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
+let lastRoom=null,participantRenderKey=null;
+function renderRoom(room){lastRoom=room;const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
+if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
 function renderPeers(peers,available){
   const list=$("peers");
@@ -3277,11 +3295,11 @@ $("cancelUpload").addEventListener("click",async()=>{
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
   finally{finishUpload()}
 });
-if(typeof requestAnimationFrame==="function")requestAnimationFrame(playheadFrame);
 document.addEventListener("visibilitychange",()=>{
   void syncRemoteWakeLock();
-  if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");roomEvents.stop();return}
+  if(document.hidden){stopPlayhead();clearTimeout(statusTimer);statusRequest?.abort("superseded");roomEvents.stop();return}
   statusFailures=0;
+  if(csrf&&!stalePage){paintPlayhead();schedulePlayhead()}
   refresh();
 });
 window.addEventListener("online",()=>{statusFailures=0;refresh()});
