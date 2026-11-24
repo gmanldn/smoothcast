@@ -89,6 +89,7 @@ py-modules = [
     "config_control",
     "config_persistence",
     "control_api",
+    "demo_mode",
     "demo_runtime",
     "demo_session",
     "density",
