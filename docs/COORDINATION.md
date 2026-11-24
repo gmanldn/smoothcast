@@ -34,16 +34,19 @@ the GitHub handover is not confirmed. The worktree contains an untracked
 duplicate commit. It verifies remote ancestry, replays the original SHA
 idempotently, and clears the receipt only when GitHub confirms publication.
 
-If `ship` exits **5** because **both** the push acknowledgement and
-follow-up remote fetch failed, the outcome is unknown: **do not assume the code
-was lost or shipped**. The private Git admin task journal stores
-`pending_push` with the exact commit SHA, verification and next action.
-Rerun `python3 scripts/agent.py ship` in the **same** worktree once remote
-access recovers. It first fetches `origin/develop` and verifies SHA
-ancestry. A landed SHA is converted into a single idempotent GitHub handover;
-an unpublished SHA is safely rebased/retried non-force. An unresolved remote
-or unreadable journal blocks `ship` / `finish`; never discard a worktree
-while a delivery receipt is pending.
+Before every private-worktree push, the Git admin task journal stores
+`pending_push` with the exact commit SHA, verification and next action. If
+that write fails, no push starts. A crash or interruption during `git push`
+therefore leaves a recoverable delivery intent.
+
+If `ship` exits **5** because the push acknowledgement and follow-up remote
+fetch failed, the outcome is unknown: **do not assume the code was lost or
+shipped**. Rerun `python3 scripts/agent.py ship` in the **same** worktree.
+It fetches `origin/develop` and verifies SHA ancestry. A landed SHA becomes a
+single idempotent GitHub handover; an unpublished SHA is safely retried
+non-force. Exit **7** after a confirmed push can also indicate an incomplete
+journal transition or cleanup. An unreadable receipt or unresolved remote
+blocks completion; never discard a worktree with a pending delivery receipt.
 
 A ticket's predicted files are an initial lease scope, not permission to
 overwrite arbitrary files. Before a push, `ship` detects new production paths,
