@@ -68,7 +68,10 @@ def test_issue_packet_is_bounded_and_keeps_last_handover():
     assert "issue #584" in packet
     assert "src/cli.py" in packet
     assert "one remaining test" in packet
-    assert "old\nHandover: old" not in packet
+    # A successor must see earlier completed slices, not only the last
+    # comment's remaining work, while keeping the brief token-bounded.
+    assert "old\nHandover: old" in packet
+    assert packet.index("Handover: old") < packet.index("Handover: one remaining test")
     assert len(packet) < 38000
 
 
