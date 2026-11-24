@@ -186,3 +186,7 @@ makes the job fail as *ambiguous* and is never reassigned; after a restart
 stop. A damaged ledger disables remote use rather than guessing. Free space and
 slots of a worker are enforced by that worker (it refuses when full); they are
 not advertised. This is trusted-LAN, not cryptographic.
+
+Limitation: the room only creates `LinkJobs` when this host has a local worker
+(or the portal is changed to also create it when `mesh_remote_acquisition` is
+on), so a host with no local tools cannot yet submit remotely.
