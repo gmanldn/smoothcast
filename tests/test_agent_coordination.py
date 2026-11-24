@@ -178,7 +178,7 @@ def test_recent_claim_feed_empty_second_page_is_complete(monkeypatch):
 
     def fake_gh(*args):
         requested.append(args[0])
-        return comments if "page=1" in args[0] else []
+        return comments if "&page=1&" in args[0] else []
 
     monkeypatch.setattr(agent, "gh", fake_gh)
     assert len(agent.recent_comments(pages=2)) == 100
