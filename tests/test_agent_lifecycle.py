@@ -199,6 +199,46 @@ def test_ship_patch_assignment_is_explicitly_opt_in():
     assert requested.assign_patch is True
 
 
+def test_assign_patch_requires_private_final_intent_before_mutating(monkeypatch):
+    def forbidden(_args):
+        raise AssertionError("invalid finalisation must not commit")
+    monkeypatch.setattr(agent, "commit_private_slice", forbidden)
+    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
+    for remaining in ("", "more tests"):
+        args = agent.build_parser().parse_args(["ship", "--assign-patch", "--next", remaining])
+        assert agent.cmd_ship(args) == 2
+    monkeypatch.setattr(agent, "private_task", lambda: None)
+    args = agent.build_parser().parse_args(["ship", "--assign-patch", "--next", "none"])
+    assert agent.cmd_ship(args) == 2
+
+
+def test_finalize_already_shipped_ticket_without_dummy_code_change(monkeypatch, tmp_path):
+    _, first, successor = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", successor)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: True)
+    deliveries = []
+    monkeypatch.setattr(agent, "publish_ship_handover",
+                        lambda *args: deliveries.append(args) or True)
+    args = agent.build_parser().parse_args(
+        ["ship", "--assign-patch", "--next", "none", "--skip-checks"])
+    assert agent.cmd_ship(args) == 2  # No published issue-specific work.
+    commit(first, "connector_result.txt", "delivered\n")
+    run(first, "push", "-q", "origin", "HEAD:develop")
+    assert agent.cmd_ship(args) == 0
+    tip = run(successor, "rev-parse", "origin/develop")
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 52")
+    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "src/version.py"
+    assert run(successor, "show", "HEAD:connector_result.txt") == "delivered"
+    assert len(deliveries) == 1
+    assert agent.cmd_ship(args) == 0  # Retry reuses the historical assignment.
+    assert run(successor, "rev-parse", "origin/develop") == tip
+    assert len(deliveries) == 1
+
+
 def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
     work = tmp_path / "work"
     work.mkdir()

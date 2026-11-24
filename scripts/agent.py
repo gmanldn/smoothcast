@@ -1087,6 +1087,13 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
+    if a.assign_patch:
+        if a.next.strip().lower() not in {"none", "complete", "no remaining work"}:
+            print("--assign-patch requires explicit final intent (--next none)")
+            return 2
+        if private_task() is None:
+            print("--assign-patch requires an agent.py start worktree")
+            return 2
     result = commit_private_slice(a)
     if result:
         return result
@@ -1148,8 +1155,14 @@ def cmd_ship(a: argparse.Namespace) -> int:
             return 4
         changed = [f for f in git("diff", "--name-only", "origin/develop...HEAD").split() if f]
         if not changed:
-            print("nothing to ship: HEAD equals origin/develop")
-            return 0
+            if not a.assign_patch:
+                print("nothing to ship: HEAD equals origin/develop")
+                return 0
+            # Native successors can finish code already delivered by a
+            # connector agent. Do not require a meaningless source edit.
+            if task is None or not ticket_commits(task["issue"]):
+                print("PATCH ASSIGNMENT REFUSED: no published ticket commit")
+                return 2
         if task is not None and not ensure_task_scope(task, changed):
             return 3
         rebased = git("rev-parse", "HEAD").strip() != before
@@ -1242,6 +1255,9 @@ def cmd_ship(a: argparse.Namespace) -> int:
                     print("PATCH INTEGRITY FAILED; no push.")
                     print((guarded.stdout + guarded.stderr)[-1200:])
                     return 6
+            elif not changed:
+                print("ticket PATCH already assigned; no new shipment needed")
+                return 0
         sha = git("rev-parse", "HEAD").strip()
         verification = shipment_verification(a.skip_checks, checks_run, unverified_checks)
         receipt = {"sha": sha, "files": changed,
