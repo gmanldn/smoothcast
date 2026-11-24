@@ -445,6 +445,64 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     return pick_runtime([native_python], env=env), env
 
 
+def install_link_tools(target: str, env: dict[str, str], *, check: bool = False) -> None:
+    """Optional native package installation; never enables guest acquisition.
+
+    Use the same trusted OS package repositories as the normal setup. The
+    check path only probes executable versions and cannot install anything.
+    """
+    def missing_tools() -> list[str]:
+        failures = []
+        for tool in ("yt-dlp", "aria2c"):
+            executable = shutil.which(tool, path=env.get("PATH"))
+            if executable is None:
+                failures.append(tool + " (missing)")
+                continue
+            try:
+                result = subprocess.run(
+                    [executable, "--version"], env=env, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=5, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                failures.append(tool + " (version probe failed)")
+            else:
+                if result.returncode:
+                    failures.append(tool + " (version probe failed)")
+        return failures
+
+    missing = missing_tools()
+    if missing and not check:
+        if target == "linux":
+            manager = manager_for_linux()
+            if manager not in LINUX_PACKAGES:
+                raise SetupError("No supported Linux package manager for optional link tools.")
+            command = ([manager, "-S", "--needed", "--noconfirm"] if manager == "pacman"
+                       else [manager, "install", "-y"])
+            checked_run(privileged([*command, "yt-dlp", "aria2"]), env=env)
+        elif target == "macos":
+            brew = find_brew()
+            if not brew:
+                raise SetupError("Homebrew is required to install optional link tools.")
+            checked_run([brew, "install", "yt-dlp", "aria2"], env=env)
+        elif target == "windows":
+            shell = msys2_root() / "usr" / "bin" / "bash.exe"
+            if not shell.is_file():
+                raise SetupError("MSYS2 is missing; repair the native runtime first.")
+            # Do not perform a partial database-only update; normal setup
+            # owns the native runtime and trust database.
+            checked_run([str(shell), "-lc",
+                         "pacman -S --needed --noconfirm "
+                         "mingw-w64-ucrt-x86_64-yt-dlp mingw-w64-ucrt-x86_64-aria2"],
+                        env=env)
+        else:
+            raise SetupError("Unsupported link-tools platform.")
+        missing = missing_tools()
+    if missing:
+        raise SetupError("Optional link tools unavailable: " + ", ".join(missing))
+    say("Verified yt-dlp and aria2c executables. Guest acquisition remains opt-in; "
+        "an owner-configured isolated worker is still required.")
+
+
 def ensure_venv(python: Path, env: dict[str, str], *,
                 check: bool = False) -> Path:
     installed = venv_python()
@@ -530,6 +588,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="Verify only; never install or modify anything")
     parser.add_argument("--no-shortcuts", action="store_true")
+    parser.add_argument("--link-tools", action="store_true",
+                        help="Install or check optional yt-dlp and aria2c engines; does not enable guest downloads")
     parser.add_argument("--install-dir", help="Install application at this location")
     parser.add_argument("-y", "--yes", action="store_true",
                         help="Accept the default install directory without prompting")
@@ -559,6 +619,8 @@ def main(argv: list[str] | None = None) -> int:
                 install_location.validate_destination(ROOT, destination)
                 child = [sys.executable, str(destination / "setup" / "bootstrap.py"),
                          "--target", args.target, "--in-place", "--yes"]
+                if args.link_tools:
+                    child.append("--link-tools")
                 if args.check:
                     if not (destination / "setup" / "bootstrap.py").is_file():
                         raise SetupError(f"No SmoothCast installation at {destination}")
@@ -572,6 +634,8 @@ def main(argv: list[str] | None = None) -> int:
         install = {"linux": install_linux, "macos": install_macos,
                    "windows": install_windows}[args.target]
         python, env = install(check=args.check)
+        if args.link_tools:
+            install_link_tools(args.target, env, check=args.check)
         isolated = ensure_venv(python, env, check=args.check)
         if not args.check:
             native_runtime.save(VENV, target=args.target, native_python=python, env=env)

@@ -267,7 +267,7 @@ class VersionTests(unittest.TestCase):
     def test_version_format(self):
         parts = version.__version__.split(".")
         self.assertEqual(len(parts), 3)
-        self.assertEqual(parts[0], "1")
+        self.assertEqual(parts[0], "2")
         self.assertTrue(parts[1].isdigit())
         self.assertTrue(parts[2].isdigit())
 

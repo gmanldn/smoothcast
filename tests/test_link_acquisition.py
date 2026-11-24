@@ -333,3 +333,436 @@ def test_youtube_adapter_uses_canonical_video_not_playlist_or_user_options(monke
     assert provider.acquire(source, tmp_path, stages.append, lambda *args: None, lambda: False).name == "example.mp4"
     assert len(calls) == 1
     assert stages == ["downloading", "verifying"]
+
+
+def test_readiness_does_not_treat_directory_as_launcher_or_execute_tools(monkeypatch, tmp_path):
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: None if name == "aria2c" else "/trusted/" + name)
+    monkeypatch.setattr(acquisition.subprocess, "run", lambda *args, **kwargs: pytest.fail("UI must not run probes"))
+    provider = acquisition.CommandProvider(("youtube", "magnet"), launcher=str(tmp_path))
+    assert provider.capabilities() == {"youtube": False, "magnet": False}
+    assert provider.readiness()["youtube"]["missing"] == ["owner-configured isolation launcher"]
+    assert provider.readiness()["magnet"]["missing"] == ["aria2c", "owner-configured isolation launcher"]
+    assert provider.readiness()["youtube"]["isolation_verified"] is False
+    assert "isolation launcher" in provider.readiness_text("youtube")
+
+
+def test_headless_worker_diagnostics_report_missing_and_failed_tools_without_paths(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: None if name == "aria2c" else "/private/" + name)
+    calls = []
+
+    def probe(command, **kwargs):
+        calls.append(command)
+        assert kwargs["timeout"] == 5
+        if command[0].endswith("ffprobe"):
+            raise acquisition.subprocess.TimeoutExpired(command, 5)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(acquisition.subprocess, "run", probe)
+    assert acquisition.diagnostics_main(["--tools-only"]) == 1
+    output = capsys.readouterr().out
+    report = json.loads(output)
+    assert report["tools"] == {"yt-dlp": "executable", "aria2c": "missing", "ffprobe": "probe_timed_out"}
+    assert report["launcher_configured"] is False and report["isolation_verified"] is False
+    assert "/private/" not in output
+    assert len(calls) == 2
+
+
+def test_tools_only_success_is_not_a_claim_of_isolation(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: "/trusted/" + name)
+    monkeypatch.setattr(acquisition.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
+    assert acquisition.diagnostics_main(["--tools-only"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["isolation_verified"] is False
+    assert acquisition.diagnostics_main([]) == 1
+
+
+def test_installed_cli_routes_link_check_before_gui(monkeypatch):
+    import cli
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["smoothcast", "--link-check", "--tools-only"])
+    monkeypatch.setattr(acquisition, "diagnostics_main",
+                        lambda args: 17 if args == ["--tools-only"] else 99)
+    assert cli.main() == 17
+
+
+def _journal_payload(*rows):
+    return {"schema": acquisition.JOURNAL_SCHEMA, "jobs": [
+        {"id": ident, "kind": "youtube", "identity": "abcdefghijk", "stage": stage}
+        for ident, stage in rows
+    ]}
+
+
+def test_restart_recovers_uncertain_delivery_without_automatic_replay(tmp_path):
+    journal = tmp_path / "acquisition-journal.json"
+    ident = "a" * 24
+    journal.write_text(json.dumps(_journal_payload((ident, "queueing"))), encoding="utf-8")
+    path = tmp_path / ident / "sample.mp4"
+    path.parent.mkdir()
+    path.write_bytes(b"previously acquired")
+    provider = FakeProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args), lambda owner: True)
+    try:
+        row = jobs.snapshot("new-session")[0]
+        assert row["stage"] == "delivery_uncertain"
+        assert row["can_cancel"] is False
+        assert jobs.submit("new-session", YOUTUBE, "new-request") == ident
+        assert provider.calls == [] and deliveries == []
+        assert path.read_bytes() == b"previously acquired"
+    finally:
+        jobs.close()
+
+
+def test_interrupted_download_requires_new_authorised_submission(tmp_path):
+    ident = "b" * 24
+    journal = tmp_path / "acquisition-journal.json"
+    journal.write_text(json.dumps(_journal_payload((ident, "resolving"))), encoding="utf-8")
+    provider = FakeProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args), lambda owner: True)
+    try:
+        assert jobs.snapshot()[0]["stage"] == "failed"
+        assert not provider.calls
+        new_id = jobs.submit("fresh-session", YOUTUBE, "fresh-request")
+        assert new_id != ident and provider.started.wait(2)
+        provider.resume.set()
+        _wait_for(lambda: jobs.snapshot()[-1]["stage"] == "ready")
+        assert len(deliveries) == 1
+        payload = journal.read_text()
+        assert "fresh-session" not in payload and "fresh-request" not in payload
+    finally:
+        provider.resume.set()
+        jobs.close()
+
+
+def test_queue_delivery_intent_is_on_disk_before_dispatch(tmp_path):
+    provider = FakeProvider()
+    provider.resume.set()
+    receipts = []
+
+    def deliver(owner, path):
+        receipt = json.loads((tmp_path / "acquisition-journal.json").read_text())
+        receipts.append(receipt["jobs"][-1])
+        assert receipt["jobs"][-1]["stage"] == "queueing"
+        assert path.read_bytes() == b"testdata"
+
+    jobs = acquisition.LinkJobs(tmp_path, provider, deliver, lambda owner: True)
+    try:
+        ident = jobs.submit("secret-session", YOUTUBE, "secret-request")
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+        assert receipts == [{"id": ident, "kind": "youtube",
+                             "identity": "abcdefghijk", "stage": "queueing"}]
+        saved = (tmp_path / "acquisition-journal.json").read_text()
+        assert json.loads(saved)["jobs"][0]["stage"] == "ready"
+        assert "secret" not in saved and "sample.mp4" not in saved
+    finally:
+        jobs.close()
+
+
+def test_write_failure_before_queue_delivery_never_dispatches(monkeypatch, tmp_path):
+    provider = FakeProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args), lambda owner: True)
+    try:
+        assert jobs._journal is not None
+        save = jobs._journal.save
+
+        def fail_queueing(rows):
+            rows = list(rows)
+            if any(row.stage == "queueing" for row in rows):
+                raise OSError("simulated disk full")
+            save(rows)
+
+        monkeypatch.setattr(jobs._journal, "save", fail_queueing)
+        ident = jobs.submit("owner", YOUTUBE, "request")
+        assert provider.started.wait(2)
+        provider.resume.set()
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "failed")
+        assert not deliveries and not jobs.storage_available()
+        _wait_for(lambda: not (tmp_path / ident).exists())
+        assert json.loads((tmp_path / "acquisition-journal.json").read_text())["jobs"][0]["stage"] == "resolving"
+    finally:
+        provider.resume.set()
+        jobs.close()
+
+
+def test_write_failure_after_dispatch_preserves_media_and_uncertain_receipt(monkeypatch, tmp_path):
+    provider = FakeProvider()
+    provider.resume.set()
+    delivered = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: delivered.append(path), lambda owner: True)
+    try:
+        save = jobs._journal.save
+
+        def fail_ready(rows):
+            rows = list(rows)
+            if any(row.stage == "ready" for row in rows):
+                raise OSError("simulated disk full")
+            save(rows)
+
+        monkeypatch.setattr(jobs._journal, "save", fail_ready)
+        jobs.submit("owner", YOUTUBE, "request")
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "delivery_uncertain")
+        assert len(delivered) == 1 and delivered[0].read_bytes() == b"testdata"
+        assert json.loads((tmp_path / "acquisition-journal.json").read_text())["jobs"][0]["stage"] == "queueing"
+    finally:
+        jobs.close()
+
+
+def test_room_restart_cannot_take_cache_lock_until_old_delivery_exits(tmp_path):
+    provider = FakeProvider()
+    provider.resume.set()
+    entered = threading.Event()
+    release = threading.Event()
+
+    def deliver(owner, path):
+        entered.set()
+        assert release.wait(3)
+
+    old = acquisition.LinkJobs(tmp_path, provider, deliver, lambda owner: True)
+    new = None
+    try:
+        old.submit("owner", YOUTUBE, "request")
+        assert entered.wait(2)
+        old.close()
+        blocked = acquisition.LinkJobs(tmp_path, FakeProvider(), lambda *args: None, lambda owner: True)
+        try:
+            assert blocked.capabilities() == {"youtube": False, "magnet": False}
+            with pytest.raises(acquisition.LinkError, match="recovery storage"):
+                blocked.submit("new-owner", MAGNET, "another-request")
+        finally:
+            blocked.close()
+        release.set()
+        _wait_for(lambda: old._worker is None)
+        new = acquisition.LinkJobs(tmp_path, FakeProvider(), lambda *args: None, lambda owner: True)
+        assert new.storage_available()
+        assert new.snapshot()[0]["stage"] == "ready"
+    finally:
+        release.set()
+        old.close()
+        if new:
+            new.close()
+
+
+def test_corrupt_journal_is_preserved_and_blocks_new_downloads(tmp_path):
+    journal = tmp_path / "acquisition-journal.json"
+    journal.write_text('{"schema":999,"jobs":[]}', encoding="utf-8")
+    provider = FakeProvider()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, lambda owner: True)
+    try:
+        assert not jobs.storage_available()
+        with pytest.raises(acquisition.LinkError, match="recovery storage"):
+            jobs.submit("owner", YOUTUBE, "request")
+        assert not provider.calls
+        assert journal.read_text() == '{"schema":999,"jobs":[]}'
+    finally:
+        jobs.close()
+
+
+def test_retained_cache_budget_preserves_previous_media(monkeypatch, tmp_path):
+    existing = tmp_path / ("a" * 24)
+    existing.mkdir()
+    media = existing / "queued.mp4"
+    media.write_bytes(b"existing")
+    monkeypatch.setattr(acquisition, "MAX_CACHE_BYTES", acquisition.MAX_BYTES)
+    provider = FakeProvider()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, lambda owner: True)
+    try:
+        jobs.submit("owner", YOUTUBE, "request")
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "failed")
+        assert "cache is full" in jobs.snapshot()[0]["error"]
+        assert provider.calls == []
+        assert media.read_bytes() == b"existing"
+    finally:
+        jobs.close()
+
+
+def test_youtube_search_results_are_projected_and_bounded():
+    row = {"id": "abcdefghijk", "title": "Example", "channel": "Artist",
+           "duration": 91.9, "url": "http://127.0.0.1/private", "thumbnail": "secret"}
+    raw = [
+        row, row, {**row, "id": "invalid"}, {**row, "id": "abcdefghij1", "is_live": True},
+        {**row, "id": "abcdefghij2", "ie_key": "Other"},
+        {**row, "id": "abcdefghij3", "_type": "playlist"},
+        *[{**row, "id": f"video{i:06d}"} for i in range(15)],
+    ]
+    results = acquisition.youtube_results(b"\n".join(json.dumps(v).encode() for v in raw))
+    assert len(results) == 10
+    assert results[0] == {"id": "abcdefghijk", "title": "Example", "channel": "Artist", "duration": 91}
+    assert len({r["id"] for r in results}) == 10
+    assert "127.0.0.1" not in json.dumps(results) and "secret" not in json.dumps(results)
+
+
+@pytest.mark.parametrize("query", [None, "", " ", "x" * 201, "bad\nquery", "bad\x00query"])
+def test_youtube_search_validates_query_before_worker(monkeypatch, query):
+    provider = acquisition.CommandProvider(("youtube",))
+    monkeypatch.setattr(acquisition, "_youtube_search_command",
+                        lambda *args: pytest.fail("invalid query reached worker"))
+    with pytest.raises(acquisition.LinkError) as exc:
+        provider.search_youtube(query, lambda: False)
+    assert exc.value.status == 400
+
+
+def test_youtube_search_uses_isolated_metadata_only_command(monkeypatch):
+    from types import SimpleNamespace
+
+    provider = acquisition.CommandProvider(("youtube",))
+    provider.launcher = "/trusted/sandbox"
+    provider.tools["youtube"] = "/trusted/yt-dlp"
+    provider.probe = "/trusted/ffprobe"
+
+    def launch(command, **kwargs):
+        assert command[:2] == [provider.launcher, provider.tools["youtube"]]
+        assert command[-2:] == ["--", "ytsearch10:--exec malicious"]
+        assert {"--ignore-config", "--skip-download", "--flat-playlist", "--no-cookies"} <= set(command)
+        kwargs["stdout"].write(b'{"id":"abcdefghijk","title":"Example"}\n')
+        kwargs["stdout"].flush()
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    monkeypatch.setattr(acquisition.subprocess, "Popen", launch)
+    assert provider.search_youtube("--exec malicious", lambda: False)[0]["id"] == "abcdefghijk"
+
+
+def test_youtube_search_output_and_global_capacity_are_bounded():
+    with pytest.raises(acquisition.LinkError, match="too much"):
+        acquisition.youtube_results(b"x" * (acquisition.SEARCH_OUTPUT_LIMIT + 1))
+    assert acquisition._SEARCH_SLOT.acquire(blocking=False)
+    try:
+        with pytest.raises(acquisition.LinkError) as exc:
+            acquisition._youtube_search_command("/not/run", "/not/run", "query", lambda: False)
+        assert exc.value.status == 429
+    finally:
+        acquisition._SEARCH_SLOT.release()
+
+
+def test_youtube_search_http_to_verified_queue(tmp_path):
+    from test_portal import PortalRig, login, decode
+
+    class SearchProvider(FakeProvider):
+        def search_youtube(self, query, cancelled):
+            assert query == "example music" and not cancelled()
+            return [{"id": "abcdefghijk", "title": "Example", "channel": "Artist", "duration": 90}]
+
+    rig = PortalRig()
+    provider = SearchProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args),
+                                rig.server.session_key_active)
+    rig.server.link_jobs = jobs
+    try:
+        origin = "http://" + rig.host
+        route = "/api/search/youtube"
+        body = {"q": "example music"}
+        assert rig.request("POST", route, body, origin=origin)[0] == 403
+        _, joined, cookie = login(rig)
+        csrf = joined["csrf"]
+        assert rig.request("POST", route, body, cookie=cookie, origin=origin)[0] == 403
+        status, response, _ = rig.request("POST", route, body, cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 200
+        result = decode(response)["results"][0]
+        assert result["title"] == "Example" and not provider.calls and not deliveries
+        receipt = {"url": "https://www.youtube.com/watch?v=" + result["id"],
+                   "request_id": "search-result-1", "authorised": True}
+        assert rig.request("POST", "/api/link-jobs", receipt, cookie=cookie,
+                           csrf=csrf, origin=origin)[0] == 202
+        assert provider.started.wait(2) and not deliveries
+        provider.resume.set()
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+        assert len(deliveries) == 1 and provider.calls == [acquisition.parse_link(YOUTUBE)]
+    finally:
+        provider.resume.set()
+        rig.close()
+
+
+def test_youtube_search_disabled_and_revoked_session(tmp_path):
+    from test_portal import PortalRig, login
+
+    rig = PortalRig()
+    try:
+        _, joined, cookie = login(rig)
+        assert rig.request("POST", "/api/search/youtube", {"q": "example"}, cookie=cookie,
+                           csrf=joined["csrf"], origin="http://" + rig.host)[0] == 503
+    finally:
+        rig.close()
+
+    class RevokedProvider(FakeProvider):
+        def search_youtube(self, query, cancelled):
+            pytest.fail("revoked guest reached search worker")
+
+    jobs = acquisition.LinkJobs(tmp_path, RevokedProvider(), lambda *args: None, lambda owner: False)
+    try:
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.search_youtube("revoked", "example")
+        assert exc.value.status == 403
+    finally:
+        jobs.close()
+
+
+def test_youtube_find_browser_selects_and_retries_same_queue_request():
+    import shutil
+    import subprocess
+
+    import portal
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for YouTube Find browser regression")
+    markup = portal._HTML
+    start = markup.index('(()=>{\n  const input=$("findInput"),search=$("youtubeSearch")')
+    script = markup[start:markup.index("</script>", start)]
+    harness = r"""
+const assert=require("node:assert/strict");
+class Element{
+  constructor(){this.children=[];this.events={};this.checked=false;this.hidden=true;this.value="";}
+  addEventListener(name,cb){this.events[name]=cb}
+  setAttribute(){}
+  append(...items){this.children.push(...items)}
+  replaceChildren(...items){this.children=items}
+  focus(){}
+}
+const el=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel",
+ "youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(k=>[k,new Element()]));
+const $=id=>el[id],document={createElement:()=>new Element()};
+let youtubeSearchBusy=false,linkCapabilities={youtube:true},calls=[],fail=true,refreshes=0;
+function updateLinkControls(){}
+function clock(s){return String(s)}
+async function refresh(){refreshes++}
+async function post(path,body){
+  calls.push({path,body});
+  if(path==="/api/search/youtube")return {results:[{id:"abcdefghijk",title:"Example",channel:"Artist",duration:90}]};
+  if(fail){fail=false;throw Error("network lost")}
+  return {message:"Acquisition accepted"};
+}
+"""
+    scenario = r"""
+(async()=>{
+  el.findInput.value="example";
+  el.findInput.events.input();
+  assert.equal(calls.length,0,"local typing never sends a YouTube query");
+  await el.youtubeSearch.events.click();
+  assert.deepEqual(calls,[{path:"/api/search/youtube",body:{q:"example"}}]);
+  assert.equal(el.youtubeResultsPanel.hidden,false);
+  const button=el.youtubeResults.children[0].children[1].children[0];
+  await button.events.click();
+  assert.equal(calls.length,1,"requires explicit authorisation");
+  el.youtubeAuthorised.checked=true;
+  await button.events.click();
+  assert.equal(button.disabled,false);
+  await button.events.click();
+  assert.equal(calls.length,3);
+  assert.deepEqual(calls[1],calls[2],"lost response must preserve request identity");
+  assert.equal(calls[2].path,"/api/link-jobs");
+  assert.equal(calls[2].body.url,"https://www.youtube.com/watch?v=abcdefghijk");
+  assert.equal(calls[2].body.authorised,true);
+  assert.equal(button.textContent,"Acquisition requested");
+  assert.equal(refreshes,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   check=True, text=True, timeout=10)

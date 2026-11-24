@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -316,3 +317,70 @@ def test_staged_notice_only_when_current_differs_from_running(root):
     ma.acknowledge(root, txn, B, clock=clock)
     assert "not yet running" in ma.staged_notice(root, A)
     assert ma.staged_notice(root, B) is None
+
+
+@pytest.mark.parametrize("filename", ["main.py", "stage-manifest.json"])
+def test_release_with_hardlinked_file_is_rejected_before_switch(root, tmp_path, filename):
+    clock = Clock()
+    settle_into_a(root, clock)
+    target = root / "releases" / B / filename
+    # The bytes still match. A second writable name makes the release mutable.
+    os.link(target, tmp_path / "external-alias")
+    with pytest.raises(ma.ActivationError, match="link|ordinary private file"):
+        ma.activate(root, B, probe=ok, clock=clock)
+    assert ma.read_active(root)["current"] == A
+
+
+@pytest.mark.parametrize("metadata", [
+    None, {"size": True, "sha256": "a" * 64},
+    {"size": -1, "sha256": "a" * 64},
+    {"size": mg.MAX_FILE_BYTES + 1, "sha256": "a" * 64},
+    {"size": 1, "sha256": "not-a-hash"},
+])
+def test_release_reuses_staging_manifest_schema(root, metadata):
+    manifest = root / "releases" / B / "stage-manifest.json"
+    manifest.write_text(json.dumps({"commit": B, "files": {"main.py": metadata}}))
+    with pytest.raises(ma.ActivationError, match="invalid file metadata"):
+        ma.verify_release(root, B)
+
+
+def test_release_rejects_file_larger_than_declared_without_reading_body(root, monkeypatch):
+    target = root / "releases" / B / "main.py"
+    with target.open("ab") as handle:
+        handle.write(b"unexpected append")
+    real = ma.hashlib.sha256
+
+    def no_payload_hash(*args, **kwargs):
+        digest = real(*args, **kwargs)
+        class NoUpdate:
+            def update(self, _block):
+                pytest.fail("file larger than manifest must be refused before hashing")
+            def hexdigest(self):
+                return digest.hexdigest()
+        return NoUpdate()
+
+    monkeypatch.setattr(ma.hashlib, "sha256", no_payload_hash)
+    with pytest.raises(ma.ActivationError, match="failed verification"):
+        ma.verify_release(root, B)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO fixture")
+def test_fifo_manifest_and_state_files_fail_without_blocking(root):
+    manifest = root / "releases" / B / "stage-manifest.json"
+    manifest.unlink()
+    os.mkfifo(manifest)
+    with pytest.raises(ma.ActivationError, match="ordinary private file"):
+        ma.verify_release(root, B)
+    active = root / ma.ACTIVE
+    os.mkfifo(active)
+    with pytest.raises(ma.ActivationError, match="ordinary private file"):
+        ma.read_active(root)
+
+
+def test_release_directory_cannot_be_redirected_via_symlink(root, tmp_path):
+    releases = root / "releases"
+    moved = tmp_path / "outside-releases"
+    releases.rename(moved)
+    releases.symlink_to(moved, target_is_directory=True)
+    with pytest.raises(ma.ActivationError, match="ordinary release directory"):
+        ma.verify_release(root, B)

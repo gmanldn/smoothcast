@@ -174,9 +174,7 @@ class CastControlApp(Adw.Application):
         self._paint_handler: int | None = None
         # Immutable identity captured before later checkout changes; never
         # shell out or import replacement modules while the GUI is running.
-        self._run_revision = version.read_checkout_revision(
-            pathlib.Path(__file__).resolve().parents[1]
-        )
+        self._run_revision = version.RUNNING_REVISION
         self._noticed_runtime_key: tuple[str | None, str | None] | None = None
         self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
 
@@ -444,7 +442,7 @@ class CastControlApp(Adw.Application):
             notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
                       "Finish playback, then quit and reopen to use the installed version.")
         else:
-            notice = (f"Checkout updated to {disk_revision[:8]}; this SmoothCast "
+            notice = (f"Installed build updated to {disk_revision[:8]}; this SmoothCast "
                       f"process started at {self._run_revision[:8]}. Finish playback, "
                       "then quit and reopen to load the new code.")
         window._installed_version_stale = True

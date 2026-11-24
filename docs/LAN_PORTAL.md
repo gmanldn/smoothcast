@@ -164,6 +164,28 @@ the same position. Seeking a converted stream restarts it at the new position.
 
 ## YouTube and BitTorrent link acquisition (#587)
 
+### Search YouTube from Find (#593)
+
+Enter a song, artist or video title in **Find something to play** and select
+**Search YouTube**. House results remain separate; typing alone does not send
+a query to YouTube. Up to ten single-video results show the title, channel and
+duration when known. Confirm that you are authorised to acquire the media and
+select **Add to Up Next**. The existing acquisition activity reports actual
+progress and verified queue acceptance; search itself never downloads media.
+A guest never needs to install anything. The host must enable the isolated
+YouTube worker described below; otherwise the search control is unavailable.
+
+The authenticated CSRF-protected `POST /api/search/youtube` accepts
+`{"q":"search text"}` (1–200 characters), returns a bounded `results` array
+of `id`, `title`, `channel` and nullable `duration` in seconds, and does not
+change the queue. Results are projected from metadata-only yt-dlp output through
+the same owner-configured sandbox, with one concurrent search process per host,
+a 20-second deadline and 512 KiB output budget. No third-party thumbnails,
+arbitrary result URLs or raw tool output are forwarded. Selection submits the
+canonical video link to the existing `POST /api/link-jobs` endpoint. Live
+search/provider qualification on native installations remains #588.
+
+
 In **Up Next → Add a link to Up Next**, a paired guest can submit one YouTube
 video or BitTorrent v1 magnet, confirm their authority to acquire the media,
 and watch the acquisition in the same room feed as other guests. The network
@@ -192,7 +214,10 @@ expose only the job staging directory and required read-only runtime,
 enforce a hard disk quota, and kill the entire descendant process tree.
 It receives the executable and individual arguments, never a shell command.
 **Do not use a pass-through launcher**. SmoothCast cannot attest an arbitrary
-launcher's OS-level restrictions. Automatic cross-platform sandbox setup and
+launcher's OS-level restrictions. Install optional engines with the platform setup's `--link-tools` flag.
+Use `smoothcast --link-check` for bounded local diagnostics. Preferences
+shows missing prerequisites without starting a worker.
+Automatic cross-platform sandbox setup and
 real-provider qualification are outstanding; unavailable workers are shown as
 unavailable instead of silently attempting unrestricted downloads.
 
@@ -217,8 +242,22 @@ Peer observations use the separate negotiated read-only telemetry protocol
 unknown or stale progress is explicitly labelled. This is observation of
 jobs initiated in each room, not remote assignment.
 
+Acquisition receipts are checkpointed in the private link-acquisitions
+cache before a worker starts and again before queue submission. No session
+keys, request identifiers, filenames or raw submitted URLs are persisted.
+A single-writer OS lock prevents an overlapping room restart from opening
+the same cache while the old worker is still delivering. After a restart,
+unfinished jobs require a new authorised submission; ambiguous queue
+delivery is preserved and never automatically replayed. Previously accepted
+jobs are historical receipts, not proof that the recovered queue still
+contains the media. Damaged or busy recovery storage disables acquisition
+without disabling playback. The retained-cache budget is 8 GiB with a
+reservation for each new 2 GiB job and a bounded directory count. Files
+that might still be queued or playing are never automatically evicted;
+owner review is required when the cache is full.
+
 **Remaining work:** authenticated remote assignment and verified node-to-node
-delivery, restart-safe leases/resume, secure worker provisioning. Follow
+delivery, engine-verified resume and safe cache reuse/eviction, secure worker provisioning. Follow
 [#587](https://github.com/gmanldn/smoothcast/issues/587),
 [#588](https://github.com/gmanldn/smoothcast/issues/588),
 [#589](https://github.com/gmanldn/smoothcast/issues/589) and

@@ -1242,7 +1242,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             state = "playing on TV"
         device = self._device()
         subtitle = f"{device} · {state}" if device else "No receiver selected"
-        tooltip = f"Running {APP_NAME} {version.label()}"
+        tooltip = f"Running {APP_NAME} {version.running_label()}"
         if self.update_notice:
             subtitle += (" · restart to apply" if getattr(self, "_installed_version_stale", False)
                          else " · update information")

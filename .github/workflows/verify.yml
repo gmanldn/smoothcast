@@ -110,11 +110,11 @@ jobs:
       - name: Verify staged browser transfers and queue controls
         run: python -m pytest -q tests/test_portal_transfer_journey.py tests/test_portal_guest_upload_smoke.py
       - name: Verify receiver capability planning
-        run: python -m pytest -q tests/test_capability_plan.py tests/test_receiver_memory.py
+        run: python -m pytest -q tests/test_capability_plan.py tests/test_receiver_memory.py tests/test_receiver_profiles.py
       - name: Verify cast failure recovery planning
         run: python -m pytest -q tests/test_cast_recovery.py tests/test_cast_preflight_preservation.py
       - name: Verify mesh Range resume integrity
-        run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py tests/test_mesh_range_resume.py
+        run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py tests/test_mesh_range_resume.py tests/test_mesh_acquisition_assignment.py
       - name: Verify source-second playheads and lock-screen controls
         run: python -m pytest -q tests/test_playhead_projection.py tests/test_media_session_portal.py
       - name: Verify private queue tooltips and filtered selection

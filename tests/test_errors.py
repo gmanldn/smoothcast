@@ -116,3 +116,20 @@ def test_preflight_and_ffmpeg_failures_carry_catalogue_codes(tmp_path):
     assert exc and exc.code == "ffmpeg.missing"
     assert issubclass(preflight.PreflightError, ffmpeg_compat.UserFacingError)
     assert subprocess  # imported for parity with the runtime modules
+
+
+def test_recent_ring_context_is_clipped_and_redacted_in_diagnostics():
+    import diagnostics
+    errors.reset_recent()
+    home = "/home/someone"
+    errors.record("cast.receiver_offline", {
+        "device": "Living Room TV", "path": f"{home}/Videos/secret.mkv",
+        "long": "x" * 500, "nested": {"a": 1}, **{f"k{i}": i for i in range(10)}})
+    entry = errors.recent()[-1]
+    assert len(entry["context"]) == 6 and "nested" not in entry["context"]
+    assert len(entry["context"]["long"]) == 120
+    shown = diagnostics.collect(home=home)["error_codes"][-1]
+    assert home not in str(shown)
+    errors.record("cast.receiver_offline")
+    assert "context" not in errors.recent()[-1]
+    errors.reset_recent()

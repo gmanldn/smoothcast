@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Register SmoothCast's launcher and icon for the current Linux user.
 
-Dock entries use this checkout's absolute launcher, never an outdated
-same-named pip or PATH command. The desktop ID matches GTK's application ID.
+Dock entries use the registered installation's absolute launcher, never an
+accidental development checkout or same-named PATH command. The desktop ID matches GTK's application ID.
 """
 from __future__ import annotations
 
@@ -18,6 +18,35 @@ ROOT = Path(__file__).resolve().parents[1]
 LEGACY_IDS = ("smoothcast.desktop", "cast-control.desktop")
 
 
+def registration_root(*, installer_target: bool = False) -> Path:
+    """Resolve the installed application; setup explicitly owns its new target.
+
+    A broken saved installation must not silently repoint a working dock
+    entry to a development checkout. Only an unregistered machine may use
+    the checkout fallback.
+    """
+    if installer_target:
+        return ROOT
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    pointer = config / "smoothcast" / "install-location"
+    try:
+        saved = pointer.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        candidate = Path.home() / ".local" / "opt" / "SmoothCast"
+        if not candidate.exists():
+            return ROOT
+    else:
+        candidate = Path(saved).expanduser()
+    if (not candidate.is_absolute()
+            or not (candidate / "smoothcast").is_file()
+            or not (candidate / "setup" / "bootstrap.py").is_file()
+            or not (candidate / "data" / "cast-control.png").is_file()
+            or not (candidate / "pyproject.toml").is_file()
+            or 'name = "smoothcast"' not in (candidate / "pyproject.toml").read_text(encoding="utf-8")):
+        raise ValueError(f"Registered SmoothCast installation is incomplete: {candidate}. Rerun setup.")
+    return candidate.resolve()
+
+
 def exec_argument(path: Path) -> str:
     """Quote an absolute Exec argument per the Desktop Entry specification."""
     value = str(path.resolve())
@@ -27,7 +56,7 @@ def exec_argument(path: Path) -> str:
 
 
 def desktop_entry(launcher: Path, *, legacy: bool = False) -> bytes:
-    """Build a desktop entry whose Exec is this checkout's absolute launcher."""
+    """Build a desktop entry whose Exec is the selected absolute launcher."""
     exec_value = exec_argument(launcher)
     try_exec = f"TryExec={launcher.resolve()}\n"
     path_line = f"Path={launcher.resolve().parent}\n"
@@ -96,28 +125,25 @@ def repair_gnome_favourites(*, pin: bool = False) -> bool:
         return False  # Unsupported shell/schema/session; never block launch.
 
 
-def install(*, data_home: Path | None = None, repair_pins: bool = True, pin: bool = False) -> bool:
-    """Install the canonical desktop entry and icon; repair legacy pins.
-
-    The canonical launcher is the project's ``smoothcast`` script (resolved
-    through the checkout). The legacy ``smoothcast.desktop`` entry is still
-    written (hidden) so existing dock pins keep working until GNOME favourites
-    are migrated.
-    """
-    source_icon = ROOT / "data" / "cast-control.png"
-    if not source_icon.is_file():
-        raise FileNotFoundError("SmoothCast icon missing from checkout")
-    base = data_home or Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share").expanduser()
+def desktop_files(root: Path, base: Path) -> dict[Path, bytes]:
+    """One source of truth for both installation and read-only verification."""
     apps = base / "applications"
+    launcher = root / "smoothcast"
     icon = base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png"
-    changed = write_if_changed(icon, source_icon.read_bytes())
-    # Pin one *specific checkout* to the dock; a bare "smoothcast" command
-    # can resolve to a stale pip script or a different installation on PATH.
-    # Preserve a hidden alias for previously pinned desktop IDs.
-    changed |= write_if_changed(apps / f"{APP_ID}.desktop", desktop_entry(ROOT / "smoothcast"))
-    changed |= write_if_changed(apps / "smoothcast.desktop", desktop_entry(ROOT / "smoothcast", legacy=True))
-    # The originally shipped desktop ID was smoothcast.desktop; GNOME favourites
-    # need updating to the real GTK app ID for dock grouping and window focusing.
+    files = {icon: (root / "data" / "cast-control.png").read_bytes(),
+             apps / f"{APP_ID}.desktop": desktop_entry(launcher)}
+    files.update({apps / name: desktop_entry(launcher, legacy=True) for name in LEGACY_IDS})
+    return files
+
+
+def install(*, data_home: Path | None = None, repair_pins: bool = True,
+            pin: bool = False, installer_target: bool = False) -> bool:
+    """Register the installed application, preserving both legacy dock IDs."""
+    root = registration_root(installer_target=installer_target)
+    base = data_home or Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share").expanduser()
+    changed = False
+    for destination, contents in desktop_files(root, base).items():
+        changed |= write_if_changed(destination, contents)
     if repair_pins:
         changed |= repair_gnome_favourites(pin=pin)
     return changed
@@ -128,16 +154,18 @@ def main() -> int:
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--check", action="store_true", help="Check desktop integration without modifying files")
     parser.add_argument("--pin", action="store_true", help="Also pin SmoothCast to the GNOME dock (adds it to favorite-apps if missing)")
+    parser.add_argument("--installer-target", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
         if args.check:
             base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share").expanduser()
-            ok = (base / "applications" / f"{APP_ID}.desktop").read_bytes() == desktop_entry(ROOT / "smoothcast")
-            ok &= (base / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_ID}.png").read_bytes() == (ROOT / "data" / "cast-control.png").read_bytes()
+            root = registration_root(installer_target=args.installer_target)
+            ok = all(path.is_file() and path.read_bytes() == contents
+                     for path, contents in desktop_files(root, base).items())
             if not args.quiet:
                 print("SmoothCast desktop integration: OK" if ok else "SmoothCast desktop integration: needs repair")
             return 0 if ok else 1
-        changed = install(repair_pins=True, pin=args.pin)
+        changed = install(repair_pins=True, pin=args.pin, installer_target=args.installer_target)
         if not args.quiet:
             print("SmoothCast desktop integration: repaired" if changed else "SmoothCast desktop integration: OK")
         return 0

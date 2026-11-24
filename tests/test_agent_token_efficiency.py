@@ -42,7 +42,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
             ROOT / "AGENTS.md",
             *(ROOT / "docs" / "agents").glob("*.md"),
         ]
-        self.assertEqual(len(files), 9, "Expected root plus eight focused handbook pages")
+        self.assertEqual(len(files), 10, "Expected root plus nine focused handbook pages")
         index = (ROOT / "docs/agents/README.md").read_text("utf-8")
         for page in ("workflow.md", "testing.md", "architecture.md",
                      "efficiency.md", "preferences.md", "fake_receivers.md", "peer-protocol.md"):
@@ -138,7 +138,7 @@ class AgentTokenEfficiencyTests(unittest.TestCase):
         for handler in ("_picture_spin", "_picture_changed", "_reset_picture",
                         "_build_picture_preferences"):
             self.assertIn("def " + handler + "(", picture)
-        self.assertIn("class PreferencesWindow(PicturePreferencesMixin, Adw.PreferencesWindow)", prefs)
+        self.assertIn("class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.PreferencesWindow)", prefs)
         self.assertIn("self._build_picture_preferences(playback, output)", prefs)
         self.assertLess(len(prefs.encode("utf-8")), 18_000)
 

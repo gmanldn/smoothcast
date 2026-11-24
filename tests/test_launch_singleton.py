@@ -67,6 +67,23 @@ class ProcScanTests(unittest.TestCase):
             self.assertEqual(launch.gui_instances(root), [4245])
             self.assertEqual(launch.gui_instances(root, {4245}), [])
 
+    @unittest.skipIf(os.name == "nt", "POSIX /proc process-table contract")
+    def test_recognised_other_installation_is_detected_only_when_requested(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            other = root / "other install"
+            (other / "src").mkdir(parents=True)
+            (other / "setup").mkdir()
+            script = other / "src" / "cast_control.py"
+            script.touch()
+            (other / "setup" / "launch.py").touch()
+            (other / "pyproject.toml").write_text('name = "smoothcast"', encoding="utf-8")
+            fake_proc(root, "4242", ("/usr/bin/python3", str(script)))
+            fake_proc(root, "4243", ("/usr/bin/python3", "/unrelated/src/cast_control.py"))
+            fake_proc(root, "4244", ("/usr/bin/python3", "-c", str(script)))
+            self.assertEqual(launch.gui_instances(root), [])
+            self.assertEqual(launch.gui_instances(root, all_installations=True), [4242])
+
     def test_identity_comes_from_the_app_source(self):
         app_id, object_path = launch.app_identity()
         self.assertIn(f'APP_ID = "{app_id}"', (ROOT / "src" / "cast_widgets.py").read_text(encoding="utf-8"))
@@ -103,6 +120,18 @@ class GuardBehaviourTests(unittest.TestCase):
     def test_unprobeable_instance_is_left_alone(self):
         # No session bus or no gdbus: fail closed, never spawn a second GUI.
         self.assertEqual(self.guard([101], None, []), (3, []))
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher guard")
+    def test_wrong_install_activation_is_not_reported_as_selected_startup(self):
+        with mock.patch.object(launch, "gui_instances", side_effect=[[101], []]), \
+             mock.patch.object(launch, "activate_existing", return_value=True):
+            self.assertEqual(launch.ensure_single_instance([]), 3)
+
+    @unittest.skipIf(os.name == "nt", "POSIX launcher guard")
+    def test_primary_exiting_during_activation_permits_clean_launch(self):
+        with mock.patch.object(launch, "gui_instances", side_effect=[[101], [101], []]), \
+             mock.patch.object(launch, "activate_existing", return_value=False):
+            self.assertIsNone(launch.ensure_single_instance([]))
 
     def test_no_pid_only_termination_helper_survives(self):
         self.assertFalse(hasattr(launch, "stop_instances"))

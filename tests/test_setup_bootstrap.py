@@ -66,6 +66,61 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("mingw-w64-ucrt-x86_64-python-gobject",
                       bootstrap.WINDOWS_PACKAGES)
 
+    def test_optional_link_tools_use_native_packages_and_recheck(self):
+        env = {"PATH": "/trusted/bin"}
+        for manager, prefix in (
+                ("apt-get", ["apt-get", "install", "-y"]),
+                ("dnf", ["dnf", "install", "-y"]),
+                ("pacman", ["pacman", "-S", "--needed", "--noconfirm"])):
+            with self.subTest(manager=manager), \
+                 mock.patch.object(bootstrap, "manager_for_linux", return_value=manager), \
+                 mock.patch.object(bootstrap, "privileged", side_effect=lambda x: x), \
+                 mock.patch.object(bootstrap.shutil, "which",
+                                   side_effect=[None, None, "/trusted/yt-dlp", "/trusted/aria2c"]), \
+                 mock.patch.object(bootstrap.subprocess, "run",
+                                   return_value=mock.Mock(returncode=0)) as probe, \
+                 mock.patch.object(bootstrap, "checked_run") as install:
+                bootstrap.install_link_tools("linux", env)
+                install.assert_called_once_with([*prefix, "yt-dlp", "aria2"], env=env)
+                self.assertEqual(probe.call_count, 2)
+                self.assertTrue(all(call.kwargs["timeout"] == 5 for call in probe.call_args_list))
+
+    def test_optional_link_tools_macos_and_windows_use_native_repository(self):
+        env = {"PATH": "/trusted/bin"}
+        for target in ("macos", "windows"):
+            with self.subTest(target=target), \
+                 mock.patch.object(bootstrap.shutil, "which",
+                                   side_effect=[None, None, "/trusted/yt-dlp", "/trusted/aria2c"]), \
+                 mock.patch.object(bootstrap.subprocess, "run",
+                                   return_value=mock.Mock(returncode=0)), \
+                 mock.patch.object(bootstrap, "checked_run") as install, \
+                 mock.patch.object(bootstrap, "find_brew", return_value="/trusted/brew"), \
+                 mock.patch.object(bootstrap.Path, "is_file", return_value=True):
+                bootstrap.install_link_tools(target, env)
+                command = install.call_args.args[0]
+                if target == "macos":
+                    self.assertEqual(command, ["/trusted/brew", "install", "yt-dlp", "aria2"])
+                else:
+                    self.assertIn("mingw-w64-ucrt-x86_64-yt-dlp", command[-1])
+                    self.assertIn("mingw-w64-ucrt-x86_64-aria2", command[-1])
+                self.assertEqual(install.call_args.kwargs["env"], env)
+
+    def test_optional_link_tools_readonly_never_installs_or_hides_probe_failure(self):
+        with mock.patch.object(bootstrap.shutil, "which", return_value="/trusted/engine"), \
+             mock.patch.object(bootstrap.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("engine", 5)), \
+             mock.patch.object(bootstrap, "checked_run") as install:
+            with self.assertRaisesRegex(bootstrap.SetupError, "version probe failed"):
+                bootstrap.install_link_tools("linux", {"PATH": "/trusted"}, check=True)
+            install.assert_not_called()
+
+    def test_optional_link_tools_existing_executables_do_not_install(self):
+        with mock.patch.object(bootstrap.shutil, "which", return_value="/trusted/engine"), \
+             mock.patch.object(bootstrap.subprocess, "run", return_value=mock.Mock(returncode=0)), \
+             mock.patch.object(bootstrap, "checked_run") as install:
+            bootstrap.install_link_tools("linux", {"PATH": "/trusted"}, check=False)
+            install.assert_not_called()
+
     def test_linux_package_manager_selection_and_dry_run(self):
         self.assertEqual(
             bootstrap.manager_for_linux(which=lambda x: x if x == "dnf" else None),

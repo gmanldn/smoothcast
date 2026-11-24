@@ -70,6 +70,10 @@ def _main() -> int:
         # Explicit, local-only privacy reset. No GI, display or receiver activity.
         import receiver_memory
         return receiver_memory.main(sys.argv[2:])
+    if sys.argv[1:2] == ["--link-check"]:
+        # Explicit read-only engine checks; no GTK, receiver or source requests.
+        import link_acquisition
+        return link_acquisition.diagnostics_main(sys.argv[2:])
     if sys.argv[1:2] == ["--network-check"]:
         # Explicit diagnostic command; does not import GTK or start a cast.
         import network_routes

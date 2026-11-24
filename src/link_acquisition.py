@@ -11,6 +11,8 @@ import base64
 from collections import OrderedDict
 from dataclasses import dataclass, field
 import hashlib
+import json
+import math
 import os
 from pathlib import Path
 import re
@@ -19,7 +21,9 @@ import shutil
 import signal
 import stat
 import subprocess
+import tempfile
 import threading
+import unicodedata
 import time
 from urllib.parse import parse_qs, urlsplit
 from typing import Callable
@@ -30,6 +34,8 @@ FREE_RESERVE = 512 * 1024**2
 MAX_FILES = 128
 MAX_PENDING = 4
 MAX_RECORDS = 24
+MAX_CACHE_BYTES = 8 * 1024**3
+MAX_CACHE_DIRECTORIES = 128
 MAX_SECONDS = 1800
 MEDIA_SUFFIXES = frozenset({
     ".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi", ".ts",
@@ -38,6 +44,10 @@ MEDIA_SUFFIXES = frozenset({
 TERMINAL = frozenset({"ready", "failed", "cancelled", "delivery_uncertain"})
 VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 REQUEST_ID = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
+SEARCH_LIMIT = 10
+SEARCH_OUTPUT_LIMIT = 512 * 1024
+SEARCH_SECONDS = 20
+_SEARCH_SLOT = threading.BoundedSemaphore(1)
 
 
 class LinkError(ValueError):
@@ -268,6 +278,26 @@ def _tree_bytes(root: Path) -> int:
     return total
 
 
+def _reserve_cache_capacity(root: Path) -> None:
+    """Bound retained staging without deleting a possibly queued/playing file.
+
+    One writer and one active job reserve their full maximum payload size.
+    Count even old, unindexed job directories; eviction of a journal receipt
+    never implies permission to unlink the corresponding media.
+    """
+    total = count = 0
+    for directory in root.iterdir():
+        if not JOB_ID.fullmatch(directory.name):
+            continue
+        count += 1
+        metadata = directory.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or count >= MAX_CACHE_DIRECTORIES:
+            raise LinkError(507, "Acquisition cache requires owner review before more downloads.")
+        total += _tree_bytes(directory)
+        if total + MAX_BYTES > MAX_CACHE_BYTES:
+            raise LinkError(507, "Acquisition cache is full. Existing media is preserved.")
+
+
 def _safe_media(root: Path, path: Path) -> Path:
     try:
         info = path.lstat()
@@ -278,6 +308,97 @@ def _safe_media(root: Path, path: Path) -> Path:
     except (OSError, ValueError):
         raise LinkError(422, "The download did not produce a supported media file.") from None
     return path
+
+
+def _search_text(value: object) -> str:
+    if (not isinstance(value, str) or not 1 <= len(value.strip()) <= 200
+            or any(unicodedata.category(ch).startswith("C") for ch in value)):
+        raise LinkError(400, "Enter a YouTube search of 1 to 200 characters.")
+    return value.strip()
+
+
+def _search_label(value: object, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return "".join(ch for ch in value[:limit] if not unicodedata.category(ch).startswith("C")).strip()
+
+
+def youtube_results(raw: bytes) -> list[dict]:
+    """Project flat metadata onto a small, safe, single-video result contract."""
+    if len(raw) > SEARCH_OUTPUT_LIMIT:
+        raise LinkError(502, "YouTube returned too much search data.")
+    results: list[dict] = []
+    seen: set[str] = set()
+    for line in raw.splitlines():
+        try:
+            row = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        identity = row.get("id")
+        if (not isinstance(identity, str) or not VIDEO_ID.fullmatch(identity)
+                or identity in seen or row.get("_type") in ("playlist", "multi_video")
+                or row.get("ie_key") not in (None, "Youtube")
+                or row.get("is_live") is True or row.get("live_status") in ("is_live", "is_upcoming")):
+            continue
+        title = _search_label(row.get("title"), 200)
+        if not title:
+            continue
+        channel = _search_label(row.get("channel") or row.get("uploader"), 100)
+        duration = row.get("duration")
+        seconds = (int(duration) if type(duration) in (int, float)
+                   and 0 < duration <= MAX_SECONDS * 48 and math.isfinite(duration) else None)
+        results.append({"id": identity, "title": title, "channel": channel, "duration": seconds})
+        seen.add(identity)
+        if len(results) >= SEARCH_LIMIT:
+            break
+    return results
+
+
+def _youtube_search_command(launcher: str, executable: str, text: str, cancelled) -> list[dict]:
+    """Metadata only, bounded by a global slot, time and output budget."""
+    if not _SEARCH_SLOT.acquire(blocking=False):
+        raise LinkError(429, "YouTube search is busy. Try again shortly.")
+    try:
+        with tempfile.TemporaryDirectory(prefix="smoothcast-search-") as directory:
+            with tempfile.TemporaryFile(dir=directory) as output:
+                command = [launcher, executable, "--ignore-config", "--no-cache-dir",
+                           "--no-cookies", "--no-cookies-from-browser", "--flat-playlist",
+                           "--skip-download", "--dump-json", "--no-warnings",
+                           "--socket-timeout", "8", "--retries", "0", "--extractor-retries", "0",
+                           "--", f"ytsearch{SEARCH_LIMIT}:{text}"]
+                kwargs = {"start_new_session": True} if os.name == "posix" else {}
+                process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                                           stdout=output, stderr=subprocess.DEVNULL, **kwargs)
+                deadline = time.monotonic() + SEARCH_SECONDS
+                try:
+                    while process.poll() is None:
+                        if cancelled():
+                            raise LinkError(403, "Room access was revoked.")
+                        if time.monotonic() >= deadline:
+                            raise LinkError(504, "YouTube search timed out. Try again.")
+                        if os.fstat(output.fileno()).st_size > SEARCH_OUTPUT_LIMIT:
+                            raise LinkError(502, "YouTube returned too much search data.")
+                        time.sleep(0.05)
+                    if process.returncode:
+                        raise LinkError(502, "YouTube search is unavailable right now.")
+                    output.seek(0)
+                    return youtube_results(output.read(SEARCH_OUTPUT_LIMIT + 1))
+                finally:
+                    if process.poll() is None:
+                        try:
+                            if os.name == "posix":
+                                os.killpg(process.pid, signal.SIGKILL)
+                            else:
+                                process.kill()
+                        except OSError:
+                            pass
+                        process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        raise LinkError(503, "The isolated YouTube search worker is unavailable.") from None
+    finally:
+        _SEARCH_SLOT.release()
 
 
 class CommandProvider:
@@ -291,15 +412,43 @@ class CommandProvider:
     """
     def __init__(self, kinds=(), *, launcher=None):
         raw = launcher or os.environ.get("SMOOTHCAST_LINK_SANDBOX", "")
-        self.launcher = str(raw) if raw and Path(raw).is_absolute() and os.access(raw, os.X_OK) else ""
+        self.launcher = (str(raw) if raw and Path(raw).is_absolute()
+                         and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
         self.probe = shutil.which("ffprobe")
         self.kinds = frozenset(kinds)
 
+    def readiness(self) -> dict:
+        """Cheap local prerequisites only; never runs programs or contacts a source."""
+        return {kind: {
+            "enabled_by_owner": kind in self.kinds,
+            "engine_present": bool(self.tools[kind]),
+            "probe_present": bool(self.probe),
+            "launcher_configured": bool(self.launcher),
+            "isolation_verified": False,
+            "missing": [name for name, present in (
+                ("yt-dlp" if kind == "youtube" else "aria2c", self.tools[kind]),
+                ("ffprobe", self.probe), ("owner-configured isolation launcher", self.launcher),
+            ) if not present],
+        } for kind in ("youtube", "magnet")}
+
     def capabilities(self) -> dict:
-        return {kind: bool(kind in self.kinds and self.launcher and self.tools[kind] and self.probe)
-                for kind in ("youtube", "magnet")}
+        return {kind: row["enabled_by_owner"] and not row["missing"]
+                for kind, row in self.readiness().items()}
+
+    def search_youtube(self, value: object, cancelled) -> list[dict]:
+        text = _search_text(value)
+        if not self.capabilities().get("youtube"):
+            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+        return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
+
+    def readiness_text(self, kind: str) -> str:
+        row = self.readiness()[kind]
+        if row["missing"]:
+            return "Missing: " + ", ".join(row["missing"]) + "."
+        return ("Worker configured; OS isolation is not verified. "
+                + ("Enabled on next room restart." if row["enabled_by_owner"] else "Owner permission is off."))
 
     def _run(self, executable, args, directory, cancelled, progress, deadline):
         if cancelled():
@@ -444,6 +593,124 @@ class _Job:
     cancel: threading.Event = field(default_factory=threading.Event)
 
 
+JOURNAL_SCHEMA = 1
+JOURNAL_BYTES = 64 * 1024
+JOB_ID = re.compile(r"[0-9a-f]{24}\Z")
+
+
+class _JobJournal:
+    """Private single-writer receipt log; a restart never replays delivery.
+
+    Hold the OS lock until the previous worker exits, not merely until its
+    room closes. No session keys, requests, titles or file paths are stored.
+    """
+    def __init__(self, root: Path):
+        import cache_privacy
+
+        self.path = root / "acquisition-journal.json"
+        self.fd = None
+        cache_privacy.ensure_private_directory(root)
+        lock = root / ".acquisition.lock"
+        if lock.is_symlink():
+            raise ValueError("Unsafe acquisition lock")
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0), 0o600)
+        try:
+            metadata = os.fstat(fd)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise ValueError("Invalid acquisition lock")
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                if metadata.st_uid != os.getuid():
+                    raise ValueError("Acquisition lock belongs to another user")
+                os.fchmod(fd, 0o600)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BaseException:
+            os.close(fd)
+            raise
+        self.fd = fd
+
+    def close(self):
+        if self.fd is not None:
+            fd, self.fd = self.fd, None
+            os.close(fd)
+
+    def load(self):
+        import json
+
+        if self.path.is_symlink():
+            raise ValueError("Unsafe acquisition journal")
+        try:
+            fd = os.open(self.path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                         | getattr(os, "O_NONBLOCK", 0))
+        except FileNotFoundError:
+            return []
+        try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                    or metadata.st_size > JOURNAL_BYTES):
+                raise ValueError("Invalid acquisition journal file")
+            if os.name != "nt":
+                if metadata.st_uid != os.getuid():
+                    raise ValueError("Acquisition journal belongs to another user")
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "rb") as stream:
+                fd = -1
+                content = stream.read(JOURNAL_BYTES + 1)
+            if len(content) > JOURNAL_BYTES:
+                raise ValueError("Acquisition journal exceeds limit")
+            data = json.loads(content)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        if (not isinstance(data, dict) or type(data.get("schema")) is not int
+                or data["schema"] != JOURNAL_SCHEMA or not isinstance(data.get("jobs"), list)
+                or len(data["jobs"]) > MAX_RECORDS):
+            raise ValueError("Unsupported acquisition journal")
+        jobs = []
+        seen = set()
+        for record in data["jobs"]:
+            if not isinstance(record, dict):
+                raise ValueError("Invalid acquisition receipt")
+            ident, kind, identity, stage = (record.get(k) for k in ("id", "kind", "identity", "stage"))
+            if (not isinstance(ident, str) or not JOB_ID.fullmatch(ident) or ident in seen
+                    or not isinstance(kind, str) or kind not in {"youtube", "magnet"}
+                    or not isinstance(identity, str) or not isinstance(stage, str)
+                    or stage not in TERMINAL | {"pending", "resolving", "downloading", "verifying", "queueing"}):
+                raise ValueError("Invalid acquisition receipt")
+            source = Source(kind, identity)
+            if parse_link(source.url) != source:
+                raise ValueError("Noncanonical acquisition source")
+            seen.add(ident)
+            error = ""
+            if stage in {"queueing", "delivery_uncertain"}:
+                stage = "delivery_uncertain"
+                error = "Previous queue delivery was not confirmed. Check recovered Up Next; not replayed."
+            elif stage == "ready":
+                error = "Previously accepted by the room; check recovered Up Next."
+            elif stage not in TERMINAL:
+                stage = "failed"
+                error = "Interrupted by a room restart. Submit a new authorised request to retry."
+            elif stage == "failed":
+                error = "Previous acquisition failed. Submit a new authorised request to retry."
+            jobs.append(_Job(ident, "", "", source, stage=stage, title=source.label, error=error))
+        return jobs
+
+    def save(self, jobs):
+        import cache_privacy
+
+        if self.fd is None:
+            raise OSError("Acquisition journal is closed")
+        cache_privacy.write_private_json_atomic(self.path, {
+            "schema": JOURNAL_SCHEMA,
+            "jobs": [{"id": job.id, "kind": job.source.kind, "identity": job.source.identity,
+                      "stage": job.stage} for job in jobs],
+        })
+
+
 class LinkJobs:
     """One bounded worker per room; snapshots expose no URL, hash or path."""
     def __init__(self, root: Path, provider, deliver: Callable, owner_active: Callable):
@@ -457,9 +724,59 @@ class LinkJobs:
         self._worker: threading.Thread | None = None
         self._closed = False
         self._revision = 0
+        self._journal = None
+        self._journal_error = False
+        try:
+            self._journal = _JobJournal(self.root)
+            self._jobs.update((job.id, job) for job in self._journal.load())
+        except (OSError, ValueError, RecursionError):
+            # Preserve damaged or busy storage; never start another writer.
+            self._journal_error = True
+            self._release_journal()
 
     def capabilities(self):
+        if self._journal_error or self._closed:
+            return {"youtube": False, "magnet": False}
         return self.provider.capabilities()
+
+    def search_youtube(self, owner: str, value: object) -> list[dict]:
+        text = _search_text(value)
+        search = getattr(self.provider, "search_youtube", None)
+        if not self.capabilities().get("youtube") or not callable(search):
+            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+
+        def cancelled():
+            return self._closed or not self.owner_active(owner)
+
+        if cancelled():
+            raise LinkError(403, "Room access was revoked.")
+        results = search(text, cancelled)
+        if cancelled():
+            raise LinkError(403, "Room access was revoked.")
+        return results
+
+    def storage_available(self):
+        return not self._journal_error and not self._closed
+
+    def _save(self):
+        """Caller holds _lock. A failed write prevents new external work."""
+        if self._journal_error or self._journal is None:
+            return False
+        try:
+            self._journal.save(self._jobs.values())
+            return True
+        except (OSError, ValueError):
+            self._journal_error = True
+            for job in self._jobs.values():
+                if job.stage == "pending":
+                    self._change(job, stage="failed", error="Acquisition recovery storage is unavailable.")
+            self._revision += 1
+            return False
+
+    def _release_journal(self):
+        if self._journal is not None:
+            self._journal.close()
+            self._journal = None
 
     def submit(self, owner: str, value: object, request: object) -> str:
         source = parse_link(value)
@@ -467,11 +784,13 @@ class LinkJobs:
             raise LinkError(400, "Submission identifier is invalid.")
         if not self.owner_active(owner):
             raise LinkError(401, "Room access was revoked.")
-        if not self.capabilities().get(source.kind):
-            raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
+            if self._journal_error:
+                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+            if not self.capabilities().get(source.kind):
+                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
             receipt = self._requests.get((owner, request))
             if receipt is not None:
                 job = self._jobs.get(receipt)
@@ -485,8 +804,12 @@ class LinkJobs:
                     return job.id
             if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
                 raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
+            previous_jobs = self._jobs.copy()
+            previous_requests = self._requests.copy()
             while len(self._jobs) >= MAX_RECORDS:
-                expired = next((j for j in self._jobs.values() if j.stage in TERMINAL), None)
+                # Never forget an ambiguous dispatch merely to free a slot.
+                expired = next((j for j in self._jobs.values()
+                                if j.stage in TERMINAL - {"delivery_uncertain"}), None)
                 if expired is None:
                     raise LinkError(429, "The room acquisition queue is full.")
                 self._jobs.pop(expired.id)
@@ -496,6 +819,9 @@ class LinkJobs:
             job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
             self._jobs[job.id] = job
             self._remember_request(owner, request, job.id)
+            if not self._save():
+                self._jobs, self._requests = previous_jobs, previous_requests
+                raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
             self._revision += 1
             if self._worker is None:
                 self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
@@ -532,10 +858,15 @@ class LinkJobs:
         while True:
             with self._lock:
                 job = next((j for j in self._jobs.values() if j.stage == "pending"), None)
-                if job is None or self._closed:
+                if job is None or self._closed or self._journal_error:
                     self._worker = None
+                    if self._closed:
+                        self._release_journal()
                     return
                 self._change(job, stage="resolving")
+                if not self._save():
+                    self._change(job, stage="failed", error="Acquisition receipt could not be saved.")
+                    continue
             directory = self.root / job.id
             delivered = False
 
@@ -550,7 +881,7 @@ class LinkJobs:
             try:
                 if cancelled():
                     raise LinkError(409, "Acquisition cancelled.")
-                self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+                _reserve_cache_capacity(self.root)
                 directory.mkdir(mode=0o700)
                 path = self.provider.acquire(job.source, directory, stage,
                                              lambda n, total: self._progress(job, n, total), cancelled)
@@ -561,15 +892,24 @@ class LinkJobs:
                 with self._lock:
                     if cancelled() or self._closed:
                         raise LinkError(409, "Acquisition cancelled.")
+                    if self._journal_error:
+                        raise LinkError(503, "Acquisition recovery storage is unavailable.")
                     title = "".join(c for c in path.name if c.isprintable())[:120]
                     title = title.replace(job.source.identity, "[source]") or job.source.label
                     self._change(job, stage="queueing", title=title,
                                  received=path.stat().st_size, total=path.stat().st_size, rate=None)
+                    # Durable intent precedes the irreversible queue call.
+                    if not self._save():
+                        raise LinkError(503, "Queue delivery receipt could not be saved.")
                     delivered = True
                 # Keep the file if a dispatch may have happened. A lost
                 # response must not remove media already in the queue.
                 self.deliver(job.owner, path)
-                self._change(job, stage="ready")
+                with self._lock:
+                    self._change(job, stage="ready")
+                    if not self._save():
+                        self._change(job, stage="delivery_uncertain",
+                                     error="Queue accepted media but its receipt could not be saved. Check Up Next.")
             except LinkError as exc:
                 self._change(job, stage="cancelled" if cancelled() and not delivered else
                              "delivery_uncertain" if delivered else "failed", error=exc.message, rate=None)
@@ -581,13 +921,16 @@ class LinkJobs:
             finally:
                 if not delivered:
                     shutil.rmtree(directory, ignore_errors=True)
+                with self._lock:
+                    if job.stage != "ready":
+                        self._save()
 
     def snapshot(self, owner=None):
         with self._lock:
             return [{"id": j.id, "kind": j.source.kind, "title": j.title, "stage": j.stage,
                      "received": j.received, "total": j.total, "rate": j.rate, "error": j.error,
                      "executor": "room host",
-                     "can_cancel": j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
+                     "can_cancel": bool(j.owner) and j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
                     for j in self._jobs.values()]
 
     def revision(self):
@@ -604,6 +947,7 @@ class LinkJobs:
             job.cancel.set()
             if job.stage == "pending":
                 self._change(job, stage="cancelled", error="Acquisition cancelled.")
+                self._save()
 
     def revoke(self, owners):
         with self._lock:
@@ -612,6 +956,7 @@ class LinkJobs:
                     job.cancel.set()
                     if job.stage == "pending":
                         self._change(job, stage="cancelled", error="Room access was revoked.")
+            self._save()
 
     def close(self):
         with self._lock:
@@ -621,3 +966,56 @@ class LinkJobs:
                     job.cancel.set()
                     if job.stage == "pending":
                         self._change(job, stage="cancelled")
+            self._save()
+            if self._worker is None:
+                self._release_journal()
+
+
+def diagnostics_main(argv=None) -> int:
+    """Explicit local executable probes. Does not start the sandbox or download."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Check local link acquisition prerequisites")
+    parser.add_argument("--tools-only", action="store_true",
+                        help="Check engine binaries without requiring an isolation launcher")
+    args = parser.parse_args(argv)
+    provider = CommandProvider()
+    tools = {}
+    for name, executable, flag in (
+            ("yt-dlp", provider.tools["youtube"], "--version"),
+            ("aria2c", provider.tools["magnet"], "--version"),
+            ("ffprobe", provider.probe, "-version")):
+        if executable is None:
+            tools[name] = "missing"
+            continue
+        try:
+            result = subprocess.run([executable, flag], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    timeout=5, check=False)
+            tools[name] = "executable" if result.returncode == 0 else "probe_failed"
+        except subprocess.TimeoutExpired:
+            tools[name] = "probe_timed_out"
+        except OSError:
+            tools[name] = "probe_failed"
+    ready = all(status == "executable" for status in tools.values())
+    report = {
+        "tools": tools,
+        "launcher_configured": bool(provider.launcher),
+        "isolation_verified": False,
+        "javascript_runtime_present": {
+            name: bool(shutil.which(name)) for name in ("deno", "node", "qjs")},
+        "notes": [
+            "No network or media acquisition was attempted.",
+            "The YouTube engine may also need a compatible JavaScript runtime and local EJS package.",
+            "Executable presence does not prove supported versions or functioning downloads.",
+            "An owner-configured isolation launcher is required; its policy is not attested by this check.",
+            "Enable providers in Preferences only after qualifying the isolated worker.",
+        ],
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if ready and (args.tools_only or provider.launcher) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(diagnostics_main())

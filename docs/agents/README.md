@@ -12,6 +12,7 @@ repository root. This routing page is the human-readable fallback: open
 | --- | --- |
 | **Start here when picking work:** choose, claim, ship, close without collisions | [Coordination](../COORDINATION.md) (`python3 scripts/agent.py board`) |
 | Claim, implement, review or close an issue | [Workflow](workflow.md) and [canonical issues](../ISSUES.md) |
+| Network, DNS or push failures inside an agent sandbox | [Sandbox networking](sandbox-network.md) |
 | Test a change; debug GTK, CI, casting or local state | [Testing and safety](testing.md) |
 | Extend the DLNA fake receiver from captured protocol behavior | [Fake receiver profiles](fake_receivers.md) |
 | Run the headless suite or use the CASTV2 fake | [Testing SmoothCast](../TESTING.md) |

@@ -208,9 +208,23 @@ def is_gui_python_command(argv: list[str], target: str) -> bool:
     return index < len(argv) and argv[index] == target
 
 
+def known_gui_script(candidate: str) -> bool:
+    """Recognise a SmoothCast source tree, not just a matching filename."""
+    try:
+        path = Path(candidate)
+        if not path.is_absolute() or path.name != "cast_control.py" or path.parent.name != "src":
+            return False
+        root = path.parent.parent
+        return (path.is_file() and (root / "setup" / "launch.py").is_file()
+                and 'name = "smoothcast"' in (root / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+
+
 def gui_instances(proc_root: Path = Path("/proc"),
-                  exclude: set[int] | None = None) -> list[int]:
-    """PIDs of other same-user processes running *this* checkout's GTK app."""
+                  exclude: set[int] | None = None, *,
+                  all_installations: bool = False) -> list[int]:
+    """Same-user GUI PIDs; optionally include recognised other installations."""
     target = str((ROOT / "src" / "cast_control.py").resolve())
     skip = {os.getpid(), os.getppid()} | (exclude or set())
     found: list[int] = []
@@ -228,7 +242,12 @@ def gui_instances(proc_root: Path = Path("/proc"),
                     for part in (entry / "cmdline").read_bytes().split(b"\0") if part]
         except OSError:
             continue
-        if is_gui_python_command(argv, target):
+        if is_gui_python_command(argv, target) or (
+            all_installations and any(
+                is_gui_python_command(argv, argument) and known_gui_script(argument)
+                for argument in argv[1:]
+            )
+        ):
             found.append(int(entry.name))
     return found
 
@@ -261,15 +280,29 @@ def ensure_single_instance(args: list[str]) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
     if os.name != "posix":
         return None
-    pids = gui_instances()
+    pids = gui_instances(all_installations=True)
     if not pids:
         return None
+    # Do not mistake successful activation of a different source tree for
+    # successful startup of the selected installed runtime.
+    selected = set(gui_instances())
     activated = activate_existing()
+    if activated and set(pids) - selected:
+        print(
+            "SmoothCast is running from another installation or checkout. "
+            "Close that instance to start the selected installed version: "
+            f"{ROOT}", file=sys.stderr,
+        )
+        return 3
     if activated:
         if not args:
             # Existing primary confirmed its activation; no extra GUI.
             return 0
         # Forward file and action arguments through GApplication.
+        return None
+    # A primary can exit normally while the activation request is in flight.
+    # Re-scan instead of leaving a false stale-instance failure behind.
+    if not gui_instances(all_installations=True):
         return None
     # A D-Bus timeout or missing probe is NOT proof of a hung process. In
     # particular, a PID found in /proc may be reused before SIGTERM/SIGKILL.
@@ -291,6 +324,15 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
         return 2
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
+    if args[:1] == ["--link-check"]:
+        # Use the recorded native runtime PATH, but never start the application.
+        try:
+            env = runtime_environment()
+        except (OSError, RuntimeError) as exc:
+            print(f"SmoothCast native runtime unavailable: {exc}", file=sys.stderr)
+            return 1
+        return subprocess.call([sys.executable, str(ROOT / "src" / "link_acquisition.py"),
+                                *args[1:]], env=env)
     if args[:1] == ["--diagnostics"]:
         # GTK-free support bundle: works even when the runtime is broken.
         return subprocess.call(

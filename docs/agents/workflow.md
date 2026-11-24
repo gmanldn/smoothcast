@@ -40,10 +40,9 @@ to `main`. The owner manually decides when (and whether) to merge it.
    `python3 scripts/agent.py finish --done "landed…" --next "remaining…"
    --verification "actual tests"` saves a handover and releases the claim.
    Closure additionally needs `--next none --checklist "acceptance…" --close`.
-   Legacy `progress`/`done` continue to work.
-   `python3 scripts/agent.py progress N --done "landed ..." --next "remaining ..."
-   --commit <actual-SHA> --verification "actual results" --release`. This
-   posts searchable durable evidence and ends the lease; `agent.py next`
+   Legacy `progress N --done … --next … --commit SHA --verification … --release`
+   still works: it posts the same durable evidence and ends the lease;
+   `agent.py next`
    previews the latest progress/handover for successors. On a partially
    complete issue, identify exactly which criteria remain. Close only when
    acceptance criteria have genuinely been demonstrated; a pushed commit alone
@@ -59,6 +58,12 @@ python3 scripts/agent.py ship --message "fix: completed behaviour" --next "remai
 # give real evidence; close only when every acceptance criterion passes
 python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
+
+## Agent sandbox networking preflight
+
+On a network-related fetch, push or dependency failure, diagnose once before
+retrying: [sandbox networking](sandbox-network.md) (read-only probe; never
+bypass ship safeguards; skipped network checks are UNVERIFIED).
 
 ## Concurrency and token efficiency
 
