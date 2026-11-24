@@ -219,12 +219,18 @@ def product_upgrade_code() -> str:
     return package.get("UpgradeCode")  # type: ignore[return-value]
 
 
+def _normalise_guid(value: object) -> str:
+    """WiX may re-emit a GUID with different case or surrounding braces."""
+    return str(value or "").strip().strip("{}").upper()
+
+
 def verify_msi(msi: Path, *, version: str, commit: str, expected_files: int) -> None:
     """Read the finished MSI back as authoring; no installation or signing."""
     output = BUILD_DIR / "decompiled.wxs"
     _run([wix_exe(), "msi", "decompile", "-o", str(output), str(msi)])
     try:
-        root = ET.fromstring(output.read_text(encoding="utf-8"))
+        text = output.read_text(encoding="utf-8")
+        root = ET.fromstring(text)
     except (OSError, ET.ParseError) as exc:
         raise BuildError(f"cannot read the built MSI: {exc}") from None
     package = root.find(f".//{{{WIX_NS}}}Package")
@@ -232,8 +238,15 @@ def verify_msi(msi: Path, *, version: str, commit: str, expected_files: int) -> 
         raise BuildError("the built MSI has no Package identity")
     if package.get("Version") != wix_payload.msi_version(version):
         raise BuildError(f"MSI ProductVersion {package.get('Version')} does not match {version}")
-    if package.get("UpgradeCode") != product_upgrade_code():
-        raise BuildError("MSI UpgradeCode changed; Windows would treat it as a new product")
+    expected_upgrade = _normalise_guid(product_upgrade_code())
+    declared = _normalise_guid(package.get("UpgradeCode"))
+    if declared:
+        if declared != expected_upgrade:
+            raise BuildError(f"MSI UpgradeCode {declared} is not the permanent "
+                             f"{expected_upgrade}; Windows would treat it as a new product")
+    elif expected_upgrade not in _normalise_guid(text):
+        raise BuildError("the built MSI does not carry the permanent UpgradeCode; "
+                         "Windows would treat it as a new product")
     if package.get("Scope") not in (None, "perUser"):
         raise BuildError(f"MSI scope is {package.get('Scope')}, expected perUser")
     files = list(root.iter(f"{{{WIX_NS}}}File"))

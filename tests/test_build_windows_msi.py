@@ -199,12 +199,14 @@ class WixTests(unittest.TestCase):
             target.write_text(text, encoding="utf-8")
         return run
 
-    def _msi(self, *, version="2.0.38", files=2, commit="a" * 40, scope="perUser"):
+    def _msi(self, *, version="2.0.38", files=2, commit="a" * 40, scope="perUser",
+             upgrade_code=None):
         names = ["SmoothCast.exe", "SmoothCastCLI.exe"][:files]
         file_xml = "".join(f'<File Id="F{i}" Name="{name}" />'
                            for i, name in enumerate(names))
+        upgrade = msi.product_upgrade_code() if upgrade_code is None else upgrade_code
         return (f'<Wix xmlns="{msi.WIX_NS}"><Package Version="{version}" '
-                f'UpgradeCode="{msi.product_upgrade_code()}" Scope="{scope}">'
+                f'UpgradeCode="{upgrade}" Scope="{scope}">'
                 f'<Property Id="SMOOTHCAST_SOURCE_REVISION" Value="{commit}" />'
                 f'{file_xml}</Package></Wix>')
 
@@ -233,6 +235,40 @@ class WixTests(unittest.TestCase):
                 with self.assertRaisesRegex(msi.BuildError, expected):
                     msi.verify_msi(Path(folder) / "test.msi", version="2.0.38",
                                    commit="a" * 40, expected_files=2)
+
+    def test_msi_upgrade_code_is_compared_case_and_brace_insensitively(self):
+        braced = "{" + msi.product_upgrade_code().lower() + "}"
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(msi, "BUILD_DIR", Path(folder)), \
+                mock.patch.object(msi, "wix_exe", return_value="wix"), \
+                mock.patch.object(msi, "_run",
+                                  side_effect=self._decompile(self._msi(upgrade_code=braced))):
+            msi.verify_msi(Path(folder) / "test.msi", version="2.0.38",
+                           commit="a" * 40, expected_files=2)
+
+    def test_msi_rejects_a_different_upgrade_code(self):
+        text = self._msi(upgrade_code="00000000-0000-0000-0000-000000000000")
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(msi, "BUILD_DIR", Path(folder)), \
+                mock.patch.object(msi, "wix_exe", return_value="wix"), \
+                mock.patch.object(msi, "_run", side_effect=self._decompile(text)):
+            with self.assertRaisesRegex(msi.BuildError, "UpgradeCode"):
+                msi.verify_msi(Path(folder) / "test.msi", version="2.0.38",
+                               commit="a" * 40, expected_files=2)
+
+    def test_msi_without_an_upgrade_attribute_still_finds_the_permanent_guid(self):
+        commit = "a" * 40
+        text = (f'<Wix xmlns="{msi.WIX_NS}"><Package Version="2.0.38" Scope="perUser">'
+                f'<Property Id="UpgradeCode" Value="{msi.product_upgrade_code()}" />'
+                f'<Property Id="SMOOTHCAST_SOURCE_REVISION" Value="{commit}" />'
+                f'<File Id="F0" Name="SmoothCast.exe" />'
+                f'<File Id="F1" Name="SmoothCastCLI.exe" /></Package></Wix>')
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(msi, "BUILD_DIR", Path(folder)), \
+                mock.patch.object(msi, "wix_exe", return_value="wix"), \
+                mock.patch.object(msi, "_run", side_effect=self._decompile(text)):
+            msi.verify_msi(Path(folder) / "test.msi", version="2.0.38",
+                           commit=commit, expected_files=2)
 
 
 class BuildTests(unittest.TestCase):
