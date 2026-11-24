@@ -2678,6 +2678,9 @@ $("uploadButton").addEventListener("click",async()=>{
       $("pauseUpload").hidden=true;
       const result=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
+      for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
+      $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Playback requested — awaiting receiver";
+      $("transferEta").textContent="Complete";
       await clearPendingUpload();
       batchIndex++;
       batchAdded++;
