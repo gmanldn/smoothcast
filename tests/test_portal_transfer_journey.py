@@ -113,3 +113,29 @@ function showError(){throw Error("Retry should not run after pause")}
 """
     subprocess.run(["node", "-"], input=harness+segment+checks,
                    check=True, timeout=10, text=True)
+
+
+def test_upload_stage_reset_gracefully_handles_minimal_status_dom():
+    """Expiring a session cannot crash when a test/partial DOM omits stage children."""
+    if not shutil.which("node"):
+        pytest.skip("Node.js needed for headless browser contract")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    helper = script[script.index("const TRANSFER_STAGES="):
+                    script.index("const MAX_UPLOAD_CHUNK_BYTES=")]
+    harness = """
+const assert = require("node:assert/strict");
+const performance = {now:()=>0};
+const elements = {};
+const $ = id => elements[id] ||= {textContent:"",value:0,checked:true};
+"""
+    checks = """
+transferView("choose");
+assert.equal($("transferStage").textContent,"Choose media");
+assert.equal($("uploadProgress").value,0);
+assert.equal($("transferPercent").textContent,"—");
+transferView("transfer",2,4);
+assert.equal($("transferPercent").textContent,"50%");
+assert.equal($("uploadProgress").value,2);
+"""
+    subprocess.run(["node", "-"], input=harness + helper + checks,
+                   check=True, timeout=10, text=True)
