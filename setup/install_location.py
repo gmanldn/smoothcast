@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -104,14 +105,24 @@ def validate_destination(source: Path, destination: Path) -> None:
                 raise ValueError("Refusing to overwrite non-SmoothCast directory")
 
 
-def _ignore(_directory: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in IGNORED or name.endswith(".pyc")}
+def _validate_copy_item(path: Path) -> None:
+    mode = path.lstat().st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise ValueError(f"Refusing linked or special installation item: {path}")
+
+
+def _ignore(directory: str, names: list[str]) -> set[str]:
+    ignored = {name for name in names if name in IGNORED or name.endswith(".pyc")}
+    for name in names:
+        if name not in ignored:
+            _validate_copy_item(Path(directory) / name)
+    return ignored
 
 
 def _source_items(source: Path):
     for name in APP_DIRS + APP_FILES:
         path = source / name
-        if path.exists():
+        if path.exists() or path.is_symlink():
             yield name, path
 
 
@@ -157,16 +168,20 @@ def installed_sources(source: Path, destination: Path):
     revision = _clean_source_revision(source)
     first = not destination.exists()
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.mkdir(exist_ok=True)
+    if first:
+        # Do not adopt a directory created by another installer after our check.
+        destination.mkdir()
     backup = Path(tempfile.mkdtemp(prefix=".smoothcast-install-backup-",
                                    dir=destination.parent))
     saved: list[str] = []
     created: list[str] = []
+    discard_backup = False
     try:
         for name, source_path in _source_items(source):
             target_path = destination / name
-            if source_path.is_symlink() or target_path.is_symlink():
-                raise ValueError(f"Refusing symbolic-link installation item: {name}")
+            _validate_copy_item(source_path)
+            if target_path.is_symlink():
+                raise ValueError(f"Refusing symbolic-link installation destination: {name}")
             if target_path.exists():
                 # Atomic rename on one filesystem: preserves the old source
                 # even when a later copy or package bootstrap fails.
@@ -179,23 +194,32 @@ def installed_sources(source: Path, destination: Path):
                 shutil.copy2(source_path, target_path)
         _record_source_revision(source, destination, revision)
         yield
+        discard_backup = True
     except BaseException:
-        for name in reversed(created):
-            path = destination / name
-            if path.is_symlink():
-                path.unlink()
-            elif path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
-        for name in saved:
-            (backup / name).rename(destination / name)
-        if first:
-            # Only delete a brand-new target if we created it.
-            shutil.rmtree(destination, ignore_errors=True)
+        try:
+            for name in reversed(created):
+                path = destination / name
+                if path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
+                    shutil.rmtree(path)
+                elif path.exists():
+                    path.unlink()
+            for name in saved:
+                (backup / name).rename(destination / name)
+            if first and not any(destination.iterdir()):
+                # Never recursively erase unrelated files created during setup.
+                destination.rmdir()
+        except OSError as exc:
+            raise OSError(
+                f"Installation rollback incomplete; recovery files retained at {backup}: {exc}"
+            ) from exc
+        discard_backup = True
         raise
     finally:
-        shutil.rmtree(backup, ignore_errors=True)
+        # A failed rollback must never destroy the last copy of the old sources.
+        if discard_backup:
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def remember_directory(target: str, destination: Path, *,
