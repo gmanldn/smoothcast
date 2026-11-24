@@ -122,10 +122,16 @@ def runtime_environment() -> dict[str, str]:
     return _runtime_environment_for(target, dict(os.environ))
 
 
+# Recognise real URI arguments without mistaking Windows C:\\ paths for schemes.
+# The launcher must never turn a web/mesh source into a local checkout path.
+_URI_ARGUMENT = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:(?://|[?])")
+
+
 def media_arguments_from_caller(args: list[str], caller: Path) -> list[str]:
     """Resolve film arguments before switching cwd to the installed checkout.
 
-    Ignore URLs, flags and --action values. A missing relative filename must
+    Preserve URIs (https://, magnet:?xt=..., file://), flags and --action
+    values. A missing relative filename must
     also become caller-absolute, otherwise a same-named checkout file could
     be silently opened instead. No filesystem mutation or GTK interaction.
     """
@@ -138,7 +144,7 @@ def media_arguments_from_caller(args: list[str], caller: Path) -> list[str]:
         elif argument == "--action":
             result.append(argument)
             action_value = True
-        elif argument.startswith("-") or argument.startswith("file://"):
+        elif argument.startswith("-") or _URI_ARGUMENT.match(argument):
             result.append(argument)
         else:
             try:
@@ -297,6 +303,13 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
               "python3 scripts/test_gui_isolated.py for opt-in Xvfb smoke.",
               file=sys.stderr)
         return 2
+    # Always activate/diagnose the existing primary BEFORE checking the venv.
+    # Its environment may have been moved during an update, while it remains
+    # healthy and able to forward the caller's request.
+    if not prechecked:
+        guarded = ensure_single_instance(args)
+        if guarded is not None:
+            return guarded
     try:
         installed = python_path()
     except FileNotFoundError as exc:
@@ -305,10 +318,6 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     # GTK's process cwd is intentionally ROOT; preserve the caller's media
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
-    if not prechecked:
-        guarded = ensure_single_instance(args)
-        if guarded is not None:
-            return guarded
     command = [str(installed), str(ROOT / "src" / "cast_control.py"), *media_args]
     try:
         env = runtime_environment()
