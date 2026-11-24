@@ -243,6 +243,9 @@ def test_list_is_bounded_and_invalid_limits_fail(tmp_path):
 
 
 def test_cli_can_run_without_loading_gtk(tmp_path, capsys):
+    import sys
+
+    before = set(sys.modules)
     root, db = tmp_path / "media", tmp_path / "idx.sqlite3"
     root.mkdir()
     (root / "sample.mkv").write_bytes(b"x")
@@ -250,7 +253,8 @@ def test_cli_can_run_without_loading_gtk(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["hashed"] == 1
     assert index.main(["--db", str(db), "list"]) == 0
     assert json.loads(capsys.readouterr().out)[0]["path"].endswith("sample.mkv")
-    assert "gi" not in __import__("sys").modules
+    # The CLI must not pull in GTK, even when another test already imported it.
+    assert "gi" not in (set(sys.modules) - before)
 
 
 def test_overlapping_explicit_roots_do_not_evict_one_another(tmp_path):

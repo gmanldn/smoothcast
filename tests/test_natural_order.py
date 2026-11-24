@@ -60,7 +60,7 @@ class NaturalOrderTests(unittest.TestCase):
     def test_queue_uses_it_for_batches_but_playlists_keep_authored_order(self):
         source = (ROOT / "src/cast_queue.py").read_text("utf-8")
         self.assertEqual(source.count("playlist_control.natural_order("), 2)
-        loader = source.split("def _playlist_open_chosen", 1)[1][:1500]
+        loader = (ROOT / "src/playlist_ui.py").read_text("utf-8")
         self.assertNotIn("natural_order", loader)
 
 
