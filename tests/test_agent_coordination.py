@@ -759,12 +759,12 @@ def test_conflict_help_explains_ours_theirs_and_names_the_other_owner():
 def test_start_packet_preserves_recent_completed_slices_not_just_latest():
     """A successor must see previous shipped work despite a newer partial handover."""
     records = [
-        comment(1, 584, 60, "Progress: oldest fix\\nHandover: old TODO"),
-        comment(2, 584, 50, "Progress: first shipped slice\\nCommit: aa11\\nHandover: second stage"),
-        comment(3, 584, 40, "Progress: second shipped slice\\nCommit: bb22\\nHandover: edge tests"),
+        comment(1, 584, 60, "Progress: oldest fix\nHandover: old TODO"),
+        comment(2, 584, 50, "Progress: first shipped slice\\nCommit: aa11\nHandover: second stage"),
+        comment(3, 584, 40, "Progress: second shipped slice\\nCommit: bb22\nHandover: edge tests"),
         comment(4, 584, 30, "Released: previous agent\\n<!-- sc-release v1 agent=other -->"),
-        comment(5, 584, 10, "Progress: edge tests implemented\\nCommit: cc33\\nHandover: run CI"),
-        comment(6, 584, 5, "Progress: CI reviewed\\nHandover: monitor test flakiness"),
+        comment(5, 584, 10, "Progress: edge tests implemented\\nCommit: cc33\nHandover: run CI"),
+        comment(6, 584, 5, "Progress: CI reviewed\nHandover: monitor test flakiness"),
     ]
     packet = agent.issue_context_packet(
         584, {"title": "[P0] Agent delivery", "body": "Acceptance: do not lose work"},
@@ -785,7 +785,7 @@ def test_start_packet_bounds_each_handover_without_discarding_earlier_evidence()
     packet = agent.issue_context_packet(
         584, {"title": "Ticket", "body": "Acceptance: done"},
         [comment(1, 584, 2, "Progress: first slice"),
-         comment(2, 584, 1, "Progress: " + long_note + "\\nHandover: inspect crash")],
+         comment(2, 584, 1, "Progress: " + long_note + "\nHandover: inspect crash")],
         "b" * 40,
     )
     assert "Progress: first slice" in packet
