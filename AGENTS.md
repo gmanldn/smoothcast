@@ -13,28 +13,21 @@ Use a private detached worktree; one ticket per worktree.
 
 ```sh
 python3 scripts/agent.py start              # choose the next available ticket
-python3 scripts/agent.py start 584          # or choose an explicit issue
 # cd into the printed worktree; read its private task brief
 python3 scripts/agent.py ship --message "fix: concrete result"
 python3 scripts/agent.py finish --done "landed implementation" --next "remaining tests" --verification "not run (unverified)"
 # To close: --next none --verification "actual test results" --checklist "all criteria" --close
 ```
 
-`start` atomically claims a short lease, refreshes develop, creates an isolated
-worktree and leaves issue body + latest handover in that worktree's Git admin
-directory. Claims expire (90m default), but progress comments and pushed SHAs
-persist; read both before taking over. `ship` auto-commits tracked edits only
-inside a coordinator-created worktree; use `--files` for new files. Without
-`--message`, commit named files yourself first. It fetches, rebases only
-unpublished work, checks every version transition even with `--skip-checks`,
-pushes non-force and posts a durable handover. On conflicts, preserve the
-worktree and reconcile intentionally. Never claim unrun checks passed.
-`finish` records actual outcomes and releases the lease. A `ship` exit
-code **7** means the code **already reached develop** but GitHub handover is
-pending: rerun `agent.py ship` from the SAME worktree to replay the saved
-SHA receipt; **do not recommit**. Newly touched production files trigger
-race-arbitrated lease expansion before push. Missing optional checks are
-reported as unverified, never as passing. Follow
+`start` refreshes `develop`, claims a short lease and opens a private
+worktree with a compact issue/handover brief. Claims expire (90m default);
+commits and handovers persist. `ship` commits tracked edits (name new files
+with `--files`), reconciles leases and unpublished commits, checks version
+integrity, pushes non-force and records progress. On conflict preserve work.
+**Exit 7 means the push succeeded but handover failed**: rerun `ship`
+in the **same** worktree to replay its SHA; never recommit. New production
+paths trigger lease expansion. Missing optional checks are UNVERIFIED.
+`finish` records evidence and releases the lease. See
 [coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
 GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 `scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
