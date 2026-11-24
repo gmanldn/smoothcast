@@ -22,7 +22,7 @@ def test_scope_job_selects_patch_fast_lane_and_minor_major_full_lane():
     assert "python -m pytest -q tests" in workflow
     for job in (
         "reliability-benchmark:", "portable-tests:", "portable-tests-native:",
-        "media-integration:", "setup-contract:", "installed-artifact:",
+        "media-integration:", "installed-artifact:",
         "search-performance:",
     ):
         match = re.search(
@@ -32,6 +32,10 @@ def test_scope_job_selects_patch_fast_lane_and_minor_major_full_lane():
         block = match.group(1)
         assert "needs: [scope]" in block
         assert "needs.scope.outputs.lane == 'full'" in block
+    # #209: first-run setup failures on Windows/macOS must be caught on every
+    # manual verify, so setup-contract is deliberately NOT full-lane gated.
+    setup = re.search(r"^  setup-contract:(.*?)(?=^  [a-z]|\Z)", workflow, re.MULTILINE | re.DOTALL)
+    assert setup is not None and "needs.scope.outputs.lane" not in setup.group(1)
 
 
 def test_manual_verify_has_no_promotion_job_whose_gates_could_hide_a_skipped_lane():
