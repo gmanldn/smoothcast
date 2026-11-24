@@ -703,3 +703,66 @@ def test_youtube_search_disabled_and_revoked_session(tmp_path):
         assert exc.value.status == 403
     finally:
         jobs.close()
+
+
+def test_youtube_find_browser_selects_and_retries_same_queue_request():
+    import shutil
+    import subprocess
+
+    import portal
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js required for YouTube Find browser regression")
+    markup = portal._HTML
+    start = markup.index('(()=>{\n  const input=$("findInput"),search=$("youtubeSearch")')
+    script = markup[start:markup.index("</script>", start)]
+    harness = r"""
+const assert=require("node:assert/strict");
+class Element{
+  constructor(){this.children=[];this.events={};this.checked=false;this.hidden=true;this.value="";}
+  addEventListener(name,cb){this.events[name]=cb}
+  setAttribute(){}
+  append(...items){this.children.push(...items)}
+  replaceChildren(...items){this.children=items}
+  focus(){}
+}
+const el=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel",
+ "youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(k=>[k,new Element()]));
+const $=id=>el[id],document={createElement:()=>new Element()};
+let youtubeSearchBusy=false,linkCapabilities={youtube:true},calls=[],fail=true,refreshes=0;
+function updateLinkControls(){}
+function clock(s){return String(s)}
+async function refresh(){refreshes++}
+async function post(path,body){
+  calls.push({path,body});
+  if(path==="/api/search/youtube")return {results:[{id:"abcdefghijk",title:"Example",channel:"Artist",duration:90}]};
+  if(fail){fail=false;throw Error("network lost")}
+  return {message:"Acquisition accepted"};
+}
+"""
+    scenario = r"""
+(async()=>{
+  el.findInput.value="example";
+  el.findInput.events.input();
+  assert.equal(calls.length,0,"local typing never sends a YouTube query");
+  await el.youtubeSearch.events.click();
+  assert.deepEqual(calls,[{path:"/api/search/youtube",body:{q:"example"}}]);
+  assert.equal(el.youtubeResultsPanel.hidden,false);
+  const button=el.youtubeResults.children[0].children[1].children[0];
+  await button.events.click();
+  assert.equal(calls.length,1,"requires explicit authorisation");
+  el.youtubeAuthorised.checked=true;
+  await button.events.click();
+  assert.equal(button.disabled,false);
+  await button.events.click();
+  assert.equal(calls.length,3);
+  assert.deepEqual(calls[1],calls[2],"lost response must preserve request identity");
+  assert.equal(calls[2].path,"/api/link-jobs");
+  assert.equal(calls[2].body.url,"https://www.youtube.com/watch?v=abcdefghijk");
+  assert.equal(calls[2].body.authorised,true);
+  assert.equal(button.textContent,"Acquisition requested");
+  assert.equal(refreshes,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   check=True, text=True, timeout=10)
