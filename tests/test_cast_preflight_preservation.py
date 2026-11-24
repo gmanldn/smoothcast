@@ -84,7 +84,8 @@ def window(*, device="TV", subs="auto", active=True, owner=None, dependencies=No
 def test_undiscovered_dlna_does_not_stop_prior_active_cast_or_monitor():
     w, previous = window(device="DLNA · Living Room · 192.168.1.41")
     tracker = w.tracker
-    w._cast_path(pathlib.Path("/unavailable.mkv"), 49.0)
+    reason = w._cast_path(pathlib.Path("/unavailable.mkv"), 49.0)
+    assert reason == "DLNA receiver is not currently discovered; scan your network again"
     assert w.session is previous
     assert w.tracker is tracker
     w._cast_failed.assert_not_called()
@@ -99,7 +100,8 @@ def test_undiscovered_dlna_does_not_stop_prior_active_cast_or_monitor():
 def test_missing_explicit_subtitles_preserves_position_and_old_cast():
     w, previous = window(subs="pick")
     tracker = w.tracker
-    w._cast_path(pathlib.Path("/another.mkv"), 33.0)
+    reason = w._cast_path(pathlib.Path("/another.mkv"), 33.0)
+    assert reason == "Selected subtitle file is missing or unsupported; choose a valid .srt"
     w._resolve_subs.assert_called_once()
     assert w.session is previous
     assert w.tracker is tracker
@@ -304,3 +306,14 @@ def test_stop_during_new_session_start_stops_owned_receiver(monkeypatch):
 
     assert stop_calls == [True, False]
     assert w._cast_failed.call_args.args == ("Cast cancelled during receiver handoff",)
+
+
+def test_missing_receiver_rejects_without_touching_current_playback():
+    w, previous = window(device="")
+    reason = w._cast_path(pathlib.Path("/another.mkv"), 0.0)
+    assert reason == "Choose a room receiver before casting"
+    assert w.session is previous
+    assert not w.busy
+    w._unload_local_video.assert_not_called()
+    w.local_playback.stop.assert_not_called()
+    w._cast_failed.assert_not_called()
