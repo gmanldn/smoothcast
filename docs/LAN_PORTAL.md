@@ -263,6 +263,21 @@ delivery, engine-verified resume and safe cache reuse/eviction, secure worker pr
 [#589](https://github.com/gmanldn/smoothcast/issues/589) and
 [#590](https://github.com/gmanldn/smoothcast/issues/590).
 
+**Headless acceptance evidence (#593).** No live search, download, receiver or
+GUI is involved:
+
+```sh
+python3 -m pytest -q tests/test_link_acquisition.py tests/test_link_acquisition_hostile.py
+python3 -m pytest -q tests/test_portal.py tests/test_openapi_contract.py
+```
+
+These cover result projection and bounds, malformed rows and queries, the
+isolated metadata-only command, the one-search-at-a-time capacity limit,
+authenticated CSRF-protected access (403 without a session or token), a disabled
+or revoked worker/session, selection with a stable retry request ID and
+search-to-verified-queue delivery. Real-device and sandbox-qualification
+results are tracked separately (#588, #208) and do not gate this feature.
+
 ## Recovering a room queue
 
 While a room is running, SmoothCast checkpoints the ordered queue into a
