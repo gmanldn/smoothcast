@@ -166,6 +166,59 @@ def test_tests_for_selects_named_importing_and_ratchet_tests():
     assert agent.tests_for(["README.md"], tests) == []
 
 
+def test_quiet_claim_feed_is_complete_not_an_error(monkeypatch):
+    """An entirely quiet repository must still permit picking up work."""
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    assert agent.recent_comments() == []
+
+
+def test_recent_claim_feed_empty_second_page_is_complete(monkeypatch):
+    comments = [marker_comment(i, i, 1, f"a{i}", ["src/x.py"]) for i in range(1, 101)]
+    requested = []
+
+    def fake_gh(*args):
+        requested.append(args[0])
+        return comments if "page=1" in args[0] else []
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    assert len(agent.recent_comments(pages=2)) == 100
+    assert len(requested) == 2
+
+
+def test_recent_claim_feed_invalid_response_fails_closed(monkeypatch):
+    import pytest
+    monkeypatch.setattr(agent, "gh", lambda *args: None)
+    with pytest.raises(agent.td.DigestError, match="invalid global claim feed"):
+        agent.recent_comments()
+
+
+def test_claim_withdraws_its_posted_comment_when_followup_read_fails(monkeypatch):
+    """HTTP failure after POST must not strand a live ownership lease."""
+    removed = []
+    mine = marker_comment(55, 584, 0, "ours", ["src/a.py"])
+
+    def fake_gh(*args):
+        if args[:2] == ("-X", "POST") and args[2].endswith("/comments"):
+            return {"id": 55}
+        if args[0].endswith("/comments?per_page=100"):
+            raise agent.td.DigestError("GitHub read timed out")
+        if args[:2] == ("-X", "DELETE"):
+            removed.append(args[2])
+            return {}
+        raise AssertionError(args)
+
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "load_issue", lambda n: {"body": "edit src/a.py"})
+    monkeypatch.setattr(agent, "recent_comments", lambda: [mine])
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+
+    import pytest
+    with pytest.raises(agent.td.DigestError, match="read timed out"):
+        agent.cmd_claim(agent.build_parser().parse_args(["claim", "584"]))
+    assert removed == [f"repos/{agent.REPO}/issues/comments/55"]
+
+
 def test_claim_loses_race_to_earlier_claim_and_withdraws(monkeypatch):
     posted, deleted = [], []
     earlier = marker_comment(5, 42, 1, "other", ["src/a.py"])
