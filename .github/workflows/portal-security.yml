@@ -21,7 +21,6 @@ on:
       - 'tests/test_mesh_service.py'
       - 'src/portal_mesh_panel.py'
       - 'src/api_spec.py'
-      - 'docs/api/openapi.json'
       - 'tests/test_link_acquisition.py'
       - 'tests/test_link_acquisition_hostile.py'
       - 'tests/test_openapi_contract.py'
