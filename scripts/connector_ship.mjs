@@ -67,8 +67,17 @@ async function checkClaims(api,p){
   check(Number.isFinite(now)&&issue.number===p.issue&&issue.state==="open"&&!issue.pull_request,"issue or clock invalid");
   const since=new Date(now-3.5*3600000).toISOString();
   const global=await pages(api,"/issues/comments?since="+since+"&sort=created",6), local=await pages(api,"/issues/"+p.issue+"/comments",10);
-  const rows=new Map(global.map(c=>[c.id,c]));
-  for(const c of local)rows.set(c.id,c);
+  // The global and issue feeds are independent snapshots. Never let a stale
+  // issue page silently overwrite a newer claim/release from the global feed.
+  const rows=new Map();
+  for(const c of [...global,...local]){
+    check(typeof c.body==="string"&&typeof c.issue_url==="string"&&/\/issues\/\d+$/.test(c.issue_url)&&
+          Number.isFinite(Date.parse(c.created_at))&&Number.isFinite(Date.parse(c.updated_at)),"incomplete comment metadata");
+    const previous=rows.get(c.id);
+    check(!previous||["body","issue_url","created_at","updated_at"].every(k=>previous[k]===c[k]),"inconsistent comment snapshots; retry");
+    rows.set(c.id,c);
+  }
+  check(local.every(c=>Number(c.issue_url.split("/").pop())===p.issue),"wrong issue comment feed");
   leaseCheck([...rows.values()],p,now);
   return local;
 }

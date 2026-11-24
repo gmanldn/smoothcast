@@ -57,7 +57,8 @@ function transport(){
     now:()=>now,
     get:async path=>{
       if(path==="/issues/598")return {number:598,state:"open"};
-      if(path.startsWith("/issues/comments?")||path.startsWith("/issues/598/comments?"))return [...comments];
+      if(path.startsWith("/issues/comments?"))return state.globalOverride??[...comments];
+      if(path.startsWith("/issues/598/comments?"))return state.localOverride??comments.filter(c=>c.issue_url.endsWith("/598"));
       if(path==="/git/ref/heads/develop")return {ref:"refs/heads/develop",object:{type:"commit",sha:state.head}};
       if(path==="/git/commits/"+p.base)return {sha:p.base,tree:{sha:baseTree}};
       if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents};
@@ -142,4 +143,19 @@ test("new competing lease after preparation prevents ref update",async()=>{
   t.comments.push(row(2,599,"<!-- sc-claim v1 agent=other ttl=30 files=src/foo.py -->"));
   await assert.rejects(ship(t.api,p,c),/conflicting active lease/);
   assert.equal(t.counters.updates,0);
+});
+
+test("inconsistent global and issue claim snapshots prevent preparation",async()=>{
+  const t=transport();
+  t.state.globalOverride=[{...mine,body:"<!-- sc-release v1 agent=test -->",updated_at:"2026-11-24T06:56:00Z"}];
+  await assert.rejects(prepare(t.api,p),/inconsistent comment snapshots/);
+  assert.equal(t.counters.commits,0);
+});
+test("missing body in global comment feed prevents preparation",async()=>{
+  const t=transport();t.state.globalOverride=[mine,{...row(2,599,""),body:null}];
+  await assert.rejects(prepare(t.api,p),/incomplete comment metadata/);
+});
+test("wrong issue in local comment feed prevents preparation",async()=>{
+  const t=transport();t.state.localOverride=[mine,row(2,599,"ordinary comment")];
+  await assert.rejects(prepare(t.api,p),/wrong issue comment feed/);
 });
