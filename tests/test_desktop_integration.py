@@ -20,6 +20,8 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.root = Path(self.tmp.name).resolve() / 'project with spaces'
         (self.root / "data").mkdir(parents=True)
         (self.root / "data/cast-control.png").write_bytes(b"PNG-fixture")
+        (self.root / "sc.py").touch()
+        (self.root / "sc.py").chmod(0o755)
         self.data_home = Path(self.tmp.name) / "xdg"
         self.home = Path(self.tmp.name) / "home"
         self.config = self.home / ".config"
@@ -36,24 +38,24 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         entry = (self.data_home / "applications/local.cast-control.desktop").read_text()
         # The dock must start *this checkout*, never a stale pip command.
-        self.assertIn("Exec=" + desktop.exec_argument(self.root / "smoothcast") + " %F", entry)
+        self.assertIn("Exec=" + desktop.exec_argument(self.root / "sc.py") + " %F", entry)
         self.assertNotIn('Exec=smoothcast %F', entry)
         self.assertIn("Icon=local.cast-control\n", entry)
         self.assertIn("StartupWMClass=local.cast-control\n", entry)
         self.assertIn("Path=" + str(self.root) + "\n", entry)
-        self.assertIn("TryExec=" + str(self.root / "smoothcast") + "\n", entry)
+        self.assertIn("TryExec=" + str(self.root / "sc.py") + "\n", entry)
         self.assertIn("StartupNotify=true\n", entry)
         self.assertNotIn("NoDisplay=true", entry)
         self.assertEqual((self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png").read_bytes(), b"PNG-fixture")
         legacy = (self.data_home / "applications/smoothcast.desktop").read_text()
         self.assertIn("NoDisplay=true\n", legacy)
-        self.assertIn("Exec=" + desktop.exec_argument(self.root / "smoothcast") + " %F", legacy)
+        self.assertIn("Exec=" + desktop.exec_argument(self.root / "sc.py") + " %F", legacy)
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
 
     def test_check_contract_matches_installed_absolute_exec(self):
         desktop.install(data_home=self.data_home, repair_pins=False)
         entry = (self.data_home / "applications/local.cast-control.desktop").read_bytes()
-        self.assertEqual(entry, desktop.desktop_entry(self.root / "smoothcast"))
+        self.assertEqual(entry, desktop.desktop_entry(self.root / "sc.py"))
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
 
     def test_repairs_changed_launcher_and_icon_without_duplication(self):
@@ -66,7 +68,7 @@ class DesktopIntegrationTests(unittest.TestCase):
 
     def test_launcher_recovers_partial_python_environment(self):
         root = Path(__file__).resolve().parents[1]
-        script = (root / "smoothcast").read_text()
+        script = (root / "sc.py").read_text()
         runtime = (root / "setup/launch.py").read_text()
         self.assertIn("launch.runtime_ready()", script)
         self.assertIn('str(SETUP / "bootstrap.py")', script)
@@ -103,7 +105,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         (checkout / "scripts").mkdir(exist_ok=True)
         source = Path(__file__).resolve().parents[1] / "scripts" / "install_desktop.py"
         (checkout / "scripts" / "install_desktop.py").write_bytes(source.read_bytes())
-        launcher = checkout / "smoothcast"
+        launcher = checkout / "sc.py"
         launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         launcher.chmod(0o755)
         xdg = Path(self.tmp.name) / "cli-xdg"
@@ -124,8 +126,8 @@ class DesktopIntegrationTests(unittest.TestCase):
     def _installation(self, root):
         (root / "setup").mkdir(parents=True)
         (root / "setup/bootstrap.py").touch()
-        (root / "smoothcast").touch()
-        (root / "smoothcast").chmod(0o755)
+        (root / "sc.py").touch()
+        (root / "sc.py").chmod(0o755)
         (root / "pyproject.toml").write_text('name = "smoothcast"\n')
         (root / "data").mkdir()
         (root / "data/cast-control.png").write_bytes(b"installed-icon")
@@ -142,7 +144,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertTrue(desktop.install(data_home=self.data_home, repair_pins=False))
         for name in ("local.cast-control.desktop", *desktop.LEGACY_IDS):
             entry = (self.data_home / "applications" / name).read_bytes()
-            self.assertEqual(entry, desktop.desktop_entry(target / "smoothcast", legacy=name in desktop.LEGACY_IDS))
+            self.assertEqual(entry, desktop.desktop_entry(target / "sc.py", legacy=name in desktop.LEGACY_IDS))
         icon = self.data_home / "icons/hicolor/128x128/apps/local.cast-control.png"
         self.assertEqual(icon.read_bytes(), b"installed-icon")
         self.assertFalse(desktop.install(data_home=self.data_home, repair_pins=False))
@@ -151,6 +153,14 @@ class DesktopIntegrationTests(unittest.TestCase):
             self.assertEqual(desktop.main(), 0)
             (self.data_home / "applications/cast-control.desktop").unlink()
             self.assertEqual(desktop.main(), 1)
+
+    def test_legacy_installed_launcher_remains_supported(self):
+        target = self._installation(self.home / "Legacy installed SmoothCast")
+        (target / "sc.py").rename(target / "smoothcast")
+        self._remember(target)
+        desktop.install(data_home=self.data_home, repair_pins=False)
+        entry = (self.data_home / "applications/local.cast-control.desktop").read_bytes()
+        self.assertEqual(entry, desktop.desktop_entry(target / "smoothcast"))
 
     def test_default_install_wins_when_no_saved_location(self):
         target = self._installation(self.home / ".local/opt/SmoothCast")
@@ -161,7 +171,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self._remember(old)
         desktop.install(data_home=self.data_home, repair_pins=False, installer_target=True)
         entry = (self.data_home / "applications/local.cast-control.desktop").read_bytes()
-        self.assertEqual(entry, desktop.desktop_entry(self.root / "smoothcast"))
+        self.assertEqual(entry, desktop.desktop_entry(self.root / "sc.py"))
         self.assertEqual(desktop.registration_root(), old)
 
     def test_broken_saved_install_does_not_overwrite_existing_dock(self):

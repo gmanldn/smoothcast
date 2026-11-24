@@ -71,7 +71,7 @@ MSYS2 UCRT64). It checks both engines with bounded local version probes.
 Rerunning with `--check --link-tools` is read-only. Missing or broken optional
 engines cause an explicit failure when this option is requested.
 
-Run `smoothcast --link-check --tools-only` (or `./smoothcast` in a checkout)
+Run `smoothcast --link-check --tools-only` (or `./sc.py` in a checkout)
 to check the engines and FFprobe without requiring isolation.
 `smoothcast --link-check` additionally reports whether an owner-configured
 launcher exists. Neither command launches a GUI, contacts a receiver,
@@ -216,3 +216,7 @@ ruff check setup tests
 
 The `.github/workflows/verify.yml` setup-contract matrix runs those
 portable checks on Ubuntu, macOS and Windows without installing GTK.
+
+### Canonical launch
+
+All source and installed application launches use root `sc.py` (Linux/macOS: `python3 sc.py`, Windows: `py -3 sc.py`). Native shortcuts are registered against the installed copy. The extensionless `smoothcast` script is only a compatibility alias. `setup/launch.py` is the internal runtime handoff, not a second public launcher. Installed wheel/frozen CLI commands retain their separate distribution entry points.

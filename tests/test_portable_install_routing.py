@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def entry(monkeypatch):
-    loader = importlib.machinery.SourceFileLoader("portable_entry", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -26,6 +26,8 @@ def entry(monkeypatch):
     monkeypatch.setitem(sys.modules, "launch", runtime)
     refresher = mock.Mock()
     refresher.refresh.return_value = 0
+    refresher.read_version.return_value = (2, 0, 5)
+    refresher.installed_revision.return_value = "a" * 40
     monkeypatch.setitem(sys.modules, "checkout_refresh", refresher)
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.delenv("SMOOTHCAST_TEST_CONTEXT", raising=False)
@@ -115,7 +117,7 @@ def test_test_context_never_delegates_to_real_install(entry, monkeypatch):
 
 
 def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monkeypatch, capsys):
-    loader = importlib.machinery.SourceFileLoader("portable_entry_direct", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry_direct", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -145,7 +147,7 @@ def test_delegation_preserves_cwd_and_args_and_propagates_failure(tmp_path, monk
 def test_saved_location_precedes_recognised_default(entry, tmp_path, monkeypatch,
                                                     remembered, default_manifest, expected):
     # Load the actual routing helper rather than the main() fixture's mock.
-    loader = importlib.machinery.SourceFileLoader("portable_entry_location", str(ROOT / "smoothcast"))
+    loader = importlib.machinery.SourceFileLoader("portable_entry_location", str(ROOT / "sc.py"))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     actual = importlib.util.module_from_spec(spec)
     loader.exec_module(actual)
@@ -178,3 +180,37 @@ def test_version_query_never_refreshes_installed_files(entry, tmp_path):
     module._installed_root.return_value = tmp_path
     assert module.main(["--version"]) == 0
     sys.modules["checkout_refresh"].refresh.assert_not_called()
+
+
+def test_new_install_handoff_uses_canonical_script(entry, tmp_path, monkeypatch):
+    loader = importlib.machinery.SourceFileLoader("canonical_direct", str(ROOT / "sc.py"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    actual = importlib.util.module_from_spec(spec)
+    loader.exec_module(actual)
+    (tmp_path / "sc.py").touch()
+    (tmp_path / "setup").mkdir()
+    (tmp_path / "setup" / "launch.py").touch()
+    call = mock.Mock(return_value=0)
+    monkeypatch.setattr(actual.subprocess, "call", call)
+    assert actual._launch_installed(tmp_path, ["relative.mkv"]) == 0
+    call.assert_called_once_with([sys.executable, str(tmp_path / "sc.py"), "relative.mkv"])
+
+
+def test_registered_root_repairs_missing_runtime_in_place(entry):
+    module, runtime = entry
+    module._installed_root.return_value = ROOT
+    runtime.runtime_ready.side_effect = [False, True]
+    assert module.main([]) == 0
+    module._bootstrap.assert_called_once_with("linux", in_place=True)
+    runtime.main.assert_called_once_with([], prechecked=True)
+
+
+def test_compatibility_wrapper_delegates_all_arguments(monkeypatch):
+    import runpy
+    canonical = mock.Mock()
+    canonical.main.return_value = 17
+    monkeypatch.setitem(sys.modules, "sc", canonical)
+    with pytest.raises(SystemExit) as result:
+        runpy.run_path(str(ROOT / "smoothcast"), run_name="__main__")
+    assert result.value.code == 17
+    canonical.main.assert_called_once_with()

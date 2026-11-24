@@ -60,7 +60,7 @@ qualification.
 
 The three scripts delegate to the same stdlib-only `setup/bootstrap.py`. They **ask where to install** the application, defaulting to a per-user program folder (or the last successful choice), copy only application files and provision an isolated `.venv` there. Use `--install-dir "<path>"` for a specific location, `--yes` to skip the prompt, `--check` for read-only diagnostics or `--no-shortcuts` to skip desktop integration. Linux adds an XDG icon/menu entry; macOS registers `~/Applications/SmoothCast.app` with a real ICNS icon; Windows creates a branded Start Menu shortcut. See [setup/README.md](setup/README.md) for dependencies, recovery and limitations.
 
-The single `./smoothcast` launcher is a Python script that runs on Linux, macOS and Windows (use `python smoothcast` on Windows). It bootstraps a project-local `.venv` when needed, then hands off to the GTK runtime. Version lookup remains side-effect free: `./smoothcast --version` (Unix), `python smoothcast --version` (Windows), or `python src/version.py` (any OS).
+The canonical launcher is **`sc.py`** at the application root: run `python3 sc.py` on Linux/macOS or `py -3 sc.py` on Windows. On Unix, `./sc.py` also works. It discovers the registered installation, refreshes a stale Linux install from a clean local develop checkout when safe, prepares the runtime if needed, and hands off to GTK. The legacy `./smoothcast` command delegates to the same entry point; native shortcuts use the installed `sc.py`. Version lookup remains side-effect free: `python3 sc.py --version` (Unix), `py -3 sc.py --version` (Windows). `python src/version.py` reports the current source tree, not necessarily the installation.
 
 **Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI. See the dated [platform status matrix](docs/PLATFORM_STATUS.md) for the current CI evidence and unverified native checks.
 
@@ -318,7 +318,7 @@ The portable unit tests and syntax checks now run on pushes and pull requests vi
 
 ## Opening media from another directory
 
-Running `./smoothcast relative-film.mkv` from a media directory resolves
+Running `./sc.py relative-film.mkv` from a media directory resolves
 the filename against that directory **before** the launcher changes into the
 checkout for dependency loading. When a second command reaches an already
 running instance, `GApplicationCommandLine.get_cwd()` supplies the original
@@ -408,7 +408,7 @@ The geometry and breakpoint decisions are independently testable in `src/respons
 
 ## Desktop launcher and dock
 
-SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the **absolute path to this checkout's `./smoothcast` launcher**, not a potentially older `smoothcast` found on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
+SmoothCast registers a desktop entry named `local.cast-control.desktop` to match its GTK application ID and Wayland window identity, with a matching 128×128 icon in the user's XDG hicolor theme directory. The desktop entry's `Exec` is the **absolute path to the registered installation's `sc.py` launcher**, not a potentially older `smoothcast` found on `PATH`. A hidden compatibility entry keeps older `smoothcast.desktop` pins launchable; on GNOME, old SmoothCast favourites are migrated to the canonical entry automatically.
 
 To repair the existing Linux dock icon after pulling a new version (run from your SmoothCast checkout, without `sudo`):
 
@@ -420,7 +420,7 @@ python3 scripts/install_desktop.py --check
 grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
-The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches this checkout's `smoothcast` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. The read-only `--check` and `grep` commands validate the desktop entry **without launching a window or stealing focus**.
+The installer refreshes `~/.local/share/applications/local.cast-control.desktop` and `~/.local/share/icons/hicolor/128x128/apps/local.cast-control.png`. The desktop entry launches the registered installation's `sc.py` script with a fixed working directory; a missing or incomplete project virtualenv is repaired on launch. `--pin` adds the canonical entry to GNOME favourites without duplicating or rearranging other favourites. The read-only `--check` and `grep` commands validate the desktop entry **without launching a window or stealing focus**.
 
 To diagnose an old version or repeated launch, compare the checkout version with the dock's actual executable:
 
@@ -434,12 +434,12 @@ grep '^Exec=' ~/.local/share/applications/local.cast-control.desktop
 ```
 
 The dock must point to the **absolute path to the launcher in this checkout**.
-Running `./smoothcast` from this directory bypasses any old dock entry.
+Running `./sc.py` from this directory resolves the registered installation independently of any old dock entry.
 A dependency repair now installs from `pyproject.toml`, not a missing
 `requirements.txt`; repair failures print the actual error rather than
 pretending that the same release installed again.
 
-If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `./smoothcast` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
+If the menu entry is missing despite a successful read-only check, log out and back in to refresh GNOME's application cache. To diagnose a user-initiated launch failure (not an automated test), run `./sc.py` from the same checkout in a terminal; on GNOME, inspect `journalctl --user -b`. Do not use `sudo` for desktop integration because it would install the icon under root's account.
 
 A second launcher click raises the existing window rather than silently exiting. On KDE or other docks, if an old pin remains stale, remove it and pin the new **SmoothCast** entry once. Regression tests: `python3 -m unittest discover -s tests -v`.
 
@@ -524,7 +524,7 @@ has an active Wayland or X11 session:
 
 ```sh
 python3 -m compileall -q src scripts setup tests
-ruff check src scripts setup tests smoothcast setup.py
+ruff check src scripts setup tests sc.py smoothcast setup.py
 python3 -m pytest -q tests   # full lane: MINOR/MAJOR bumps only
 ```
 

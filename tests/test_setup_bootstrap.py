@@ -161,7 +161,7 @@ class SetupContractTests(unittest.TestCase):
         self.assertTrue(bootstrap.python_ok(sys.executable))
         source = bootstrap.python_ok.__code__
         self.assertIn("sys.exit", source.co_consts[-1])
-        launcher = (ROOT / "smoothcast").read_text(encoding="utf-8")
+        launcher = (ROOT / "sc.py").read_text(encoding="utf-8")
         self.assertIn("sys.version_info < (3, 10)", launcher)
         self.assertNotIn("assert sys.version_info", launcher)
 
@@ -446,7 +446,7 @@ class SetupContractTests(unittest.TestCase):
             self.assertEqual(list(app.parent.glob(".smoothcast-app-backup-*")), [])
             script = app / "Contents" / "MacOS" / "SmoothCast"
             self.assertTrue(script.is_file())
-            self.assertIn(str(ROOT / "setup" / "launch.py"), script.read_text())
+            self.assertIn(str(ROOT / "sc.py"), script.read_text())
             # Windows does not expose POSIX executable mode bits for files.
             if os.name != "nt":
                 self.assertTrue(script.stat().st_mode & 0o111)
@@ -531,17 +531,19 @@ class SetupContractTests(unittest.TestCase):
             self.assertFalse(streamer.Session().used_software_fallback)
 
     def test_canonical_launcher_delegates_to_shared_bootstrap(self):
-        script = (ROOT / "smoothcast").read_text()
+        script = (ROOT / "sc.py").read_text()
         self.assertTrue(script.startswith("#!/usr/bin/env python3\n"))
         self.assertIn('str(SETUP / "bootstrap.py")', script)
         self.assertIn("launch.runtime_ready()", script)
         self.assertIn("launch.main(args)", script)
         self.assertIn('"install_desktop.py"', script)
-        self.assertNotIn("sc.py", script)
+        wrapper = (ROOT / "smoothcast").read_text()
+        self.assertIn("from sc import main", wrapper)
+        self.assertNotIn("def _bootstrap", wrapper)
 
     def test_canonical_launcher_keeps_headless_queries_out_of_bootstrap(self):
         loader = importlib.machinery.SourceFileLoader(
-            "smoothcast_launcher", str(ROOT / "smoothcast"))
+            "smoothcast_launcher", str(ROOT / "sc.py"))
         spec = importlib.util.spec_from_loader(loader.name, loader)
         launcher = importlib.util.module_from_spec(spec)
         loader.exec_module(launcher)

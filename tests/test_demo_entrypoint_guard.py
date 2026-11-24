@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
     ["--demo=1"],
 ])
 def test_canonical_launcher_refuses_before_bootstrap(args, capsys):
-    launcher = runpy.run_path(str(ROOT / "smoothcast"), run_name="demo-guard-test")
+    launcher = runpy.run_path(str(ROOT / "sc.py"), run_name="demo-guard-test")
     fake_launch = ModuleType("launch")
     with mock.patch.dict(sys.modules, {"launch": fake_launch}):
         assert launcher["main"](args) == 2
