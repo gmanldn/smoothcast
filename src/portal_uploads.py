@@ -183,6 +183,8 @@ class _Upload:
     received: int = 0
     complete_path: Path | None = None
     cast_submitted: bool = False
+    dispatch_pending: bool = False
+    dispatch_queue_only: bool | None = None
     # "idle" -> "requested" -> "active"/"declined"; early casting state.
     early_cast: str = "idle"
     keep_partial: bool = False
@@ -308,7 +310,9 @@ class UploadManager:
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received,
                     "complete": upload.complete_path is not None and upload.directory_synced,
-                    "ready_to_cast": upload.early_cast in {"requested", "active"}}
+                    "ready_to_cast": upload.early_cast in {"requested", "active"},
+                    "dispatch_state": ("accepted" if upload.cast_submitted else
+                                       "pending" if upload.dispatch_pending else "not_submitted")}
 
     def _summary(self, upload: _Upload, now: float) -> dict:
         """Best-effort display only; never wait for a network chunk on GTK.
@@ -442,11 +446,17 @@ class UploadManager:
         upload.keep_partial = True
         return True
 
-    def finalize(self, owner: str, upload_id: str) -> tuple[Path, str, bool]:
+    def finalize(self, owner: str, upload_id: str, *,
+                 queue_only: bool | None = None) -> tuple[Path, str, bool]:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
+            intent = upload.queue_only or bool(queue_only)
+            if upload.dispatch_pending:
+                raise UploadError(409, "The host is still processing this upload. Retry shortly.")
+            if upload.cast_submitted and upload.dispatch_queue_only != intent:
+                raise UploadError(409, "This upload already has a different accepted room action.")
             if upload.complete_path is None:
                 if upload.received != upload.size:
                     raise UploadError(409, f"Upload is incomplete at byte {upload.received}")
@@ -481,7 +491,7 @@ class UploadManager:
                     if os.name != "nt":
                         raise
                 upload.directory_synced = True
-            if upload.queue_only and not upload.media_validated:
+            if intent and not upload.media_validated:
                 try:
                     import streamer
                     media = streamer.ffprobe(upload.complete_path)
@@ -514,7 +524,9 @@ class UploadManager:
                     raise UploadError(422, message)
                 upload.media_validated = True
             should_dispatch = not upload.cast_submitted
-            upload.cast_submitted = True
+            if should_dispatch:
+                upload.dispatch_pending = True
+                upload.dispatch_queue_only = intent
             return upload.complete_path, upload.name, should_dispatch
 
     def finish_dispatch(self, owner: str, upload_id: str, *, accepted: bool) -> None:
@@ -522,15 +534,18 @@ class UploadManager:
         with upload.lock:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
-            if not accepted:
-                upload.cast_submitted = False
+            if upload.dispatch_pending:
+                upload.dispatch_pending = False
+                upload.cast_submitted = accepted
+                if not accepted:
+                    upload.dispatch_queue_only = None
 
     def cancel(self, owner: str, upload_id: str) -> None:
         upload = self._get(owner, upload_id)
         with upload.lock:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
-            if upload.cast_submitted:
+            if upload.cast_submitted or upload.dispatch_pending:
                 raise UploadError(409, "Casting has already been requested for this upload")
             try:
                 (upload.complete_path or upload.partial_path).unlink()
@@ -556,7 +571,7 @@ class UploadManager:
                     targets.append(upload)
                     self._uploads.pop(upload_id, None)
         for upload in targets:
-            if upload.cast_submitted or upload.keep_partial:
+            if upload.cast_submitted or upload.dispatch_pending or upload.keep_partial:
                 continue  # May be in use by a locally owned receiver session.
             if not upload.lock.acquire(blocking=False):
                 continue
