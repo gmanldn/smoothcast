@@ -136,7 +136,8 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     if f.phase == "staged":
         # Staging never changes active.json. Bind the signature to the exact
         # independently verified staged generation, not the active reference.
-        if candidate_id is None or staged_id != candidate_id or running_id is None:
+        if (candidate_id is None or staged_id != candidate_id or running_id is None
+                or (f.active_commit is not None and active_id is None)):
             return make("unconfirmed", "Staged update not confirmed",
                         "The candidate, staged generation and running build must be identified before restarting.",
                         "check_now")
