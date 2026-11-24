@@ -390,10 +390,18 @@ def ensure_single_instance(args: list[str]) -> int | None:
 
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    # Direct shortcut/launcher calls must not bypass demo isolation (#523).
+    # Direct shortcut/launcher calls reach the same isolated demo as sc.py (#523):
+    # before any single-instance check, so a real running SmoothCast is untouched.
     if any(arg == "--demo" or arg.startswith("--demo=") for arg in args):
-        print("Demo mode is not ready. No receiver was contacted.", file=sys.stderr)
-        return 2
+        sys.path.insert(0, str(ROOT / "src"))
+        import demo_launch
+        if args != ["--demo"]:
+            return demo_launch.run(args)
+        try:
+            return demo_launch.run(args, str(python_path()), runtime_environment())
+        except (OSError, RuntimeError) as exc:
+            print(f"SmoothCast demo could not start: {exc}", file=sys.stderr)
+            return 1
     if args in (["--version"], ["-V"]):
         return subprocess.call([sys.executable, str(ROOT / "src" / "version.py")])
     if args[:1] == ["--link-check"]:

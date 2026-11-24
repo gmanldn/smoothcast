@@ -81,6 +81,18 @@ ships an older release, upgrade the FFmpeg package before casting.
 
 For an environment where GTK4/libadwaita and FFmpeg are already available, the Python package can be installed with `python -m pip install -e .`. Plain `pip install` cannot provide the required native GTK stack; the platform setup scripts are the recommended first-install path.
 
+## Try it in 30 seconds (no TV needed)
+
+```sh
+python3 sc.py --demo      # or: smoothcast --demo
+```
+
+Demo mode starts the real app in a throwaway profile with generated sample
+media (FFmpeg) and an in-process fake Chromecast. It is **loopback-only**: it
+never discovers or contacts real receivers, never touches your settings or a
+running SmoothCast, and deletes everything when you quit. It needs FFmpeg and an
+X11/XWayland display. The Demo badge in the window is still to come.
+
 ## Cast targets, MKV codecs and subtitle files
 
 **Google Cast-compatible receivers:** SmoothCast discovers Chromecast,

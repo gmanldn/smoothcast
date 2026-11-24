@@ -15,8 +15,8 @@ import cli  # noqa: E402
 
 class DemoCliSafetyTests(unittest.TestCase):
     def test_demo_request_rejects_before_import_or_live_gui_activation(self):
-        for args in (["--demo"], ["--demo", "--self-test"],
-                     ["--demo", "/tmp/some-film.mkv"]):
+        for args in (["--demo", "--self-test"], ["--demo", "/tmp/some-film.mkv"],
+                     ["--demo=1"]):
             with self.subTest(args=args):
                 touched = []
                 fake = types.ModuleType("cast_control")
@@ -29,8 +29,20 @@ class DemoCliSafetyTests(unittest.TestCase):
                     result = cli._main()
                 self.assertEqual(result, 2)
                 self.assertEqual(touched, [])
-                self.assertIn("Demo mode is not ready", stderr.getvalue())
+                self.assertIn("no receiver was contacted", stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_bare_demo_starts_demo_launcher_not_the_real_app(self):
+        touched = []
+        fake = types.ModuleType("cast_control")
+        fake.main = lambda: touched.append("GUI") or 0
+        import demo_launch
+        with mock.patch.object(sys, "argv", ["smoothcast", "--demo"]), \
+             mock.patch.dict(sys.modules, {"cast_control": fake}), \
+             mock.patch.object(demo_launch, "run", return_value=0) as run:
+            self.assertEqual(cli._main(), 0)
+        run.assert_called_once_with(["--demo"])
+        self.assertEqual(touched, [])
 
 
 if __name__ == "__main__":
