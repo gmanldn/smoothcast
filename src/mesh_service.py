@@ -26,6 +26,7 @@ import time
 from typing import Any
 
 import mesh_beacon as mb
+import mesh_acquisition_activity
 import mesh_cache
 import mesh_clients
 import mesh_http
@@ -104,6 +105,7 @@ class MeshConfig:
     prober: mv.Prober | None = None
     on_error: Callable[[BaseException], None] | None = None
     link_acquisition_sources: tuple[str, ...] = ()
+    link_activity: Callable[[], list] = lambda: []
 
 
 class MeshService:
@@ -158,7 +160,7 @@ class MeshService:
                             version=cfg.version if _valid_version(cfg.version) else "0.0.0",
                             rev=1, boot_epoch=epoch, mesh_port=http.port,
                             room_port=cfg.room_port,
-                            capabilities=("room", "screens", *(
+                            capabilities=("room", "screens", mesh_acquisition_activity.HINT, *(
                                 "acquire-" + kind + "-local" for kind in ("youtube", "magnet")
                                 if kind in cfg.link_acquisition_sources)),
                             addresses=(cfg.bind_ip,))
@@ -175,6 +177,11 @@ class MeshService:
         self.replicator = mesh_sync.Replicator(
             clock=loop, rpc=self.rpc, rng=rng, beacon=self.beacon, membership=self.membership,
             state=self.mesh_state, publisher=self.publisher)
+        self.acquisition_activity = mesh_acquisition_activity.AcquisitionActivity(
+            clock=loop, rpc=self.rpc, members=self.membership.members,
+            record=self.mesh_state.get, own=lambda: self.mesh_state.own,
+            version=own.version, local_jobs=cfg.link_activity,
+            disabled=lambda node: self.replicator.config.disabled_caps_by_peer.get(node, frozenset()))
         self.roles = mesh_roles.PrimaryTracker(
             clock=loop, own_id=self.node_id, own_epoch=epoch,
             members=lambda: [(m.node_id, m.boot_id, m.boot_epoch, m.status == mem.SUSPECT)
@@ -227,6 +234,7 @@ class MeshService:
         self.replicator.start()
         self.roles.start()
         self.observer.start()
+        self.acquisition_activity.start()
         assert self._loop is not None
         self._loop.call_later(CACHE_SAVE_S, self._save_cache)
 
@@ -241,6 +249,7 @@ class MeshService:
 
                 def shutdown() -> None:
                     try:
+                        self.acquisition_activity.close()
                         self.observer.close()
                         self.roles.close()
                         self.replicator.close()
