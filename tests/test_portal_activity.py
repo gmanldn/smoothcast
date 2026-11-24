@@ -304,3 +304,42 @@ def test_peer_links_open_only_compatible_hosts_and_keep_the_pin_boundary():
         window, [], available=False, status="Peer discovery is unavailable", gtk=gtk)
     assert [child.label for child in window.portal_peers_box.children] == [
         "Peer discovery is unavailable"]
+
+
+def test_immediate_receiver_rejection_does_not_poison_upload_id(tmp_path):
+    window, uploads, _ = _build_window(tmp_path)
+    upload_id = uploads.create("owner", "film.mkv", 4)["id"]
+    partial = uploads.root / f"{upload_id}.partial"
+    partial.write_bytes(b"abcd")
+    payload = {"path": str(partial), "name": "film.mkv", "upload_id": upload_id}
+    accepted_cast = window._cast_path
+    window._cast_path = lambda *_args: "Choose a room receiver before casting"
+
+    with pytest.raises(_PortalRequestError, match="Choose a room receiver") as rejected:
+        window._portal_handle("cast_upload", {**payload, "early": True})
+    assert rejected.value.status == 409
+    assert upload_id not in window._portal_accepted_uploads
+    assert upload_id not in window._portal_cast_uploads
+    assert window._portal_early is False
+
+    window._cast_path = accepted_cast
+    window._portal_handle("cast_upload", {**payload, "early": False})
+    assert window.casts == [(str(partial), 0)]
+    assert upload_id in window._portal_accepted_uploads
+    uploads.close()
+
+
+def test_status_publication_failure_cannot_erase_command_receipt(tmp_path):
+    def immediate_idle(callback):
+        callback()
+        return 1
+
+    window, uploads, _ = _build_window(tmp_path, idle_add=immediate_idle)
+
+    def failed_publish():
+        raise RuntimeError("status serialization failed")
+
+    window._publish_portal_status = failed_publish
+    window._portal_handle = lambda _operation, _payload: "accepted once"
+    assert window._portal_dispatch("music_autogain", {"value": True}) == "accepted once"
+    uploads.close()
