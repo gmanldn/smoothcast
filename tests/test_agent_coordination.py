@@ -219,6 +219,15 @@ def test_claim_withdraws_its_posted_comment_when_followup_read_fails(monkeypatch
     assert removed == [f"repos/{agent.REPO}/issues/comments/55"]
 
 
+def test_closed_ticket_cannot_be_claimed_after_selection(monkeypatch):
+    monkeypatch.setattr(agent, "load_issue", lambda n: {
+        "state": "closed", "body": "edit src/a.py"})
+    monkeypatch.setattr(agent, "agent_id", lambda: "worker")
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must never publish a lease for a closed issue")))
+    assert agent.cmd_claim(agent.build_parser().parse_args(["claim", "584"])) == 3
+
+
 def test_claim_loses_race_to_earlier_claim_and_withdraws(monkeypatch):
     posted, deleted = [], []
     earlier = marker_comment(5, 42, 1, "other", ["src/a.py"])
