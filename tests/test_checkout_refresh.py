@@ -85,3 +85,34 @@ def test_exact_installed_revision_skips_reinstall(roots, monkeypatch):
     monkeypatch.setattr(refresh.subprocess, "call", call)
     assert refresh.refresh(source, installed, "linux", lambda: []) == 0
     call.assert_not_called()
+
+def test_current_build_announces_exact_version_and_local_scope(roots, monkeypatch, capsys):
+    source, installed = roots
+    version(installed, 3)
+    (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    message = capsys.readouterr().err
+    assert "Loading latest checked-out version v2.0.3" in message
+    assert SHA[:12] in message
+    assert "remote freshness not checked" in message
+
+
+def test_refresh_announces_latest_only_after_copy_verification(roots, monkeypatch, capsys):
+    source, installed = roots
+
+    def bootstrap(_args):
+        assert "Loading latest" not in capsys.readouterr().err
+        version(installed, 3)
+        (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
+        return 0
+
+    monkeypatch.setattr(refresh.subprocess, "call", bootstrap)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert "Loading latest local develop version v2.0.3" in capsys.readouterr().err
+
+
+def test_failed_refresh_does_not_announce_latest(roots, monkeypatch, capsys):
+    source, installed = roots
+    monkeypatch.setattr(refresh.subprocess, "call", Mock(return_value=0))
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 1
+    assert "Loading latest" not in capsys.readouterr().err

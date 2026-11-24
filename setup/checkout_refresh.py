@@ -57,6 +57,13 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
         return None
 
 
+def announce(version: tuple[int, int, int], revision: str | None, reason: str) -> None:
+    label = "v" + ".".join(map(str, version))
+    build = f" (build {revision[:12]})" if revision else " (build unknown)"
+    print(f"SmoothCast: {reason} {label}{build}; remote freshness not checked.",
+          file=sys.stderr, flush=True)
+
+
 def refresh(root: Path, installed: Path, target: str, running) -> int:
     """Return zero only when handoff can proceed; never fall back after failure."""
     source_version = read_version(root)
@@ -65,17 +72,20 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: cannot establish checkout/installed version; rerun setup.",
               file=sys.stderr)
         return 1
-    if source_version < installed_version:
-        return 0  # An old checkout must never downgrade a newer installation.
     previous = installed_revision(installed)
+    if source_version < installed_version:
+        announce(installed_version, previous, "Loading newer installed version")
+        return 0  # An old checkout must never downgrade a newer installation.
     head = git(root, "rev-parse", "--verify", "HEAD")
     revision = head.stdout.strip() if head is not None and head.returncode == 0 else None
     if source_version == installed_version and previous and previous == revision:
+        announce(installed_version, previous, "Loading latest checked-out version")
         return 0
     # If the installed revision is newer on the same lineage, retain it.
     if source_version == installed_version and previous and revision:
         newer = git(root, "merge-base", "--is-ancestor", revision, previous)
         if newer is not None and newer.returncode == 0:
+            announce(installed_version, previous, "Loading newer installed build")
             return 0
     clean = install_location._clean_source_revision(root)
     branch = git(root, "symbolic-ref", "--short", "HEAD")
@@ -101,8 +111,11 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
               "window normally, then rerun ./smoothcast to update it.",
               file=sys.stderr)
         return 3
-    print("SmoothCast: refreshing installed application from local develop "
-          + ".".join(map(str, source_version)), file=sys.stderr, flush=True)
+    print("SmoothCast: updating installed application from v"
+          + ".".join(map(str, installed_version)) + " to v"
+          + ".".join(map(str, source_version))
+          + f" (build {clean[:12]}) from local develop.",
+          file=sys.stderr, flush=True)
     try:
         code = subprocess.call([sys.executable, str(root / "setup" / "bootstrap.py"),
                                 "--target", target, "--yes", "--install-dir", str(installed)])
@@ -115,4 +128,5 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: installed refresh did not verify the requested build; "
               "refusing stale startup.", file=sys.stderr)
         return 1
+    announce(source_version, clean, "Loading latest local develop version")
     return 0
