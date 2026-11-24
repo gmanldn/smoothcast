@@ -181,6 +181,26 @@ def test_room_jobs_progress_dedup_privacy_and_verified_queue_delivery(tmp_path):
         jobs.close()
 
 
+@pytest.mark.parametrize("link", [YOUTUBE, MAGNET])
+def test_guest_snapshot_carries_no_source_identity_url_or_path(tmp_path, link):
+    """Acceptance #587: guest telemetry has no URL, hash, path or raw output."""
+    provider = FakeProvider()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, lambda owner: True)
+    source = acquisition.parse_link(link)
+    try:
+        jobs.submit("owner-key", link, "request")
+        assert provider.started.wait(2)
+        blob = json.dumps(jobs.snapshot("owner-key")[0])
+        assert source.identity not in blob
+        assert "magnet:" not in blob and "http" not in blob
+        assert str(tmp_path) not in blob and "sample.mp4" not in blob
+        assert "owner-key" not in blob
+        assert jobs.snapshot("owner-key")[0]["title"] == source.label
+    finally:
+        provider.resume.set()
+        jobs.close()
+
+
 def test_revocation_or_owner_cancel_stops_acquisition_before_queue(tmp_path):
     provider = FakeProvider()
     deliveries = []
