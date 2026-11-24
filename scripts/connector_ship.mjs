@@ -130,6 +130,7 @@ async function checkBase(api,p){
 }
 
 async function verifyCandidate(api,p,candidate){
+  validate(p);
   check(isSha(candidate),"invalid candidate");
   const before=await checkBase(api,p);
   const c=await api.get("/git/commits/"+candidate);
@@ -167,7 +168,9 @@ function checkPending(comments,candidate=null){
     check(resolved.has(sha)||sha===candidate,"recover pending candidate "+sha+" first");
 }
 
-async function prepare(api,p){
+// Create immutable objects only. No branch update occurs until the later
+// publication stage independently verifies the candidate and durable receipt.
+async function createCandidate(api,p){
   validate(p);const comments=await checkClaims(api,p);
   checkPending(comments);
   check(await tip(api)===p.base,"stale base");
@@ -175,6 +178,12 @@ async function prepare(api,p){
   const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
   const candidate=await api.commit(tree,p.base,p.message+" (Refs #"+p.issue+")");
+  check(isSha(candidate),"invalid candidate");
+  return candidate;
+}
+
+async function prepare(api,p){
+  const candidate=await createCandidate(api,p);
   await verifyCandidate(api,p,candidate);
   return candidate;
 }
@@ -250,4 +259,4 @@ function connectorAdapter(tools){
   };
 }
 
-export {validate,leaseCheck,pages,prepare,ship,recordPending,publishPending,recordHandover,connectorAdapter,treeSnapshot,verifyTreeDelta};
+export {validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,connectorAdapter,treeSnapshot,verifyTreeDelta};

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,prepare,ship,recordPending,publishPending,recordHandover} from "../scripts/connector_ship.mjs";
+import {validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover} from "../scripts/connector_ship.mjs";
 const p={issue:598,agent:"test",base:"a".repeat(40),versionBlob:"b".repeat(40),
   changes:[{path:"src/foo.py",old:null,content:"pass\n"}],message:"fix",verification:"not run",next:"integration"};
 const now=Date.parse("2026-11-24T07:00:00Z");
@@ -223,4 +223,28 @@ test("landed candidate without receipt cannot acquire false handover",async()=>{
   const t=transport(),c=await prepare(t.api,p);
   t.state.head=c;
   await assert.rejects(recordHandover(t.api,p,c),/missing pending receipt/);
+});
+
+test("bounded creation and verification are independent and never publish",async()=>{
+  const t=transport(),c=await createCandidate(t.api,p);
+  assert.equal(c,t.candidate);
+  await verifyCandidate(t.api,p,c);
+  assert.deepEqual(t.counters,{trees:1,commits:1,updates:0});
+  assert.equal(t.comments.length,1);
+});
+test("standalone verification rejects a malformed manifest",async()=>{
+  const t=transport();
+  await assert.rejects(verifyCandidate(t.api,{...p,changes:[]},t.candidate),/invalid change count/);
+});
+test("candidate created with wrong parent cannot obtain a pending receipt",async()=>{
+  const t=transport();t.state.parents=[{sha:id("9")}];
+  const c=await createCandidate(t.api,p);
+  await assert.rejects(recordPending(t.api,p,c),/candidate parent/);
+  assert.equal(t.comments.length,1);
+  assert.equal(t.counters.updates,0);
+});
+test("standalone creation refuses stale branch before creating objects",async()=>{
+  const t=transport();t.state.head=id("9");
+  await assert.rejects(createCandidate(t.api,p),/stale base/);
+  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0});
 });
