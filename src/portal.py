@@ -793,6 +793,7 @@ class _Handler(BaseHTTPRequestHandler):
         state["room"] = self.server.room.snapshot(participant_id)
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
+        state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
         state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         state["mesh_link_activity"] = (activity.snapshot() if activity is not None else
@@ -2206,7 +2207,7 @@ function showJoinedRoom(){
   if(entering)$("playbackHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
-let linkCapabilities={},linkPosting=false,linkAttempt=null,linkSignature="";
+let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="";
 function updateLinkControls(){
   const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
@@ -2214,10 +2215,11 @@ function updateLinkControls(){
   input.disabled=!enabled||linkPosting;consent.disabled=!enabled||linkPosting;
   button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
-  label.textContent=enabled?"Host enabled: "+sources.join(" and ")+".":"External acquisition is unavailable until the host enables an isolated media worker.";
+  label.textContent=enabled?"Host enabled: "+sources.join(" and ")+".":linkStorageAvailable===false?"Acquisition recovery storage is busy or unavailable. Ask the host to check it and restart the room. Existing media is preserved.":"External acquisition is unavailable until the host enables an isolated media worker.";
 }
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
+  linkStorageAvailable=state.link_storage_available;
   updateLinkControls();
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
