@@ -1090,6 +1090,7 @@ def cmd_ship(a: argparse.Namespace) -> int:
             print("remote contains the commit: treating failed push acknowledgement as success")
         verification = ("not run (unverified)" if a.skip_checks else
                         (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
+        handover_recorded = True
         if task is not None:
             # Persist before a possibly failing GitHub comment request. On a
             # crash/retry, verify remote ancestry before replaying the record.
@@ -1099,13 +1100,19 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 task.update(newer)
             else:
                 print("WARNING: pushed SHA is not durably journalled locally")
-            if publish_ship_handover(task, sha, changed, verification, a.next):
+            handover_recorded = publish_ship_handover(
+                task, sha, changed, verification, a.next)
+            if handover_recorded:
                 if "pending_handover" in task:
                     newer = dict(task)
                     newer.pop("pending_handover", None)
                     if persist_private_task(newer):
                         task.pop("pending_handover", None)
         print(f"pushed {sha[:12]} to develop (attempt {attempt}); {verification}")
+        if not handover_recorded:
+            print("PUSH SUCCEEDED but ISSUE HANDOVER IS PENDING; run 'agent.py ship' again "
+                  "from this worktree to reconcile the saved receipt")
+            return 7
         return 0
     print("could not push after 5 contested attempts; preserve worktree and inspect origin/develop")
     return 5
