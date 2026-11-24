@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import stat
 import time
 from typing import Callable
 
@@ -59,10 +60,14 @@ def _atomic_write(path: Path, payload: dict, hook: Callable[[str], None]) -> Non
         tmp.unlink(missing_ok=True)
 
 
-def _read(path: Path) -> dict | None:
+def _read(path: Path, *, single_link: bool = False) -> dict | None:
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        # A malicious/corrupt FIFO must not hang startup before fstat.
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         with os.fdopen(os.open(path, flags), "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or (single_link and info.st_nlink != 1):
+                raise ActivationError(f"{path.name} is not an ordinary private file")
             raw = handle.read(MAX_JSON + 1)
     except FileNotFoundError:
         return None
@@ -118,30 +123,48 @@ def read_active(root: Path) -> dict:
 def verify_release(root: Path, commit: str) -> None:
     """Re-hash a staged generation; any dirty/missing/extra/linked file fails."""
     _commit(commit)
-    release = Path(root) / "releases" / commit
-    if release.is_symlink() or not release.is_dir():
-        raise ActivationError("Generation is not staged")
-    meta = _read(release / "stage-manifest.json")
-    files = meta.get("files") if meta else None
-    if meta is None or meta.get("commit") != commit or not isinstance(files, dict) or not files:
+    root = Path(root)
+    release = root / "releases" / commit
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise ActivationError("Secure release verification requires no-follow file handles")
+    if any(path.is_symlink() for path in (root, release.parent, release)) or not release.is_dir():
+        raise ActivationError("Generation is not staged in an ordinary release directory")
+    meta = _read(release / "stage-manifest.json", single_link=True)
+    if meta is None or meta.get("commit") != commit:
         raise ActivationError("Generation manifest is missing or for another commit")
-    seen = set()
-    for path in release.rglob("*"):
-        if path.is_symlink() or not (path.is_dir() or path.is_file()):
-            raise ActivationError("Generation contains a link or special file")
-        if path.is_file():
+    try:
+        planned = mg._manifest(meta.get("files"))
+    except mg.StageError as exc:
+        raise ActivationError("Generation manifest has invalid file metadata or paths") from exc
+    try:
+        seen = set()
+        for path in release.rglob("*"):
+            info = path.lstat()
+            if stat.S_ISDIR(info.st_mode):
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ActivationError("Generation contains a link or special file")
             seen.add(path.relative_to(release).as_posix())
-    if seen != set(files) | {"stage-manifest.json"}:
-        raise ActivationError("Generation has missing or unexpected files (dirty source)")
-    for name, attrs in files.items():
-        digest, size = hashlib.sha256(), 0
-        with open(release.joinpath(*name.split("/")), "rb") as handle:
-            while block := handle.read(mg.BUFFER):
-                size += len(block)
-                digest.update(block)
-        if size != attrs.get("size") or not hmac.compare_digest(
-                digest.hexdigest(), str(attrs.get("sha256"))):
-            raise ActivationError(f"Generation file failed verification: {name}")
+        if seen != {name for name, _size, _sha in planned} | {"stage-manifest.json"}:
+            raise ActivationError("Generation has missing or unexpected files (dirty source)")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        for name, expected_size, expected_hash in planned:
+            digest, size = hashlib.sha256(), 0
+            path = release.joinpath(*name.split("/"))
+            with os.fdopen(os.open(path, flags), "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or info.st_size != expected_size):
+                    raise ActivationError(f"Generation file failed verification: {name}")
+                while block := handle.read(min(mg.BUFFER, expected_size + 1 - size)):
+                    size += len(block)
+                    if size > expected_size:
+                        raise ActivationError(f"Generation file grew during verification: {name}")
+                    digest.update(block)
+            if size != expected_size or not hmac.compare_digest(digest.hexdigest(), expected_hash):
+                raise ActivationError(f"Generation file failed verification: {name}")
+    except OSError as exc:
+        raise ActivationError("Cannot safely read staged generation") from exc
 
 
 def _lease_live(root: Path, now: float) -> bool:
