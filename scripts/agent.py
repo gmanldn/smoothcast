@@ -1233,6 +1233,15 @@ def cmd_finish(a: argparse.Namespace) -> int:
         print(f"no develop commit referencing #{number}; cannot finish")
         return 2
     latest = refs[0]
+    # It is valid for unrelated agents to advance develop, but not for this
+    # ticket to change after the owner's worktree snapshot. A successor may
+    # have added new work/acceptance evidence. Review those commits before
+    # declaring completion or releasing ownership.
+    if subprocess.run(["git", "merge-base", "--is-ancestor", latest, head],
+                      cwd=ROOT, capture_output=True).returncode:
+        print(f"issue #{number} advanced at {latest[:12]} since this worktree; "
+              "update/review the ticket before finishing")
+        return 3
     marker = f"<!-- sc-finish v1 issue={number} sha={latest} -->"
     comments = issue_comments(number)
     if not isinstance(comments, list):
