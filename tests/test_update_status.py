@@ -118,8 +118,8 @@ def test_checking_is_cancellable_and_does_not_touch_playback():
 def test_copy_follows_the_ux_contract_for_every_reachable_state():
     states = [d(), d(checks_enabled=False), d(phase="checking"), d(phase="downloaded", candidate=B, candidate_signed=True),
               d(phase="verified", candidate=B, candidate_signed=True),
-              d(phase="staged", candidate=B, candidate_signed=True, active_commit=B),
-              d(phase="staged", candidate=B, candidate_signed=True, active_commit=B, playing=True),
+              d(phase="staged", candidate=B, candidate_signed=True, active_commit=A, staged_commit=B),
+              d(phase="staged", candidate=B, candidate_signed=True, active_commit=A, staged_commit=B, playing=True),
               d(journal_state="planned"), d(journal_state="switched"),
               d(journal_state="rolled_back", previous_commit=C), d(journal_state="aborted"),
               d(candidate=B, candidate_signed=False, phase="staged", active_commit=A, staged_commit=B)]
@@ -150,6 +150,7 @@ def test_verified_download_never_offers_restart_even_if_reference_moved():
     {"candidate": B[:7]},
     {"running_commit": A[:7]},
     {"staged_commit": B[:7]},
+    {"active_commit": A[:7]},
 ])
 def test_staged_build_needs_exact_matching_identities(changes):
     facts = replace(BASE, candidate=B, candidate_signed=True, phase="staged",
@@ -182,3 +183,11 @@ def test_sha256_commit_ids_are_supported_but_abbreviations_are_not():
     assert d(running_commit=running, candidate=candidate).state == "available"
     assert d(running_commit=running, candidate=candidate[:40]).state == "available"
     assert d(running_commit=running, candidate=candidate[:12]).state == "unchecked"
+
+
+@pytest.mark.parametrize("terminal", ["acked", "rolled_back", "aborted"])
+def test_old_terminal_journal_does_not_hide_new_staging_or_check(terminal):
+    facts = dict(journal_state=terminal, active_commit=A, previous_commit=C)
+    assert d(phase="checking", **facts).state == "checking"
+    ready = d(candidate=B, candidate_signed=True, phase="staged", staged_commit=B, **facts)
+    assert ready.state == "ready" and "restart_now" in ready.actions
