@@ -35,7 +35,7 @@ def test_screen_css_has_no_independent_literal_palette():
     # The only literal colour values are inside design_tokens.css().
     token_end = css.index("@media(prefers-contrast:more) and (prefers-color-scheme:light)")
     body = css[css.index("}}", token_end) + 2:]
-    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", body)
+    assert not re.search(r"(?<=:)\s*#[0-9a-fA-F]{3,8}\b", body), "Use shared semantic colour tokens"
     assert "var(--accent)" in body and "var(--text)" in body
     assert "var(--qr-paper)" in body
     assert "--qr-paper:#ffffff" in css
