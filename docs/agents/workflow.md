@@ -69,30 +69,16 @@ have returned temporary DNS resolution failures for GitHub and PyPI
 SmoothCast runtime defect. The GitHub connector may use independent
 networking and remain available.
 
-In a terminal with Python and Git, run this bounded, read-only check
-from the repository (no GUI, package installation or credential prompts):
+From the repository root, run the bounded, read-only diagnostic (no GUI,
+package installation or interactive credential prompts):
 
 ```sh
-python3 - <<'PY'
-import os, subprocess, sys
-for host in ("github.com", "api.github.com", "pypi.org"):
-    try:
-        subprocess.run([sys.executable, "-c",
-            "import socket,sys; socket.getaddrinfo(sys.argv[1],443,type=socket.SOCK_STREAM)",
-            host], check=True, timeout=5)
-        print(host, "DNS OK", flush=True)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        print(host, "DNS FAILED or TIMED OUT", flush=True)
-try:
-    result = subprocess.run(
-        ["git", "ls-remote", "--exit-code", "origin", "refs/heads/develop"],
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"},
-        timeout=15, check=False)
-    print("Git remote exit:", result.returncode)
-except (OSError, subprocess.TimeoutExpired) as exc:
-    print("Git probe unavailable:", type(exc).__name__)
-PY
+python3 scripts/agent_network.py
 ```
+
+Exit 0 means native Git can read develop; exit 1 means it cannot be verified.
+Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
+`python3 -m unittest discover -s tests -p test_agent_network.py`.
 
 - Interpret DNS, transport/TLS, authentication/authorisation and missing-ref
   failures separately. DNS success alone does not prove Git access;
