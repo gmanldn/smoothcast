@@ -192,7 +192,10 @@ expose only the job staging directory and required read-only runtime,
 enforce a hard disk quota, and kill the entire descendant process tree.
 It receives the executable and individual arguments, never a shell command.
 **Do not use a pass-through launcher**. SmoothCast cannot attest an arbitrary
-launcher's OS-level restrictions. Automatic cross-platform sandbox setup and
+launcher's OS-level restrictions. Install optional engines with the platform setup's `--link-tools` flag.
+Use `smoothcast --link-check` for bounded local diagnostics. Preferences
+shows missing prerequisites without starting a worker.
+Automatic cross-platform sandbox setup and
 real-provider qualification are outstanding; unavailable workers are shown as
 unavailable instead of silently attempting unrestricted downloads.
 
