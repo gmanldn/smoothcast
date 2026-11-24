@@ -2608,7 +2608,7 @@ function fileUnits(bytes){
   do{size/=1024;index++}while(size>=1024&&index<units.length-1);
   return size.toFixed(size<10?1:0)+" "+units[index];
 }
-function transferView(phase,received=0,total=0,note=""){
+function transferView(phase,received=0,total=0,note="",queueOnly=$("uploadQueue").checked){
   const stage=TRANSFER_STAGES.includes(phase)?phase:"choose";
   const index=TRANSFER_STAGES.indexOf(stage);
   for(const item of ($("transferSteps")?.children||[])){
@@ -2624,7 +2624,7 @@ function transferView(phase,received=0,total=0,note=""){
   $("uploadProgress").value=valid?received:0;
   $("transferPercent").textContent=valid?pct+"%":"—";
   $("transferBytes").textContent=valid?fileUnits(received)+" of "+fileUnits(total):"No file selected";
-  $("transferDestination").textContent=$("uploadQueue").checked?"Up Next":"Room receiver (pending)";
+  $("transferDestination").textContent=queueOnly?"Up Next":"Room receiver (pending)";
   const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to SmoothCast host",verify:"Checking received media",deliver:"Submitting to shared room"};
   $("transferStage").textContent=names[stage]+(note?" · "+note:"");
   if(stage==="transfer"&&valid){
@@ -2706,13 +2706,15 @@ async function restoreUpload(){
   }finally{finishUpload()}
 }
 function updateUploadControls(){
-  const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
-  if(audio)$("uploadQueue").checked=true;
+  const files=batchFiles?batchFiles.slice(batchIndex):Array.from($("videoFile").files);
+  const file=files[0],audio=files.length>0&&files.every(item=>/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(item.name));
+  // Audio is always queued per file, but a mixed selection may still request
+  // playback of video. Never overwrite a locked batch's requested intent.
+  if(audio&&!batchFiles&&!pendingUpload)$("uploadQueue").checked=true;
   const resumeLabel=pendingUpload&&(pendingUpload.received===pendingUpload.size
     ?"Retry queue / playback request":`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`);
   const summary=$("uploadSelectionSummary");
   if(summary){
-    const files=batchFiles?batchFiles.slice(batchIndex):Array.from($("videoFile").files);
     summary.textContent=files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
       (typeof fileUnits==="function"?fileUnits(files.reduce((sum,item)=>sum+item.size,0)):"")+
       (audio||$("uploadQueue").checked?" · Add to Up Next":" · Request playback for video; audio joins Up Next"):
@@ -2724,7 +2726,7 @@ function updateUploadControls(){
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
   const destination=$("transferDestination");
-  if(destination&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
+  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
   const pause=$("pauseUpload");if(pause){pause.hidden=!uploading||!pendingUpload;pause.disabled=cancelUpload;}
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
@@ -2796,11 +2798,11 @@ $("uploadButton").addEventListener("click",async()=>{
       transferEvent((pendingUpload?"Resuming file ":"Preparing file ")+(batchIndex+1)+" of "+batchFiles.length+" · "+fileUnits(file.size));
       let state;
       if(pendingUpload){
-        transferView("prepare",pendingUpload.received,file.size,"Resuming");
+        transferView("prepare",pendingUpload.received,file.size,"Resuming",queueOnly);
         showError("uploadStatus",`Checking ${file.name}…`);
         state=await uploadRequest("GET","/api/uploads/"+pendingUpload.id);
       }else{
-        transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length);
+        transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length,queueOnly);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
         state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
         const {id,chunk_size:chunkSize}=state;
@@ -2817,7 +2819,7 @@ $("uploadButton").addEventListener("click",async()=>{
         throw Error("Upload progress is invalid. Reload and choose the file again.");
       casting=!!state.ready_to_cast;
       if(casting)monitorText("transferDelivery","Early playback requested — not confirmed");
-      transferView("transfer",state.received,file.size);
+      transferView("transfer",state.received,file.size,"",queueOnly);
       pendingUpload.received=state.received;
       let milestone=Math.floor(state.received*4/file.size);
       while(state.received<file.size&&!cancelUpload){
@@ -2826,7 +2828,7 @@ $("uploadButton").addEventListener("click",async()=>{
         if(!validUploadProgress(state.received,file.size)||state.received!==end)
           throw Error("Host returned an unexpected upload offset. Resume to check the saved position.");
         pendingUpload.received=state.received;
-        transferView("transfer",state.received,file.size);
+        transferView("transfer",state.received,file.size,"",queueOnly);
         if(state.ready_to_cast&&!casting){
           if(state.early_cast_accepted===false){
             monitorText("transferDelivery","Early cast declined — retry after upload");
@@ -2848,14 +2850,14 @@ $("uploadButton").addEventListener("click",async()=>{
       }
       if(cancelUpload){await discardUpload();break}
       $("cancelUpload").disabled=true;
-      transferView("verify",file.size,file.size);
+      transferView("verify",file.size,file.size,"",queueOnly);
       $("pauseUpload").hidden=true;
       await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Playback requested — receiver not confirmed");
       monitorText("transferAck",fileUnits(file.size));
       transferEvent(queueOnly?"Host accepted queue addition":"Host accepted playback request; receiver confirmation is separate");
-      transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted");
+      transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted",queueOnly);
       for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
       $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Playback requested — awaiting receiver";
       $("transferEta").textContent="Complete";
@@ -2890,14 +2892,14 @@ $("uploadButton").addEventListener("click",async()=>{
     }else if(pauseRequested){
       monitorText("transferOperation","Paused");
       transferEvent("Paused; resume from the last host-confirmed offset");
-      if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available");
+      if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available",pendingUpload.queueOnly);
       showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
     }else {
       if(pendingUpload){
         const received=pendingUpload.received,total=pendingUpload.size,complete=received===total;
-        transferView(complete?"verify":"transfer",received,total,complete?"Action not confirmed — retry available":"Paused — resume available");
+        transferView(complete?"verify":"transfer",received,total,complete?"Action not confirmed — retry available":"Paused — resume available",pendingUpload.queueOnly);
         showError("uploadStatus",error.message+(complete?" Select Retry queue / playback request.":" Select Resume to retry."));
       }else showError("uploadStatus",error.message+" Select Continue upload batch to retry.");
     }
