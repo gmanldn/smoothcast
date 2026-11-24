@@ -229,6 +229,27 @@ def test_failed_post_recovers_durable_handover_after_remote_push(monkeypatch, tm
     assert calls[0][1] == sha and calls[1][1] == sha
 
 
+def test_recovered_receipt_clears_when_sha_comment_already_exists(monkeypatch, tmp_path):
+    """An existing GitHub delivery record is success, not a retry deadlock."""
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    sha = run(first, "rev-parse", "HEAD")
+    task = {"issue": 584, "pending_handover": {
+        "sha": sha, "files": ["src/a.py"],
+        "verification": "pytest: 5 passed", "next": "remaining"}}
+    assert agent.persist_private_task(task)
+    marker = f"<!-- sc-ship v1 sha={sha} -->"
+    def fake_gh(*args):
+        if len(args) == 1 and args[0].endswith("/issues/584/comments?per_page=100"):
+            return [{"id": 91, "body": f"Progress: already recorded {marker}"}]
+        raise AssertionError("existing SHA evidence must never be posted twice")
+    monkeypatch.setattr(agent, "gh", fake_gh)
+    assert agent.recover_pending_handover(task) is True
+    assert "pending_handover" not in task
+    folder = Path(run(first, "rev-parse", "--absolute-git-dir"))
+    assert "pending_handover" not in (folder / "sc-agent-task.json").read_text()
+
+
 def test_unpublished_receipt_is_not_reported_as_shipped(monkeypatch, tmp_path):
     _, first, _ = seed_git(tmp_path)
     monkeypatch.setattr(agent, "ROOT", first)
