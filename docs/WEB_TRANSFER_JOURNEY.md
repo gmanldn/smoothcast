@@ -83,6 +83,10 @@ machine's codec installation. It is included in the manual Verify workflow.
 python3 -m pytest -q tests/test_portal_guest_upload_smoke.py
 ```
 
+`pytest.ini` runs tests with `-n`, so the development test dependencies
+(including `pytest-xdist`, listed in `pyproject.toml`) must be installed first;
+without them pytest stops with `unrecognized arguments: -n` before any test runs.
+
 For the real-browser qualification, install the optional test-only Playwright
 package and its Chromium runtime into the development environment (FFmpeg and
 FFprobe must also be installed). The following runs the actual served page,
