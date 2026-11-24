@@ -324,7 +324,7 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert PIN not in page
     assert 'id="keepScreenOn" type="checkbox"' in page
     assert "Keep screen on" in page
-    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
+    assert "For an iPad on a stand, turn on Guided Access" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>{timedOut=true;controller.abort();},60000)" in page
@@ -1519,8 +1519,8 @@ def test_status_refresh_does_not_overwrite_an_active_slider():
 @pytest.mark.parametrize(
     ("method", "stage", "expected_status", "expected_text"),
     [
-        ("POST", "prepare", 507, "Not enough space"),
-        ("PUT", "store", 408, "Resume from the saved position"),
+        ("POST", "prepare", 507, "not enough space on the SmoothCast computer"),
+        ("PUT", "store", 408, "Select Resume to carry on"),
         ("POST", "finalise", 503, "Host could not finalise"),
     ],
 )

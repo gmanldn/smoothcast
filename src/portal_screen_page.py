@@ -94,7 +94,7 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 <div class="brand"><div class="logo" aria-hidden="true">S</div><h1>Make this a SmoothCast screen</h1></div>
 <p>Play movies and music from the room on this device. Nothing to install.</p>
 <label for="name">Name this screen</label><input id="name" maxlength="32" placeholder="Living room TV" required>
-<label for="pin">Room PIN shown on the host</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+<label for="pin">House PIN shown in SmoothCast</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
 <p class="err" id="loginError" role="alert"></p><button type="submit">Join the room</button></form></div>
 
 <div class="stage" id="startView" hidden><div class="card">
@@ -157,7 +157,7 @@ async function begin(){
 function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
 function slateLayout(queueEmpty){$("slate").classList.toggle("corner",queueEmpty===false);$("slate").classList.toggle("empty",queueEmpty===true)}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
-const DIM_HINT="Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.";
+const DIM_HINT="Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.";
 function dimHint(){if(store.get("sc_dim_hint"))return;store.set("sc_dim_hint","1");banner(DIM_HINT);setTimeout(()=>{if($("banner").textContent===DIM_HINT)banner("")},9000)}
 async function keepAwake(){if(!("wakeLock"in navigator)){dimHint();return}try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(_){dimHint()}}
 if(safe(()=>document.pictureInPictureEnabled&&video.requestPictureInPicture)){$("pipButton").hidden=false;$("pipButton").addEventListener("click",e=>{e.stopPropagation();safe(()=>document.pictureInPictureElement?document.exitPictureInPicture():video.requestPictureInPicture())})}

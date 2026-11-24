@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 from collections import OrderedDict
 from dataclasses import dataclass, field
+import guest_messages
 import hashlib
 import json
 import math
@@ -375,7 +376,7 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
                 try:
                     while process.poll() is None:
                         if cancelled():
-                            raise LinkError(403, "Room access was revoked.")
+                            raise LinkError(403, guest_messages.ACCESS_REMOVED)
                         if time.monotonic() >= deadline:
                             raise LinkError(504, "YouTube search timed out. Try again.")
                         if os.fstat(output.fileno()).st_size > SEARCH_OUTPUT_LIMIT:
@@ -440,7 +441,7 @@ class CommandProvider:
     def search_youtube(self, value: object, cancelled) -> list[dict]:
         text = _search_text(value)
         if not self.capabilities().get("youtube"):
-            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+            raise LinkError(503, guest_messages.YOUTUBE_OFF)
         return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
 
     def readiness_text(self, kind: str) -> str:
@@ -771,16 +772,16 @@ class LinkJobs:
         text = _search_text(value)
         search = getattr(self.provider, "search_youtube", None)
         if not self.capabilities().get("youtube") or not callable(search):
-            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+            raise LinkError(503, guest_messages.YOUTUBE_OFF)
 
         def cancelled():
             return self._closed or not self.owner_active(owner)
 
         if cancelled():
-            raise LinkError(403, "Room access was revoked.")
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
         results = search(text, cancelled)
         if cancelled():
-            raise LinkError(403, "Room access was revoked.")
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
         return results
 
     def storage_available(self):
@@ -811,7 +812,7 @@ class LinkJobs:
         if not isinstance(request, str) or not REQUEST_ID.fullmatch(request):
             raise LinkError(400, "Submission identifier is invalid.")
         if not self.owner_active(owner):
-            raise LinkError(401, "Room access was revoked.")
+            raise LinkError(401, guest_messages.ACCESS_REMOVED)
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
@@ -1024,7 +1025,7 @@ class LinkJobs:
                 if job.owner in owners and job.stage not in TERMINAL and job.stage != "queueing":
                     job.cancel.set()
                     if job.stage == "pending":
-                        self._change(job, stage="cancelled", error="Room access was revoked.")
+                        self._change(job, stage="cancelled", error=guest_messages.ACCESS_REMOVED)
             self._save()
 
     def close(self):

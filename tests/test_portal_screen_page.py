@@ -64,7 +64,7 @@ def test_wake_lock_pip_and_dim_hint_contract():
     assert 'navigator.wakeLock.request("screen")' in html
     assert 'addEventListener("visibilitychange"' in html and "keepAwake()" in html
     assert 'id="pipButton"' in html and "document.pictureInPictureEnabled" in html
-    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in html
+    assert "For an iPad on a stand, turn on Guided Access" in html
 
 
 def test_idle_screen_shows_self_hosted_join_qr_and_safe_short_address():

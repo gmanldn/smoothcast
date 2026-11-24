@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import guest_messages
 import hashlib
 import hmac
 import math
@@ -423,7 +424,7 @@ class UploadManager:
             finally:
                 os.close(fd)
             if upload.cancelled:
-                raise UploadError(401, "Room access was revoked during this upload")
+                raise UploadError(401, guest_messages.ACCESS_REMOVED_DURING_UPLOAD)
             upload.received += written
             upload.last_at = self._clock()
             ready = self._maybe_start_early_cast(upload)

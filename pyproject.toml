@@ -111,6 +111,8 @@ py-modules = [
     "font_attachments",
     "frozen_entry",
     "frozen_runtime",
+    "guest_messages",
+    "gui_link_add",
     "gui_test_safety",
     "hdr_tonemap",
     "hls_pause_recovery",

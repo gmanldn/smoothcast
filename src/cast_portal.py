@@ -1,6 +1,7 @@
 """Shared-room portal startup, GTK dispatch and playback snapshot ownership."""
 from __future__ import annotations
 
+import guest_messages
 import pathlib
 import threading
 import time
@@ -233,7 +234,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if session_key is not None:
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
-                raise portal.PortalRequestError(401, "Room access was revoked")
+                raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:

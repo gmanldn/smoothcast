@@ -6,6 +6,7 @@ methods run on the GTK main thread because ``PortalQueueMixin`` is part of
 """
 from __future__ import annotations
 
+import guest_messages
 import hashlib
 import os
 import pathlib
@@ -53,7 +54,7 @@ class PortalQueueMixin:
         upload_root = getattr(getattr(portal_instance, "server", None), "uploads", None)
         root = getattr(upload_root, "root", None)
         if root is None:
-            raise portal.PortalRequestError(503, "Upload storage is unavailable")
+            raise portal.PortalRequestError(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         path = pathlib.Path(payload.get("path", ""))
         try:
             info = path.lstat()

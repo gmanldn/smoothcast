@@ -8,6 +8,7 @@ media and poll reads need the cookie only.
 from __future__ import annotations
 
 from collections import OrderedDict
+import guest_messages
 import re
 import threading
 import time
@@ -113,7 +114,7 @@ def route(handler, method: str, path: str) -> bool:
 def _guarded(handler, action, *, csrf: bool = False) -> None:
     if not handler._authenticated(csrf=csrf):
         status = 403 if csrf else 401
-        message = ("Session expired or request token invalid" if csrf
+        message = (guest_messages.SESSION_ENDED if csrf
                    else "Enter the PIN shown in SmoothCast")
         return handler._error(status, message)
     try:

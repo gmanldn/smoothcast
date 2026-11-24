@@ -10,6 +10,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from functools import lru_cache, wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import guest_messages
 import hashlib
 import errno
 import hmac
@@ -669,9 +670,9 @@ class _Handler(BaseHTTPRequestHandler):
         """Keep expected upload failures actionable and avoid disclosing paths."""
         self.close_connection = True
         if isinstance(exc, TimeoutError):
-            return self._error(408, "Upload timed out. Resume from the saved position.")
+            return self._error(408, guest_messages.UPLOAD_TIMED_OUT)
         if exc.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)}:
-            return self._error(507, "Not enough space on the SmoothCast host.",
+            return self._error(507, guest_messages.NO_SPACE,
                                code="upload.disk_full")
         error_log.log(f"portal upload {stage} storage error: {type(exc).__name__}, errno={exc.errno}")
         return self._error(503, f"Host could not {stage} the upload. Retry when storage is available.")
@@ -1076,7 +1077,7 @@ class _Handler(BaseHTTPRequestHandler):
             if self._throttle("upload"):
                 return
             if self.server.uploads is None:
-                return self._error(503, "Upload storage is unavailable")
+                return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
             try:
                 return self._send(200, {"ok": True, **self.server.uploads.status(
                     self._cookie_token() or "", upload_id)})
@@ -1088,7 +1089,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._safe_origin(required=True):
-            return self._error(403, "Request origin is not allowed")
+            return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/search/youtube"}
@@ -1104,10 +1105,10 @@ class _Handler(BaseHTTPRequestHandler):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             try:
                 if self.server.uploads is None:
-                    return self._error(503, "Upload storage is unavailable")
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 token = self._cookie_token() or ""
                 created = self.server.uploads.create(
@@ -1116,7 +1117,7 @@ class _Handler(BaseHTTPRequestHandler):
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
-                    return self._error(403, "Room access was revoked")
+                    return self._error(403, guest_messages.ACCESS_REMOVED)
             except PortalRequestError as exc:
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
@@ -1127,10 +1128,10 @@ class _Handler(BaseHTTPRequestHandler):
         upload_id = self._upload_complete_route(path)
         if upload_id:
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             try:
                 if self.server.uploads is None:
-                    return self._error(503, "Upload storage is unavailable")
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 try:
                     default_queue = self.server.uploads.is_queue_only(
@@ -1146,7 +1147,7 @@ class _Handler(BaseHTTPRequestHandler):
                     if dispatch:
                         self.server.uploads.finish_dispatch(token, upload_id, accepted=False)
                     self.server.uploads.revoke_owner_keys({key})
-                    return self._error(403, "Room access was revoked")
+                    return self._error(403, guest_messages.ACCESS_REMOVED)
                 if dispatch:
                     try:
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
@@ -1174,7 +1175,7 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError as exc:
                 return self._upload_storage_error(exc, "finalise")
         if not self._safe_origin(required=True):
-            return self._error(403, "Request origin is not allowed")
+            return self._error(403, guest_messages.WRONG_ORIGIN)
         try:
             body = self._body()
         except PortalRequestError as exc:
@@ -1207,10 +1208,10 @@ class _Handler(BaseHTTPRequestHandler):
             }, cookie=cookie)
         if path == "/api/search/youtube":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
             if jobs is None:
-                return self._error(503, "Ask the host to enable an isolated YouTube worker.")
+                return self._error(503, guest_messages.YOUTUBE_OFF)
             owner = self.server._session_key(self._cookie_token() or "")
             try:
                 return self._send(200, {"results": jobs.search_youtube(owner, body.get("q"))})
@@ -1218,10 +1219,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(exc.status, exc.message)
         if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
             if jobs is None:
-                return self._error(503, "The host has not enabled external media acquisition")
+                return self._error(503, guest_messages.LINK_DOWNLOADS_OFF)
             owner = self.server._session_key(self._cookie_token() or "")
             try:
                 if path.endswith("/cancel"):
@@ -1236,7 +1237,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(exc.status, exc.message)
         if path == "/api/profile":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             name = body.get("name")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
@@ -1251,7 +1252,7 @@ class _Handler(BaseHTTPRequestHandler):
                                     "participant": participant.public(self.server.clock())})
         if path == "/api/action":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             action = body.get("action")
             envelope: portal_commands.MutationEnvelope | None = None
             participant_id: str | None = None
@@ -1333,7 +1334,7 @@ class _Handler(BaseHTTPRequestHandler):
                         if isinstance(value, bool) or not isinstance(value, (float, int)):
                             return self._error(400, "Seek position must be a number")
                         if not math.isfinite(float(value)) or not 0 <= float(value) <= 24 * 60 * 60:
-                            return self._error(400, "Seek position is out of range")
+                            return self._error(400, guest_messages.SEEK_OUT_OF_RANGE)
                         body["value"] = float(value)
                     if action == "volume":
                         value = body.get("value")
@@ -1414,7 +1415,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self._path().startswith("/api/uploads") and not self._client_compatible():
             return
         if not self._authenticated(csrf=True):
-            return self._error(403, "Session expired or request token invalid")
+            return self._error(403, guest_messages.SESSION_ENDED)
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
@@ -1424,7 +1425,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(400, "Chunked transfer encoding is not supported")
         raw_length = self.headers.get("Content-Length")
         if self.server.uploads is None:
-            return self._error(503, "Upload storage is unavailable")
+            return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         try:
             length = int(raw_length or "")
         except ValueError:
@@ -1458,14 +1459,14 @@ class _Handler(BaseHTTPRequestHandler):
         if portal_screens_http.route(self, "DELETE", self._path()):
             return
         if not self._authenticated(csrf=True):
-            return self._error(403, "Session expired or request token invalid")
+            return self._error(403, guest_messages.SESSION_ENDED)
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
         if self.server.uploads is None:
-            return self._error(503, "Upload storage is unavailable")
+            return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         try:
             self.server.uploads.cancel(self._cookie_token() or "", upload_id)
             return self._send(200, {"ok": True})
@@ -1981,14 +1982,14 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">Phone remote</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
-<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p>
+<p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
 <section aria-labelledby="musicHeading"><h3 id="musicHeading">Music playback</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
-<details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to audio-only playback where the host supports processing.</p></div></details>
+<details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
-<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room if you want to switch computers. It has its own access settings; discovery does not grant permission.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
-<section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Read-only status from reachable Cast and DLNA receivers, refreshed every 15 seconds. No commands are sent to these other receivers.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section>
+<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+<section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
 </div></details></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
@@ -2405,7 +2406,7 @@ $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
-const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
   return true;
 }

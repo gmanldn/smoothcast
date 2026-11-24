@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
+import guest_messages
 import hashlib
 import json
 import math
@@ -124,7 +125,7 @@ def _payload(action: str, value: object) -> dict:
         if isinstance(position, bool) or not isinstance(position, (int, float)):
             raise CommandError(400, "Seek position must be a number")
         if not math.isfinite(float(position)) or not 0 <= float(position) <= 24 * 60 * 60:
-            raise CommandError(400, "Seek position is out of range")
+            raise CommandError(400, guest_messages.SEEK_OUT_OF_RANGE)
         return {"value": float(position)}
     if action == "volume":
         level = value.get("value")
