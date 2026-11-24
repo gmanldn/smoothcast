@@ -1739,6 +1739,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
+<p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
@@ -2513,6 +2514,7 @@ async function sendChunk(path,file,offset,end){
       showError("uploadStatus","Connection interrupted. Retrying…");
       await new Promise(resolve=>setTimeout(resolve,Math.max(250*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
       if(cancelUpload)throw Error("Upload cancelled");
+      if(pauseRequested)throw Error("Transfer paused");
       try{
         const state=await uploadRequest("GET",path);
         if(state.received===end)return state;
@@ -2706,7 +2708,16 @@ async function restoreUpload(){
 function updateUploadControls(){
   const file=batchFiles&&batchFiles[batchIndex]||$("videoFile").files[0],audio=file&&/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
   if(audio)$("uploadQueue").checked=true;
-  const resumeLabel=pendingUpload&&`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`;
+  const resumeLabel=pendingUpload&&(pendingUpload.received===pendingUpload.size
+    ?"Retry queue / playback request":`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`);
+  const summary=$("uploadSelectionSummary");
+  if(summary){
+    const files=batchFiles?batchFiles.slice(batchIndex):Array.from($("videoFile").files);
+    summary.textContent=files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
+      (typeof fileUnits==="function"?fileUnits(files.reduce((sum,item)=>sum+item.size,0)):"")+
+      (audio||$("uploadQueue").checked?" · Add to Up Next":" · Request playback for video; audio joins Up Next"):
+      pendingUpload?"Choose the original file to resume.":"No files selected. Choose a video or audio file to begin.";
+  }
   $("uploadButton").disabled=uploading||!file;
   $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;
@@ -2743,7 +2754,8 @@ async function discardUpload(){
     catch(error){if(error.status!==404)throw error}
     await clearPendingUpload();
   }
-  batchFiles=null;batchIndex=0;
+  batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;
+  $("videoFile").value="";
   transferView("choose");
   monitorText("transferOperation","Cancelled");
   monitorText("transferDelivery","Not submitted");
@@ -2755,6 +2767,7 @@ $("uploadButton").addEventListener("click",async()=>{
   const selected=Array.from($("videoFile").files);
   if(!batchFiles&&!selected.length)return;
   const session=csrf,json={"Content-Type":"application/json"};
+  if(!pendingUpload&&!batchFiles)resetTransferMonitor();
   uploading=true;
   cancelUpload=false;
   pauseRequested=false;
@@ -2854,7 +2867,9 @@ $("uploadButton").addEventListener("click",async()=>{
     if(batchFiles&&batchIndex>=batchFiles.length){
       const count=batchAdded,total=batchTotal;
       batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;
-      showError("uploadStatus",`${count} of ${total} files added`);
+      $("videoFile").value="";
+      if(total>1)showError("uploadStatus",`${count} of ${total} file requests accepted by the host. See transfer activity for details.`);
+      refresh();
     }
   }catch(error){
     if(!pauseRequested&&!cancelUpload){
@@ -2864,12 +2879,13 @@ $("uploadButton").addEventListener("click",async()=>{
     if(error.status===404){
       await clearPendingUpload();
       showError("uploadStatus",error.message+" Select the upload button to start this file again.");
-    }else if(error.status===413||error.status===422){
+    }else if(error.status===422||(error.status===413&&!pendingUpload)){
       await clearPendingUpload();
       batchIndex++;
-      if(batchIndex>=batchFiles.length){
-        batchFiles=null;batchIndex=0;
-        showError("uploadStatus",`${error.message} No files remain in this batch.`);
+      if(batchFiles&&batchIndex>=batchFiles.length){
+        batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;
+        $("videoFile").value="";
+        showError("uploadStatus",`${error.message} Choose another file to continue.`);
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
     }else if(pauseRequested){
       monitorText("transferOperation","Paused");
@@ -2878,8 +2894,13 @@ $("uploadButton").addEventListener("click",async()=>{
       showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
-    }else {if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — resume available");
-      showError("uploadStatus",pendingUpload?error.message+" Select Resume to retry.":error.message);}
+    }else {
+      if(pendingUpload){
+        const received=pendingUpload.received,total=pendingUpload.size,complete=received===total;
+        transferView(complete?"verify":"transfer",received,total,complete?"Action not confirmed — retry available":"Paused — resume available");
+        showError("uploadStatus",error.message+(complete?" Select Retry queue / playback request.":" Select Resume to retry."));
+      }else showError("uploadStatus",error.message+" Select Continue upload batch to retry.");
+    }
   }
   finally{finishUpload()}
 });
@@ -2905,7 +2926,7 @@ uploadPanel.addEventListener("drop",event=>{
   uploadPanel.classList.remove("drop-active");
   if(uploading||!event.dataTransfer?.files?.length)return;
   event.preventDefault();
-  try{$("videoFile").files=event.dataTransfer.files;updateUploadControls();}
+  try{$("videoFile").files=event.dataTransfer.files;$("videoFile").dispatchEvent(new Event("change"));}
   catch(_){showError("uploadStatus","This browser cannot accept dropped files. Use Choose files instead.");}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
