@@ -44,6 +44,7 @@ label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--muted)}
 input{width:100%;min-height:52px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--border);border-radius:14px;padding:10px 14px}
 #pin{letter-spacing:.3em;font-size:1.3rem;text-align:center}
 button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:var(--on-accent);background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
+button:disabled{opacity:.65;cursor:wait}
 button.ghost{background:var(--nav);color:var(--on-nav);width:auto;margin:0;min-height:44px;padding:0 16px}
 button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
@@ -102,12 +103,12 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 <p>Play movies and music from the room on this device. Nothing to install.</p>
 <label for="name">Name this screen</label><input id="name" maxlength="32" placeholder="Living room TV" required>
 <label for="pin">House PIN shown in SmoothCast</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
-<p class="err" id="loginError" role="alert"></p><button type="submit">Join the room</button></form></div>
+<p class="err" id="loginError" role="alert"></p><button id="loginSubmit" type="submit">Join the room</button></form></div>
 
 <div class="stage" id="startView" hidden><div class="card">
 <div class="brand"><div class="logo" aria-hidden="true">S</div><h1 id="startName">Screen</h1></div>
 <p>One tap lets this browser play sound and video when the room sends it something. You can leave it running; it reconnects by itself.</p>
-<button id="startButton" type="button">Start screen</button></div></div>
+<p class="err" id="startError" role="alert"></p><button id="startButton" type="button">Start screen</button></div></div>
 
 <div class="stage" id="slate" hidden><div class="slate">
 <p class="big"><span class="dot" id="dot"></span><span id="slateName">Screen</span></p>
@@ -132,6 +133,7 @@ const $=id=>document.getElementById(id);
 // Short address is text, never HTML; the QR contains the bound numeric endpoint.
 $("joinAddress").textContent=location.host;
 let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
+let joining=false,starting=false;
 let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false,recoverAt=0,stallTimer=null;
 const video=$("video");
 const safe=(fn)=>{try{return fn()}catch(_){return undefined}};
@@ -146,12 +148,15 @@ async function api(method,path,body,signal){
   if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
   return d}
 async function login(e){
-  e.preventDefault();$("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
+  e.preventDefault();if(joining)return;joining=true;
+  const button=$("loginSubmit");button.disabled=true;button.textContent="Joining…";
+  $("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
   try{const r=await fetch("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
     const d=await r.json();if(!r.ok)throw Error(d.error||"Could not join");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
-  catch(err){$("loginError").textContent=err.message}}
+  catch(err){$("loginError").textContent=err.message||"Could not join. Please try again."}
+  finally{joining=false;button.disabled=false;button.textContent="Join the room"}}
 async function enter(name){
-  $("startName").textContent=name;$("slateName").textContent=name;show("startView");
+  $("startName").textContent=name;$("slateName").textContent=name;$("startError").textContent="";show("startView");
   if(started)await begin();}
 async function register(){
   const name=$("slateName").textContent||"Screen";
@@ -159,8 +164,15 @@ async function register(){
   screenId=d.screen.id;seq=d.screen.seq;playSeq=d.screen.play_seq;$("slateName").textContent=d.screen.name;
   safe(()=>sessionStorage.setItem("sc_screen_id",screenId))}
 async function begin(){
-  started=true;stopped=false;try{await register()}catch(err){if(err.status===401||err.status===403){return relogin()}throw err}
-  show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
+  if(starting||started)return;
+  starting=true;const button=$("startButton");button.disabled=true;button.textContent="Connecting…";
+  $("startError").textContent="";
+  try{await register()}
+  catch(err){if(err.status===401||err.status===403){relogin();return}
+    $("startError").textContent="Could not start this screen. Check your connection and try again.";
+    return}
+  finally{starting=false;button.disabled=false;button.textContent="Start screen"}
+  started=true;stopped=false;show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
 function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
 function slateLayout(queueEmpty){$("slate").classList.toggle("corner",queueEmpty===false);$("slate").classList.toggle("empty",queueEmpty===true)}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
@@ -240,10 +252,10 @@ video.addEventListener("error",()=>{
 function recover(){if(!current||!transcoded)return;recoverAt=Date.now();const at=position();load(current.url,at,true)}
 function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
   hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
-document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(e.key==="f"||e.key==="F")fullscreen()});
+document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(!e.repeat&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.target?.isContentEditable&&!["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target?.tagName)&&(!$("slate").hidden||!$("player").hidden)&&(e.key==="f"||e.key==="F")){e.preventDefault();fullscreen()}});
 function fullscreen(){const el=document.documentElement;if(document.fullscreenElement){document.exitFullscreen()}else if(el.requestFullscreen){el.requestFullscreen().catch(()=>{})}}
 $("fsButton").addEventListener("click",e=>{e.stopPropagation();fullscreen()});$("fsSlate").addEventListener("click",fullscreen);
-$("startButton").addEventListener("click",()=>{begin().catch(err=>{setSlate(err.message,"bad");show("slate")})});
+$("startButton").addEventListener("click",begin);
 $("loginForm").addEventListener("submit",login);
 window.addEventListener("pagehide",()=>{if(screenId&&csrf)safe(()=>fetch(`/api/screens/${screenId}`,{method:"DELETE",credentials:"same-origin",keepalive:true,headers:{"X-CSRF-Token":csrf}}))});
 $("name").value=store.get("sc_screen_name");show("loginView");

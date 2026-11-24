@@ -174,3 +174,62 @@ assert.equal(elements.screensMsg.textContent,"New room");
         ["node", "-"], input=harness + script + scenario,
         check=True, text=True, timeout=12,
     )
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_screen_start_failure_is_retryable_and_shortcuts_respect_input():
+    """Registration failure cannot strand the screen or start polling prematurely."""
+    html = portal_screen_page.screen_page().decode()
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    harness = r"""
+const nodes=new Map();
+function node(id){
+  if(!nodes.has(id))nodes.set(id,{hidden:true,disabled:false,value:"",textContent:"",listeners:{},
+    classList:{add(){},remove(){},toggle(){}},style:{},addEventListener(k,fn){this.listeners[k]=fn},
+    canPlayType(){return "maybe"}});
+  return nodes.get(id);
+}
+let fullscreens=0,beats=0;
+const document={getElementById:node,createElement:node,listeners:{},hidden:false,
+  addEventListener(k,fn){this.listeners[k]=fn},
+  documentElement:{requestFullscreen(){fullscreens++;return Promise.resolve()}}};
+const location={host:"127.0.0.1"};
+const navigator={},window={addEventListener(){}};
+const localStorage={getItem(){return ""},setItem(){}},sessionStorage=localStorage;
+const setInterval=()=>{beats++},setTimeout=()=>1,clearTimeout=()=>{};
+const requests=[],pending=[];
+const fetch=(url,options)=>new Promise((resolve,reject)=>{
+  requests.push({url,options});pending.push({resolve,reject});
+});
+function check(ok,msg){if(!ok)throw Error(msg)}
+const response=(status,data)=>({ok:status<400,status,json:async()=>data});
+const event={preventDefault(){}};
+"""
+    scenario = r"""
+(async()=>{
+  node("name").value="Office";node("pin").value="123456";
+  const login1=login(event),login2=login(event);
+  check(requests.length===1,"duplicate join");check(node("loginSubmit").disabled,"join busy");
+  pending[0].resolve(response(200,{csrf:"test"}));await Promise.all([login1,login2]);
+  check(!node("startView").hidden,"start visible");
+  const start1=begin(),start2=begin();
+  check(requests.length===2,"duplicate start");check(node("startButton").disabled,"start busy");
+  check(!started&&beats===0,"premature start");
+  pending[1].reject(Error("network"));await Promise.all([start1,start2]);
+  check(!started&&!node("startView").hidden&&node("slate").hidden,"failed start must remain retryable");
+  check(!node("startButton").disabled&&node("startError").textContent.includes("try again"),"retry guidance");
+  const retry=begin();pending[2].resolve(response(401,{}));await retry;
+  check(!node("loginView").hidden&&!started&&beats===0,"expired registration needs login");
+  const login3=login(event);pending[3].resolve(response(200,{csrf:"new"}));await login3;
+  const success=begin();pending[4].resolve(response(200,{screen:{id:"s",name:"Office",seq:0,play_seq:0}}));await success;
+  check(started&&!node("slate").hidden&&beats===1,"successful registration starts heartbeat");
+  check(requests.length===6&&requests[5].url.includes("/poll?"),"poll only after success");
+  const key=(target,extra={})=>document.listeners.keydown({key:"f",target,preventDefault(){},...extra});
+  key({tagName:"INPUT"});key({tagName:"DIV",isContentEditable:true});key({tagName:"DIV"},{ctrlKey:true});key({tagName:"DIV"},{repeat:true});
+  check(fullscreens===0,"typing/modified keys must not fullscreen");
+  key({tagName:"DIV"});check(fullscreens===1,"fullscreen shortcut remains available");
+})()
+.catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   check=True, text=True, timeout=12)
