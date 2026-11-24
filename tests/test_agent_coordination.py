@@ -736,6 +736,17 @@ def test_legacy_done_never_releases_after_unconfirmed_handover(monkeypatch):
         agent.cmd_done(args)
 
 
+def test_agent_ci_completes_running_proof_and_coalesces_pending_pushes():
+    # GitHub concurrency allows one active and one replaceable pending run.
+    # Cancelling the active test under every develop push can starve CI.
+    source = (Path(__file__).resolve().parents[1] /
+              ".github/workflows/agent-control-plane.yml").read_text()
+    lines = source.splitlines()
+    assert "  group: sc-agent-control-develop" in lines
+    assert "  cancel-in-progress: false" in lines
+    assert "  cancel-in-progress: true" not in lines
+
+
 def test_doc_guard_runs_the_tests_that_pin_changed_docs_and_workflows():
     tests = {"tests/test_quality_gates.py": 'read("AGENTS.md") and "verify.yml"',
              "tests/test_unrelated.py": "nothing here",
