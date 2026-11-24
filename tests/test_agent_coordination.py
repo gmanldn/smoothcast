@@ -66,6 +66,28 @@ def test_legacy_free_text_claims_and_releases_are_understood():
     assert claims(comment(1, 7, 3, "Claim released; first slice landed.")) == []
 
 
+def test_existing_task_lease_fences_other_issue_claiming_same_production_file(monkeypatch):
+    # The issue-local ledger alone cannot reveal another ticket's source claim.
+    mine = marker_comment(21, 584, 3, "ours", ["src/streaming.py"])
+    rival = marker_comment(22, 810, 1, "other", ["src/streaming.py"])
+    monkeypatch.setattr(agent, "gh", lambda *args: [mine])
+    monkeypatch.setattr(agent, "recent_comments", lambda *args: [rival])
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    assert not agent.ensure_live_task_claim(
+        {"issue": 584, "files": ["src/streaming.py"]})
+
+
+def test_existing_task_lease_allows_independent_other_issue(monkeypatch):
+    mine = marker_comment(21, 584, 3, "ours", ["src/streaming.py"])
+    unrelated = marker_comment(22, 810, 1, "other", ["src/portal.py"])
+    monkeypatch.setattr(agent, "gh", lambda *args: [mine])
+    monkeypatch.setattr(agent, "recent_comments", lambda *args: [unrelated])
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    assert agent.ensure_live_task_claim({"issue": 584, "files": ["src/streaming.py"]})
+
+
 def test_conflicts_same_ticket_and_overlapping_files_but_not_shared_or_own():
     live = claims(marker_comment(1, 10, 5, "a1", ["src/a.py", "src/b.py"]))
     assert agent.conflicts(10, set(), "a2", live)
