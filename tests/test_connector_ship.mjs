@@ -395,21 +395,30 @@ function finaliseTransport(){
   return {api,state,counters,comments,candidate};
 }
 
-test("close lane requires a finalise plan and an unconfirmed commit refuses to close",async()=>{
-  const t=finaliseTransport(), c=await prepare(t.api,finalisePlan);
-  await assert.rejects(closeTicket(t.api,p,c),/finalise plan/);
-  await assert.rejects(closeTicket(t.api,finalisePlan,c),/unconfirmed/);
-  assert.equal(t.counters.closes,0);
-  assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-close")).length,0);
+test("unqualified finalise is fenced at every public mutation stage",async()=>{
+  const t=finaliseTransport(), c=t.candidate;
+  assert.throws(()=>validate(finalisePlan),/finalise disabled/);
+  for(const invoke of [
+    ()=>createCandidate(t.api,finalisePlan),
+    ()=>prepare(t.api,finalisePlan),
+    ()=>verifyCandidate(t.api,finalisePlan,c),
+    ()=>recordPending(t.api,finalisePlan,c),
+    ()=>publishPending(t.api,finalisePlan,c),
+    ()=>recordHandover(t.api,finalisePlan,c),
+    ()=>closeTicket(t.api,finalisePlan,c),
+    ()=>ship(t.api,finalisePlan,c)
+  ])await assert.rejects(invoke(),/finalise disabled/);
+  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0,closes:0});
+  assert.equal(t.comments.length,1);
+  assert.equal(t.state.issueState,"open");
+  assert.equal(t.state.head,p.base);
 });
-test("finalise ship posts one close receipt and closes the issue; replay is idempotent",async()=>{
-  const t=finaliseTransport(), c=await prepare(t.api,finalisePlan);
-  await ship(t.api,finalisePlan,c);
-  assert.equal(t.state.issueState,"closed");
-  assert.equal(t.counters.closes,1);
-  assert.equal(t.comments.filter(x=>x.body.includes(closeMarker(finalisePlan,c))).length,1);
-  assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-pending")).length,1);
-  await ship(t.api,finalisePlan,c);
-  assert.equal(t.counters.closes,1);
-  assert.equal(t.comments.length,3);
+test("already-landed draft PATCH cannot bypass the closure fence",async()=>{
+  const t=finaliseTransport();
+  t.state.head=t.candidate;
+  t.comments.push(row(2,598,"<!-- sc-connector-pending v1 sha="+t.candidate+" base="+p.base+" agent=test -->"));
+  await assert.rejects(closeTicket(t.api,finalisePlan,t.candidate),/finalise disabled/);
+  assert.equal(t.counters.closes,0);
+  assert.equal(t.comments.length,2);
+  assert.equal(t.state.issueState,"open");
 });

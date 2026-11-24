@@ -1,5 +1,6 @@
 // Connector-only, develop-only transport (#598): progress slices and the
-// guarded finalisation/PATCH lane. versionBlob MUST come from offline
+// experimental finalisation/PATCH lane (write-disabled pending qualification).
+// versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes.
 function check(ok,why){if(!ok)throw Error(why)}
 
@@ -28,6 +29,11 @@ function validate(p){
   check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
   check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
   check(p.kind===undefined||p.kind==="progress"||p.kind==="finalise","invalid plan kind");
+  // A numeric +1 alone is not a safe completion proof. Keep the draft lane
+  // intact, but fail closed at every entry point until exact canonical AST
+  // validation, complete assignment history, acceptance evidence and live
+  // closure fencing are implemented and independently qualified (#598).
+  check(p.kind!=="finalise","finalise disabled: use native verified completion until qualification");
   check(Array.isArray(p.changes)&&p.changes.length>0&&p.changes.length<=30,"invalid change count");
   const paths=new Set();
   for(const c of p.changes){
