@@ -242,6 +242,23 @@ def test_unpublished_receipt_is_not_reported_as_shipped(monkeypatch, tmp_path):
     assert "pending_handover" in task
 
 
+def test_push_success_handover_failure_is_partial_success_not_zero(monkeypatch, tmp_path):
+    """The Git SHA is durable even if its issue comment has not landed."""
+    _, _a, worker = seed_git(tmp_path)
+    commit(worker, "worker.txt", "delivered code\n")
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: True)
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args: False)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 7
+    assert run(worker, "rev-parse", "HEAD") == run(worker, "rev-parse", "origin/develop")
+    assert task["pending_handover"]["sha"] == run(worker, "rev-parse", "HEAD")
+
+
 def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_path):
     _remote, a, b = seed_git(tmp_path)
     commit(b, "b.txt", "B\n")
