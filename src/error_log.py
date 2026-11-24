@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import deque
 import datetime as _dt
+import os
 import pathlib
 import sys
 import threading
@@ -16,6 +17,7 @@ from types import TracebackType
 from typing import Optional
 
 import command_trace
+import log_jsonl
 
 ExceptionDetails = tuple[type[BaseException], BaseException, TracebackType | None]
 
@@ -27,6 +29,8 @@ MAX_LOG_BYTES = 4 * 1024 * 1024
 MAX_RETAIN_BYTES = 2 * 1024 * 1024
 MAX_ENTRY_BYTES = 16 * 1024
 FILENAME = "errors.log"
+# Opt-in machine-readable mode: SMOOTHCAST_LOG_FORMAT=jsonl writes one JSON object per entry.
+FORMAT_ENV = "SMOOTHCAST_LOG_FORMAT"
 
 
 class ErrorLog:
@@ -116,7 +120,10 @@ class ErrorLog:
             details = exc_info if isinstance(exc_info, tuple) else sys.exc_info()
             detail = "".join(traceback.format_exception(*details))
             message = f"{message}\n{detail}"
-        entry = f"{stamp}  {message}"
+        if os.environ.get(FORMAT_ENV, "").strip().lower() == "jsonl":
+            entry = log_jsonl.entry(stamp, message, trace_id, bool(exc_info), MAX_ENTRY_BYTES)
+        else:
+            entry = f"{stamp}  {message}"
         encoded = entry.encode("utf-8")
         if len(encoded) > MAX_ENTRY_BYTES:
             marker = b"\n[... oversized entry truncated ...]\n"

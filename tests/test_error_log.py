@@ -218,3 +218,46 @@ def test_clear_after_reopening_is_atomic_and_stays_empty(tmp_path):
     logger.add("fresh")
     assert "old" not in path.read_text()
     assert "fresh" in path.read_text()
+
+
+def test_jsonl_mode_writes_one_valid_object_per_entry(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("SMOOTHCAST_LOG_FORMAT", "jsonl")
+    log = error_log.ErrorLog(tmp_path / "errors.log")
+    log.add("plain failure with é and \"quotes\"")
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log.add("handler failed", exc_info=True)
+    lines = (tmp_path / "errors.log").read_text("utf-8").splitlines()
+    assert len(lines) == 2                       # the traceback is a field, not extra lines
+    first, second = (json.loads(line) for line in lines)
+    assert first["msg"] == 'plain failure with é and "quotes"' and first["level"] == "error"
+    assert "traceback" not in first and first["ts"]
+    assert second["msg"] == "handler failed" and "ValueError: boom" in second["traceback"]
+    assert [json.loads(line)["msg"] for line in log.read()] == [first["msg"], second["msg"]]
+
+
+def test_jsonl_mode_stays_valid_and_bounded_for_huge_or_hostile_entries(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("SMOOTHCAST_LOG_FORMAT", "JSONL")
+    log = error_log.ErrorLog(tmp_path / "errors.log")
+    log.add("é" * 40000 + "\n" + "\x00\n\t" * 5000)
+    log.add("x" * 100000)
+    for line in (tmp_path / "errors.log").read_text("utf-8").splitlines():
+        assert len(line.encode("utf-8")) <= error_log.MAX_ENTRY_BYTES
+        assert json.loads(line)["level"] == "error"
+
+
+def test_default_format_is_unchanged_plain_text(tmp_path, monkeypatch):
+    monkeypatch.delenv("SMOOTHCAST_LOG_FORMAT", raising=False)
+    log = error_log.ErrorLog(tmp_path / "errors.log")
+    log.add("hello")
+    assert (tmp_path / "errors.log").read_text("utf-8").rstrip().endswith("  hello")
+
+
+def test_unknown_format_value_falls_back_to_plain_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMOOTHCAST_LOG_FORMAT", "xml")
+    log = error_log.ErrorLog(tmp_path / "errors.log")
+    log.add("hello")
+    assert not (tmp_path / "errors.log").read_text("utf-8").startswith("{")
