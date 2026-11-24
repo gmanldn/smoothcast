@@ -1819,6 +1819,20 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here when accepted by the host.</p>
+<section id="linkAcquisition" aria-labelledby="linkHeading">
+<h3 id="linkHeading">Add a link to Up Next</h3>
+<p id="linkAvailability" class="field-hint">Checking the room host's acquisition capabilities…</p>
+<form id="linkForm">
+<label for="linkInput">YouTube video or magnet link</label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required disabled>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required disabled><span>I am authorised to acquire this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Acquire and add to Up Next</button>
+</form>
+<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
+<h4>Acquisition activity</h4>
+<p class="field-hint">Downloads run on this room's host. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
+<ul id="linkJobs" aria-label="Room media acquisition activity"><li class="empty">No link acquisitions yet</li></ul>
+</section>
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the room receiver; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
@@ -2179,6 +2193,65 @@ function renderPlaybackToggle(state){
   button.title=description;
   button.setAttribute("aria-label",description);
 }
+const linkForm=$("linkForm");
+let linkCapabilities={},linkPosting=false,linkAttempt=null,linkSignature="";
+function updateLinkControls(){
+  const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
+  const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
+  if(!input||!consent||!button||!label)return;
+  input.disabled=!enabled||linkPosting;consent.disabled=!enabled||linkPosting;
+  button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
+  const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
+  label.textContent=enabled?"Host enabled: "+sources.join(" and ")+".":"External acquisition is unavailable until the host enables an isolated media worker.";
+}
+function renderLinkJobs(state){
+  linkCapabilities=state.link_capabilities||{};
+  updateLinkControls();
+  const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
+  const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
+  const signature=JSON.stringify(jobs);
+  if(signature===linkSignature)return;linkSignature=signature;
+  const stages={pending:"Waiting for a worker",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
+  const rows=[];
+  if(!jobs.length){const row=document.createElement("li");row.className="empty";row.textContent="No link acquisitions yet";rows.push(row)}
+  for(const job of jobs.slice().reverse()){
+    const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
+    heading.textContent=job.title||"Media acquisition";
+    detail.className="muted";detail.textContent=(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
+    row.append(heading,detail);
+    const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
+    const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
+    if(job.stage==="downloading"||job.stage==="resolving"){
+      const meter=document.createElement("progress");meter.setAttribute("aria-label","Reported acquisition progress");
+      if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
+      row.append(meter);
+      const stats=document.createElement("p");stats.className="field-hint";
+      const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
+      stats.textContent=(received===null?"Waiting for worker measurements":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
+      row.append(stats);
+    }
+    if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
+    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel acquisition";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
+    rows.push(row);
+  }
+  list.replaceChildren(...rows);
+}
+if(linkForm&&typeof linkForm.addEventListener==="function"){
+  $("linkInput").addEventListener("input",updateLinkControls);
+  $("linkAuthorised").addEventListener("change",updateLinkControls);
+  linkForm.addEventListener("submit",async event=>{
+    event.preventDefault();if(linkPosting||!$("linkAuthorised").checked)return;
+    const url=$("linkInput").value.trim();if(!url)return;
+    if(!linkAttempt||linkAttempt.url!==url)linkAttempt={url,id:"link-"+Date.now()+"-"+Math.random().toString(36).slice(2)};
+    linkPosting=true;updateLinkControls();showError("linkFeedback","Submitting to the room host…");
+    try{
+      const result=await post("/api/link-jobs",{url,request_id:linkAttempt.id,authorised:true});
+      $("linkInput").value="";$("linkAuthorised").checked=false;linkAttempt=null;
+      showError("linkFeedback",result.message||"Acquisition accepted");void refresh();
+    }catch(error){showError("linkFeedback",error.message)}
+    finally{linkPosting=false;updateLinkControls()}
+  });
+}
 function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   $("dashboard").hidden=false;
@@ -2191,7 +2264,7 @@ function applyStatus(d){
     const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No receiver selected")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueue(s.queue);
+renderQueue(s.queue);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
