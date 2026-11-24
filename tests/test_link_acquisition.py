@@ -582,3 +582,124 @@ def test_retained_cache_budget_preserves_previous_media(monkeypatch, tmp_path):
         assert media.read_bytes() == b"existing"
     finally:
         jobs.close()
+
+
+def test_youtube_search_results_are_projected_and_bounded():
+    row = {"id": "abcdefghijk", "title": "Example", "channel": "Artist",
+           "duration": 91.9, "url": "http://127.0.0.1/private", "thumbnail": "secret"}
+    raw = [
+        row, row, {**row, "id": "invalid"}, {**row, "id": "abcdefghij1", "is_live": True},
+        {**row, "id": "abcdefghij2", "ie_key": "Other"},
+        {**row, "id": "abcdefghij3", "_type": "playlist"},
+        *[{**row, "id": f"video{i:06d}"} for i in range(15)],
+    ]
+    results = acquisition.youtube_results(b"\n".join(json.dumps(v).encode() for v in raw))
+    assert len(results) == 10
+    assert results[0] == {"id": "abcdefghijk", "title": "Example", "channel": "Artist", "duration": 91}
+    assert len({r["id"] for r in results}) == 10
+    assert "127.0.0.1" not in json.dumps(results) and "secret" not in json.dumps(results)
+
+
+@pytest.mark.parametrize("query", [None, "", " ", "x" * 201, "bad\nquery", "bad\x00query"])
+def test_youtube_search_validates_query_before_worker(monkeypatch, query):
+    provider = acquisition.CommandProvider(("youtube",))
+    monkeypatch.setattr(acquisition, "_youtube_search_command",
+                        lambda *args: pytest.fail("invalid query reached worker"))
+    with pytest.raises(acquisition.LinkError) as exc:
+        provider.search_youtube(query, lambda: False)
+    assert exc.value.status == 400
+
+
+def test_youtube_search_uses_isolated_metadata_only_command(monkeypatch):
+    from types import SimpleNamespace
+
+    provider = acquisition.CommandProvider(("youtube",))
+    provider.launcher = "/trusted/sandbox"
+    provider.tools["youtube"] = "/trusted/yt-dlp"
+    provider.probe = "/trusted/ffprobe"
+
+    def launch(command, **kwargs):
+        assert command[:2] == [provider.launcher, provider.tools["youtube"]]
+        assert command[-2:] == ["--", "ytsearch10:--exec malicious"]
+        assert {"--ignore-config", "--skip-download", "--flat-playlist", "--no-cookies"} <= set(command)
+        kwargs["stdout"].write(b'{"id":"abcdefghijk","title":"Example"}\n')
+        kwargs["stdout"].flush()
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    monkeypatch.setattr(acquisition.subprocess, "Popen", launch)
+    assert provider.search_youtube("--exec malicious", lambda: False)[0]["id"] == "abcdefghijk"
+
+
+def test_youtube_search_output_and_global_capacity_are_bounded():
+    with pytest.raises(acquisition.LinkError, match="too much"):
+        acquisition.youtube_results(b"x" * (acquisition.SEARCH_OUTPUT_LIMIT + 1))
+    assert acquisition._SEARCH_SLOT.acquire(blocking=False)
+    try:
+        with pytest.raises(acquisition.LinkError) as exc:
+            acquisition._youtube_search_command("/not/run", "/not/run", "query", lambda: False)
+        assert exc.value.status == 429
+    finally:
+        acquisition._SEARCH_SLOT.release()
+
+
+def test_youtube_search_http_to_verified_queue(tmp_path):
+    from test_portal import PortalRig, login, decode
+
+    class SearchProvider(FakeProvider):
+        def search_youtube(self, query, cancelled):
+            assert query == "example music" and not cancelled()
+            return [{"id": "abcdefghijk", "title": "Example", "channel": "Artist", "duration": 90}]
+
+    rig = PortalRig()
+    provider = SearchProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args),
+                                rig.server.session_key_active)
+    rig.server.link_jobs = jobs
+    try:
+        origin = "http://" + rig.host
+        route = "/api/search/youtube"
+        body = {"q": "example music"}
+        assert rig.request("POST", route, body, origin=origin)[0] == 403
+        _, joined, cookie = login(rig)
+        csrf = joined["csrf"]
+        assert rig.request("POST", route, body, cookie=cookie, origin=origin)[0] == 403
+        status, response, _ = rig.request("POST", route, body, cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 200
+        result = decode(response)["results"][0]
+        assert result["title"] == "Example" and not provider.calls and not deliveries
+        receipt = {"url": "https://www.youtube.com/watch?v=" + result["id"],
+                   "request_id": "search-result-1", "authorised": True}
+        assert rig.request("POST", "/api/link-jobs", receipt, cookie=cookie,
+                           csrf=csrf, origin=origin)[0] == 202
+        assert provider.started.wait(2) and not deliveries
+        provider.resume.set()
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+        assert len(deliveries) == 1 and provider.calls == [acquisition.parse_link(YOUTUBE)]
+    finally:
+        provider.resume.set()
+        rig.close()
+
+
+def test_youtube_search_disabled_and_revoked_session(tmp_path):
+    from test_portal import PortalRig, login
+
+    rig = PortalRig()
+    try:
+        _, joined, cookie = login(rig)
+        assert rig.request("POST", "/api/search/youtube", {"q": "example"}, cookie=cookie,
+                           csrf=joined["csrf"], origin="http://" + rig.host)[0] == 503
+    finally:
+        rig.close()
+
+    class RevokedProvider(FakeProvider):
+        def search_youtube(self, query, cancelled):
+            pytest.fail("revoked guest reached search worker")
+
+    jobs = acquisition.LinkJobs(tmp_path, RevokedProvider(), lambda *args: None, lambda owner: False)
+    try:
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.search_youtube("revoked", "example")
+        assert exc.value.status == 403
+    finally:
+        jobs.close()
