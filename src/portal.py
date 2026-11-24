@@ -1118,9 +1118,10 @@ class _Handler(BaseHTTPRequestHandler):
                 token = self._cookie_token() or ""
                 key = self.server._session_key(token)
                 media_path, name, dispatch = self.server.uploads.finalize(
-                    token, upload_id)
+                    token, upload_id, queue_only=queue_only)
                 if not self.server.session_key_active(key):
-                    self.server.uploads.finish_dispatch(token, upload_id, accepted=False)
+                    if dispatch:
+                        self.server.uploads.finish_dispatch(token, upload_id, accepted=False)
                     self.server.uploads.revoke_owner_keys({key})
                     return self._error(403, "Room access was revoked")
                 if dispatch:
@@ -1139,8 +1140,9 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.uploads.finish_dispatch(
                             self._cookie_token() or "", upload_id, accepted=False)
                         raise PortalRequestError(503, "SmoothCast could not start this upload") from exc
+                    self.server.uploads.finish_dispatch(token, upload_id, accepted=True)
                 message = ("Added to the shared queue." if queue_only else
-                           "Upload received; casting started.")
+                           "Upload received; playback request accepted.")
                 return self._send(202, {"ok": True, "message": message})
             except PortalRequestError as exc:
                 return self._exception_error(exc)
