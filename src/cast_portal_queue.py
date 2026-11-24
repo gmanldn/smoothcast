@@ -11,6 +11,7 @@ import hashlib
 import os
 import pathlib
 import stat
+import secrets
 
 import portal
 
@@ -109,7 +110,12 @@ class PortalQueueMixin:
         Async.run(work, done=done, failed=failed, domain="media",
                   valid=lambda: not getattr(self, "_closing", False))
 
-    def _portal_fetch_remote(self, key: object, contributor: str | None = None) -> str:
+    def _portal_copy_status(self) -> list[dict]:
+        """Bounded, guest-safe transfer receipts; never publish keys or paths."""
+        return [dict(row) for row in getattr(self, "_portal_copy_receipts", {}).values()]
+
+    def _portal_fetch_remote(self, key: object, contributor: str | None = None,
+                             session_key: object = None) -> str:
         """Copy a file from another computer into the cache, then queue the copy."""
         mesh = getattr(self, "_mesh_library", None)
         source = mesh.remote_source(key) if mesh is not None and isinstance(key, str) else None
@@ -119,24 +125,62 @@ class PortalQueueMixin:
         pending = self.__dict__.setdefault("_portal_fetching", set())
         if key in pending:
             return f"Already fetching “{source['title']}”."
+        if len(pending) >= 8:
+            raise portal.PortalRequestError(429, "Too many library copies are in progress. Try again shortly.")
         pending.add(key)
         title, where = source["title"], source["name"]
+        receipts = self.__dict__.setdefault("_portal_copy_receipts", {})
+        while len(receipts) >= 24:
+            oldest = next((ident for ident, row in receipts.items()
+                           if row["stage"] != "copying"), None)
+            if oldest is None:
+                break
+            receipts.pop(oldest)
+        ident = secrets.token_hex(12)
+        receipt = receipts[ident] = {
+            "id": ident, "title": title, "origin": where,
+            "contributor": contributor, "stage": "copying",
+        }
+        server = getattr(getattr(self, "_portal", None), "server", None)
+        keep = set(self.queue)
+
+        def cancelled():
+            if getattr(self, "_closing", False):
+                return True
+            if session_key is None:
+                return False
+            current = getattr(getattr(self, "_portal", None), "server", None)
+            return current is not server or server is None or not server.session_key_active(session_key)
 
         def work():
-            return mesh.fetch_remote(key, source, cancelled=lambda: getattr(self, "_closing", False),
-                                     keep=set(self.queue))
+            return mesh.fetch_remote(key, source, cancelled=cancelled, keep=keep)
 
         def done(path):
             pending.discard(key)
-            self._portal_queue_display_names = getattr(self, "_portal_queue_display_names", {})
-            self._portal_queue_display_names[str(path)] = title
-            self._portal_enqueue_contributed(str(path), contributor, "library")
+            if cancelled():
+                receipt["stage"] = "cancelled"
+                return
+            try:
+                self._portal_queue_display_names = getattr(self, "_portal_queue_display_names", {})
+                self._portal_queue_display_names[str(path)] = title
+                self._portal_enqueue_contributed(str(path), contributor, "library")
+                receipt["stage"] = "ready" if str(path) in self.queue else "failed"
+            except Exception:
+                receipt["stage"] = "uncertain"
+                self.toast("Library copy finished but queue acceptance could not be confirmed.", error=True)
 
         def failed(error):
             pending.discard(key)
-            self.toast(_fetch_message(error, title), error=True)
+            receipt["stage"] = "cancelled" if cancelled() else "failed"
+            if receipt["stage"] == "failed":
+                self.toast(_fetch_message(error, title), error=True)
 
-        self._portal_run_async(work, done, failed)
+        try:
+            self._portal_run_async(work, done, failed)
+        except Exception:
+            pending.discard(key)
+            receipt["stage"] = "failed"
+            raise
         return f"Copying “{title}” from {where}; it joins Up Next when ready."
 
     def _portal_queue_index(self, item_id: object) -> int:
@@ -227,7 +271,8 @@ class PortalQueueMixin:
             try:
                 path = self._portal_library_path(payload.get("key"))
             except portal.PortalRequestError:
-                return self._portal_fetch_remote(payload.get("key"), self._portal_contributor(payload))
+                return self._portal_fetch_remote(payload.get("key"), self._portal_contributor(payload),
+                                                 payload.get("_portal_auth_key"))
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), "library")

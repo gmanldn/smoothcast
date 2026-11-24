@@ -1927,6 +1927,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<section aria-labelledby="libraryCopiesHeading"><h3 id="libraryCopiesHeading">Shared-library transfers</h3><p class="field-hint">Copied media joins Up Next only after the host verifies it. Recent transfer outcomes are shown separately from playable items.</p><ul id="libraryCopyRows" aria-label="Shared library transfer activity"><li class="empty">No library transfers reported</li></ul></section>
 <section id="linkAcquisition" aria-labelledby="linkHeading">
 <h3 id="linkHeading">Add a link to Up Next</h3>
 <p id="linkAvailability" class="field-hint">Checking whether downloads are available…</p>
@@ -2457,6 +2458,21 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
     finally{linkPosting=false;updateLinkControls()}
   });
 }
+let libraryCopySignature="";
+function renderLibraryCopies(state){
+  const list=$("libraryCopyRows");if(!list)return;
+  const rows=Array.isArray(state.library_copies)?state.library_copies.slice(-24).reverse():null;
+  const signature=JSON.stringify(rows);if(signature===libraryCopySignature)return;libraryCopySignature=signature;
+  if(!rows||!rows.length){const li=document.createElement("li");li.className="empty";li.textContent=rows?"No library transfers yet":"Library transfer status unavailable";list.replaceChildren(li);return}
+  const labels={copying:"Copying and verifying media",ready:"Queue accepted",failed:"Copy failed — try again from Find",cancelled:"Cancelled",uncertain:"Queue acceptance uncertain — check Up Next"};
+  list.replaceChildren(...rows.map(row=>{
+    const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p");
+    title.textContent=row.title||"Shared media";
+    detail.className="field-hint";
+    detail.textContent=[labels[row.stage]||"Unknown status",row.origin?"Requested from "+row.origin:"",row.contributor?"Added by "+row.contributor:""].filter(Boolean).join(" · ");
+    li.append(title,detail);return li;
+  }));
+}
 function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
@@ -2470,7 +2486,7 @@ function applyStatus(d){
     const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueueDestination(s);renderQueue(s.queue);renderLinkJobs(s);
+renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}

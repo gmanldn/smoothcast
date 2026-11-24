@@ -269,6 +269,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                          if 0.05 <= self.tracker.rate <= 4.0 else 1.0),
                 "volume": volume,
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "library_copies": self._portal_copy_status(),
                 "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
