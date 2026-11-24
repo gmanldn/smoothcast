@@ -66,8 +66,9 @@ _PANEL = r"""
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
 <p id="meshRoomQueue" class="muted">Waiting for queue status</p><p id="meshRoomStreams" class="muted">Waiting for network activity</p>
+<p id="meshAcquisitions" class="muted">Waiting for acquisition activity</p><ul id="meshAcquisitionRows" aria-label="Room host media acquisition activity"></ul>
 <ul id="meshStreamList" aria-label="Reported live receiver streams"></ul>
-<div class="mesh-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Up Next</a><a href="#uploadCard">Transfer files</a><a href="#networkActivity">Receiver activity</a></div>
+<div class="mesh-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Up Next</a><a href="#linkAcquisition">Link acquisitions</a><a href="#uploadCard">Transfer files</a><a href="#networkActivity">Receiver activity</a></div>
 </div>
 <div class="mesh-columns"><div><h3>Nodes · version and capability</h3><ul id="meshNodes" aria-label="Mesh nodes"></ul></div>
 <div><h3>Receivers · reachability and ownership</h3><ul id="meshTargets" aria-label="Playback targets"></ul></div></div>
@@ -107,6 +108,24 @@ _PANEL = r"""
     put("meshRoomQueue",queued===null?"Queue status unavailable":plural(queued,"waiting item")+(state.busy?" · Playback command pending":""));
     const streams=Array.isArray(state.network_activity)?state.network_activity.length:null;
     put("meshRoomStreams",streams===null?"Receiver activity unavailable":plural(streams,"reported active receiver stream"));
+    const acquisitions=Array.isArray(state.link_jobs)?state.link_jobs:[];
+    const active=acquisitions.filter(job=>!["ready","failed","cancelled","delivery_uncertain"].includes(job.stage));
+    put("meshAcquisitions",active.length?plural(active.length,"active room-host acquisition"):"No active room-host acquisitions");
+    const acquisitionRows=$("meshAcquisitionRows");
+    if(acquisitionRows&&typeof acquisitionRows.replaceChildren==="function"){
+      const fingerprint=JSON.stringify(active.map(j=>[j.id,j.title,j.stage,j.received,j.total]));
+      if(acquisitionRows.dataset.sig!==fingerprint){
+        acquisitionRows.dataset.sig=fingerprint;
+        acquisitionRows.replaceChildren(...active.map(job=>{
+          const row=el("li","mesh-stream");
+          row.append(el("strong","",job.title||"Media acquisition"),el("span","muted","Room host · "+(job.stage==="pending"?"Waiting for worker":job.stage)));
+          if(Number.isSafeInteger(job.received)&&Number.isSafeInteger(job.total)&&job.total>0&&job.received>=0&&job.received<=job.total){
+            const meter=el("progress");meter.max=job.total;meter.value=job.received;meter.setAttribute("aria-label","Reported acquisition progress");row.append(meter);
+          }
+          return row;
+        }));
+      }
+    }
     const streamList=$("meshStreamList");
     if(streamList&&typeof streamList.replaceChildren==="function"){
       const observed=Array.isArray(state.network_activity)?state.network_activity.slice(0,64):[];
