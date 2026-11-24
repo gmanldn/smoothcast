@@ -37,6 +37,38 @@
         },
         "type": "object"
       },
+      "LinkCancel": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "LinkStart": {
+        "properties": {
+          "authorised": {
+            "const": true
+          },
+          "request_id": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 1500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "request_id",
+          "authorised"
+        ],
+        "type": "object"
+      },
       "Login": {
         "properties": {
           "name": {
@@ -96,7 +128,7 @@
   "info": {
     "description": "HTTP/SSE API of a SmoothCast node on the trusted home LAN. Sessions are cookie-based; mutations also need the CSRF token returned by /api/login in X-CSRF-Token.",
     "title": "SmoothCast room API",
-    "version": "1.0"
+    "version": "1.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -330,6 +362,94 @@
         "summary": "One level of a shared folder: sub-folders and files (relative paths only)",
         "tags": [
           "search"
+        ]
+      }
+    },
+    "/api/link-jobs": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "csrf": []
+          }
+        ],
+        "summary": "Acquire an authorised YouTube video or magnet into Up Next",
+        "tags": [
+          "acquisition"
+        ]
+      }
+    },
+    "/api/link-jobs/cancel": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "csrf": []
+          }
+        ],
+        "summary": "Cancel your pending or downloading acquisition",
+        "tags": [
+          "acquisition"
         ]
       }
     },
@@ -987,7 +1107,7 @@
             "session": []
           }
         ],
-        "summary": "Playback, queue, room presence and receiver state",
+        "summary": "Playback, queue, room presence, receiver state and link acquisitions",
         "tags": [
           "room"
         ]
