@@ -106,3 +106,22 @@ no remote job mutation and no file transfer is wired to them yet.
   transferred content key matches; replays and restarts cannot enqueue twice.
 * **Redaction:** the public view carries only job id, stage, executor, byte
   counts and stale/ambiguous flags.
+
+### Offer, report and cancel messages (#589, transport-agnostic)
+
+`src/mesh_acquisition_rpc.py` defines the small dict messages (`offer`,
+`cancel`, `report`, `finished`, `failed`; wire version 1) and two classes:
+`HostCoordinator` (room host, sole queue authority) and `WorkerService`.
+Messages are allow-listed, size-bounded and carry only job id, generation,
+provider kind and the source digest. The sender is the authenticated peer id
+from the transport, never a message field.
+
+* A refused offer (`busy`, `fenced`, `invalid`) returns the job to pending.
+* A lost or unintelligible delivery marks the job **ambiguous**; it is never
+  reassigned without an explicit resolution.
+* A replayed offer is `duplicate` and starts nothing; a stale-generation cancel
+  is ignored; a cancel to an unreachable owner reports "unacknowledged".
+
+Covered by an in-process two-node simulation in
+`tests/test_mesh_acquisition_rpc.py`. The real authenticated mesh RPC, verified
+file transfer and Live Mesh display are still to be wired.

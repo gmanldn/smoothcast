@@ -153,6 +153,23 @@ class AssignmentLedger:
         job.lease_until, job.seen_at = now + self.lease_seconds, now
         return node_id, job.generation
 
+    def refused(self, job_id: str, node_id: str, generation: int) -> None:
+        """The executor *definitely* did not start (busy/fenced/invalid reply):
+        return the job to pending so it may be assigned again."""
+        job = self._job(job_id)
+        self._fenced(job, node_id, generation)
+        if job.state != "resolving":
+            raise LedgerError("executor already reported progress")
+        job.node, job.state, job.lease_until = None, "pending", 0.0
+
+    def mark_ambiguous(self, job_id: str, node_id: str, generation: int) -> None:
+        """Delivery outcome unknown (timeout/disconnect): the executor may be
+        running, so never reassign without an explicit resolution."""
+        job = self._job(job_id)
+        if job.state in TERMINAL or job.node != node_id or job.generation != generation:
+            return
+        job.ambiguous = True
+
     def _fenced(self, job: Job, node_id: str, generation: int) -> None:
         if job.state in TERMINAL:
             raise LedgerError("job already finished")
