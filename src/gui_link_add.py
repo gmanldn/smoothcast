@@ -72,9 +72,15 @@ class Submission:
 
 
 def unavailable_message(jobs) -> str:
+    """Say exactly what is missing; PATH/file checks only, nothing is launched."""
+    row = link_acquisition.CommandProvider(("youtube",)).readiness()["youtube"]
+    if row["missing"]:
+        return ("YouTube needs " + ", ".join(row["missing"]) + " on this computer"
+                " (see Preferences). A mesh device that has them can download for you once "
+                "'Use other devices' is on in Network.")
     if jobs is None:
-        return ("YouTube needs an isolated worker. Turn on 'Let guests acquire YouTube "
-                "links' in Preferences, install yt-dlp and ffprobe, and restart the room.")
+        return ("Turn on 'Let guests acquire YouTube links' in Preferences, then restart "
+                "the room. The YouTube worker is ready on this computer.")
     return "The YouTube worker on this computer is not ready."
 
 

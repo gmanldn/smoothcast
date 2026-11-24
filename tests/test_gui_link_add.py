@@ -72,7 +72,7 @@ def test_progress_text_hides_url_and_unavailable_worker_is_explained(tmp_path):
     finally:
         jobs.close()
     none = gui_link_add.submit(None, YOUTUBE)
-    assert not none.ok and "isolated worker" in none.message
+    assert not none.ok and ("YouTube needs" in none.message or "Turn on" in none.message)
     assert not gui_link_add.attach(None, lambda path: None)
 
 
@@ -85,3 +85,19 @@ def test_invalid_link_returns_friendly_error_without_running_a_worker(tmp_path):
         assert jobs.snapshot() == []
     finally:
         jobs.close()
+
+
+def test_unavailable_message_names_missing_tools_without_launching_anything(monkeypatch):
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: None)
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    message = gui_link_add.unavailable_message(None)
+    assert "yt-dlp" in message and "ffprobe" in message and "Use other devices" in message
+
+
+def test_unavailable_message_points_at_the_owner_switch_when_tools_exist(monkeypatch, tmp_path):
+    launcher = tmp_path / "sandbox"
+    launcher.write_text("#!/bin/sh\n")
+    launcher.chmod(0o755)
+    monkeypatch.setattr(acquisition.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setenv("SMOOTHCAST_LINK_SANDBOX", str(launcher))
+    assert "Let guests acquire YouTube links" in gui_link_add.unavailable_message(None)
