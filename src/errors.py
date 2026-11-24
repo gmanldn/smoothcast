@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import threading
 import time
 
 CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "subtitle", "upload", "internal")
@@ -124,6 +125,7 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
 FALLBACK = CATALOGUE["internal.unexpected"]
 
 _RECENT: "deque[tuple[float, str, dict[str, str]]]" = deque(maxlen=20)
+_RECENT_LOCK = threading.Lock()
 _MAX_CONTEXT_KEYS = 6
 _MAX_CONTEXT_VALUE = 120
 
@@ -143,18 +145,26 @@ def _bounded_context(context: object) -> dict[str, str]:
 
 def record(code: str, context: object = None) -> None:
     """Remember that ``code`` reached a user (bounded ring; context is clipped)."""
-    _RECENT.append((time.time(), code if code in CATALOGUE else FALLBACK.code,
-                    _bounded_context(context)))
+    entry = (time.time(), code if code in CATALOGUE else FALLBACK.code, _bounded_context(context))
+    with _RECENT_LOCK:
+        _RECENT.append(entry)
 
 
 def recent() -> list[dict]:
-    """Last error codes shown, oldest first, for the diagnostics bundle."""
-    return [{"at": int(at), "code": code, **({"context": ctx} if ctx else {})}
-            for at, code, ctx in _RECENT]
+    """Last error codes shown, oldest first, for the diagnostics bundle.
+
+    A snapshot taken under the lock; context dicts are copied so a caller can
+    neither race a concurrent ``record`` nor edit the stored history.
+    """
+    with _RECENT_LOCK:
+        snapshot = list(_RECENT)
+    return [{"at": int(at), "code": code, **({"context": dict(ctx)} if ctx else {})}
+            for at, code, ctx in snapshot]
 
 
 def reset_recent() -> None:
-    _RECENT.clear()
+    with _RECENT_LOCK:
+        _RECENT.clear()
 
 
 class SmoothCastError(Exception):
