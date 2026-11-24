@@ -606,6 +606,45 @@ def ensure_live_task_claim(task: dict) -> bool:
                                         ttl=90)) == 0
 
 
+def ensure_task_scope(task: dict, changed: list[str]) -> bool:
+    """Fenced lease expansion for source files first discovered during work.
+
+    A task brief predicts files, but tests/refactors may reveal a second
+    production file. Do not push it under a narrower claim: another agent
+    could already own that file on a different issue. A new comment is
+    race-arbitrated before updating the private, untracked worktree marker.
+    """
+    scoped = {f for f in changed
+              if f not in SHARED and f.startswith(
+                  ("src/", "scripts/", "setup/", "packaging/", "fakecast/"))}
+    owned = set(task.get("files") or [])
+    missing = scoped - owned
+    if not missing:
+        return True
+    combined = sorted(owned | scoped)
+    print(f"source scope expanded: {', '.join(sorted(missing)[:8])}; checking other leases")
+    claimed = cmd_claim(argparse.Namespace(number=task["issue"],
+                                           files=",".join(combined), ttl=90))
+    if claimed:
+        print("new source files conflict with another lease; worktree preserved")
+        return False
+    try:
+        folder = Path(git("rev-parse", "--absolute-git-dir").strip())
+        dest = folder / "sc-agent-task.json"
+        newer = dict(task, files=combined)
+        staged = folder / f"sc-agent-task-{uuid.uuid4().hex}.tmp"
+        try:
+            staged.write_text(json.dumps(newer, indent=2) + "\n", encoding="utf-8")
+            staged.replace(dest)
+        finally:
+            staged.unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"scope lease obtained but task marker could not be saved: {exc}")
+        return False
+    task["files"] = combined
+    return True
+
+
 def cmd_progress(a: argparse.Namespace) -> int:
     """Persist the work/evidence/next-action independently of the expiring claim."""
     if not a.done.strip() or not a.next.strip():
@@ -895,6 +934,8 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if not changed:
             print("nothing to ship: HEAD equals origin/develop")
             return 0
+        if task is not None and not ensure_task_scope(task, changed):
+            return 3
         rebased = git("rev-parse", "HEAD").strip() != before
         # Mandatory even with --skip-checks: a concurrent agent must never
         # regress, skip or silently overwrite a canonical version increment.
