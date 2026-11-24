@@ -790,12 +790,16 @@ def plan_checks(changed: list[str], tests: dict[str, str]) -> list[tuple[str, li
     return steps
 
 
-def run_headless_check(cmd: list[str]) -> tuple[subprocess.CompletedProcess | None, str]:
-    """An unavailable optional checker must not crash the shipping process."""
+def run_headless_check(cmd: list[str], timeout: int = 180
+                       ) -> tuple[subprocess.CompletedProcess | None, str]:
+    """Never let a missing or stalled optional checker monopolise an agent."""
     try:
-        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True), ""
+        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True,
+                              timeout=timeout), ""
     except (FileNotFoundError, PermissionError) as exc:
         return None, f"{cmd[0]} unavailable: {exc}"
+    except subprocess.TimeoutExpired:
+        return None, f"{cmd[0]} exceeded {timeout}s time budget"
 
 
 def failing_ids(output: str) -> list[str]:
