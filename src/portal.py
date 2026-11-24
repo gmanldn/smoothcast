@@ -32,6 +32,7 @@ import mesh_files
 import library_replication
 import portal_commands
 import command_trace
+import demo_mode
 import design_tokens
 import error_log
 import failure_boundary
@@ -168,6 +169,7 @@ def _page() -> bytes:
                            + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_VERSION__", version.label())
+            .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
             .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
@@ -714,7 +716,8 @@ class _Handler(BaseHTTPRequestHandler):
         mine = html.escape(self.server.hostname_label or "This computer")
         body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
                 .replace("__MINE__", mine).replace("__ROWS__", rows)
-                .replace("__SC_VERSION__", version.label()))
+                .replace("__SC_VERSION__", version.label())
+                .replace("<!--SC_DEMO-->", _demo_badge()))
         return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
 
     def _mesh_file(self, path: str, *, head: bool) -> None:
@@ -1625,6 +1628,15 @@ class Portal:
 
 
 # Fallback computer list (#591): same tokens and permanent Home control as the room.
+def _demo_badge() -> str:
+    """A visible DEMO marker on every page of an isolated demo host (#454), else nothing."""
+    if not demo_mode.active():
+        return ""
+    return ('<span class="sc-demo" role="status" aria-label="Demo mode: no real receivers" '
+            'style="font-size:.74rem;font-weight:700;letter-spacing:.06em;color:#fff;'
+            'background:#b45309;border-radius:999px;padding:2px 9px;margin-left:6px">DEMO</span>')
+
+
 _NODES_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="light dark"><title>SmoothCast computers</title>
@@ -1644,7 +1656,7 @@ li a:hover{border-color:var(--accent)}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 @media(forced-colors:active){.home-btn{border:2px solid ButtonText}}
 </style></head><body>
-<header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></header>
+<header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></header>
 <main><h1>SmoothCast in this house</h1><p>Open any computer to join its room.</p>
 <ul><li><a href="/">__MINE__ (this one)</a></li>__ROWS__</ul></main></body></html>"""
 
@@ -1867,7 +1879,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
-</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
+</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
