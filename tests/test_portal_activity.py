@@ -343,3 +343,25 @@ def test_status_publication_failure_cannot_erase_command_receipt(tmp_path):
     window._portal_handle = lambda _operation, _payload: "accepted once"
     assert window._portal_dispatch("music_autogain", {"value": True}) == "accepted once"
     uploads.close()
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_failed_early_cast_fallback_clears_deduplication(tmp_path, raises):
+    window, uploads, _ = _build_window(tmp_path)
+    upload_id = uploads.create("owner", "film.mkv", 4)["id"]
+    path = uploads.root / f"{upload_id}.partial"
+
+    def rejected(*_args):
+        if raises:
+            raise RuntimeError("could not submit")
+        return "Choose a room receiver before casting"
+
+    window._cast_path = rejected
+    if raises:
+        with pytest.raises(RuntimeError, match="could not submit"):
+            window._retry_portal_cast(upload_id, str(path))
+    else:
+        assert window._retry_portal_cast(upload_id, str(path)) is False
+    assert upload_id not in window._portal_accepted_uploads
+    assert upload_id not in window._portal_cast_uploads
+    uploads.close()
