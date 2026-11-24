@@ -2551,8 +2551,8 @@ async function restoreUpload(){
           return;
         }
         pendingUpload={...record,received:state.received};
-        transferView("transfer",state.received,record.size,"Resumable");
         $("uploadQueue").checked=record.queueOnly;
+        transferView("transfer",state.received,record.size,"Resumable");
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
         return;
       }catch(error){
@@ -2573,7 +2573,8 @@ function updateUploadControls(){
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
-  if(!uploading&&!pendingUpload&&!batchFiles)$("transferDestination").textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
+  const destination=$("transferDestination");
+  if(destination&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
 }
@@ -2671,7 +2672,7 @@ $("uploadButton").addEventListener("click",async()=>{
       await clearPendingUpload();
       batchIndex++;
       batchAdded++;
-      showError("uploadStatus",result.message||`${file.name} added`);
+      showError("uploadStatus",queueOnly?"Added to shared Up Next.":"Playback requested; receiver confirmation is separate.");
     }
     if(batchFiles&&batchIndex>=batchFiles.length){
       const count=batchAdded,total=batchTotal;
