@@ -203,6 +203,45 @@ def test_ship_records_true_multiline_handover_only_once(monkeypatch):
     assert f"<!-- sc-ship v1 sha={sha} -->" in seen[0]
 
 
+def test_failed_post_recovers_durable_handover_after_remote_push(monkeypatch, tmp_path):
+    """A finished code push must remain attributable after GitHub comment failure."""
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    sha = run(first, "rev-parse", "HEAD")
+    task = {"issue": 584, "files": ["src/a.py"],
+            "pending_handover": {"sha": sha, "files": ["src/a.py"],
+                                 "verification": "tests: 4 passed",
+                                 "next": "review startup"}}
+    assert agent.persist_private_task(task)
+    admin = Path(run(first, "rev-parse", "--absolute-git-dir"))
+    assert (admin / "sc-agent-task.json").exists()
+    calls = []
+    def flaky_post(*args):
+        calls.append(args)
+        return len(calls) > 1
+    monkeypatch.setattr(agent, "publish_ship_handover", flaky_post)
+    assert not agent.recover_pending_handover(task)
+    assert "pending_handover" in task
+    assert agent.recover_pending_handover(task)
+    assert "pending_handover" not in task
+    assert "pending_handover" not in (admin / "sc-agent-task.json").read_text()
+    assert len(calls) == 2
+    assert calls[0][1] == sha and calls[1][1] == sha
+
+
+def test_unpublished_receipt_is_not_reported_as_shipped(monkeypatch, tmp_path):
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    commit(first, "unpublished.txt", "not delivered\n")
+    task = {"issue": 584, "pending_handover": {
+        "sha": run(first, "rev-parse", "HEAD"), "files": ["unpublished.txt"],
+        "verification": "none", "next": "push"}}
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *a: (_ for _ in ()).throw(
+        AssertionError("must never report an unpublished SHA")))
+    assert agent.recover_pending_handover(task) is False
+    assert "pending_handover" in task
+
+
 def test_two_independent_agents_rebase_without_losing_a_commit(monkeypatch, tmp_path):
     _remote, a, b = seed_git(tmp_path)
     commit(b, "b.txt", "B\n")
