@@ -57,6 +57,9 @@ DEFAULTS: dict = {
     "portal_screens": True,
     "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
+    # External acquisition is explicitly owner-authorised, never guest-enabled.
+    "portal_link_youtube": False,
+    "portal_link_magnet": False,
     "idle_join_slate": False,  # opt-in: cast the join QR slate to an idle Cast TV (#420)
     "library_indexer": True,
     "library_folders": [],
