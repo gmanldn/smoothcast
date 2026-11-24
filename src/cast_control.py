@@ -33,6 +33,7 @@ from join_slate_ui import JoinSlateMixin
 import version
 import error_log
 import desktop_failure_notice
+import error_banner_ui
 import local_playback
 import demo_mode
 import startup_cleanup
@@ -363,17 +364,7 @@ class CastControlApp(Adw.Application):
         window = self.window
         if not self._failure_notice_available() or window is None:
             return
-        toast = Adw.Toast.new(failure.message)
-        toast.set_timeout(8)
-        toast.set_priority(Adw.ToastPriority.HIGH)
-        toast.set_button_label("Copy details")
-        toast.connect(
-            "button-clicked",
-            lambda *_: window.get_clipboard().set(
-                desktop_failure_notice.copy_details(failure)
-            ),
-        )
-        window.toasts.add_toast(toast)
+        error_banner_ui.present(window, failure, timeout=8)
 
     def _guard_glib(self, callback):
         bridge = self._failure_bridge
@@ -578,6 +569,8 @@ class CastControlApp(Adw.Application):
             if len(observed) != 1 or "private" in observed[0].message:
                 raise RuntimeError("expected one civil desktop failure toast")
             print("SELFTEST: desktop failure toast was civil and rate limited")
+            error_banner_ui.show_details(self.window, observed[0], retry=("Try again", lambda: None))
+            print("SELFTEST: failure details dialog built")
         except Exception as exc:
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
