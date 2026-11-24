@@ -861,11 +861,54 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     return 0
 
 
+def persist_private_task(task: dict) -> bool:
+    """Atomic, untracked delivery journal for an agent-owned worktree."""
+    try:
+        folder = Path(git("rev-parse", "--absolute-git-dir").strip())
+        destination = folder / "sc-agent-task.json"
+        temporary = folder / f"sc-agent-task-{uuid.uuid4().hex}.tmp"
+        try:
+            temporary.write_text(json.dumps(task, indent=2) + "\n", encoding="utf-8")
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return True
+    except OSError as exc:
+        print(f"WARNING: cannot persist private handover journal: {exc}")
+        return False
+
+
+def recover_pending_handover(task: dict) -> bool:
+    """Retry a previously pushed SHA, never describe an unpublished SHA as shipped."""
+    pending = task.get("pending_handover")
+    if not isinstance(pending, dict):
+        return True
+    sha = pending.get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[a-fA-F0-9]{40,64}", sha):
+        print("invalid private handover receipt; review it before continuing")
+        return False
+    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", sha, "origin/develop"],
+                              cwd=ROOT, capture_output=True)
+    if ancestor.returncode:
+        print("pending handover SHA is not on develop; preserving journal")
+        return False
+    if not publish_ship_handover(task, sha, pending.get("files") or [],
+                                 pending.get("verification") or "not run (unverified)",
+                                 pending.get("next") or ""):
+        return False
+    newer = dict(task)
+    newer.pop("pending_handover", None)
+    if not persist_private_task(newer):
+        return False
+    task.pop("pending_handover", None)
+    return True
+
+
 def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
-                          verification: str, next_action: str) -> None:
+                          verification: str, next_action: str) -> bool:
     """Best-effort, idempotent evidence; never reinterpret a failed push as success."""
     if task is None:
-        return
+        return True
     number = task["issue"]
     marker = f"<!-- sc-ship v1 sha={sha} -->"
     try:
@@ -881,8 +924,10 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
                     "-f", f"body={body}")
         if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
             raise td.DigestError("GitHub did not confirm ship handover")
+        return True
     except td.DigestError as exc:
         print(f"WARNING: develop commit {sha[:12]} landed, but issue handover failed: {exc}")
+        return False
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
@@ -898,6 +943,9 @@ def cmd_ship(a: argparse.Namespace) -> int:
     for attempt in range(1, 6):
         git("fetch", "-q", "origin", "develop")
         remote_before = git("rev-parse", "origin/develop").strip()
+        if task is not None and not recover_pending_handover(task):
+            print("previous pushed slice has an unrecorded handover; retry later")
+            return 7
         if task is not None:
             # Fast feedback when an issue was closed while the agent worked.
             try:
@@ -1042,7 +1090,21 @@ def cmd_ship(a: argparse.Namespace) -> int:
             print("remote contains the commit: treating failed push acknowledgement as success")
         verification = ("not run (unverified)" if a.skip_checks else
                         (", ".join(sorted(set(checks_run))) or "no affected tests selected"))
-        publish_ship_handover(task, sha, changed, verification, a.next)
+        if task is not None:
+            # Persist before a possibly failing GitHub comment request. On a
+            # crash/retry, verify remote ancestry before replaying the record.
+            newer = dict(task, pending_handover={
+                "sha": sha, "files": changed, "verification": verification, "next": a.next})
+            if persist_private_task(newer):
+                task.update(newer)
+            else:
+                print("WARNING: pushed SHA is not durably journalled locally")
+            if publish_ship_handover(task, sha, changed, verification, a.next):
+                if "pending_handover" in task:
+                    newer = dict(task)
+                    newer.pop("pending_handover", None)
+                    if persist_private_task(newer):
+                        task.pop("pending_handover", None)
         print(f"pushed {sha[:12]} to develop (attempt {attempt}); {verification}")
         return 0
     print("could not push after 5 contested attempts; preserve worktree and inspect origin/develop")
