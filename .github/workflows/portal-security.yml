@@ -8,6 +8,11 @@ on:
     paths:
       - 'src/portal.py'
       - 'src/link_acquisition.py'
+      - 'setup/bootstrap.py'
+      - 'setup/launch.py'
+      - 'smoothcast'
+      - 'src/cli.py'
+      - 'tests/test_setup_bootstrap.py'
       - 'src/mesh_service.py'
       - 'src/mesh_acquisition_activity.py'
       - 'tests/test_mesh_acquisition_activity.py'
@@ -71,6 +76,10 @@ jobs:
           python -m pytest -q
           tests/test_portal.py
           tests/test_link_acquisition.py
+          tests/test_setup_bootstrap.py::SetupContractTests::test_optional_link_tools_use_native_packages_and_recheck
+          tests/test_setup_bootstrap.py::SetupContractTests::test_optional_link_tools_macos_and_windows_use_native_repository
+          tests/test_setup_bootstrap.py::SetupContractTests::test_optional_link_tools_readonly_never_installs_or_hides_probe_failure
+          tests/test_setup_bootstrap.py::SetupContractTests::test_optional_link_tools_existing_executables_do_not_install
           tests/test_mesh_acquisition_activity.py
           tests/test_mesh_service.py::test_app_hook_advertises_only_enabled_local_link_workers
           tests/test_openapi_contract.py
