@@ -203,3 +203,66 @@ def test_no_isolation_launcher_means_no_external_worker(monkeypatch):
     monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
     provider = acquisition.CommandProvider(("youtube", "magnet"))
     assert provider.capabilities() == {"youtube": False, "magnet": False}
+
+
+def test_room_http_submission_requires_auth_csrf_and_consent_and_publishes_progress(tmp_path):
+    from test_portal import PortalRig, login, decode
+
+    rig = PortalRig()
+    provider = FakeProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: deliveries.append(args),
+                                rig.server.session_key_active)
+    rig.server.link_jobs = jobs
+    try:
+        origin = "http://" + rig.host
+        body = {"url": YOUTUBE, "request_id": "browser-1", "authorised": True}
+        assert rig.request("POST", "/api/link-jobs", body, origin=origin)[0] == 403
+        status, joined, cookie = login(rig, name="Submitter")
+        assert status == 200
+        csrf = joined["csrf"]
+        assert rig.request("POST", "/api/link-jobs", body, cookie=cookie, origin=origin)[0] == 403
+        assert rig.request("POST", "/api/link-jobs", {**body, "authorised": False},
+                           cookie=cookie, csrf=csrf, origin=origin)[0] == 400
+        status, response, _ = rig.request("POST", "/api/link-jobs", body,
+                                          cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 202
+        job_id = decode(response)["id"]
+        assert provider.started.wait(2)
+        status, response, _ = rig.request("GET", "/api/status", cookie=cookie)
+        assert status == 200
+        state = decode(response)["state"]
+        assert state["link_capabilities"] == {"youtube": True, "magnet": True}
+        assert state["link_jobs"][0]["id"] == job_id
+        assert state["link_jobs"][0]["received"] == 3
+        assert state["link_jobs"][0]["can_cancel"]
+        assert "abcdefghijk" not in json.dumps(state["link_jobs"])
+        status, viewer, other_cookie = login(rig, name="Viewer")
+        assert status == 200
+        status, response, _ = rig.request("GET", "/api/status", cookie=other_cookie)
+        assert status == 200
+        assert decode(response)["state"]["link_jobs"][0]["can_cancel"] is False
+        assert rig.request("POST", "/api/link-jobs/cancel", {"id": job_id},
+                           cookie=other_cookie, csrf=viewer["csrf"], origin=origin)[0] == 404
+        provider.resume.set()
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+        assert len(deliveries) == 1
+    finally:
+        provider.resume.set()
+        rig.close()
+
+
+def test_host_disabled_by_default_has_truthful_capability_and_rejects_download(tmp_path):
+    from test_portal import PortalRig, login, decode
+
+    rig = PortalRig()
+    try:
+        _, joined, cookie = login(rig)
+        status, response, _ = rig.request("GET", "/api/status", cookie=cookie)
+        assert status == 200
+        assert decode(response)["state"]["link_capabilities"] == {"youtube": False, "magnet": False}
+        assert rig.request("POST", "/api/link-jobs",
+                           {"url": MAGNET, "request_id": "browser-2", "authorised": True},
+                           cookie=cookie, csrf=joined["csrf"], origin="http://" + rig.host)[0] == 503
+    finally:
+        rig.close()
