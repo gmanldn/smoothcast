@@ -22,6 +22,9 @@ user-writable location. Noninteractive options:
 - `--check` — read-only check of an existing installation: no downloads,
   source copies, native package changes or shortcut updates.
 - `--no-shortcuts` — install runtime without menu registration.
+- `--link-tools` — optionally install yt-dlp and aria2c from native package
+  repositories. With `--check`, probe these engines without installing them.
+  This does not enable guest acquisition or configure a sandbox.
 - `--in-place` — explicitly install the existing checkout (developer mode);
   this is intentionally not the end-user default.
 
@@ -53,6 +56,34 @@ bounded `-version` probes to confirm they actually execute.
 Application registration points at the installed location, never the source
 archive: Linux XDG desktop/icon, a macOS `~/Applications/SmoothCast.app`
 with branded ICNS, and a Windows Start Menu link with branded ICO.
+
+## Optional guest media acquisition (#588)
+
+On a host where you intend to permit link acquisition, run the normal
+platform setup with `--link-tools`:
+
+- Linux: `bash setup/linuxsetup.sh --link-tools`
+- macOS: `bash setup/macsetup.sh --link-tools`
+- Windows: `setup\winsetup.bat --link-tools`
+
+The installer uses the native package manager (apt/dnf/pacman, Homebrew or
+MSYS2 UCRT64). It checks both engines with bounded local version probes.
+Rerunning with `--check --link-tools` is read-only. Missing or broken optional
+engines cause an explicit failure when this option is requested.
+
+Run `smoothcast --link-check --tools-only` (or `./smoothcast` in a checkout)
+to check the engines and FFprobe without requiring isolation.
+`smoothcast --link-check` additionally reports whether an owner-configured
+launcher exists. Neither command launches a GUI, contacts a receiver,
+downloads a file or verifies isolation policy. Current YouTube extraction
+may additionally require a compatible JavaScript runtime and a local EJS
+package; consult the [upstream EJS requirements](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
+
+**Installation is not authorisation.** Both guest permissions remain off
+unless the owner enables them. A qualified isolation launcher configured
+through `SMOOTHCAST_LINK_SANDBOX` is required before enabling downloads.
+Do not use a pass-through launcher. Native sandbox provisioning and actual
+authorised provider qualification remain open on #588.
 
 ## Platform caveats
 
