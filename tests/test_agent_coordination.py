@@ -639,6 +639,63 @@ def test_done_requires_a_published_ticket_commit_and_explicit_close_evidence(mon
     assert agent.cmd_done(base) == 2  # cannot close with default unverified evidence
 
 
+def test_legacy_done_close_refused_even_when_evidence_claims_success(monkeypatch):
+    from argparse import Namespace
+    monkeypatch.setattr(agent, "git", lambda *args: (_ for _ in ()).throw(
+        AssertionError("closure must be rejected before Git operations")))
+    monkeypatch.setattr(agent, "gh", lambda *args: (_ for _ in ()).throw(
+        AssertionError("legacy done must never close an issue")))
+    args = Namespace(number=584, why="completed", checklist="everything",
+                     verification="100 tests passed", close=True)
+    assert agent.cmd_done(args) == 2
+
+
+def test_legacy_done_posts_evidence_without_releasing_successor(monkeypatch):
+    from argparse import Namespace
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs:
+                        "a" * 40 if args[0] == "rev-parse" else "src/a.py")
+    monkeypatch.setattr(agent.subprocess, "run",
+                        lambda *args, **kwargs: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(agent, "ticket_commits", lambda number: ["a" * 40])
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "issue_comments",
+                        lambda number: [marker_comment(90, number, 1, "successor",
+                                                       ["src/a.py"])])
+    posted = []
+    monkeypatch.setattr(agent, "gh", lambda *args: (
+        posted.append(args) or {"id": 123}) if args[:2] == ("-X", "POST") else {})
+    monkeypatch.setattr(agent, "release", lambda *args: (_ for _ in ()).throw(
+        AssertionError("must never release another worker's claim")))
+    args = Namespace(number=584, why="fixed retry", checklist="remaining hardware",
+                     verification="not run (unverified)", close=False)
+    assert agent.cmd_done(args) == 0
+    assert len(posted) == 1
+    assert "Implementation:" in posted[0][-1]
+
+
+def test_legacy_done_never_releases_after_unconfirmed_handover(monkeypatch):
+    from argparse import Namespace
+    from types import SimpleNamespace
+    import pytest
+
+    monkeypatch.setattr(agent, "git", lambda *args, **kwargs:
+                        "a" * 40 if args[0] == "rev-parse" else "")
+    monkeypatch.setattr(agent.subprocess, "run",
+                        lambda *args, **kwargs: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(agent, "ticket_commits", lambda number: ["a" * 40])
+    monkeypatch.setattr(agent, "gh", lambda *args: {})
+    monkeypatch.setattr(agent, "release", lambda *args: (_ for _ in ()).throw(
+        AssertionError("unconfirmed report must not release ownership")))
+    monkeypatch.setattr(agent, "issue_comments", lambda number: (_ for _ in ()).throw(
+        AssertionError("do not check ownership after failed evidence post")))
+    args = Namespace(number=584, why="partial", checklist="needs testing",
+                     verification="not run (unverified)", close=False)
+    with pytest.raises(agent.td.DigestError, match="did not confirm legacy handover"):
+        agent.cmd_done(args)
+
+
 def test_doc_guard_runs_the_tests_that_pin_changed_docs_and_workflows():
     tests = {"tests/test_quality_gates.py": 'read("AGENTS.md") and "verify.yml"',
              "tests/test_unrelated.py": "nothing here",
