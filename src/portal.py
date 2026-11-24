@@ -1121,11 +1121,11 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube"}
                 or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
@@ -1247,7 +1247,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"results": jobs.search_youtube(owner, body.get("q"))})
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
-        if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
+        if path in {"/api/link-jobs", "/api/link-jobs/cancel", "/api/link-jobs/retry"}:
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
@@ -1258,6 +1258,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if path.endswith("/cancel"):
                     jobs.cancel(owner, body.get("id"))
                     return self._send(202, {"ok": True, "message": "Cancellation requested"})
+                if path.endswith("/retry"):
+                    job_id = jobs.retry(owner, body.get("id"))
+                    return self._send(202, {"ok": True, "id": job_id,
+                                            "message": "Retry accepted; Up Next updates when the media is ready"})
                 if body.get("authorised") is not True:
                     return self._error(400, "Confirm that you are authorised to download this media")
                 job_id = jobs.submit(owner, body.get("url"), body.get("request_id"))
@@ -2529,6 +2533,7 @@ function renderLinkJobs(state){
     }
     if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
     if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
+    if(job.can_retry){const retry=document.createElement("button");retry.type="button";retry.className="secondary tiny";retry.textContent="Retry download";retry.setAttribute("aria-label","Retry "+(job.title||"acquisition"));retry.addEventListener("click",async()=>{retry.disabled=true;try{const reply=await post("/api/link-jobs/retry",{id:job.id});showError("linkFeedback",reply.message||"Retry accepted");void refresh()}catch(error){showError("linkFeedback",error.message);retry.disabled=false}});row.append(retry)}
     rows.push(row);
   }
   list.replaceChildren(...rows);

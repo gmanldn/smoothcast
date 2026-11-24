@@ -838,3 +838,186 @@ def test_in_flight_source_still_coalesces_instead_of_reusing(tmp_path):
     finally:
         provider.resume.set()
         jobs.close()
+
+
+class FlakyProvider(FakeProvider):
+    """First acquire fails like an unavailable worker, then succeeds."""
+
+    def __init__(self):
+        super().__init__()
+        self.failures = 0
+
+    def acquire(self, source, root, stage, progress, cancelled):
+        self.failures += 1
+        if self.failures == 1:
+            self.calls.append(source)
+            raise acquisition.LinkError(503, "No acquisition worker is available for this link right now.")
+        return super().acquire(source, root, stage, progress, cancelled)
+
+
+def _failed_job(tmp_path, provider, deliveries):
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    ident = jobs.submit("owner", YOUTUBE, "request-1")
+    _wait_for(lambda: any(r["id"] == ident and r["stage"] == "failed" for r in jobs.snapshot()))
+    return jobs, ident
+
+
+def test_retry_of_a_failed_row_downloads_and_delivers_exactly_once(tmp_path):
+    provider = FlakyProvider()
+    deliveries = []
+    jobs, failed = _failed_job(tmp_path, provider, deliveries)
+    try:
+        rows = {r["id"]: r for r in jobs.snapshot("owner")}
+        assert rows[failed]["can_retry"] is True and rows[failed]["can_cancel"] is False
+        assert "worker" in rows[failed]["error"].lower()
+        assert jobs.snapshot("other")[0]["can_retry"] is False
+        attempt = jobs.retry("owner", failed)
+        assert attempt != failed
+        _wait_for(lambda: any(r["id"] == attempt and r["stage"] == "downloading" for r in jobs.snapshot()))
+        # A second explicit retry while the attempt runs joins it: never two downloads.
+        assert jobs.retry("owner", failed) == attempt
+        assert len(provider.calls) == 2
+        provider.resume.set()
+        _wait_for(lambda: any(r["id"] == attempt and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(deliveries) == 1 and deliveries[0].read_bytes() == b"testdata"
+        # Replaying the original submission identifier now follows the retry.
+        assert jobs.submit("owner", YOUTUBE, "request-1") == attempt
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.retry("owner", attempt)
+        assert exc.value.status == 409
+    finally:
+        provider.resume.set()
+        jobs.close()
+
+
+def test_retry_is_owner_bound_and_allows_a_cancelled_row(tmp_path):
+    provider = FakeProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    try:
+        ident = jobs.submit("owner", YOUTUBE, "request-1")
+        assert provider.started.wait(2)
+        jobs.cancel("owner", ident)
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "cancelled")
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.retry("other", ident)
+        assert exc.value.status == 404
+        for bad in (None, "z" * 24):
+            with pytest.raises(acquisition.LinkError) as exc:
+                jobs.retry("owner", bad)
+            assert exc.value.status == 404
+        assert jobs.snapshot("other")[0]["can_retry"] is False
+        attempt = jobs.retry("owner", ident)
+        assert attempt != ident
+        provider.resume.set()
+        _wait_for(lambda: any(r["id"] == attempt and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 2 and len(deliveries) == 1
+    finally:
+        provider.resume.set()
+        jobs.close()
+
+
+def test_retry_never_pretends_a_disabled_worker_can_try_again(tmp_path, monkeypatch):
+    provider = FlakyProvider()
+    deliveries = []
+    jobs, failed = _failed_job(tmp_path, provider, deliveries)
+    try:
+        before = jobs.snapshot("owner")
+        monkeypatch.setattr(provider, "capabilities", lambda: {"youtube": False, "magnet": False})
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.retry("owner", failed)
+        assert exc.value.status == 503
+        assert jobs.snapshot("owner") == before and deliveries == []
+    finally:
+        jobs.close()
+
+
+def test_retry_reuses_verified_retained_media_without_a_second_download(tmp_path, monkeypatch):
+    provider = FakeProvider()
+    provider.resume.set()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    holding = {"fail": False}
+    real_save = jobs._save
+
+    def gated_save():
+        if holding["fail"] and any(j.stage == "queueing" for j in jobs._jobs.values()):
+            return False  # freeze the receipt write, like a full disk at queue time
+        return real_save()
+
+    monkeypatch.setattr(jobs, "_save", gated_save)
+    try:
+        jobs.submit("owner", YOUTUBE, "request-1")
+        _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+        holding["fail"] = True
+        second = jobs.submit("owner", YOUTUBE, "request-2")
+        _wait_for(lambda: any(r["id"] == second and r["stage"] == "failed" for r in jobs.snapshot()))
+        assert len(provider.calls) == 1 and len(deliveries) == 1
+        holding["fail"] = False
+        retry = jobs.retry("owner", second)
+        _wait_for(lambda: any(r["id"] == retry and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 1  # verified retained media: no second download
+        assert len(deliveries) == 2 and deliveries[1].read_bytes() == b"testdata"
+        assert deliveries[0] == deliveries[1]
+        saved = (tmp_path / "acquisition-journal.json").read_text()
+        assert "sample.mp4" not in saved and str(tmp_path) not in saved
+    finally:
+        jobs.close()
+
+
+def test_restart_interrupted_rows_are_not_retryable_by_any_guest(tmp_path):
+    ident = "c" * 24
+    (tmp_path / "acquisition-journal.json").write_text(
+        json.dumps(_journal_payload((ident, "downloading"))), encoding="utf-8")
+    jobs = acquisition.LinkJobs(tmp_path, FakeProvider(), lambda *args: None, lambda owner: True)
+    try:
+        row = jobs.snapshot("some-session")[0]
+        assert row["stage"] == "failed" and row["can_retry"] is False
+        with pytest.raises(acquisition.LinkError) as exc:
+            jobs.retry("some-session", ident)
+        assert exc.value.status == 404
+    finally:
+        jobs.close()
+
+
+def test_room_http_retry_is_csrf_protected_owner_bound_and_truthful(tmp_path):
+    from test_portal import PortalRig, login, decode
+
+    rig = PortalRig()
+    provider = FlakyProvider()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, rig.server.session_key_active)
+    rig.server.link_jobs = jobs
+    try:
+        origin = "http://" + rig.host
+        _, joined, cookie = login(rig, name="Submitter")
+        csrf = joined["csrf"]
+        status, response, _ = rig.request(
+            "POST", "/api/link-jobs",
+            {"url": YOUTUBE, "request_id": "browser-1", "authorised": True},
+            cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 202
+        failed = decode(response)["id"]
+        _wait_for(lambda: any(r["id"] == failed and r["stage"] == "failed" for r in jobs.snapshot()))
+        status, state, _ = rig.request("GET", "/api/status", cookie=cookie)
+        row = next(r for r in decode(state)["state"]["link_jobs"] if r["id"] == failed)
+        assert row["can_retry"] is True and "worker" in row["error"].lower()
+        # The retry route keeps the same origin/CSRF/session fences as cancel.
+        assert rig.request("POST", "/api/link-jobs/retry", {"id": failed},
+                           cookie=cookie, origin=origin)[0] == 403
+        assert rig.request("POST", "/api/link-jobs/retry", {"id": failed},
+                           csrf=csrf, origin=origin)[0] == 403
+        _, viewer, other_cookie = login(rig, name="Viewer")
+        assert rig.request("POST", "/api/link-jobs/retry", {"id": failed},
+                           cookie=other_cookie, csrf=viewer["csrf"], origin=origin)[0] == 404
+        status, response, _ = rig.request("POST", "/api/link-jobs/retry", {"id": failed},
+                                          cookie=cookie, csrf=csrf, origin=origin)
+        assert status == 202 and decode(response)["id"] != failed
+        provider.resume.set()
+        _wait_for(lambda: any(r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 2
+    finally:
+        provider.resume.set()
+        rig.close()
