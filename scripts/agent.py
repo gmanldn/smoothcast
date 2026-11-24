@@ -1462,7 +1462,7 @@ def cmd_prune(a: argparse.Namespace) -> int:
     removed: list[str] = []
     kept = 0
     for block in git("worktree", "list", "--porcelain").split("\n\n"):
-        line = next((l for l in block.splitlines() if l.startswith("worktree ")), "")
+        line = next((entry for entry in block.splitlines() if entry.startswith("worktree ")), "")
         if not line:
             continue
         path = Path(line.split(" ", 1)[1])
