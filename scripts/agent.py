@@ -414,11 +414,19 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
     """Persist a bounded, source-grounded brief outside the tracked checkout."""
     ordered = sorted((c for c in comments if isinstance(c, dict)),
                      key=lambda c: int(c.get("id") or 0))
-    handovers = [str(c.get("body") or "") for c in ordered
-                 if re.search(r"(?m)^(?:Progress|Implementation|Handover):", str(c.get("body") or ""))]
-    latest = handovers[-1] if handovers else "No prior handover; inspect related commits."
-    if len(latest) > 2300:
-        latest = latest[:1500] + "\n[handover abbreviated; see issue]\n" + latest[-550:]
+    # A latest-only handover often omits completed earlier slices. Preserve
+    # several recent pieces of durable evidence so a successor doesn't redo
+    # work merely because the last comment mentions only its next action.
+    evidence = [(c.get("id"), str(c.get("body") or "")) for c in ordered
+                if re.search(r"(?m)^(?:Progress|Implementation|Handover):",
+                             str(c.get("body") or ""))]
+    snippets = []
+    for cid, record in evidence[-4:]:
+        if len(record) > 1250:
+            record = record[:850] + "\n[evidence abbreviated; see issue comment]\n" + record[-300:]
+        snippets.append(f"### Comment {cid or 'unknown'}\n{record}")
+    latest = ("\n\n".join(snippets) if snippets
+              else "No prior handover; inspect related commits.")
     body = str(issue.get("body") or "")
     if len(body) > 5200:
         # Preserve the objective and tail checklist while avoiding token-heavy
@@ -438,7 +446,7 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
         "Start here: AGENTS.md then one relevant handbook topic.\n"
         f"Context route: {guidance}\n\n"
         f"## Acceptance and background\n{body[:30000]}\n\n"
-        f"## Most recent durable handover\n{latest}\n"
+        f"## Recent durable handovers (oldest to newest; verify source)\n{latest}\n"
     )
 
 
