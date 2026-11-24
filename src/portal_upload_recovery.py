@@ -50,5 +50,16 @@ class PortalUploadRecoveryMixin:
         accepted = getattr(self, "_portal_accepted_uploads", None)
         if accepted is not None:
             accepted.add(upload_id)
-        self._cast_path(pathlib.Path(path), 0)
+        try:
+            reason = self._cast_path(pathlib.Path(path), 0)
+        except Exception:
+            # A failed fallback must never leave a permanently deduped ID.
+            casting.pop(upload_id, None)
+            if accepted is not None:
+                accepted.discard(upload_id)
+            raise
+        if reason is not None:
+            casting.pop(upload_id, None)
+            if accepted is not None:
+                accepted.discard(upload_id)
         return False
