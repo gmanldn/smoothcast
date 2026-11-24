@@ -18,7 +18,7 @@ repository root. This routing page is the human-readable fallback: open
 | Run the headless suite or use the CASTV2 fake | [Testing SmoothCast](../TESTING.md) |
 | Find code owners; modify playback, devices, UI or setup | [Architecture](architecture.md) |
 | Preferences, UI hierarchy and safe worker ownership | [Preferences & concurrency](preferences.md) |
-| Reduce context, tool output or code size | [Agent efficiency](efficiency.md), [Caveman](../../.kilo/skills/caveman/SKILL.md), [Ponytail](../../.kilo/skills/ponytail/SKILL.md) |
+| Reduce context, tool output or code size; apply bundled Caveman/Ponytail | [Agent efficiency](efficiency.md), [Caveman](../../.kilo/skills/caveman/SKILL.md), [Ponytail](../../.kilo/skills/ponytail/SKILL.md); `agent_context.py skills` |
 | Mesh peer negotiation, versions and downgrade rules | [Peer protocol](peer-protocol.md) |
 | Product direction, trust model, mesh/room/portal features | [Vision](../VISION.md), [mesh search](../MESH_SEARCH.md) — **authoritative**; trusted-home-LAN model supersedes older PIN/pairing assumptions |
 | Historical rationale, old invariants or regressions | [Full original notes](../AGENT_REFERENCE.md) — **historical; not policy** |
