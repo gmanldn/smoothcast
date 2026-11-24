@@ -21,7 +21,7 @@ WIRE_VERSION = 1
 KINDS = ("youtube", "magnet")
 MAX_FIELD = 128
 _FIELDS = {
-    "offer": {"job", "gen", "key", "kind"},
+    "offer": {"job", "gen", "key", "kind", "src"},
     "cancel": {"job", "gen"},
     "report": {"job", "gen", "stage", "received", "total"},
     "finished": {"job", "gen", "content"},
@@ -55,8 +55,15 @@ def parse(message: object) -> dict:
         raise WireError("invalid job identity")
     if type(message["gen"]) is not int or not 1 <= message["gen"] <= (1 << 63) - 1:
         raise WireError("bad generation")
-    if kind == "offer" and message["kind"] not in KINDS:
-        raise WireError("unknown provider")
+    if kind == "offer":
+        if message["kind"] not in KINDS:
+            raise WireError("unknown provider")
+        # The canonical identity (11-char video id or 40-hex btih) travels only
+        # on this authenticated RPC, never in telemetry, and must hash to the key.
+        pattern = r"[A-Za-z0-9_-]{11}" if message["kind"] == "youtube" else r"[0-9a-f]{40}"
+        if (not isinstance(message["src"], str) or not re.fullmatch(pattern, message["src"])
+                or core.source_key(message["kind"], message["src"]) != message["key"]):
+            raise WireError("source does not match its key")
     for name in ("key", "content"):
         if name in message and (not isinstance(message[name], str)
                                 or not re.fullmatch(r"[0-9a-f]{64}", message[name])):
@@ -73,12 +80,12 @@ def parse(message: object) -> dict:
 class WorkerService:
     """Executor side: fences offers/cancels and starts or stops the real worker."""
 
-    def __init__(self, start: Callable[[str, int, str, str], None],
+    def __init__(self, start: Callable[..., None],
                  stop: Callable[[str], None], slots: int = 1) -> None:
         self.guard = core.ExecutorGuard(slots)
         self._start, self._stop = start, stop
 
-    def handle(self, message: object) -> dict:
+    def handle(self, message: object, sender: str | None = None) -> dict:
         try:
             msg = parse(message)
         except WireError:
@@ -88,7 +95,7 @@ class WorkerService:
             for job in superseded:
                 self._stop(job)
             if verdict == "accepted":
-                self._start(msg["job"], msg["gen"], msg["key"], msg["kind"])
+                self._start(msg["job"], msg["gen"], msg["key"], msg["kind"], msg["src"], sender)
             return {"ok": verdict in ("accepted", "duplicate"), "verdict": verdict}
         if msg["t"] == "cancel":
             if self.guard.cancel(msg["job"], msg["gen"]):
@@ -122,7 +129,7 @@ class HostCoordinator:
         if selection.local:
             return job, selection, "local"
         try:
-            reply = self._send(node, build("offer", job=job, gen=generation, key=key, kind=kind))
+            reply = self._send(node, build("offer", job=job, gen=generation, key=key, kind=kind, src=identity))
         except Exception:  # noqa: BLE001 - delivery unknown: it may be running
             self.ledger.mark_ambiguous(job, node, generation)
             return job, selection, "ambiguous"

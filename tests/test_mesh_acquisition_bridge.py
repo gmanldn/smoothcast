@@ -14,7 +14,7 @@ HOST, WORK = "a" * 32, "b" * 32
 BOOT_H, BOOT_W = "c" * 32, "d" * 32
 ADDR = {HOST: "192.168.1.2", WORK: "192.168.1.4"}
 JOB = "job-00000001"
-URL = "https://example.invalid/watch?v=abc"
+URL = "abcdefghijk"  # canonical video id (the only source form that crosses nodes)
 
 
 class Clock:
@@ -113,7 +113,7 @@ def test_identity_and_source_must_all_match(tamper):
     p = pair()
     body = {"hello": p.hb.hello.wire(), "node": HOST, "boot": BOOT_H, "target": WORK,
             "target_boot": BOOT_W,
-            "msg": wire.build("offer", job=JOB, gen=1, key=core.source_key("youtube", URL), kind="youtube")}
+            "msg": wire.build("offer", job=JOB, gen=1, key=core.source_key("youtube", URL), kind="youtube", src=URL)}
     source = ADDR[HOST]
     if tamper == "source":
         source = "192.168.1.99"

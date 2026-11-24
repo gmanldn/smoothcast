@@ -895,7 +895,7 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     if a.files and (not paths or any(
             Path(p).is_absolute() or ".." in Path(p).parts
             or p in {".", "./"} or p.startswith(("-", ":"))
-            or any(c in p for c in "*?[]\\x00")
+            or any(c in p for c in "*?[]\x00")
             or (ROOT / p).is_dir() for p in paths)):
         print("--files requires literal, named repository-relative files, not directories or Git globs")
         return 2

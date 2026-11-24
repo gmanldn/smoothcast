@@ -141,3 +141,16 @@ from workers are applied to the host ledger under the sender's authenticated
 node id. `send` blocks and is refused on the mesh loop thread; a lost or
 unverified reply raises, which the host treats as an ambiguous owner. Remote
 worker execution and verified file transfer are still to be connected.
+
+### Remote worker execution (#589)
+
+`src/mesh_acquisition_executor.py` is the worker's `start`/`stop` target. An
+offer now carries the canonical source identity (`src`: 11-character video id
+or 40-hex btih) *only* on the authenticated RPC; it must hash to the offered
+`key` and is re-validated against the local canonical form. Telemetry, the
+public view and the ledger snapshot still never contain it. The executor runs
+the same isolated provider as the local room, reports stages and measured bytes
+(at most once a second), SHA-256-hashes the verified media and sends `finished`
+(retried a bounded number of times) or `failed`. Cancel stops it without a
+failure report and removes its files. The room host still performs the single
+queue add; pulling the verified file from the worker is the remaining step.

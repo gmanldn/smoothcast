@@ -78,7 +78,7 @@ class AcquisitionBridge:
         if kind in _WORKER_TYPES and self.worker is not None:
             if not self.accept():
                 return self._envelope({"ok": False, "verdict": "declined"})
-            return self._envelope(self.worker.handle(message))
+            return self._envelope(self.worker.handle(message, sender=peer.node_id))
         if kind in _HOST_TYPES and self.host is not None:
             applied = self.host.on_message(peer.node_id, message, self.clock.monotonic())
             return self._envelope({"ok": bool(applied), "verdict": "applied" if applied else "refused"})
