@@ -315,7 +315,12 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert status == 200
     page = body.decode()
     assert "fetch(\"/api/status\"" in page
-    assert "https://" not in page and "http://" not in page
+    # The page may only BUILD one canonical YouTube link to submit to this
+    # host's own /api/link-jobs (#593); it must never reference external
+    # resources, so that single literal is the whole allow-list.
+    submitted = 'url:"https://www.youtube.com/watch?v="+result.id'
+    assert page.count(submitted) <= 1
+    assert "https://" not in page.replace(submitted, "") and "http://" not in page
     assert PIN not in page
     assert 'id="keepScreenOn" type="checkbox"' in page
     assert "Keep screen on" in page
