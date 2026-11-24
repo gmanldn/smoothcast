@@ -1758,7 +1758,14 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
 #queuePanel .queue-destination .eyebrow{margin:0 0 4px}
 #queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
-#queuePanel .queue-add-links{margin:0 0 12px}
+#queuePanel .contribute{margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input)}
+#queuePanel .contribute h3{margin:0;font-size:1.1rem}
+#queuePanel .queue-add-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px;margin-top:10px}
+#queuePanel .queue-add-links a{display:flex;flex-direction:column;justify-content:center;gap:3px;min-height:64px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);text-decoration:none;overflow-wrap:anywhere}
+#queuePanel .queue-add-links a:first-child{border-color:var(--accent)}
+#queuePanel .queue-add-links a:hover{background:var(--nav-hover)}
+#queuePanel .queue-add-links a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+#queuePanel .queue-add-links span{font-size:.82rem;color:var(--muted);line-height:1.4}
 #queuePanel #linkAcquisition{margin-top:12px;min-width:0;box-shadow:none;border:1px solid var(--line);padding:12px}
 #linkAcquisition>summary{font-weight:750;cursor:pointer;min-height:44px;align-content:center}
 #linkForm{display:grid;gap:8px}#linkForm label{margin:0}#linkForm input[type="text"]{min-width:0}#linkForm button{justify-self:start;max-width:100%}
@@ -1938,7 +1945,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
-<div class="quick-links queue-add-links" aria-label="Contribute media"><a href="#linkAcquisition" id="openLinkAcquisition">Add YouTube or magnet link</a><a href="#findPanel">Find shared media</a><a href="#uploadCard">Add files</a></div>
+<div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
 
@@ -2402,6 +2409,12 @@ let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkSt
 const linkShortcut=$("openLinkAcquisition");
 function openLinkAcquisition(){const panel=$("linkAcquisition");if(panel)panel.open=true}
 if(linkShortcut)linkShortcut.addEventListener("click",()=>{openLinkAcquisition();$("linkInput").focus()});
+function focusContributionControl(id){
+  const control=$(id);
+  if(control&&!control.disabled)control.focus({preventScroll:true});
+}
+$("openUploadEntry").addEventListener("click",()=>focusContributionControl("videoFile"));
+$("openFindEntry").addEventListener("click",()=>focusContributionControl("findInput"));
 if(location.hash==="#linkAcquisition")openLinkAcquisition();
 window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){

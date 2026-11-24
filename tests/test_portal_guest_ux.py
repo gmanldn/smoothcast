@@ -790,3 +790,17 @@ def test_select_controls_meet_the_touch_target_size_used_by_buttons_and_inputs()
     html = portal._HTML
     assert "select{font:inherit;min-height:44px;" in html
     assert 'id="activityFilter"' in html and html.count("<select") == html.count("</select>")
+
+
+def test_front_page_contribution_links_reuse_existing_controls():
+    page = room_html()
+    by_id = {a["id"]: (tag, a) for tag, a in page.elements if "id" in a}
+    for entry, target in (("openUploadEntry", "uploadCard"),
+                          ("openLinkAcquisition", "linkAcquisition"),
+                          ("openFindEntry", "findPanel")):
+        assert by_id[entry][0] == "a"
+        assert by_id[entry][1]["href"] == "#" + target
+    assert page.ids.count("videoFile") == 1
+    assert page.ids.count("linkInput") == 1
+    assert page.ids.count("findInput") == 1
+    assert 'aria-labelledby="contributeHeading"' in portal._HTML
