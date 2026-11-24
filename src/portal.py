@@ -1669,7 +1669,7 @@ _HTML = r"""<!doctype html>
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:760px;margin:auto;padding:20px}
 h1{font-size:1.4rem;margin:.2rem 0}h2{font-size:1.05rem;margin:0 0 12px}p{color:var(--muted);margin:.35rem 0}
 section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 8px 26px var(--shadow)}
-label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid var(--border);padding:8px 12px}
+label{display:block;margin:12px 0 6px}select{font:inherit;min-height:44px;max-width:100%;padding:0 10px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:inherit}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid var(--border);padding:8px 12px}
 input{width:100%;color:inherit;background:var(--input)}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
 dialog#shortcutsHelp{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}

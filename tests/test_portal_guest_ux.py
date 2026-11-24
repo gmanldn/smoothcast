@@ -766,3 +766,10 @@ def test_mesh_stream_rows_advance_a_playing_position_between_receiver_polls():
     html = portal_mesh_panel.panel_html()
     assert "item.observed_age_ms" in html or "observed_age_ms" in html
     assert 'if(item.state==="PLAYING")' in html and "setInterval" in html
+
+
+def test_select_controls_meet_the_touch_target_size_used_by_buttons_and_inputs():
+    """#558: the activity filter was an 18px sliver; every select now has a 44px target."""
+    html = portal._HTML
+    assert "select{font:inherit;min-height:44px;" in html
+    assert 'id="activityFilter"' in html and html.count("<select") == html.count("</select>")
