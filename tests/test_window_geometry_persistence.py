@@ -29,8 +29,8 @@ def test_invalid_allocations_cannot_overwrite_saved_normal_window():
 def test_clamp_saved_normal_size_after_monitor_change():
     saved = remember_normal_size(1600, 1000, (1180, 760),
                                  fullscreen=False, maximized=False)
-    assert window_size(*saved, 1366, 768) == (1294, 672)
-    assert window_size(*saved, 600, 400) == (528, 304)
+    assert window_size(*saved, 1366, 768) == (1161, 652)
+    assert window_size(*saved, 600, 400) == (510, 304)
 
 
 def test_ui_uses_allocation_not_default_size_when_persisting():
@@ -42,3 +42,14 @@ def test_ui_uses_allocation_not_default_size_when_persisting():
     assert "width, height = self.get_default_size()" not in lifecycle
     assert session.count("self._remember_normal_geometry()") >= 2
     assert "self.move(" not in lifecycle and "self.move(" not in ui
+
+
+def test_a_default_or_saved_size_never_looks_like_a_full_screen_window():
+    import cast_widgets  # noqa: F401  (DEFAULTS must stay a modest window)
+    width, height = cast_widgets.DEFAULTS["window_width"], cast_widgets.DEFAULTS["window_height"]
+    assert (width, height) == (1180, 760)
+    for screen in ((1366, 768), (1920, 1080), (2560, 1440), (3840, 2160), (1280, 720)):
+        w, h = window_size(1600, 1000, *screen)
+        assert w <= screen[0] * 0.85 and h <= screen[1] * 0.85, screen
+    w, h = window_size(width, height, 1920, 1080)
+    assert (w, h) == (1180, 760)  # a normal desktop keeps the modest default

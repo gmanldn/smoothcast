@@ -171,8 +171,9 @@ class CanonicalVersionTests(unittest.TestCase):
 
     def test_gtk_header_title_about_and_cli_share_the_module(self):
         source = combined_source()
-        self.assertIn('self.set_title(f"{APP_NAME} {version.running_label()}")', source)
-        self.assertIn('title=f"{APP_NAME} {version.running_label()}"', source)
+        self.assertIn('self.set_title(f"{APP_NAME} {version.label()}")', source)  # SemVer only in the title bar
+        self.assertIn('title=f"{APP_NAME} {version.label()}"', source)
+        self.assertIn('Running {APP_NAME} {version.running_label()}', source)  # build id stays in the tooltip
         self.assertIn('version=version.__version__', source)
         self.assertIn('print(f"{APP_NAME} {version.label()}")', source)
         self.assertIn('window.update_notice = notice', source)

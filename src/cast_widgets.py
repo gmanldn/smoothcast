@@ -86,8 +86,8 @@ DEFAULTS: dict = {
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).
-    "window_width": 1600,
-    "window_height": 1000,
+    "window_width": 1180,
+    "window_height": 760,
     "window_x": -1,
     "window_y": -1,
     "update_channel": "develop",  # Source update channel; available choices: develop / main (#579).

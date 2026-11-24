@@ -56,17 +56,19 @@ def window_size(
 ) -> tuple[int, int]:
     """Preserve a preferred size but never request more than the screen.
 
-    Keep a modest allowance for task bars/decorations.  When monitor geometry
-    is unavailable, use a reasonable default instead of forcing fullscreen.
+    Keep a modest allowance for task bars/decorations and never open larger
+    than 85 % of the monitor, so a window never appears to be full screen (an
+    old saved or default size can be near the monitor size). When monitor
+    geometry is unavailable, use a reasonable default.
     """
     width = max(380, _dimension(configured_width, 1180))
     height = max(330, _dimension(configured_height, 760))
     screen_w = _dimension(monitor_width, 0)
     screen_h = _dimension(monitor_height, 0)
     if screen_w:
-        width = min(width, max(320, screen_w - 72))
+        width = min(width, max(320, min(screen_w - 72, screen_w * 85 // 100)))
     if screen_h:
-        height = min(height, max(300, screen_h - 96))
+        height = min(height, max(300, min(screen_h - 96, screen_h * 85 // 100)))
     return width, height
 
 

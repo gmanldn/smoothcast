@@ -49,10 +49,10 @@ class PanelMixin:
     def _build_ui(self) -> None:
         # Keep the *running* release in the prominent title, not an easily
         # truncated device/status subtitle or a live on-disk git lookup.
-        self.set_title(f"{APP_NAME} {version.running_label()}")
+        self.set_title(f"{APP_NAME} {version.label()}")
         header = Adw.HeaderBar()
         self.title_widget = Adw.WindowTitle(
-            title=f"{APP_NAME} {version.running_label()}",
+            title=f"{APP_NAME} {version.label()}",
             subtitle=self.cfg["device"] or "No receiver selected",
         )
         self.title_widget.set_tooltip_text(f"Running {APP_NAME} {version.running_label()}")
