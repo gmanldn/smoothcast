@@ -12,6 +12,19 @@ read repository instructions. Kilo can additionally discover the named
 Caveman proxy or Ponytail hook plugin, and they do not alter your local
 global agent configurations.
 
+## Use them
+
+Both skills are static, tracked files: they ship with every checkout and
+queue worktree and need no install. Kilo discovers them by name; other agents
+read the two `SKILL.md` paths directly.
+
+- `python3 scripts/agent_context.py skills` prints the bundled paths, and a
+  context/token route appends the same reminder.
+- `agent.py start` writes both paths into every private task brief.
+- Apply Ponytail while choosing and writing the diff, then Caveman while
+  reporting. Correctness, tests and evidence take precedence over brevity; see
+  [agent efficiency](agents/efficiency.md) for the full rules.
+
 ## Measured repository instruction size
 
 At integration, the original `AGENTS.md` was **30,316 characters

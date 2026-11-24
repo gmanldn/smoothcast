@@ -10,7 +10,9 @@ description: >-
 
 Adapted from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman).
 This is a **repository-scoped instruction adapter**, not its CLI/proxy or a
-claim that upstream hooks were installed. Upstream is separate software.
+claim that upstream hooks were installed. Upstream is separate software. It is
+bundled and versioned with SmoothCast; usage, precedence and measurement rules
+are in [docs/agents/efficiency.md](../../../docs/agents/efficiency.md).
 
 - Answer the user's actual question first. One result sentence per material
   change. No repeated progress/recap, ceremony or fictional accomplishments.

@@ -453,7 +453,10 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
         f"Full issue: https://github.com/{REPO}/issues/{number}\n"
         f"Likely files: {', '.join(named) or 'not specified; inspect issue and source'}\n"
         "Start here: AGENTS.md then one relevant handbook topic.\n"
-        f"Context route: {guidance}\n\n"
+        f"Context route: {guidance}\n"
+        "Token discipline: .kilo/skills/ponytail/SKILL.md (smallest complete "
+        "diff); .kilo/skills/caveman/SKILL.md (terse evidence). "
+        "Never trade correctness, tests or evidence for brevity.\n\n"
         f"## Acceptance and background\n{body[:30000]}\n\n"
         f"## Recent durable handovers (oldest to newest; verify source)\n{latest}\n"
     )

@@ -120,6 +120,8 @@ def test_start_creates_distinct_agent_ids_and_scoped_briefs(monkeypatch, tmp_pat
         assert "Ticket for both" in packet
         assert "Context route:" in packet
         assert "src/cli.py" in packet
+        assert ".kilo/skills/ponytail/SKILL.md" in packet
+        assert ".kilo/skills/caveman/SKILL.md" in packet
     assert ids[0] != ids[1]
 
 

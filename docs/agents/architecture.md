@@ -7,36 +7,8 @@ and DLNA. Ordinary tests do not import GTK.
 
 ## UX and orchestration
 
-Owner directive (24 November 2026): user experience is paramount. Sophisticated
-plumbing must remain elegant, fast and largely invisible to the user.
-
-- **One clear journey:** discover or join, choose media, choose a receiver, then
-  play or queue. Make shared Up Next prominent, including contributor, actual
-  selected target and waiting items. Keep Settings and Live accessible even
-  without a mesh; place idle diagnostics behind disclosure, not in the happy path.
-- **Automatic plumbing:** use the existing discovery, queue, transfer, dependency
-  and worker authorities. Choose eligible routes and workers automatically;
-  revalidate and fail over safely. Provision supported prerequisites through
-  setup with explicit owner approval. Guests must not install host software or
-  manually route work. Unsupported or unavailable features need one actionable
-  explanation, not instructions to defeat isolation, policy or receiver ownership.
-- **Responsive by design:** GTK owns widgets and state; offload disk, network,
-  subprocess and heavy media work to bounded existing worker domains. Coalesce
-  updates, reuse models, avoid unchanged DOM/GTK rebuilds and stop idle/hidden
-  timers. Bound retained data, queues and retries. Fence stale results against
-  session and generation changes. Never add a second controller or poller just
-  to make a new view work.
-- **Truthful feedback and recovery:** distinguish requested, queued, transferring,
-  verifying, accepted, confirmed, failed and uncertain. Show real progress and
-  units only when reported; preserve user input and unrelated playback. Retry
-  idempotently within a budget and present a useful recovery action when needed.
-  A status receipt is not proof of playback. No silent failure or invented metrics.
-- **Acceptance:** exercise narrow/mobile and desktop layouts, keyboard focus,
-  offline/disabled/slow dependencies, stale callbacks, concurrent clients and
-  recovery as applicable. Add deterministic regressions. For performance claims,
-  measure CPU/memory, latency, callback/DOM churn or queue scale as relevant;
-  distinguish expected gains from measured gains. Never launch a real receiver
-  or the normal desktop app for routine tests.
+The 24 November owner UX directive, acceptance rules and orchestration
+constraints are in [preferences](preferences.md#ux-and-orchestration).
 
 ## GTK window: seven smaller modules
 

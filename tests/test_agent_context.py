@@ -89,7 +89,41 @@ class AgentContextTests(unittest.TestCase):
     def test_root_sends_agents_to_agent_ready_issues_without_large_context(self):
         root = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("scripts/ticket_digest.py --next --label agent-ready", root)
+        self.assertIn("docs/agents/efficiency.md", root)
+        for relative, _ in router.SKILLS.values():
+            self.assertIn(relative, root)
         self.assertLess(len(root), 3500)
+
+    def test_bundled_token_skills_are_static_bounded_files(self):
+        self.assertEqual(set(router.SKILLS), {"caveman", "ponytail"})
+        for name, (relative, purpose) in router.SKILLS.items():
+            with self.subTest(name=name):
+                path = ROOT / relative
+                self.assertTrue(path.is_file(), path)
+                text = path.read_text(encoding="utf-8")
+                self.assertLess(len(text), 4000)
+                self.assertIn(f"name: {name}", text)
+                self.assertIn("../../../docs/agents/efficiency.md", text)
+                self.assertIn("bundled", text.lower())
+                self.assertTrue(purpose)
+
+    def test_efficiency_route_names_bundled_skill_paths(self):
+        hint = router.route_hint(["caveman", "token"])
+        self.assertLess(len(hint), router.MAX_HINT_CHARS)
+        for relative, _ in router.SKILLS.values():
+            self.assertIn(relative, hint)
+
+    def test_skills_command_lists_the_bundle_without_reading_it(self):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(Path, "read_text",
+                               side_effect=AssertionError("skills read a file")):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                self.assertEqual(router.main(["skills"]), 0)
+        self.assertEqual(stderr.getvalue(), "")
+        output = stdout.getvalue()
+        self.assertLess(len(output), router.MAX_HINT_CHARS)
+        for relative, _ in router.SKILLS.values():
+            self.assertIn(relative, output)
 
     def test_workflow_stays_readable_while_release_details_remain_available(self):
         guide = (ROOT / "docs/agents/workflow.md").read_text(encoding="utf-8")

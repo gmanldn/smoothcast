@@ -17,6 +17,27 @@ refuses to print an oversized document rather than truncating important
 instructions. Do not feed the complete historical archive back into every
 session. [Handbook index](README.md) is the fallback for ambiguous tasks.
 
+## Bundled skills — Caveman and Ponytail
+
+Both are **static repository files**, versioned with the code and present in
+every worktree; Kilo also discovers them by name. No plugin, package, proxy,
+account or user setting is required.
+
+- [Ponytail](../../.kilo/skills/ponytail/SKILL.md) — choose and write the
+  smallest complete diff.
+- [Caveman](../../.kilo/skills/caveman/SKILL.md) — report results, handovers and
+  reviews in short factual prose.
+
+Ponytail bounds the change; Caveman bounds the report.
+`agent.py start` repeats this in every private brief;
+`python3 scripts/agent_context.py skills` prints the paths.
+
+**Precedence:** correctness, safety, explicit scope, tests and evidence beat
+brevity. Never compress negations, versions, paths, commands, errors, security
+warnings or failing output; use normal prose for risky or irreversible work.
+These are instruction adapters, not the upstream proxy/plugin or its hooks,
+telemetry or token accounting. Do not install those from this repository.
+
 ## Reliable token-saving practices
 
 1. **Scope before reading.** Restate goal, affected files, constraints,
