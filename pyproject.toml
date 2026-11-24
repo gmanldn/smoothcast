@@ -70,6 +70,7 @@ py-modules = [
     "cast_portal_host",
     "cast_portal_queue",
     "cast_queue",
+    "cast_recovery",
     "cast_session",
     "cast_settings",
     "cast_subtitle_files",

@@ -17,6 +17,7 @@ Main GTK entry point: `src/cast_control.py`; `MainWindow` inherits:
 | Header, player + tabbed side panel, reflow | `src/panel_ui.py` (`PanelMixin`) |
 | Files, queue, device discovery, output selection | `src/cast_queue.py` (`QueueMixin`) |
 | Casting, seeking, transport, sleep/window state | `src/cast_session.py` (`SessionMixin`) |
+| Recovery options after a failed cast launch/seek/transfer (pure planner; not yet wired into `SessionMixin`) | `src/cast_recovery.py` (#13) |
 | Audio, subtitles, volume, local preview, meters | `src/cast_av.py` (`AvMixin`); delay: `src/cast_subtitles.py` |
 | Closing, cleanup, menu actions, screenshots | `src/cast_lifecycle.py` (`LifecycleMixin`) |
 | Shared GTK widgets, config, constants | `src/cast_widgets.py` |

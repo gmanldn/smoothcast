@@ -107,6 +107,8 @@ jobs:
           python -m pytest -q tests/test_managed_generations.py tests/test_managed_archive.py tests/test_managed_activation.py
       - name: Verify colour-adjusted local previews are bounded and stale-safe
         run: python -m pytest -q tests/test_picture_adjustments_preview.py
+      - name: Verify cast failure recovery planning
+        run: python -m pytest -q tests/test_cast_recovery.py tests/test_cast_preflight_preservation.py
       - name: Verify mesh Range resume integrity
         run: python -m pytest -q tests/test_mesh_files.py tests/test_mesh_file_wire_bounds.py tests/test_mesh_range_resume.py
       - name: Verify source-second playheads and lock-screen controls

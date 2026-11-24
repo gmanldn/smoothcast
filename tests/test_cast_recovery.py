@@ -1,0 +1,138 @@
+"""#13: failed cast launch/seek/transfer keeps position and offers clear recovery."""
+from __future__ import annotations
+
+import math
+from pathlib import Path
+import sys
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import cast_recovery as cr
+from cast_recovery import FailureContext, plan_recovery
+import errors
+
+
+def kinds(plan):
+    return [o.kind for o in plan.options]
+
+
+def test_generic_launch_failure_offers_retry_then_encoding_then_targets():
+    plan = plan_recovery(FailureContext("Living Room", position=754.2, duration=3600,
+                                        targets=("Kitchen", "Den")))
+    assert kinds(plan) == ["retry", "alternate_encoding", "alternate_target", "alternate_target"]
+    assert plan.primary.kind == "retry" and plan.position == 754.2
+    assert all(o.position == 754.2 for o in plan.options)
+    assert "12:34" in plan.headline and "saved" in plan.headline
+    enc = plan.options[1]
+    assert (enc.device, enc.mode) == ("Living Room", "remux")
+    assert "while starting" in enc.reason and "direct" in enc.reason
+    assert [o.device for o in plan.options[2:]] == ["Kitchen", "Den"]
+    assert all(o.reason and o.label for o in plan.options)
+
+
+@pytest.mark.parametrize("stage,phrase", [("seek", "while seeking"), ("launch", "while starting"),
+                                          ("transfer", "during playback")])
+def test_reason_names_the_stage(stage, phrase):
+    plan = plan_recovery(FailureContext("TV", stage=stage, targets=("Den",)))
+    assert phrase in plan.options[1].reason and phrase in plan.options[-1].reason
+
+
+def test_encoding_ladder_advances_and_ends_at_transcode():
+    first = plan_recovery(FailureContext("TV", mode="direct"))
+    assert [(o.kind, o.mode) for o in first.options if o.kind != "retry"] == [("alternate_encoding", "remux")]
+    again = plan_recovery(FailureContext("TV", mode="remux", tried=(("TV", "direct"),)))
+    assert [o.mode for o in again.options if o.kind == "alternate_encoding"] == ["transcode"]
+    last = plan_recovery(FailureContext("TV", mode="transcode"))
+    assert "alternate_encoding" not in kinds(last)
+    unknown = plan_recovery(FailureContext("TV", mode="dlna"))
+    assert "alternate_encoding" not in kinds(unknown)
+
+
+def test_a_pair_that_failed_twice_is_never_offered_again():
+    ctx = FailureContext("TV", mode="direct", tried=(("TV", "direct"), ("TV", "remux"), ("TV", "remux")),
+                         targets=("Den",))
+    plan = plan_recovery(ctx)
+    assert "retry" not in kinds(plan)  # TV/direct has now failed twice
+    assert not [o for o in plan.options if o.kind == "alternate_encoding" and o.mode == "remux"]
+    assert [o.device for o in plan.options if o.kind == "alternate_target"] == ["Den"]
+    blocked = plan_recovery(FailureContext("TV", mode="direct", targets=("Den",),
+                                           tried=(("Den", "direct"), ("Den", "direct"))))
+    assert "alternate_target" not in kinds(blocked)
+
+
+@pytest.mark.parametrize("code,expected", [
+    ("cast.receiver_offline", ["retry", "alternate_target"]),
+    ("cast.no_supported_format", ["alternate_target"]),
+    ("cast.settings_unsupported", ["alternate_target"]),
+    ("cast.command_in_progress", ["retry"]),
+    ("ffmpeg.decoder_timeout", ["retry", "alternate_encoding"]),
+    ("ffmpeg.decoder_failed", []),
+    ("media.unavailable", []),
+])
+def test_catalogued_failures_only_offer_options_that_can_help(code, expected):
+    plan = plan_recovery(FailureContext("TV", error_code=code, targets=("Den",)))
+    assert dict.fromkeys(kinds(plan)).keys() == dict.fromkeys(expected).keys()
+    assert plan.steps == errors.CATALOGUE[code].steps
+    assert errors.CATALOGUE[code].message in plan.headline
+
+
+def test_non_retryable_catalogue_entry_never_offers_retry_even_if_allowed():
+    assert not errors.CATALOGUE["cast.no_supported_format"].retryable
+    assert "retry" not in kinds(plan_recovery(FailureContext("TV", error_code="cast.no_supported_format")))
+
+
+def test_unknown_code_is_treated_as_unexpected_with_everything_offered():
+    plan = plan_recovery(FailureContext("TV", error_code="made.up_code", targets=("Den",)))
+    assert plan.steps == errors.FALLBACK.steps
+    assert kinds(plan) == ["retry", "alternate_encoding", "alternate_target"]
+
+
+@pytest.mark.parametrize("position,duration,expected", [
+    (None, None, 0.0), (-5, None, 0.0), (float("nan"), 100, 0.0), (float("inf"), 100, 0.0),
+    ("12", 100, 0.0), (True, 100, 0.0), (50, 100, 50.0), (500, 100, 100.0), (500, None, 500.0),
+    (500, float("nan"), 500.0), (500, -1, 500.0), (0, 100, 0.0),
+])
+def test_position_is_always_safe(position, duration, expected):
+    assert cr.safe_position(position, duration) == expected
+    plan = plan_recovery(FailureContext("TV", position=position, duration=duration))
+    assert plan.position == expected and math.isfinite(plan.position)
+
+
+@pytest.mark.parametrize("seconds,text", [(0, "0:00"), (59.9, "0:59"), (60, "1:00"), (3599, "59:59"),
+                                          (3600, "1:00:00"), (7384, "2:03:04"), (-3, "0:00")])
+def test_format_position(seconds, text):
+    assert cr.format_position(seconds) == text
+
+
+def test_targets_are_sanitised_deduplicated_and_bounded():
+    targets = ("TV", "Den\x07‮", "Den", "", "  ", 42, "A" * 200, "B", "C", "D", "E")
+    plan = plan_recovery(FailureContext("TV", targets=targets))
+    names = [o.device for o in plan.options if o.kind == "alternate_target"]
+    assert names == ["Den", "A" * 64, "B"]  # failed device and junk skipped, capped at 3
+    assert len(plan.options) <= 1 + 1 + cr.MAX_TARGET_OPTIONS
+    assert all("\x07" not in o.label and "‮" not in o.label for o in plan.options)
+
+
+def test_hostile_tried_history_is_bounded():
+    tried = tuple((f"d{i}", "direct") for i in range(10_000))
+    assert plan_recovery(FailureContext("TV", tried=tried)).options  # no blow-up, still answers
+
+
+def test_plan_is_pure_and_deterministic():
+    ctx = FailureContext("TV", position=5, targets=("Den",))
+    assert plan_recovery(ctx) == plan_recovery(ctx)
+    with pytest.raises(Exception):
+        ctx.device = "other"  # frozen
+
+
+@pytest.mark.parametrize("message,code", [
+    ("Receiver is offline", "cast.receiver_offline"),
+    ("Chromecast not reachable at 192.168.1.5", "cast.receiver_offline"),
+    ("Connection refused", "cast.receiver_offline"),
+    ("Unsupported media type", "cast.no_supported_format"),
+    ("probe timed out", "ffmpeg.decoder_timeout"),
+    ("something odd", None), ("", None), (None, None),
+])
+def test_legacy_free_text_is_classified_conservatively(message, code):
+    assert cr.classify_message(message) == code
