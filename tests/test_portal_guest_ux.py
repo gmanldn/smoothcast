@@ -40,7 +40,7 @@ def test_join_explains_shared_controls_and_optional_house_pin():
     page = room_html()
     text = portal._HTML
     assert 'id="joinTitle">Join the house' in text
-    assert "only if the host has enabled one" in text
+    assert "You only need a House PIN if one has been set" in text
     assert "Everyone who joins can control playback" in text
     assert "No app, account or cloud" in text
     fields = {a["id"]: a for tag, a in page.elements if tag == "input" and "id" in a}
@@ -331,7 +331,7 @@ def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
 
     panel = panel_html()
     assert 'aria-labelledby="screensPanelHeading"' in panel
-    assert "House PIN only if the host requires it" in panel
+    assert "House PIN only if one has been set" in panel
     assert "Stop this screen without stopping the host TV" in panel
     assert "Screen command received; checking its state." in panel
     assert 'play.setAttribute("aria-label","Play selected queue item on "+sc.name)' in panel
@@ -706,3 +706,47 @@ for(const outcome of ["load","error"]){
     run = subprocess.run(["node", "-"], input=harness.replace("BLOCK", repr(block)),
                          capture_output=True, text=True, timeout=30)
     assert run.returncode == 0, run.stderr
+
+
+def test_guest_visible_text_uses_plain_words():
+    """#599: everyday guest text says 'TV or speaker', 'SmoothCast computer' and
+    'download'. Precise diagnostic terms live only behind Technical details,
+    More and the mesh/network panels."""
+    import re
+    from html.parser import HTMLParser
+
+    exempt = {"transferTech", "advancedPanel", "meshPanel", "networkActivity", "shortcutsHelp"}
+
+    class Visible(HTMLParser):
+        void = {"meta", "input", "img", "br", "link", "source", "path", "hr"}
+
+        def __init__(self):
+            super().__init__()
+            self.stack, self.text, self.skip = [], [], 0
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            skip = attrs.get("id") in exempt or tag in ("script", "style")
+            if not self.skip and not skip:
+                self.text += [attrs[k] for k in ("title", "aria-label", "placeholder", "alt")
+                              if attrs.get(k) and attrs.get("id") != "scVersion"]
+            if tag not in self.void:
+                self.stack.append(skip)
+                self.skip += skip
+
+        def handle_endtag(self, tag):
+            if self.stack:
+                self.skip -= self.stack.pop()
+
+        def handle_data(self, data):
+            if not self.skip and data.strip():
+                self.text.append(data.strip())
+
+    page = Visible()
+    page.feed(portal._page().decode("utf-8"))
+    jargon = re.compile(r"\b(receivers?|hosts?|acquisitions?|acquire|worker|chunk|offset|advertised)\b", re.I)
+    offenders = [text for text in page.text if jargon.search(text)]
+    assert offenders == []
+    html = portal._page().decode("utf-8")
+    assert '<details class="tech-details" id="transferTech"><summary>Technical details</summary>' in html
+    assert 'id="transferTech" open' not in html  # collapsed by default

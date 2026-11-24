@@ -39,7 +39,7 @@ def test_upload_journey_and_queue_accessibility():
     assert 'body.queue_revision=queueRevision' in portal._HTML
     assert 'body.queue_command_id=' in portal._HTML
     assert "Queue action was not applied:" in portal._HTML
-    assert "Playback requested; receiver confirmation is separate." in portal._HTML
+    assert "Play requested; waiting for the TV or speaker to start." in portal._HTML
 
 
 def test_real_browser_progress_code_reports_only_acknowledged_bytes():
@@ -77,7 +77,7 @@ transferView("verify",10485760,10485760);
 assert.equal(el.transferPercent.textContent,"100%");
 assert(steps[3].classList.contains("active"));
 assert.equal(steps[3].attrs["aria-current"],"step");
-assert.equal(el.transferDestination.textContent,"Room receiver (pending)");
+assert.equal(el.transferDestination.textContent,"TV or speaker (pending)");
 transferView("deliver",10485760,10485760);
 assert(steps[4].classList.contains("active"));
 transferView("transfer",10485761,10485760);
@@ -193,7 +193,7 @@ const fetch=async()=>({status:503,ok:false,headers:{get:()=>null},
   request.status=200;
   request.responseText=JSON.stringify({ok:true,received:9000,size:8192});
   request.onload();
-  await assert.rejects(malformed,/invalid upload receipt/);
+  await assert.rejects(malformed,/unexpected reply/);
   assert.equal($("transferAck").textContent,"4.0 KiB");
   assert.notEqual($("transferInFlight").textContent,"Chunk acknowledged by host");
   const interrupted=uploadRequest("PUT","/api/uploads/private-id",{size:4096});

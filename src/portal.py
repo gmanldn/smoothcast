@@ -1228,10 +1228,10 @@ class _Handler(BaseHTTPRequestHandler):
                     jobs.cancel(owner, body.get("id"))
                     return self._send(202, {"ok": True, "message": "Cancellation requested"})
                 if body.get("authorised") is not True:
-                    return self._error(400, "Confirm that you are authorised to acquire this media")
+                    return self._error(400, "Confirm that you are authorised to download this media")
                 job_id = jobs.submit(owner, body.get("url"), body.get("request_id"))
                 return self._send(202, {"ok": True, "id": job_id,
-                                        "message": "Acquisition accepted; Up Next updates when media is ready"})
+                                        "message": "Download accepted; Up Next updates when the media is ready"})
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/profile":
@@ -1743,7 +1743,9 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .transfer-meter,.transfer-stats{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .transfer-meter{margin:13px 0 7px}.transfer-stats{margin:8px 0 0;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem}
 #uploadStatus{overflow-wrap:anywhere;min-height:1.3em}
-.transfer-live{border-top:1px solid var(--line);margin-top:14px;padding-top:12px;min-width:0}
+.tech-details{margin-top:12px;border-top:1px solid var(--line);padding-top:6px}
+.tech-details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:650;color:var(--muted)}
+.transfer-live{border-top:0;margin-top:6px;padding-top:0;min-width:0}
 .transfer-live h3{font-size:.95rem;margin:0 0 8px}
 .transfer-live-file{font-weight:650;overflow-wrap:anywhere;margin:0 0 8px}
 .transfer-live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px;margin:0}
@@ -1817,7 +1819,7 @@ main{padding-top:6px}
 .site-intro:focus{outline:none}
 .site-intro{scroll-margin-top:var(--bar-h)}
 .site-intro{margin:14px 2px 4px;font-size:.95rem}
-#dashboard nav{top:var(--bar-h);z-index:20;margin-inline:-10px;padding:10px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
@@ -1871,46 +1873,46 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <ol class="steps" aria-label="How SmoothCast works"><li><strong>1. Join</strong>Enter a name so everyone knows who's here.</li><li><strong>2. Add or find</strong>Choose something from the house or upload a file.</li><li><strong>3. Share the queue</strong>Vote, move items and control the room together.</li></ol>
 <form id="loginForm"><label for="name">Your display name</label><p class="field-hint" id="nameHint">Shown to others in this room. You can change it later.</p>
 <input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" aria-describedby="nameHint" required>
-<div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask the host for the six-digit House PIN shown in SmoothCast.</p>
+<div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask whoever runs SmoothCast for the six-digit House PIN shown on their computer.</p>
 <input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" aria-describedby="pinHint" required></div>
-<p id="loginHint" class="field-hint">You must be on the same local network. A House PIN is required only if the host has enabled one.</p>
+<p id="loginHint" class="field-hint">Your device must be on the same Wi-Fi. You only need a House PIN if one has been set.</p>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Join</button></form>
-<details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
+<details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on a computer in this home, not in the cloud. Only join rooms you trust, and ask the person who runs SmoothCast if you are unsure.</p></div></details>
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
 <div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
+<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
 <p class="section-desc">These controls affect the room's selected TV or speaker.</p>
-<p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p>
+<p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the receiver cannot seek.</p>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
-<div class="actions"><button data-action="play_pause" title="Toggle playback for everyone using this receiver">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the room receiver">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<label for="volume">Receiver volume</label><p class="field-hint" id="volumeHelp">Changes the selected receiver's volume, not the volume of this phone.</p>
-<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the room receiver volume" disabled><p id="volumeText" class="muted">—</p>
-<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the selected receiver. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the receiver is not ready or does not support that action.</p></div></details>
+<div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
+<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
+<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
+<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
 <section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
 <div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">YouTube search needs an enabled isolated host worker.</p>
+<p id="youtubeAvailability" class="field-hint">YouTube search is turned off on the SmoothCast computer.</p>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
 <p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
-<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to acquire the selected media.</span></label>
+<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
 <ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
 <details id="libraries" class="help"><summary>Browse libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details>
-<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds media advertised by SmoothCast hosts on your network. <strong>Available now</strong> limits results to items that can currently be reached; an unavailable host may return later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are acquired and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
 </section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
-<p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
+<p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
@@ -1923,11 +1925,11 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <li data-stage="verify"><span class="stage-dot">4</span><span>Check media</span></li>
 <li data-stage="deliver"><span class="stage-dot">5</span><span>Queue / play</span></li>
 </ol>
-<div class="transfer-route" aria-label="Current file route"><span>Your device</span><span aria-hidden="true">→</span><strong id="transferHost">SmoothCast host</strong><span aria-hidden="true">→</span><strong id="transferDestination">Up Next</strong></div>
+<div class="transfer-route" aria-label="Current file route"><span>Your device</span><span aria-hidden="true">→</span><strong id="transferHost">SmoothCast computer</strong><span aria-hidden="true">→</span><strong id="transferDestination">Up Next</strong></div>
 <div class="transfer-meter"><strong id="transferStage" aria-live="polite">Ready to choose</strong><span id="transferPercent">0%</span></div>
 <progress id="uploadProgress" max="1" value="0" aria-label="File transfer bytes received"></progress>
 <div class="transfer-stats"><span id="transferBytes">0 B of 0 B</span><span id="transferRate">—</span><span id="transferEta">—</span></div>
-<div class="transfer-live" aria-labelledby="transferLiveHeading">
+<details class="tech-details" id="transferTech"><summary>Technical details</summary><div class="transfer-live" aria-labelledby="transferLiveHeading">
 <h3 id="transferLiveHeading">Live transfer monitor</h3>
 <p id="transferFileName" class="transfer-live-file">No active file</p>
 <dl class="transfer-live-grid">
@@ -1941,31 +1943,31 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </dl>
 <details open><summary>Transfer activity · newest first</summary><pre id="transferEvents" aria-label="Recent transfer activity" tabindex="0">Choose a file to begin. Events appear here as they happen.</pre></details>
 </div>
-<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
+<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p></details>
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
-<details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
+<details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
-<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here when accepted by the host.</p>
+<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
 <section id="linkAcquisition" aria-labelledby="linkHeading">
 <h3 id="linkHeading">Add a link to Up Next</h3>
-<p id="linkAvailability" class="field-hint">Checking the room host's acquisition capabilities…</p>
+<p id="linkAvailability" class="field-hint">Checking whether downloads are available…</p>
 <form id="linkForm">
 <label for="linkInput">YouTube video or magnet link</label>
 <input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required disabled>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required disabled><span>I am authorised to acquire this media.</span></label>
-<button id="linkSubmit" type="submit" disabled>Acquire and add to Up Next</button>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required disabled><span>I am authorised to download this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
 </form>
 <p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<h4>Acquisition activity</h4>
-<p class="field-hint">Downloads run on this room's host. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
-<ul id="linkJobs" aria-label="Room media acquisition activity"><li class="empty">No link acquisitions yet</li></ul>
+<h4>Downloads</h4>
+<p class="field-hint">Downloads run on the SmoothCast computer. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
+<ul id="linkJobs" aria-label="Room downloads"><li class="empty">No downloads yet</li></ul>
 </section>
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
-<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the room receiver; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
 <p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
@@ -1985,7 +1987,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to audio-only playback where the host supports processing.</p></div></details>
 </section>
-<section aria-labelledby="peerHeading"><h3 id="peerHeading">Nearby SmoothCast hosts</h3><p class="section-desc">Open another SmoothCast computer's room if you want to switch hosts. It has its own access settings; discovery does not grant permission.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
+<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room if you want to switch computers. It has its own access settings; discovery does not grant permission.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
 <section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Read-only status from reachable Cast and DLNA receivers, refreshed every 15 seconds. No commands are sent to these other receivers.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section>
 </div></details></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
@@ -2311,9 +2313,9 @@ let roomSnapshotEpoch="",roomSnapshotVersion=-1;
 // A delayed poll or SSE frame must never roll a newer same-run film state back.
 function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
 function playbackToggleCopy(state){
-  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the selected room receiver for everyone"];
-  if(state==="PAUSED")return ["Resume","Resume playback on the selected room receiver for everyone"];
-  return ["Play / pause","Toggle playback on the selected room receiver for everyone"];
+  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the TV or speaker for everyone"];
+  if(state==="PAUSED")return ["Resume","Resume playback on the TV or speaker for everyone"];
+  return ["Play / pause","Toggle playback on the TV or speaker for everyone"];
 }
 function renderPlaybackToggle(state){
   const button=document.querySelector('[data-action="play_pause"]');
@@ -2335,7 +2337,7 @@ function updateLinkControls(){
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
     search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
-    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask the host to enable an isolated YouTube worker.";
+    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask whoever runs SmoothCast to turn on YouTube downloads.";
   }
   const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
@@ -2343,7 +2345,7 @@ function updateLinkControls(){
   input.disabled=!enabled||linkPosting;consent.disabled=!enabled||linkPosting;
   button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
-  label.textContent=enabled?"Host enabled: "+sources.join(" and ")+".":linkStorageAvailable===false?"Acquisition recovery storage is busy or unavailable. Ask the host to check it and restart the room. Existing media is preserved.":"External acquisition is unavailable until the host enables an isolated media worker.";
+  label.textContent=enabled?"Turned on: "+sources.join(" and ")+".":linkStorageAvailable===false?"Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.":"Downloads from links are off until whoever runs SmoothCast turns them on.";
 }
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
@@ -2353,27 +2355,27 @@ function renderLinkJobs(state){
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
-  const stages={pending:"Waiting for a worker",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
+  const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
   const rows=[];
-  if(!jobs.length){const row=document.createElement("li");row.className="empty";row.textContent="No link acquisitions yet";rows.push(row)}
+  if(!jobs.length){const row=document.createElement("li");row.className="empty";row.textContent="No downloads yet";rows.push(row)}
   for(const job of jobs.slice().reverse()){
     const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
-    heading.textContent=job.title||"Media acquisition";
+    heading.textContent=job.title||"Download";
     detail.className="muted";detail.textContent=(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
     row.append(heading,detail);
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
     if(job.stage==="downloading"||job.stage==="resolving"){
-      const meter=document.createElement("progress");meter.setAttribute("aria-label","Reported acquisition progress");
+      const meter=document.createElement("progress");meter.setAttribute("aria-label","Download progress");
       if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
       row.append(meter);
       const stats=document.createElement("p");stats.className="field-hint";
       const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
-      stats.textContent=(received===null?"Waiting for worker measurements":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
+      stats.textContent=(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
       row.append(stats);
     }
     if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
-    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel acquisition";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
+    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
     rows.push(row);
   }
   list.replaceChildren(...rows);
@@ -2385,11 +2387,11 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
     event.preventDefault();if(linkPosting||!$("linkAuthorised").checked)return;
     const url=$("linkInput").value.trim();if(!url)return;
     if(!linkAttempt||linkAttempt.url!==url)linkAttempt={url,id:"link-"+Date.now()+"-"+Math.random().toString(36).slice(2)};
-    linkPosting=true;updateLinkControls();showError("linkFeedback","Submitting to the room host…");
+    linkPosting=true;updateLinkControls();showError("linkFeedback","Sending to the SmoothCast computer…");
     try{
       const result=await post("/api/link-jobs",{url,request_id:linkAttempt.id,authorised:true});
       $("linkInput").value="";$("linkAuthorised").checked=false;linkAttempt=null;
-      showError("linkFeedback",result.message||"Acquisition accepted");void refresh();
+      showError("linkFeedback",result.message||"Download accepted");void refresh();
     }catch(error){showError("linkFeedback",error.message)}
     finally{linkPosting=false;updateLinkControls()}
   });
@@ -2397,7 +2399,7 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No receiver selected")+" · "+(s.state_label||"State unavailable"));
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueue(s.queue);renderLinkJobs(s);
@@ -2442,7 +2444,7 @@ function renderPeers(peers,available){
   const entries=available&&Array.isArray(peers)?peers:[];
   const focused=document.activeElement;
   if(!entries.length){
-    const message=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";
+    const message=available?"No other SmoothCast computers found":"Peer discovery is unavailable on this network";
     if(list.firstElementChild?.className==="empty"&&list.firstElementChild.textContent===message)return;
     const empty=document.createElement("li");
     empty.className="empty";
@@ -2530,7 +2532,7 @@ window.addEventListener("keydown",event=>{
   if(shortcut.action==="help"){showShortcutHelp();return;}
   const command=shortcutCommand(shortcut.action,shortcutState,Number($("seek").value),Number($("volume").value));
   if(!command||stalePage||!csrf||busy){
-    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and receiver are ready.");
+    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and the TV or speaker are ready.");
     return;
   }
   if(["play_pause","next","previous"].includes(command.action)){
@@ -2571,7 +2573,7 @@ async function act(action,value,extra={}){
     if(value!==undefined)body.value=value;
     const result=await post("/api/action",body);
     showError("errorDash",result.message||"Command accepted");
-    if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted by the host; awaiting room refresh.";
+    if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted; updating the list…";
   }catch(err){showError("errorDash",err.message);if(action.startsWith("queue_"))$("queueFeedback").textContent="Queue action was not applied: "+err.message;}
   finally{
     busy=false;
@@ -2729,20 +2731,20 @@ async function uploadRequest(method,path,body,headers={}){
     monitorText("transferResponse","HTTP "+response.status);
     let data;
     try{data=await response.json()}catch(_){
-      throw Object.assign(Error("The SmoothCast host returned an unreadable upload response."),{status:response.status, retryAfter:1});
+      throw Object.assign(Error("The SmoothCast computer sent an unreadable reply."),{status:response.status, retryAfter:1});
     }
     if(data?.code==="client_reload_required")showUpdateNotice();
     if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
     const validReceipt=validUploadProgress(data.received,data.size);
     if(method==="PUT"&&!validReceipt)
-      throw Error("Host returned an invalid upload receipt. Resume to check the saved position.");
+      throw Error("The SmoothCast computer sent an unexpected reply. Resume to check where the upload got to.");
     if(validReceipt)monitorText("transferAck",fileUnits(data.received));
     if(method==="PUT")monitorText("transferInFlight","Chunk acknowledged by host");
     else transferEvent(operation+" · HTTP "+response.status);
     monitorText("transferOperation","Host response received");
     return data;
   }catch(error){
-    if(timedOut)error=Object.assign(Error("Host did not respond within 60 seconds"),{status:408});
+    if(timedOut)error=Object.assign(Error("The SmoothCast computer did not respond within 60 seconds"),{status:408});
     const message=error?.message||"Unknown upload failure";
     monitorText("transferOperation","Request interrupted");
     monitorText("transferResponse",(error?.status?"HTTP "+error.status+": ":"")+message);
@@ -2877,8 +2879,8 @@ function transferView(phase,received=0,total=0,note="",queueOnly=$("uploadQueue"
   $("uploadProgress").value=valid?received:0;
   $("transferPercent").textContent=valid?pct+"%":"—";
   $("transferBytes").textContent=valid?fileUnits(received)+" of "+fileUnits(total):"No file selected";
-  $("transferDestination").textContent=queueOnly?"Up Next":"Room receiver (pending)";
-  const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to SmoothCast host",verify:"Checking received media",deliver:"Submitting to shared room"};
+  $("transferDestination").textContent=queueOnly?"Up Next":"TV or speaker (pending)";
+  const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to the SmoothCast computer",verify:"Checking received media",deliver:"Submitting to shared room"};
   $("transferStage").textContent=names[stage]+(note?" · "+note:"");
   if(stage==="transfer"&&valid){
     const now=performance.now();
@@ -2979,7 +2981,7 @@ function updateUploadControls(){
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
   const destination=$("transferDestination");
-  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
+  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"TV or speaker (pending)";
   const pause=$("pauseUpload");if(pause){pause.hidden=!uploading||!pendingUpload;pause.disabled=cancelUpload;}
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
@@ -3079,7 +3081,7 @@ $("uploadButton").addEventListener("click",async()=>{
         const end=Math.min(state.received+chunkSize,file.size);
         state=await sendChunk(path,file,state.received,end);
         if(!validUploadProgress(state.received,file.size)||state.received!==end)
-          throw Error("Host returned an unexpected upload offset. Resume to check the saved position.");
+          throw Error("The SmoothCast computer reported an unexpected position. Resume to check where the upload got to.");
         pendingUpload.received=state.received;
         transferView("transfer",state.received,file.size,"",queueOnly);
         if(state.ready_to_cast&&!casting){
@@ -3107,17 +3109,17 @@ $("uploadButton").addEventListener("click",async()=>{
       $("pauseUpload").hidden=true;
       await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       monitorText("transferOperation","Transfer complete");
-      monitorText("transferDelivery",queueOnly?"Added to Up Next":"Playback requested — receiver not confirmed");
+      monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
       monitorText("transferAck",fileUnits(file.size));
       transferEvent(queueOnly?"Host accepted queue addition":"Host accepted playback request; receiver confirmation is separate");
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted",queueOnly);
       for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
-      $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Playback requested — awaiting receiver";
+      $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Play requested — waiting for the TV or speaker";
       $("transferEta").textContent="Complete";
       await clearPendingUpload();
       batchIndex++;
       batchAdded++;
-      showError("uploadStatus",queueOnly?"Added to shared Up Next.":"Playback requested; receiver confirmation is separate.");
+      showError("uploadStatus",queueOnly?"Added to shared Up Next.":"Play requested; waiting for the TV or speaker to start.");
     }
     if(batchFiles&&batchIndex>=batchFiles.length){
       const count=batchAdded,total=batchTotal;
@@ -3144,9 +3146,9 @@ $("uploadButton").addEventListener("click",async()=>{
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
     }else if(pauseRequested){
       monitorText("transferOperation","Paused");
-      transferEvent("Paused; resume from the last host-confirmed offset");
+      transferEvent("Paused; Resume carries on from the last saved point");
       if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available",pendingUpload.queueOnly);
-      showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
+      showError("uploadStatus","Paused safely. Select Resume to carry on from where it stopped.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
     }else {
@@ -3410,13 +3412,13 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
-          if(!linkCapabilities.youtube){status.textContent="The host's YouTube worker is unavailable.";return}
-          if(!consent.checked){status.textContent="Confirm that you are authorised to acquire this media.";consent.focus();return}
+          if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";
           try{
             const receipt=await post("/api/link-jobs",{url:"https://www.youtube.com/watch?v="+result.id,request_id,authorised:true});
-            add.textContent="Acquisition requested";
-            if(current===generation)status.textContent=receipt.message||"Acquisition accepted; follow its progress below.";
+            add.textContent="Download requested";
+            if(current===generation)status.textContent=receipt.message||"Download accepted; follow its progress below.";
             void refresh();
           }catch(err){
             if(current===generation)status.textContent=err.message;
@@ -3425,7 +3427,7 @@ function syncMediaSession(s){
         });
         actions.append(add);row.append(info,actions);out.append(row);
       }
-      status.textContent=out.children.length?out.children.length+" YouTube results. Select a video to acquire.":"No YouTube videos found.";
+      status.textContent=out.children.length?out.children.length+" YouTube results. Choose a video to download.":"No YouTube videos found.";
     }catch(err){if(current===generation)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
