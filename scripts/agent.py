@@ -76,6 +76,21 @@ def claim_marker(agent: str, files: list[str], ttl: int, beat: float | None = No
             f"files={','.join(sorted(files))} -->")
 
 
+def safe_claim_ttl(raw: str | None) -> int:
+    """Malformed GitHub claim metadata never crashes the whole agent fleet.
+
+    A malformed TTL gets the maximum supported lease, conservatively
+    preventing duplicate work until that bounded lease naturally expires.
+    """
+    if raw is None:
+        return 90
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        return TTL_MAX
+    return min(max(value, TTL_MIN), TTL_MAX)
+
+
 def parse_events(comments: list[dict]) -> list[dict]:
     """Claim/release events, structured and legacy, oldest first."""
     events = []
@@ -93,7 +108,7 @@ def parse_events(comments: list[dict]) -> list[dict]:
             at = max(created, updated)
             events.append({"kind": marker.group(1), "issue": issue, "agent": fields.get("agent", "?"),
                            "at": at,
-                           "ttl": min(max(int(fields.get("ttl", 90)), TTL_MIN), TTL_MAX),
+                           "ttl": safe_claim_ttl(fields.get("ttl")),
                            "files": {f for f in fields.get("files", "").split(",") if f}, "id": c.get("id", 0)})
         elif re.match(r"\s*(?:\*\*)?claim\b", body, re.IGNORECASE) and "releas" not in body[:200].lower():
             events.append({"kind": "claim", "issue": issue, "agent": "legacy", "at": created,
