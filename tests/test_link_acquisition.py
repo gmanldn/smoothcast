@@ -457,8 +457,10 @@ def test_queue_delivery_intent_is_on_disk_before_dispatch(tmp_path):
     try:
         ident = jobs.submit("secret-session", YOUTUBE, "secret-request")
         _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
-        assert receipts == [{"id": ident, "kind": "youtube",
-                             "identity": "abcdefghijk", "stage": "queueing"}]
+        import hashlib
+        assert receipts == [{"id": ident, "kind": "youtube", "identity": "abcdefghijk",
+                             "stage": "queueing", "size": 8,
+                             "sha256": hashlib.sha256(b"testdata").hexdigest()}]
         saved = (tmp_path / "acquisition-journal.json").read_text()
         assert json.loads(saved)["jobs"][0]["stage"] == "ready"
         assert "secret" not in saved and "sample.mp4" not in saved
@@ -766,3 +768,73 @@ async function post(path,body){
 """
     subprocess.run(["node", "-"], input=harness + script + scenario,
                    check=True, text=True, timeout=10)
+
+
+def _ready_job(tmp_path, deliveries, provider=None):
+    provider = provider or FakeProvider()
+    provider.resume.set()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    first = jobs.submit("owner", YOUTUBE, "request-1")
+    _wait_for(lambda: jobs.snapshot()[0]["stage"] == "ready")
+    return jobs, provider, first
+
+
+def test_new_request_for_acquired_media_requeues_without_downloading_again(tmp_path):
+    deliveries = []
+    jobs, provider, first = _ready_job(tmp_path, deliveries)
+    try:
+        second = jobs.submit("owner", YOUTUBE, "request-2")
+        assert second != first
+        _wait_for(lambda: any(r["id"] == second and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 1 and len(deliveries) == 2
+        assert deliveries[0] == deliveries[1] and deliveries[1].read_bytes() == b"testdata"
+        # Replaying either request id is idempotent: no third delivery.
+        assert jobs.submit("owner", YOUTUBE, "request-2") == second
+        assert len(deliveries) == 2
+        saved = (tmp_path / "acquisition-journal.json").read_text()
+        assert "sample.mp4" not in saved and str(tmp_path) not in saved
+    finally:
+        jobs.close()
+
+
+def test_tampered_retained_media_is_never_requeued_and_is_downloaded_afresh(tmp_path):
+    deliveries = []
+    jobs, provider, first = _ready_job(tmp_path, deliveries)
+    try:
+        (tmp_path / first / "sample.mp4").write_bytes(b"evildata")  # same size, other bytes
+        second = jobs.submit("owner", YOUTUBE, "request-2")
+        _wait_for(lambda: any(r["id"] == second and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 2  # verification failed: acquired again
+        assert deliveries[-1].parent.name == second
+        assert deliveries[-1].read_bytes() == b"testdata"
+    finally:
+        jobs.close()
+
+
+def test_retained_media_survives_a_room_restart_and_is_reused_by_content(tmp_path):
+    deliveries = []
+    jobs, provider, first = _ready_job(tmp_path, deliveries)
+    jobs.close()
+    provider2 = FakeProvider()
+    provider2.resume.set()
+    restarted = acquisition.LinkJobs(tmp_path, provider2,
+                                     lambda owner, path: deliveries.append(path), lambda owner: True)
+    try:
+        second = restarted.submit("owner", YOUTUBE, "request-9")
+        _wait_for(lambda: any(r["id"] == second and r["stage"] == "ready" for r in restarted.snapshot()))
+        assert provider2.calls == [] and len(deliveries) == 2
+    finally:
+        restarted.close()
+
+
+def test_in_flight_source_still_coalesces_instead_of_reusing(tmp_path):
+    provider = FakeProvider()
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: None, lambda owner: True)
+    try:
+        first = jobs.submit("owner", YOUTUBE, "request-1")
+        assert provider.started.wait(2)
+        assert jobs.submit("owner", YOUTUBE, "request-2") == first
+    finally:
+        provider.resume.set()
+        jobs.close()
