@@ -177,6 +177,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
             "For plain-text subtitles only; applies on the next cast or encoder restart. "
             "ASS/SSA keep their authored styling.",
         )
+        self._build_subtitle_search(captions)
 
         general = self._page("Appearance", "preferences-desktop-theme-symbolic")
         visual = self._group(
@@ -216,22 +217,20 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
                 row.set_selected(preference_choices.selected_index(key, cfg.get(key)))
             for key, row in self._switches.items():
                 row.set_active(bool(cfg.get(key, False)))
+            media = self.owner.media
+            picture_path = str(media.path) if media is not None else None
+            picture = picture_adjustments.for_path(cfg, picture_path)
             for key, spin in self._picture_spins.items():
-                spin.set_value(picture_adjustments.validated(
-                    key, cfg.get(key, picture_adjustments.DEFAULTS[key])))
+                spin.set_value(picture[key])
             self.gain.set_value(float(cfg.get("audio_gain", 6.0)))
             # Only PATH/file checks here: GTK must not launch or probe engines.
             if "portal_link_youtube" in self._switches and "portal_link_magnet" in self._switches:
-                import link_acquisition
-                provider = link_acquisition.CommandProvider(
-                    kind for kind in ("youtube", "magnet") if cfg.get("portal_link_" + kind) is True)
-                for kind, label in (("youtube", "Authorised single videos only."),
-                                    ("magnet", "Authorised public torrents only.")):
-                    self._switches["portal_link_" + kind].set_subtitle(
-                        label + " " + provider.readiness_text(kind) +
-                        " Changes apply after a room restart.")
+                import link_diagnostics
+                link_diagnostics.describe_switches(self.owner, cfg, self._switches)
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
-            media = self.owner.media
+            refresh_search = getattr(self, "_refresh_subtitle_search_rows", None)
+            if callable(refresh_search):
+                refresh_search()
             audio_tracks = media.audio_streams if media is not None else []
             audio_labels = ["Auto (file default)"] + [track.label for track in audio_tracks]
             if audio_labels != self._audio_labels:

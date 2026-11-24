@@ -71,7 +71,11 @@ const document={
   createElement:tag=>new FakeNode(tag)
 };
 const window={};let csrf="session-fixture";
-const setInterval=()=>{};
+const setInterval=()=>{};let timerId=0;const timers=new Map();
+const setTimeout=(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId};
+const clearTimeout=id=>timers.delete(id);
+class AbortController{constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}}
+function expire(){const entry=[...timers].find(([,t])=>t.ms===8000);assert.ok(entry);timers.delete(entry[0]);entry[1].fn()}
 const requests=[];
 let fetch=async(url,options)=>{
   requests.push({url,body:JSON.parse(options.body)});
@@ -102,12 +106,12 @@ assert.equal(document.activeElement,pick);
 window.scRenderScreens({screens:[one],queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"resume","handler must use the latest state");
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],
   queue:[{id:"track",title:"First"}]});
 toggle.listeners.click();
 assert.equal(requests.at(-1).body.action,"pause","handler must not capture a stale state");
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 window.scRenderScreens({screens:[{...one,state:"playing"}],queue:[]});
 assert.equal(list.children[0],row,"queue changes must retain the screen row");
 assert.equal(pick.value,"");
@@ -136,7 +140,7 @@ const select=buttons[0],livePlay=buttons[1],liveToggle=buttons[2];
 select.value="track";select.listeners.change();
 const pending=[],before=requests.length;
 fetch=(url,options)=>new Promise(resolve=>{
-  requests.push({url,body:JSON.parse(options.body)});
+  requests.push({url,body:JSON.parse(options.body),signal:options.signal});
   pending.push(resolve);
 });
 liveToggle.listeners.click();livePlay.listeners.click();liveToggle.listeners.click();
@@ -152,25 +156,134 @@ otherToggle.listeners.click();
 assert.equal(requests.length,before+2,"another screen must not be blocked");
 assert.equal(otherRow.attrs["aria-busy"],"true");
 pending[0]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(liveRow.attrs["aria-busy"],"false");
 assert.equal(livePlay.attrs["aria-disabled"],"false");
 assert.equal(otherRow.attrs["aria-busy"],"true","other screen still waiting");
 otherToggle.listeners.click();
 assert.equal(requests.length,before+2,"duplicate on second screen suppressed");
 pending[1]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(otherRow.attrs["aria-busy"],"false");
 liveToggle.listeners.click();
 assert.equal(requests.length,before+3);
 csrf="replacement";
 elements.screensMsg.textContent="New room";
 pending[2]({ok:true,json:async()=>({})});
-for(let i=0;i<5;i++)await Promise.resolve();
+for(let i=0;i<16;i++)await Promise.resolve();
 assert.equal(elements.screensMsg.textContent,"New room");
+assert.equal(timers.size,0,"completed commands must clear deadline");
+liveToggle.listeners.click();
+const timed=requests.length-1;
+assert.equal(liveRow.attrs["aria-busy"],"true");
+expire();
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(requests[timed].signal.aborted,true);
+assert.equal(liveRow.attrs["aria-busy"],"false");
+assert.match(elements.screensMsg.textContent,/No confirmation from Kitchen/);
+assert.equal(requests.length,timed+1,"never replay a timed-out mutation");
+liveToggle.listeners.click();
+const newer=requests.length-1;
+pending.at(-2)({ok:true,json:async()=>({})});
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(liveRow.attrs["aria-busy"],"true","late reply cannot unlock newer command");
+assert.match(elements.screensMsg.textContent,/Sending command to Kitchen/);
+pending.at(-1)({ok:true,json:()=>new Promise(()=>{})});
+for(let i=0;i<16;i++)await Promise.resolve();
+expire();
+for(let i=0;i<16;i++)await Promise.resolve();
+assert.equal(requests[newer].signal.aborted,true,"body stall bounded too");
+assert.equal(liveRow.attrs["aria-busy"],"false");
+window.scRenderScreens({screens:[{...one,ready:false}],queue:[{id:"track",title:"First"}]});
+assert.equal(liveToggle.attrs["aria-disabled"],"true","unavailable remains accessible as disabled");
+assert.equal(timers.size,0);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run(
         ["node", "-"], input=harness + script + scenario,
         check=True, text=True, timeout=12,
     )
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_screen_start_failure_is_retryable_and_shortcuts_respect_input():
+    """Registration failure cannot strand the screen or start polling prematurely."""
+    html = portal_screen_page.screen_page().decode()
+    script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+    harness = r"""
+const nodes=new Map();
+function node(id){
+  if(!nodes.has(id))nodes.set(id,{hidden:true,disabled:false,value:"",textContent:"",listeners:{},
+    classList:{add(){},remove(){},toggle(){}},style:{},addEventListener(k,fn){this.listeners[k]=fn},
+    canPlayType(){return "maybe"}});
+  return nodes.get(id);
+}
+let fullscreens=0,beats=0;
+const document={getElementById:node,createElement:node,listeners:{},hidden:false,
+  addEventListener(k,fn){this.listeners[k]=fn},
+  documentElement:{requestFullscreen(){fullscreens++;return Promise.resolve()}}};
+const location={host:"127.0.0.1"};
+const navigator={},window={addEventListener(){}};
+const localStorage={getItem(){return ""},setItem(){}},sessionStorage=localStorage;
+const setInterval=()=>{beats++},timers=new Map();let timerId=0;
+const setTimeout=(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId};
+const clearTimeout=id=>timers.delete(id);
+function expire(ms){const match=[...timers].find(([,t])=>t.ms===ms);if(!match)throw Error("No timer "+ms);timers.delete(match[0]);match[1].fn()}
+class AbortController {constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}}
+const requests=[],pending=[];
+const fetch=(url,options)=>new Promise((resolve,reject)=>{
+  requests.push({url,options});pending.push({resolve,reject});
+});
+function check(ok,msg){if(!ok)throw Error(msg)}
+const response=(status,data)=>({ok:status<400,status,json:async()=>data});
+const event={preventDefault(){}};
+"""
+    scenario = r"""
+(async()=>{
+  node("name").value="Office";node("pin").value="123456";
+  const login1=login(event),login2=login(event);
+  check(requests.length===1,"duplicate join");check(node("loginSubmit").disabled,"join busy");
+  pending[0].resolve(response(200,{csrf:"test"}));await Promise.all([login1,login2]);
+  check(!node("startView").hidden,"start visible");
+  const start1=begin(),start2=begin();
+  check(requests.length===2,"duplicate start");check(node("startButton").disabled,"start busy");
+  check(!started&&beats===0,"premature start");
+  pending[1].reject(Error("network"));await Promise.all([start1,start2]);
+  check(!started&&!node("startView").hidden&&node("slate").hidden,"failed start must remain retryable");
+  check(!node("startButton").disabled&&node("startError").textContent.includes("try again"),"retry guidance");
+  const retry=begin();pending[2].resolve(response(401,{}));await retry;
+  check(!node("loginView").hidden&&!started&&beats===0,"expired registration needs login");
+  const login3=login(event);pending[3].resolve(response(200,{csrf:"new"}));await login3;
+  const success=begin();pending[4].resolve(response(200,{screen:{id:"s",name:"Office",seq:0,play_seq:0}}));await success;
+  check(started&&!node("slate").hidden&&beats===1,"successful registration starts heartbeat");
+  check(requests.length===6&&requests[5].url.includes("/poll?"),"poll only after success");
+  const key=(target,extra={})=>document.listeners.keydown({key:"f",target,preventDefault(){},...extra});
+  key({tagName:"INPUT"});key({tagName:"DIV",isContentEditable:true});key({tagName:"DIV"},{ctrlKey:true});key({tagName:"DIV"},{repeat:true});
+  check(fullscreens===0,"typing/modified keys must not fullscreen");
+  key({tagName:"DIV"});check(fullscreens===1,"fullscreen shortcut remains available");
+  check(timers.size>0,"poll deadline exists");
+  expire(POLL_TIMEOUT);
+  for(let i=0;i<12;i++)await Promise.resolve();
+  check(requests[5].options.signal.aborted,"stalled poll aborted");
+  check(node("slateText").textContent.includes("Reconnecting"),"first failure shown");
+  expire(1000);
+  for(let i=0;i<12;i++)await Promise.resolve();
+  check(requests.length===7,"poll retried after backoff");
+  pending[6].resolve(response(200,{orders:[],queue_empty:true}));
+  for(let i=0;i<20;i++)await Promise.resolve();
+  check(node("slateText").textContent===READY,"recovery shown");
+  check(requests.length===8,"next poll started");
+  const slow=requestJSON("/slow",{method:"GET"});
+  let timedOut=false;const observed=slow.catch(err=>{timedOut=err.message.includes("did not respond")});
+  pending[8].resolve({ok:true,status:200,json:()=>new Promise(()=>{})});
+  expire(REQUEST_TIMEOUT);await observed;
+  check(timedOut&&requests[8].options.signal.aborted,"deadline includes response body");
+  const noReply=requestJSON("/no-reply",{method:"GET"});
+  const rejected=noReply.catch(err=>err.message);
+  expire(REQUEST_TIMEOUT);
+  check((await rejected).includes("did not respond"),"deadline rejects even if transport ignores abort");
+})()
+.catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   check=True, text=True, timeout=12)

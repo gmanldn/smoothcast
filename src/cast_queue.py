@@ -126,6 +126,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
     def set_selection(self, path: str) -> None:
         if path not in self.queue:
             self.queue.append(path)
+            record = getattr(self, "_portal_record_contribution", None)
+            if callable(record):
+                record(path, "Host", "local")
             self._rebuild_queue()
         index = self.queue.index(path)
         self.selected_index = index
@@ -246,6 +249,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         for path in paths:
             if path not in self.queue:
                 self.queue.append(path)
+                record = getattr(self, "_portal_record_contribution", None)
+                if callable(record):
+                    record(path, "Host", "local")
                 added += 1
                 fingerprint.KEYS.get(path)         # warm the content key in the background
         if not added:
@@ -286,6 +292,9 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
 
 
     def _rebuild_queue(self) -> None:
+        prune = getattr(self, "_portal_prune_queue_provenance", None)
+        if callable(prune):
+            prune()
         # GTK emits row-selected(None) while clearing; preserve the source
         # row index so a rebuild does not change the file selected for casting.
         selected = (
@@ -813,6 +822,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         idle = (self.device_state in {"OFFLINE", "IDLE", "UNKNOWN"}
                 or self._join_slate_showing(info))  # our own idle slate is not user playback (#420)
         if idle:
+            self._external_runtime = None
             if self.external:
                 self.external = False
             # An idle receiver must not leave an old URL cast marked as owned.
@@ -841,6 +851,7 @@ class QueueMixin(MusicImportMixin, QueuePrewarmMixin, QueueRowMixin):
         # Without a matching saved stream the receiver is playing other media.
         self.external = True
         self.tracker.clear()
+        self._external_runtime = playback_state.external_runtime(info)
 
 
     def _device(self) -> str:

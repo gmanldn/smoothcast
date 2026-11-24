@@ -25,6 +25,7 @@ import audio_delay
 import bookmarks
 import cache_policy
 import subtitle_delay
+import subtitle_search
 import accent
 import density
 import subtitle_style
@@ -48,6 +49,7 @@ _OPTIONS = {
 _LIMITED_MAPS = frozenset({
     "positions", "audio_track_by_file", "subtitle_track_by_file",
     "device_last_used", "subtitle_delay_by_file", "audio_delay_by_file",
+    "picture_by_file",
 })
 _MAX_PATH = 4096
 _MAX_ITEMS = 512
@@ -92,6 +94,8 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
             cfg[key] = bookmarks.clean(value)
         elif key == "library_folders":
             cfg[key] = library_folders.to_config(library_folders.load({key: value}))
+        elif key == "subtitle_search_folders":
+            cfg[key] = subtitle_search.clean_folders(value)
         elif key in {"recents", "favourites", "cast_targets", "device_favourites"}:
             if isinstance(value, list):
                 limit = 8 if key == "recents" else (
@@ -121,6 +125,15 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
                         if (type(selection) is int and selection != 0
                                 and -audio_delay.LIMIT_MS <= selection <= audio_delay.LIMIT_MS):
                             clean[path] = selection
+                    elif key == "picture_by_file":
+                        if isinstance(selection, dict):
+                            preset = {
+                                name: picture_adjustments.validated(name, item)
+                                for name, item in selection.items()
+                                if name in picture_adjustments.DEFAULTS
+                            }
+                            if preset:
+                                clean[path] = preset
                     elif type(selection) is int and -1 <= selection <= 1024:
                         clean[path] = selection
                 cfg[key] = clean

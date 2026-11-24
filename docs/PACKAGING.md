@@ -51,6 +51,11 @@ are ignored by Git.
   Packaging verification checks these, CATT `--help`, bundle icon hash, and
   importable GTK4/libadwaita **without creating a window or touching a TV**.
   The build script automatically fails on a broken artefact.
+- Windows media-tool layout (#530): a frozen Windows build runs only
+  `<folder with SmoothCast.exe>/ffmpeg/{ffmpeg,ffprobe,ffplay}.exe`, resolved by
+  `src/media_tools.py`, and never searches PATH. A missing or relocated tool
+  fails with `ffmpeg.bundled_missing`. Source checkouts and the Linux/macOS
+  bundles keep using PATH. Staging those files is #529's job.
 - FFmpeg, ffprobe and ffplay are **still native external executables**,
   not redistributed in the bundle. Install compatible versions on the host
   and ensure they are on PATH. This avoids silently changing FFmpeg's
@@ -70,6 +75,20 @@ notarisation, Windows signing/installer generation and hardware qualification
 remain separate release gates. See GitHub issue #192.
 
 Reference: https://pyinstaller.org/en/stable/spec-files.html
+
+## Windows payload manifest (issue #528)
+
+After the Windows build, `scripts/ci/verify_windows_payload.py --dist dist/SmoothCast
+--write-manifest` writes `payload-manifest.json` (schema, `windows-x64`, release
+version, and each file's forward-slash path, size and SHA-256, in sorted order, so
+the same tree gives the same bytes) and verifies it. It reads files and PE headers
+only and never runs the application. It reports, by file name: changed, missing or
+unlisted files; links and case-duplicate paths; any binary that is not x64; a GUI
+`SmoothCast.exe` or console `SmoothCastCLI.exe` with the wrong subsystem; imported
+DLLs that are neither Windows system files nor in the payload; and launch files
+that point at the build machine (MSYS2). The CI step is advisory until the first
+native run confirms the system-DLL allow-list in `scripts/ci/windows_payload.py`.
+The tools staged by #529 will be covered by the same manifest.
 
 ## Unsigned macOS disk image (issue #556)
 

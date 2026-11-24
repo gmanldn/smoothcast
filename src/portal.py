@@ -10,6 +10,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass
 from functools import lru_cache, wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import guest_messages
 import hashlib
 import errno
 import hmac
@@ -31,6 +32,7 @@ import mesh_files
 import library_replication
 import portal_commands
 import command_trace
+import demo_mode
 import design_tokens
 import error_log
 import failure_boundary
@@ -166,6 +168,8 @@ def _page() -> bytes:
     markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
                            + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
+            .replace("__SC_VERSION__", version.label())
+            .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
             .replace("__SC_ACCENTS__", json.dumps(json.dumps(design_tokens.web_accents(), separators=(",", ":"))))
@@ -408,6 +412,21 @@ class _PortalHTTPServer(ThreadingHTTPServer):
         with self._lock:
             self._expire_sessions(self.clock())
             return key in self._sessions
+
+    def session_display_name(self, key: object) -> str | None:
+        """Resolve a contributor from an internal authenticated session key."""
+        if not isinstance(key, str) or len(key) != 64:
+            return None
+        with self._lock:
+            now = self.clock()
+            self._expire_sessions(now)
+            session = self._sessions.get(key)
+            if session is None:
+                return None
+            try:
+                return self.room.touch(session.participant_id, now=now).name
+            except portal_room.RoomError:
+                return None
 
     def session_csrf(self, token: str | None) -> str | None:
         if not token:
@@ -668,9 +687,9 @@ class _Handler(BaseHTTPRequestHandler):
         """Keep expected upload failures actionable and avoid disclosing paths."""
         self.close_connection = True
         if isinstance(exc, TimeoutError):
-            return self._error(408, "Upload timed out. Resume from the saved position.")
+            return self._error(408, guest_messages.UPLOAD_TIMED_OUT)
         if exc.errno in {errno.ENOSPC, getattr(errno, "EDQUOT", -1)}:
-            return self._error(507, "Not enough space on the SmoothCast host.",
+            return self._error(507, guest_messages.NO_SPACE,
                                code="upload.disk_full")
         error_log.log(f"portal upload {stage} storage error: {type(exc).__name__}, errno={exc.errno}")
         return self._error(503, f"Host could not {stage} the upload. Retry when storage is available.")
@@ -710,10 +729,10 @@ class _Handler(BaseHTTPRequestHandler):
             f'{html.escape(str(n.get("name", "SmoothCast")))}</a></li>'
             for n in nodes if isinstance(n, dict) and str(n.get("url", "")).startswith("http://"))
         mine = html.escape(self.server.hostname_label or "This computer")
-        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,"
-                "initial-scale=1'><title>SmoothCast computers</title><h1>SmoothCast in this house</h1>"
-                "<p>Open any computer to join the room.</p><ul><li><a href='/'>" + mine
-                + " (this one)</a></li>" + rows + "</ul>")
+        body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
+                .replace("__MINE__", mine).replace("__ROWS__", rows)
+                .replace("__SC_VERSION__", version.label())
+                .replace("<!--SC_DEMO-->", _demo_badge()))
         return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
 
     def _mesh_file(self, path: str, *, head: bool) -> None:
@@ -794,6 +813,17 @@ class _Handler(BaseHTTPRequestHandler):
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
         state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
+        provider = getattr(self.server, "link_readiness_provider", None)
+        if provider is not None:
+            # Only fixed prerequisite flags, never executable paths or environment values.
+            state["link_owner_enabled"] = {kind: kind in provider.kinds for kind in ("youtube", "magnet")}
+            # Fixed prerequisite flags, not paths or environment values.
+            state["link_local_prerequisites"] = {
+                kind: {"engine": bool(provider.tools.get(kind)),
+                       "probe": bool(provider.probe),
+                       "isolation": bool(provider.launcher)}
+                for kind in ("youtube", "magnet")
+            }
         state["link_jobs"] = jobs.snapshot(self.server._session_key(self._cookie_token() or "")) if jobs is not None else []
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         state["mesh_link_activity"] = (activity.snapshot() if activity is not None else
@@ -1076,7 +1106,7 @@ class _Handler(BaseHTTPRequestHandler):
             if self._throttle("upload"):
                 return
             if self.server.uploads is None:
-                return self._error(503, "Upload storage is unavailable")
+                return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
             try:
                 return self._send(200, {"ok": True, **self.server.uploads.status(
                     self._cookie_token() or "", upload_id)})
@@ -1088,7 +1118,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._safe_origin(required=True):
-            return self._error(403, "Request origin is not allowed")
+            return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
                      "/api/search/youtube"}
@@ -1104,10 +1134,10 @@ class _Handler(BaseHTTPRequestHandler):
             return  # parses its own body; must run before the generic parse
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             try:
                 if self.server.uploads is None:
-                    return self._error(503, "Upload storage is unavailable")
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 token = self._cookie_token() or ""
                 created = self.server.uploads.create(
@@ -1116,7 +1146,7 @@ class _Handler(BaseHTTPRequestHandler):
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
-                    return self._error(403, "Room access was revoked")
+                    return self._error(403, guest_messages.ACCESS_REMOVED)
             except PortalRequestError as exc:
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
@@ -1127,10 +1157,10 @@ class _Handler(BaseHTTPRequestHandler):
         upload_id = self._upload_complete_route(path)
         if upload_id:
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             try:
                 if self.server.uploads is None:
-                    return self._error(503, "Upload storage is unavailable")
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 try:
                     default_queue = self.server.uploads.is_queue_only(
@@ -1146,12 +1176,13 @@ class _Handler(BaseHTTPRequestHandler):
                     if dispatch:
                         self.server.uploads.finish_dispatch(token, upload_id, accepted=False)
                     self.server.uploads.revoke_owner_keys({key})
-                    return self._error(403, "Room access was revoked")
+                    return self._error(403, guest_messages.ACCESS_REMOVED)
                 if dispatch:
                     try:
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
                             "path": str(media_path), "name": name,
                             "upload_id": upload_id, "early": False,
+                            "_portal_source": "upload",
                             "client": self.client_address[0],
                             "_portal_auth_key": key,
                         })
@@ -1174,7 +1205,7 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError as exc:
                 return self._upload_storage_error(exc, "finalise")
         if not self._safe_origin(required=True):
-            return self._error(403, "Request origin is not allowed")
+            return self._error(403, guest_messages.WRONG_ORIGIN)
         try:
             body = self._body()
         except PortalRequestError as exc:
@@ -1207,10 +1238,10 @@ class _Handler(BaseHTTPRequestHandler):
             }, cookie=cookie)
         if path == "/api/search/youtube":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
             if jobs is None:
-                return self._error(503, "Ask the host to enable an isolated YouTube worker.")
+                return self._error(503, guest_messages.YOUTUBE_OFF)
             owner = self.server._session_key(self._cookie_token() or "")
             try:
                 return self._send(200, {"results": jobs.search_youtube(owner, body.get("q"))})
@@ -1218,25 +1249,25 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._error(exc.status, exc.message)
         if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
             if jobs is None:
-                return self._error(503, "The host has not enabled external media acquisition")
+                return self._error(503, guest_messages.LINK_DOWNLOADS_OFF)
             owner = self.server._session_key(self._cookie_token() or "")
             try:
                 if path.endswith("/cancel"):
                     jobs.cancel(owner, body.get("id"))
                     return self._send(202, {"ok": True, "message": "Cancellation requested"})
                 if body.get("authorised") is not True:
-                    return self._error(400, "Confirm that you are authorised to acquire this media")
+                    return self._error(400, "Confirm that you are authorised to download this media")
                 job_id = jobs.submit(owner, body.get("url"), body.get("request_id"))
                 return self._send(202, {"ok": True, "id": job_id,
-                                        "message": "Acquisition accepted; Up Next updates when media is ready"})
+                                        "message": "Download accepted; Up Next updates when the media is ready"})
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
         if path == "/api/profile":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             name = body.get("name")
             if not isinstance(name, str):
                 return self._error(400, "Your name must be text")
@@ -1251,7 +1282,7 @@ class _Handler(BaseHTTPRequestHandler):
                                     "participant": participant.public(self.server.clock())})
         if path == "/api/action":
             if not self._authenticated(csrf=True):
-                return self._error(403, "Session expired or request token invalid")
+                return self._error(403, guest_messages.SESSION_ENDED)
             action = body.get("action")
             envelope: portal_commands.MutationEnvelope | None = None
             participant_id: str | None = None
@@ -1333,7 +1364,7 @@ class _Handler(BaseHTTPRequestHandler):
                         if isinstance(value, bool) or not isinstance(value, (float, int)):
                             return self._error(400, "Seek position must be a number")
                         if not math.isfinite(float(value)) or not 0 <= float(value) <= 24 * 60 * 60:
-                            return self._error(400, "Seek position is out of range")
+                            return self._error(400, guest_messages.SEEK_OUT_OF_RANGE)
                         body["value"] = float(value)
                     if action == "volume":
                         value = body.get("value")
@@ -1414,7 +1445,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self._path().startswith("/api/uploads") and not self._client_compatible():
             return
         if not self._authenticated(csrf=True):
-            return self._error(403, "Session expired or request token invalid")
+            return self._error(403, guest_messages.SESSION_ENDED)
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
@@ -1424,7 +1455,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(400, "Chunked transfer encoding is not supported")
         raw_length = self.headers.get("Content-Length")
         if self.server.uploads is None:
-            return self._error(503, "Upload storage is unavailable")
+            return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         try:
             length = int(raw_length or "")
         except ValueError:
@@ -1458,14 +1489,14 @@ class _Handler(BaseHTTPRequestHandler):
         if portal_screens_http.route(self, "DELETE", self._path()):
             return
         if not self._authenticated(csrf=True):
-            return self._error(403, "Session expired or request token invalid")
+            return self._error(403, guest_messages.SESSION_ENDED)
         if self._throttle("upload"):
             return
         upload_id = self._upload_route(self._path())
         if not upload_id:
             return self._error(404, "Not found")
         if self.server.uploads is None:
-            return self._error(503, "Upload storage is unavailable")
+            return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         try:
             self.server.uploads.cancel(self._cookie_token() or "", upload_id)
             return self._send(200, {"ok": True})
@@ -1531,10 +1562,12 @@ class Portal:
         self.port = int(self.server.server_address[1])
         self.server.status_peek = status_peek
         provider = link_acquisition.CommandProvider(link_sources)
+        self.server.link_readiness_provider = provider
         if any(provider.capabilities().values()):
             def deliver(owner, path):
                 # Existing authenticated GTK queue authority; never cast now.
                 self.server.dispatch("queue_add", {"path": str(path), "name": path.name,
+                                                   "_portal_source": "link",
                                                    "_portal_auth_key": owner})
             self.server.link_jobs = link_acquisition.LinkJobs(
                 self.uploads.root / "link-acquisitions", provider, deliver,
@@ -1623,15 +1656,49 @@ class Portal:
             self.server.uploads.close()
 
 
+# Fallback computer list (#591): same tokens and permanent Home control as the room.
+def _demo_badge() -> str:
+    """A visible DEMO marker on every page of an isolated demo host (#454), else nothing."""
+    if not demo_mode.active():
+        return ""
+    return ('<span class="sc-demo" role="status" aria-label="Demo mode: no real receivers" '
+            'style="font-size:.74rem;font-weight:700;letter-spacing:.06em;color:#fff;'
+            'background:#b45309;border-radius:999px;padding:2px 9px;margin-left:6px">DEMO</span>')
+
+
+_NODES_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="light dark"><title>SmoothCast computers</title>
+<style>/*TOKENS*/
+:root{font:16px ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+.app-bar{position:sticky;top:0;display:flex;align-items:center;gap:12px;height:64px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
+.home-btn svg{width:22px;height:22px;fill:currentColor}
+.app-bar strong{font-size:1.1rem;letter-spacing:-.02em}
+.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+main{max-width:640px;margin:auto;padding:24px 16px}
+h1{font-size:clamp(1.5rem,5vw,2rem);letter-spacing:-.025em;margin:8px 0}p{color:var(--muted);line-height:1.5}
+ul{list-style:none;padding:0;display:grid;gap:10px}
+li a{display:flex;align-items:center;min-height:56px;padding:0 18px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--text);font-weight:650;text-decoration:none;overflow-wrap:anywhere}
+li a:hover{border-color:var(--accent)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(forced-colors:active){.home-btn{border:2px solid ButtonText}}
+</style></head><body>
+<header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></header>
+<main><h1>SmoothCast in this house</h1><p>Open any computer to join its room.</p>
+<ul><li><a href="/">__MINE__ (this one)</a></li>__ROWS__</ul></main></body></html>"""
+
+
 _HTML = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark light"><meta name="theme-color" content="#101722" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="light dark"><title>SmoothCast</title>
 <style>
 :root{font:16px system-ui,sans-serif;color-scheme:light dark}/*TOKENS*/
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:760px;margin:auto;padding:20px}
 h1{font-size:1.4rem;margin:.2rem 0}h2{font-size:1.05rem;margin:0 0 12px}p{color:var(--muted);margin:.35rem 0}
 section{background:var(--card);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 8px 26px var(--shadow)}
-label{display:block;margin:12px 0 6px}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid var(--border);padding:8px 12px}
+label{display:block;margin:12px 0 6px}select{font:inherit;min-height:44px;max-width:100%;padding:0 10px;border-radius:10px;border:1px solid var(--border);background:var(--input);color:inherit}input,button{font:inherit;min-height:44px;border-radius:10px;border:1px solid var(--border);padding:8px 12px}
 input{width:100%;color:inherit;background:var(--input)}button{background:var(--accent);color:white;border:0;font-weight:650;cursor:pointer}
 #musicAutogain{width:auto;min-height:0;margin-right:8px}
 dialog#shortcutsHelp{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:14px;max-width:min(92vw,480px);width:100%;padding:20px}
@@ -1654,9 +1721,7 @@ nav{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0}nav a{display:inline-flex;
 /* Guest-first room layout: semantic tokens, progressive disclosure and touch-safe help. */
 [hidden]{display:none!important}
 main{max-width:1120px;padding:clamp(12px,3vw,28px)}
-.site-head{display:flex;align-items:center;gap:14px;padding:18px 0 22px}
 .site-mark{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:14px;background:var(--accent);color:var(--on-accent);font-size:1.6rem;font-weight:800}
-.site-head p{line-height:1.5}
 .eyebrow{font-size:.74rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 #login{max-width:660px;margin:24px auto}
 #login h2{font-size:clamp(1.4rem,4vw,1.85rem);letter-spacing:-.025em}
@@ -1689,6 +1754,24 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #playback #volume{margin-top:5px}
 #findChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
+#queuePanel{border-top:3px solid var(--accent)}
+#queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
+#queuePanel .queue-destination .eyebrow{margin:0 0 4px}
+#queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
+#queuePanel .contribute{margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input)}
+#queuePanel .contribute h3{margin:0;font-size:1.1rem}
+#queuePanel .queue-add-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px;margin-top:10px}
+#queuePanel .queue-add-links a{display:flex;flex-direction:column;justify-content:center;gap:3px;min-height:64px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);text-decoration:none;overflow-wrap:anywhere}
+#queuePanel .queue-add-links a:first-child{border-color:var(--accent)}
+#queuePanel .queue-add-links a:hover{background:var(--nav-hover)}
+#queuePanel .queue-add-links a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+#queuePanel .queue-add-links span{font-size:.82rem;color:var(--muted);line-height:1.4}
+#queuePanel #linkAcquisition{margin-top:12px;min-width:0;box-shadow:none;border:1px solid var(--line);padding:12px}
+#linkAcquisition>summary{font-weight:750;cursor:pointer;min-height:44px;align-content:center}
+#linkForm{display:grid;gap:8px}#linkForm label{margin:0}#linkForm input[type="text"]{min-width:0}#linkForm button{justify-self:start;max-width:100%}
+#linkForm .toggle{border-top:1px solid var(--line);padding-top:10px}#linkAvailability{margin:8px 0;overflow-wrap:anywhere}
+#libraryCopiesPanel,#linkJobPanel{margin:12px 0 0;padding:10px;border:1px solid var(--line);border-radius:12px;box-shadow:none}
+#libraryCopiesPanel h3,#linkJobPanel h4{margin:0 0 8px;font-size:.95rem}
 #queuePanel #clearQueue{margin:8px 0 4px}
 #queuePanel #queue{margin:12px 0 0}
 #queuePanel .queue-actions button{min-height:44px;min-width:44px}
@@ -1720,7 +1803,9 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .transfer-meter,.transfer-stats{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .transfer-meter{margin:13px 0 7px}.transfer-stats{margin:8px 0 0;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem}
 #uploadStatus{overflow-wrap:anywhere;min-height:1.3em}
-.transfer-live{border-top:1px solid var(--line);margin-top:14px;padding-top:12px;min-width:0}
+.tech-details{margin-top:12px;border-top:1px solid var(--line);padding-top:6px}
+.tech-details>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:650;color:var(--muted)}
+.transfer-live{border-top:0;margin-top:6px;padding-top:0;min-width:0}
 .transfer-live h3{font-size:.95rem;margin:0 0 8px}
 .transfer-live-file{font-weight:650;overflow-wrap:anywhere;margin:0 0 8px}
 .transfer-live-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px;margin:0}
@@ -1747,7 +1832,8 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
   #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
-  #findPanel,#queuePanel{grid-column:2}
+  #findPanel{grid-column:2}
+  #queuePanel{grid-column:1/-1}
   #peoplePanel{grid-column:1/-1}
   .advanced-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
@@ -1760,56 +1846,161 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
   #dashboard nav{margin-inline:-4px}
 }
 
-</style></head><body><main><header class="site-head"><span class="site-mark" aria-hidden="true">S</span><div><h1>SmoothCast</h1><p>Watch, listen and build the queue together — on your own Wi-Fi.</p></div></header>
+/* Ticket 591 refresh: sticky app bar with a permanent Home control, rounded system
+   type, a clear surface hierarchy and Now Playing as the room's focal "screen".
+   Colours come only from the tested tokens above. */
+:root{--font:ui-rounded,"SF Pro Rounded","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --bar-h:64px;--r-lg:22px;--r-md:14px;--r-sm:10px;font-family:var(--font)}
+body{font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  background:var(--bg);background-image:radial-gradient(120% 60% at 50% -10%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 60%);background-attachment:fixed}
+h1,h2,h3{color:var(--text);letter-spacing:-.018em;font-weight:720}
+h2{font-size:1.18rem}
+#elapsed,#duration,#volumeText,.transfer-stats,time{font-variant-numeric:tabular-nums}
+header.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;height:var(--bar-h);
+  padding:0 max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left));border-bottom:1px solid var(--line);
+  background:var(--bg);background:color-mix(in srgb,var(--bg) 84%,transparent);-webkit-backdrop-filter:saturate(1.5) blur(16px);backdrop-filter:saturate(1.5) blur(16px)}
+.home-btn{display:inline-flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:0 18px 0 13px;border-radius:999px;
+  background:var(--accent);color:var(--on-accent);font-weight:750;font-size:.98rem;text-decoration:none;box-shadow:0 6px 18px var(--shadow)}
+.home-btn svg{width:22px;height:22px;fill:currentColor}
+.home-btn:hover{filter:brightness(1.08)}.home-btn:active{transform:scale(.97)}
+.brand{display:flex;align-items:center;gap:10px;flex:none}
+.brand h1{margin:0;font-size:1.12rem;letter-spacing:-.02em;white-space:nowrap}
+.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.brand .site-mark{width:44px;height:44px;border-radius:13px;font-size:1.2rem;text-decoration:none;background:linear-gradient(135deg,var(--accent),var(--vote-on));transition:transform .12s ease,box-shadow .12s ease}
+.brand .site-mark:hover{transform:translateY(-1px);box-shadow:0 6px 16px var(--shadow)}
+.bar-now{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:9px;min-width:0;max-width:min(44vw,360px);min-height:44px;padding:0 15px;
+  border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);text-decoration:none;font-size:.88rem}
+.bar-now:hover{border-color:var(--accent)}
+.bar-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
+.bar-now.paused .bar-dot{background:var(--dim);box-shadow:none}
+.bar-now-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-now-label{color:var(--muted)}
+#barNowTitle{font-weight:680}
+main{padding-top:6px}
+.site-intro:focus{outline:none}
+.site-intro{scroll-margin-top:var(--bar-h)}
+.site-intro{margin:14px 2px 4px;font-size:.95rem}
+#dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+#dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
+#dashboard nav a:hover{background:var(--nav-hover)}
+#dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
+section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
+.advanced-grid>section,.transfer-journey,.help .help-body,#login .steps li{border-radius:var(--r-md)}
+input,select{border-radius:var(--r-sm)}
+input:focus-visible{border-color:var(--accent)}
+button{border-radius:12px;transition:filter .15s ease,transform .1s ease}
+button:hover:not(:disabled){filter:brightness(1.07)}button:active:not(:disabled){transform:scale(.98)}
+.tiny{border-radius:999px}
+.welcome h2{font-size:1.45rem}
+.quick-links a{border-radius:999px;border-color:var(--line);background:var(--card)}
+.quick-links a:hover{border-color:var(--accent);background:var(--nav-hover)}
+#login{border-radius:var(--r-lg)}
+#login h2{font-size:clamp(1.6rem,5vw,2.1rem)}
+/* The focal screen: Now Playing glows like the TV it controls. */
+#playback{position:relative;overflow:hidden;padding:22px;background:var(--card);
+  background-image:radial-gradient(90% 70% at 50% -20%,color-mix(in srgb,var(--accent) 26%,transparent),transparent 70%)}
+#playback::before{content:"";position:absolute;inset:0 18% auto;height:2px;border-radius:2px;background:var(--accent);opacity:.85;box-shadow:0 0 22px 4px color-mix(in srgb,var(--accent) 45%,transparent)}
+#playback #title{font-size:clamp(1.45rem,4.5vw,2rem);line-height:1.15;letter-spacing:-.025em;color:var(--text);margin:.4rem 0 .2rem}
+#playback #receiver{font-size:.9rem}
+progress{-webkit-appearance:none;appearance:none;height:8px;border:0;border-radius:999px;background:var(--input);overflow:hidden;margin-top:14px}
+progress::-webkit-progress-bar{background:var(--input);border-radius:999px}
+progress::-webkit-progress-value{background:var(--accent);border-radius:999px}
+progress::-moz-progress-bar{background:var(--accent);border-radius:999px}
+input[type="range"]{accent-color:var(--accent);background:transparent;border:0;padding:0}
+#playback .actions button[data-action="play_pause"]{flex-basis:100%;min-height:56px;font-size:1.05rem;border-radius:16px}
+@media(min-width:520px){#playback .actions button[data-action="play_pause"]{flex-basis:auto;flex-grow:2}}
+.invite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;max-width:660px;margin:0 auto 14px;padding:18px 20px}
+#login:not([hidden])~.invite{margin-top:4px}
+body:has(#dashboard:not([hidden])) .invite{max-width:none}
+.invite h2{margin:0 0 4px;font-size:1.15rem}
+.invite-how{margin:0 0 4px;color:var(--text)}
+.invite .room-link{border-top:0;margin-top:10px;padding-top:0}
+.invite #roomLinkStatus:empty{display:none}
+.invite #roomLinkHint{margin-bottom:0}
+.invite .room-link label{font-weight:600;color:var(--muted);font-size:.88rem}
+.invite-qr{margin:0;display:grid;justify-items:center}
+.invite-qr img{display:block;width:144px;height:144px;padding:8px;border-radius:14px;background:white;box-shadow:0 0 0 1px var(--line);image-rendering:pixelated}
+.invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
+@media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
+@media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:340px){.brand .site-mark{display:none}}
+@media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
+@media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
+</style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
 <p>Use your phone or computer as a remote, add your own music or films, and help choose what's next. No app, account or cloud connection needed.</p>
 <ol class="steps" aria-label="How SmoothCast works"><li><strong>1. Join</strong>Enter a name so everyone knows who's here.</li><li><strong>2. Add or find</strong>Choose something from the house or upload a file.</li><li><strong>3. Share the queue</strong>Vote, move items and control the room together.</li></ol>
 <form id="loginForm"><label for="name">Your display name</label><p class="field-hint" id="nameHint">Shown to others in this room. You can change it later.</p>
 <input id="name" name="name" maxlength="40" autocomplete="nickname" placeholder="e.g. Sam" aria-describedby="nameHint" required>
-<div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask the host for the six-digit House PIN shown in SmoothCast.</p>
+<div id="pinRow"><label for="pin">House PIN</label><p class="field-hint" id="pinHint">Ask whoever runs SmoothCast for the six-digit House PIN shown on their computer.</p>
 <input id="pin" name="pin" minlength="6" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" aria-describedby="pinHint" required></div>
-<p id="loginHint" class="field-hint">You must be on the same local network. A House PIN is required only if the host has enabled one.</p>
+<p id="loginHint" class="field-hint">Your device must be on the same Wi-Fi. You only need a House PIN if one has been set.</p>
 <p id="error" role="alert" aria-live="polite"></p><button type="submit">Join</button></form>
-<details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on the host's local network, not in the cloud. Only join rooms you trust, and ask the host if you are unsure.</p></div></details>
+<details class="help"><summary>Room privacy and what guests can do</summary><div class="help-body"><p>Everyone who joins can control playback and contribute to the same Up Next queue. Playback actions affect the selected TV or speaker, not just your phone.</p><p>The room runs on a computer in this home, not in the cloud. Only join rooms you trust, and ask the person who runs SmoothCast if you are unsure.</p></div></details>
 </section>
+<section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#queuePanel">Up Next</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div><div class="room-link"><label for="roomLinkText">Share this room link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Choose media already available in your room or transfer a file from this device. This page uses SmoothCast room controls; it does not appear in Chrome’s native Cast… menu, which is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
+<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
+<div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
+<div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
+<p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
+<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
+
+<button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
+<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
+<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
+<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
+<form id="linkForm">
+<label for="linkInput">YouTube video or magnet link</label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
+</form>
+<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
+<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
+</details>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+
+<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
+<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
 <p class="section-desc">These controls affect the room's selected TV or speaker.</p>
-<p id="title" class="big">Nothing playing</p><p id="receiver">Receiver: —</p>
+<p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the receiver cannot seek.</p>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
-<div class="actions"><button data-action="play_pause" title="Toggle playback for everyone using this receiver">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the room receiver">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<label for="volume">Receiver volume</label><p class="field-hint" id="volumeHelp">Changes the selected receiver's volume, not the volume of this phone.</p>
-<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the room receiver volume" disabled><p id="volumeText" class="muted">—</p>
-<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the selected receiver. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the receiver is not ready or does not support that action.</p></div></details>
+<div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
+<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
+<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
+<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
 <section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
 <div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">YouTube search needs an enabled isolated host worker.</p>
+<p id="youtubeAvailability" class="field-hint">YouTube search is turned off on the SmoothCast computer.</p>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
 <p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
-<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to acquire the selected media.</span></label>
+<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
 <ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
-<details id="libraries" class="help"><summary>Browse libraries on the network</summary><div id="libBody" class="muted">Loading libraries...</div></details>
-<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds media advertised by SmoothCast hosts on your network. <strong>Available now</strong> limits results to items that can currently be reached; an unavailable host may return later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are acquired and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
+<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
 </section>
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
-<p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast transfers it to the host over your local network.</p>
-<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept="audio/*,video/*,.mkv,.ts,.wmv" multiple title="Choose media stored on this device">
+<p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
+<label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
-<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted.</span></span></label>
+<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
 <li data-stage="choose" class="done"><span class="stage-dot">1</span><span>Choose file</span></li>
@@ -1818,11 +2009,11 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <li data-stage="verify"><span class="stage-dot">4</span><span>Check media</span></li>
 <li data-stage="deliver"><span class="stage-dot">5</span><span>Queue / play</span></li>
 </ol>
-<div class="transfer-route" aria-label="Current file route"><span>Your device</span><span aria-hidden="true">→</span><strong id="transferHost">SmoothCast host</strong><span aria-hidden="true">→</span><strong id="transferDestination">Up Next</strong></div>
+<div class="transfer-route" aria-label="Current file route"><span>Your device</span><span aria-hidden="true">→</span><strong id="transferHost">SmoothCast computer</strong><span aria-hidden="true">→</span><strong id="transferDestination">Up Next</strong></div>
 <div class="transfer-meter"><strong id="transferStage" aria-live="polite">Ready to choose</strong><span id="transferPercent">0%</span></div>
 <progress id="uploadProgress" max="1" value="0" aria-label="File transfer bytes received"></progress>
 <div class="transfer-stats"><span id="transferBytes">0 B of 0 B</span><span id="transferRate">—</span><span id="transferEta">—</span></div>
-<div class="transfer-live" aria-labelledby="transferLiveHeading">
+<details class="tech-details" id="transferTech"><summary>Technical details</summary><div class="transfer-live" aria-labelledby="transferLiveHeading">
 <h3 id="transferLiveHeading">Live transfer monitor</h3>
 <p id="transferFileName" class="transfer-live-file">No active file</p>
 <dl class="transfer-live-grid">
@@ -1836,31 +2027,10 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 </dl>
 <details open><summary>Transfer activity · newest first</summary><pre id="transferEvents" aria-label="Recent transfer activity" tabindex="0">Choose a file to begin. Events appear here as they happen.</pre></details>
 </div>
-<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p>
+<p id="transferExplanation" class="field-hint">A percentage measures bytes received by this host. Bytes sent by the browser are not yet confirmed on disk. Media checks and queue or playback confirmation follow afterwards. Cross-node routing will appear only when a mesh transfer session confirms it.</p></details>
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
-<details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the selected room receiver as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
-</section>
-<section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading">Up Next</h2><span id="queueCount" class="muted"></span></div>
-<p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
-<p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here when accepted by the host.</p>
-<section id="linkAcquisition" aria-labelledby="linkHeading">
-<h3 id="linkHeading">Add a link to Up Next</h3>
-<p id="linkAvailability" class="field-hint">Checking the room host's acquisition capabilities…</p>
-<form id="linkForm">
-<label for="linkInput">YouTube video or magnet link</label>
-<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="Paste a YouTube or magnet link" required disabled>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required disabled><span>I am authorised to acquire this media.</span></label>
-<button id="linkSubmit" type="submit" disabled>Acquire and add to Up Next</button>
-</form>
-<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<h4>Acquisition activity</h4>
-<p class="field-hint">Downloads run on this room's host. Existing playback continues. Media appears in the playable queue only after verification and queue acceptance.</p>
-<ul id="linkJobs" aria-label="Room media acquisition activity"><li class="empty">No link acquisitions yet</li></ul>
-</section>
-<button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
-<ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
-<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the room receiver; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+<details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
 <p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
@@ -1874,14 +2044,14 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 <section aria-labelledby="phoneHeading"><h3 id="phoneHeading">Phone remote</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
-<p id="remoteDimHint" role="status" hidden>Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.</p>
+<p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
 <section aria-labelledby="musicHeading"><h3 id="musicHeading">Music playback</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
-<details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to audio-only playback where the host supports processing.</p></div></details>
+<details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
-<section aria-labelledby="peerHeading"><h3 id="peerHeading">Nearby SmoothCast hosts</h3><p class="section-desc">Open another SmoothCast computer's room if you want to switch hosts. It has its own access settings; discovery does not grant permission.</p><ul id="peers"><li class="empty">No other SmoothCast hosts found</li></ul></section>
-<section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Read-only status from reachable Cast and DLNA receivers, refreshed every 15 seconds. No commands are sent to these other receivers.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Checking discovered receivers…</p><ul id="networkActivityRows"><li>No active streams reported by reachable receivers</li></ul></section>
+<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+<section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
 </div></details></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
@@ -1890,6 +2060,7 @@ const SHORTCUTS=typeof __SC_SHORTCUTS__==="undefined"?[]:__SC_SHORTCUTS__,shortc
 let stalePage=false,shortcutState=null;
 function showUpdateNotice(){
   stalePage=true;
+  stopPlayhead();
   roomEvents.stop();
   void syncRemoteWakeLock();
   document.getElementById("updateNotice").hidden=false;
@@ -2021,6 +2192,7 @@ $("loginForm").addEventListener("submit",async e=>{
   });
 })();
 function expireSession(){
+  stopPlayhead();playhead=null;
   csrf="";
   roomEvents.stop();
   void syncRemoteWakeLock();
@@ -2041,10 +2213,16 @@ function expireSession(){
 }
 function clock(s){if(s==null||!Number.isFinite(s))return "--:--";s=Math.floor(Math.max(0,s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`}
 function projectPosition(s,ageMs,sinceMs){const p=Number(s.position),d=Number(s.duration),dur=Number.isFinite(d)&&d>0?d:0;if(!Number.isFinite(p)||p<0)return 0;if(s.state!=="PLAYING")return dur?Math.min(p,dur):p;const rate=s.rate,speed=typeof rate==="number"&&Number.isFinite(rate)&&rate>=0.05&&rate<=4?rate:1;const lead=Math.min(Math.max(0,Number(ageMs)||0)+Math.max(0,Number(sinceMs)||0),21600000)/1000,v=p+lead*speed;return dur?Math.min(v,dur):v}
-let playhead=null,paintedAt=-1;
-function trackPlayhead(s){playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);if(Math.abs(pos-paintedAt)<0.2)return;paintedAt=pos;const dur=Number(playhead.s.duration)||0;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
-function playheadFrame(){if(!document.hidden)paintPlayhead();requestAnimationFrame(playheadFrame)}
+let playhead=null,paintedAt=-1,playheadTimer=null;
+function stopPlayhead(){if(playheadTimer!==null){clearTimeout(playheadTimer);playheadTimer=null}}
+function schedulePlayhead(){
+  if(playheadTimer!==null||!playhead||document.hidden||!csrf||stalePage||playhead.s.state!=="PLAYING")return;
+  const duration=Number(playhead.s.duration)||0;
+  if(duration>0&&paintedAt>=duration)return;
+  playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
+}
+function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -2088,7 +2266,7 @@ function renderQueue(items){
   if(queuePressed){deferredQueue=rows;return}
   queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
-    item.id,item.title,item.duration,item.votes,item.voted,
+    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,
   ]));
   if(key===queueRenderKey)return;
   const focused=document.activeElement;
@@ -2128,7 +2306,9 @@ function renderQueue(items){
     li.setAttribute("aria-setsize",String(rows.length));
     li.children[0].children[0].textContent=itemTitle;
     li.children[0].children[1].textContent="Position "+(index+1)+" of "+rows.length+" · "+(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
-      +(item.duration?" · "+clock(item.duration):"");
+      +(item.duration?" · "+clock(item.duration):"")
+      +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
+      +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
     const buttons=li.children[1].children;
     const labels=[
       (item.voted?"Remove vote for":"Vote for")+" "+itemTitle,
@@ -2206,9 +2386,9 @@ let roomSnapshotEpoch="",roomSnapshotVersion=-1;
 // A delayed poll or SSE frame must never roll a newer same-run film state back.
 function acceptRoomSnapshot(d){const epoch=d&&d.stream_epoch,ver=d&&d.state&&d.state.snapshot_version;if(typeof epoch!=="string"||!epoch||epoch.length>64||!Number.isSafeInteger(ver)||ver<0)return true;if(epoch!==roomSnapshotEpoch){roomSnapshotEpoch=epoch;roomSnapshotVersion=ver;return true}if(ver<roomSnapshotVersion)return false;roomSnapshotVersion=ver;return true}
 function playbackToggleCopy(state){
-  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the selected room receiver for everyone"];
-  if(state==="PAUSED")return ["Resume","Resume playback on the selected room receiver for everyone"];
-  return ["Play / pause","Toggle playback on the selected room receiver for everyone"];
+  if(state==="PLAYING"||state==="BUFFERING")return ["Pause","Pause playback on the TV or speaker for everyone"];
+  if(state==="PAUSED")return ["Resume","Resume playback on the TV or speaker for everyone"];
+  return ["Play / pause","Toggle playback on the TV or speaker for everyone"];
 }
 function renderPlaybackToggle(state){
   const button=document.querySelector('[data-action="play_pause"]');
@@ -2222,53 +2402,133 @@ function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   $("dashboard").hidden=false;
   $("uploadCard").hidden=false;
-  if(entering)$("playbackHeading").focus({preventScroll:true});
+  if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
-let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
+let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
+const linkShortcut=$("openLinkAcquisition");
+function openLinkAcquisition(){const panel=$("linkAcquisition");if(panel)panel.open=true}
+if(linkShortcut)linkShortcut.addEventListener("click",()=>{openLinkAcquisition();$("linkInput").focus()});
+function focusContributionControl(id){
+  const control=$(id);
+  if(control&&!control.disabled)control.focus({preventScroll:true});
+}
+$("openUploadEntry").addEventListener("click",()=>focusContributionControl("videoFile"));
+$("openFindEntry").addEventListener("click",()=>focusContributionControl("findInput"));
+if(location.hash==="#linkAcquisition")openLinkAcquisition();
+window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){
+  function linkWorkerExplanation(kind){
+    const owner=typeof linkOwnerEnabled==="undefined"?null:linkOwnerEnabled;
+    const prerequisites=typeof linkLocalPrerequisites==="undefined"?null:linkLocalPrerequisites;
+    if(owner?.[kind]===false)return "Ask the host to enable guest downloads in desktop Preferences → Queue.";
+    const local=prerequisites?.[kind],missing=[];
+    if(local?.engine===false)missing.push(kind==="youtube"?"yt-dlp":"aria2c");
+    if(local?.probe===false)missing.push("FFprobe");
+    if(local?.isolation===false)missing.push("isolated worker launcher");
+    if(missing.length)return "No eligible worker is currently available. Host prerequisites missing at startup: "+missing.join(", ")+". Ask the host to check desktop Preferences → Queue and restart after repair.";
+    return "Ask the host to check the acquisition worker in desktop Preferences → Queue. You can keep the link here.";
+  }
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
     search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
-    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask the host to enable an isolated YouTube worker.";
+    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask whoever runs SmoothCast to turn on YouTube downloads.";
   }
-  const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
-  if(!input||!consent||!button||!label)return;
-  input.disabled=!enabled||linkPosting;consent.disabled=!enabled||linkPosting;
-  button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
+  if(!input||!consent||!button||!label)return false;
+  const value=String(input.value||"").trim();
+  // Advisory preflight only; the server remains the validation/policy authority.
+  function classify(text){
+    const fail=message=>({kind:null,message});
+    if(!text)return {kind:null,message:""};
+    if(text.length>1500)return fail("This link is too long. Copy the video's share link instead.");
+    if(/[\s\x00-\x1f\x7f]/.test(text))return fail("Paste just one link, without surrounding text or spaces. For a title, use Find.");
+    const queryValues=(query,key)=>{
+      const fields=query.split("&");
+      if(fields.length>80)throw Error("Too many link parameters");
+      return fields.filter(Boolean).map(field=>{
+        const i=field.indexOf("="),decode=x=>decodeURIComponent(x.replace(/\+/g," "));
+        return i<0?[decode(field),""]:[decode(field.slice(0,i)),decode(field.slice(i+1))];
+      }).filter(pair=>pair[0]===key&&pair[1]).map(pair=>pair[1]);
+    };
+    try{
+      if(/^magnet:/i.test(text)){
+        const match=/^magnet:\?([^#]+)$/.exec(text);
+        if(match){
+          const xt=queryValues(match[1],"xt");
+          if(xt.length===1&&/^urn:btih:(?:[0-9a-f]{40}|[a-z2-7]{32})$/i.test(xt[0]))return {kind:"magnet"};
+        }
+        return fail("This magnet is incomplete or unsupported. Copy a single BitTorrent v1 magnet from its source.");
+      }
+      const match=/^https:\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/.exec(text);
+      if(match){
+        const host=match[1].toLowerCase().replace(/:443$/,""),path=match[2],query=match[3]||"";
+        const youtube=["youtube.com","www.youtube.com","m.youtube.com","youtu.be"].includes(host);
+        if(youtube){
+          const ids=path==="/watch"&&host!=="youtu.be"?queryValues(query,"v"):[host==="youtu.be"?path.slice(1):path.startsWith("/shorts/")?path.slice(8):""];
+          if(ids.length===1&&/^[A-Za-z0-9_-]{11}$/.test(ids[0]))return {kind:"youtube"};
+          return fail("Choose one YouTube video or Short, then copy its Share link. Channel and playlist links are not supported.");
+        }
+        return fail("This website is not supported for downloads here. Use a YouTube video, magnet link, shared library or a file from your device.");
+      }
+      if(/^http:\/\//i.test(text))return fail("Use the secure HTTPS Share link from the video page.");
+      if(/^(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(text))return fail("Copy the complete YouTube Share link, including https://.");
+      return fail("Looking for a title? Use Find. To add a download, paste a YouTube video or magnet link.");
+    }catch(_){return fail("The link contains invalid parameters. Copy a fresh Share link and try again.")}
+  }
+  const intent=classify(value),kind=intent.kind;
+  const sourceName=kind==="youtube"?"YouTube":"BitTorrent magnets";
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
-  label.textContent=enabled?"Host enabled: "+sources.join(" and ")+".":linkStorageAvailable===false?"Acquisition recovery storage is busy or unavailable. Ask the host to check it and restart the room. Existing media is preserved.":"External acquisition is unavailable until the host enables an isolated media worker.";
+  const allowed=!!(kind&&linkCapabilities[kind]&&linkStorageAvailable!==false);
+  input.disabled=linkPosting;consent.disabled=linkPosting;
+  button.disabled=!allowed||linkPosting||!consent.checked;
+  button.textContent=linkPosting?"Submitting…":kind==="youtube"?"Add YouTube video to Up Next":kind==="magnet"?"Add torrent media to Up Next":"Download and add to Up Next";
+  if(linkStorageAvailable===false){
+    label.textContent="Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.";
+  }else if(value&&!kind){
+    label.textContent=intent.message;
+  }else if(kind&&!allowed){
+    label.textContent=sourceName+" unavailable in this room. "+linkWorkerExplanation(kind);
+  }else if(kind){
+    label.textContent=sourceName+" recognised. "+(consent.checked?"Ready to request download; playback will not be interrupted.":"Confirm permission to download and add to Up Next.");
+  }else{
+    label.textContent=sources.length?"Available: "+sources.join(" and ")+".":"Downloads are not ready. Ask the host to enable or check the acquisition worker in desktop Preferences → Queue. You can still add files or use shared libraries.";
+  }
+  return !button.disabled;
 }
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
+  linkOwnerEnabled=state.link_owner_enabled||null;
+  linkLocalPrerequisites=state.link_local_prerequisites||null;
   linkStorageAvailable=state.link_storage_available;
   updateLinkControls();
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
+  const panel=$("linkJobPanel");if(panel)panel.hidden=!jobs.length;
+  if(jobs.some(job=>["pending","resolving","downloading","verifying","queueing"].includes(job.stage)))openLinkAcquisition();
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
-  const stages={pending:"Waiting for a worker",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
+  const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
   const rows=[];
-  if(!jobs.length){const row=document.createElement("li");row.className="empty";row.textContent="No link acquisitions yet";rows.push(row)}
   for(const job of jobs.slice().reverse()){
     const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
-    heading.textContent=job.title||"Media acquisition";
-    detail.className="muted";detail.textContent=(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
+    heading.textContent=job.title||"Download";
+    const sourceLabel=job.kind==="youtube"?"YouTube":job.kind==="magnet"?"BitTorrent magnet":"Link";
+    detail.className="muted";detail.textContent=sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
     row.append(heading,detail);
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
     if(job.stage==="downloading"||job.stage==="resolving"){
-      const meter=document.createElement("progress");meter.setAttribute("aria-label","Reported acquisition progress");
+      const meter=document.createElement("progress");meter.setAttribute("aria-label","Download progress");
       if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
       row.append(meter);
       const stats=document.createElement("p");stats.className="field-hint";
       const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
-      stats.textContent=(received===null?"Waiting for worker measurements":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
+      stats.textContent=(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
       row.append(stats);
     }
     if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
-    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel acquisition";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
+    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
     rows.push(row);
   }
   list.replaceChildren(...rows);
@@ -2277,28 +2537,58 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
   $("linkAuthorised").addEventListener("change",updateLinkControls);
   linkForm.addEventListener("submit",async event=>{
-    event.preventDefault();if(linkPosting||!$("linkAuthorised").checked)return;
+    event.preventDefault();if(!updateLinkControls())return;
     const url=$("linkInput").value.trim();if(!url)return;
     if(!linkAttempt||linkAttempt.url!==url)linkAttempt={url,id:"link-"+Date.now()+"-"+Math.random().toString(36).slice(2)};
-    linkPosting=true;updateLinkControls();showError("linkFeedback","Submitting to the room host…");
+    linkPosting=true;updateLinkControls();showError("linkFeedback","Sending to the SmoothCast computer…");
     try{
       const result=await post("/api/link-jobs",{url,request_id:linkAttempt.id,authorised:true});
       $("linkInput").value="";$("linkAuthorised").checked=false;linkAttempt=null;
-      showError("linkFeedback",result.message||"Acquisition accepted");void refresh();
+      showError("linkFeedback",result.message||"Download accepted");void refresh();
     }catch(error){showError("linkFeedback",error.message)}
     finally{linkPosting=false;updateLinkControls()}
   });
 }
+let libraryCopySignature="";
+function renderLibraryCopies(state){
+  const list=$("libraryCopyRows");if(!list)return;
+  const rows=Array.isArray(state.library_copies)?state.library_copies.slice(-24).reverse():null;
+  const panel=$("libraryCopiesPanel");if(panel)panel.hidden=!rows?.length;
+  const signature=JSON.stringify(rows);if(signature===libraryCopySignature)return;libraryCopySignature=signature;
+  if(!rows||!rows.length){list.replaceChildren();return}
+  const labels={copying:"Copying and verifying media",ready:"Queue accepted",failed:"Copy failed — try again from Find",cancelled:"Cancelled",uncertain:"Queue acceptance uncertain — check Up Next"};
+  list.replaceChildren(...rows.map(row=>{
+    const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p");
+    title.textContent=row.title||"Shared media";
+    detail.className="field-hint";
+    detail.textContent=[labels[row.stage]||"Unknown status",row.origin?"Requested from "+row.origin:"",row.contributor?"Added by "+row.contributor:""].filter(Boolean).join(" · ");
+    li.append(title,detail);return li;
+  }));
+}
+function renderQueueDestination(state){
+  const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
+  if(target)target.textContent=state.receiver||"No casting target selected";
+  if(playing)playing.textContent=(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  // The mesh panel owns visibility. Never infer remote readiness from room selection.
+  if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
+}
+let networkActivityKey=null;
+function renderNetworkActivity(entries){
+  const streams=Array.isArray(entries)?entries:[],activityRows=$("networkActivityRows");
+  const signature=JSON.stringify(streams.map(item=>[item.title,item.receiver,item.protocol,item.state,item.position,item.duration,item.is_local]));
+  if(signature===networkActivityKey)return;networkActivityKey=signature;
+  activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Receiver: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No receiver selected")+" · "+(s.state_label||"State unavailable"));
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueue(s.queue);renderLinkJobs(s);
+renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
-const streams=Array.isArray(s.network_activity)?s.network_activity:[],activityRows=$("networkActivityRows");activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"No active streams reported by reachable receivers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
+renderNetworkActivity(s.network_activity);
 document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
   return true;
 }
@@ -2330,14 +2620,17 @@ async function refresh(){
 }
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
-let lastRoom=null;function renderRoom(room){lastRoom=room;const people=$("people");people.replaceChildren();if(room&&room.participants)for(const person of room.participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
+let lastRoom=null,participantRenderKey=null;
+function renderRoom(room){lastRoom=room;const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
+if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
 function renderPeers(peers,available){
   const list=$("peers");
   const entries=available&&Array.isArray(peers)?peers:[];
   const focused=document.activeElement;
   if(!entries.length){
-    const message=available?"No other SmoothCast hosts found":"Peer discovery is unavailable on this network";
+    const message=available?"No other SmoothCast computers found":"Peer discovery is unavailable on this network";
     if(list.firstElementChild?.className==="empty"&&list.firstElementChild.textContent===message)return;
     const empty=document.createElement("li");
     empty.className="empty";
@@ -2425,7 +2718,7 @@ window.addEventListener("keydown",event=>{
   if(shortcut.action==="help"){showShortcutHelp();return;}
   const command=shortcutCommand(shortcut.action,shortcutState,Number($("seek").value),Number($("volume").value));
   if(!command||stalePage||!csrf||busy){
-    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and receiver are ready.");
+    showError($("dashboard").hidden?"error":"errorDash","This shortcut is unavailable until the room and the TV or speaker are ready.");
     return;
   }
   if(["play_pause","next","previous"].includes(command.action)){
@@ -2466,7 +2759,7 @@ async function act(action,value,extra={}){
     if(value!==undefined)body.value=value;
     const result=await post("/api/action",body);
     showError("errorDash",result.message||"Command accepted");
-    if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted by the host; awaiting room refresh.";
+    if(action.startsWith("queue_"))$("queueFeedback").textContent=result.message||"Queue change accepted; updating the list…";
   }catch(err){showError("errorDash",err.message);if(action.startsWith("queue_"))$("queueFeedback").textContent="Queue action was not applied: "+err.message;}
   finally{
     busy=false;
@@ -2624,20 +2917,20 @@ async function uploadRequest(method,path,body,headers={}){
     monitorText("transferResponse","HTTP "+response.status);
     let data;
     try{data=await response.json()}catch(_){
-      throw Object.assign(Error("The SmoothCast host returned an unreadable upload response."),{status:response.status, retryAfter:1});
+      throw Object.assign(Error("The SmoothCast computer sent an unreadable reply."),{status:response.status, retryAfter:1});
     }
     if(data?.code==="client_reload_required")showUpdateNotice();
     if(!response.ok||!data||data.ok===false)throw Object.assign(Error(response.status===429?"Upload requests are busy. Retrying shortly…":data?.error||"Upload request failed"),{status:response.status,code:data?.code,retryAfter:Math.max(1,Number(response.headers.get("Retry-After"))||1)});
     const validReceipt=validUploadProgress(data.received,data.size);
     if(method==="PUT"&&!validReceipt)
-      throw Error("Host returned an invalid upload receipt. Resume to check the saved position.");
+      throw Error("The SmoothCast computer sent an unexpected reply. Resume to check where the upload got to.");
     if(validReceipt)monitorText("transferAck",fileUnits(data.received));
     if(method==="PUT")monitorText("transferInFlight","Chunk acknowledged by host");
     else transferEvent(operation+" · HTTP "+response.status);
     monitorText("transferOperation","Host response received");
     return data;
   }catch(error){
-    if(timedOut)error=Object.assign(Error("Host did not respond within 60 seconds"),{status:408});
+    if(timedOut)error=Object.assign(Error("The SmoothCast computer did not respond within 60 seconds"),{status:408});
     const message=error?.message||"Unknown upload failure";
     monitorText("transferOperation","Request interrupted");
     monitorText("transferResponse",(error?.status?"HTTP "+error.status+": ":"")+message);
@@ -2772,8 +3065,8 @@ function transferView(phase,received=0,total=0,note="",queueOnly=$("uploadQueue"
   $("uploadProgress").value=valid?received:0;
   $("transferPercent").textContent=valid?pct+"%":"—";
   $("transferBytes").textContent=valid?fileUnits(received)+" of "+fileUnits(total):"No file selected";
-  $("transferDestination").textContent=queueOnly?"Up Next":"Room receiver (pending)";
-  const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to SmoothCast host",verify:"Checking received media",deliver:"Submitting to shared room"};
+  $("transferDestination").textContent=queueOnly?"Up Next":"TV or speaker (pending)";
+  const names={choose:"Choose media",prepare:"Preparing private transfer",transfer:"Sending to the SmoothCast computer",verify:"Checking received media",deliver:"Submitting to shared room"};
   $("transferStage").textContent=names[stage]+(note?" · "+note:"");
   if(stage==="transfer"&&valid){
     const now=performance.now();
@@ -2856,6 +3149,8 @@ async function restoreUpload(){
 function updateUploadControls(){
   const files=batchFiles?batchFiles.slice(batchIndex):Array.from($("videoFile").files);
   const file=files[0],audio=files.length>0&&files.every(item=>/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(item.name));
+  const invalid=files.find(item=>!Number.isSafeInteger(item.size)||item.size<=0||!/\.(mp4|m4v|mkv|mov|avi|webm|ts|mpeg|mpg|wmv|mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(item.name));
+  const target=typeof shortcutState!=="undefined"?shortcutState?.receiver:null;
   // Audio is always queued per file, but a mixed selection may still request
   // playback of video. Never overwrite a locked batch's requested intent.
   if(audio&&!batchFiles&&!pendingUpload)$("uploadQueue").checked=true;
@@ -2863,18 +3158,18 @@ function updateUploadControls(){
     ?"Retry queue / playback request":`Resume ${pendingUpload.name} (${Math.floor(pendingUpload.received*100/pendingUpload.size)}%)`);
   const summary=$("uploadSelectionSummary");
   if(summary){
-    summary.textContent=files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
+    summary.textContent=invalid?("Cannot add "+invalid.name+": "+(invalid.size<=0?"the file is empty.":"choose a supported video or audio file.")+" Select files again; nothing has been sent."):files.length?files.length+" file"+(files.length===1?"":"s")+" selected · "+
       (typeof fileUnits==="function"?fileUnits(files.reduce((sum,item)=>sum+item.size,0)):"")+
-      (audio||$("uploadQueue").checked?" · Add to Up Next":" · Request playback for video; audio joins Up Next"):
+      (audio||$("uploadQueue").checked?" · Add to Up Next":" · Play video on "+(target||"the selected room receiver (not yet confirmed)")+"; audio joins Up Next")+(files.length===1?" · "+file.name:""):
       pendingUpload?"Choose the original file to resume.":"No files selected. Choose a video or audio file to begin.";
   }
-  $("uploadButton").disabled=uploading||!file;
+  $("uploadButton").disabled=uploading||!file||!!invalid;
   $("uploadButton").textContent=resumeLabel||(batchFiles?"Continue upload batch":($("uploadQueue").checked?"Upload and add":"Upload and cast"));
   $("videoFile").disabled=uploading||!!batchFiles;
   $("videoFile").multiple=!pendingUpload||!!batchFiles;
   $("uploadQueue").disabled=uploading||!!batchFiles||!!pendingUpload||!!audio;
   const destination=$("transferDestination");
-  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":"Room receiver (pending)";
+  if(destination&&file&&!uploading&&!pendingUpload&&!batchFiles)destination.textContent=$("uploadQueue").checked||audio?"Up Next":target?target+" (requested)":"TV or speaker (pending)";
   const pause=$("pauseUpload");if(pause){pause.hidden=!uploading||!pendingUpload;pause.disabled=cancelUpload;}
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
@@ -2914,6 +3209,7 @@ async function discardUpload(){
 }
 $("uploadButton").addEventListener("click",async()=>{
   if(uploading)return;
+  updateUploadControls();if($("uploadButton").disabled)return;
   const selected=Array.from($("videoFile").files);
   if(!batchFiles&&!selected.length)return;
   const session=csrf,json={"Content-Type":"application/json"};
@@ -2974,7 +3270,7 @@ $("uploadButton").addEventListener("click",async()=>{
         const end=Math.min(state.received+chunkSize,file.size);
         state=await sendChunk(path,file,state.received,end);
         if(!validUploadProgress(state.received,file.size)||state.received!==end)
-          throw Error("Host returned an unexpected upload offset. Resume to check the saved position.");
+          throw Error("The SmoothCast computer reported an unexpected position. Resume to check where the upload got to.");
         pendingUpload.received=state.received;
         transferView("transfer",state.received,file.size,"",queueOnly);
         if(state.ready_to_cast&&!casting){
@@ -3002,17 +3298,17 @@ $("uploadButton").addEventListener("click",async()=>{
       $("pauseUpload").hidden=true;
       await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
       monitorText("transferOperation","Transfer complete");
-      monitorText("transferDelivery",queueOnly?"Added to Up Next":"Playback requested — receiver not confirmed");
+      monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
       monitorText("transferAck",fileUnits(file.size));
       transferEvent(queueOnly?"Host accepted queue addition":"Host accepted playback request; receiver confirmation is separate");
       transferView("deliver",file.size,file.size,queueOnly?"Queue request accepted":"Playback request submitted",queueOnly);
       for(const step of $("transferSteps").children){step.classList.add("done");step.classList.remove("active");step.removeAttribute("aria-current");}
-      $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Playback requested — awaiting receiver";
+      $("transferStage").textContent=queueOnly?"Added to shared Up Next":"Play requested — waiting for the TV or speaker";
       $("transferEta").textContent="Complete";
       await clearPendingUpload();
       batchIndex++;
       batchAdded++;
-      showError("uploadStatus",queueOnly?"Added to shared Up Next.":"Playback requested; receiver confirmation is separate.");
+      showError("uploadStatus",queueOnly?"Added to shared Up Next.":"Play requested; waiting for the TV or speaker to start.");
     }
     if(batchFiles&&batchIndex>=batchFiles.length){
       const count=batchAdded,total=batchTotal;
@@ -3039,9 +3335,9 @@ $("uploadButton").addEventListener("click",async()=>{
       }else showError("uploadStatus",`${error.message} Skipped this file; select Continue upload batch to add the rest.`);
     }else if(pauseRequested){
       monitorText("transferOperation","Paused");
-      transferEvent("Paused; resume from the last host-confirmed offset");
+      transferEvent("Paused; Resume carries on from the last saved point");
       if(pendingUpload)transferView("transfer",pendingUpload.received,pendingUpload.size,"Paused — Resume available",pendingUpload.queueOnly);
-      showError("uploadStatus","Paused safely. Select Resume to continue; the host decides the saved offset.");
+      showError("uploadStatus","Paused safely. Select Resume to carry on from where it stopped.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
     }else {
@@ -3086,11 +3382,11 @@ $("cancelUpload").addEventListener("click",async()=>{
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
   finally{finishUpload()}
 });
-if(typeof requestAnimationFrame==="function")requestAnimationFrame(playheadFrame);
 document.addEventListener("visibilitychange",()=>{
   void syncRemoteWakeLock();
-  if(document.hidden){clearTimeout(statusTimer);statusRequest?.abort("superseded");roomEvents.stop();return}
+  if(document.hidden){stopPlayhead();clearTimeout(statusTimer);statusRequest?.abort("superseded");roomEvents.stop();return}
   statusFailures=0;
+  if(csrf&&!stalePage){paintPlayhead();schedulePlayhead()}
   refresh();
 });
 window.addEventListener("online",()=>{statusFailures=0;refresh()});
@@ -3143,7 +3439,7 @@ function syncMediaSession(s){
 (()=>{
   const input=$("findInput"),out=$("findResults"),status=$("findStatus");
   if(!input||!out||!status)return;
-  let timer=null,source=null,controller=null;
+  let timer=null,source=null,controller=null,searchGeneration=0;
   const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
   const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
   function where(copies){
@@ -3170,12 +3466,21 @@ function syncMediaSession(s){
     meta.textContent=bits.join(" - ");
     const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
     text.append(title,meta,where_);li.append(text);
-    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";
+    const feedback=document.createElement("p");feedback.className="field-hint";feedback.setAttribute("role","status");text.append(feedback);
+    const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";add.setAttribute("aria-label","Add "+(it.title||it.name||"media")+" to Up Next");
     if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}
     add.addEventListener("click",async()=>{
-      add.disabled=true;
-      try{const d=await post("/api/action",{action:"queue_add_key",key:it.id});showError("errorDash",d.message||"Added to Up Next");add.textContent="Added"}
-      catch(err){showError("errorDash",err.message);add.disabled=false}
+      if(add.disabled)return;
+      add.disabled=true;feedback.textContent="Submitting request…";
+      const session=csrf;
+      try{
+        const d=await post("/api/action",{action:"queue_add_key",key:it.id});
+        if(csrf!==session)return;
+        // A remote copy may still be transferring. Acknowledgement is not queue confirmation.
+        feedback.textContent=d.message||"Request accepted; check Up Next for confirmation.";
+        add.textContent=d.message==="Added to the queue."?"Added":"Requested";
+        void refresh();
+      }catch(err){if(csrf===session){feedback.textContent=err.message||"Could not add media. Retry.";add.disabled=false}}
     });
     const a=document.createElement("div");a.className="queue-actions";a.append(add);li.append(a);return li;
   }
@@ -3193,23 +3498,29 @@ function syncMediaSession(s){
     status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
       (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
   }
-  function stop(){if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
+  function stop(){searchGeneration++;if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
   async function run(){
-    stop();const typed=input.value.trim();
+    clearTimeout(timer);stop();const typed=input.value.trim();
+    const generation=searchGeneration,session=csrf;
+    const current=()=>generation===searchGeneration&&csrf===session;
+    if(!session)return;
     if(!typed&&!kind){out.replaceChildren();status.textContent="";return}
     const q=(typed+(kind?" kind:"+kind:"")).trim();
     const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
+    out.replaceChildren();status.textContent="Searching shared libraries…";
     if(typeof EventSource==="function"){
-      source=new EventSource(url);
-      source.addEventListener("results",e=>render(JSON.parse(e.data)));
-      source.addEventListener("more",e=>render(JSON.parse(e.data)));
-      source.addEventListener("done",()=>stop());
-      source.onerror=()=>stop();
+      const stream=new EventSource(url);source=stream;
+      const accept=e=>{if(!current()||source!==stream)return;try{render(JSON.parse(e.data))}catch(_){status.textContent="Search update could not be read.";stop()}};
+      stream.addEventListener("results",accept);
+      stream.addEventListener("more",accept);
+      stream.addEventListener("done",()=>{if(current()&&source===stream)stop()});
+      stream.onerror=()=>{if(current()&&source===stream){status.textContent="Search connection interrupted. Change the query or filter to retry.";stop()}};
       return;
     }
-    controller=new AbortController();
-    try{const r=await fetch(url,{credentials:"same-origin",signal:controller.signal});const d=await r.json();if(!r.ok)throw Error(d.error||"Search failed");render(d)}
-    catch(err){if(err.name!=="AbortError")status.textContent=err.message}
+    const request=new AbortController();controller=request;
+    try{const r=await fetch(url,{credentials:"same-origin",signal:request.signal});const d=await r.json();if(!current()||request.signal.aborted)return;if(!r.ok)throw Error(d.error||"Search failed");render(d)}
+    catch(err){if(current()&&err.name!=="AbortError")status.textContent=err.message}
+    finally{if(controller===request)controller=null}
   }
 
   let kind="",availableOnly=false;
@@ -3222,7 +3533,9 @@ function syncMediaSession(s){
     });
   }
   const lib=$("libraries"),body=$("libBody");
-  let libLoaded=false;
+  let libLoaded=false,libraryGeneration=0,libraryBusy=false;
+  const libStatus=$("libStatus"),libRefresh=$("libRefresh");
+  const libraryStatus=message=>{if(libStatus)libStatus.textContent=message};
   const crumb=(parts)=>{const p=document.createElement("p");p.className="muted";p.textContent=parts.join(" / ");return p};
   async function getJSON(url){const r=await fetch(url,{credentials:"same-origin"});const d=await r.json();if(!r.ok)throw Error(d.error||"Request failed");return d}
   function showOrigins(d){
@@ -3244,9 +3557,15 @@ function syncMediaSession(s){
     }
   }
   async function browse(origin,name,folder,path,cursor){
+    if(cursor&&libraryBusy)return;
+    const generation=++libraryGeneration,session=csrf;
+    if(!session)return;
+    const current=()=>generation===libraryGeneration&&csrf===session;
+    libraryBusy=true;libraryStatus(cursor?"Loading more media…":"Opening shared folder…");
     try{
       const url="/api/libraries/"+encodeURIComponent(origin)+"/"+encodeURIComponent(folder)+"?path="+encodeURIComponent(path)+(cursor?"&cursor="+encodeURIComponent(cursor):"");
       const d=await getJSON(url);
+      if(!current())return;
       if(!cursor)body.replaceChildren();
       else{const old=body.querySelector(".more");if(old)old.remove()}
       if(!cursor){
@@ -3268,11 +3587,22 @@ function syncMediaSession(s){
       body.append(ul);
       if(d.next){const more=document.createElement("button");more.type="button";more.className="tiny more";more.textContent="Load more";
         more.addEventListener("click",()=>browse(origin,name,folder,path,d.next));body.append(more)}
-    }catch(err){body.textContent=err.message}
+      libraryStatus(!(d.dirs||[]).length&&!(d.items||[]).length&&!cursor?"No media in this folder.":"");
+    }catch(err){if(current())libraryStatus(err.message||"Could not open this folder.")}
+    finally{if(generation===libraryGeneration)libraryBusy=false}
   }
-  async function showAll(){try{showOrigins(await getJSON("/api/libraries"))}catch(err){body.textContent=err.message}}
-  lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded){libLoaded=true;showAll()}});
-  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+  async function showAll(){
+    const generation=++libraryGeneration,session=csrf;
+    if(!session)return;
+    const current=()=>generation===libraryGeneration&&csrf===session;
+    libraryBusy=true;libraryStatus("Refreshing shared libraries…");
+    try{const d=await getJSON("/api/libraries");if(current()){showOrigins(d);libLoaded=true;libraryStatus("")}}
+    catch(err){if(current()){libLoaded=false;libraryStatus(err.message||"Could not load libraries.")}}
+    finally{if(generation===libraryGeneration)libraryBusy=false}
+  }
+  if(libRefresh)libRefresh.addEventListener("click",showAll);
+  lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded)showAll()});
+  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();status.textContent="";timer=setTimeout(run,120)});
 })();
 (()=>{
   const input=$("findInput"),search=$("youtubeSearch"),panel=$("youtubeResultsPanel"),
@@ -3305,13 +3635,13 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
-          if(!linkCapabilities.youtube){status.textContent="The host's YouTube worker is unavailable.";return}
-          if(!consent.checked){status.textContent="Confirm that you are authorised to acquire this media.";consent.focus();return}
+          if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";
           try{
             const receipt=await post("/api/link-jobs",{url:"https://www.youtube.com/watch?v="+result.id,request_id,authorised:true});
-            add.textContent="Acquisition requested";
-            if(current===generation)status.textContent=receipt.message||"Acquisition accepted; follow its progress below.";
+            add.textContent="Download requested";
+            if(current===generation)status.textContent=receipt.message||"Download accepted; follow its progress below.";
             void refresh();
           }catch(err){
             if(current===generation)status.textContent=err.message;
@@ -3320,10 +3650,51 @@ function syncMediaSession(s){
         });
         actions.append(add);row.append(info,actions);out.append(row);
       }
-      status.textContent=out.children.length?out.children.length+" YouTube results. Select a video to acquire.":"No YouTube videos found.";
+      status.textContent=out.children.length?out.children.length+" YouTube results. Choose a video to download.":"No YouTube videos found.";
     }catch(err){if(current===generation)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
+})();
+// #591: the Home control is always in the sticky app bar. It returns to the top
+// of the room and moves keyboard/screen-reader focus there; the now-playing pill
+// mirrors the playback card so the current item is visible from any section.
+(()=>{
+  const home=$("homeButton"),top=$("roomTop"),pill=$("barNow"),pillTitle=$("barNowTitle");
+  const title=$("title"),state=$("state"),dash=$("dashboard");
+  if(!home||!top||!pill||!pillTitle||!title||!state||!dash||!home.addEventListener)return;
+  const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const goHome=event=>{
+    event.preventDefault();
+    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
+    if(location.hash)history.replaceState(null,"",location.pathname+location.search);
+    top.focus({preventScroll:true});
+  };
+  home.addEventListener("click",goHome);
+  const logo=$("homeLogo");if(logo&&logo.addEventListener)logo.addEventListener("click",goHome);
+  const idle=new Set(["","Nothing playing","—"]);
+  function syncPill(){
+    const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
+    const show=!dash.hidden&&!idle.has(text);
+    pill.hidden=!show;
+    if(!show)return;
+    pillTitle.textContent=text;
+    pill.classList.toggle("paused",!/play|buffer/i.test(mode));
+    pill.setAttribute("aria-label","Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls");
+  }
+  if(typeof MutationObserver!=="function"){syncPill();return}
+  const watch=new MutationObserver(syncPill);
+  for(const node of [title,state])watch.observe(node,{childList:true,characterData:true,subtree:true});
+  watch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
+  syncPill();
+})();
+// Ticket 592: invite QR from the same origin. Handlers are attached before src so
+// a fast or cached load is never missed; on failure the link remains the way in.
+(()=>{
+  const img=$("inviteQr"),fallback=$("inviteQrFallback");
+  if(!img||!fallback||!img.addEventListener)return;
+  img.addEventListener("load",()=>{img.hidden=false;fallback.hidden=true});
+  img.addEventListener("error",()=>{img.hidden=true;img.removeAttribute("src");fallback.hidden=false});
+  img.src="/join-qr.png";
 })();
 </script></body></html>"""
 _HTML = _HTML.replace("/*TOKENS*/", design_tokens.css())

@@ -11,13 +11,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
 import uuid
+import media_tools
 
 EXTENSIONS = frozenset({".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".mpeg", ".mpg", ".wmv"})
 CHUNK = 1024 * 1024
@@ -106,9 +106,9 @@ def _fingerprint(path: Path, expected: os.stat_result) -> str:
 
 def _probe(path: Path) -> tuple[dict, bool]:
     """Optional local-only FFprobe; bound runtime and output, never a shell."""
-    if not shutil.which("ffprobe"):
+    if not media_tools.find_media_tool("ffprobe"):
         return {"probe_error": "ffprobe not installed"}, False
-    args = ["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe",
+    args = [media_tools.resolve_media_tool("ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe",
             "-show_entries", "format=duration,format_name:stream=codec_type,codec_name,width,height,channels",
             "-of", "json", "-i", str(path)]
     try:

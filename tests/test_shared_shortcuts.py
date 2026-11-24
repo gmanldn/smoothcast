@@ -90,7 +90,7 @@ def test_mute_is_authorized_and_rejected_when_receiver_offline():
     call = []
     controller = SimpleNamespace(
         _closing=False, busy=False, device_state="PLAYING",
-        mute_button=SimpleNamespace(get_sensitive=lambda: True),
+        _volume_control_available=lambda: True,
         _device=lambda: "", toggle_mute=lambda: call.append("mute"),
     )
     command = portal_commands.MutationEnvelope(

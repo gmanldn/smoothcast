@@ -148,8 +148,8 @@ def plan_recovery(ctx: FailureContext) -> RecoveryPlan:
             if failures.get((device, later), 0) < MAX_ATTEMPTS:
                 options.append(RecoveryOption(
                     "alternate_encoding", f"Convert for {device} ({later})",
-                    f"{device} could not play this {where} as {mode}; "
-                    f"{later} is more widely supported.", device, later, position))
+                    f"{device} could not play this {where}; converting it to a more "
+                    "widely supported format may help.", device, later, position))
                 break
     if "alternate_target" in allowed:
         seen: set[str] = {device}
@@ -184,14 +184,15 @@ def plan_for_window(window: object, message: str | None = None) -> RecoveryPlan 
         tracker = getattr(window, "tracker", None)
         position = tracker.value() if tracker is not None else None
         session = getattr(window, "session", None)
-        mode = str(getattr(session, "mode", "") or "direct")
+        mode = str(getattr(window, "_attempt_mode", "") or getattr(session, "mode", "") or "direct")
+        tried = tuple((str(d), str(m)) for d, m in list(getattr(window, "_cast_tried", ()) or ())[-16:])
         names = tuple(str(getattr(d, "name", "")) for d in (getattr(window, "devices", None) or ())[:64])
         info = getattr(window, "device_info", None)
         duration = info.get("duration") if isinstance(info, dict) else None
         return plan_recovery(FailureContext(
             device=device, mode=mode, stage="launch" if session is None else "transfer",
             error_code=classify_message(message), position=position, duration=duration,
-            targets=tuple(n for n in names if n)))
+            targets=tuple(n for n in names if n), tried=tried))
     except Exception:  # noqa: BLE001 - observation must never break failure handling
         return None
 

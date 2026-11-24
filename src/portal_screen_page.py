@@ -6,6 +6,7 @@ Text reaches the DOM only through ``textContent``/attributes, never ``innerHTML`
 from __future__ import annotations
 
 import design_tokens
+import version
 
 KNOWN_MIMES_JS = (
     '["video/mp4","video/webm","video/x-matroska","video/ogg","audio/mpeg",'
@@ -15,6 +16,7 @@ KNOWN_MIMES_JS = (
 
 def screen_page() -> bytes:
     return (_SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS)
+            .replace("__SC_VERSION__", version.label())
             .replace("/*TOKENS*/", design_tokens.css())).encode("utf-8")
 
 
@@ -33,7 +35,7 @@ _SCREEN_HTML = r"""<!doctype html>
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);overflow:hidden;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
-.stage{position:fixed;inset:0;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+.stage{position:fixed;inset:0;display:grid;justify-items:center;align-items:start;align-items:safe center;overflow:auto;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
 .card{width:min(30rem,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 .logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--vote-on));display:grid;place-items:center;font-weight:800;color:var(--on-accent);font-size:1.25rem}
@@ -42,7 +44,8 @@ label{display:block;margin:16px 0 6px;font-size:.9rem;color:var(--muted)}
 input{width:100%;min-height:52px;font:inherit;color:var(--text);background:var(--input);border:1px solid var(--border);border-radius:14px;padding:10px 14px}
 #pin{letter-spacing:.3em;font-size:1.3rem;text-align:center}
 button{font:inherit;font-weight:700;min-height:52px;border:0;border-radius:14px;padding:0 22px;color:var(--on-accent);background:var(--accent);cursor:pointer;width:100%;margin-top:18px}
-button.ghost{background:var(--nav);color:var(--text);width:auto;margin:0;min-height:44px;padding:0 16px}
+button:disabled{opacity:.65;cursor:wait}
+button.ghost{background:var(--nav);color:var(--on-nav);width:auto;margin:0;min-height:44px;padding:0 16px}
 button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .err{color:var(--danger);min-height:1.4em;margin:.6rem 0 0}
 .big{font-size:clamp(1.6rem,5vw,2.6rem);font-weight:750;letter-spacing:-.03em;margin:0;display:flex;align-items:center;justify-content:center;gap:.6rem}
@@ -68,26 +71,44 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 .paused .bars i{animation-play-state:paused}
 @keyframes eq{50%{height:100%}}
 @media(prefers-reduced-motion:reduce){.bars i,.dot{animation:none}}
-#hud{position:absolute;left:0;right:0;bottom:0;padding:44px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:linear-gradient(transparent,rgba(0,0,0,.8));transition:opacity .3s}
+#hud{position:absolute;left:0;right:0;bottom:0;padding:16px max(22px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(22px,env(safe-area-inset-left));background:var(--media-surface);color:var(--media-text);transition:opacity .3s}
 #hud.hide{opacity:0;pointer-events:none}
 #hud .title{font-size:1.15rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.9rem;margin-top:6px}
+#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--media-text);font-size:.9rem;margin-top:6px}
 .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin-top:10px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--accent)}
-#banner{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--scrim);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
+#banner{position:absolute;top:max(76px,calc(env(safe-area-inset-top) + 62px));left:50%;transform:translateX(-50%);background:var(--media-surface);color:var(--media-text);border:1px solid var(--media-text);border-radius:999px;padding:8px 16px;font-size:.9rem;max-width:90vw;text-align:center}
 #tools{position:absolute;top:max(14px,env(safe-area-inset-top));right:max(14px,env(safe-area-inset-right));display:flex;gap:8px;transition:opacity .3s}
-#tools.hide{opacity:0;pointer-events:none}
+#tools.hide{opacity:0;pointer-events:none}#tools.hide:focus-within{opacity:1;pointer-events:auto}
+/* #591: Home back to the room on every view; during untouched video it fades
+   with the other tools and returns on any pointer, key or focus. */
+.home-link{position:fixed;z-index:40;top:max(14px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none;box-shadow:0 8px 22px rgba(0,0,0,.35);transition:opacity .3s}
+.home-link svg{width:22px;height:22px;fill:currentColor}
+.home-link.hide{opacity:0;pointer-events:none}.home-link:focus-visible{opacity:1;pointer-events:auto;outline:3px solid var(--focus);outline-offset:3px}
+.screen-version{position:fixed;z-index:40;top:max(24px,calc(env(safe-area-inset-top) + 10px));left:calc(max(14px,env(safe-area-inset-left)) + 118px);font-size:.74rem;font-weight:650;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;transition:opacity .3s}
+.screen-version.hide{opacity:0}
+/* Reserve the corner so Home and the version never cover a card or the slate. */
+.stage{padding-top:max(80px,calc(env(safe-area-inset-top) + 70px))}
+/* On a phone, keep video tools clear of the Home/version strip. */
+@media(max-width:600px){
+  #tools{top:max(68px,calc(env(safe-area-inset-top) + 54px));flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 28px)}
+  #banner{top:max(172px,calc(env(safe-area-inset-top) + 158px));width:max-content;max-width:calc(100% - 28px);overflow-wrap:anywhere;border-radius:14px}
+  .card{padding:20px}
+}
+@media(prefers-reduced-motion:reduce){#hud,#tools,.home-link,.screen-version{transition:none}}
+@media(forced-colors:active){.home-link{border:2px solid ButtonText}}
 </style></head><body>
+<a class="home-link" id="homeLink" href="/" title="Back to the SmoothCast room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><span class="sc-version screen-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span>
 <div class="stage" id="loginView" hidden><form class="card" id="loginForm" autocomplete="off">
 <div class="brand"><div class="logo" aria-hidden="true">S</div><h1>Make this a SmoothCast screen</h1></div>
 <p>Play movies and music from the room on this device. Nothing to install.</p>
 <label for="name">Name this screen</label><input id="name" maxlength="32" placeholder="Living room TV" required>
-<label for="pin">Room PIN shown on the host</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
-<p class="err" id="loginError" role="alert"></p><button type="submit">Join the room</button></form></div>
+<label for="pin">House PIN shown in SmoothCast</label><input id="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" required>
+<p class="err" id="loginError" role="alert"></p><button id="loginSubmit" type="submit">Join the room</button></form></div>
 
 <div class="stage" id="startView" hidden><div class="card">
 <div class="brand"><div class="logo" aria-hidden="true">S</div><h1 id="startName">Screen</h1></div>
 <p>One tap lets this browser play sound and video when the room sends it something. You can leave it running; it reconnects by itself.</p>
-<button id="startButton" type="button">Start screen</button></div></div>
+<p class="err" id="startError" role="alert"></p><button id="startButton" type="button">Start screen</button></div></div>
 
 <div class="stage" id="slate" hidden><div class="slate">
 <p class="big"><span class="dot" id="dot"></span><span id="slateName">Screen</span></p>
@@ -112,6 +133,7 @@ const $=id=>document.getElementById(id);
 // Short address is text, never HTML; the QR contains the bound numeric endpoint.
 $("joinAddress").textContent=location.host;
 let csrf="",screenId="",seq=0,playSeq=0,current=null,started=false,polling=false,stopped=false;
+let joining=false,starting=false;
 let failures=0,lastReport=0,lastState="",hideTimer=null,wakeLock=null,fallbackTried=false,recoverAt=0,stallTimer=null;
 const video=$("video");
 const safe=(fn)=>{try{return fn()}catch(_){return undefined}};
@@ -119,19 +141,38 @@ const store={get:k=>safe(()=>localStorage.getItem(k))||"",set:(k,v)=>safe(()=>lo
 function show(...ids){for(const id of["loginView","startView","slate","player"])$(id).hidden=!ids.includes(id)}
 function clock(s){s=Math.max(0,Math.floor(Number(s)||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")}
 function capabilities(){return MIMES.filter(m=>{const el=m.startsWith("video")?video:document.createElement("audio");return !!safe(()=>el.canPlayType(m))})}
-async function api(method,path,body,signal){
+const REQUEST_TIMEOUT=8000,POLL_TIMEOUT=12000;
+async function requestJSON(path,options,timeout=REQUEST_TIMEOUT){
+  const controller=new AbortController();
+  let timer;
+  const deadline=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+      reject(Error("The room did not respond. Check your connection and try again."));
+      controller.abort();
+    },timeout);
+  });
+  try{return await Promise.race([deadline,(async()=>{
+    const r=await fetch(path,{...options,signal:controller.signal});
+    let d={};try{d=await r.json()}catch(err){if(r.ok)throw err}
+    if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
+    return d;
+  })()])}
+  finally{clearTimeout(timer)}
+}
+async function api(method,path,body,timeout=REQUEST_TIMEOUT){
   const headers={};if(body!==undefined)headers["Content-Type"]="application/json";if(method!=="GET")headers["X-CSRF-Token"]=csrf;
-  const r=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body),signal});
-  let d={};try{d=await r.json()}catch(_){}
-  if(!r.ok)throw Object.assign(Error(d.error||"Request failed"),{status:r.status});
-  return d}
+  return requestJSON(path,{method,credentials:"same-origin",cache:"no-store",headers,body:body===undefined?undefined:JSON.stringify(body)},timeout)
+}
 async function login(e){
-  e.preventDefault();$("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
-  try{const r=await fetch("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
-    const d=await r.json();if(!r.ok)throw Error(d.error||"Could not join");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
-  catch(err){$("loginError").textContent=err.message}}
+  e.preventDefault();if(joining)return;joining=true;
+  const button=$("loginSubmit");button.disabled=true;button.textContent="Joining…";
+  $("loginError").textContent="";const name=$("name").value.trim(),pin=$("pin").value.trim();
+  try{const d=await requestJSON("/api/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,name})});
+    if(!d.csrf)throw Error("Invalid room response. Please try again.");csrf=d.csrf;store.set("sc_screen_name",name);$("pin").value="";await enter(name)}
+  catch(err){$("loginError").textContent=err.message||"Could not join. Please try again."}
+  finally{joining=false;button.disabled=false;button.textContent="Join the room"}}
 async function enter(name){
-  $("startName").textContent=name;$("slateName").textContent=name;show("startView");
+  $("startName").textContent=name;$("slateName").textContent=name;$("startError").textContent="";show("startView");
   if(started)await begin();}
 async function register(){
   const name=$("slateName").textContent||"Screen";
@@ -139,12 +180,19 @@ async function register(){
   screenId=d.screen.id;seq=d.screen.seq;playSeq=d.screen.play_seq;$("slateName").textContent=d.screen.name;
   safe(()=>sessionStorage.setItem("sc_screen_id",screenId))}
 async function begin(){
-  started=true;stopped=false;try{await register()}catch(err){if(err.status===401||err.status===403){return relogin()}throw err}
-  show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
+  if(starting||started)return;
+  starting=true;const button=$("startButton");button.disabled=true;button.textContent="Connecting…";
+  $("startError").textContent="";
+  try{await register()}
+  catch(err){if(err.status===401||err.status===403){relogin();return}
+    $("startError").textContent="Could not start this screen. Check your connection and try again.";
+    return}
+  finally{starting=false;button.disabled=false;button.textContent="Start screen"}
+  started=true;stopped=false;show("slate");setSlate(READY,"ok");keepAwake();loop();heartbeat()}
 function relogin(){csrf="";screenId="";started=false;show("loginView");$("loginError").textContent="Your session ended. Enter the room PIN again."}
 function slateLayout(queueEmpty){$("slate").classList.toggle("corner",queueEmpty===false);$("slate").classList.toggle("empty",queueEmpty===true)}
 function setSlate(text,tone){$("slateText").textContent=text;$("dot").className="dot"+(tone==="bad"?" bad":tone==="warn"?" warn":"")}
-const DIM_HINT="Your browser may dim the screen. Use Guided Access/kiosk mode for a docked iPad.";
+const DIM_HINT="Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.";
 function dimHint(){if(store.get("sc_dim_hint"))return;store.set("sc_dim_hint","1");banner(DIM_HINT);setTimeout(()=>{if($("banner").textContent===DIM_HINT)banner("")},9000)}
 async function keepAwake(){if(!("wakeLock"in navigator)){dimHint();return}try{wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null})}catch(_){dimHint()}}
 if(safe(()=>document.pictureInPictureEnabled&&video.requestPictureInPicture)){$("pipButton").hidden=false;$("pipButton").addEventListener("click",e=>{e.stopPropagation();safe(()=>document.pictureInPictureElement?document.exitPictureInPicture():video.requestPictureInPicture())})}
@@ -152,14 +200,14 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&started&&
 async function loop(){
   if(polling)return;polling=true;
   while(started&&!stopped){
-    try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`);
+    try{const d=await api("GET",`/api/screens/${screenId}/poll?since=${seq}&wait=8`,undefined,POLL_TIMEOUT);
       if(failures){failures=0;banner("");if(!current)setSlate(READY,"ok")}
       for(const o of d.orders){if(o.seq>seq){seq=o.seq;apply(o)}}
       slateLayout(d.queue_empty)
     }catch(err){
       if(err.status===401||err.status===403){polling=false;return relogin()}
-      if(err.status===404){try{await register();continue}catch(_){}}
-      failures++;if(failures>1){banner("Reconnecting to the room…");if(!current)setSlate("Reconnecting to the room…","warn")}
+      if(err.status===404){try{await register();continue}catch(registerError){if(registerError.status===401||registerError.status===403){polling=false;return relogin()}}}
+      failures++;banner("Reconnecting to the room…");if(!current)setSlate("Reconnecting to the room…","warn");
       await new Promise(r=>setTimeout(r,Math.min(10000,500*2**Math.min(failures,5))))}}
   polling=false}
 function banner(text){const b=$("banner");b.textContent=text;b.hidden=!text}
@@ -196,7 +244,7 @@ async function report(force,ack){
   const body={state:s,position:position(),duration:(current&&current.duration)||(isFinite(video.duration)&&!transcoded?video.duration:0),volume:Math.round(video.volume*100),play_seq:playSeq};
   if(ack!==undefined)body.ack=ack;
   if(s==="error")body.error=errorText();
-  try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(err.status===401||err.status===403)relogin()}}
+  const session=csrf;try{await api("POST",`/api/screens/${screenId}/report`,body)}catch(err){if(csrf===session&&(err.status===401||err.status===403))relogin()}}
 function errorText(){const c=video.error&&video.error.code;return c===3||c===4?"This device cannot decode that file":c===2?"Network problem while loading":"Playback failed"}
 let beat=null;function heartbeat(){if(!beat)beat=setInterval(()=>{if(started)report(false);hud()},1000)}
 function hud(){
@@ -218,12 +266,12 @@ video.addEventListener("error",()=>{
   if(transcoded&&Date.now()-recoverAt>4000&&video.error&&video.error.code===2){recover();return}
   report(true)});
 function recover(){if(!current||!transcoded)return;recoverAt=Date.now();const at=position();load(current.url,at,true)}
-function wake(){const hud=$("hud"),tools=$("tools");hud.classList.remove("hide");tools.classList.remove("hide");clearTimeout(hideTimer);
-  hideTimer=setTimeout(()=>{if(!video.paused){hud.classList.add("hide");tools.classList.add("hide")}},3500)}
-document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(e.key==="f"||e.key==="F")fullscreen()});
+function wake(){const hud=$("hud"),tools=$("tools"),home=$("homeLink"),ver=$("scVersion");hud.classList.remove("hide");tools.classList.remove("hide");home.classList.remove("hide");ver.classList.remove("hide");clearTimeout(hideTimer);
+  hideTimer=setTimeout(()=>{if(!video.paused&&!$("player").hidden){hud.classList.add("hide");tools.classList.add("hide");home.classList.add("hide");ver.classList.add("hide")}},3500)}
+document.addEventListener("pointermove",wake);document.addEventListener("keydown",e=>{wake();if(!e.repeat&&!e.altKey&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.target?.isContentEditable&&!["INPUT","TEXTAREA","SELECT","BUTTON"].includes(e.target?.tagName)&&(!$("slate").hidden||!$("player").hidden)&&(e.key==="f"||e.key==="F")){e.preventDefault();fullscreen()}});
 function fullscreen(){const el=document.documentElement;if(document.fullscreenElement){document.exitFullscreen()}else if(el.requestFullscreen){el.requestFullscreen().catch(()=>{})}}
 $("fsButton").addEventListener("click",e=>{e.stopPropagation();fullscreen()});$("fsSlate").addEventListener("click",fullscreen);
-$("startButton").addEventListener("click",()=>{begin().catch(err=>{setSlate(err.message,"bad");show("slate")})});
+$("startButton").addEventListener("click",begin);
 $("loginForm").addEventListener("submit",login);
 window.addEventListener("pagehide",()=>{if(screenId&&csrf)safe(()=>fetch(`/api/screens/${screenId}`,{method:"DELETE",credentials:"same-origin",keepalive:true,headers:{"X-CSRF-Token":csrf}}))});
 $("name").value=store.get("sc_screen_name");show("loginView");
@@ -236,9 +284,11 @@ _PANEL_HTML = r"""
 #screensList select{flex:1 1 100%;min-height:44px;max-width:100%;font:inherit;color:inherit;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:0 10px}
 #screensList .queue-actions button{min-height:44px;min-width:44px;flex:1 1 auto}
 #screensList .state-error{color:var(--danger)}
+#screensList li[aria-busy="true"] button{cursor:wait}
+#screensList button[aria-disabled="true"]{opacity:.65}
 </style>
 <section id="screensPanel" hidden aria-labelledby="screensPanelHeading"><div class="row"><h2 id="screensPanelHeading" tabindex="-1">Screens</h2><span id="screensCount" class="muted"></span></div>
-<p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if the host requires it. Tap Start screen once to allow sound.</p>
+<p>Any browser can be a screen or speaker for this room — no app, no account. Open <a href="/screen" target="_blank" rel="noopener">this room's screen page</a> on a TV, tablet or laptop and enter the House PIN only if one has been set. Tap Start screen once to allow sound.</p>
 <ul id="screensList"><li class="empty">No screens connected</li></ul>
 <details class="help"><summary>How to use and control browser screens</summary><div class="help-body"><p><strong>Set up a screen:</strong> open the screen page on the device that will play sound or video, join with a name and the House PIN if required, then choose Start screen on that device.</p><p><strong>Choose from queue</strong> selects an item already in Up Next. <strong>Play</strong> starts it on that individual screen, not the main room TV. Pause, Resume and Stop affect only the named screen.</p><p>If a screen is not responding, controls remain unavailable until it reconnects. Add new media using the room's Find or Add files sections first.</p></div></details>
 <p id="screensMsg" class="muted" role="status" aria-live="polite"></p></section>
@@ -252,25 +302,38 @@ _PANEL_HTML = r"""
   const pendingScreenCommands=new Map();
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const clock=s=>{s=Math.max(0,Math.floor(Number(s)||0));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+  const COMMAND_TIMEOUT=8000;
   async function send(id,body){
     const key=String(id),session=csrf;
-    if(pendingScreenCommands.get(key)===session)return;
-    pendingScreenCommands.set(key,session);refreshScreenPending(key);
-    if(csrf===session)msg.textContent="Sending screen command…";
-    try{const r=await fetch(`/api/screens/${encodeURIComponent(key)}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session},
-      body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
-      const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");
-      if(csrf===session)msg.textContent="Screen command received; checking its state.";
-    }catch(err){if(csrf===session)msg.textContent=err.message}
-    finally{if(pendingScreenCommands.get(key)===session){pendingScreenCommands.delete(key);refreshScreenPending(key)}}
+    if(pendingScreenCommands.get(key)?.session===session)return;
+    const controller=new AbortController(),command={session};let timer;
+    const owns=()=>csrf===session&&pendingScreenCommands.get(key)===command;
+    pendingScreenCommands.set(key,command);refreshScreenPending(key);
+    const name=screenById.get(key)?.name||"Screen";
+    msg.textContent="Sending command to "+name+"…";
+    try{
+      const deadline=new Promise((_,reject)=>{
+        timer=setTimeout(()=>{
+          reject(Error("No confirmation from "+name+". Check its current state before trying again."));
+          controller.abort();
+        },COMMAND_TIMEOUT);
+      });
+      await Promise.race([deadline,(async()=>{
+        const r=await fetch(`/api/screens/${encodeURIComponent(key)}/command`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session},signal:controller.signal,
+          body:JSON.stringify({...body,command_id:`s${Date.now().toString(36)}-${(++seq).toString(36)}`})});
+        const d=await r.json();if(!r.ok)throw Error(d.error||"Screen command failed");
+      })()]);
+      if(owns())msg.textContent=name+": command received; checking its state.";
+    }catch(err){if(owns())msg.textContent=err.message||"No confirmation. Check the screen state before trying again."}
+    finally{clearTimeout(timer);if(pendingScreenCommands.get(key)===command){pendingScreenCommands.delete(key);refreshScreenPending(key)}}
   }
   function updateScreenPlayButton(play,pick,ready){play.disabled=!ready||!pick.value}
   const label={idle:"Ready",loading:"Loading",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Finished",error:"Problem"};
   const screenById=new Map();
   function markScreenPending(li,id){
-    const busy=pendingScreenCommands.get(id)===csrf;
+    const busy=pendingScreenCommands.get(id)?.session===csrf;
     li.setAttribute("aria-busy",String(busy));
-    for(const button of Array.from(li.children[1]?.children||[]).slice(1))button.setAttribute("aria-disabled",String(busy));
+    for(const button of Array.from(li.children[1]?.children||[]).slice(1))button.setAttribute("aria-disabled",String(busy||!!button.disabled));
   }
   function refreshScreenPending(id){
     const row=Array.from(list.children).find(li=>li.dataset?.screenId===id);
@@ -284,7 +347,7 @@ _PANEL_HTML = r"""
     const play=el("button","tiny","Play"),toggle=el("button","secondary tiny","Pause"),stop=el("button","secondary tiny","Stop");
     pick.addEventListener("change",()=>{
       choice[key]=pick.value;
-      updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready);
+      updateScreenPlayButton(play,pick,!!screenById.get(key)?.ready);markScreenPending(li,key);
     });
     play.type="button";play.title="Play the selected shared-queue item on this screen, not the room TV";
     play.addEventListener("click",()=>{

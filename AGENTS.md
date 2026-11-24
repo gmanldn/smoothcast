@@ -2,8 +2,8 @@
 
 Python 3.10+, GTK4/libadwaita, Chromecast/DLNA. Read only the relevant
 [handbook](docs/agents/README.md) topic. Use
-`python3 scripts/agent_context.py route <task-or-path>`. The
-[archive](docs/AGENT_REFERENCE.md) is historical, not default context.
+`python3 scripts/agent_context.py route <task-or-path>`.
+The [archive](docs/AGENT_REFERENCE.md) is historical, not policy.
 
 ## Fast agent lifecycle (P0)
 
@@ -19,20 +19,26 @@ python3 scripts/agent.py finish --done "landed implementation" --next "remaining
 # To close: --next none --verification "actual test results" --checklist "all criteria" --close
 ```
 
-`start` refreshes `develop`, claims a short lease and opens a private
-worktree with a compact issue/handover brief. Claims expire (90m default);
-commits and handovers persist. `ship` commits tracked edits (name new files
-with `--files`), reconciles leases and unpublished commits, checks version
-integrity, pushes non-force and records progress. On conflict preserve work.
-**Exit 7 means the push succeeded but handover failed**: rerun `ship`
-in the **same** worktree to replay its SHA; never recommit.
-**Exit 5 after push and failed fetch is UNCERTAIN**: retry `ship` in
-that worktree; its saved SHA is verified before any re-push. New production
-paths trigger lease expansion. Missing optional checks are UNVERIFIED.
-`finish` records evidence and releases the lease. See
+`start` refreshes `develop`, claims a 90m lease and opens a private worktree
+with a compact brief; commits persist. `ship` commits tracked
+edits (`--files` for new files), reconciles leases, checks version integrity and
+pushes non-force. Preserve conflicts; after exit 5/7 rerun `ship` in the same
+worktree, never recommit or overwrite another checkout. New paths expand the
+lease; missing optional checks are UNVERIFIED. `finish` records
+evidence and releases the lease. See
 [coordination](docs/COORDINATION.md) and [workflow](docs/agents/workflow.md).
 GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 `scripts/ticket_digest.py --next --label agent-ready` is not claim-aware.
+
+## Product rule: effortless UX (P0)
+
+- User experience is paramount. SmoothCast handles discovery, routing,
+  workers, recovery and cleanup; users choose media and targets.
+- Keep the happy path fast and obvious; disclose diagnostics progressively.
+  Never fake readiness or success, hide a real failure, or weaken consent/security.
+- Keep GTK/browser interaction responsive: bounded off-thread I/O, coalesced
+  updates, no duplicate pollers or needless redraws. Preserve input and playback.
+  See [UX and orchestration](docs/agents/preferences.md#ux-and-orchestration).
 
 ## Quality and safety
 
@@ -40,18 +46,18 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
   Tests are optional on `develop`, but never assert unrun checks passed.
 - **Never launch the real GUI** or control real receivers during tests.
   Read [testing](docs/agents/testing.md); use
-  `scripts/test_gui_isolated.py`. Full opt-in tests:
+  `scripts/test_gui_isolated.py`; full suite:
   `python3 -m pytest -q tests`.
-- Respect playback ownership, privacy, compatibility and error paths.
-  See [architecture](docs/agents/architecture.md).
-- Keep context bounded: [efficiency](docs/agents/efficiency.md),
-  [Ponytail](.kilo/skills/ponytail/SKILL.md),
-  [Caveman](.kilo/skills/caveman/SKILL.md).
-- Owner policy: **one PATCH per completed ticket**. Ship progress without
-  bumps; use `agent.py ship --assign-patch` for the final acceptance slice.
-  Retries reuse the existing issue assignment; never mint a second PATCH.
-  Git commit SHA identifies every build (`--build-id`); `src/version.py` is SemVer
-  (`smoothcast --version`). Mandatory
+- Respect playback ownership, privacy, compatibility and errors; see
+  [architecture](docs/agents/architecture.md).
+- **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the
+  smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
+  evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
+- Owner policy: **one PATCH per completed ticket**; ship progress without
+  bumps and use `agent.py ship --assign-patch` for final acceptance.
+  Retries reuse the issue assignment; never mint a second PATCH.
+  Git commit SHA identifies every build (`--build-id`); `src/version.py` is
+  SemVer (`smoothcast --version`). Mandatory
   version-history checks run on every ship, even with `--skip-checks`.
   Never bypass them via raw pushes.
   No automatic merging, tagging or publishing to `main`.

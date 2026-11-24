@@ -3,6 +3,7 @@
 
 Usage:
     python3 scripts/agent_context.py list
+    python3 scripts/agent_context.py skills
     python3 scripts/agent_context.py route src/cast_av.py subtitles
     python3 scripts/agent_context.py read architecture
 
@@ -47,6 +48,15 @@ TOPICS = {
 MAX_HINT_CHARS = 1500
 MAX_READ_CHARS = 9000
 
+# Token-discipline skills are bundled with the checkout, not installed from a
+# plugin: both agents and humans get the same files from every worktree.
+SKILLS = {
+    "caveman": (".kilo/skills/caveman/SKILL.md",
+                "terse factual reports; keep every safety detail"),
+    "ponytail": (".kilo/skills/ponytail/SKILL.md",
+                 "smallest complete diff; reuse before adding"),
+}
+
 
 _PATH_MARKERS = {"src/", "setup/", "cast_", ".py"}
 
@@ -89,8 +99,18 @@ def guide(name: str) -> Path:
 
 def list_topics() -> str:
     return "\n".join(
-        f"{name:13} {desc} — docs/agents/{name}.md"
-        for name, (desc, _) in TOPICS.items()
+        [f"{name:13} {desc} — docs/agents/{name}.md"
+         for name, (desc, _) in TOPICS.items()]
+        + ["skills       " + ", ".join(SKILLS)
+           + " — .kilo/skills/<name>/SKILL.md"]
+    )
+
+
+def skills_list() -> str:
+    """Print the bundled token-discipline skills without reading them."""
+    return "\n".join(
+        f"{name:9} {path} — {purpose}"
+        for name, (path, purpose) in SKILLS.items()
     )
 
 
@@ -121,16 +141,22 @@ def route_hint(words: list[str]) -> str:
                 "symbols/files narrowly; do not load the entire archive.")
     first = matches[0]
     suffix = "; also consider " + ", ".join(matches[1:3]) if len(matches) > 1 else ""
-    return (f"Read docs/agents/{first}.md for "
+    hint = (f"Read docs/agents/{first}.md for "
             f"{TOPICS[first][0].lower()}{suffix}. "
             "Open only task-relevant source ranges and direct callers."
             + related_invariants(words))
+    if first == "efficiency":
+        hint += (" Apply .kilo/skills/ponytail/SKILL.md for the smallest "
+                 "complete diff and .kilo/skills/caveman/SKILL.md for terse "
+                 "evidence; see docs/agents/efficiency.md for precedence.")
+    return hint
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="Show brief topic map")
+    sub.add_parser("skills", help="Show bundled token-discipline skills")
     lookup = sub.add_parser("route", help="Select a task-specific guide")
     lookup.add_argument("query", nargs="+", help="Paths or task keywords")
     read = sub.add_parser("read", help="Print one guide, never all docs")
@@ -139,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "list":
         output = list_topics()
+    elif args.command == "skills":
+        output = skills_list()
     elif args.command == "route":
         output = route_hint(args.query)
         if len(output) > MAX_HINT_CHARS:

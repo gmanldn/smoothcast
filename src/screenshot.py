@@ -11,6 +11,7 @@ import uuid
 
 import aspect_override
 import picture_adjustments
+import media_tools
 
 
 class SparseFrameCache:
@@ -148,7 +149,7 @@ def capture_frame(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     target = directory / f"smoothcast_{stamp}_{uuid.uuid4().hex[:8]}.png"
     args = [
-        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
         "-n", "-ss", str(max(0.0, position)), "-i", str(source),
         "-map", f"0:{video_stream_index}", "-frames:v", "1", str(target),
     ]
@@ -195,7 +196,7 @@ def cover_art(source: Path, *, timeout: int = 8) -> bytes:
     if not stat.S_ISREG(info.st_mode):
         raise CaptureError(f"Source is not a regular file: {source.name}")
     command = [
-        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
         "-i", str(source), "-map", "0:v:0", "-an", "-sn", "-dn",
         "-frames:v", "1", "-vf", "scale=480:480:force_original_aspect_ratio=decrease",
         "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
@@ -232,7 +233,7 @@ def preview_frame(source: Path, position: float, *, timeout: int = 12,
     if type(video_stream_index) is not int or video_stream_index < 0:
         raise CaptureError("Invalid video stream index")
     command = [
-        "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+        media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
         "-ss", str(max(0.0, position)), "-i", str(source),
         "-map", f"0:{video_stream_index}",
         "-an", "-sn", "-dn", "-frames:v", "1",

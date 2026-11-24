@@ -21,11 +21,12 @@ WIRE_VERSION = 1
 KINDS = ("youtube", "magnet")
 MAX_FIELD = 128
 _FIELDS = {
-    "offer": {"job", "gen", "key", "kind"},
+    "offer": {"job", "gen", "key", "kind", "src"},
     "cancel": {"job", "gen"},
     "report": {"job", "gen", "stage", "received", "total"},
     "finished": {"job", "gen", "content"},
     "failed": {"job", "gen"},
+    "ticket": {"job", "gen"},  # host asks the worker for a one-job download ticket
 }
 
 
@@ -55,8 +56,15 @@ def parse(message: object) -> dict:
         raise WireError("invalid job identity")
     if type(message["gen"]) is not int or not 1 <= message["gen"] <= (1 << 63) - 1:
         raise WireError("bad generation")
-    if kind == "offer" and message["kind"] not in KINDS:
-        raise WireError("unknown provider")
+    if kind == "offer":
+        if message["kind"] not in KINDS:
+            raise WireError("unknown provider")
+        # The canonical identity (11-char video id or 40-hex btih) travels only
+        # on this authenticated RPC, never in telemetry, and must hash to the key.
+        pattern = r"[A-Za-z0-9_-]{11}" if message["kind"] == "youtube" else r"[0-9a-f]{40}"
+        if (not isinstance(message["src"], str) or not re.fullmatch(pattern, message["src"])
+                or core.source_key(message["kind"], message["src"]) != message["key"]):
+            raise WireError("source does not match its key")
     for name in ("key", "content"):
         if name in message and (not isinstance(message[name], str)
                                 or not re.fullmatch(r"[0-9a-f]{64}", message[name])):
@@ -73,12 +81,15 @@ def parse(message: object) -> dict:
 class WorkerService:
     """Executor side: fences offers/cancels and starts or stops the real worker."""
 
-    def __init__(self, start: Callable[[str, int, str, str], None],
-                 stop: Callable[[str], None], slots: int = 1) -> None:
+    def __init__(self, start: Callable[..., None],
+                 stop: Callable[[str], None], slots: int = 1,
+                 ticket: Callable[[str, int], dict | None] | None = None,
+                 discard: Callable[[str], None] | None = None) -> None:
         self.guard = core.ExecutorGuard(slots)
-        self._start, self._stop = start, stop
+        self._start, self._stop, self._ticket = start, stop, ticket
+        self._discard = discard
 
-    def handle(self, message: object) -> dict:
+    def handle(self, message: object, sender: str | None = None) -> dict:
         try:
             msg = parse(message)
         except WireError:
@@ -88,12 +99,20 @@ class WorkerService:
             for job in superseded:
                 self._stop(job)
             if verdict == "accepted":
-                self._start(msg["job"], msg["gen"], msg["key"], msg["kind"])
+                self._start(msg["job"], msg["gen"], msg["key"], msg["kind"], msg["src"], sender)
             return {"ok": verdict in ("accepted", "duplicate"), "verdict": verdict}
         if msg["t"] == "cancel":
+            stale = msg["gen"] < self.guard.highest.get(msg["job"], 0)
             if self.guard.cancel(msg["job"], msg["gen"]):
                 self._stop(msg["job"])
+            if not stale and self._discard is not None:
+                # Current fence: also revoke any download ticket and drop the verified file,
+                # even when the download already finished (nothing is "running" then).
+                self._discard(msg["job"])
             return {"ok": True, "verdict": "cancelled"}
+        if msg["t"] == "ticket":
+            result = self._ticket(msg["job"], msg["gen"]) if self._ticket else None
+            return {"ok": bool(result), "verdict": "ticket" if result else "none", **(result or {})}
         return {"ok": False, "verdict": "invalid"}
 
 
@@ -122,14 +141,14 @@ class HostCoordinator:
         if selection.local:
             return job, selection, "local"
         try:
-            reply = self._send(node, build("offer", job=job, gen=generation, key=key, kind=kind))
+            reply = self._send(node, build("offer", job=job, gen=generation, key=key, kind=kind, src=identity))
         except Exception:  # noqa: BLE001 - delivery unknown: it may be running
             self.ledger.mark_ambiguous(job, node, generation)
             return job, selection, "ambiguous"
         verdict = reply.get("verdict") if isinstance(reply, dict) else None
         if verdict in ("accepted", "duplicate"):
             return job, selection, "accepted"
-        if verdict in ("busy", "fenced", "invalid"):
+        if verdict in ("busy", "fenced", "invalid", "declined"):
             self.ledger.refused(job, node, generation)
             return job, selection, "refused"
         self.ledger.mark_ambiguous(job, node, generation)

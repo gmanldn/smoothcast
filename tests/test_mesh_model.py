@@ -1,6 +1,7 @@
 """Mesh wire model: round trips, caps, tiers, strict parsing (ticket #394)."""
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -153,11 +154,128 @@ def test_duplicate_entries_are_rejected():
         mm.parse_record(wire)
 
 
-def test_unknown_fields_are_ignored_for_forward_compatibility():
+def test_unknown_fields_never_change_how_known_fields_parse():
+    # Unknown fields (top level and nested) are carried only as opaque extras:
+    # stripping them yields exactly the record parsed without them.
     wire = full().to_wire()
     wire["future_feature"] = {"x": 1}
     wire["targets"][0]["colour"] = "red"
-    assert mm.parse_record(wire) == mm.parse_record(full().to_wire())
+    parsed = mm.parse_record(wire)
+    baseline = mm.parse_record(full().to_wire())
+    assert mm._strip_extras(parsed) == baseline
+    assert parsed.targets[0].extra == (("colour", '"red"'),)
+
+
+# -- #387: additive top-level fields survive relaying through an older node --
+
+
+def extras_wire(**extra):
+    wire = full().to_wire()
+    wire.update(extra)
+    return wire
+
+
+def test_unknown_top_level_fields_survive_a_relay_hop_unchanged():
+    wire = extras_wire(future_feature={"x": 1, "y": [1, 2, "z"]}, flag_b=True)
+    hop1 = mm.parse_record(wire)
+    relayed = hop1.to_wire()
+    assert relayed["future_feature"] == {"x": 1, "y": [1, 2, "z"]}
+    assert relayed["flag_b"] is True
+    hop2 = mm.parse_record(relayed)
+    # Idempotent: any number of hops yields identical bytes and digest.
+    assert hop2 == hop1
+    assert mm.encode_record(hop2) == mm.encode_record(hop1)
+    assert mm.record_digest(hop2) == mm.record_digest(hop1)
+    assert mm.parse_record_bytes(mm.encode_record(hop1)) == hop1
+
+
+def test_relayed_extras_never_shadow_or_change_known_fields():
+    wire = extras_wire(future_feature=1)
+    parsed = mm.parse_record(wire)
+    assert parsed.name == "Lounge PC" and parsed.rev == 7 and parsed.key == (BOOT, 7)
+    forged = replace(full(), extra=(("name", '"evil"'), ("rev", "999"),
+                                    ("v", "9")))
+    out = forged.to_wire()
+    assert out["name"] == "Lounge PC" and out["rev"] == 7 and out["v"] == 1
+
+
+def test_extras_are_omitted_when_there_are_none():
+    assert full().extra == ()
+    assert set(full().to_wire()) == set(mm._KNOWN_RECORD_KEYS)
+
+
+@pytest.mark.parametrize("key", [
+    "Bad", "has-dash", "1starts_digit", "", "x" * 33, "white space", "ünï",
+    "__proto__x" * 4, "a.b", "../etc"])
+def test_extras_with_unsafe_key_names_are_dropped_not_fatal(key):
+    wire = extras_wire(good_key=1)
+    wire[key] = 1
+    parsed = mm.parse_record(wire)
+    assert [name for name, _ in parsed.extra] == ["good_key"]
+
+
+@pytest.mark.parametrize("value", [
+    1.5, float("nan"), float("inf"), {"nested": 1.0}, [1, 2.5],
+    2 ** 60, -(2 ** 60), "x" * 300, "bad\x00control", {"k": "bad\x07"},
+    {"a": {"b": {"c": {"d": {"e": 1}}}}},            # deeper than the cap
+    list(range(200)),                                  # too many nodes
+    object(), {1, 2}, b"bytes"])
+def test_extras_with_unsafe_values_are_dropped_not_fatal(value):
+    wire = extras_wire(keep_me="ok")
+    wire["bad_value"] = value
+    parsed = mm.parse_record(wire)
+    assert [name for name, _ in parsed.extra] == ["keep_me"]
+    assert replace(parsed, extra=()) == mm.parse_record(full().to_wire())
+
+
+def test_extras_are_capped_deterministically_by_key_order():
+    wire = extras_wire(**{f"f{index:02d}": index for index in range(40)})
+    parsed = mm.parse_record(wire)
+    names = [name for name, _ in parsed.extra]
+    assert len(names) == mm.MAX_EXTRA_FIELDS
+    assert names == sorted(names) == [f"f{index:02d}" for index in range(16)]
+    # Same input, same outcome on every node, and stable across further hops.
+    assert mm.parse_record(parsed.to_wire()) == parsed
+
+
+def test_total_extra_bytes_are_bounded():
+    big = ["y" * 200, "y" * 200]
+    wire = extras_wire(**{f"k{index:02d}": big for index in range(16)})
+    parsed = mm.parse_record(wire)
+    spent = sum(len(name) + len(text) + 4 for name, text in parsed.extra)
+    assert 0 < len(parsed.extra) < 16
+    assert spent <= mm.MAX_EXTRA_TOTAL_BYTES
+
+
+def test_extras_never_make_an_acceptable_record_unencodable(monkeypatch):
+    base_size = mm.encoded_size(full())
+    wire = extras_wire(future_feature={"x": "y" * 100})
+    monkeypatch.setattr(mm, "MAX_RECORD_BYTES", base_size + 20)
+    parsed = mm.parse_record(wire)
+    assert parsed.extra == ()
+    assert mm.encode_record(parsed)
+
+
+def test_extras_arriving_as_text_or_bytes_are_preserved_too():
+    wire = extras_wire(future_feature=[1, 2])
+    data = json.dumps(wire).encode()
+    assert mm.parse_record_bytes(data).to_wire()["future_feature"] == [1, 2]
+    assert mm.parse_record_bytes(data.decode()).extra
+
+
+def test_extras_never_reach_the_public_or_guest_tiers():
+    parsed = mm.parse_record(extras_wire(future_feature={"secret": "x"}))
+    assert parsed.extra
+    for tier in (mm.public_tier(parsed), mm.guest_tier(parsed)):
+        assert "future_feature" not in tier
+        assert "secret" not in json.dumps(tier)
+    assert mm.full_tier(parsed)["future_feature"] == {"secret": "x"}
+
+
+def test_duplicate_extra_keys_are_still_rejected_before_parsing():
+    data = b'{"v":1,"future_feature":1,"future_feature":2}'
+    with pytest.raises(mm.MeshModelError):
+        mm.parse_record_bytes(data)
 
 
 def test_raw_message_hazards_are_rejected_before_parsing():
@@ -419,3 +537,80 @@ def test_public_and_guest_tiers_expose_only_their_allow_list(rec):
     assert not {"clients", "edges", "sources", "addresses"} & set(guest)
     assert guest["client_count"] == len(rec.clients)
     assert set(guest) - set(public) == {"targets", "client_count"}
+
+
+# -- #387: unknown fields survive in EVERY nested synced item type ------------
+
+ITEM_GROUPS = ("targets", "clients", "sources", "edges")
+
+
+def nested_wire(**extras):
+    wire = full().to_wire()
+    for group in ITEM_GROUPS:
+        assert wire[group], f"fixture needs at least one {group[:-1]}"
+        wire[group][0].update(extras)
+    return wire
+
+
+def test_nested_unknown_fields_survive_every_relay_hop_in_all_four_item_types():
+    wire = nested_wire(future_a={"n": [1, 2]}, future_b=True)
+    hop1 = mm.parse_record(wire)
+    relayed = hop1.to_wire()
+    for group in ITEM_GROUPS:
+        assert relayed[group][0]["future_a"] == {"n": [1, 2]}
+        assert relayed[group][0]["future_b"] is True
+        assert "future_a" not in relayed[group][-1] or len(relayed[group]) == 1
+    hop2 = mm.parse_record(relayed)
+    assert hop2 == hop1 and mm.encode_record(hop2) == mm.encode_record(hop1)
+    assert mm.record_digest(hop2) == mm.record_digest(hop1)
+    assert mm.parse_record_bytes(mm.encode_record(hop1)) == hop1
+
+
+@pytest.mark.parametrize("group,known", [
+    ("targets", mm._KNOWN_TARGET_KEYS), ("clients", mm._KNOWN_CLIENT_KEYS),
+    ("sources", mm._KNOWN_SOURCE_KEYS), ("edges", mm._KNOWN_EDGE_KEYS)])
+def test_nested_extras_never_shadow_known_item_fields(group, known):
+    base = full()
+    forged = replace(base, **{group: tuple(
+        replace(item, extra=tuple(sorted((key, '"evil"') for key in known)))
+        for item in getattr(base, group))})
+    clean = base.to_wire()[group]
+    assert forged.to_wire()[group] == clean  # every known field intact, nothing added
+
+
+def test_nested_extras_are_bounded_per_item_and_unsafe_ones_dropped_not_fatal():
+    wire = full().to_wire()
+    for i in range(10):
+        wire["targets"][0][f"field_{i}"] = i
+    wire["targets"][0]["BadKey"] = 1                      # unsafe key
+    wire["targets"][0]["floaty"] = 1.5                     # floats are not canonical
+    wire["targets"][0]["huge"] = "x" * 400                # over the text bound
+    parsed = mm.parse_record(wire)
+    extra = dict(parsed.targets[0].extra)
+    assert len(extra) <= mm.MAX_ITEM_EXTRA_FIELDS
+    assert sum(len(k) + len(v) + 4 for k, v in parsed.targets[0].extra) <= mm.MAX_ITEM_EXTRA_BYTES
+    assert not {"BadKey", "floaty", "huge"} & set(extra)
+    assert sorted(extra) == sorted(extra)[:mm.MAX_ITEM_EXTRA_FIELDS]
+    assert mm.parse_record(parsed.to_wire()) == parsed     # idempotent after bounding
+
+
+def test_nested_extras_never_reach_the_guest_or_public_tiers():
+    parsed = mm.parse_record(nested_wire(future_secret="leak-me"))
+    for tier in (mm.public_tier(parsed), mm.guest_tier(parsed)):
+        assert "leak-me" not in json.dumps(tier)
+    assert "leak-me" in json.dumps(mm.full_tier(parsed))
+
+
+def test_extras_are_dropped_before_known_data_when_a_record_must_shrink():
+    parsed = mm.parse_record(nested_wire(future_a="y" * 200, future_b="z" * 40))
+    assert mm._has_extras(parsed)
+    small = mm.fit_record(parsed, limit=mm.encoded_size(mm._strip_extras(parsed)))
+    assert not mm._has_extras(small)
+    assert small.targets == mm._strip_extras(parsed).targets and not small.truncated
+
+
+def test_nested_extras_never_make_an_acceptable_record_unencodable(monkeypatch):
+    base = mm.parse_record(full().to_wire())
+    monkeypatch.setattr(mm, "MAX_RECORD_BYTES", mm.encoded_size(base) + 8)
+    parsed = mm.parse_record(nested_wire(future_a="y" * 120))
+    assert not mm._has_extras(parsed) and mm.encoded_size(parsed) <= mm.MAX_RECORD_BYTES

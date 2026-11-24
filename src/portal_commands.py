@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
+import guest_messages
 import hashlib
 import json
 import math
@@ -25,6 +26,7 @@ import threading
 import time
 from typing import Callable
 
+import action_state
 import actions
 import command_trace
 
@@ -124,7 +126,7 @@ def _payload(action: str, value: object) -> dict:
         if isinstance(position, bool) or not isinstance(position, (int, float)):
             raise CommandError(400, "Seek position must be a number")
         if not math.isfinite(float(position)) or not 0 <= float(position) <= 24 * 60 * 60:
-            raise CommandError(400, "Seek position is out of range")
+            raise CommandError(400, guest_messages.SEEK_OUT_OF_RANGE)
         return {"value": float(position)}
     if action == "volume":
         level = value.get("value")
@@ -476,13 +478,19 @@ def run_mutation(controller: object, fence: CommandFence,
                            revision=revision, code="cast.command_in_progress")
     command_trace.stage("dispatched")
     action = envelope.action
+    # Preconditions come from controller state, never from the desktop's GTK
+    # widget sensitivity: a stale control must not reject a remote command.
+    preview_path = getattr(controller, "_preview_path", None)
     if action == "play_pause":
-        if not controller.play_button.get_sensitive():
+        if not action_state.can_play_pause(controller.device_state, controller.session,
+                                           controller.external, preview_path, controller.busy):
             raise CommandError(409, "Playback is not available right now", revision=revision)
         controller.toggle_play()
         message = "Playback command sent; the dashboard will refresh with receiver state."
     elif action == "stop":
-        if not controller.stop_button.get_sensitive():
+        if not action_state.can_stop(controller.device_state, controller.session,
+                                     controller.external, preview_path, controller.busy,
+                                     getattr(controller, "_dlna_cancel", None)):
             raise CommandError(409, "Nothing SmoothCast can stop right now", revision=revision)
         controller.stop_stream()
         message = "Stop requested; the dashboard will refresh with receiver state."
@@ -493,13 +501,14 @@ def run_mutation(controller: object, fence: CommandFence,
         controller.seek_to(envelope.payload["value"])
         message = "Seek requested; the dashboard will refresh with receiver state."
     elif action == "volume":
-        if controller.device_state == "OFFLINE" or not controller.volume_scale.get_sensitive():
+        if not action_state.can_volume(controller.device_state,
+                                       controller._volume_control_available()):
             raise CommandError(409, "Receiver volume is unavailable", revision=revision)
         controller.volume_scale.set_value(envelope.payload["value"])
         message = "Volume change requested; the dashboard will refresh with receiver state."
     elif action == "mute":
-        if (controller.device_state == "OFFLINE"
-                or not controller.mute_button.get_sensitive()):
+        if not action_state.can_volume(controller.device_state,
+                                       controller._volume_control_available()):
             raise CommandError(409, "Receiver mute is unavailable", revision=revision)
         controller.toggle_mute()
         message = "Mute change requested; the dashboard will refresh with receiver state."

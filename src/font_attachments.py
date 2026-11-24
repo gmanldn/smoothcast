@@ -19,6 +19,7 @@ import subprocess
 from dataclasses import dataclass
 
 import cache_privacy
+import media_tools
 
 FONT_EXTENSIONS = frozenset({".ttf", ".otf", ".ttc", ".otc"})
 FONT_MIME_TYPES = {
@@ -64,7 +65,7 @@ def list_fonts(path: pathlib.Path) -> list[FontAttachment]:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
+                media_tools.resolve_media_tool("ffprobe"), "-v", "error",
                 "-show_entries", "stream=index,codec_type:stream_tags=filename,mimetype",
                 "-of", "json", str(path),
             ],
@@ -110,7 +111,7 @@ def _extract_one(source: pathlib.Path, attachment: FontAttachment, destination: 
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
                 "-dump_attachment:t:" + str(attachment.ordinal), str(destination),
                 "-i", str(source), "-map", "0", "-c", "copy", "-f", "null", "-",
             ],

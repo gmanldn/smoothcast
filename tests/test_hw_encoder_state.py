@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import cli
 import hw_encoder_state as hw
 import streamer
+import media_tools
 
 KEY = {"ffmpeg": "ffmpeg version 6.1", "device": "/dev/dri/renderD128",
        "driver": "i915", "kernel": "6.8.0"}
@@ -71,7 +72,7 @@ class StateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as work:
             binary = Path(work) / "ffmpeg"
             binary.write_bytes(b"v1")
-            with mock.patch.object(hw.shutil, "which", return_value=str(binary)), \
+            with mock.patch.object(media_tools.shutil, "which", return_value=str(binary)), \
                  mock.patch("subprocess.Popen", side_effect=AssertionError("must not spawn")):
                 first = hw.ffmpeg_identity()
                 binary.write_bytes(b"version two")        # upgrade: new size
@@ -80,9 +81,9 @@ class StateTests(unittest.TestCase):
         self.assertIn(str(binary.resolve()), first)
 
     def test_ffmpeg_identity_handles_a_missing_or_vanished_binary(self):
-        with mock.patch.object(hw.shutil, "which", return_value=None):
+        with mock.patch.object(media_tools.shutil, "which", return_value=None):
             self.assertEqual(hw.ffmpeg_identity(), "missing")
-        with mock.patch.object(hw.shutil, "which", return_value="/gone/ffmpeg"):
+        with mock.patch.object(media_tools.shutil, "which", return_value="/gone/ffmpeg"):
             self.assertEqual(hw.ffmpeg_identity(), "unknown")
 
     def test_driver_lookup_is_safe_without_sysfs(self):

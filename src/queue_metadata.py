@@ -12,23 +12,24 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class MediaProbe:
-    fingerprint: tuple[int, int] | None
+    fingerprint: tuple[int, int, int, int, int] | None
     media: object | None
 
 
-def file_fingerprint(path: str | Path) -> tuple[int, int] | None:
+def file_fingerprint(path: str | Path) -> tuple[int, int, int, int, int] | None:
     """Identity for cached metadata; missing files never produce reusable data."""
     try:
         stat = Path(path).stat()
     except OSError:
         return None
-    return stat.st_size, stat.st_mtime_ns
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
 
 
 def cached_media(cache: Mapping[str, tuple], path: str | Path) -> object | None:
     """Return cached media only while the source file has the same identity."""
     entry = cache.get(str(path))
-    if not entry or len(entry) != 2 or entry[0] != file_fingerprint(path):
+    fingerprint = file_fingerprint(path)
+    if fingerprint is None or not entry or len(entry) != 2 or entry[0] != fingerprint:
         return None
     return entry[1]
 
@@ -47,10 +48,10 @@ def display_title(path: str | Path, cache: Mapping[str, tuple]) -> str:
 
 def media_for_cast(
     entry: tuple | None, path: str | Path, probe: Callable[[Path], object],
-) -> tuple[object, tuple[int, int] | None]:
+) -> tuple[object, tuple[int, int, int, int, int] | None]:
     """Use a snapshot only while the source still has its cached identity."""
     fingerprint = file_fingerprint(path)
-    if entry is not None and entry[0] == fingerprint:
+    if fingerprint is not None and entry is not None and len(entry) == 2 and entry[0] == fingerprint:
         return entry[1], fingerprint
     return probe(Path(path)), None
 
@@ -91,7 +92,7 @@ def publish_media(
     """Publish valid queue metadata on the caller thread with a bounded cache."""
     active = set(queued_paths)
     for path, result in results.items():
-        if (path in active and result.media is not None
+        if (path in active and result.media is not None and result.fingerprint is not None
                 and result.fingerprint == file_fingerprint(path)):
             cache[path] = (result.fingerprint, result.media)
     while len(cache) > max_entries:

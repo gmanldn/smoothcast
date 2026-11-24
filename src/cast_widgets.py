@@ -46,12 +46,14 @@ DEFAULTS: dict = {
     "subs_path": "",
     "subtitle_track_by_file": {},
     "subtitle_delay_by_file": {},
+    "subtitle_search_folders": [],  # bounded local sidecar search (#51)
     "audio_delay_by_file": {},  # per-film lip-sync delay in ms, +/-5000 (#113)
     "subtitle_style": "default",  # burned-in caption preset, see subtitle_style.py (#34)
     "audio_track_by_file": {},
     "burn_subs": False,
     "direct": True,
     "autonext": False,
+    "idle_join_slate": False,  # opt-in join QR on the TV after playback ends (#420)
     "auto_shutdown": False,
     "notifications": True,  # In-app toasts and console; no OS dock counters (#543)
     "portal_screens": True,
@@ -60,7 +62,6 @@ DEFAULTS: dict = {
     # External acquisition is explicitly owner-authorised, never guest-enabled.
     "portal_link_youtube": False,
     "portal_link_magnet": False,
-    "idle_join_slate": False,  # opt-in: cast the join QR slate to an idle Cast TV (#420)
     "library_indexer": True,
     "library_folders": [],
     "keep_streaming": True,
@@ -83,6 +84,7 @@ DEFAULTS: dict = {
     "picture_contrast": 1.0,
     "picture_saturation": 1.0,
     "picture_hue": 0.0,
+    "picture_by_file": {},  # per-film colour preset; global controls are the fallback (#112)
     "sleep_timer_minutes": 0,
     "sleep_timer_deadline": 0.0,
     "sleep_fade_seconds": 30,  # Fade volume out this long before the sleep timer stops; 0 = off (#270).

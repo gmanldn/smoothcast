@@ -18,13 +18,13 @@ import hashlib
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
 import subprocess
 import threading
 from typing import BinaryIO, Callable
 
 import process_priority
+import media_tools
 
 CHUNK = 64 * 1024
 MAX_STREAMS = 8
@@ -43,7 +43,7 @@ class MediaError(Exception):
 
 
 def ffmpeg_path() -> str | None:
-    return shutil.which("ffmpeg")
+    return media_tools.find_media_tool("ffmpeg")
 
 
 def can_transcode() -> bool:

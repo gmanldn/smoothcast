@@ -320,21 +320,35 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     # resources, so that single literal is the whole allow-list.
     submitted = 'url:"https://www.youtube.com/watch?v="+result.id'
     assert page.count(submitted) <= 1
-    assert "https://" not in page.replace(submitted, "") and "http://" not in page
+    # Link UX (#587) adds two non-fetched literals: input placeholder text and
+    # a user-facing correction message. Allow-list exactly those, once each.
+    prose = (
+        'placeholder="https://youtu.be/… or magnet:…"',
+        "Copy the complete YouTube Share link, including https://.",
+    )
+    local = page.replace(submitted, "")
+    for literal in prose:
+        assert local.count(literal) <= 1
+        local = local.replace(literal, "")
+    assert "https://" not in local and "http://" not in page
+    # Nothing may load an external resource, whatever its scheme spelling.
+    for pattern in ('src="//', "href=\"//", "@import", "url(http", "url(//",
+                    'action="http', "importScripts("):
+        assert pattern not in page, pattern
     assert PIN not in page
     assert 'id="keepScreenOn" type="checkbox"' in page
     assert "Keep screen on" in page
-    assert "Your browser may dim the screen. Use Guided Access/kiosk mode" in page
+    assert "For an iPad on a stand, turn on Guided Access" in page
     assert headers["Cache-Control"] == "no-store"
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "setTimeout(()=>{timedOut=true;controller.abort();},60000)" in page
-    assert 'if(timedOut)error=Object.assign(Error("Host did not respond within 60 seconds"),{status:408})' in page
+    assert 'if(timedOut)error=Object.assign(Error("The SmoothCast computer did not respond within 60 seconds"),{status:408})' in page
     assert "clearTimeout(deadline);clearInterval(tick)" in page
     assert 'if(activeUploadController)activeUploadController.abort()' in page
     assert "Select Resume to retry" in page
     assert "Audio always goes into Up Next" in page
     assert "compatible video may start playing" in page
-    assert 'accept="audio/*,video/*,.mkv,.ts,.wmv" multiple' in page
+    assert 'id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple' in page
     assert "while(batchIndex<batchFiles.length" in page
     assert "six-digit House PIN" in page
     assert 'inputmode="numeric"' in page
@@ -1161,18 +1175,15 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
         _enqueue=lambda paths: queue.extend(paths),
         _remove_queue=lambda index: queue.pop(index),
     )
-    host._portal_upload_path = MethodType(
-        cast_portal_queue.PortalQueueMixin._portal_upload_path, host,
-    )
-    host._portal_observe_queue = MethodType(
-        cast_portal_queue.PortalQueueMixin._portal_observe_queue, host,
-    )
-    host._portal_check_queue_revision = MethodType(
-        cast_portal_queue.PortalQueueMixin._portal_check_queue_revision, host,
-    )
-    host._portal_queue_index = MethodType(
-        cast_portal_queue.PortalQueueMixin._portal_queue_index, host,
-    )
+    # Bind the real queue-authority methods so the fake host exercises the
+    # same enqueue/provenance path as CastWindow (#570 provenance).
+    for name in ("_portal_upload_path", "_portal_observe_queue",
+                 "_portal_check_queue_revision", "_portal_queue_index",
+                 "_portal_contributor", "_portal_record_contribution",
+                 "_portal_enqueue_contributed",
+                 "_portal_prune_queue_provenance"):
+        setattr(host, name, MethodType(
+            getattr(cast_portal_queue.PortalQueueMixin, name), host))
     try:
         _, login_result, cookie = login(rig)
         origin = f"http://{rig.host}"
@@ -1519,8 +1530,8 @@ def test_status_refresh_does_not_overwrite_an_active_slider():
 @pytest.mark.parametrize(
     ("method", "stage", "expected_status", "expected_text"),
     [
-        ("POST", "prepare", 507, "Not enough space"),
-        ("PUT", "store", 408, "Resume from the saved position"),
+        ("POST", "prepare", 507, "not enough space on the SmoothCast computer"),
+        ("PUT", "store", 408, "Select Resume to carry on"),
         ("POST", "finalise", 503, "Host could not finalise"),
     ],
 )

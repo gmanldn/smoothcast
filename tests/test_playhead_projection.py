@@ -39,11 +39,11 @@ CASES = [
 ]
 
 
-def test_page_wires_projection_to_animation_frames_without_overwriting_scrubs():
+def test_page_wires_projection_to_a_timer_without_overwriting_scrubs():
     html = portal._HTML
     assert "function trackPlayhead(" in html and "function paintPlayhead(" in html
-    assert "requestAnimationFrame(playheadFrame)" in html and "typeof requestAnimationFrame" in html
-    assert "if(!document.hidden)paintPlayhead()" in html  # hidden tabs do not paint
+    assert "function schedulePlayhead(" in html and "playheadTimer=setTimeout(" in html
+    assert "if(document.hidden||!csrf||stalePage)return;" in html  # hidden tabs do not paint
     paint = next(line for line in html.splitlines() if line.startswith("function paintPlayhead("))
     assert 'if(!editingControls.has("seek"))$("seek").value' in paint
     assert "trackPlayhead(s)" in html
@@ -105,7 +105,8 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
 
     from gui_source import main_window_methods
 
-    method = main_window_methods()["_portal_handle"]
+    methods = main_window_methods()
+    method = methods["_portal_handle"] + "\n" + methods["_portal_timing"]
     state_label = SimpleNamespace(label="Playing", short="Playing",
                                   accessible="Playing", icon="play")
     namespace = {
@@ -123,9 +124,11 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     window.tracker = SimpleNamespace(value=lambda: 18.0, duration=120.0,
                                      rate=2.0, known=True)
     window.media = None
+    window._external_runtime = (7.0, 300.0)
     window.np_title = SimpleNamespace(get_text=lambda: "Film")
     window.now_playing = None
     window._portal_queue_status = lambda: []
+    window._portal_copy_status = lambda: []
     window.device_info = None
     window.session = object()
     window.external = False
@@ -145,6 +148,14 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
     assert window._portal_handle("status", {})["rate"] == 1.0
     window.tracker.rate = float("nan")
     assert window._portal_handle("status", {})["rate"] == 1.0
+
+    # An external stream (not ours) reports the receiver's own runtime and position.
+    window.tracker = SimpleNamespace(value=lambda: None, duration=0.0, rate=1.0, known=False)
+    window.session, window.external = None, True
+    snapshot = window._portal_handle("status", {})
+    assert (snapshot["position"], snapshot["duration"]) == (7.0, 300.0)
+    window.external = False  # once the receiver is idle again the runtime must not linger
+    assert window._portal_handle("status", {})["duration"] == 0.0
 
 
 
@@ -255,3 +266,30 @@ console.log(JSON.stringify(out));""" % (DELAYS_MS, json.dumps(state))
     out = json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True,
                                     text=True, timeout=8).stdout)
     assert set(out) == {42}
+
+
+def _js_function(name: str) -> str:
+    html = portal._HTML
+    start = html.index(f"function {name}(")
+    depth, i = 0, html.index("{", start)
+    while True:
+        depth += html[i] == "{"
+        depth -= html[i] == "}"
+        i += 1
+        if depth == 0:
+            return html[start:i]
+
+
+@pytest.mark.parametrize("name", ["schedulePlayhead", "paintPlayhead", "trackPlayhead"])
+def test_animation_path_creates_no_network_or_command_traffic(name):
+    """#336: painting the playhead each frame is pure DOM arithmetic."""
+    body = _js_function(name)
+    for forbidden in ("fetch(", "XMLHttpRequest", "sendBeacon", "post(", "EventSource", "command(", "WebSocket"):
+        assert forbidden not in body, f"{name} must not call {forbidden}"
+
+
+def test_playhead_sources_never_probe_media():
+    """The host derives source position from its tracker: no ffprobe on the status/playhead path."""
+    root = Path(__file__).resolve().parents[1] / "src"
+    for name in ("portal.py", "position_tracker.py", "playback_state.py", "progress_model.py"):
+        assert "ffprobe" not in (root / name).read_text("utf-8"), name

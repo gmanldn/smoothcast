@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -22,6 +21,7 @@ import fingerprint
 import library_folders
 import media_names
 import search_engine
+import media_tools
 
 VIDEO_EXT = {".mkv", ".mp4", ".mov", ".avi", ".webm", ".m4v", ".ts", ".mpeg", ".mpg", ".wmv"}
 AUDIO_EXT = {".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".aif", ".aiff", ".wma"}
@@ -84,9 +84,9 @@ def _num(value: object) -> int | None:
 
 def probe_tags(path: Path) -> dict:
     """Bounded, network-disabled ffprobe; returns {} when unavailable."""
-    if not shutil.which("ffprobe"):
+    if not media_tools.find_media_tool("ffprobe"):
         return {}
-    args = ["ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe",
+    args = [media_tools.resolve_media_tool("ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe",
             "-show_entries",
             "format=duration:format_tags:stream=codec_type,width,height:stream_tags=language",
             "-of", "json", "-i", str(path)]

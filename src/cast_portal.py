@@ -1,6 +1,7 @@
 """Shared-room portal startup, GTK dispatch and playback snapshot ownership."""
 from __future__ import annotations
 
+import guest_messages
 import pathlib
 import threading
 import time
@@ -233,7 +234,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if session_key is not None:
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
-                raise portal.PortalRequestError(401, "Room access was revoked")
+                raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:
@@ -246,8 +247,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 raise portal.PortalRequestError(400, "Invalid command envelope")
             return portal_commands.run_mutation(self, fence, envelope)
         if operation == "status":
-            position = self.tracker.value()
-            duration = self.tracker.duration or (self.media.duration if self.media else 0.0)
+            position, duration = self._portal_timing()
             title = self.np_title.get_text()
             if not title and self.now_playing:
                 title = pathlib.Path(self.now_playing).name
@@ -269,6 +269,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                          if 0.05 <= self.tracker.rate <= 4.0 else 1.0),
                 "volume": volume,
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "library_copies": self._portal_copy_status(),
                 "active": active, "busy": bool(self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
@@ -276,6 +277,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "network_activity": network_activity.portal_entries(
                     getattr(self, "_network_activity_entries", []),
                     self._device_host(self._device()),
+                    getattr(self, "_network_activity_updated", None),
                 ),
             }
             fence = getattr(self, "_portal_fence", None)

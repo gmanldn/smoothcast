@@ -120,6 +120,18 @@ class FrozenRuntimeTests(unittest.TestCase):
              mock.patch.object(sys, "argv", ["SmoothCast", frozen_runtime.SERVER_FLAG]):
             self.assertEqual(cli.main(), 0)
 
+    def test_media_probe_flag_prints_json_and_reports_failure_in_the_exit_code(self):
+        import io
+        import media_tools
+        for ok, expected in ((True, 0), (False, 1)):
+            report = {"strict": False, "tools": {}, "ok": ok}
+            with mock.patch.object(frozen_runtime, "dispatch_frozen_helper", return_value=None), \
+                 mock.patch.object(media_tools, "report", return_value=report), \
+                 mock.patch.object(sys, "argv", ["SmoothCastCLI", "--_smoothcast-media-probe"]), \
+                 mock.patch("sys.stdout", new=io.StringIO()) as out:
+                self.assertEqual(cli.main(), expected)
+            self.assertEqual(__import__("json").loads(out.getvalue())["ok"], ok)
+
     def test_source_package_check_rejects_without_gtk(self):
         with mock.patch.object(frozen_runtime, "is_frozen", return_value=False), \
              mock.patch.object(frozen_runtime, "dispatch_frozen_helper", return_value=None), \

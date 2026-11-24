@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from async_jobs import UserFacingError
 
 import subtitle_encoding
+import media_tools
 
 if TYPE_CHECKING:
     import streamer
@@ -70,7 +71,7 @@ def check_media(
         with tempfile.TemporaryDirectory(prefix="smoothcast-preflight-") as folder:
             output = pathlib.Path(folder) / "sample.mka"
             args = [
-                "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+                media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
                 "-i", str(path), "-map", f"0:a:{selected.index}", "-vn", "-t", "0.8",
                 "-c:a", "aac", "-ac", "2", "-f", "matroska", "-y", str(output),
             ]
@@ -146,7 +147,7 @@ def check_media(
         ])
         output = scratch / "sample.mkv"
         args = [
-            "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error",
+            media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error",
             "-i", str(path),
         ]
         if bitmap_subtitle:
@@ -189,7 +190,7 @@ def check_media(
             raise PreflightError("MKV decoder check produced no media", code="ffmpeg.decoder_failed")
         try:
             verify = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                [media_tools.resolve_media_tool("ffprobe"), "-v", "error", "-select_streams", "v:0",
                  "-count_frames", "-show_entries", "stream=nb_read_frames",
                  "-of", "json", str(output)],
                 capture_output=True, text=True, timeout=8,

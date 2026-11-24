@@ -51,12 +51,19 @@ unknown fields and forbids writes when the stored schema exceeds the reader's
 supported schema. A downgrade may display supported information but must not
 write a document whose newer fields it cannot preserve semantically.
 
-**Important existing limitation:** legacy NodeRecord types in mesh_model.py
-normalise to their known v1 fields when re-encoded, so they must not be used
-as round-trip storage for future schema-bearing data. Migrate each persistent
-shared store to the lossless document wrapper before enabling its sync
-capability. This is an outstanding integration item on #387, not a claim that
-all future stores are already schema-safe.
+**NodeRecord and unknown fields:** `NodeRecord` relays additive *top-level*
+fields from newer nodes losslessly in `NodeRecord.extra` (sorted `(key,
+canonical JSON)` pairs). They are bounded (16 fields, 4 KiB total, depth 4,
+integers only, lowercase `[a-z][a-z0-9_]{0,31}` keys), never shadow a known
+key, never reach the public or guest tiers, and are dropped first if they would
+push a record over `MAX_RECORD_BYTES`. Out-of-bounds extras are skipped, not
+fatal. Unknown fields *inside* nested items (targets, clients, sources,
+edges) are relayed the same way in each item's own `extra` (4 fields, 256 bytes
+per item, same key/value rules), never exposed in the guest tier, and dropped
+before any known data when a record must shrink. Migrate each persistent shared
+store to the lossless document wrapper before enabling its sync capability.
+`peer_status_text()` holds the user-facing copy for older or incompatible peers;
+a Network/health row should render it (not yet wired into `mesh_ui.py`).
 
 ## Rollout and testing
 

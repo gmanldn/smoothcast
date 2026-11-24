@@ -29,6 +29,10 @@ import audio_monitor
 
 import screenshot
 
+import picture_adjustments
+
+import subtitle_search
+
 from cast_widgets import save_config, Async, fmt_time
 
 
@@ -306,7 +310,15 @@ class AvMixin:
         if mode == "pick":
             path = pathlib.Path(self.cfg["subs_path"]).expanduser()
             return path if path.is_file() and path.suffix.lower() in streamer.SUBTITLE_EXTS else None
-        return streamer.find_subtitles(video) if mode == "auto" else None
+        if mode != "auto":
+            return None
+        found = streamer.find_subtitles(video)
+        if found is None:
+            found = subtitle_search.find_subtitle(
+                video, self.cfg.get("subtitle_search_folders"),
+                preferred=self.cfg.get("preferred_subtitle_languages") or (),
+            )
+        return found
 
 
     def _active_subs(self) -> str | None:
@@ -323,7 +335,7 @@ class AvMixin:
         cached_path, cached_result = self._subs_cache
         if cached_path == path:
             return cached_result
-        found = streamer.find_subtitles(pathlib.Path(path))
+        found = self._resolve_subs(pathlib.Path(path))
         result = str(found) if found else None
         self._subs_cache = (path, result)
         return result
@@ -344,7 +356,7 @@ class AvMixin:
         if self.now_playing:
             found = self._cached_subs(self.now_playing)
             if found:
-                return f"Found next to video: {pathlib.Path(found).name}"
+                return f"Found subtitle: {pathlib.Path(found).name}"
         if self.media is not None and self.media.subtitle_tracks:
             chosen = streamer.preferred_embedded_subtitle(self.media)
             if chosen is not None:
@@ -469,8 +481,8 @@ class AvMixin:
         aspect_mode = self.cfg.get("aspect_override", "original")
         aspect_options = {"aspect_mode": aspect_mode} if aspect_mode != "original" else {}
         # Snapshot settings for asynchronous decodes; do not read a changing GTK config
-        # from the worker after a user moves a colour control.
-        picture_config = dict(self.cfg)
+        # from the worker after a user moves a colour control. Per-film presets win.
+        picture_config = picture_adjustments.for_path(self.cfg, path)
         if sparse:
             cache = getattr(self, "_sparse_frame_cache", None)
             if cache is None:

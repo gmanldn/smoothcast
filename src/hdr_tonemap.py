@@ -10,6 +10,7 @@ import re
 import subprocess
 
 from async_jobs import UserFacingError
+import media_tools
 
 # Linearise the PQ signal before Hable tone mapping, then convert gamut,
 # transfer and matrix to BT.709. Preserve the existing 8-bit 4:2:0 baseline.
@@ -41,7 +42,7 @@ def filters_available() -> bool:
     """Ask the selected FFmpeg once. No device or GUI access is involved."""
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-filters"],
+            [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-filters"],
             capture_output=True, text=True, timeout=8, check=False,
         )
     except (OSError, subprocess.TimeoutExpired):

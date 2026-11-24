@@ -33,6 +33,7 @@ from join_slate_ui import JoinSlateMixin
 import version
 import error_log
 import desktop_failure_notice
+import error_banner_ui
 import local_playback
 import demo_mode
 import startup_cleanup
@@ -40,6 +41,7 @@ from cast_widgets import APP_ID, APP_NAME, ICON_NAME, CSS, load_config, save_con
 from cast_ui import UiMixin
 from cast_settings import SettingsCardMixin
 from cast_queue import QueueMixin
+from cast_retry_ui import RetryMixin
 from cast_session import SessionMixin
 from cast_av import AvMixin
 from cast_subtitle_files import SubtitleFileMixin
@@ -51,7 +53,7 @@ from cast_audio_sync import AudioSyncMixin
 from room_checkpoint_ui import RoomCheckpointUiMixin
 
 
-class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, Adw.ApplicationWindow):
+class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, LifecycleMixin, UiTimerMixin, FindMixin, PortalMixin, PortalQueueMixin, JoinSlateMixin, SubtitleMixin, AudioSyncMixin, SubtitleFileMixin, RoomCheckpointUiMixin, RetryMixin, Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app)
         self.app = app
@@ -308,6 +310,7 @@ class CastControlApp(Adw.Application):
         simple("save-diagnostics", lambda *a: self._window().action_save_diagnostics())
         simple("report-problem", lambda *a: self._window().action_report_problem())
         simple("open-url", lambda *a: self._window()._open_url())
+        simple("add-youtube", lambda *a: self._window()._add_youtube())
         simple("screenshot", lambda *a: self._window()._screenshot())
         simple("benchmark", lambda *a: self._window().action_benchmark())
         simple("clear-recents", lambda *a: self._window()._clear_recents())
@@ -361,17 +364,7 @@ class CastControlApp(Adw.Application):
         window = self.window
         if not self._failure_notice_available() or window is None:
             return
-        toast = Adw.Toast.new(failure.message)
-        toast.set_timeout(8)
-        toast.set_priority(Adw.ToastPriority.HIGH)
-        toast.set_button_label("Copy details")
-        toast.connect(
-            "button-clicked",
-            lambda *_: window.get_clipboard().set(
-                desktop_failure_notice.copy_details(failure)
-            ),
-        )
-        window.toasts.add_toast(toast)
+        error_banner_ui.present(window, failure, timeout=8)
 
     def _guard_glib(self, callback):
         bridge = self._failure_bridge
@@ -576,6 +569,8 @@ class CastControlApp(Adw.Application):
             if len(observed) != 1 or "private" in observed[0].message:
                 raise RuntimeError("expected one civil desktop failure toast")
             print("SELFTEST: desktop failure toast was civil and rate limited")
+            error_banner_ui.show_details(self.window, observed[0], retry=("Try again", lambda: None))
+            print("SELFTEST: failure details dialog built")
         except Exception as exc:
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 
 import entry_name
+import mesh_acquisition_app
 import mesh_discovery
 import mesh_service
 from version import __version__
@@ -19,25 +20,42 @@ from version import __version__
 def start(window: object, address: str) -> None:
     """(Re)start the mesh on *address* in the background; never raises."""
     try:
+        window._mesh_address = address               # type: ignore[attr-defined]
         settings = mesh_service.load_settings()
         stop(window)
         if not settings["enabled"]:
             return
         portal = getattr(window, "_portal", None)
         jobs = getattr(getattr(portal, "server", None), "link_jobs", None)
+        if jobs is None and settings.get("remote_acquisition"):
+            # No local worker here: still let mesh workers serve the owner-enabled kinds.
+            jobs = mesh_acquisition_app.ensure_jobs(portal, getattr(window, "cfg", None) or {})
         capabilities = jobs.capabilities() if jobs is not None else {}
         sources = tuple(kind for kind in ("youtube", "magnet") if capabilities.get(kind) is True)
+        remote = None
+        if settings.get("remote_acquisition") or settings.get("accept_acquisition"):
+            remote = _remote_acquisition(settings, address, jobs)
         config = mesh_service.MeshConfig(
             bind_ip=address, name=getattr(portal, "name", "") or "SmoothCast",
             version=__version__, room_port=getattr(portal, "port", None),
             strict=settings["strict"], seeds=settings["seeds"],
             link_acquisition_sources=sources,
-            link_activity=getattr(jobs, "snapshot", lambda: []))
+            link_activity=(lambda: remote.activity(jobs.snapshot() if jobs is not None else []))
+            if remote is not None else getattr(jobs, "snapshot", lambda: []),
+            acquisition_worker=getattr(remote, "worker", None),
+            acquisition_accept=lambda: bool(mesh_service.load_settings()["accept_acquisition"]),
+            acquisition_attach=remote.attach if remote is not None else None)
         adapter = mesh_discovery.DiscoveryAdapter()
         config.discovery = adapter.snapshot
         window._mesh_discovery = adapter             # type: ignore[attr-defined]
         window._mesh_scan_sig = None                 # type: ignore[attr-defined]
         service = mesh_service.MeshService(config)
+        window._mesh_remote = remote                 # type: ignore[attr-defined]
+        if remote is not None and jobs is not None and settings.get("remote_acquisition"):
+            # Mesh workers become one more provider for the room's own LinkJobs.
+            remote.original_provider = jobs.provider
+            jobs.provider = mesh_acquisition_app.CompositeProvider(jobs.provider, remote)
+            remote.jobs = jobs
         entry = entry_name.EntryName(address, int(getattr(portal, "port", 0) or 0))
         window._entry_name = entry                   # type: ignore[attr-defined]
         service.primary_listeners.append(
@@ -46,7 +64,13 @@ def start(window: object, address: str) -> None:
         window._mesh_sig = None                      # type: ignore[attr-defined]
 
         def run() -> None:
-            if service.start() and portal is not None:
+            started = service.start()
+            if started and remote is not None:
+                try:
+                    remote.reconcile()  # stop-or-confirm workers a previous run may have left running
+                except Exception:
+                    pass
+            if started and portal is not None:
                 try:
                     # A delayed startup must not attach a replaced mesh service.
                     if getattr(window, "_mesh", None) is service:
@@ -60,11 +84,61 @@ def start(window: object, address: str) -> None:
         return
 
 
+ACQUISITION_KEYS = {"remote_acquisition": "mesh_remote_acquisition",
+                    "accept_acquisition": "mesh_accept_acquisition"}
+
+
+def set_acquisition(window: object, name: str, value: object, *, save=None, flush=None) -> bool:
+    """Persist one remote-acquisition opt-in and restart the mesh so it takes effect.
+
+    Both switches are off by default and only ever flipped by an explicit user
+    action in the Network popover. Never raises; returns whether it was applied.
+    """
+    key = ACQUISITION_KEYS.get(name) if isinstance(name, str) else None
+    cfg = getattr(window, "cfg", None)
+    if key is None or type(value) is not bool or not isinstance(cfg, dict):
+        return False
+    try:
+        if save is None or flush is None:
+            import config_persistence
+            save, flush = save or config_persistence.save_config, flush or config_persistence.flush_config
+        cfg[key] = value
+        save(cfg)
+        flush()  # start() reads the file, so it must be on disk first
+        address = getattr(window, "_mesh_address", None)
+        if address:
+            start(window, address)
+        return True
+    except Exception:
+        return False
+
+
+def _remote_acquisition(settings: dict, address: str, jobs: object):
+    """Build the opt-in remote acquisition glue; None when it cannot be made safely."""
+    try:
+        import pathlib
+        local = getattr(jobs, "provider", None)
+        local = getattr(local, "local", local)  # never wrap a wrapper
+        base = pathlib.Path(mesh_service.config_path().parent) / "mesh-acquisition"
+        return mesh_acquisition_app.RemoteAcquisition(
+            base, bind_ip=address, local_provider=local,
+            use_workers=lambda: bool(mesh_service.load_settings()["remote_acquisition"]),
+            accept_work=lambda: bool(mesh_service.load_settings()["accept_acquisition"]))
+    except Exception:
+        return None
+
+
 def stop(window: object) -> None:
     """Stop the mesh if running; never raises."""
     try:
         service = getattr(window, "_mesh", None)
         window._mesh = None                          # type: ignore[attr-defined]
+        remote = getattr(window, "_mesh_remote", None)
+        window._mesh_remote = None                   # type: ignore[attr-defined]
+        if remote is not None:
+            if getattr(remote, "jobs", None) is not None and getattr(remote, "original_provider", None):
+                remote.jobs.provider = remote.original_provider
+            threading.Thread(target=remote.close, name="smoothcast-acq-stop", daemon=True).start()
         entry = getattr(window, "_entry_name", None)
         window._entry_name = None                    # type: ignore[attr-defined]
         if entry is not None:

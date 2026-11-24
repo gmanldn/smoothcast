@@ -17,6 +17,7 @@ def test_mesh_boot_singleflight_and_stale_session_rejection():
     script = panel_html().split("<script>", 1)[1].split("</script>", 1)[0]
     harness = r"""
 const assert=require("node:assert/strict");
+const window={};  // the panel exports scRenderMeshRoom on window (#386)
 const panel={hidden:true,contains:()=>false,previousElementSibling:null};
 const nav={hidden:true},dash={hidden:false};
 let tick=()=>{},vis=()=>{},csrf="initial",timeId=0;

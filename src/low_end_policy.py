@@ -13,7 +13,6 @@ import math
 import os
 from pathlib import Path
 import platform
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -22,6 +21,7 @@ from typing import Any
 
 import benchmark
 import process_priority
+import media_tools
 
 SCHEMA = 1
 HEADROOM = 1.3
@@ -41,7 +41,7 @@ def machine_key() -> str:
     """Opaque hardware/FFmpeg identity; no hostnames, paths or CPU serials persisted."""
     identity: list[str] = [platform.system(), platform.machine(),
                            str(os.cpu_count()), platform.processor()]
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = media_tools.find_media_tool("ffmpeg")
     try:
         if ffmpeg:
             info = Path(ffmpeg).stat()

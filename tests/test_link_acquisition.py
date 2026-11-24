@@ -739,7 +739,7 @@ async function post(path,body){
   calls.push({path,body});
   if(path==="/api/search/youtube")return {results:[{id:"abcdefghijk",title:"Example",channel:"Artist",duration:90}]};
   if(fail){fail=false;throw Error("network lost")}
-  return {message:"Acquisition accepted"};
+  return {message:"Download accepted"};
 }
 """
     scenario = r"""
@@ -762,7 +762,7 @@ async function post(path,body){
   assert.equal(calls[2].path,"/api/link-jobs");
   assert.equal(calls[2].body.url,"https://www.youtube.com/watch?v=abcdefghijk");
   assert.equal(calls[2].body.authorised,true);
-  assert.equal(button.textContent,"Acquisition requested");
+  assert.equal(button.textContent,"Download requested");
   assert.equal(refreshes,1);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """

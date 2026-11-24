@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import media_tools
 
 MAX_BUNDLE_BYTES = 256 * 1024
 MAX_ERROR_LINES = 200
@@ -71,7 +72,8 @@ def redact(text: object, *, home: str | None = None) -> str:
 
 def tool_version(command: str, *args: str, timeout: float = 4.0) -> str:
     """Return the first line of a tool's version output, or '' if unavailable."""
-    executable = shutil.which(command)
+    executable = (media_tools.find_media_tool(command) if command in media_tools.TOOLS
+                  else shutil.which(command))
     if executable is None:
         return ""
     try:

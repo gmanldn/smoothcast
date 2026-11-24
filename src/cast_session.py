@@ -16,6 +16,7 @@ import threading
 
 import time
 
+import capability_gate
 import cast_recovery
 import castctl
 import command_trace
@@ -51,6 +52,7 @@ import preflight
 import queue_metadata
 import reliability_metrics
 
+import gui_link_add
 import url_control
 
 from cast_widgets import DEFAULTS, CONFIG_DIR, save_config, fmt_time, Async
@@ -147,12 +149,19 @@ class SessionMixin:
                            if isinstance(saved_audio, dict) else -1)
         audio_track = requested_audio if type(requested_audio) is int and requested_audio >= 0 else -1
         learned = receiver_memory.ReceiverMemory(CONFIG_DIR / receiver_memory.STATE_NAME)
+        picture_config = picture_adjustments.for_path(cfg, path)
         use_direct = (
             bool(cfg["direct"]) and cfg["audio"] == "original"
             and speed == 1.0 and rotation == 0 and audio_track < 0 and not adelay
-            and not picture_adjustments.active(cfg)
+            and not picture_adjustments.active(picture_config)
             and not getattr(self, "_portal_early", False)
+            and not getattr(self, "_force_transcode_once", False)
         )
+        self._force_transcode_once = False  # one-shot override from the retry button
+        self._attempt_mode = "direct" if use_direct else "transcode"
+        if not getattr(self, "_retry_in_flight", False):
+            self._cast_tried = []  # a fresh user-initiated cast starts a new attempt history
+        self._retry_in_flight = False
         def work():
             media, prewarm_fingerprint = queue_metadata.media_for_cast(
                 prewarmed_entry, path, streamer.ffprobe,
@@ -264,8 +273,10 @@ class SessionMixin:
                         # No stable identity or codec: keep the normal direct decision, and
                         # drop the half-built key so nothing is recorded under it later.
                         receiver_key = codec_key = ""
+                gate_ok, _gate_note = capability_gate.direct_allowed(
+                    media, path.suffix, next((d.model for d in getattr(self, "devices", ()) if d.name == device), ""))
                 direct_eligible = (
-                    use_direct and media.direct_ok and not burn
+                    use_direct and media.direct_ok and not burn and gate_ok
                     and embedded is None and not music_enabled
                     and (aspect_mode == "original" or getattr(media, "is_audio_only", False)))
                 if receiver_memory.should_try_direct(
@@ -306,7 +317,7 @@ class SessionMixin:
                     subtitle_delay_ms=delay, subtitle_preset=preset,
                     audio_delay_ms=adelay,
                     music_autogain=music_enabled,
-                    picture_config=cfg,
+                    picture_config=picture_config,
                 )
                 # start_transcode returned only after verifying our HLS URL on
                 # the receiver; a successful FFmpeg/catt launch alone is not proof.
@@ -650,6 +661,7 @@ class SessionMixin:
         file_path = pathlib.Path(state.file) if state else None
         title = state.title if state else (file_path.stem if file_path else "video")
         cfg = dict(self.cfg)  # frozen before background restart
+        picture_config = picture_adjustments.for_path(cfg, file_path)
         audio = self.cfg["audio"]
         speed = (
             float(speed_override) if speed_override is not None
@@ -694,7 +706,7 @@ class SessionMixin:
                     subtitle_preset=subtitle_style.from_config(self.cfg),
                     audio_delay_ms=audio_delay.get(self.cfg, file_path),
                     music_autogain=bool(self.cfg.get("music_autogain", False)),
-                    picture_config=cfg,
+                    picture_config=picture_config,
                 )
             except Exception:
                 try:
@@ -1182,10 +1194,20 @@ class SessionMixin:
         def on_resp(d, r):
             if r == "open":
                 url = entry.get_text().strip()
-                if url:
+                if url and gui_link_add.is_youtube(url):
+                    self._add_youtube_link(url)    # a page, not media: acquire into Up Next
+                elif url:
                     self._cast_remote_url(url)
         dialog.connect("response", on_resp)
         dialog.present(self)
+
+
+    def _add_youtube(self) -> None:
+        gui_link_add.show_dialog(self)
+
+
+    def _add_youtube_link(self, url: str) -> None:
+        gui_link_add.add_link(self, url)
 
 
     def _toggle_fullscreen(self) -> None:
@@ -1222,6 +1244,11 @@ class SessionMixin:
     def _cast_failed(self, message: str) -> None:
         # Observe before the tracker is cleared; never alters the failure path.
         self._recovery_plan = cast_recovery.plan_for_window(self, message)
+        try:  # remember this failed (receiver, mode) so the planner never re-offers it
+            self._cast_tried = [*getattr(self, "_cast_tried", [])[-15:],
+                                (self._device(), getattr(self, "_attempt_mode", "direct"))]
+        except Exception:  # noqa: BLE001 - bookkeeping must never break failure handling
+            self._cast_tried = list(getattr(self, "_cast_tried", []))  # keep prior attempts
         self._dlna_cancel = None
         reliability_metrics.fail_attempt(self, Async.run)
         reliability_metrics.finish_active(self, "failed", Async.run)
@@ -1234,31 +1261,14 @@ class SessionMixin:
             self.tracker.clear()
             self._finished_handled = False
         retry = self._retry_action()
-        self.toast(f"Cast failed: {message}", error=True, **({"action": retry} if retry else {}))
+        option = self._recovery_plan.primary if retry and self._recovery_plan else None
+        why = f" — {option.reason}" if option is not None and option.kind != "retry" else ""
+        self.toast(f"Cast failed: {message}{why}", error=True, **({"action": retry} if retry else {}))
         self._console(f"Cast failed: {message}")
         if self._recovery_plan is not None:
             self._console(cast_recovery.summary_line(self._recovery_plan))
         self._notify("error", message)
         self._refresh_controls()
-
-
-    def _retry_action(self):
-        """('Try again', callback) when the plan's first option is a plain retry."""
-        plan, path = getattr(self, "_recovery_plan", None), getattr(self, "_last_cast_path", None)
-        if plan is None or path is None or plan.primary is None or plan.primary.kind != "retry":
-            return None
-        self._cast_failure_id = getattr(self, "_cast_failure_id", 0) + 1
-        token, position = self._cast_failure_id, plan.position
-        return "Try again", lambda: self._retry_cast(token, path, position)
-
-    def _retry_cast(self, token: int, path, position: float) -> None:
-        """Re-run the normal cast entry at the saved place, only if nothing else began."""
-        if (getattr(self, "_closing", False) or token != getattr(self, "_cast_failure_id", 0)
-                or self.busy or (self.session is not None and self.session.active())):
-            self.toast("Playback changed; not retrying automatically")
-            return
-        self._console(f"Retrying cast at {fmt_time(position)}")
-        self._cast_path(pathlib.Path(path), position)
 
 
     def _skip(self, delta: float) -> None:

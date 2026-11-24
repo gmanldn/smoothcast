@@ -112,6 +112,15 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Install FFmpeg 5.0 or newer.
   2. Restart SmoothCast.
 
+<a id="errors-ffmpeg-bundled-missing"></a>
+## `ffmpeg.bundled_missing`
+
+- Severity: error; retryable: no
+- Message: SmoothCast's built-in media tools are missing. Reinstall SmoothCast.
+- Try:
+  1. Reinstall SmoothCast with its installer.
+  2. Restart SmoothCast.
+
 <a id="errors-ffmpeg-decoder-failed"></a>
 ## `ffmpeg.decoder_failed`
 
@@ -225,6 +234,59 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
 - Message: This DLNA receiver is not verified for audio-only playback. Choose a Google Cast target.
 - Try:
   1. Choose a Google Cast target.
+
+<a id="errors-cast-command-failed"></a>
+## `cast.command_failed`
+
+- Severity: error; retryable: yes
+- Message: The receiver command failed. Check the receiver connection and try again.
+- Try:
+  1. Check that the receiver is on and on the same network.
+  2. Retry the action.
+
+<a id="errors-cast-command-invalid"></a>
+## `cast.command_invalid`
+
+- Severity: warning; retryable: no
+- Message: The receiver command has invalid settings. Check the values and try again.
+- Try:
+  1. Reset the setting you just changed.
+  2. Retry the action.
+
+<a id="errors-cast-not-connected"></a>
+## `cast.not_connected`
+
+- Severity: error; retryable: yes
+- Message: Receiver is not connected. Scan the network and choose it again.
+- Try:
+  1. Scan the network.
+  2. Choose the receiver again from the list.
+
+<a id="errors-cast-no-subtitle-track"></a>
+## `cast.no_subtitle_track`
+
+- Severity: info; retryable: no
+- Message: The receiver has no selectable subtitle track.
+- Try:
+  1. Choose a different subtitle source.
+  2. Turn subtitles off.
+
+<a id="errors-media-url-invalid"></a>
+## `media.url_invalid`
+
+- Severity: error; retryable: no
+- Message: A valid HTTP media URL is required.
+- Try:
+  1. Enter an address that starts with http:// or https://.
+
+<a id="errors-media-type-unsupported"></a>
+## `media.type_unsupported`
+
+- Severity: error; retryable: no
+- Message: The media URL has no supported content type.
+- Try:
+  1. Choose media with a known file type.
+  2. Cast a local file instead.
 
 <a id="errors-internal-unexpected"></a>
 ## `internal.unexpected`

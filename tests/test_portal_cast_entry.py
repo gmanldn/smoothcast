@@ -52,7 +52,9 @@ def test_no_native_chrome_cast_menu_claim():
     html = portal._HTML
     entry = html.split('<section id="castEntry"', 1)[1].split("</section>", 1)[0]
     assert "Chrome" in entry and "not yet supported" in entry
-    assert "native Cast" in entry and "Cast via SmoothCast Mesh" not in entry
+    # Plain wording (#599): say Chrome's own Cast button is not supported, never claim it.
+    assert "Chrome's own Cast button is not yet supported" in entry
+    assert "Cast via SmoothCast Mesh" not in entry
 
 
 def test_entry_never_uploads_or_casts_on_navigation():

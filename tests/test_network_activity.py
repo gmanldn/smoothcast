@@ -86,3 +86,15 @@ def test_portal_entries_omit_receiver_addresses_and_mark_local_cast():
         "state": "PLAYING", "position": 12, "duration": 120, "is_local": True,
     }]
     assert "host" not in result[0]
+
+
+def test_portal_entries_report_reading_age_so_viewers_can_advance_the_position(monkeypatch):
+    monkeypatch.setattr(network_activity.time, "monotonic", lambda: 110.0)
+    rows = [{"protocol": "DLNA", "receiver": "TV", "host": "10.0.0.2", "title": "Film",
+             "state": "PLAYING", "position": 30, "duration": 5400}]
+
+    assert network_activity.portal_entries(rows, "", 100.0)[0]["observed_age_ms"] == 10000
+    # A clock that went backwards or a stale reading is clamped, never negative or huge.
+    assert network_activity.portal_entries(rows, "", 200.0)[0]["observed_age_ms"] == 0
+    assert network_activity.portal_entries(rows, "", -1e6)[0]["observed_age_ms"] == 600000
+    assert "observed_age_ms" not in network_activity.portal_entries(rows, "")[0]

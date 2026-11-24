@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import ipaddress
 import math
 import re
+import time
 from typing import Callable
 
 import castctl
@@ -111,10 +112,13 @@ def snapshot(
     return sorted(results, key=lambda item: (item["receiver"].casefold(), item["protocol"]))
 
 
-def portal_entries(entries: list[dict], local_host: str = "") -> list[dict]:
+def portal_entries(entries: list[dict], local_host: str = "", updated: float | None = None) -> list[dict]:
     """Return privacy-trimmed dashboard rows without LAN addresses."""
     local_host = str(local_host or "").strip()
-    return [
+    # How old the receiver reading is, so viewers can advance a playing position.
+    age_ms = (min(600_000, max(0, int((time.monotonic() - updated) * 1000)))
+              if isinstance(updated, (int, float)) else None)
+    rows = [
         {
             "protocol": str(item.get("protocol", "")),
             "receiver": str(item.get("receiver", "")),
@@ -126,3 +130,7 @@ def portal_entries(entries: list[dict], local_host: str = "") -> list[dict]:
         }
         for item in entries[:MAX_RECEIVERS]
     ]
+    if age_ms is not None:
+        for row in rows:
+            row["observed_age_ms"] = age_ms
+    return rows

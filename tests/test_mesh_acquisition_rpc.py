@@ -8,7 +8,7 @@ import mesh_acquisition_rpc as rpc
 import pytest
 
 JOB = "job-00000001"
-URL = "https://example.invalid/watch?v=abc"
+URL = "abcdefghijk"  # canonical video id (the only source form that crosses nodes)
 CONTENT = "c" * 64
 
 
@@ -99,7 +99,7 @@ def test_cancel_propagates_and_stale_cancel_is_ignored():
     assert rig.worker.handle(rpc.build("cancel", job=job, gen=0 + 1))["ok"]
     # an older generation's cancel after a newer offer must not stop the new run
     w = rpc.WorkerService(lambda *a: None, lambda j: rig.stopped.append("x"))
-    w.handle(rpc.build("offer", job=JOB, gen=3, key=core.source_key("youtube", URL), kind="youtube"))
+    w.handle(rpc.build("offer", job=JOB, gen=3, key=core.source_key("youtube", URL), kind="youtube", src=URL))
     w.handle(rpc.build("cancel", job=JOB, gen=2))
     assert "x" not in rig.stopped
 
@@ -129,14 +129,20 @@ def test_malformed_messages_are_refused(bad):
 def test_nothing_sensitive_crosses_the_wire_or_the_public_view():
     rig = Rig()
     rig.submit()
-    blob = repr(rig.sent) + repr(rig.host.ledger.public_view(1.0))
-    assert URL not in blob and "example.invalid" not in blob and CONTENT not in blob
+    view = repr(rig.host.ledger.public_view(1.0))
+    assert URL not in view and CONTENT not in view  # public/telemetry view: no source, no content key
+    wire_blob = repr(rig.sent)
+    assert "http" not in wire_blob and "magnet" not in wire_blob  # canonical id only, never a URL
 
 
 @pytest.mark.parametrize("kind, fields", [
-    ("offer", {"job": 123, "key": "a" * 64, "kind": "youtube"}),
-    ("offer", {"job": JOB, "key": 123, "kind": "youtube"}),
-    ("offer", {"job": JOB, "key": "z" * 64, "kind": "youtube"}),
+    ("offer", {"job": 123, "key": "a" * 64, "kind": "youtube", "src": "abcdefghijk"}),
+    ("offer", {"job": JOB, "key": 123, "kind": "youtube", "src": "abcdefghijk"}),
+    ("offer", {"job": JOB, "key": "z" * 64, "kind": "youtube", "src": "abcdefghijk"}),
+    ("offer", {"job": JOB, "key": core.source_key("youtube", "abcdefghijk"), "kind": "youtube",
+               "src": "https://evil.example/x"}),
+    ("offer", {"job": JOB, "key": core.source_key("youtube", "abcdefghijk"), "kind": "youtube",
+               "src": "zzzzzzzzzzz"}),  # valid shape but hashes to another key
     ("cancel", {"job": 123}),
     ("cancel", {"job": "../invalid"}),
     ("cancel", {"job": JOB, "gen": 1 << 63}),

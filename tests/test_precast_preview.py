@@ -62,9 +62,11 @@ class PreCastPreviewTests(unittest.TestCase):
         self.assertIn("if self._preview_path == path:", selection)
 
     def test_local_preview_can_work_with_offline_cast_device(self):
+        # The desktop and the web share one state rule (action_state); the pure
+        # truth table lives in test_action_state. Here we guard the wiring.
         controls = METHODS["_refresh_controls"]
-        self.assertIn("local_ready = self._preview_path is not None", controls)
-        self.assertIn("or local_ready", controls)
+        self.assertIn("local_ready = action_state.local_preview_ready(", controls)
+        self.assertIn("action_state.can_play_pause(", controls)
         self.assertIn("self.local_button.set_sensitive(local_ready", controls)
 
     def test_scrub_thumbnails_are_throttled_and_do_not_run_on_gtk_thread(self):

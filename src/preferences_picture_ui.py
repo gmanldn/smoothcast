@@ -38,21 +38,44 @@ class PicturePreferencesMixin:
     def _picture_changed(self, key: str, spin) -> None:
         if self._syncing:
             return
-        self.owner.cfg[key] = picture_adjustments.validated(key, spin.get_value())
-        save_config(self.owner.cfg)
+        owner = self.owner
+        value = picture_adjustments.validated(key, spin.get_value())
+        media = getattr(owner, "media", None)
+        path = str(media.path) if media is not None else None
+        if path is None:
+            owner.cfg[key] = value
+        else:
+            presets = owner.cfg.get(picture_adjustments.CONFIG_KEY)
+            if not isinstance(presets, dict):
+                presets = {}
+            preset = picture_adjustments.for_path(owner.cfg, path)
+            preset[key] = value
+            presets[path] = preset
+            owner.cfg[picture_adjustments.CONFIG_KEY] = presets
+        save_config(owner.cfg)
         self._refresh_picture_preview()
 
     def _reset_picture(self, _button) -> None:
-        self.owner.cfg.update(picture_adjustments.DEFAULTS)
-        save_config(self.owner.cfg)
+        owner = self.owner
+        media = getattr(owner, "media", None)
+        path = str(media.path) if media is not None else None
+        if path is None:
+            owner.cfg.update(picture_adjustments.DEFAULTS)
+        else:
+            presets = owner.cfg.get(picture_adjustments.CONFIG_KEY)
+            if isinstance(presets, dict) and path in presets:
+                presets.pop(path)
+                owner.cfg[picture_adjustments.CONFIG_KEY] = presets
+        save_config(owner.cfg)
         self.sync_from_owner()
         self._refresh_picture_preview()
 
     def _build_picture_preferences(self, playback, output) -> None:
         picture = self._group(
             playback, "Colour adjustments",
-            "Optional FFmpeg adjustments for transcoded output. Neutral settings "
-            "preserve the source; changing a value disables direct play for that cast.",
+            "Optional FFmpeg adjustments for transcoded output. A change applies to the "
+            "selected film; with no film selected it becomes the default. Neutral settings "
+            "preserve the source and keep direct play available.",
         )
         for key, title, step in (
             ("picture_brightness", "Brightness", 0.05),
@@ -61,7 +84,11 @@ class PicturePreferencesMixin:
             ("picture_hue", "Hue (degrees)", 5),
         ):
             self._picture_spin(picture, key, title, step)
-        reset_row = Adw.ActionRow(title="Restore original colours")
+        reset_row = Adw.ActionRow(
+            title="Restore original colours",
+            subtitle="Removes the selected film's saved preset; with no film "
+                     "selected, restores the global defaults.",
+        )
         reset_button = Gtk.Button(label="Reset picture")
         reset_button.set_valign(Gtk.Align.CENTER)
         reset_button.connect("clicked", self._reset_picture)

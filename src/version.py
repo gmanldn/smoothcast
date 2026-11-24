@@ -14,7 +14,7 @@ import re
 
 MAJOR = 2
 MINOR = 0
-PATCH = 16
+PATCH = 38
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 

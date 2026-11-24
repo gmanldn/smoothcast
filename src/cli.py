@@ -50,6 +50,13 @@ def _main() -> int:
         from gi.repository import Gtk, Adw  # noqa: F401
         print(hashlib.sha256(icon_path().read_bytes()).hexdigest())
         return 0
+    if sys.argv[1:] == ["--_smoothcast-media-probe"]:
+        # Headless: `<tool> -version` only; never media, GTK or a receiver (#530).
+        import json
+        import media_tools
+        result = media_tools.report()
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["ok"] else 1
     if sys.argv[1:] == ["--build-id"]:
         # Read the checkout revision once at command invocation. A packaged
         # build without .git reports only the embedded semantic baseline.

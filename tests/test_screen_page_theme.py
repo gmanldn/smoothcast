@@ -87,3 +87,24 @@ def test_theme_colour_audit_distinguishes_numeric_ids_from_literal_values():
         "#1234", "#12345678",
     ]
     assert _literal_css_colours("@media(prefers-color-scheme:light){.screen{color:#abc}}") == ["#abc"]
+
+
+def test_video_overlay_has_theme_independent_readable_colours():
+    for scheme in design_tokens.SCHEMES.values():
+        assert design_tokens.contrast_ratio(scheme["media_text"], scheme["media_surface"]) >= 4.5
+    assert design_tokens.FORCED["media_text"] == "CanvasText"
+    assert design_tokens.FORCED["media_surface"] == "Canvas"
+    html = portal_screen_page.screen_page().decode("utf-8")
+    for selector in ("#hud", "#banner"):
+        rule = re.search(re.escape(selector) + r"\{([^}]+)\}", html).group(1)
+        assert "background:var(--media-surface)" in rule
+        assert "color:var(--media-text)" in rule
+    assert "#hud .meta{display:flex;justify-content:space-between;gap:12px;color:var(--media-text)" in html
+
+
+def test_screen_controls_remain_reachable_on_short_or_narrow_viewports():
+    html = portal_screen_page.screen_page().decode("utf-8")
+    assert "align-items:safe center;overflow:auto" in html
+    assert "#tools.hide:focus-within{opacity:1;pointer-events:auto}" in html
+    assert "@media(max-width:600px)" in html
+    assert "@media(prefers-reduced-motion:reduce){#hud,#tools,.home-link,.screen-version{transition:none}}" in html

@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import subprocess
 import time
+import media_tools
 
 _FPS = re.compile(r"fps=\s*([\d.]+)")
 SOURCE_RATE = 30
@@ -68,7 +69,7 @@ def recommend(encode_fps: float | None, source_fps: float) -> dict:
 def probe_command(seconds: int = 4, height: int = 1080, encoder: str = "libx264") -> list[str]:
     width = max(2, round(height * 16 / 9 / 2) * 2)
     return [
-        "ffmpeg", "-hide_banner", "-loglevel", "info",
+        media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-loglevel", "info",
         "-f", "lavfi", "-i", f"testsrc=size={width}x{height}:rate={SOURCE_RATE}",
         "-t", str(seconds), "-c:v", encoder, "-preset", "veryfast",
         "-f", "null", "-",

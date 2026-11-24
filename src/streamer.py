@@ -47,6 +47,7 @@ import subtitle_style
 import picture_adjustments
 import video_policy
 import aspect_override
+import media_tools
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
@@ -354,7 +355,7 @@ def measure_mean_volume(path: str, max_seconds: int = 60,
                 return _VOLUME_CACHE[key]
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
+            [media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-i", path, "-map", f"0:a:{track}?",
              "-t", str(max_seconds), "-vn",
              "-af", ",".join([downmix, "volumedetect"] if downmix else ["volumedetect"]),
              "-f", "null", "-"],
@@ -951,7 +952,7 @@ def ffprobe(path: pathlib.Path, *, cancel: threading.Event | None = None) -> Med
     except OSError:
         pass
     try:
-        args = ["ffprobe", "-v", "error", "-print_format", "json",
+        args = [media_tools.resolve_media_tool("ffprobe"), "-v", "error", "-print_format", "json",
                 "-show_format", "-show_streams", "-show_chapters", str(path)]
         result = (_ffprobe_cancellable(args, cancel) if cancel is not None else
                   subprocess.run(args, capture_output=True, text=True, timeout=30))
@@ -1813,7 +1814,7 @@ class Session:
             self.used_software_fallback = True
         software = True if audio_only else self.used_software_fallback
         args = [
-            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-loglevel", "warning",
             "-progress", str(PROGRESS_FILE), "-nostats",
             # Read source samples at the requested playback rate: a 2×
             # setpts/atempo stream needs 2× input, otherwise the TV starves.

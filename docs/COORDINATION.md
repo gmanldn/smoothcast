@@ -22,7 +22,22 @@ python3 scripts/agent.py progress 207 --done "landed …" --next "remaining …"
 python3 scripts/agent.py done 207 --why "…" --checklist "…" # legacy evidence-only; never closes
 python3 scripts/agent.py heartbeat 207         # extend the lease on long work
 python3 scripts/agent.py release 207 --note "…"
+python3 scripts/agent.py prune                 # delete merged, clean worktrees (keeps dirty/leased)
 ```
+
+## Worktree pool
+
+`start` creates each private worktree inside one pool under the user data
+directory (`$SC_WORKTREE_POOL`, else `$XDG_DATA_HOME/smoothcast/worktrees`, else
+`~/.local/share/smoothcast/worktrees`), never beside the checkout: a worktree
+per ticket must not bury the project directory under dozens of siblings.
+`prune` removes only `smoothcast-issue-<n>-*` worktrees whose HEAD is already
+merged into `origin/develop` and whose working tree is clean. It never deletes
+the shared checkout, a worktree inside it, Kilo/Claude/manual worktrees,
+unmerged or dirty trees, a live lease, or the caller's own worktree. Run it
+after finishing tickets. Long-lived branches are `develop` (all agent code)
+and `main` (owner promotion only). Do not create feature branches or agent PRs;
+delete a local branch only after it is fully merged into `develop`.
 
 ## Recovery and exit statuses
 

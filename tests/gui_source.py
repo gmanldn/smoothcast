@@ -40,6 +40,7 @@ GUI_MODULES = (
     "cast_queue.py",
     "queue_row_ui.py",
     "cast_session.py",
+    "cast_retry_ui.py",
     "cast_av.py",
     "cast_subtitle_files.py",
     "cast_lifecycle.py",
@@ -56,7 +57,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
@@ -150,6 +151,7 @@ def handler_globals() -> dict:
     in one place. ``CONFIG_DIR`` is always a fresh temp directory so a test can
     never read or write a real SmoothCast config.
     """
+    import capability_gate
     import fingerprint
     import low_end_policy
     import picture_adjustments
@@ -158,6 +160,7 @@ def handler_globals() -> dict:
     config_dir = Path(tempfile.mkdtemp(prefix="smoothcast-test-config-"))
     atexit.register(shutil.rmtree, config_dir, ignore_errors=True)
     return {
+        "capability_gate": capability_gate,
         "fingerprint": fingerprint,
         "low_end_policy": low_end_policy,
         "picture_adjustments": picture_adjustments,

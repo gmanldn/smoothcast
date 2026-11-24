@@ -9,6 +9,7 @@ No GUI toolkit dependencies: safe to import and test on any machine.
 """
 from __future__ import annotations
 
+import math
 import time
 
 
@@ -30,9 +31,10 @@ class PositionTracker:
 
     def start(self, base: float, duration: float, playing: bool = True, rate: float = 1.0) -> None:
         self.known = True
-        self.duration = duration or self.duration
-        self.rate = max(0.05, float(rate))
-        self._base = max(0.0, base)
+        # A new source must never inherit the previous source's duration.
+        self.duration = duration if math.isfinite(duration) and duration > 0 else 0.0
+        self.rate = max(0.05, float(rate)) if math.isfinite(rate) and rate > 0 else 1.0
+        self._base = max(0.0, base) if math.isfinite(base) else 0.0
         now = time.monotonic()
         self._epoch = now
         self._playing = playing
@@ -57,15 +59,22 @@ class PositionTracker:
                 # extrapolation on resume rather than counting paused seconds.
                 self._device_epoch = now
         else:
+            if self._device_pos is not None:
+                # Freeze the extrapolated position before disabling playback.
+                self._device_pos = self.value(now)
+                self._device_epoch = now
             self._pause_started = now
         self._playing = playing
 
     def device_update(
         self, current: float, duration: float | None, rate: float | None = None,
     ) -> None:
+        if not math.isfinite(current):
+            return  # An invalid sample must not overwrite the last good clock.
         self.known = True
-        self.duration = duration or self.duration
-        if rate is not None:
+        if duration is not None and math.isfinite(duration) and duration > 0:
+            self.duration = duration
+        if rate is not None and math.isfinite(rate) and rate > 0:
             self.rate = max(0.05, float(rate))
         # Record the device's authoritative position; play state governs whether
         # it advances between polls so a paused stream does not creep forward.

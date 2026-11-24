@@ -9,7 +9,9 @@ description: >-
 
 Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail).
 This is a **repository-scoped instruction adapter**, not the upstream
-Ponytail plugin, hooks or live token-accounting dashboard.
+Ponytail plugin, hooks or live token-accounting dashboard. It is bundled and
+versioned with SmoothCast; usage, precedence and measurement rules are in
+[docs/agents/efficiency.md](../../../docs/agents/efficiency.md).
 
 1. **Understand:** inspect the affected code, every caller and any data/TV
    ownership edge cases before changing it. Define the required outcome.

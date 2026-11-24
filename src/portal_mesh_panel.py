@@ -59,10 +59,11 @@ _PANEL = r"""
 <div class="mesh-metrics" aria-label="Latest reported mesh totals">
 <div class="mesh-metric"><strong id="meshDeviceCount">—</strong><span>Online nodes</span></div>
 <div class="mesh-metric"><strong id="meshClientCount">—</strong><span>Connected clients</span></div>
-<div class="mesh-metric"><strong id="meshReadyCount">—</strong><span>Ready targets</span></div>
-<div class="mesh-metric"><strong id="meshBusyCount">—</strong><span>Targets in use</span></div>
+<div class="mesh-metric"><strong id="meshReadyCount">—</strong><span>Reported ready</span></div>
+<div class="mesh-metric"><strong id="meshBusyCount">—</strong><span>Reported in use</span></div>
 <div class="mesh-metric"><strong id="meshUnavailableCount">—</strong><span>Stale / unreachable</span></div>
 </div>
+<section id="meshReceiverInventory" aria-labelledby="meshTargetsHeading"><h3 id="meshTargetsHeading">Casting targets across the mesh</h3><p class="field-hint">Receiver observations, not a cast command. A ready report does not reserve a receiver.</p><ul id="meshTargets" aria-label="Playback targets"></ul><p id="meshNoTargets" class="muted" hidden>No receivers reported yet. Check whether your TV or speaker is awake.</p></section>
 <div class="mesh-room" aria-labelledby="meshRoomHeading"><h3 id="meshRoomHeading">This host · room control</h3>
 <strong id="meshRoomTitle">Waiting for room state…</strong><p id="meshRoomReceiver" class="muted">Receiver status unavailable</p>
 <p id="meshRoomQueue" class="muted">Waiting for queue status</p><p id="meshRoomStreams" class="muted">Waiting for network activity</p>
@@ -74,14 +75,13 @@ _PANEL = r"""
 <ul id="meshStreamList" aria-label="Reported live receiver streams"></ul>
 <div class="mesh-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Up Next</a><a href="#linkAcquisition">Link acquisitions</a><a href="#uploadCard">Transfer files</a><a href="#networkActivity">Receiver activity</a></div>
 </div>
-<div class="mesh-columns"><div><h3>Nodes · version and capability</h3><ul id="meshNodes" aria-label="Mesh nodes"></ul></div>
-<div><h3>Receivers · reachability and ownership</h3><ul id="meshTargets" aria-label="Playback targets"></ul></div></div>
+<div><h3>Nodes · version and capability</h3><ul id="meshNodes" aria-label="Mesh nodes"></ul></div>
 <p id="meshVersionNote" class="mesh-note"></p><p id="meshFreshness" class="mesh-note">Waiting for first mesh snapshot.</p>
 <p class="mesh-note">Counts reflect current mesh advertisements, not a network scan. CPU, disk, per-hop bandwidth and playback confirmation on other nodes are not reported here.</p>
 
 <details class="help"><summary>What do the network devices and target states mean?</summary><div class="help-body">
 <p><strong>Devices</strong> are SmoothCast computers cooperating on your local network. <strong>Targets</strong> are the TVs, speakers and browser screens they can reach. <strong>This device</strong> identifies this host; <strong>Primary</strong> is the node coordinating the mesh, not the receiver currently playing.</p>
-<p><strong>Ready</strong> means the receiver is currently reachable, <strong>In use</strong> means another room has it, <strong>Not seen lately</strong> means discovery is out of date, and <strong>Can't be reached</strong> means no node can currently contact it.</p>
+<p><strong>Reported ready</strong> means an observer reported the receiver reachable, <strong>Reported in use</strong> means an observer reported it occupied (including when another observer reports ready), <strong>Not seen lately</strong> means discovery is out of date, and <strong>Can't be reached</strong> means no node can currently contact it.</p>
 <p>This panel is a read-only view of local network activity. It does not cast, claim receivers or upload files; use Now Playing, Find or Add files for room actions. Reconnecting indicates that updates have temporarily stopped, not that your current cast has ended.</p>
 </div></details>
 <div id="meshLive" class="sr-only" aria-live="polite" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div></section>
@@ -89,13 +89,17 @@ _PANEL = r"""
 (function(){
   const panel=document.getElementById("meshPanel");if(!panel)return;
   const navLink=document.getElementById("meshNavLink");
-  function showNetworkNavigation(visible){if(navLink)navLink.hidden=!visible}
+  function showNetworkNavigation(visible){
+    if(navLink)navLink.hidden=!visible;
+    const queueLink=document.getElementById("queueMeshLink");
+    if(queueLink){queueLink.hidden=!visible;queueLink.href="#meshReceiverInventory";}
+  }
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
   let bootRequest=null,bootEpoch=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
-  const TEXT={self:"This device",alive:"Online",ready:"Ready",busy:"In use",stale:"Not seen lately",unreachable:"Can't be reached"};
+  const TEXT={self:"This device",alive:"Online",ready:"Reported ready",busy:"Reported in use",stale:"Not seen lately",unreachable:"Can't be reached"};
   const RANK={ready:0,busy:1,stale:2,unreachable:3};
   const plural=(n,w)=>n+" "+w+(n===1?"":"s");
   const put=(id,value)=>{const target=$(id);if(target&&target.textContent!==String(value))target.textContent=String(value)};
@@ -106,8 +110,8 @@ _PANEL = r"""
   function updateFreshness(){if(lastMeshAt)put("meshFreshness","Last mesh change / snapshot received at "+new Date(lastMeshAt).toLocaleTimeString()+". Quiet meshes may have no changes.")}
   window.scRenderMeshRoom=function(state){
     if(!state||typeof state!=="object")return;
-    put("meshRoomTitle",state.title||"Nothing playing");
-    put("meshRoomReceiver",(state.receiver||"No receiver selected")+" · "+(state.state_label||state.state||"State unavailable"));
+    put("meshRoomTitle",state.active?(state.title||"Media title unavailable"):"Nothing playing");
+    put("meshRoomReceiver","Selected: "+(state.receiver||"No receiver selected")+" · "+(state.state_label||state.state||"State unavailable"));
     const queued=Array.isArray(state.queue)?state.queue.length:null;
     put("meshRoomQueue",queued===null?"Queue status unavailable":plural(queued,"waiting item")+(state.busy?" · Playback command pending":""));
     const streams=Array.isArray(state.network_activity)?state.network_activity.length:null;
@@ -159,7 +163,7 @@ _PANEL = r"""
             const row=el("li","mesh-stream");
             const label=job.kind==="youtube"?"YouTube video":"BitTorrent media";
             const stage={pending:"Waiting for worker",resolving:"Resolving metadata",downloading:"Downloading",verifying:"Verifying media",queueing:"Submitting to queue"}[job.stage]||"Unknown";
-            row.append(el("strong","",host+" · "+label),el("span","muted",freshness+" · "+stage));
+            row.append(el("strong","",host+" · "+label),el("span","muted",freshness+" · "+stage+(job.remote===true?" · running for another room":"")));
             if(Number.isSafeInteger(job.received)&&Number.isSafeInteger(job.total)&&job.total>0&&job.received>=0&&job.received<=job.total){
               const meter=el("progress");meter.max=job.total;meter.value=job.received;meter.setAttribute("aria-label",peer.freshness==="live"?"Reported acquisition progress":"Last reported acquisition progress");row.append(meter);
               const size=n=>(n/1048576).toFixed(1)+" MiB";
@@ -178,7 +182,7 @@ _PANEL = r"""
       const signature=JSON.stringify(observed.map(item=>[item.receiver,item.title,item.protocol,item.state,item.position,item.duration,item.is_local]));
       if(streamList.dataset.sig!==signature){
         streamList.dataset.sig=signature;
-        const timing=value=>Number.isFinite(value)&&value>=0?Math.floor(value/60)+":"+String(Math.floor(value%60)).padStart(2,"0"):"";
+        live=[];
         const rows=observed.map(item=>{
           const row=document.createElement("li");row.className="mesh-stream";
           const title=document.createElement("strong");title.textContent=item.title||"Media title unavailable";
@@ -190,6 +194,10 @@ _PANEL = r"""
             progress.setAttribute("aria-label","Reported playback position");
             const time=document.createElement("span");time.className="muted";time.textContent=timing(item.position)+" / "+timing(item.duration);
             row.append(progress,time);
+            if(item.state==="PLAYING"){const age=Number(item.observed_age_ms);live.push({progress,time,duration:item.duration,base:item.position+(Number.isFinite(age)&&age>0?Math.min(age,600000)/1000:0),at:Date.now()})}
+          }else if(Number.isFinite(item.duration)&&item.duration>0){
+            const total=document.createElement("span");total.className="muted";total.textContent="Total runtime "+timing(item.duration);
+            row.append(total);
           }
           return row;
         });
@@ -197,6 +205,10 @@ _PANEL = r"""
       }
     }
   };
+  let live=[];
+  const timing=value=>{if(!Number.isFinite(value)||value<0)return "";const s=Math.floor(value),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=String(s%60).padStart(2,"0");return h?h+":"+String(m).padStart(2,"0")+":"+r:m+":"+r};
+  // Receivers are polled every 15 s; advance playing streams between polls so the position stays current.
+  if(typeof setInterval==="function"){const timer=setInterval(()=>{const now=Date.now();for(const s of live){const at=Math.min(s.duration,s.base+(now-s.at)/1000);s.progress.value=at;s.time.textContent=timing(at)+" / "+timing(s.duration)}},1000);if(timer&&typeof timer.unref==="function")timer.unref()}
   function model(){
     const list=[...nodes.values()].sort((a,b)=>(a.node_id===local?-1:b.node_id===local?1:a.name.localeCompare(b.name)||a.node_id.localeCompare(b.node_id)));
     const versions=list.map(n=>n.version).filter(v=>semver(v));
@@ -213,14 +225,23 @@ _PANEL = r"""
     const by=new Map();
     for(const n of list)for(const t of (n.targets||[])){const e=by.get(t.id)||{id:t.id,name:t.name,kind:t.kind,model:t.model,obs:[]};e.obs.push({node:n.name,state:t.state,age:t.age_ms||0,owner:t.owner});by.set(t.id,e)}
     const trows=[...by.values()].map(e=>{
-      e.obs.sort((a,b)=>RANK[a.state]-RANK[b.state]);const best=e.obs[0].state;
-      const ready=e.obs.filter(o=>o.state==="ready").map(o=>o.node);
+      e.obs.sort((a,b)=>RANK[a.state]-RANK[b.state]||a.node.localeCompare(b.node));
+      const busy=e.obs.filter(o=>o.state==="busy"),ready=e.obs.filter(o=>o.state==="ready");
+      // Do not mask an occupied receiver with another observer's ready report.
+      // Conservative display only; commands require separate authority.
+      const best=busy.length?"busy":e.obs[0].state;
       let why="";
-      if(best==="busy"){const owner=e.obs.map(o=>o.owner).find(id=>nodes.has(id));why=owner?"Reported in use via "+nodes.get(owner).name+".":"Reported in use; owner not reported."}
+      if(best==="busy"){
+        const owners=[...new Set(busy.map(o=>o.owner).filter(id=>nodes.has(id)))].map(id=>nodes.get(id).name);
+        why=owners.length?"Reported in use via "+owners.join(", ")+".":"Reported in use; owner not reported.";
+        if(ready.length)why+=" Conflicting ready and busy reports; check receiver before casting.";
+      }
       else if(best==="stale")why="Not seen for "+Math.max(1,Math.round(Math.min(...e.obs.map(o=>o.age))/60000))+" min.";
       else if(best==="unreachable")why="No device can reach it right now.";
       const kind={cast:"Chromecast",dlna:"DLNA",screen:"Browser screen",smoothcast:"SmoothCast"}[e.kind]||"Receiver";
-      return {key:"t:"+e.id,title:e.name,sub:kind+(e.model&&e.model!==kind?" · "+e.model:"")+" — seen by "+(ready.length?ready:e.obs.map(o=>o.node)).slice(0,2).join(", "),badges:[],state:best,why}});
+      const observations=e.obs.slice(0,6).map(o=>o.node+" ("+(TEXT[o.state]||"Unknown")+")");
+      if(e.obs.length>6)observations.push("+"+(e.obs.length-6)+" more");
+      return {key:"t:"+e.id,title:e.name,sub:kind+(e.model&&e.model!==kind?" · "+e.model:"")+" · "+observations.join(" · "),badges:[],state:best,why}});
     trows.sort((a,b)=>RANK[a.state]-RANK[b.state]||a.title.localeCompare(b.title)||a.key.localeCompare(b.key));
     return {rows,trows,newest,list};
   }
@@ -247,6 +268,7 @@ _PANEL = r"""
     const {rows,trows,newest,list}=model();
     const keyFocus=document.activeElement&&panel.contains(document.activeElement)?document.activeElement:null;
     sync($("meshNodes"),rows);sync($("meshTargets"),trows);
+    const empty=$("meshNoTargets");if(empty)empty.hidden=trows.length!==0;
     const live=rows.length,ready=trows.filter(t=>t.state==="ready").length,busy=trows.filter(t=>t.state==="busy").length;
     const clients=list.reduce((sum,n)=>sum+(Number.isSafeInteger(n.client_count)&&n.client_count>=0?n.client_count:0),0);
     put("meshDeviceCount",live);put("meshClientCount",clients);put("meshReadyCount",ready);put("meshBusyCount",busy);put("meshUnavailableCount",trows.length-ready-busy);

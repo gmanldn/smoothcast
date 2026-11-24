@@ -12,11 +12,19 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import agent
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _isolated_worktree_pool(monkeypatch, tmp_path):
+    """Private worktrees always land in a temporary pool, never the user's home."""
+    monkeypatch.setenv("SC_WORKTREE_POOL", str(tmp_path / "worktrees"))
 
 
 def run(cwd: Path, *args: str) -> str:
@@ -102,7 +110,7 @@ def test_start_creates_distinct_agent_ids_and_scoped_briefs(monkeypatch, tmp_pat
     cmd = agent.build_parser().parse_args(["start", "584"])
     assert agent.cmd_start(cmd) == 0
     assert agent.cmd_start(cmd) == 0
-    folders = sorted(tmp_path.glob("smoothcast-issue-584-*"))
+    folders = sorted((tmp_path / "worktrees").glob("smoothcast-issue-584-*"))
     assert len(folders) == 2
     ids = []
     for worktree in folders:
@@ -112,7 +120,57 @@ def test_start_creates_distinct_agent_ids_and_scoped_briefs(monkeypatch, tmp_pat
         assert "Ticket for both" in packet
         assert "Context route:" in packet
         assert "src/cli.py" in packet
+        assert ".kilo/skills/ponytail/SKILL.md" in packet
+        assert ".kilo/skills/caveman/SKILL.md" in packet
     assert ids[0] != ids[1]
+
+
+def test_start_keeps_worktrees_in_the_pool_not_beside_the_repo(monkeypatch, tmp_path):
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "cmd_claim", lambda args: 0)
+    monkeypatch.setattr(agent, "load_issue", lambda n: {
+        "title": "Pooled", "body": "Edit src/cli.py", "state": "open"})
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    assert agent.cmd_start(agent.build_parser().parse_args(["start", "584"])) == 0
+    assert list((tmp_path / "worktrees").glob("smoothcast-issue-584-*"))
+    # The project directory must not fill up with one sibling per ticket.
+    assert not list(tmp_path.glob("smoothcast-issue-584-*"))
+
+
+def test_prune_removes_merged_clean_worktrees_and_preserves_dirty_ones(monkeypatch, tmp_path):
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    monkeypatch.setattr(agent, "recent_comments", lambda *a, **k: [])
+    pool = tmp_path / "worktrees"
+    pool.mkdir()
+    merged = pool / "smoothcast-issue-1-aaaa1111"
+    dirty = pool / "smoothcast-issue-2-bbbb2222"
+    run(first, "worktree", "add", "--detach", str(merged), "origin/develop")
+    run(first, "worktree", "add", "--detach", str(dirty), "origin/develop")
+    (dirty / "wip.txt").write_text("unshipped work\n", encoding="utf-8")
+    assert agent.cmd_prune(agent.build_parser().parse_args(["prune"])) == 0
+    assert not merged.exists()
+    assert dirty.exists() and (dirty / "wip.txt").exists()
+
+
+def test_prune_never_touches_kilo_or_manual_worktrees(monkeypatch, tmp_path):
+    """Only agent.py's own smoothcast-issue-<n>-* worktrees may ever be removed."""
+    _, first, _ = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", first)
+    monkeypatch.setattr(agent, "gh", lambda *args: [])
+    monkeypatch.setattr(agent, "recent_comments", lambda *a, **k: [])
+    pool = tmp_path / "worktrees"
+    pool.mkdir()
+    kilo = pool / "chartreuse-impala"  # Kilo Agent Manager worktree, no issue number
+    manual = pool / "smoothcast-reconcile"
+    ours = pool / "smoothcast-issue-3-cccc3333"
+    for target in (kilo, manual, ours):
+        run(first, "worktree", "add", "--detach", str(target), "origin/develop")
+    assert agent.cmd_prune(agent.build_parser().parse_args(["prune"])) == 0
+    assert kilo.exists() and manual.exists()
+    assert not ours.exists()
 
 
 def test_claim_freshness_rejects_rival_and_reclaims_expired(monkeypatch):
@@ -319,7 +377,7 @@ def test_start_ship_finish_complete_headless_cycle(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", no_network)
 
     assert agent.cmd_start(agent.build_parser().parse_args(["start", "584"])) == 0
-    trees = list(tmp_path.glob("smoothcast-issue-584-*"))
+    trees = list((tmp_path / "worktrees").glob("smoothcast-issue-584-*"))
     assert len(trees) == 1
     worktree = trees[0]
     monkeypatch.setattr(agent, "ROOT", worktree)

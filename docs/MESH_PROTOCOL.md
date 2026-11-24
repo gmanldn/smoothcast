@@ -125,3 +125,96 @@ from the transport, never a message field.
 Covered by an in-process two-node simulation in
 `tests/test_mesh_acquisition_rpc.py`. The real authenticated mesh RPC, verified
 file transfer and Live Mesh display are still to be wired.
+
+### Authenticated transport for assignment (#589, `mesh.acquisition.assign.v1`)
+
+`src/mesh_acquisition_bridge.py` carries the `mesh_acquisition_rpc` messages on
+the protected `acquisition_job` RPC kind. Trust model (LAN, **not**
+cryptographic): the sender must be a currently ALIVE member whose node id, boot
+id and *numeric source address* match, and both peers must negotiate the
+separate `mesh.acquisition.assign.v1` capability (advertised as the
+`acquisition-assign-v1` hint only when the app configures a worker or attach
+hook; the v1 telemetry token and node digest are untouched). Workers accept
+offers/cancels only while the operator's live opt-in (`acquisition_accept`) is
+true, otherwise they answer `declined` and the job returns to pending. Reports
+from workers are applied to the host ledger under the sender's authenticated
+node id. `send` blocks and is refused on the mesh loop thread; a lost or
+unverified reply raises, which the host treats as an ambiguous owner. Remote
+worker execution and verified file transfer are still to be connected.
+
+### Remote worker execution (#589)
+
+`src/mesh_acquisition_executor.py` is the worker's `start`/`stop` target. An
+offer now carries the canonical source identity (`src`: 11-character video id
+or 40-hex btih) *only* on the authenticated RPC; it must hash to the offered
+`key` and is re-validated against the local canonical form. Telemetry, the
+public view and the ledger snapshot still never contain it. The executor runs
+the same isolated provider as the local room, reports stages and measured bytes
+(at most once a second), SHA-256-hashes the verified media and sends `finished`
+(retried a bounded number of times) or `failed`. Cancel stops it without a
+failure report and removes its files. The room host still performs the single
+queue add; pulling the verified file from the worker is the remaining step.
+
+### Verified file transfer (#589)
+
+When a worker's `finished` arrives the host calls `TransferHost.collect(job)`:
+it sends a `ticket` message (authenticated RPC), which makes the worker's
+`TransferServer` (LAN-only, `GET /acq/<job>/<token>`) offer **only** that
+verified file under a fresh random token that expires in 15 minutes and is
+revoked on cancel. The host streams it to a private `.part` file (size bound,
+time bound, `Range` resume, bounded retries) and publishes it atomically only
+when both the byte count and SHA-256 equal the executor's report. Then, and
+only then, `AssignmentLedger.enqueue_once` admits one queue add and the verified
+local copy is delivered. Wrong token, unknown job, expiry, swapped file,
+oversize stream and non-LAN endpoints all fail closed; a failed transfer leaves
+nothing queued and can be retried. A worker never sends a path, URL or address.
+
+### Using mesh workers from the room (#589, opt-in)
+
+Two settings in `config.json`, both **off by default**: `mesh_remote_acquisition`
+(this room may hand link downloads to trusted mesh workers) and
+`mesh_accept_acquisition` (this node will run downloads for the room host; read
+live, so turning it off makes the node answer `declined`). `src/cast_mesh.py`
+builds `mesh_acquisition_app.RemoteAcquisition` only when either is on. For the
+room host it wraps the local provider in a `CompositeProvider`: a local worker
+is used when this host has one for the kind, otherwise a live peer that
+advertises `acquisition-assign-v1` plus `acquire-<kind>-local`. `LinkJobs` is
+unchanged and keeps the journal, guest status and the one queue add; the remote
+path just returns a verified local file. A lost, restarted or unreachable worker
+makes the job fail as *ambiguous* and is never reassigned; after a restart
+`reconcile()` asks workers to stop and resolves a job only on an acknowledged
+stop. A damaged ledger disables remote use rather than guessing. Free space and
+slots of a worker are enforced by that worker (it refuses when full); they are
+not advertised. This is trusted-LAN, not cryptographic.
+
+Limitation: the room only creates `LinkJobs` when this host has a local worker
+(or the portal is changed to also create it when `mesh_remote_acquisition` is
+on), so a host with no local tools cannot yet submit remotely.
+
+### Live Mesh routing for remote work (#589)
+
+A worker publishes the jobs it runs for other rooms in its own
+`acquisition_status` rows with `remote: true` (true-only flag; ids are the
+24-hex job ids; no URL, title, path, owner or peer address). The Live Mesh panel
+labels them "running for another room", so the executing node and its real
+progress are what peers see. The room that delegated the job publishes it as
+`pending` ("Waiting for worker") instead of mirroring the worker's progress, so
+one download is never shown twice or counted as two.
+
+### Cancel and release (#589)
+
+A `cancel` with the current fence makes the worker stop any running download
+**and** revoke its download ticket and delete the verified copy, including after
+the download already finished. A stale-generation cancel changes nothing. After
+a successful, verified collection the host sends the same cancel (best effort)
+so the worker frees the file immediately instead of waiting for the 15 minute
+ticket expiry.
+
+### Worker disk reaper (#589)
+
+A verified copy that the host never collects or cancels (host vanished, crashed
+or lost its ledger) is deleted after 30 minutes (`RESULT_TTL`, twice the ticket
+lifetime), together with its ticket. The check piggybacks on the periodic
+telemetry poll (at most every 30 s), and any working directory that no live job
+or verified result owns, including a previous run's leftovers at startup, is
+removed. Symbolic links are never followed or deleted.

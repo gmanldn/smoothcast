@@ -17,6 +17,7 @@ import cast_targets
 import responsive_layout
 import queue_accessibility
 import slider_accessibility
+import action_state
 
 import buffer_health
 import notifications
@@ -140,6 +141,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         section.append("Play locally", "app.play-locally")
         section.append("Add videos to queue…", "app.add-files")
         section.append("Find in the house…", "app.find-house")
+        section.append("Add from YouTube…", "app.add-youtube")
         section.append("Open URL…", "app.open-url")
         recents = Gio.Menu()
         for index, path in enumerate(self.cfg["recents"][:8]):
@@ -1306,13 +1308,14 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             self.cast_button.remove_css_class("primary-action")
             self.open_button.add_css_class("primary-action")
         self.stop_tv_button.set_sensitive(active and not busy)
-        local_ready = self._preview_path is not None and self.session is None and not self.external
-        can_play = not busy and ((online and active) or local_ready)
+        local_ready = action_state.local_preview_ready(
+            self._preview_path, self.session, self.external)
+        can_play = action_state.can_play_pause(
+            self.device_state, self.session, self.external, self._preview_path, busy)
         self.play_button.set_sensitive(can_play)
-        self.stop_button.set_sensitive(
-            (not busy and ((online and active) or local_ready))
-            or (busy and self._dlna_cancel is not None)
-        )
+        self.stop_button.set_sensitive(action_state.can_stop(
+            self.device_state, self.session, self.external, self._preview_path,
+            busy, self._dlna_cancel))
         can_seek = not busy and ((online and not self.external and self.tracker.known and active)
                                  or (local_ready and bool(self.media and self.media.duration)))
         for button in (self.start_button, self.back10_button, self.back30_button,
@@ -1322,7 +1325,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         index = self.queue.index(self.now_playing) if self.now_playing in self.queue else None
         self.prev_button.set_sensitive(not busy and (has_queue and (index is None or index > 0) or active))
         self.next_button.set_sensitive(not busy and has_queue and index is not None and index + 1 < len(self.queue))
-        has_volume = online and self._volume_control_available()
+        has_volume = action_state.can_volume(self.device_state, self._volume_control_available())
         for control in (self.volume_scale, self.mute_button):
             control.set_sensitive(has_volume)
         # Sensitivity is user feedback, not the security/ownership guard:

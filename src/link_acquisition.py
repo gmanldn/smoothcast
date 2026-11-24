@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 from collections import OrderedDict
 from dataclasses import dataclass, field
+import guest_messages
 import hashlib
 import json
 import math
@@ -27,6 +28,7 @@ import unicodedata
 import time
 from urllib.parse import parse_qs, urlsplit
 from typing import Callable
+import media_tools
 
 MAX_LINK = 1500
 MAX_BYTES = 2 * 1024**3
@@ -375,7 +377,7 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
                 try:
                     while process.poll() is None:
                         if cancelled():
-                            raise LinkError(403, "Room access was revoked.")
+                            raise LinkError(403, guest_messages.ACCESS_REMOVED)
                         if time.monotonic() >= deadline:
                             raise LinkError(504, "YouTube search timed out. Try again.")
                         if os.fstat(output.fileno()).st_size > SEARCH_OUTPUT_LIMIT:
@@ -416,8 +418,16 @@ class CommandProvider:
                          and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
-        self.probe = shutil.which("ffprobe")
+        self.probe = media_tools.find_media_tool("ffprobe")
         self.kinds = frozenset(kinds)
+
+    def _isolation_verified(self) -> bool:
+        """A passing ``--link-check --qualify`` for this exact launcher file (#588)."""
+        try:
+            import link_sandbox_probe
+            return bool(self.launcher) and link_sandbox_probe.is_verified(self.launcher)
+        except Exception:
+            return False
 
     def readiness(self) -> dict:
         """Cheap local prerequisites only; never runs programs or contacts a source."""
@@ -426,11 +436,13 @@ class CommandProvider:
             "engine_present": bool(self.tools[kind]),
             "probe_present": bool(self.probe),
             "launcher_configured": bool(self.launcher),
-            "isolation_verified": False,
+            "isolation_verified": self._isolation_verified(),
             "missing": [name for name, present in (
                 ("yt-dlp" if kind == "youtube" else "aria2c", self.tools[kind]),
                 ("ffprobe", self.probe), ("owner-configured isolation launcher", self.launcher),
-            ) if not present],
+            ) if not present] + (["qualified isolation (run smoothcast --link-check --qualify)"]
+                                 if os.environ.get("SMOOTHCAST_LINK_REQUIRE_QUALIFIED") == "1"
+                                 and self.launcher and not self._isolation_verified() else []),
         } for kind in ("youtube", "magnet")}
 
     def capabilities(self) -> dict:
@@ -440,7 +452,7 @@ class CommandProvider:
     def search_youtube(self, value: object, cancelled) -> list[dict]:
         text = _search_text(value)
         if not self.capabilities().get("youtube"):
-            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+            raise LinkError(503, guest_messages.YOUTUBE_OFF)
         return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
 
     def readiness_text(self, kind: str) -> str:
@@ -771,16 +783,16 @@ class LinkJobs:
         text = _search_text(value)
         search = getattr(self.provider, "search_youtube", None)
         if not self.capabilities().get("youtube") or not callable(search):
-            raise LinkError(503, "Ask the host to enable an isolated YouTube worker.")
+            raise LinkError(503, guest_messages.YOUTUBE_OFF)
 
         def cancelled():
             return self._closed or not self.owner_active(owner)
 
         if cancelled():
-            raise LinkError(403, "Room access was revoked.")
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
         results = search(text, cancelled)
         if cancelled():
-            raise LinkError(403, "Room access was revoked.")
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
         return results
 
     def storage_available(self):
@@ -811,7 +823,7 @@ class LinkJobs:
         if not isinstance(request, str) or not REQUEST_ID.fullmatch(request):
             raise LinkError(400, "Submission identifier is invalid.")
         if not self.owner_active(owner):
-            raise LinkError(401, "Room access was revoked.")
+            raise LinkError(401, guest_messages.ACCESS_REMOVED)
         with self._lock:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
@@ -1024,7 +1036,7 @@ class LinkJobs:
                 if job.owner in owners and job.stage not in TERMINAL and job.stage != "queueing":
                     job.cancel.set()
                     if job.stage == "pending":
-                        self._change(job, stage="cancelled", error="Room access was revoked.")
+                        self._change(job, stage="cancelled", error=guest_messages.ACCESS_REMOVED)
             self._save()
 
     def close(self):
@@ -1048,6 +1060,9 @@ def diagnostics_main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Check local link acquisition prerequisites")
     parser.add_argument("--tools-only", action="store_true",
                         help="Check engine binaries without requiring an isolation launcher")
+    parser.add_argument("--qualify", action="store_true",
+                        help="Attack-test the configured launcher (loopback, LAN, home, leftover "
+                             "processes); saves the result for this exact launcher file")
     args = parser.parse_args(argv)
     provider = CommandProvider()
     tools = {}
@@ -1068,21 +1083,31 @@ def diagnostics_main(argv=None) -> int:
         except OSError:
             tools[name] = "probe_failed"
     ready = all(status == "executable" for status in tools.values())
+    qualification = None
+    if args.qualify:
+        import link_sandbox_probe
+        qualification = link_sandbox_probe.qualify(provider.launcher)
+        if provider.launcher:
+            link_sandbox_probe.save(provider.launcher, qualification)
     report = {
         "tools": tools,
         "launcher_configured": bool(provider.launcher),
-        "isolation_verified": False,
+        "isolation_verified": bool(qualification.verified) if qualification else provider._isolation_verified(),
+        **({"isolation_checks": qualification.checks, "isolation_detail": qualification.detail}
+           if qualification else {}),
         "javascript_runtime_present": {
             name: bool(shutil.which(name)) for name in ("deno", "node", "qjs")},
         "notes": [
             "No network or media acquisition was attempted.",
             "The YouTube engine may also need a compatible JavaScript runtime and local EJS package.",
             "Executable presence does not prove supported versions or functioning downloads.",
-            "An owner-configured isolation launcher is required; its policy is not attested by this check.",
+            "An owner-configured isolation launcher is required; use --qualify to attack-test it.",
             "Enable providers in Preferences only after qualifying the isolated worker.",
         ],
     }
     print(json.dumps(report, indent=2, sort_keys=True))
+    if qualification is not None and not qualification.verified:
+        return 1
     return 0 if ready and (args.tools_only or provider.launcher) else 1
 
 

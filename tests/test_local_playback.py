@@ -6,6 +6,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import local_playback
+import media_tools
 
 
 class LocalPlaybackTests(unittest.TestCase):
@@ -24,7 +25,7 @@ class LocalPlaybackTests(unittest.TestCase):
 
     def _start(self, path="movie.mp4"):
         self._player_patch = mock.patch.object(
-            local_playback.shutil, "which", return_value="/usr/bin/ffplay"
+            media_tools.shutil, "which", return_value="/usr/bin/ffplay"
         )
         self._player_patch.start()
         self._isfile_patch = mock.patch.object(local_playback.Path, "is_file", return_value=True)
@@ -42,7 +43,7 @@ class LocalPlaybackTests(unittest.TestCase):
         self.assertFalse(self.playback.is_active())
 
     def test_available_when_ffplay_installed(self):
-        patcher = mock.patch.object(local_playback.shutil, "which", return_value="/usr/bin/ffplay")
+        patcher = mock.patch.object(media_tools.shutil, "which", return_value="/usr/bin/ffplay")
         patcher.start()
         try:
             self.assertTrue(self.playback.available())
@@ -50,7 +51,7 @@ class LocalPlaybackTests(unittest.TestCase):
             patcher.stop()
 
     def test_unavailable_when_ffplay_missing(self):
-        patcher = mock.patch.object(local_playback.shutil, "which", return_value=None)
+        patcher = mock.patch.object(media_tools.shutil, "which", return_value=None)
         patcher.start()
         try:
             self.assertFalse(self.playback.available())
@@ -71,7 +72,7 @@ class LocalPlaybackTests(unittest.TestCase):
         self.assertEqual(args[-1], "song.flac")
 
     def test_start_rejects_missing_file(self):
-        patcher = mock.patch.object(local_playback.shutil, "which", return_value="/usr/bin/ffplay")
+        patcher = mock.patch.object(media_tools.shutil, "which", return_value="/usr/bin/ffplay")
         patcher.start()
         try:
             with self.assertRaises(FileNotFoundError):
@@ -81,7 +82,7 @@ class LocalPlaybackTests(unittest.TestCase):
         self.assertFalse(self.playback.is_active())
 
     def test_start_rejects_missing_ffplay(self):
-        patcher = mock.patch.object(local_playback.shutil, "which", return_value=None)
+        patcher = mock.patch.object(media_tools.shutil, "which", return_value=None)
         patcher.start()
         try:
             with self.assertRaises(FileNotFoundError):

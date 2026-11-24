@@ -27,6 +27,7 @@ import re
 import subprocess
 import threading
 from typing import Callable
+import media_tools
 
 CONFIG_KEYS = ("auto_crop", "auto_deinterlace")
 SAMPLE_FRACTIONS = (0.25, 0.5, 0.75)
@@ -175,7 +176,7 @@ def detect_crop(path: str, duration: float, width: int, height: int,
                 health: Health | None = None) -> Crop | None:
     samples: list[Crop] = []
     for start in _sample_starts(duration):
-        text = _run(["ffmpeg", "-hide_banner", "-ss", str(start), "-i", path,
+        text = _run([media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-ss", str(start), "-i", path,
                      "-map", f"0:{video_stream}", "-t", str(CROP_SAMPLE_SECONDS),
                      "-vf", "cropdetect=limit=24:round=2:reset=0", "-an", "-sn", "-f", "null", "-"],
                     runner, health)
@@ -188,7 +189,7 @@ def detect_crop(path: str, duration: float, width: int, height: int,
 def detect_interlaced(path: str, duration: float, *, video_stream: int = 0,
                       runner: Runner = subprocess.run, health: Health | None = None) -> bool:
     start = _sample_starts(duration)[len(SAMPLE_FRACTIONS) // 2 if duration > 0 else 0]
-    text = _run(["ffmpeg", "-hide_banner", "-ss", str(start), "-i", path,
+    text = _run([media_tools.resolve_media_tool("ffmpeg"), "-hide_banner", "-ss", str(start), "-i", path,
                  "-map", f"0:{video_stream}", "-t", str(IDET_SAMPLE_SECONDS),
                  "-vf", "idet", "-an", "-sn", "-f", "null", "-"], runner, health)
     return is_interlaced(parse_idet(text))

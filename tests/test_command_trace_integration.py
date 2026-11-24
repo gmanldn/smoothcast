@@ -28,8 +28,8 @@ def test_receiver_rejection_has_one_correlated_trace_with_every_failure_stage():
 
     controller = SimpleNamespace(
         _closing=False, busy=False, _device=lambda: "Receiver",
-        play_button=SimpleNamespace(get_sensitive=lambda: True),
-        toggle_play=toggle,
+        device_state="PLAYING", session=SimpleNamespace(state=object()), external=False,
+        _preview_path=None, toggle_play=toggle,
     )
     env = portal_commands.MutationEnvelope(
         client_id="guest-device", command_id="trace-command-1",

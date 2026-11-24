@@ -40,7 +40,7 @@ def test_join_explains_shared_controls_and_optional_house_pin():
     page = room_html()
     text = portal._HTML
     assert 'id="joinTitle">Join the house' in text
-    assert "only if the host has enabled one" in text
+    assert "You only need a House PIN if one has been set" in text
     assert "Everyone who joins can control playback" in text
     assert "No app, account or cloud" in text
     fields = {a["id"]: a for tag, a in page.elements if tag == "input" and "id" in a}
@@ -99,7 +99,7 @@ def test_upload_picker_has_actionable_disabled_state():
     text = portal._HTML
     assert 'id="uploadSelectionHint"' in text
     assert 'aria-describedby="uploadSelectionHint" disabled' in text
-    assert '$("uploadButton").disabled=uploading||!file;' in text
+    assert '$("uploadButton").disabled=uploading||!file||!!invalid;' in text
 
 
 def test_upload_button_state_transitions_in_headless_browser_js():
@@ -117,7 +117,9 @@ def test_upload_button_state_transitions_in_headless_browser_js():
     harness = r"""
 const assert = require("node:assert/strict");
 let uploading=false,pendingUpload=null,batchFiles=null,batchIndex=0,cancelUpload=false;
+let shortcutState={receiver:"Living room TV"};
 const el={
+ uploadSelectionSummary:{},transferDestination:{},
  videoFile:{files:[],disabled:false,multiple:true},
  uploadQueue:{checked:true,disabled:false},
  uploadButton:{disabled:false,textContent:""},
@@ -151,6 +153,21 @@ batchIndex=0;
 updateUploadControls();
 assert.equal(el.uploadQueue.checked,false,"audio item must not overwrite batch intent");
 batchFiles=null;
+el.videoFile.files=[{name:"video.mp4",size:0}];
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"empty file must not start upload");
+assert.ok(el.uploadSelectionSummary.textContent.includes("empty"));
+el.videoFile.files=[{name:"video.mp4",size:100},{name:"notes.pdf",size:200}];
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,true,"invalid batch must not partially start");
+assert.ok(el.uploadSelectionSummary.textContent.includes("notes.pdf"));
+el.videoFile.files=[{name:"movie.MKV",size:100}];
+el.uploadQueue.checked=false;
+updateUploadControls();
+assert.equal(el.uploadButton.disabled,false);
+assert.ok(el.uploadSelectionSummary.textContent.includes("Living room TV"));
+assert.ok(el.uploadSelectionSummary.textContent.includes("movie.MKV"));
+assert.equal(el.transferDestination.textContent,"Living room TV (requested)");
 uploading=true;
 updateUploadControls();
 assert.equal(el.uploadButton.disabled,true,"in-flight upload cannot be started twice");
@@ -250,19 +267,26 @@ def test_joined_room_and_open_expiry_return_focus_to_visible_content():
     import pytest
 
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
-    start = script.index("function showJoinedRoom(){")
-    end = script.index("function applyStatus(d){", start)
-    joined = script[start:end]
-    start = script.index("function expireSession(){")
-    end = script.index("function clock(s){", start)
-    expired = script[start:end]
-    assert 'id="playbackHeading" tabindex="-1"' in portal._HTML
+
+    def _fn(name):
+        start = script.index(f"function {name}(")
+        depth, i = 0, script.index("{", start)
+        while True:
+            depth += script[i] == "{"
+            depth -= script[i] == "}"
+            i += 1
+            if depth == 0:
+                return script[start:i]
+
+    joined = _fn("showJoinedRoom")
+    expired = _fn("expireSession")
+    assert 'id="queueHeading" tabindex="-1"' in portal._HTML
     if not shutil.which("node"):
         pytest.skip("Node.js required to test focus transitions")
     harness = r"""
 const assert=require("node:assert/strict");
 const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
- playbackHeading:{focusCount:0,focus(){this.focusCount++}},
+ queueHeading:{focusCount:0,focus(){this.focusCount++}},
  login:{hidden:true},loginButton:{disabled:false},
  pin:{focusCount:0,focus(){this.focusCount++}},
  name:{focusCount:0,focus(){this.focusCount++}},
@@ -270,6 +294,8 @@ const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
 const $=id=>elements[id];
 const loginButton=elements.loginButton;
 let csrf="paired",shortcutState={},statusFailures=3,uploading=false,activeUploadController=null;
+let playhead=null,playheadTimer=null;
+function stopPlayhead(){}
 const pendingControls={clear(){}};const roomEvents={stop(){}};
 function syncRemoteWakeLock(){}
 function resetUploadBatch(){}
@@ -277,10 +303,10 @@ function showError(id,msg){$(id).textContent=msg}
 """
     scenario = r"""
 showJoinedRoom();
-assert.equal(elements.playbackHeading.focusCount,1);
+assert.equal(elements.queueHeading.focusCount,1);
 assert.equal(elements.dashboard.hidden,false);
 showJoinedRoom();
-assert.equal(elements.playbackHeading.focusCount,1,"polls must not steal focus");
+assert.equal(elements.queueHeading.focusCount,1,"polls must not steal focus");
 const PIN_REQUIRED=false;
 expireSession();
 assert.equal(elements.name.focusCount,1);
@@ -331,9 +357,9 @@ def test_screen_panel_is_reachable_and_uses_guest_safe_explanations():
 
     panel = panel_html()
     assert 'aria-labelledby="screensPanelHeading"' in panel
-    assert "House PIN only if the host requires it" in panel
+    assert "House PIN only if one has been set" in panel
     assert "Stop this screen without stopping the host TV" in panel
-    assert "Screen command received; checking its state." in panel
+    assert "command received; checking its state." in panel
     assert 'play.setAttribute("aria-label","Play selected queue item on "+sc.name)' in panel
     assert 'toggle.setAttribute("aria-label",(sc.state==="paused"?"Resume":"Pause")+" playback on "+sc.name)' in panel
     assert 'stop.setAttribute("aria-label","Stop playback on "+sc.name)' in panel
@@ -475,8 +501,8 @@ def test_mesh_network_help_defines_target_states_without_cast_permissions():
     assert '<details class="help"><summary>What do the network devices and target states mean?</summary>' in panel
     assert "Devices</strong> are SmoothCast computers" in panel
     assert "Primary</strong> is the node coordinating the mesh" in panel
-    assert "Ready</strong> means" in panel
-    assert "In use</strong> means" in panel
+    assert "Reported ready</strong> means" in panel
+    assert "Reported in use</strong> means" in panel
     assert "Can't be reached</strong> means" in panel
     assert "It does not cast, claim receivers or upload files" in panel
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
@@ -504,11 +530,15 @@ def test_network_navigation_only_appears_when_mesh_is_available():
         pytest.skip("Node.js required for conditional navigation test")
     harness = r"""
 const assert=require("node:assert/strict");
+const queueLink={hidden:true};
+const document={getElementById(id){assert.equal(id,"queueMeshLink");return queueLink}};
 let navLink={hidden:true};
 showNetworkNavigation(true);
 assert.equal(navLink.hidden,false);
+assert.equal(queueLink.hidden,false);
 showNetworkNavigation(false);
 assert.equal(navLink.hidden,true);
+assert.equal(queueLink.hidden,true);
 navLink=null;
 assert.doesNotThrow(()=>showNetworkNavigation(true));
 """
@@ -633,3 +663,157 @@ assert.equal(joinedAs.textContent,"Joined as <img src=x onerror=alert(1)>");
 """
     subprocess.run(["node", "-"], input=harness + helper + scenarios,
                    check=True, text=True, timeout=10)
+
+
+def test_invite_and_home_logo_are_outside_login_and_dashboard():
+    """#592: the invite (QR + link) and the S home logo are usable before and after joining."""
+    from html.parser import HTMLParser
+
+    class Parents(HTMLParser):
+        void = {"meta", "input", "img", "br", "link", "source", "path"}
+
+        def __init__(self):
+            super().__init__()
+            self.stack, self.ancestors, self.attrs = [], {}, {}
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if attrs.get("id"):
+                self.ancestors[attrs["id"]] = [i for _, i in self.stack if i]
+                self.attrs[attrs["id"]] = attrs
+            if tag not in self.void:
+                self.stack.append((tag, attrs.get("id")))
+
+        def handle_endtag(self, tag):
+            for index in range(len(self.stack) - 1, -1, -1):
+                if self.stack[index][0] == tag:
+                    del self.stack[index:]
+                    break
+
+    html = portal._page().decode("utf-8")
+    page = Parents()
+    page.feed(html)
+    for element in ("roomInvite", "inviteQr", "roomLinkText", "roomLinkCopy", "homeLogo"):
+        assert html.count(f'id="{element}"') == 1
+        assert "login" not in page.ancestors[element]
+        assert "dashboard" not in page.ancestors[element]
+    assert "roomInvite" in page.ancestors["roomLinkText"]
+    logo = page.attrs["homeLogo"]
+    assert logo["href"] == "#roomTop" and logo["aria-label"] == "SmoothCast home"
+    assert 'id="roomTop" tabindex="-1"' in html
+    assert page.attrs["inviteQr"]["alt"] and "hidden" in page.attrs["inviteQr"]
+    assert "src" not in page.attrs["inviteQr"]  # assigned by script after handlers
+    assert "same Wi-Fi" in html[html.index('id="inviteHow"'):][:200]
+
+
+def test_invite_qr_registers_handlers_before_loading_and_falls_back_to_the_link():
+    import shutil
+    import subprocess
+    import pytest
+
+    if not shutil.which("node"):
+        pytest.skip("node required")
+    script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    start = script.index("// Ticket 592")
+    block = script[start:script.index("})();", start) + 5]
+    harness = r"""
+const assert=require("node:assert/strict");
+function make(){const log=[];const el={hidden:true,handlers:{},log,
+  addEventListener(n,f){log.push("on:"+n);this.handlers[n]=f},
+  removeAttribute(n){log.push("rm:"+n);delete this._src},
+  set src(v){log.push("src");this._src=v},get src(){return this._src}};return el}
+for(const outcome of ["load","error"]){
+  const img=make(),fallback={hidden:true};
+  const $=id=>({inviteQr:img,inviteQrFallback:fallback})[id];
+  eval(BLOCK);
+  assert.deepEqual(img.log.slice(0,3),["on:load","on:error","src"]);
+  assert.equal(img._src,"/join-qr.png");
+  img.handlers[outcome]();
+  if(outcome==="load"){assert.equal(img.hidden,false);assert.equal(fallback.hidden,true)}
+  else{assert.equal(img.hidden,true);assert.equal(fallback.hidden,false);assert.equal(img._src,undefined)}
+}
+"""
+    run = subprocess.run(["node", "-"], input=harness.replace("BLOCK", repr(block)),
+                         capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stderr
+
+
+def test_guest_visible_text_uses_plain_words():
+    """#599: everyday guest text says 'TV or speaker', 'SmoothCast computer' and
+    'download'. Precise diagnostic terms live only behind Technical details,
+    More and the mesh/network panels."""
+    import re
+    from html.parser import HTMLParser
+
+    exempt = {"transferTech", "advancedPanel", "meshPanel", "networkActivity", "shortcutsHelp"}
+
+    class Visible(HTMLParser):
+        void = {"meta", "input", "img", "br", "link", "source", "path", "hr"}
+
+        def __init__(self):
+            super().__init__()
+            self.stack, self.text, self.skip = [], [], 0
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            skip = attrs.get("id") in exempt or tag in ("script", "style")
+            if not self.skip and not skip:
+                self.text += [attrs[k] for k in ("title", "aria-label", "placeholder", "alt")
+                              if attrs.get(k) and attrs.get("id") != "scVersion"]
+            if tag not in self.void:
+                self.stack.append(skip)
+                self.skip += skip
+
+        def handle_endtag(self, tag):
+            if self.stack:
+                self.skip -= self.stack.pop()
+
+        def handle_data(self, data):
+            if not self.skip and data.strip():
+                self.text.append(data.strip())
+
+    page = Visible()
+    page.feed(portal._page().decode("utf-8"))
+    jargon = re.compile(r"\b(receivers?|hosts?|acquisitions?|acquire|worker|chunk|offset|advertised)\b", re.I)
+    offenders = [text for text in page.text if jargon.search(text)]
+    assert offenders == []
+    html = portal._page().decode("utf-8")
+    assert '<details class="tech-details" id="transferTech"><summary>Technical details</summary>' in html
+    assert 'id="transferTech" open' not in html  # collapsed by default
+
+
+def test_mesh_stream_rows_show_total_runtime_even_without_a_position():
+    import portal_mesh_panel
+
+    html = portal_mesh_panel.panel_html()
+    assert '"Total runtime "+timing(item.duration)' in html
+    assert "h?h+" in html  # long films show hours rather than 125:30
+
+
+def test_mesh_stream_rows_advance_a_playing_position_between_receiver_polls():
+    import portal_mesh_panel
+
+    html = portal_mesh_panel.panel_html()
+    assert "item.observed_age_ms" in html or "observed_age_ms" in html
+    assert 'if(item.state==="PLAYING")' in html and "setInterval" in html
+
+
+def test_select_controls_meet_the_touch_target_size_used_by_buttons_and_inputs():
+    """#558: the activity filter was an 18px sliver; every select now has a 44px target."""
+    html = portal._HTML
+    assert "select{font:inherit;min-height:44px;" in html
+    assert 'id="activityFilter"' in html and html.count("<select") == html.count("</select>")
+
+
+def test_front_page_contribution_links_reuse_existing_controls():
+    page = room_html()
+    by_id = {a["id"]: (tag, a) for tag, a in page.elements if "id" in a}
+    for entry, target in (("openUploadEntry", "uploadCard"),
+                          ("openLinkAcquisition", "linkAcquisition"),
+                          ("openFindEntry", "findPanel")):
+        assert by_id[entry][0] == "a"
+        assert by_id[entry][1]["href"] == "#" + target
+    assert page.ids.count("videoFile") == 1
+    assert page.ids.count("linkInput") == 1
+    assert page.ids.count("findInput") == 1
+    assert 'aria-labelledby="contributeHeading"' in portal._HTML

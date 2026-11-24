@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import threading
 import time
 
 CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "subtitle", "upload", "internal")
@@ -76,6 +77,9 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("ffmpeg.missing", "error", False,
           "FFmpeg is missing or cannot start. SmoothCast needs FFmpeg 5.0 or newer.",
           "Install FFmpeg 5.0 or newer.", "Restart SmoothCast."),
+    _spec("ffmpeg.bundled_missing", "error", False,
+          "SmoothCast's built-in media tools are missing. Reinstall SmoothCast.",
+          "Reinstall SmoothCast with its installer.", "Restart SmoothCast."),
     _spec("ffmpeg.decoder_failed", "error", False,
           "SmoothCast could not decode this file. Choose a different track or file.",
           "Choose another audio track or subtitle option.", "Try a different file."),
@@ -115,6 +119,25 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("cast.audio_only_unverified", "warning", False,
           "This DLNA receiver is not verified for audio-only playback. Choose a Google Cast target.",
           "Choose a Google Cast target."),
+    _spec("cast.command_failed", "error", True,
+          "The receiver command failed. Check the receiver connection and try again.",
+          "Check that the receiver is on and on the same network.",
+          "Retry the action."),
+    _spec("cast.command_invalid", "warning", False,
+          "The receiver command has invalid settings. Check the values and try again.",
+          "Reset the setting you just changed.", "Retry the action."),
+    _spec("cast.not_connected", "error", True,
+          "Receiver is not connected. Scan the network and choose it again.",
+          "Scan the network.", "Choose the receiver again from the list."),
+    _spec("cast.no_subtitle_track", "info", False,
+          "The receiver has no selectable subtitle track.",
+          "Choose a different subtitle source.", "Turn subtitles off."),
+    _spec("media.url_invalid", "error", False,
+          "A valid HTTP media URL is required.",
+          "Enter an address that starts with http:// or https://."),
+    _spec("media.type_unsupported", "error", False,
+          "The media URL has no supported content type.",
+          "Choose media with a known file type.", "Cast a local file instead."),
     _spec("internal.unexpected", "error", True,
           "SmoothCast hit an unexpected problem. Retry the action.",
           "Retry the action.",
@@ -124,6 +147,7 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
 FALLBACK = CATALOGUE["internal.unexpected"]
 
 _RECENT: "deque[tuple[float, str, dict[str, str]]]" = deque(maxlen=20)
+_RECENT_LOCK = threading.Lock()
 _MAX_CONTEXT_KEYS = 6
 _MAX_CONTEXT_VALUE = 120
 
@@ -143,18 +167,26 @@ def _bounded_context(context: object) -> dict[str, str]:
 
 def record(code: str, context: object = None) -> None:
     """Remember that ``code`` reached a user (bounded ring; context is clipped)."""
-    _RECENT.append((time.time(), code if code in CATALOGUE else FALLBACK.code,
-                    _bounded_context(context)))
+    entry = (time.time(), code if code in CATALOGUE else FALLBACK.code, _bounded_context(context))
+    with _RECENT_LOCK:
+        _RECENT.append(entry)
 
 
 def recent() -> list[dict]:
-    """Last error codes shown, oldest first, for the diagnostics bundle."""
-    return [{"at": int(at), "code": code, **({"context": ctx} if ctx else {})}
-            for at, code, ctx in _RECENT]
+    """Last error codes shown, oldest first, for the diagnostics bundle.
+
+    A snapshot taken under the lock; context dicts are copied so a caller can
+    neither race a concurrent ``record`` nor edit the stored history.
+    """
+    with _RECENT_LOCK:
+        snapshot = list(_RECENT)
+    return [{"at": int(at), "code": code, **({"context": dict(ctx)} if ctx else {})}
+            for at, code, ctx in snapshot]
 
 
 def reset_recent() -> None:
-    _RECENT.clear()
+    with _RECENT_LOCK:
+        _RECENT.clear()
 
 
 class SmoothCastError(Exception):

@@ -94,7 +94,9 @@ class _Section:
 
 
 class NetworkPopover:
-    def __init__(self) -> None:
+    def __init__(self, window: object | None = None) -> None:
+        self._window = window
+        self._syncing = False
         self.button = Gtk.MenuButton(label="Network", visible=False)
         self.button.set_tooltip_text("Devices, screens and receivers on your network")
         popover = Gtk.Popover()
@@ -113,11 +115,66 @@ class NetworkPopover:
         for section in self.sections.values():
             inner.append(section.box)
         scroller.set_child(inner)
-        for widget in (self.summary, self.hint, scroller):
+        self.switches: dict[str, Gtk.Switch] = {}
+        for widget in (self.summary, self.hint, scroller,
+                       self._link_download_options()):
             outer.append(widget)
         popover.set_child(outer)
         self.button.set_popover(popover)
+        popover.connect("show", lambda *_: self.sync_switches())
         self.model: vm.NetworkModel | None = None
+
+    def _link_download_options(self) -> Gtk.Widget:
+        """Opt-in switches for sharing link downloads on a trusted home network (#589)."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=8)
+        title = Gtk.Label(label="Link downloads", xalign=0.0)
+        title.add_css_class("heading")
+        box.append(title)
+        for name, text, detail in (
+            ("remote_acquisition", "Use other devices to download links",
+             "Hands YouTube and torrent links to a trusted device here when this computer cannot."),
+            ("accept_acquisition", "Download links for other devices",
+             "Lets another SmoothCast room on your network use this computer for downloads."),
+        ):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, hexpand=True)
+            main = Gtk.Label(label=text, xalign=0.0, wrap=True)
+            note = Gtk.Label(label=detail, xalign=0.0, wrap=True)
+            note.add_css_class("dim-label")
+            note.add_css_class("caption")
+            labels.append(main)
+            labels.append(note)
+            switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+            switch.update_property([Gtk.AccessibleProperty.LABEL], [text])
+            switch.connect("notify::active", self._toggled, name)
+            self.switches[name] = switch
+            row.append(labels)
+            row.append(switch)
+            box.append(row)
+        self.sync_switches()
+        return box
+
+    def sync_switches(self) -> None:
+        """Reflect the saved opt-ins (read from disk, the single source of truth)."""
+        try:
+            import mesh_service
+            saved = mesh_service.load_settings()
+        except Exception:
+            return
+        self._syncing = True
+        try:
+            for name, switch in self.switches.items():
+                if switch.get_active() != bool(saved.get(name)):
+                    switch.set_active(bool(saved.get(name)))
+        finally:
+            self._syncing = False
+
+    def _toggled(self, switch: Gtk.Switch, _param: object, name: str) -> None:
+        if self._syncing or self._window is None:
+            return
+        import cast_mesh
+        if not cast_mesh.set_acquisition(self._window, name, bool(switch.get_active())):
+            self.sync_switches()  # not applied: show the truth, not the click
 
     def show(self, model: vm.NetworkModel | None) -> None:
         """Apply a model, or hide the button when there is no running mesh."""
@@ -141,7 +198,7 @@ class NetworkPopover:
 
 def build_button(window: object) -> Gtk.MenuButton:
     """Create the Network button once; refreshed by :func:`refresh`."""
-    popover = NetworkPopover()
+    popover = NetworkPopover(window)
     window._mesh_ui = popover                       # type: ignore[attr-defined]
     return popover.button
 

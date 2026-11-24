@@ -6,10 +6,12 @@ methods run on the GTK main thread because ``PortalQueueMixin`` is part of
 """
 from __future__ import annotations
 
+import guest_messages
 import hashlib
 import os
 import pathlib
 import stat
+import secrets
 
 import portal
 
@@ -34,16 +36,44 @@ class PortalQueueMixin:
             self._portal_queue_revision = getattr(self, "_portal_queue_revision", 0) + 1
         return self._portal_queue_revision
 
-    def _portal_queue_status(self) -> list[dict]:
-        display_names = getattr(self, "_portal_queue_display_names", {})
+    def _portal_prune_queue_provenance(self) -> None:
         queued_paths = set(self.queue)
-        for path in tuple(display_names):
-            if path not in queued_paths:
-                display_names.pop(path, None)
+        for attr in ("_portal_queue_display_names", "_portal_queue_provenance"):
+            records = getattr(self, attr, {})
+            for path in tuple(records):
+                if path not in queued_paths:
+                    records.pop(path, None)
+
+    def _portal_contributor(self, payload: dict) -> str | None:
+        server = getattr(getattr(self, "_portal", None), "server", None)
+        lookup = getattr(server, "session_display_name", None)
+        if callable(lookup):
+            return lookup(payload.get("_portal_auth_key"))
+        return None
+
+    def _portal_record_contribution(self, path: str, contributor: str | None,
+                                    source: str) -> None:
+        self.__dict__.setdefault("_portal_queue_provenance", {})[path] = {
+            "contributor": contributor, "source_kind": source,
+        }
+
+    def _portal_enqueue_contributed(self, path: str, contributor: str | None,
+                                    source: str) -> None:
+        if path in self.queue:
+            return
+        self._enqueue([path])
+        if path in self.queue:
+            self._portal_record_contribution(path, contributor, source)
+
+    def _portal_queue_status(self) -> list[dict]:
+        self._portal_prune_queue_provenance()
+        display_names = getattr(self, "_portal_queue_display_names", {})
+        provenance = getattr(self, "_portal_queue_provenance", {})
         rows = [{
             "id": portal_queue_id(path),
             "title": display_names.get(path, pathlib.Path(path).name),
             "duration": self.queue_durations.get(path, 0.0),
+            **provenance.get(path, {}),
         } for path in self.queue[:100]]
         self._portal_observe_queue()
         return rows
@@ -53,7 +83,7 @@ class PortalQueueMixin:
         upload_root = getattr(getattr(portal_instance, "server", None), "uploads", None)
         root = getattr(upload_root, "root", None)
         if root is None:
-            raise portal.PortalRequestError(503, "Upload storage is unavailable")
+            raise portal.PortalRequestError(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
         path = pathlib.Path(payload.get("path", ""))
         try:
             info = path.lstat()
@@ -80,7 +110,12 @@ class PortalQueueMixin:
         Async.run(work, done=done, failed=failed, domain="media",
                   valid=lambda: not getattr(self, "_closing", False))
 
-    def _portal_fetch_remote(self, key: object) -> str:
+    def _portal_copy_status(self) -> list[dict]:
+        """Bounded, guest-safe transfer receipts; never publish keys or paths."""
+        return [dict(row) for row in getattr(self, "_portal_copy_receipts", {}).values()]
+
+    def _portal_fetch_remote(self, key: object, contributor: str | None = None,
+                             session_key: object = None) -> str:
         """Copy a file from another computer into the cache, then queue the copy."""
         mesh = getattr(self, "_mesh_library", None)
         source = mesh.remote_source(key) if mesh is not None and isinstance(key, str) else None
@@ -90,24 +125,62 @@ class PortalQueueMixin:
         pending = self.__dict__.setdefault("_portal_fetching", set())
         if key in pending:
             return f"Already fetching “{source['title']}”."
+        if len(pending) >= 8:
+            raise portal.PortalRequestError(429, "Too many library copies are in progress. Try again shortly.")
         pending.add(key)
         title, where = source["title"], source["name"]
+        receipts = self.__dict__.setdefault("_portal_copy_receipts", {})
+        while len(receipts) >= 24:
+            oldest = next((ident for ident, row in receipts.items()
+                           if row["stage"] != "copying"), None)
+            if oldest is None:
+                break
+            receipts.pop(oldest)
+        ident = secrets.token_hex(12)
+        receipt = receipts[ident] = {
+            "id": ident, "title": title, "origin": where,
+            "contributor": contributor, "stage": "copying",
+        }
+        server = getattr(getattr(self, "_portal", None), "server", None)
+        keep = set(self.queue)
+
+        def cancelled():
+            if getattr(self, "_closing", False):
+                return True
+            if session_key is None:
+                return False
+            current = getattr(getattr(self, "_portal", None), "server", None)
+            return current is not server or server is None or not server.session_key_active(session_key)
 
         def work():
-            return mesh.fetch_remote(key, source, cancelled=lambda: getattr(self, "_closing", False),
-                                     keep=set(self.queue))
+            return mesh.fetch_remote(key, source, cancelled=cancelled, keep=keep)
 
         def done(path):
             pending.discard(key)
-            self._portal_queue_display_names = getattr(self, "_portal_queue_display_names", {})
-            self._portal_queue_display_names[str(path)] = title
-            self._enqueue([str(path)])
+            if cancelled():
+                receipt["stage"] = "cancelled"
+                return
+            try:
+                self._portal_queue_display_names = getattr(self, "_portal_queue_display_names", {})
+                self._portal_queue_display_names[str(path)] = title
+                self._portal_enqueue_contributed(str(path), contributor, "library")
+                receipt["stage"] = "ready" if str(path) in self.queue else "failed"
+            except Exception:
+                receipt["stage"] = "uncertain"
+                self.toast("Library copy finished but queue acceptance could not be confirmed.", error=True)
 
         def failed(error):
             pending.discard(key)
-            self.toast(_fetch_message(error, title), error=True)
+            receipt["stage"] = "cancelled" if cancelled() else "failed"
+            if receipt["stage"] == "failed":
+                self.toast(_fetch_message(error, title), error=True)
 
-        self._portal_run_async(work, done, failed)
+        try:
+            self._portal_run_async(work, done, failed)
+        except Exception:
+            pending.discard(key)
+            receipt["stage"] = "failed"
+            raise
         return f"Copying “{title}” from {where}; it joins Up Next when ready."
 
     def _portal_queue_index(self, item_id: object) -> int:
@@ -153,7 +226,8 @@ class PortalQueueMixin:
             path = self._portal_upload_path(payload)
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
-            self._enqueue([str(path)])
+            source = "link" if payload.get("_portal_source") == "link" else "upload"
+            self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), source)
             name = payload.get("name")
             if isinstance(name, str) and name:
                 display_names = getattr(self, "_portal_queue_display_names", None)
@@ -197,10 +271,11 @@ class PortalQueueMixin:
             try:
                 path = self._portal_library_path(payload.get("key"))
             except portal.PortalRequestError:
-                return self._portal_fetch_remote(payload.get("key"))
+                return self._portal_fetch_remote(payload.get("key"), self._portal_contributor(payload),
+                                                 payload.get("_portal_auth_key"))
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
-            self._enqueue([str(path)])
+            self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), "library")
             return "Added to the queue."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))
