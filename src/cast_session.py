@@ -75,14 +75,24 @@ class SessionMixin:
         self._cast_path(pathlib.Path(path), start_at)
 
 
-    def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> None:
+    def _cast_path(self, path: pathlib.Path, offset: float | None = None) -> str | None:
+        """Submit cast preparation; return a safe reason for immediate rejection.
+
+        None means the background preparation was submitted, not that the
+        receiver is playing. Desktop callers already receive toast feedback.
+        """
         # None resumes; zero rewinds.
         offset = playback_state.start_offset(
             offset, watch_history.saved_position(
                 self.cfg, path, fingerprint.KEYS.get(path)))
         if self.busy:
-            self.toast("Hold on — finishing the last command")
-            return
+            reason = "Hold on — finishing the last command"
+            self.toast(reason)
+            return reason
+        if not self._device().strip():
+            reason = "Choose a room receiver before casting"
+            self.toast(reason, error=True)
+            return reason
         if str(path) == self._local_video_path and self.session is None:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
@@ -107,8 +117,9 @@ class SessionMixin:
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
             self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
-            self._cast_preflight_failed("DLNA receiver is not currently discovered; scan your network again")
-            return
+            reason = "DLNA receiver is not currently discovered; scan your network again"
+            self._cast_preflight_failed(reason)
+            return reason
         device_ip = self._device_host(device)
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
@@ -116,8 +127,9 @@ class SessionMixin:
         subs_mode = cfg["subs"]
         subs_path = self._resolve_subs(path)
         if subs_mode == "pick" and subs_path is None:
-            self._cast_preflight_failed("Selected subtitle file is missing or unsupported; choose a valid .srt")
-            return
+            reason = "Selected subtitle file is missing or unsupported; choose a valid .srt"
+            self._cast_preflight_failed(reason)
+            return reason
         delay = subtitle_delay.get(cfg, path)
         adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
@@ -385,6 +397,7 @@ class SessionMixin:
 
         self._cast_starting = True
         Async.run(work, done=done, failed=failed, domain="media")
+        return None
 
 
     @command_trace.traced("desktop", "stop")
