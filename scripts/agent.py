@@ -451,17 +451,35 @@ def issue_context_packet(number: int, issue: dict, comments: list[dict], base: s
 
 
 def private_task() -> dict | None:
-    """Return this detached worktree's task marker; never trust a shared checkout."""
+    """Read the private task marker without treating corruption as no ownership."""
     if not (ROOT / ".git").is_file():
         return None
+    folder = Path(git("rev-parse", "--absolute-git-dir").strip())
+    marker = folder / "sc-agent-task.json"
     try:
-        folder = Path(git("rev-parse", "--absolute-git-dir").strip())
-        payload = json.loads((folder / "sc-agent-task.json").read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or type(payload.get("issue")) is not int:
-            return None
-        return payload
-    except (OSError, ValueError, json.JSONDecodeError):
+        raw = marker.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except OSError as exc:
+        raise td.DigestError(f"cannot read private task journal {marker}: {exc}") from exc
+    except UnicodeError as exc:
+        raise td.DigestError(f"invalid encoding in private task journal {marker}") from exc
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise td.DigestError(f"invalid JSON in private task journal {marker}") from exc
+    if (not isinstance(payload, dict) or type(payload.get("issue")) is not int
+            or payload["issue"] < 1):
+        raise td.DigestError(f"invalid issue identity in private task journal {marker}")
+    if "files" in payload and (not isinstance(payload["files"], list)
+                               or not all(isinstance(p, str) for p in payload["files"])):
+        raise td.DigestError(f"invalid file scope in private task journal {marker}")
+    for key in ("pending_push", "pending_handover"):
+        if key in payload and not isinstance(payload[key], dict):
+            raise td.DigestError(f"invalid {key} in private task journal {marker}")
+    if "pending_push" in payload and "pending_handover" in payload:
+        raise td.DigestError(f"conflicting delivery receipts in private task journal {marker}")
+    return payload
 
 
 def cmd_start(a: argparse.Namespace) -> int:
@@ -940,7 +958,7 @@ def recover_uncertain_push(task: dict) -> bool:
     work and resume the ordinary non-force push path. Git errors fail closed.
     """
     pending = task.get("pending_push")
-    if pending is None:
+    if "pending_push" not in task:
         return True
     if not isinstance(pending, dict):
         print("invalid pending push receipt; manual review required")
@@ -974,8 +992,11 @@ def recover_uncertain_push(task: dict) -> bool:
 def recover_pending_handover(task: dict) -> bool:
     """Retry a previously pushed SHA, never describe an unpublished SHA as shipped."""
     pending = task.get("pending_handover")
-    if not isinstance(pending, dict):
+    if "pending_handover" not in task:
         return True
+    if not isinstance(pending, dict):
+        print("invalid pending handover receipt; manual review required")
+        return False
     sha = pending.get("sha")
     if not isinstance(sha, str) or not re.fullmatch(r"[a-fA-F0-9]{40,64}", sha):
         print("invalid private handover receipt; review it before continuing")
