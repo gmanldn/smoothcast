@@ -383,6 +383,102 @@ def test_lost_push_ack_is_not_a_failed_or_duplicated_commit(monkeypatch, tmp_pat
     assert run(b, "rev-parse", "HEAD") == run(b, "rev-parse", "origin/develop")
 
 
+def test_lost_push_ack_and_failed_fetch_replays_exact_remote_sha(monkeypatch, tmp_path):
+    """Two consecutive transport failures must not strand a shipped SHA."""
+    _, _seed, worker = seed_git(tmp_path)
+    commit(worker, "delivered.txt", "the code actually landed\n")
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    handovers = []
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args:
+                        handovers.append(args) or True)
+    real_run = subprocess.run
+    pushes = []
+    failed_fetch = []
+
+    def lost_ack_and_fetch(command, **kwargs):
+        if command[:2] == ["git", "push"]:
+            pushes.append(1)
+            result = real_run(command, **kwargs)
+            assert result.returncode == 0
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="push ack lost") if len(pushes) == 1 else result
+        if command[:2] == ["git", "fetch"] and pushes and not failed_fetch:
+            failed_fetch.append(1)
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="fetch network down")
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(agent.subprocess, "run", lost_ack_and_fetch)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 5
+    sha = run(worker, "rev-parse", "HEAD")
+    admin = Path(run(worker, "rev-parse", "--absolute-git-dir"))
+    assert task["pending_push"]["sha"] == sha
+    assert "pending_push" in (admin / "sc-agent-task.json").read_text()
+    assert handovers == []
+
+    # Connectivity returns. Remote ancestry confirms the exact SHA and
+    # delivery evidence is replayed, with no second code push or commit.
+    assert agent.cmd_ship(args) == 0
+    assert [item[1] for item in handovers] == [sha]
+    assert len(pushes) == 1
+    assert run(worker, "rev-parse", "origin/develop") == sha
+    assert "pending_push" not in task and "pending_handover" not in task
+    assert "pending_push" not in (admin / "sc-agent-task.json").read_text()
+
+
+def test_failed_push_and_failed_fetch_retries_unpublished_code(monkeypatch, tmp_path):
+    """Never publish a handover for an SHA the remote does not contain."""
+    _, _seed, worker = seed_git(tmp_path)
+    commit(worker, "retry.txt", "needs a real push\n")
+    monkeypatch.setattr(agent, "ROOT", worker)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    handovers = []
+    monkeypatch.setattr(agent, "publish_ship_handover", lambda *args:
+                        handovers.append(args) or True)
+    real_run = subprocess.run
+    pushes = []
+    failed_fetch = []
+
+    def failed_transport(command, **kwargs):
+        if command[:2] == ["git", "push"]:
+            pushes.append(1)
+            if len(pushes) == 1:
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="push offline")
+        if command[:2] == ["git", "fetch"] and pushes and not failed_fetch:
+            failed_fetch.append(1)
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="fetch offline")
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(agent.subprocess, "run", failed_transport)
+    args = agent.build_parser().parse_args(["ship", "--skip-checks"])
+    assert agent.cmd_ship(args) == 5
+    sha = run(worker, "rev-parse", "HEAD")
+    assert task["pending_push"]["sha"] == sha
+    assert handovers == []
+    assert agent.cmd_ship(args) == 0
+    assert len(pushes) == 2
+    assert [args[1] for args in handovers] == [sha]
+    assert run(worker, "rev-parse", "origin/develop") == sha
+    assert "pending_push" not in task
+
+
+def test_uncertain_push_refuses_ambiguous_remote_ancestry(monkeypatch):
+    task = {"issue": 584, "pending_push": {"sha": "a" * 40}}
+    monkeypatch.setattr(agent.subprocess, "run",
+                        lambda *args, **kwargs: SimpleNamespace(returncode=128))
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: (_ for _ in ()).throw(
+        AssertionError("ambiguous ancestry must not alter the receipt")))
+    assert agent.recover_uncertain_push(task) is False
+    assert "pending_push" in task
+
+
 def test_competing_push_retries_and_keeps_both_changes(monkeypatch, tmp_path):
     _remote, a, b = seed_git(tmp_path)
     commit(a, "a.txt", "A\n")
