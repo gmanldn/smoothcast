@@ -188,6 +188,17 @@ class SourceShapeTests(unittest.TestCase):
                     if plan.video == "copy":
                         self.assertEqual(shape.video, "h264")
                         self.assertLessEqual(shape.height, caps.max_height)
+                        # Even audio-only transcoding must never copy video
+                        # the fake device independently rejects.
+                        self.assertTrue(supports(profile, {
+                            "codec": "h264", "profile": "high", "level": "4.1",
+                            "width": shape.width, "height": shape.height,
+                            "fps": shape.fps,
+                        }))
+                    elif shape.height > caps.max_height:
+                        # An oversized source must be scaled, not merely
+                        # re-encoded at the same unsupported dimensions.
+                        self.assertEqual(plan.scale_to_height, caps.max_height)
                     if plan.audio == "copy":
                         self.assertIn(shape.audio, ("aac", "mp3"))
                     if shape.subtitles != "none":
