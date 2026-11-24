@@ -269,6 +269,7 @@ def ensure_jobs(portal, cfg: dict):
 
         def deliver(owner, path):
             server.dispatch("queue_add", {"path": str(path), "name": Path(path).name,
+                                          "_portal_source": "link",
                                           "_portal_auth_key": owner})
 
         server.link_jobs = links.LinkJobs(Path(portal.uploads.root) / "link-acquisitions",

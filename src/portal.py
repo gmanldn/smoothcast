@@ -2382,13 +2382,30 @@ function updateLinkControls(){
     search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
     availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask whoever runs SmoothCast to turn on YouTube downloads.";
   }
-  const enabled=!!(linkCapabilities.youtube||linkCapabilities.magnet);
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
-  if(!input||!consent||!button||!label)return;
-  input.disabled=linkPosting;consent.disabled=linkPosting;
-  button.disabled=!enabled||linkPosting||!consent.checked||!String(input.value||"").trim();
+  if(!input||!consent||!button||!label)return false;
+  const value=String(input.value||"").trim();
+  // Classify only the source family for UI readiness; the server validates
+  // the full URL, video ID or infohash and enforces acquisition policy.
+  const kind=/^magnet:/i.test(value)?"magnet":
+    /^https:\/\/(?:(?:www\.|m\.)?youtube\.com|youtu\.be)(?=[:/?#]|$)/i.test(value)?"youtube":null;
+  const sourceName=kind==="youtube"?"YouTube":"BitTorrent magnets";
   const sources=[linkCapabilities.youtube?"YouTube":null,linkCapabilities.magnet?"BitTorrent magnets":null].filter(Boolean);
-  label.textContent=enabled?"Turned on: "+sources.join(" and ")+".":linkStorageAvailable===false?"Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.":"Downloads from links are off until whoever runs SmoothCast turns them on.";
+  const allowed=!!(kind&&linkCapabilities[kind]&&linkStorageAvailable!==false);
+  input.disabled=linkPosting;consent.disabled=linkPosting;
+  button.disabled=!allowed||linkPosting||!consent.checked;
+  if(linkStorageAvailable===false){
+    label.textContent="Download storage is busy or unavailable. Ask whoever runs SmoothCast to check it and restart the room. Existing media is preserved.";
+  }else if(value&&!kind){
+    label.textContent="Paste one HTTPS YouTube video or BitTorrent magnet link.";
+  }else if(kind&&!allowed){
+    label.textContent=sourceName+" unavailable in this room. Keep the link here and ask the host to enable an eligible worker.";
+  }else if(kind){
+    label.textContent=sourceName+" available. Confirm permission to download and add to Up Next.";
+  }else{
+    label.textContent=sources.length?"Available: "+sources.join(" and ")+".":"Paste a link; downloads require an enabled acquisition worker.";
+  }
+  return !button.disabled;
 }
 function renderLinkJobs(state){
   linkCapabilities=state.link_capabilities||{};
@@ -2404,7 +2421,8 @@ function renderLinkJobs(state){
   for(const job of jobs.slice().reverse()){
     const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
     heading.textContent=job.title||"Download";
-    detail.className="muted";detail.textContent=(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
+    const sourceLabel=job.kind==="youtube"?"YouTube":job.kind==="magnet"?"BitTorrent magnet":"Link";
+    detail.className="muted";detail.textContent=sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
     row.append(heading,detail);
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
@@ -2427,7 +2445,7 @@ if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
   $("linkAuthorised").addEventListener("change",updateLinkControls);
   linkForm.addEventListener("submit",async event=>{
-    event.preventDefault();if(linkPosting||!(linkCapabilities.youtube||linkCapabilities.magnet)||!$("linkAuthorised").checked)return;
+    event.preventDefault();if(!updateLinkControls())return;
     const url=$("linkInput").value.trim();if(!url)return;
     if(!linkAttempt||linkAttempt.url!==url)linkAttempt={url,id:"link-"+Date.now()+"-"+Math.random().toString(36).slice(2)};
     linkPosting=true;updateLinkControls();showError("linkFeedback","Sending to the SmoothCast computer…");
