@@ -29,9 +29,12 @@ on:
 permissions:
   contents: read
 
+# Keep one running verification to completion while GitHub replaces the
+# single pending run with the newest pushed revision. Under rapid agent pushes,
+# cancel-in-progress: true starves all checks and discards paid runner work.
 concurrency:
   group: sc-agent-control-develop
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   headless-coordinator:
