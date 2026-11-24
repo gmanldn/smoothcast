@@ -16,6 +16,7 @@ import threading
 
 import time
 
+import capability_gate
 import cast_recovery
 import castctl
 import command_trace
@@ -271,8 +272,10 @@ class SessionMixin:
                         # No stable identity or codec: keep the normal direct decision, and
                         # drop the half-built key so nothing is recorded under it later.
                         receiver_key = codec_key = ""
+                gate_ok, _gate_note = capability_gate.direct_allowed(
+                    media, path.suffix, next((d.model for d in self.devices if d.name == device), ""))
                 direct_eligible = (
-                    use_direct and media.direct_ok and not burn
+                    use_direct and media.direct_ok and not burn and gate_ok
                     and embedded is None and not music_enabled
                     and (aspect_mode == "original" or getattr(media, "is_audio_only", False)))
                 if receiver_memory.should_try_direct(
