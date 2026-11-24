@@ -43,7 +43,7 @@ def test_destination_and_link_controls_without_receiver_or_provider():
                  html.index("function renderLinkJobs(")]
     harness = """
 const assert=require("node:assert/strict");
-const elements={linkInput:{value:"magnet:?xt=urn:btih:example"},
+const elements={linkInput:{value:"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"},
   linkAuthorised:{checked:true},meshNavLink:{hidden:true}};
 const $=id=>elements[id] ||= {};
 let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,
