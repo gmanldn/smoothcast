@@ -220,8 +220,10 @@ def recent_comments(hours: float = TTL_MAX / 60 + 0.5, pages: int = 6) -> list[d
     out: list[dict] = []
     for page in range(1, pages + 1):
         chunk = gh(f"repos/{REPO}/issues/comments?since={since}&per_page=100&page={page}&sort=created")
-        if not isinstance(chunk, list) or not chunk:
-            break
+        if not isinstance(chunk, list) or any(not isinstance(c, dict) for c in chunk):
+            raise td.DigestError("GitHub returned an invalid global claim feed")
+        if not chunk:
+            return out  # An empty page is a complete feed, not saturation.
         out.extend(chunk)
         if len(chunk) < 100:
             return out
@@ -529,28 +531,38 @@ def cmd_claim(a: argparse.Namespace) -> int:
     posted = gh("-X", "POST", f"repos/{REPO}/issues/{a.number}/comments", "-f", f"body={body}")
     if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
         raise td.DigestError("GitHub did not return a claim comment ID")
-    # Verify publication before taking an assignment. The global comment feed
-    # can lag; consult this issue directly only when our claim is missing.
-    recent = recent_comments()
-    # Always merge this issue's entire comment history, even when our new
-    # marker appears in the global feed. The global feed can omit an earlier
-    # active rival under heavy repository activity.
-    direct = issue_comments(a.number)
-    seen = {c.get("id") for c in recent}
-    recent.extend(c for c in direct if c.get("id") not in seen)
-    # Optimistic lock: only an earlier published claim can beat our claim.
-    events = [e for e in parse_events(recent) if e["id"] <= posted["id"]]
-    mine = [e for e in events if e["id"] == posted["id"] and e["kind"] == "claim"]
-    rivals = [c for c in active_claims(events, utcnow())
-              if c["agent"] != me and (c["issue"] == a.number or files & c["files"]) and c["id"] < posted["id"]]
-    if not mine or rivals:
-        gh("-X", "DELETE", f"repos/{REPO}/issues/comments/{posted['id']}")
-        if rivals:
-            print(f"LOST RACE to {rivals[0]['agent']} on #{rivals[0]['issue']}; claim withdrawn. "
-                  "Run: python3 scripts/agent.py next")
-        else:
-            print("CLAIM NOT CONFIRMED in GitHub comment feed; withdrawn, retry or pick another.")
-        return 3
+    # Never leave an orphan claim when a post succeeded but the follow-up
+    # freshness request times out or returns an incomplete comment ledger.
+    # A rejected claim must be deleted even if a second GitHub read fails.
+    confirmed = False
+    try:
+        recent = recent_comments()
+        # Always inspect this issue directly; a bounded global feed can omit
+        # an older live rival even if our own marker is already visible.
+        direct = issue_comments(a.number)
+        seen = {c.get("id") for c in recent}
+        recent.extend(c for c in direct if c.get("id") not in seen)
+        events = [e for e in parse_events(recent) if e["id"] <= posted["id"]]
+        mine = [e for e in events if e["id"] == posted["id"] and e["kind"] == "claim"]
+        rivals = [c for c in active_claims(events, utcnow())
+                  if c["agent"] != me
+                  and (c["issue"] == a.number or files & c["files"])
+                  and c["id"] < posted["id"]]
+        if not mine or rivals:
+            if rivals:
+                print(f"LOST RACE to {rivals[0]['agent']} on #{rivals[0]['issue']}; "
+                      "withdrawing claim. Run: python3 scripts/agent.py next")
+            else:
+                print("CLAIM NOT CONFIRMED in GitHub comments; withdrawing and retrying")
+            return 3
+        confirmed = True
+    finally:
+        if not confirmed:
+            try:
+                gh("-X", "DELETE", f"repos/{REPO}/issues/comments/{posted['id']}")
+            except td.DigestError as exc:
+                print(f"WARNING: could not remove unconfirmed claim {posted['id']}: {exc}; "
+                      "lease will expire", file=sys.stderr)
     # The confirmed structured comment is the lock. GitHub labels/assignees
     # are advisory and must never turn a successful lease into a false failure.
     # Otherwise start() can leave an invisible orphan lease on metadata 403.
