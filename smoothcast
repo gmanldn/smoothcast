@@ -31,7 +31,7 @@ def _headless(args: list[str]) -> bool:
     return (os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1"
             or "--self-test" in args
             or args in (["--version"], ["-V"])
-            or args[:1] == ["--diagnostics"])
+            or args[:1] in (["--diagnostics"], ["--link-check"]))
 
 
 def _bootstrap(target: str) -> int:
