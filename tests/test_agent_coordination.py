@@ -444,6 +444,20 @@ def test_plan_checks_runs_mypy_only_for_gated_modules(monkeypatch):
     assert "mypy" in [name for name, _ in agent.plan_checks(["src/cast_ui.py"], {})]
 
 
+def test_missing_optional_checker_returns_unverified_instead_of_crashing(monkeypatch):
+    import subprocess
+
+    check, reason = agent.run_headless_check(["smoothcast-does-not-exist-584"])
+    assert check is None and "unavailable" in reason
+
+    def timed_out(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(agent.subprocess, "run", timed_out)
+    check, reason = agent.run_headless_check(["pytest", "-q"], timeout=3)
+    assert check is None and "exceeded 3s" in reason
+
+
 def test_failing_ids_parses_pytest_summary_and_ignores_noise():
     out = ("..F\nFAILED tests/test_a.py::test_x - AssertionError: boom\n"
            "ERROR tests/test_b.py::test_y\nFAILED tests/test_a.py::test_x - again\n3 failed")
