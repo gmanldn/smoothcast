@@ -1192,70 +1192,11 @@ class SessionMixin:
 
 
     def _add_youtube(self) -> None:
-        dialog = Adw.AlertDialog.new(
-            "Add from YouTube",
-            "Paste a YouTube video link. It is downloaded and checked, then added to "
-            "Up Next. Only add media you are authorised to download.")
-        entry = Gtk.Entry()
-        entry.set_placeholder_text("https://www.youtube.com/watch?v=…")
-        entry.update_property([Gtk.AccessibleProperty.LABEL], ["YouTube video link"])
-        entry.set_activates_default(True)
-        try:
-            clip = self.get_clipboard()
-            clip.read_text_async(None, lambda c, res: self._prefill_youtube(entry, c, res))
-        except Exception:
-            pass
-        dialog.set_extra_child(entry)
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("add", "Add to Up Next")
-        dialog.set_default_response("add")
-        dialog.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
-        dialog.connect("response", lambda d, r: r == "add" and entry.get_text().strip()
-                       and self._add_youtube_link(entry.get_text().strip()))
-        dialog.present(self)
-
-
-    @staticmethod
-    def _prefill_youtube(entry, clipboard, result) -> None:
-        try:
-            text = (clipboard.read_text_finish(result) or "").strip()
-        except Exception:
-            return
-        if gui_link_add.is_youtube(text) and not entry.get_text():
-            entry.set_text(text)
-            entry.select_region(0, -1)
+        gui_link_add.show_dialog(self)
 
 
     def _add_youtube_link(self, url: str) -> None:
-        portal_obj = getattr(self, "_portal", None)
-        jobs = getattr(getattr(portal_obj, "server", None), "link_jobs", None)
-        if not gui_link_add.is_youtube(url):
-            self.toast("Enter a single YouTube video link.", error=True)
-            return
-        if not gui_link_add.attach(
-                jobs, lambda path: GLib.idle_add(lambda: self._enqueue([str(path)]) or False)):
-            self.toast(gui_link_add.unavailable_message(jobs), error=True)
-            return
-        result = gui_link_add.submit(jobs, url)
-        if not result.ok:
-            self.toast(result.message, error=True)
-            return
-        self.toast(result.message)
-        self._console("YouTube video accepted; adding to Up Next")
-        state = {"last": ""}
-
-        def poll():
-            if getattr(self, "_closing", False):
-                return False
-            text, done = gui_link_add.describe(jobs, result.job_id)
-            if text != state["last"]:
-                state["last"] = text
-                self._console("YouTube: " + text)
-                if done:
-                    self.toast(text, error=text.startswith(("Could not", "Cancelled")))
-            return not done
-
-        GLib.timeout_add_seconds(2, poll)
+        gui_link_add.add_link(self, url)
 
 
     def _toggle_fullscreen(self) -> None:

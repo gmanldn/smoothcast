@@ -13,6 +13,7 @@ tested headlessly; ``poll`` and the dialog glue stay in ``cast_session``.
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,3 +102,75 @@ def describe(jobs, job_id: str) -> tuple[str, bool]:
     if stage in ("failed", "cancelled", "delivery_uncertain") and row.get("error"):
         text += f": {row['error']}"
     return text, stage in FINAL
+
+
+# --- GTK glue (window-facing); imports stay lazy so the core above is headless ---
+
+def add_link(window, url: str) -> None:
+    """Submit *url* for the GUI owner and report progress in toasts and the console."""
+    from gi.repository import GLib
+    if not is_youtube(url):
+        window.toast("Enter a single YouTube video link.", error=True)
+        return
+    jobs = getattr(getattr(getattr(window, "_portal", None), "server", None), "link_jobs", None)
+    if not attach(jobs, lambda path: GLib.idle_add(lambda: window._enqueue([str(path)]) or False)):
+        window.toast(unavailable_message(jobs), error=True)
+        return
+    result = submit(jobs, url)
+    if not result.ok:
+        window.toast(result.message, error=True)
+        return
+    window.toast(result.message)
+    window._console("YouTube video accepted; adding to Up Next")
+    last = [""]
+
+    def poll():
+        if getattr(window, "_closing", False):
+            return False
+        text, done = describe(jobs, result.job_id)
+        if text != last[0]:
+            last[0] = text
+            window._console("YouTube: " + text)
+            if done:
+                window.toast(text, error=text.startswith(("Could not", "Cancelled")))
+        return not done
+
+    GLib.timeout_add_seconds(2, poll)
+
+
+def _prefill(entry, clipboard, result) -> None:
+    try:
+        text = (clipboard.read_text_finish(result) or "").strip()
+    except Exception as exc:  # noqa: BLE001 - clipboard is a convenience only
+        logging.getLogger(__name__).debug("clipboard prefill skipped: %s", exc)
+        return
+    if is_youtube(text) and not entry.get_text():
+        entry.set_text(text)
+        entry.select_region(0, -1)
+
+
+def show_dialog(window) -> None:
+    """Ask for one YouTube link (prefilled from the clipboard) and add it."""
+    from gi.repository import Adw, Gtk
+    dialog = Adw.AlertDialog.new(
+        "Add from YouTube",
+        "Paste a YouTube video link. It is downloaded and checked, then added to "
+        "Up Next. Only add media you are authorised to download.")
+    entry = Gtk.Entry()
+    entry.set_placeholder_text("https://www.youtube.com/watch?v=…")
+    entry.update_property([Gtk.AccessibleProperty.LABEL], ["YouTube video link"])
+    entry.set_activates_default(True)
+    window.get_clipboard().read_text_async(None, lambda c, res: _prefill(entry, c, res))
+    dialog.set_extra_child(entry)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("add", "Add to Up Next")
+    dialog.set_default_response("add")
+    dialog.set_response_appearance("add", Adw.ResponseAppearance.SUGGESTED)
+
+    def answered(_dialog, response):
+        text = entry.get_text().strip()
+        if response == "add" and text:
+            add_link(window, text)
+
+    dialog.connect("response", answered)
+    dialog.present(window)
