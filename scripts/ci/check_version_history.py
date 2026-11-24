@@ -32,11 +32,17 @@ def parse_version(source: str) -> tuple[int, int, int]:
     except (SyntaxError, ValueError) as exc:
         raise VersionHistoryError("invalid version.py syntax") from exc
     parts: dict[str, int] = {}
+    canonical_names = {"MAJOR", "MINOR", "PATCH"}
+    # Record the *specific* permitted target nodes, then inspect the entire
+    # AST for any other write. Otherwise PATCH += 1, a nested assignment,
+    # or a walrus binding silently changes runtime SemVer without changing
+    # the number recorded by this history guard.
+    permitted: set[int] = set()
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
         target = node.targets[0]
-        if not isinstance(target, ast.Name) or target.id not in ("MAJOR", "MINOR", "PATCH"):
+        if not isinstance(target, ast.Name) or target.id not in canonical_names:
             continue
         if target.id in parts or not isinstance(node.value, ast.Constant):
             raise VersionHistoryError("duplicate or non-literal version component")
@@ -44,8 +50,25 @@ def parse_version(source: str) -> tuple[int, int, int]:
         if type(value) is not int or not 0 <= value <= 2_147_483_647:
             raise VersionHistoryError("version components must be non-negative bounded integers")
         parts[target.id] = value
-    if set(parts) != {"MAJOR", "MINOR", "PATCH"}:
+        permitted.add(id(target))
+    if set(parts) != canonical_names:
         raise VersionHistoryError("version components missing")
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Name) and node.id in canonical_names
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                and id(node) not in permitted):
+            raise VersionHistoryError(f"unexpected secondary write to {node.id}")
+    # Function/class/import definitions can also rebind a canonical module
+    # attribute without generating an ast.Name(Store) node.
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in canonical_names:
+                raise VersionHistoryError(f"unexpected shadow definition of {node.name}")
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split(".", 1)[0]
+                if bound in canonical_names:
+                    raise VersionHistoryError(f"unexpected imported binding {bound}")
     return parts["MAJOR"], parts["MINOR"], parts["PATCH"]
 
 
