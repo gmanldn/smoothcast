@@ -23,13 +23,25 @@ def server_command(source_script: Path) -> list[str]:
     return [sys.executable, str(source_script)]
 
 
+def install_root() -> Path:
+    """Directory holding the frozen executables and the bundled media sidecars.
+
+    PyInstaller onedir keeps ``SmoothCast.exe``/``SmoothCastCLI.exe`` and the
+    ``ffmpeg/`` sidecar folder at the top of the distribution; ``_internal``
+    holds only support libraries. A source run returns the interpreter
+    directory, which callers only consult in frozen mode. This is the single
+    packaging layout contract shared with ``media_tools`` (#530).
+    """
+    return Path(sys.executable).parent
+
+
 def companion_executable() -> Path:
     """Return the shipped console-enabled executable; required for CATT JSON.
 
     Windows GUI-subsystem executables may not expose stdout or stderr to
     capture_output=True. Failing closed is safer than an empty scan response.
     """
-    executable = Path(sys.executable)
+    executable = install_root() / Path(sys.executable).name
     if executable.stem == "SmoothCastCLI":
         return executable
     companion = executable.with_name("SmoothCastCLI" + executable.suffix)

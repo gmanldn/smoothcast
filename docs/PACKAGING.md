@@ -48,7 +48,8 @@ are ignored by Git.
   A frozen `sys.executable` is **not** a Python interpreter: never pass it
   a `.py` pathname, nor silently substitute a system `catt`.
 - `SmoothCastCLI --version` and `--_smoothcast-package-check` are headless.
-  Packaging verification checks these, CATT `--help`, bundle icon hash, and
+  Packaging verification checks these, CATT `--help`, the `--_smoothcast-media-probe`
+  JSON contract (exit 0 iff every tool is usable), bundle icon hash, and
   importable GTK4/libadwaita **without creating a window or touching a TV**.
   The build script automatically fails on a broken artefact.
 - Windows media-tool layout (#530): a frozen Windows build runs only

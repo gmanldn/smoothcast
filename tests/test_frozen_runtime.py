@@ -132,6 +132,35 @@ class FrozenRuntimeTests(unittest.TestCase):
                 self.assertEqual(cli.main(), expected)
             self.assertEqual(__import__("json").loads(out.getvalue())["ok"], ok)
 
+    def test_frozen_verifier_checks_the_media_probe_contract(self):
+        import importlib.util
+        import json as _json
+
+        path = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "verify_frozen_artifact.py"
+        spec = importlib.util.spec_from_file_location("verify_frozen_artifact", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def result(returncode, payload):
+            return types.SimpleNamespace(returncode=returncode, stdout=payload, stderr="")
+
+        def probe(ok):
+            body = _json.dumps({"strict": False, "tools": {}, "ok": ok})
+            return result(0 if ok else 1, body)
+
+        with mock.patch.object(module.subprocess, "run", return_value=probe(True)):
+            module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        with mock.patch.object(module.subprocess, "run", return_value=probe(False)):
+            module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        with mock.patch.object(module.subprocess, "run", return_value=result(0, "not json")):
+            with self.assertRaises(RuntimeError):
+                module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        # ok=true but exit 1 (or vice versa) is a broken probe, not a media state.
+        with mock.patch.object(module.subprocess, "run",
+                               return_value=result(1, _json.dumps({"tools": {}, "ok": True}))):
+            with self.assertRaises(RuntimeError):
+                module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+
     def test_source_package_check_rejects_without_gtk(self):
         with mock.patch.object(frozen_runtime, "is_frozen", return_value=False), \
              mock.patch.object(frozen_runtime, "dispatch_frozen_helper", return_value=None), \

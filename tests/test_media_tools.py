@@ -110,6 +110,18 @@ def test_no_source_module_runs_a_media_tool_by_bare_name_or_path_lookup():
     assert offenders == []
 
 
+def test_media_tools_and_companion_share_one_install_root(monkeypatch, tmp_path):
+    """One packaging layout contract (#530): sidecars sit beside the executables."""
+    import frozen_runtime
+
+    root = tmp_path / "SmoothCast ünï"
+    root.mkdir()
+    monkeypatch.setattr(frozen_runtime.sys, "executable", str(root / "SmoothCast.exe"))
+    assert media_tools._install_root() == root == frozen_runtime.install_root()
+    (root / "SmoothCastCLI.exe").write_bytes(b"MZ")
+    assert frozen_runtime.companion_executable() == root / "SmoothCastCLI.exe"
+
+
 def _fake_run(outputs):
     import subprocess
 

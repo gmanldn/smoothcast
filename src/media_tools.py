@@ -21,6 +21,7 @@ import sys
 from typing import Literal
 
 from async_jobs import UserFacingError
+import frozen_runtime
 
 MediaTool = Literal["ffmpeg", "ffprobe", "ffplay"]
 TOOLS: tuple[str, ...] = ("ffmpeg", "ffprobe", "ffplay")
@@ -50,7 +51,8 @@ def _strict() -> bool:
 
 
 def _install_root() -> Path:
-    return Path(sys.executable).parent
+    """The one layout contract: sidecars sit beside the frozen executables."""
+    return frozen_runtime.install_root()
 
 
 def _check_name(name: str) -> str:

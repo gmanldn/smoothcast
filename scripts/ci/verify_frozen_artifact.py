@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -34,6 +35,35 @@ def check(executable: Path, arguments: list[str], expected: str) -> None:
         )
 
 
+def check_media_probe(executable: Path) -> None:
+    """Prove the frozen CLI's media probe is wired and self-consistent (#530).
+
+    Only ``<tool> -version`` runs; no media, display or receiver. The report
+    deliberately omits paths, so this asserts the JSON contract and that the
+    exit code agrees with ``ok`` (0 when every tool is usable, 1 otherwise).
+    Whether the *bundled* tools exist is enforced by the Windows MSI gate
+    (#529/#535); this check catches a broken or missing probe on any platform.
+    """
+    result = subprocess.run(
+        [str(executable), "--_smoothcast-media-probe"], stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, timeout=30, cwd=executable.parent,
+    )
+    try:
+        report = json.loads(result.stdout)
+    except (TypeError, ValueError):
+        raise RuntimeError(
+            f"{executable.name} --_smoothcast-media-probe did not print JSON "
+            f"({result.returncode}): {(result.stderr or result.stdout)[-1800:]}"
+        )
+    if not isinstance(report, dict) or "tools" not in report or "ok" not in report:
+        raise RuntimeError(f"media probe JSON is missing 'tools'/'ok': {report!r}")
+    expected = 0 if report["ok"] else 1
+    if result.returncode != expected:
+        raise RuntimeError(
+            f"media probe exit {result.returncode} disagrees with ok={report['ok']}"
+        )
+
+
 def verify(dist: Path) -> None:
     executable = console_executable(dist)
     # Do not launch the normal GUI or the HLS server. All probes exit promptly.
@@ -41,6 +71,7 @@ def verify(dist: Path) -> None:
     check(executable, ["--_smoothcast-catt", "--help"], "Usage:")
     expected = hashlib.sha256(ICON.read_bytes()).hexdigest()
     check(executable, ["--_smoothcast-package-check"], expected)
+    check_media_probe(executable)
 
 
 if __name__ == "__main__":
