@@ -452,6 +452,75 @@ def run_managed(root: Path, command: list[str], env: dict[str, str]) -> int:
             shutil.rmtree(ready_dir, ignore_errors=True)
 
 
+def recovery_web(exit_code: int) -> int:
+    """Keep a local, read-only recovery page alive after a desktop crash.
+
+    No GTK, media tools, app imports, LAN advertisement or receiver commands.
+    The terminal still owns this process; Ctrl+C stops the recovery server.
+    """
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    page = (
+        "<!doctype html><html lang='en'><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>SmoothCast recovery</title>"
+        "<main><h1>SmoothCast recovery mode</h1>"
+        f"<p>The desktop process exited with status {int(exit_code)}.</p>"
+        "<p>The casting engine and shared room are unavailable. "
+        "This page is local diagnostics only, not an active room.</p>"
+        "<p>Read the terminal error, stop recovery with Ctrl+C, "
+        "then retry <code>python3 sc.py</code>.</p></main></html>"
+    ).encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            self.request.settimeout(3)
+            super().setup()
+
+        def do_GET(self):
+            expected = f"127.0.0.1:{self.server.server_port}"
+            if self.headers.get("Host") != expected:
+                self.send_error(403)
+                return
+            if self.path != "/":
+                self.send_error(404)
+                return
+            self.send_response(503)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(page)
+
+        def log_message(self, *_args):
+            pass
+
+    try:
+        with HTTPServer(("127.0.0.1", 0), Handler) as server:
+            print(f"SmoothCast recovery web URL: http://127.0.0.1:{server.server_port}/ "
+                  "(local only; casting unavailable). Ctrl+C to stop.",
+                  file=sys.stderr, flush=True)
+            server.serve_forever()
+    except KeyboardInterrupt:
+        return 130
+    except OSError as exc:
+        print(f"SmoothCast recovery web unavailable: {exc}", file=sys.stderr, flush=True)
+    return exit_code
+
+
+def _desktop_exit(code: int) -> int:
+    if code in (0, 130, -2, -15):
+        return code  # normal exit or operator interrupt/termination
+    print(f"SmoothCast: desktop exited with status {code}.", file=sys.stderr, flush=True)
+    if gui_instances(all_installations=True):
+        print("SmoothCast: another primary is still present; not starting recovery.",
+              file=sys.stderr, flush=True)
+        return code
+    return recovery_web(code)
+
+
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     # Direct shortcut/launcher calls reach the same isolated demo as sc.py (#523):
@@ -512,13 +581,10 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
         env = runtime_environment()
         if target is not None:
             # Keep the launcher resident to acknowledge the new primary.
-            return run_managed(ROOT, command, env)
-        if os.name != "nt":
-            # A .desktop launch may inherit HOME or / as its working directory.
-            # Use the same project root as the Windows launcher.
-            os.chdir(ROOT)
-            os.execvpe(command[0], command, env)
-        return subprocess.call(command, cwd=ROOT, env=env)
+            return _desktop_exit(run_managed(ROOT, command, env))
+        # Supervise the desktop instead of replacing the launcher: even an
+        # import error or native crash must leave a browser recovery path.
+        return _desktop_exit(subprocess.call(command, cwd=ROOT, env=env))
     except (OSError, RuntimeError) as exc:
         print(f"SmoothCast could not start: {exc}", file=sys.stderr)
         return 1

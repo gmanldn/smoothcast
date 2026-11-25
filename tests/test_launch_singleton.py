@@ -203,8 +203,7 @@ class EarlyActivationTests(unittest.TestCase):
              mock.patch.object(launch, "runtime_environment", return_value={}), \
              mock.patch.object(launch, "ensure_single_instance",
                                side_effect=AssertionError("guard must run once")), \
-             mock.patch.object(launch.os, "chdir"), \
-             mock.patch.object(launch.os, "execvpe", side_effect=OSError("stubbed exec")):
+             mock.patch.object(launch.subprocess, "call", side_effect=OSError("stubbed spawn")):
             with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}):
                 self.assertEqual(launch.main([], prechecked=True), 1)
 
@@ -271,3 +270,20 @@ def test_canonical_singleton_precheck_recognises_managed_primary():
          mock.patch.object(launch, "activate_existing", return_value=True):
         assert launch.ensure_single_instance(args) is None
     assert launch.RELOAD_SERVICES_ARG in args
+
+
+def test_desktop_failure_enters_recovery_but_normal_exit_does_not():
+    with mock.patch.object(launch, "gui_instances", return_value=[]), \
+         mock.patch.object(launch, "recovery_web", return_value=130) as recovery:
+        assert launch._desktop_exit(0) == 0
+        assert launch._desktop_exit(-2) == -2
+        recovery.assert_not_called()
+        assert launch._desktop_exit(1) == 130
+        recovery.assert_called_once_with(1)
+
+
+def test_failed_secondary_never_starts_another_recovery_server():
+    with mock.patch.object(launch, "gui_instances", return_value=[123]), \
+         mock.patch.object(launch, "recovery_web") as recovery:
+        assert launch._desktop_exit(1) == 1
+        recovery.assert_not_called()

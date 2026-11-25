@@ -39,6 +39,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             return True
         self._stop_portal()
         if not address:
+            print("SmoothCast web GUI unavailable: no private LAN IPv4 address.",
+                  flush=True)
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
             self._set_room_join_link(None, "Room unavailable — connect to a private LAN")
             return True
@@ -64,6 +66,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                                          link_sources=tuple(kind for kind in ("youtube", "magnet")
                                                             if self.cfg.get("portal_link_" + kind) is True))
         except (OSError, portal.PortalError):
+            print("SmoothCast web GUI unavailable: room server could not bind.",
+                  flush=True)
             self._portal = None
             self._portal_ip = None
             self.portal_status_label.set_text(
@@ -71,6 +75,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             )
             self._set_room_join_link(None, "Room unavailable — check network settings")
             return True
+        print(f"SmoothCast web GUI: {self._portal.url}", flush=True)
         # Claim the stable address so a printed QR survives DHCP changes; the
         # mesh reuses this entry and only releases it when another node is primary.
         entry = entry_name.EntryName(address, self._portal.port)
@@ -78,6 +83,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         self._entry_name = entry
         self._portal.attach_entry(entry)
         join_url = self._portal.join_url()
+        if join_url != self._portal.url:
+            print(f"SmoothCast room link: {join_url}", flush=True)
         self._portal_qr_url = join_url
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.
