@@ -115,7 +115,15 @@ def test_upload_button_state_transitions_in_headless_browser_js():
         pytest.skip("Node.js is required for this browser-control regression")
     script = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
     start = script.index("function updateUploadControls(){")
-    end = script.index("function resetUploadBatch(){", start)
+    depth = 0
+    for end in range(start, len(script)):
+        if script[end] == "{":
+            depth += 1
+        elif script[end] == "}":
+            depth -= 1
+            if depth == 0:
+                end += 1
+                break
     controls = script[start:end]
     harness = r"""
 const assert = require("node:assert/strict");
