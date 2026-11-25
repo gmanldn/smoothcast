@@ -1736,7 +1736,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .field-hint{margin:6px 0}
 #dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 #dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
-#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
 #dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
 #dashboard nav a{white-space:nowrap;flex:none}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
@@ -1789,7 +1789,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .help .help-body{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:7px;font-size:.87rem;line-height:1.55}
 .help .help-body p{margin:.4rem 0}.help .help-body p:first-child{margin-top:0}.help .help-body p:last-child{margin-bottom:0}
 #advancedPanel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px;scroll-margin-top:78px}
-#advancedPanel>summary{cursor:pointer;font-size:1.05rem;font-weight:750;min-height:44px;align-content:center}
+#advancedPanel>h2,#localLivePanel>h2{margin:0 0 8px}
 #advancedPanel>p{font-size:.88rem;margin:6px 0}
 .advanced-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
 .advanced-grid>section{margin:0;box-shadow:none;border:1px solid var(--line);min-width:0}
@@ -1834,7 +1834,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
-  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
   #findPanel{grid-column:2}
   #queuePanel{grid-column:1/-1}
@@ -1946,7 +1946,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
@@ -2037,26 +2037,26 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
-<p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
+<p class="section-desc">See who is connected. <a href="#advancedPanel">Change your name in Settings</a> or <a href="#localLivePanel">follow room activity</a>.</p>
 <div id="people" class="participants"></div>
-<form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form>
-<h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<details id="advancedPanel"><summary>More settings and network information</summary><p>Optional controls for phones, music and other devices. Most guests will not need to change these.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="phoneHeading"><h3 id="phoneHeading">Phone remote</h3>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
+<section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
 <p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
-<section aria-labelledby="musicHeading"><h3 id="musicHeading">Music playback</h3>
+<section aria-labelledby="musicHeading"><h3 id="musicHeading">Shared room audio</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
-<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+</div></section>
+<section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading">Live room activity</h2><p class="section-desc">Current room activity is available even without a connected mesh.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">Receiver status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
 <section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
-</div></details></div>
+</div></section></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
@@ -2574,6 +2574,9 @@ function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
   if(playing)playing.textContent=(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
+  if(liveTarget&&target)liveTarget.textContent=target.textContent;
+  if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
   if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
 }

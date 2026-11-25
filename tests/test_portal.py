@@ -369,6 +369,22 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert "Add to Up Next" in page
 
 
+def test_room_settings_and_local_live_are_persistent(rig):
+    status, body, _ = rig.request("GET", "/")
+    assert status == 200
+    page = body.decode()
+    nav = page.split('<nav aria-label="Jump to room section">', 1)[1].split("</nav>", 1)[0]
+    assert '<a href="#localLivePanel">Live</a>' in nav
+    assert '<a href="#advancedPanel">Settings</a>' in nav
+    assert '<section id="advancedPanel" aria-labelledby="roomSettingsHeading">' in page
+    assert '<section id="localLivePanel" aria-labelledby="localLiveHeading">' in page
+    for identity in ("nameForm", "lockControls", "musicAutogain", "activity",
+                     "peers", "networkActivity", "liveRoomTarget", "liveRoomPlayback"):
+        assert page.count(f'id="{identity}"') == 1
+    assert 'liveTarget.textContent=target.textContent' in page
+    assert 'livePlayback.textContent=playing.textContent' in page
+
+
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
     status, body, _ = rig.request("GET", "/api/status")
     assert status == 401 and decode(body)["ok"] is False
