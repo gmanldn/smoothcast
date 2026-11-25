@@ -446,12 +446,7 @@ class CastControlApp(Adw.Application):
         window.toast(notice, error=True)
 
     def _publish_activation_ready(self) -> None:
-        """Publish this primary's exact commit to a managing launcher (#581).
-
-        The launcher passes SMOOTHCAST_ACTIVATION_READY (see
-        setup/managed_startup.py) only for a switch awaiting acknowledgement; a
-        normal launch never sets it, so this is a no-op.
-        """
+        """Tell a waiting launcher which commit is live."""
         path = os.environ.get("SMOOTHCAST_ACTIVATION_READY")
         commit = version.RUNNING_REVISION
         if not path or not commit:

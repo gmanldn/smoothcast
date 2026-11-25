@@ -125,6 +125,7 @@ def test_launcher_handles_corrupt_record_without_spawning_gui():
         native_runtime.manifest_path(venv).write_text("bad json")
         with mock.patch.object(launch, "VENV", venv), \
              mock.patch.object(launch, "python_path", return_value=Path(sys.executable)), \
+             mock.patch.object(launch, "ensure_single_instance", return_value=None), \
              mock.patch.object(launch.os, "execvpe") as execvpe, \
              mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
             assert launch.main([]) == 1

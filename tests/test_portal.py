@@ -174,7 +174,11 @@ const listeners = new Map(), timers = new Map();
 const elements = new Map();
 function element(id) {
   if(!elements.has(id)){
-    elements.set(id, {files: [], addEventListener(){}, focus(){this.focused=true},
+    elements.set(id, {files: [], hidden: false, textContent: "", className: "",
+                      addEventListener(){}, focus(){this.focused=true},
+                      getAttribute(){return null}, setAttribute(){}, removeAttribute(){},
+                      contains(){return false}, querySelectorAll(){return []},
+                      classList: {add(){}, remove(){}, toggle(){}},
                       querySelector(){return element("loginButton")}});
   }
   return elements.get(id);
@@ -186,7 +190,8 @@ const document = {
   querySelectorAll(){return []},
 };
 const window = {addEventListener(){}};
-const location = {origin:"http://127.0.0.1:4321"}; // Browser origin for room-share controls.
+const location = {origin:"http://127.0.0.1:4321", hash:"", pathname:"/",
+                  search:"", reload(){}}; // Browser globals for room-share and blade controls.
 let timerId = 0, requests = 0, respond;
 const setTimeout = (callback, delay) => {
   timers.set(++timerId, {callback, delay});
