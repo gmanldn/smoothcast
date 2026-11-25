@@ -14,6 +14,7 @@ import stat
 import secrets
 
 import portal
+import queue_metadata
 
 
 def portal_queue_id(path: str) -> str:
@@ -81,7 +82,8 @@ class PortalQueueMixin:
         provenance = getattr(self, "_portal_queue_provenance", {})
         rows = [{
             "id": portal_queue_id(path),
-            "title": display_names.get(path, pathlib.Path(path).name),
+            "title": queue_metadata.display_title(path, getattr(self, "_media_cache", {}),
+                                                  display_names.get(path)),
             "duration": self.queue_durations.get(path, 0.0),
             **provenance.get(path, {}),
         } for path in self.queue[:100]]
@@ -221,7 +223,8 @@ class PortalQueueMixin:
             raise portal.PortalRequestError(404, "That media is no longer available")
         display_names = getattr(self, "_portal_queue_display_names", {})
         return {"path": str(path),
-                "title": display_names.get(str(path), path.name),
+                "title": queue_metadata.display_title(path, getattr(self, "_media_cache", {}),
+                                                      display_names.get(str(path))),
                 "duration": self.queue_durations.get(str(path), 0.0)}
 
     def _portal_queue_action(self, operation: str, payload: dict) -> str | dict | None:
@@ -237,8 +240,9 @@ class PortalQueueMixin:
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             source = "link" if payload.get("_portal_source") == "link" else "upload"
+            if str(path) not in self.queue:
+                self._portal_note_display_name(path, payload.get("name"))
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), source)
-            self._portal_note_display_name(path, payload.get("name"))
             return "Added to the queue."
         if operation == "queue_remove":
             self._portal_check_queue_revision(payload)

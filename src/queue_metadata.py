@@ -34,16 +34,21 @@ def cached_media(cache: Mapping[str, tuple], path: str | Path) -> object | None:
     return entry[1]
 
 
-def display_title(path: str | Path, cache: Mapping[str, tuple]) -> str:
-    """Format verified embedded music tags, with the filename as fallback."""
-    media = cached_media(cache, path)
-    if media is None:
-        return Path(path).name
-    title = str(getattr(media, "title", "") or "").strip() or Path(path).name
+def media_title(path: str | Path, media: object | None = None,
+                display_name: str | None = None, *, fallback: str | None = None) -> str:
+    """Use verified tags and original contribution names, never an absolute path."""
+    name = display_name.strip() if isinstance(display_name, str) else ""
+    title = str(getattr(media, "title", "") or "").strip() or name or fallback or Path(path).name
     artist = str(getattr(media, "artist", "") or "").strip()
     album = str(getattr(media, "album", "") or "").strip()
     value = f"{artist} — {title}" if artist else title
     return f"{value} · {album}" if album else value
+
+
+def display_title(path: str | Path, cache: Mapping[str, tuple],
+                  display_name: str | None = None) -> str:
+    """Format verified embedded tags and the original contribution name."""
+    return media_title(path, cached_media(cache, path), display_name)
 
 
 def media_for_cast(

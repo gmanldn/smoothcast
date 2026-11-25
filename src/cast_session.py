@@ -130,6 +130,7 @@ class SessionMixin:
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
         prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
+        display_name = getattr(self, "_portal_queue_display_names", {}).get(str(path))
         subs_mode = cfg["subs"]
         # Keep immediate validation of an explicitly selected subtitle, but
         # defer automatic directory scanning to the cast worker.
@@ -248,7 +249,7 @@ class SessionMixin:
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             session = dlna.Session() if renderer is not None else streamer.Session()
-            title = pretty_title(path)
+            title = queue_metadata.media_title(path, media, display_name, fallback=pretty_title(path))
 
             def stop_if_cancelled_after_start():
                 if cancel.is_set():

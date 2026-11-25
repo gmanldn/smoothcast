@@ -50,3 +50,33 @@ def test_queue_renderer_uses_text_and_refreshes_on_metadata_change():
     assert "item.voted,item.contributor,item.source_kind" in portal._HTML
     assert 'item.contributor?"Added by "+item.contributor' in portal._HTML
     assert "Contributor not recorded" in portal._HTML
+
+
+def test_original_title_is_available_before_queue_row_creation():
+    import pathlib
+    host = Host()
+    path = pathlib.Path("/private/opaque-upload.mp4")
+    host.busy = False
+    host._portal_upload_path = lambda payload: path
+    def enqueue(paths):
+        assert host._portal_queue_display_names[str(path)] == "Original film.mp4"
+        host.queue.extend(paths)
+    host._enqueue = enqueue
+    host._portal_queue_action("queue_add", {"name": "Original film.mp4"})
+    assert host._portal_queue_status()[0]["title"] == "Original film.mp4"
+
+
+def test_verified_media_tags_and_original_name_share_title_projection(tmp_path):
+    import queue_metadata
+    path = tmp_path / "opaque.mp4"
+    path.write_bytes(b"media")
+    host = Host()
+    host.queue.append(str(path))
+    host._portal_note_display_name(path, "Original film.mp4")
+    host._media_cache = {str(path): (queue_metadata.file_fingerprint(path),
+                                    SimpleNamespace(title="Real title", artist="Artist"))}
+    expected = "Artist — Real title"
+    assert host._portal_queue_status()[0]["title"] == expected
+    assert queue_metadata.media_title(path, host._media_cache[str(path)][1],
+                                      "Original film.mp4") == expected
+    assert queue_metadata.media_title(path, display_name="Original film.mp4") == "Original film.mp4"

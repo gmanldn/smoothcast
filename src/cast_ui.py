@@ -12,6 +12,7 @@ import pathlib
 import time
 
 from utils import pretty_title
+import queue_metadata
 import cast_targets
 
 import responsive_layout
@@ -1230,7 +1231,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _set_now_playing_labels(self, media, session) -> None:
-        title = pretty_title(media.path)
+        display_name = getattr(self, "_portal_queue_display_names", {}).get(str(media.path))
+        title = queue_metadata.media_title(media.path, media, display_name,
+                                           fallback=pretty_title(media.path))
         meta = ([f"Audio · {media.acodec or 'unknown codec'}"]
                 if media.is_audio_only else [media.resolution])
         if media.duration:

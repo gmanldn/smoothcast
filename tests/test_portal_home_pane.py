@@ -54,7 +54,9 @@ def test_home_is_the_default_dashboard_pane_with_unique_ids():
     assert len(page.ids) == len(set(page.ids)), "duplicate ids break DOM binding"
     assert page.tags["homePanel"] == "section"
     assert page.parent["homePanel"] == "dashboard"
+    assert page.parent["playback"] == "homePanel"
     assert page.tags["homeHeading"] == "h2"
+    assert '<a href="#playback">Now Playing</a>' not in portal._HTML
     assert 'id="homeHeading" tabindex="-1"' in portal._HTML
 
 
@@ -90,7 +92,7 @@ def test_default_view_is_home_and_every_panel_is_a_blade():
     assert ("#dashboard:not([data-room-blade])>:not(nav):not(#errorDash)"
             ":not(#homePanel){display:none}") in html
     for panel in ("homePanel", "queuePanel", "uploadCard", "peoplePanel",
-                  "screensPanel", "meshPanel", "playback", "findPanel",
+                  "screensPanel", "meshPanel", "findPanel",
                   "advancedPanel", "localLivePanel"):
         assert f'#dashboard[data-room-blade="{panel}"]' in html
     assert ("#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel"
@@ -119,8 +121,9 @@ const location={hash:""},document={activeElement:null};
 const make=(id,blade=null)=>({id,attrs:{},scrolls:0,focuses:0,closest(){return blade||null},contains(x){return x===this||x?.parent===this},scrollIntoView(){this.scrolls++},focus(){this.focuses++;document.activeElement=this},setAttribute(k,v){this.attrs[k]=v},removeAttribute(k){delete this.attrs[k]},getAttribute(k){return this.attrs[k]??null}});
 const home=make("homePanel"),queue=make("queuePanel"),upload=make("uploadCard"),people=make("peoplePanel"),mesh=make("meshPanel"),find=make("findPanel");
 home.closest=()=>home;queue.closest=()=>queue;upload.closest=()=>upload;people.closest=()=>people;mesh.closest=()=>mesh;find.closest=()=>find;
+const playback=make("playback");playback.closest=()=>playback;playback.parent=home;
 const homeHeading=make("homeHeading");homeHeading.parent=home;
-const elements={homePanel:home,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
+const elements={homePanel:home,playback,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
 const $=id=>elements[id]||null;
 const links=["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel","findPanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
 const dash=make("dashboard");dash.hidden=false;dash.contains=x=>Object.values(elements).includes(x);dash.querySelectorAll=()=>links;
@@ -132,7 +135,9 @@ for(const id of ["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel"
   location.hash="#"+id;syncRoomBlade(true);
   check(dash.getAttribute("data-room-blade")===id,"blade "+id);
 }
+location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="homePanel","legacy playback link opens Home");
 location.hash="";syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"home clears the blade");
+check(links[0].getAttribute("aria-current")==="page","Home selected by default");
 """
     subprocess.run(["node", "-"], input=harness + router + checks,
                    text=True, check=True, timeout=10)
