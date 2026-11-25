@@ -24,6 +24,7 @@ def version(root, patch):
 def roots(tmp_path, monkeypatch):
     source, installed = tmp_path / "checkout", tmp_path / "installed"
     version(source, 3)
+    (source / ".git").mkdir()
     version(installed, 2)
     monkeypatch.setattr(refresh.install_location, "_clean_source_revision", lambda _: SHA)
     def git(_root, *args):
@@ -248,3 +249,17 @@ def test_same_version_refresh_consumes_real_installer_marker(roots, monkeypatch)
     assert refresh.installed_revision(installed) == SHA
     assert refresh.refresh(source, installed, "linux", lambda: []) == 0
     call.assert_called_once()
+
+
+@pytest.mark.parametrize("archive_version", [2, 3])
+def test_zip_repeat_launch_uses_registered_install_without_git(tmp_path, monkeypatch, capsys,
+                                                               archive_version):
+    source, installed = tmp_path / "extracted zip", tmp_path / "installed"
+    version(source, archive_version)
+    version(installed, 2)
+    monkeypatch.setattr(refresh, "git", Mock(side_effect=AssertionError("ZIP needs no Git")))
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert "archive source revision unverified" in capsys.readouterr().err
+    call.assert_not_called()

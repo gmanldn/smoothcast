@@ -93,8 +93,10 @@ class InstallLocationTests(unittest.TestCase):
             (source / "src" / "module.py").write_text("x = 1\n")
             (source / "setup" / "bootstrap.py").write_text("# bootstrap\n")
             (source / "pyproject.toml").write_text('[project]\nname = "smoothcast"\n')
+            (source / "smoothcast").write_text("# Compatibility entry point\nfrom sc import main\n")
             destination = base / "Installed apps" / "SmoothCast"
             with install_location.installed_sources(source, destination):
+                self.assertFalse((destination / "smoothcast").exists())
                 self.assertEqual((destination / "src" / "module.py").read_text(), "x = 1\n")
                 self.assertFalse((destination / ".git").exists())
                 self.assertFalse((destination / "src" / "__pycache__").exists())
@@ -116,10 +118,14 @@ class InstallLocationTests(unittest.TestCase):
             (target / ".venv").mkdir()
             (target / ".venv" / "important").write_text("preserve")
             (target / "my music.txt").write_text("preserve")
+            legacy = target / "smoothcast"
+            legacy.write_text("# Compatibility entry point\nfrom sc import main\n")
             with self.assertRaisesRegex(RuntimeError, "simulated failure"):
                 with install_location.installed_sources(source, target):
                     self.assertEqual((target / "src" / "player.py").read_text(), "new\n")
+                    self.assertFalse(legacy.exists())
                     raise RuntimeError("simulated failure")
+            self.assertTrue(legacy.is_file())
             self.assertEqual((target / "src" / "player.py").read_text(), "old\n")
             self.assertEqual((target / ".venv" / "important").read_text(), "preserve")
             self.assertEqual((target / "my music.txt").read_text(), "preserve")

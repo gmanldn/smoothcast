@@ -110,6 +110,16 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
     if source_version < installed_version:
         announce(installed_version, previous, "Loading newer installed version")
         return 0  # An old checkout must never downgrade a newer installation.
+    # ZIP downloads have no Git metadata. Do not invoke Git (including a
+    # parent's unrelated checkout), or refuse a repeat launch solely for that.
+    # An archive cannot prove ancestry, so keep the registered installation.
+    if not (root / ".git").exists():
+        if source_version > installed_version:
+            print("SmoothCast: this archive is newer than the registered install; "
+                  "explicit setup is needed to replace it.", file=sys.stderr, flush=True)
+        announce(installed_version, previous,
+                 "Loading registered installation; archive source revision unverified")
+        return 0
     head = git(root, "rev-parse", "--verify", "HEAD")
     revision = head.stdout.strip() if head is not None and head.returncode == 0 else None
     branch = git(root, "symbolic-ref", "--short", "HEAD")
