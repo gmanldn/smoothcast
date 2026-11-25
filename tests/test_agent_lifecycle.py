@@ -192,27 +192,7 @@ def test_claim_freshness_rejects_rival_and_reclaims_expired(monkeypatch):
     assert reclaimed == [584]
 
 
-def test_ship_patch_assignment_is_explicitly_opt_in():
-    default = agent.build_parser().parse_args(["ship"])
-    requested = agent.build_parser().parse_args(["ship", "--assign-patch"])
-    assert default.assign_patch is False
-    assert requested.assign_patch is True
-
-
-def test_assign_patch_requires_private_final_intent_before_mutating(monkeypatch):
-    def forbidden(_args):
-        raise AssertionError("invalid finalisation must not commit")
-    monkeypatch.setattr(agent, "commit_private_slice", forbidden)
-    monkeypatch.setattr(agent, "private_task", lambda: {"issue": 584})
-    for remaining in ("", "more tests"):
-        args = agent.build_parser().parse_args(["ship", "--assign-patch", "--next", remaining])
-        assert agent.cmd_ship(args) == 2
-    monkeypatch.setattr(agent, "private_task", lambda: None)
-    args = agent.build_parser().parse_args(["ship", "--assign-patch", "--next", "none"])
-    assert agent.cmd_ship(args) == 2
-
-
-def test_finalize_already_shipped_ticket_without_dummy_code_change(monkeypatch, tmp_path):
+def test_legacy_assign_patch_flag_does_not_allocate(monkeypatch, tmp_path):
     _, first, successor = seed_git(tmp_path)
     monkeypatch.setattr(agent, "ROOT", successor)
     task = {"issue": 584, "files": []}
@@ -225,17 +205,23 @@ def test_finalize_already_shipped_ticket_without_dummy_code_change(monkeypatch, 
                         lambda *args: deliveries.append(args) or True)
     args = agent.build_parser().parse_args(
         ["ship", "--assign-patch", "--next", "none", "--skip-checks"])
-    assert agent.cmd_ship(args) == 2  # No published issue-specific work.
+    assert agent.cmd_ship(args) == 0
     commit(first, "connector_result.txt", "delivered\n")
     run(first, "push", "-q", "origin", "HEAD:develop")
     assert agent.cmd_ship(args) == 0
     tip = run(successor, "rev-parse", "origin/develop")
-    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 52")
-    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "src/version.py"
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
     assert run(successor, "show", "HEAD:connector_result.txt") == "delivered"
+    assert len(deliveries) == 0
+    commit(successor, "native_result.txt", "finished\n")
+    assert agent.cmd_ship(args) == 0
+    shipped = run(successor, "rev-parse", "origin/develop")
+    assert shipped != tip
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
+    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "native_result.txt"
     assert len(deliveries) == 1
-    assert agent.cmd_ship(args) == 0  # Retry reuses the historical assignment.
-    assert run(successor, "rev-parse", "origin/develop") == tip
+    assert agent.cmd_ship(args) == 0
+    assert run(successor, "rev-parse", "origin/develop") == shipped
     assert len(deliveries) == 1
 
 

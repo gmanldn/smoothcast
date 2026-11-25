@@ -53,9 +53,9 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 - **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the
   smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
   evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
-- Owner policy: **one PATCH per completed ticket**; ship progress without
-  bumps and use `agent.py ship --assign-patch` for final acceptance.
-  Retries reuse the issue assignment; never mint a second PATCH.
+- Owner policy (25 Nov 2026): **no per-ticket version bumps**. Ship and close
+  verified tickets immediately using their commit SHA; only explicit owner-directed
+  release changes edit SemVer. The old `--assign-patch` flag is ignored.
   Git commit SHA identifies every build (`--build-id`); `src/version.py` is
   SemVer (`smoothcast --version`). Mandatory
   version-history checks run on every ship, even with `--skip-checks`.
