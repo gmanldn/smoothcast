@@ -19,8 +19,11 @@ WIX_NS = "http://wixtoolset.org/schemas/v4/wxs"       # the namespace WiX v6 sti
 # Fixed forever: component GUIDs are uuid5(this, lower-cased path). Changing it re-keys every component.
 COMPONENT_NAMESPACE = uuid.UUID("6f1c2f0e-83a5-4d1e-9b6e-5f2a0c3d7b41")
 MAX_MAJOR_MINOR, MAX_BUILD = 255, 65535
-_VERSION = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,5})$")
+_VERSION = re.compile(r"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,5}")
 _RESERVED = re.compile(r'[<>:"|?*\x00-\x1f]')
+
+
+_DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])", re.IGNORECASE)
 
 
 class WixError(ValueError):
@@ -29,19 +32,22 @@ class WixError(ValueError):
 
 def msi_version(version: str) -> str:
     """The three-field MSI ProductVersion, rejecting values Windows Installer ignores or truncates."""
-    match = _VERSION.match(str(version))
+    match = _VERSION.fullmatch(str(version))
     if not match:
         raise WixError(f"version {version!r} must be MAJOR.MINOR.PATCH numbers")
-    major, minor, build = map(int, match.groups())
+    major, minor, build = map(int, match.group().split("."))
     if major > MAX_MAJOR_MINOR or minor > MAX_MAJOR_MINOR or build > MAX_BUILD:
         raise WixError(f"version {version} is outside the MSI limits 255.255.65535")
     return f"{major}.{minor}.{build}"
 
 
 def _clean(path: str) -> PurePosixPath:
+    if not isinstance(path, str):
+        raise WixError("payload path must be a string")
     pure = PurePosixPath(path)
     if (not path or pure.as_posix() != path or pure.is_absolute() or "\\" in path or _RESERVED.search(path)
             or any(part in ("", ".", "..") or part != part.strip() or part.endswith(".")
+                   or _DEVICE.fullmatch(part.split(".", 1)[0].rstrip())
                    for part in pure.parts)):
         raise WixError(f"{path!r}: unsafe payload path")
     return pure
@@ -55,6 +61,23 @@ def _identifier(prefix: str, path: str) -> str:
     return f"{prefix}_{hashlib.sha256(path.casefold().encode('utf-8')).hexdigest()[:24]}"
 
 
+def _validate_paths(paths: list[str]) -> None:
+    """Reject file/directory aliases before generating duplicate WiX identities."""
+    seen: dict[str, tuple[str, bool]] = {}
+    for path in paths:
+        parts = _clean(path).parts
+        for depth in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:depth])
+            is_file = depth == len(parts)
+            key = prefix.casefold()
+            previous = seen.get(key)
+            if previous is not None:
+                if previous != (prefix, is_file) or is_file:
+                    raise WixError(f"{prefix}: collides with {previous[0]} when case is ignored")
+            else:
+                seen[key] = (prefix, is_file)
+
+
 def load_files(manifest_path: Path) -> list[str]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -63,13 +86,7 @@ def load_files(manifest_path: Path) -> list[str]:
         raise WixError(f"payload manifest unreadable: {exc}") from None
     if manifest.get("platform") != "windows-x64":
         raise WixError("payload manifest is not for windows-x64")
-    seen: dict[str, str] = {}
-    for path in paths:
-        _clean(path)
-        folded = path.casefold()
-        if folded in seen:
-            raise WixError(f"{path}: collides with {seen[folded]} when case is ignored")
-        seen[folded] = path
+    _validate_paths(paths)
     for required in ("SmoothCast.exe", "SmoothCastCLI.exe"):
         if required not in paths:
             raise WixError(f"{required} is missing from the payload manifest")
@@ -78,6 +95,7 @@ def load_files(manifest_path: Path) -> list[str]:
 
 def render(paths: list[str], source_dir: str = "$(PayloadDir)") -> str:
     """The ``Payload.wxs`` text: one Component per file, GUIDs and ids fixed by path."""
+    _validate_paths(paths)
     tree: dict = {}
     for path in paths:
         node = tree
