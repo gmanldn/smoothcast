@@ -1134,17 +1134,22 @@ def _port_open(port: int) -> bool:
 def _server_probe(port: int = PORT) -> tuple[bool, str | None, int | None]:
     """Return (healthy, listen address, pid) for the server on our port.
 
-    The address and pid come from headers added with the access restriction;
-    an older server that predates them reports ``(True, None, None)``.
+    The address and pid come from the health response. A recognised obsolete
+    server deliberately reports no compatible bind address, so the next cast
+    replaces it only after the usual process ownership checks.
     """
     connection = HTTPConnection("127.0.0.1", port, timeout=0.4)
     try:
         connection.request("GET", "/_smoothcast/health")
         response = connection.getresponse()
-        if response.status != 200 or response.read(64) != b"SmoothCast HLS server v1\n":
+        if response.status != 200:
+            return False, None, None
+        body = response.read(64)
+        if body not in (hls_server.HEALTH_BODY, b"SmoothCast HLS server v1\n"):
             return False, None, None
         pid = response.getheader("X-SmoothCast-Pid", "")
-        return True, response.getheader("X-SmoothCast-Bind"), int(pid) if pid.isdigit() else None
+        bound = response.getheader("X-SmoothCast-Bind") if body == hls_server.HEALTH_BODY else None
+        return True, bound, int(pid) if pid.isdigit() else None
     except (OSError, ValueError, HTTPException):
         return False, None, None
     finally:
@@ -1484,11 +1489,11 @@ class Session:
                 busy.append(port)         # another program owns it: leave it alone
                 continue
             self.port = port
-            if bind_ip is None or bound == bind_ip:
-                return  # Verified server left alive by keep-streaming.
+            if bound is not None and (bind_ip is None or bound == bind_ip):
+                return  # Verified compatible server left alive by keep-streaming.
             if not _pid_is_ours(pid, "server"):
                 raise StreamError(
-                    f"A SmoothCast streaming server on port {port} is bound to a different "
+                    f"A SmoothCast streaming server on port {port} is outdated or bound to a different "
                     "address and could not be verified for replacement; stop it and retry")
             _terminate_pid(pid, "server")
             if _port_open(port):
@@ -2035,6 +2040,7 @@ class Session:
         deadline = time.monotonic() + timeout
         observed = False
         known_state = False
+        last_status = {}
         while True:
             if self.caster is not None and self.caster.poll() not in (None, 0):
                 raise StreamPreparationError(
@@ -2049,6 +2055,7 @@ class Session:
                 info = None
             if isinstance(info, dict) and info:
                 observed = True
+                last_status = info
                 known_state |= castctl.player_state(info) not in {"UNKNOWN", "OFFLINE"}
             if matches(info):
                 return
@@ -2062,6 +2069,10 @@ class Session:
         if not known_state:
             raise StreamPreparationError(
                 "Receiver responded but did not report playback state. Check the TV's Cast app.",
+                detail=f"Receiver app={last_status.get('app_id')!r}, "
+                       f"state={castctl.player_state(last_status)}, "
+                       f"media_present={bool(last_status.get('content_id'))}; "
+                       f"{self._caster_output('helper still running or no output')}",
                 code="cast.command_failed")
         raise StreamPreparationError(
             "Receiver is reachable but did not confirm playback of this media. Check the TV.",

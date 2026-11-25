@@ -22,7 +22,8 @@ import error_log
 ROOT = Path.home() / ".cache" / "cast-control"
 PORT = 8767
 HEALTH_PATH = "/_smoothcast/health"
-HEALTH_BODY = b"SmoothCast HLS server v1\n"
+# v2 identifies the CORS-capable server. A new cast must not reuse v1.
+HEALTH_BODY = b"SmoothCast HLS server v2\n"
 # Written by the streamer before each cast; read per request so a server kept
 # alive between casts always honours the *current* receiver.
 POLICY_NAME = "server_access.json"
