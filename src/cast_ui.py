@@ -20,6 +20,7 @@ import queue_accessibility
 import slider_accessibility
 import action_state
 
+import async_jobs
 import buffer_health
 import notifications
 import state_labels
@@ -840,6 +841,18 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._last_stall_count = 0
         self.buffer_graph = BufferHealthGraph()
         body.append(self.buffer_graph)
+        heading = Gtk.Label(label="PYTHON THREADS", xalign=0.0)
+        heading.add_css_class("detail-section")
+        body.append(heading)
+        self.thread_status_label = Gtk.Label(
+            label="Sampling live threads…", xalign=0.0, wrap=True, selectable=True,
+        )
+        self.thread_status_label.add_css_class("mono")
+        self.thread_status_label.set_tooltip_text(
+            "Python-visible thread liveness only; native libraries and child processes are separate."
+        )
+        body.append(self.thread_status_label)
+        self._thread_status_at = float("-inf")
         return card
 
 
@@ -1099,6 +1112,15 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _update_details(self, snapshot: progress_model.Progress | None = None) -> None:
+        thread_label = getattr(self, "thread_status_label", None)
+        if thread_label is not None and time.monotonic() - self._thread_status_at >= 1.0:
+            self._thread_status_at = time.monotonic()
+            rows = async_jobs.thread_inventory()
+            report = f"{len(rows)} Python threads reporting alive"
+            if rows:
+                report += "\n" + "\n".join(rows)
+            if thread_label.get_text() != report:
+                thread_label.set_text(report)
         info = self.device_info
         session = self.session
         media = self.media

@@ -55,10 +55,24 @@ def test_never_downgrades_newer_install(roots, monkeypatch):
 
 
 def test_running_gui_is_not_overwritten(roots, monkeypatch):
+    import launch
+    monkeypatch.setattr(launch, "gui_instances", lambda **_kwargs: [])
     source, installed = roots
     call = Mock()
     monkeypatch.setattr(refresh.subprocess, "call", call)
     assert refresh.refresh(source, installed, "linux", lambda: [123]) == 3
+    call.assert_not_called()
+
+
+def test_running_installed_gui_can_activate_without_overwriting(roots, monkeypatch, capsys):
+    import launch
+    source, installed = roots
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    monkeypatch.setattr(launch, "gui_instances",
+                        lambda *, target: [123] if target == installed / "src" / "cast_control.py" else [])
+    assert refresh.refresh(source, installed, "linux", lambda: [123]) == 0
+    assert "update deferred" in capsys.readouterr().err
     call.assert_not_called()
 
 

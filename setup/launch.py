@@ -35,6 +35,9 @@ def runtime_python() -> Path | None:
 
 
 def python_path() -> Path:
+    managed = managed_target()
+    if managed is not None:
+        return managed[0]
     candidate = runtime_python()
     if candidate is None:
         raise FileNotFoundError(
@@ -44,7 +47,9 @@ def python_path() -> Path:
 
 
 def runtime_ready() -> bool:
-    """True when the project runtime and media tools can start without setup."""
+    """True when the selected runtime can start without setup."""
+    if managed_target() is not None:
+        return True  # the activated generation already passed its health probe
     runtime = runtime_python()
     if runtime is None:
         return False
@@ -366,6 +371,10 @@ def ensure_single_instance(args: list[str], target: Path | None = None) -> int |
         return None
     # Do not mistake successful activation of a different source tree for
     # successful startup of the selected installed runtime.
+    if target is None:
+        managed = managed_target()
+        if managed is not None:
+            target = managed[1]
     selected = set(gui_instances(target=target))
     activated = activate_existing()
     if activated and set(pids) - selected:

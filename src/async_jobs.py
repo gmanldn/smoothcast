@@ -24,6 +24,20 @@ DEFAULT_LIMITS = {
     "media": (2, 4),
     "background": (2, 8),
 }
+def thread_inventory() -> tuple[str, ...]:
+    """Snapshot Python-visible threads; liveness is not a health guarantee."""
+    rows = []
+    for thread in threading.enumerate():
+        if not thread.is_alive():
+            continue
+        ident = thread.native_id
+        role = ("main" if thread is threading.main_thread()
+                else "daemon" if thread.daemon else "worker")
+        rows.append((thread.name, ident or 0,
+                     f"{thread.name} · TID {ident if ident is not None else 'unknown'} · {role} · alive"))
+    return tuple(row[2] for row in sorted(rows))
+
+
 _STOP = object()
 _FAILURE_MESSAGES = {
     "transport": "Check that the receiver is connected, then try again.",

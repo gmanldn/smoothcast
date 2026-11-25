@@ -160,7 +160,18 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: newer checkout available. Quit the application and run "
               "the platform setup script to update the installed copy.", file=sys.stderr)
         return 3
-    if running():
+    pids = running()
+    if pids:
+        # A running primary from this exact install can still be activated.
+        # Never copy over its files or start an older competing process.
+        import launch
+
+        app = installed / "src" / "cast_control.py"
+        if set(pids) & set(launch.gui_instances(target=app)):
+            print("SmoothCast: update deferred; activating the running installed build. "
+                  "Quit normally and rerun sc.py to apply the newer checkout.",
+                  file=sys.stderr, flush=True)
+            return 0
         print("SmoothCast: newer checkout available. Quit the existing SmoothCast "
               "window normally, then rerun sc.py to update it.",
               file=sys.stderr)

@@ -250,3 +250,24 @@ class AppFailureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_verified_managed_generation_is_used_instead_of_missing_flat_runtime():
+    python = Path("/managed/.venv/bin/python")
+    app = Path("/managed/src/cast_control.py")
+    with mock.patch.object(launch, "managed_target", return_value=(python, app)), \
+         mock.patch.object(launch, "runtime_python", side_effect=AssertionError("flat probe")):
+        assert launch.runtime_ready()
+        assert launch.python_path() == python
+
+
+def test_canonical_singleton_precheck_recognises_managed_primary():
+    app = Path("/managed/src/cast_control.py")
+    def instances(*, all_installations=False, target=None):
+        return [123] if all_installations or target == app else []
+    args = []
+    with mock.patch.object(launch, "managed_target", return_value=(Path("/managed/python"), app)), \
+         mock.patch.object(launch, "gui_instances", side_effect=instances), \
+         mock.patch.object(launch, "activate_existing", return_value=True):
+        assert launch.ensure_single_instance(args) is None
+    assert launch.RELOAD_SERVICES_ARG in args
