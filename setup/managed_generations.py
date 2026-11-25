@@ -94,7 +94,9 @@ def _copy_one(source: Path, dest: Path, size: int, digest: str) -> None:
     for parent in (source, *source.parents):
         if parent.is_symlink():
             raise StageError("Source contains a symbolic-link component")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    # A FIFO can block in open() before fstat can reject it. Regular files
+    # ignore O_NONBLOCK, so validate the opened descriptor without waiting.
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(source, flags)
         with os.fdopen(fd, "rb") as reader:

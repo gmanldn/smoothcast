@@ -202,3 +202,25 @@ def test_build_marker_fsync_failure_prevents_generation_publication(tmp_path, mo
     assert not list((root / "releases").glob(".staging-*"))
     assert (root / "current").read_text() == "old-verified-generation"
 
+
+def test_fifo_source_is_rejected_without_waiting_for_a_writer(tmp_path, monkeypatch):
+    if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+        pytest.skip("POSIX named pipes are unavailable")
+    source, root, files = sample(tmp_path)
+    fifo = source / "src/entry.py"
+    fifo.unlink()
+    os.mkfifo(fifo)
+    original = mg.os.open
+
+    def guarded_open(path, flags, *args, **kwargs):
+        if Path(path) == fifo:
+            # Fail immediately on a regression instead of hanging pytest.
+            assert flags & os.O_NONBLOCK
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(mg.os, "open", guarded_open)
+    with pytest.raises(mg.StageError, match="ordinary private file"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
