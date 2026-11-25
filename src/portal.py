@@ -1888,6 +1888,10 @@ main{padding-top:6px}
 #dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
+#dashboard[data-room-blade="playback"]>:not(nav):not(#errorDash):not(#playback),
+#dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel){display:none}
+#dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel{grid-column:1/-1}
+#dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
 .advanced-grid>section,.transfer-journey,.help .help-body,#login .steps li{border-radius:var(--r-md)}
@@ -1987,7 +1991,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
-<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
+<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
 <div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
@@ -3672,10 +3676,32 @@ function syncMediaSession(s){
   const title=$("title"),state=$("state"),dash=$("dashboard");
   if(!home||!top||!pill||!pillTitle||!title||!state||!dash||!home.addEventListener)return;
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function syncRoomBlade(navigate=false){
+    const target=$(location.hash.slice(1));
+    const blade=target&&dash.contains(target)&&target.closest("#playback,#findPanel");
+    const selected=blade?blade.id:"";
+    const previous=dash.getAttribute("data-room-blade")||"";
+    if(selected)dash.setAttribute("data-room-blade",selected);
+    else dash.removeAttribute("data-room-blade");
+    for(const link of dash.querySelectorAll("nav a")){
+      if(selected&&link.getAttribute("href")==="#"+selected)link.setAttribute("aria-current","page");
+      else link.removeAttribute("aria-current");
+    }
+    if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
+      target.scrollIntoView({block:"start",behavior:"auto"});
+      if(blade===target&&!target.contains(document.activeElement)){
+        const heading=$(selected==="playback"?"playbackHeading":"findHeading");
+        if(heading)heading.focus({preventScroll:true});
+      }
+    }
+  }
+  window.addEventListener("hashchange",()=>syncRoomBlade(true));
+  syncRoomBlade();
   const goHome=event=>{
     event.preventDefault();
-    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
     if(location.hash)history.replaceState(null,"",location.pathname+location.search);
+    syncRoomBlade();
+    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
     top.focus({preventScroll:true});
   };
   home.addEventListener("click",goHome);
@@ -3694,6 +3720,8 @@ function syncMediaSession(s){
   const watch=new MutationObserver(syncPill);
   for(const node of [title,state])watch.observe(node,{childList:true,characterData:true,subtree:true});
   watch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
+  const routeWatch=new MutationObserver(()=>{if(!dash.hidden&&location.hash)syncRoomBlade(true)});
+  routeWatch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
   syncPill();
 })();
 // Ticket 592: invite QR from the same origin. Handlers are attached before src so
