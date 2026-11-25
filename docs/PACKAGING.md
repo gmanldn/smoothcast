@@ -132,25 +132,27 @@ FFmpeg sidecars and is not a qualified public installer.
 
 ## Windows MSI lifecycle matrix (issue #535)
 
-`scripts/ci/windows_msi_lifecycle.py` drives a disposable install -> CLI
-smoke -> upgrade -> repair -> uninstall matrix and writes machine-readable
-evidence to `dist/windows-msi-test-results.json` (commit, version, OS build,
-runner, per-step command/exit code/log, fixture hashes). It accepts only the
-documented Windows Installer codes (`0`, `3010` restart-required) and redacts
-`C:\Users\<name>` and temp paths from retained `msiexec /L*v` logs. It never
-opens a GUI, touches a receiver or changes the firewall.
+`scripts/ci/smoke_windows_msi.py` installs, repairs and uninstalls the exact
+built MSI on a **separate disposable GitHub-hosted Windows worker** (the
+`windows-msi-install` job), then runs bounded headless `SmoothCastCLI` checks
+from a sanitised PATH. It writes `dist/windows-msi-test-results.json` (source
+commit, version, SHA-256, OS, per-operation result) and refuses to mutate
+anything unless `SMOOTHCAST_TEST_CONTEXT=1` and the runner is disposable.
+`scripts/ci/msi_install_contract.py` holds the pure primitives: candidate
+SHA-256 verification, noninteractive `msiexec` argv, and a deadline that treats
+`3010`/`1641` as *not qualified* rather than success. Nothing opens a GUI,
+touches a receiver or changes the firewall.
 
-`build_windows_msi.py --fixture-version X.Y.Z` builds the two temporary A/B
-fixtures (increasing ProductVersion, same permanent UpgradeCode) **without
-editing `src/version.py`**; fixtures are never published. `--dry-run` writes
-the same evidence shape with every step `untested`, so the contract is
-exercised off Windows and is never reported green. The native `msiexec` run
-only executes on `win32`.
+`build_windows_msi.py --fixture-version X.Y.Z` builds temporary A/B fixtures
+with an increasing ProductVersion and the same permanent UpgradeCode **without
+editing `src/version.py`**; fixtures are never published. This is the enabler
+for the upgrade gate (#535 item 5), which is still `untested` in the smoke
+report.
 
-Still separate: wiring this harness into a Windows CI runner job (#535), the
-signed release gate (#536/#538) and physical-device qualification (#537).
-A headless MSI CI pass is **not** evidence of a verified native GUI, HLS
-reachability, local preview or Cast.
+Still separate: the A/B upgrade/rollback driver on the fixtures, the signed
+release gate (#536/#538) and physical-device qualification (#537). A headless
+MSI CI pass is **not** evidence of a verified native GUI, HLS reachability,
+local preview or Cast.
 
 ## Unsigned macOS disk image (issue #556)
 
