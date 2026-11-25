@@ -20,6 +20,7 @@ _PANEL = r"""
 #meshPanel .mesh-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
 #meshPanel .mesh-head h2{margin-bottom:6px}
 #meshPanel .mesh-feed{border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:.75rem;color:var(--muted)}
+#meshPanel .mesh-heartbeat{font-size:.82rem;color:var(--text);margin:.1rem 0 .6rem;overflow-wrap:anywhere}
 #meshPanel .mesh-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin:12px 0}
 #meshPanel .mesh-metric{background:var(--input);border:1px solid var(--line);border-radius:11px;padding:10px;min-width:0}
 #meshPanel .mesh-metric strong{display:block;font-size:1.55rem;font-variant-numeric:tabular-nums;line-height:1.2}
@@ -54,7 +55,7 @@ _PANEL = r"""
 @keyframes meshin{from{opacity:0}to{opacity:1}}
 </style>
 <section id="meshPanel" hidden aria-labelledby="meshTitle"><div class="mesh-head"><h2 id="meshTitle">Live mesh</h2><span id="meshFeedState" class="mesh-feed" role="status">Connecting…</span></div>
-<p id="meshSum" class="mesh-sum" role="status">Looking for devices…</p><p id="meshConn" class="conn" role="status" aria-live="polite"></p>
+<p id="meshSum" class="mesh-sum" role="status">Looking for devices…</p><p id="meshHeartbeat" class="mesh-heartbeat" role="status" aria-live="polite">Waiting for the coordinating node…</p><p id="meshConn" class="conn" role="status" aria-live="polite"></p>
 <p id="meshHint" class="muted"></p>
 <div class="mesh-metrics" aria-label="Latest reported mesh totals">
 <div class="mesh-metric"><strong id="meshDeviceCount">—</strong><span>Online nodes</span></div>
@@ -97,6 +98,7 @@ _PANEL = r"""
   const $=id=>document.getElementById(id);
   const dash=document.getElementById("dashboard");
   let nodes=new Map(),local="",primary="",es=null,backoff=3000,retry=null,lastSay=0,prev=null,started=false,hiddenTimer=null;
+  let beatTimer=null,beatBusy=false;
   let bootRequest=null,bootEpoch=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n};
   const TEXT={self:"This device",alive:"Online",ready:"Reported ready",busy:"Reported in use",stale:"Not seen lately",unreachable:"Can't be reached"};
@@ -297,6 +299,33 @@ _PANEL = r"""
     lastMeshAt=Date.now();render();
   }
   function conn(text){$("meshConn").textContent=text}
+  // Dedicated primary-node heartbeat (#626): polled while the panel is visible,
+  // never on the SSE feed so a quiet mesh stays quiet.
+  function heartbeatText(b){
+    if(!b||typeof b!=="object")return "Heartbeat unavailable";
+    const p=b.primary;
+    const who=p?(p.self===true?"This device":(p.name||"A node")):"None yet";
+    const state={up:"Coordinating",no_primary:"Waiting for the first node",mesh_off:"Mesh off",unavailable:"Unavailable",stopped:"Stopped",starting:"Starting"}[b.state]||String(b.state||"Unknown");
+    const parts=["Coordinator: "+who,state];
+    if(Number.isSafeInteger(b.seq))parts.push("beat "+b.seq);
+    const age=Number.isSafeInteger(b.age_ms)?Math.round(b.age_ms/1000):null;
+    if(age!==null)parts.push(age<=1?"just now":age+" s ago");
+    const acts=Array.isArray(b.activities)?b.activities.filter(a=>typeof a==="string"):[];
+    if(acts.length)parts.push(acts[0]);
+    return parts.join(" · ");
+  }
+  async function heartbeat(){
+    if(beatBusy||document.hidden||!dash||dash.hidden)return;
+    beatBusy=true;
+    try{
+      const r=await fetch("/api/mesh/heartbeat",{credentials:"same-origin",cache:"no-store"});
+      if(!r.ok){put("meshHeartbeat","Heartbeat unavailable");return}
+      const d=await r.json();put("meshHeartbeat",heartbeatText(d&&d.heartbeat));
+    }catch(_){put("meshHeartbeat","Heartbeat unavailable")}
+    finally{beatBusy=false}
+  }
+  function startHeartbeat(){if(beatTimer===null&&typeof setInterval==="function"){heartbeat();beatTimer=setInterval(heartbeat,3000)}}
+  function stopHeartbeat(){if(beatTimer!==null){clearInterval(beatTimer);beatTimer=null}}
   function open(){
     close();
     es=new EventSource("/api/mesh/events");
@@ -328,15 +357,16 @@ _PANEL = r"""
       if(!current())return;
       nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
       panel.hidden=false;showNetworkNavigation(true);started=true;backoff=3000;lastMeshAt=Date.now();render();open();
+      put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();
     }catch(_){if(current())schedule()}
     finally{if(bootRequest===request)bootRequest=null}
   }
   document.addEventListener("visibilitychange",()=>{
-    if(document.hidden){cancelMeshBoot();cancelMeshRetry();hiddenTimer=setTimeout(()=>{close()},30000)}
+    if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();hiddenTimer=setTimeout(()=>{close()},30000)}
     else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
   const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshBoot();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshBoot();cancelMeshRetry();stopHeartbeat();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """

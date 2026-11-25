@@ -842,6 +842,27 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         return card
 
 
+    def _build_mesh_heartbeat_card(self) -> Gtk.Box:
+        import mesh_heartbeat_ui
+
+        self._heartbeat_card = mesh_heartbeat_ui.HeartbeatCard()
+        self._refresh_mesh_heartbeat()
+        return self._heartbeat_card.card
+
+    def _refresh_mesh_heartbeat(self) -> None:
+        card = getattr(self, "_heartbeat_card", None)
+        if card is None:
+            return
+        service = getattr(self, "_mesh", None)
+        beat = None
+        if service is not None:
+            try:
+                beat = service.heartbeat_snapshot()
+            except Exception:
+                beat = None
+        card.update(beat)
+
+
     def _card(self, title: str, subtitle: str = "") -> tuple[Gtk.Box, Gtk.Box]:
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         card.add_css_class("card")

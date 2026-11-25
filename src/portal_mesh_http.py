@@ -1,5 +1,6 @@
-"""Browser routes for the live mesh view (ticket #402): ``/api/mesh`` snapshot and
-``/api/mesh/events`` Server-Sent Events. Same auth as the rest of the room: paired
+"""Browser routes for the live mesh view (ticket #402): ``/api/mesh`` snapshot,
+``/api/mesh/events`` Server-Sent Events and ``/api/mesh/heartbeat`` for the
+dedicated primary-node heartbeat. Same auth as the rest of the room: paired
 session cookie, Host check, no CSRF (read-only). Returns 503 until a ``MeshFeed``
 is attached to the portal server (the app does this when the mesh runs, #405).
 """
@@ -15,7 +16,8 @@ MAX_STREAM_SECONDS = 8 * 3600
 
 
 def route(handler, method: str, path: str) -> bool:
-    if method != "GET" or path not in {"/api/mesh", "/api/mesh/events"}:
+    if method != "GET" or path not in {"/api/mesh", "/api/mesh/events",
+                                       "/api/mesh/heartbeat"}:
         return False
     if not handler._authenticated():
         handler._error(401, "Enter the PIN shown in SmoothCast")
@@ -24,9 +26,16 @@ def route(handler, method: str, path: str) -> bool:
     if feed is None:
         handler._error(503, "The mesh is not running")
         return True
+    if path == "/api/mesh/heartbeat":
+        handler._send(200, {"ok": True, "heartbeat": _heartbeat(handler.server)})
+        return True
     if path == "/api/mesh":
         view = feed._publisher.view
-        handler._send(200, {"ok": True, "mesh": mesh_clients.guest_snapshot(view, feed._primary()),
+        body = mesh_clients.guest_snapshot(view, feed._primary())
+        beat = _heartbeat(handler.server)
+        if beat is not None:
+            body["heartbeat"] = beat
+        handler._send(200, {"ok": True, "mesh": body,
                             "event": f"{feed.generation}:{feed.last_event}"})
         return True
     key = handler.server._session_key(handler._cookie_token() or "")
@@ -37,6 +46,18 @@ def route(handler, method: str, path: str) -> bool:
         return True
     _serve(handler, stream)
     return True
+
+
+def _heartbeat(server) -> dict | None:
+    """Latest dedicated-heartbeat reading attached by the app, or None."""
+    provider = getattr(server, "mesh_heartbeat", None)
+    if provider is None:
+        return None
+    try:
+        beat = provider()
+    except Exception:
+        return None
+    return beat if isinstance(beat, dict) else None
 
 
 def _serve(handler, stream) -> None:

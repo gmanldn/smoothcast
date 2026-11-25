@@ -23,11 +23,25 @@ class UiTimerMixin:
         self._refresh_portal()
         GLib.timeout_add_seconds(15, self._refresh_portal)
         GLib.timeout_add_seconds(15, self._refresh_network_activity)
+        GLib.timeout_add_seconds(1, self._mesh_heartbeat_tick)
         self._sync_ui_timers()
         GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
         GLib.timeout_add(400, self._initial_scan)
         GLib.timeout_add(600, self._adopt_session)
         GLib.timeout_add_seconds(600, self._theme_tick)
+
+    def _mesh_heartbeat_tick(self) -> bool:
+        """Refresh the Info-tab heartbeat at ~1 Hz only while it is visible."""
+        if self._closing:
+            return False
+        try:
+            stack = getattr(self, "panel_stack", None)
+            if (self.get_mapped() and stack is not None
+                    and stack.get_visible_child_name() == "info"):
+                self._refresh_mesh_heartbeat()
+        except Exception:
+            pass
+        return True
 
     def _bind_surface_resize(self, *_args) -> None:
         """Listen to real GdkSurface allocations, not a periodic size poll."""

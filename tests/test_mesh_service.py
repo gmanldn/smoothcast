@@ -146,6 +146,21 @@ def test_a_lonely_node_hints_that_multicast_may_be_blocked(tmp_path, monkeypatch
     s.stop()
 
 
+def test_heartbeat_reports_the_first_node_up_and_stops_with_the_mesh(tmp_path):
+    s = make(tmp_path, "solo")
+    assert s.start()
+    try:
+        assert wait_for(lambda: (s.heartbeat_snapshot() or {}).get("state") == "up")
+        beat = s.heartbeat_snapshot()
+        assert beat["primary"]["self"] is True and beat["primary"]["name"] == "solo"
+        assert beat["seq"] >= 1 and beat["activities"]
+        assert "smoothcast-mesh-heartbeat" in mesh_threads()
+    finally:
+        s.stop()
+    assert s.heartbeat_snapshot() is None
+    assert wait_for(lambda: "smoothcast-mesh-heartbeat" not in mesh_threads())
+
+
 # -- lifecycle, leaks, containment ---------------------------------------------------------
 
 def test_repeated_start_stop_leaks_no_threads_or_sockets(tmp_path):

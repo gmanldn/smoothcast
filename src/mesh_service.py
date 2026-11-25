@@ -30,6 +30,7 @@ import mesh_acquisition_activity
 import mesh_acquisition_bridge
 import mesh_cache
 import mesh_clients
+import mesh_heartbeat
 import mesh_http
 import mesh_membership as mem
 import mesh_model as mm
@@ -218,6 +219,8 @@ class MeshService:
         self.cache = mesh_cache.MeshCache(cfg.cache_path or cfg.state_dir / "mesh_cache.sqlite")
         self.cache.open()
         self.feed = mesh_clients.MeshFeed(self.publisher, primary=lambda: self.roles.primary)
+        self.heartbeat = mesh_heartbeat.HeartbeatCoordinator(
+            sample=self._heartbeat_sample, on_error=self._on_error)
         self.started_at = time.monotonic()
         loop.start()
         loop.call_soon_threadsafe(self._start_components)
@@ -258,6 +261,7 @@ class MeshService:
         self.roles.start()
         self.observer.start()
         self.acquisition_activity.start()
+        self.heartbeat.start()
         assert self._loop is not None
         self._loop.call_later(CACHE_SAVE_S, self._save_cache)
 
@@ -272,6 +276,7 @@ class MeshService:
 
                 def shutdown() -> None:
                     try:
+                        self.heartbeat.stop()
                         self.acquisition_activity.close()
                         if self.acquisition_bridge is not None:
                             self.acquisition_bridge.close()
@@ -308,6 +313,12 @@ class MeshService:
         if self.cache is not None:
             try:
                 self.cache.close()
+            except Exception:
+                pass
+        beat = getattr(self, "heartbeat", None)
+        if beat is not None:
+            try:
+                beat.stop()
             except Exception:
                 pass
         if self._loop is not None:
@@ -433,6 +444,36 @@ class MeshService:
                    has_primary=self.roles.primary is not None)
         return out
 
+    def heartbeat_snapshot(self) -> dict[str, Any] | None:
+        """Latest dedicated-heartbeat reading, or None when no heartbeat runs."""
+        if self.state != "running":
+            return None
+        beat = getattr(self, "heartbeat", None)
+        if beat is None:
+            return None
+        try:
+            return beat.snapshot()
+        except Exception:
+            return None
+
+    def _heartbeat_sample(self) -> dict[str, Any]:
+        """Read-only observation fed to the heartbeat thread (never mutates the mesh)."""
+        view = self.publisher.view
+        primary_id = self.roles.primary
+        names = {record.node_id: record.name for record in view.nodes}
+        observations = view.targets()
+        nodes = len(view.nodes)
+        targets = len(observations)
+        ready = sum(1 for _node, target in observations if target.state == "ready")
+        clients = sum(len(record.clients) for record in view.nodes)
+        return {"mesh_state": self.state, "primary_id": primary_id,
+                "primary_name": names.get(primary_id) if primary_id else None,
+                "primary_self": primary_id == self.node_id,
+                "nodes": nodes, "targets": targets, "targets_ready": ready,
+                "clients": clients, "generation": view.generation,
+                "activities": _heartbeat_activities(primary_id, names, nodes, targets,
+                                                    ready, clients)}
+
     def diagnostics(self) -> dict[str, Any]:
         """Redacted health: counts and flags only, no names, addresses or ids."""
         out = self.status()
@@ -461,6 +502,27 @@ class MeshService:
 
 def _public(stats: Any) -> dict[str, int]:
     return {k: v for k, v in vars(stats).items() if isinstance(v, int)}
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}" + ("" if count == 1 else "s")
+
+
+def _heartbeat_activities(primary_id: str | None, names: dict[str, str], nodes: int,
+                          targets: int, ready: int, clients: int) -> list[str]:
+    """Short, human-readable lines describing what the mesh is doing right now."""
+    out: list[str] = []
+    if primary_id is None:
+        out.append("Waiting for the first node to come up")
+    else:
+        who = names.get(primary_id)
+        out.append(f"{who} coordinates the mesh" if who else "A node coordinates the mesh")
+    out.append(_plural(nodes, "node") + " online")
+    if targets:
+        out.append(f"{ready} of {_plural(targets, 'receiver')} ready")
+    if clients:
+        out.append(_plural(clients, "connected client"))
+    return out
 
 
 def _valid_version(value: str) -> bool:

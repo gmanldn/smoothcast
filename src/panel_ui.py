@@ -151,6 +151,7 @@ class PanelMixin:
         settings = [self._build_settings_card()]
         console = self._build_console_card()
         details = self._build_details_card()
+        heartbeat = self._build_mesh_heartbeat_card()
         queue = self._build_queue()
         levels = self._build_live_levels()
         self.right_column.append(self._build_side_panel({
@@ -158,7 +159,7 @@ class PanelMixin:
             "devices": devices,
             "room": room,
             "settings": settings,
-            "info": [details, levels, console],
+            "info": [heartbeat, details, levels, console],
         }))
         self.page.append(self.left_column)
         self.page.append(self.right_column)
