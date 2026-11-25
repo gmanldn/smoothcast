@@ -1,7 +1,6 @@
 """Canonical commit identity: committer date plus deterministic weapon alias."""
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -22,22 +21,29 @@ COMMIT_DATE = "2026-11-09T23:30:00-05:00"
 
 
 class CodenameTests(unittest.TestCase):
-    def test_weapon_list_is_frozen_identity_data(self):
+    def test_weapon_pool_is_unique(self):
         self.assertEqual(len(commit_identity.WEAPON_NAMES), 64)
         self.assertEqual(len(set(commit_identity.WEAPON_NAMES)), 64)
-        self.assertEqual(
-            hashlib.sha256("\n".join(commit_identity.WEAPON_NAMES).encode()).hexdigest(),
-            "737bc8bc7f8f407663c71cb3207dd4309d0e56f130ca773e0b11d586dd564416",
-        )
 
     def test_pinned_codenames_detect_algorithm_drift(self):
-        self.assertEqual(commit_identity.codename("0" * 40), "Halberd")
-        self.assertEqual(commit_identity.codename("a" * 40), "Mace")
-        self.assertEqual(commit_identity.codename("f" * 40), "Dirk")
+        self.assertEqual(commit_identity.codename("0" * 40), "Halberd-Flail")
+        self.assertEqual(commit_identity.codename("a" * 40), "Mace-Tomahawk")
+        self.assertEqual(commit_identity.codename("f" * 40), "Dirk-Talwar")
         self.assertEqual(
             commit_identity.codename("0123456789abcdef0123456789abcdef01234567"),
-            "Kukri",
+            "Kukri-Stiletto",
         )
+
+    def test_codename_is_two_distinct_weapons(self):
+        pool = commit_identity.WEAPON_NAMES
+        for seed in ("0" * 40, "1" * 40, "a" * 40, "f" * 40,
+                     "0123456789abcdef0123456789abcdef01234567"):
+            with self.subTest(seed=seed):
+                first, separator, second = commit_identity.codename(seed).partition("-")
+                self.assertEqual(separator, "-")
+                self.assertIn(first, pool)
+                self.assertIn(second, pool)
+                self.assertNotEqual(first, second)
 
     def test_codename_is_case_insensitive_and_stable(self):
         sha = "abcdef0123456789" + "1" * 24

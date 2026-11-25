@@ -33,12 +33,14 @@ vX.Y.Z - YYYY-MM-DD - Codename
 - `vX.Y.Z` remains the SemVer in `src/version.py`; the badge never replaces it.
 - `YYYY-MM-DD` is the commit's **committer date** in the timezone recorded in
   the commit object, never the server's or viewer's local date.
-- `Codename` comes from the frozen 64-entry weapon-of-war tuple in
-  `src/commit_identity.py`: `sha256(full-lowercase-SHA)[0] % 64`.
+- `Codename` is a disposable two-weapon mnemonic from
+  `src/commit_identity.py`: two names from the weapon-of-war tuple chosen by
+  bytes of `sha256(full-lowercase-SHA)` (`64 * 64` combinations), joined by `-`.
 - Both parts are derived from the exact commit, so they stay bound to it.
   Rebase, amend or cherry-pick creates a new commit and a new identity.
-- The tuple and index rule are frozen identity data: reordering, removing or
-  adding a name would relabel already-published commits.
+- The codename is only a memorable high-water cue for spotting a new commit; the
+  committer date is the canonical marker, so the alias is disposable and may be
+  redefined between releases.
 - Reading is offline and bounded: loose and non-delta packed commit objects are
   parsed directly, with no Git subprocess, network, GUI or receiver work.
   Missing, malformed, oversized, delta-packed or unreadable provenance fails
