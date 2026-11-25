@@ -4,6 +4,24 @@ Owner goal: a first-time browser guest understands what is happening when
 sending a film or track, where the bytes go, and when it reaches Up Next or
 requests room playback. Source: `src/portal.py`; #570 and #324.
 
+## Upload & Cast Now
+
+The joined home screen presents a primary **Upload & Cast Now** action. The
+guest chooses one video, then the connected room authority (pnode) checks its
+selected receiver from GTK-owned status without a network call on the GTK
+thread. No bytes are sent before the guest confirms the named receiver.
+The confirmed target is checked again before reserving upload storage and is
+pinned server-side to the upload ID for early and final dispatch, including
+resumes. A changed target is refused rather than silently retargeting the
+guest's upload. Queue-only and audio uploads retain their existing behaviour.
+
+The existing 16 MiB progressive heuristic remains the initial buffering
+mechanism for suitable video containers. It is not a proven continuous
+producer/consumer pipeline; full mesh routing, sustained-underflow recovery,
+and physical playback qualification remain #571/#572. The pnode here is the
+connected room authority, not an assertion that arbitrary peer ingress is
+already routed to the elected mesh primary.
+
 ## Current staged journey (supported on develop)
 
 | UI stage | Actual authority | Honest outcome |

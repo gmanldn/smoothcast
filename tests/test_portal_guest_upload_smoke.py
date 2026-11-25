@@ -47,6 +47,8 @@ def guest_room(tmp_path, monkeypatch):
     original_dispatch = rig.server.dispatch
 
     def dispatch(action, payload):
+        if action == "upload_target":
+            return {"receiver": "Test TV", "target_id": "a" * 64, "active": False}
         if action in {"queue_add", "cast_upload"}:
             data = Path(payload["path"]).read_bytes()
             deliveries.append((action, payload["name"], hashlib.sha256(data).hexdigest()))
@@ -58,6 +60,27 @@ def guest_room(tmp_path, monkeypatch):
     finally:
         rig.close()
         uploads.close()
+
+
+def test_guest_cast_target_preflight_and_upload_fence(guest_room):
+    rig, uploads, _deliveries = guest_room
+    origin = f"http://{rig.host}"
+    status, raw, response = rig.request("POST", "/api/login", {"name": "Cast guest", "pin": ""}, origin=origin)
+    assert status == 200
+    cookie = response["Set-Cookie"].split(";", 1)[0]
+    auth = {"cookie": cookie, "csrf": decode(raw)["csrf"], "origin": origin}
+    status, raw, _ = rig.request("POST", "/api/uploads/target", {}, **auth)
+    assert status == 200 and decode(raw)["receiver"] == "Test TV"
+    target = decode(raw)["target_id"]
+    status, _, _ = rig.request("POST", "/api/uploads",
+                              {"name": "movie.mp4", "size": 32, "queue": False,
+                               "cast_target": "b" * 64}, **auth)
+    assert status == 409
+    status, raw, _ = rig.request("POST", "/api/uploads",
+                                {"name": "movie.mp4", "size": 32, "queue": False,
+                                 "cast_target": target}, **auth)
+    assert status == 201
+    assert uploads.cast_target(cookie.split("=", 1)[1], decode(raw)["id"]) == target
 
 
 def test_guest_upload_http_smoke(guest_room, monkeypatch):
@@ -181,9 +204,11 @@ def test_guest_upload_real_browser_smoke(guest_room, monkeypatch, tmp_path):
             assert deliveries == [("queue_add", audio.name,
                                    hashlib.sha256(audio.read_bytes()).hexdigest())]
 
-            page.locator("#videoFile").set_input_files(str(video))
-            page.locator("#uploadQueue").uncheck()
-            page.locator("#uploadButton").click()
+            expect(page.locator("#uploadCastNow")).to_be_visible()
+            page.on("dialog", lambda dialog: dialog.accept())
+            with page.expect_file_chooser() as chooser:
+                page.locator("#uploadCastNow").click()
+            chooser.value.set_files(str(video))
             expect(page.locator("#transferDelivery")).to_have_text(
                 "Playback requested — receiver not confirmed")
             expect(page.locator("#videoFile")).to_have_value("")

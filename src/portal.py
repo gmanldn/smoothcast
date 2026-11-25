@@ -1132,6 +1132,17 @@ class _Handler(BaseHTTPRequestHandler):
                 return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
+        if path == "/api/uploads/target":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            try:
+                self._body()
+                target = self.server.dispatch("upload_target", {
+                    "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
+                })
+                return self._send(200, {"ok": True, **target})
+            except PortalRequestError as exc:
+                return self._exception_error(exc)
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
@@ -1140,9 +1151,19 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 token = self._cookie_token() or ""
+                queue_only = bool(body.get("queue", True))
+                cast_target = body.get("cast_target")
+                if cast_target is not None and not queue_only:
+                    if not isinstance(cast_target, str) or not re.fullmatch(r"[0-9a-f]{64}", cast_target):
+                        raise PortalRequestError(400, "Invalid casting target confirmation")
+                    target = self.server.dispatch("upload_target", {
+                        "_portal_auth_key": self.server._session_key(token),
+                    })
+                    if target.get("target_id") != cast_target:
+                        raise PortalRequestError(409, "Casting target changed. Confirm the current receiver again.")
                 created = self.server.uploads.create(
                     token, body.get("name"), body.get("size"),
-                    self.client_address[0], queue_only=bool(body.get("queue", True)))
+                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None)
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
@@ -1182,6 +1203,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
                             "path": str(media_path), "name": name,
                             "upload_id": upload_id, "early": False,
+                            "cast_target": self.server.uploads.cast_target(token, upload_id),
                             "_portal_source": "upload",
                             "client": self.client_address[0],
                             "_portal_auth_key": key,
@@ -1436,6 +1458,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.dispatch("cast_upload", {
                 "path": result["cast_path"], "name": result["name"],
                 "upload_id": upload_id, "early": True,
+                "cast_target": self.server.uploads.cast_target(self._cookie_token() or "", upload_id),
                 "client": result.get("client", ""),
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
@@ -1967,6 +1990,12 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<section id="quickCastCard" aria-labelledby="quickCastHeading" style="grid-column:1/-1">
+<div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
+<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker, asks for your confirmation, then starts playback as soon as enough compatible media has arrived.</p>
+<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard">Add to Up Next instead</a></div>
+<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
+</section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
@@ -3262,7 +3291,16 @@ function updateUploadControls(){
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
 }
+let batchCastTarget=null,quickCastIntent=false;
+$("uploadCastNow").addEventListener("click",()=>{
+  if(uploading||pendingUpload||batchFiles){location.hash="#uploadCard";showError("uploadStatus","Finish or cancel your existing transfer first.");return}
+  quickCastIntent=true;
+  location.hash="#uploadCard";
+  $("videoFile").click();
+});
+$("videoFile").addEventListener("cancel",()=>{quickCastIntent=false;});
 function resetUploadBatch(){
+  batchCastTarget=null;quickCastIntent=false;
   resetTransferMonitor();
   pendingUpload=null;
   batchFiles=null;
@@ -3315,11 +3353,25 @@ $("uploadButton").addEventListener("click",async()=>{
       }
       if(cancelUpload){await discardUpload();return}
       if(!session||csrf!==session)return;
+      const queueIntent=pendingUpload?.queueOnly??$("uploadQueue").checked;
+      if(!pendingUpload&&!queueIntent){
+        showError("uploadStatus","Checking the pnode's selected receiver…");
+        const target=await uploadRequest("POST","/api/uploads/target",JSON.stringify({}),json);
+        if(!session||csrf!==session||cancelUpload)return;
+        if(typeof target.receiver!=="string"||!target.receiver||!(/^[0-9a-f]{64}$/.test(target.target_id||"")))
+          throw Error("No reachable casting target. Choose Add to Up Next instead.");
+        if(!window.confirm("Stream this upload via SmoothCast to "+target.receiver+"?"+(target.active?" This replaces current playback.":""))){
+          $("uploadQueue").checked=true;
+          showError("uploadStatus","Not sent. Choose Upload and add to keep it in Up Next.");
+          return;
+        }
+        batchCastTarget=target.target_id;
+      }
       batchFiles=selected;
       batchIndex=0;
       batchAdded=0;
       batchTotal=selected.length;
-      batchQueueOnly=pendingUpload?.queueOnly??$("uploadQueue").checked;
+      batchQueueOnly=queueIntent;
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
@@ -3336,7 +3388,7 @@ $("uploadButton").addEventListener("click",async()=>{
       }else{
         transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length,queueOnly);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
-        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
+        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget}),json);
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
@@ -3464,7 +3516,19 @@ uploadPanel.addEventListener("drop",event=>{
   catch(_){showError("uploadStatus","This browser cannot accept dropped files. Use Choose files instead.");}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
-$("videoFile").addEventListener("change",()=>{updateUploadControls();const file=$("videoFile").files[0];if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));});
+$("videoFile").addEventListener("change",()=>{
+  const file=$("videoFile").files[0],quick=quickCastIntent;quickCastIntent=false;
+  if(quick&&file){
+    if($("videoFile").files.length!==1||/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name)){
+      $("uploadQueue").checked=true;updateUploadControls();
+      showError("uploadStatus","Choose one video for Cast Now. Audio and batches can be added to Up Next.");return;
+    }
+    $("uploadQueue").checked=false;
+  }
+  updateUploadControls();
+  if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));
+  if(quick&&file&&!$("uploadButton").disabled)$("uploadButton").click();
+});
 $("cancelUpload").addEventListener("click",async()=>{
   cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}

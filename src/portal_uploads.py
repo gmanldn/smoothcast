@@ -191,6 +191,7 @@ class _Upload:
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
+    cast_target: str | None = None
     media_validated: bool = False
     # A successful rename and directory fsync are separate steps. If fsync
     # fails, retain the final path and retry durability without re-uploading.
@@ -250,7 +251,8 @@ class UploadManager:
                 upload.lock.release()
 
     def create(self, owner: str, name_value: object, size_value: object,
-               client: str = "", *, queue_only: bool = False) -> dict:
+               client: str = "", *, queue_only: bool = False,
+               cast_target: str | None = None) -> dict:
         name, suffix, audio_only = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
@@ -285,7 +287,7 @@ class UploadManager:
             upload = _Upload(upload_id, owner_key, name, suffix, size_value, partial,
                              client=str(client or "")[:64], created_at=now, last_at=now,
                              queue_only=bool(queue_only or audio_only),
-                             audio_only=audio_only)
+                             audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE}
@@ -303,6 +305,10 @@ class UploadManager:
     def is_queue_only(self, owner: str, upload_id: str) -> bool:
         """Whether this upload was created with early casting disabled."""
         return self._get(owner, upload_id).queue_only
+
+    def cast_target(self, owner: str, upload_id: str) -> str | None:
+        """Immutable server-side destination consent, including resumed uploads."""
+        return self._get(owner, upload_id).cast_target
 
     def is_audio_only(self, owner: str, upload_id: str) -> bool:
         """Whether a validated source is audio-only and must never early-cast."""

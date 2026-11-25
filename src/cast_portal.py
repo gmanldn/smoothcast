@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import guest_messages
+import hashlib
 import pathlib
 import threading
 import time
@@ -257,6 +258,18 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if isinstance(state, dict):
             snapshot.publish(state)
 
+    def _portal_upload_target(self) -> dict:
+        """Read GTK-owned selection/status only; never perform network I/O here."""
+        receiver = self._device()
+        host = self._device_host(receiver)
+        if not receiver or not host or not self.device_info or self.device_state == "OFFLINE":
+            raise portal.PortalRequestError(409, "No reachable room receiver. Ask the host to select a TV or speaker.")
+        if self.busy:
+            raise portal.PortalRequestError(409, "SmoothCast is finishing another command. Try again shortly.")
+        identity = "\\0".join((receiver, host, str(self.cfg.get("device_uuid") or "")))
+        return {"receiver": receiver, "target_id": hashlib.sha256(identity.encode()).hexdigest(),
+                "active": bool(self.session is not None or self.external)}
+
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
@@ -265,6 +278,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
                 raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
+        if operation == "upload_target":
+            return self._portal_upload_target()
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:
@@ -333,6 +348,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 accepted_uploads = self._portal_accepted_uploads = set()
             if upload_id in accepted_uploads:
                 return "Upload received; casting started."
+            target = payload.get("cast_target")
+            if target is not None and self._portal_upload_target()["target_id"] != target:
+                raise portal.PortalRequestError(409, "Casting target changed. The upload has not been sent to another receiver.")
             path = self._portal_upload_path(payload)
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
