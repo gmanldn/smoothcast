@@ -9,7 +9,7 @@
 > updater until all of #579's acceptance gates are green.
 
 
-Status: **S0 safety baseline plus P0 channel selection on `develop`**; no live source mutations. Transactional staged install, native restart and health acknowledgement are **not yet implemented**. Owner P0: #579; related #138 (update UI), #540 (stale GUI), #350 (source installations), #533 (Windows MSI), #426 (playback handoff). Reviewed 23 November 2026.
+Status: **S0 safety baseline plus P0 channel selection on `develop`**; no live source mutations. Transactional staged install and the launch-time activation/acknowledgement path are on `develop`; native restart, MSI and end-to-end evidence are **not yet implemented**. Owner P0: #579; related #138 (update UI), #540 (stale GUI), #350 (source installations), #533 (Windows MSI), #426 (playback handoff). Reviewed 23 November 2026.
 
 ## Non-negotiable contracts
 
@@ -66,8 +66,15 @@ idempotently after a crash at any step. The new primary must `acknowledge()` its
 exact commit before the lease expires; a wrong commit, late acknowledgement or
 explicit `rollback()` restores the previous reference. `staged_notice()` gives
 the "staged, not yet running" text. It signals no process and starts nothing.
-It is **not wired** into the launcher, and no zero-downtime claim is made until
-a real stream survives an update end to end.
+`setup/managed_startup.py` is the **launch-time half** (#581): the launcher
+`settle()`s an interrupted transaction, runs the hash-verified, probe-healthy
+`releases/<sha>` instead of the flat tree, and `acknowledge()`s the switch once
+the new primary publishes the exact commit it loaded (through
+`SMOOTHCAST_ACTIVATION_READY`; a generation records that commit in
+`src/.smoothcast-build`). A broken or tampered activation always falls back to a
+launch that keeps working. No zero-downtime claim is made until a real stream
+survives an update end to end, and native launcher/MSI evidence remains
+#581/#533.
 
 **This does NOT yet fetch or authenticate manifests, construct a complete
 independent native GTK/Python environment, atomically activate a generation,

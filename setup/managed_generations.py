@@ -20,6 +20,7 @@ MAX_FILES = 100_000
 MAX_FILE_BYTES = 1 << 30
 MAX_TOTAL_BYTES = 4 << 30
 BUFFER = 1 << 20
+BUILD_MARKER = "src/.smoothcast-build"
 _COMMIT = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -169,6 +170,18 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
                       temporary.joinpath(*name.split("/")), size, digest)
         payload = {name: {"size": size, "sha256": digest}
                    for name, size, digest in planned}
+        # Record the generation's own identity so a launched copy can prove the
+        # exact commit it loaded (src/version.py reads this same marker).
+        if BUILD_MARKER in payload:
+            raise StageError("Candidate supplies the reserved build marker")
+        marker = (commit + "\n").encode("ascii")
+        marker_path = temporary / BUILD_MARKER
+        marker_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        marker_path.write_bytes(marker)
+        if os.name != "nt":
+            marker_path.chmod(0o600)
+        payload[BUILD_MARKER] = {"size": len(marker),
+                                 "sha256": hashlib.sha256(marker).hexdigest()}
         manifest_file = temporary / "stage-manifest.json"
         if manifest_file.exists():
             raise StageError("Reserved manifest path supplied by candidate")
