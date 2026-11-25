@@ -2103,7 +2103,23 @@ $("roomLinkCopy").addEventListener("click",async()=>{
   }
 });
 
-async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){
+  if(stalePage)throw Error("Reload required");
+  // A missing action response must not indefinitely block every room control.
+  const controller=path==="/api/action"?new AbortController():null;
+  const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
+  try{
+    const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
+    const d=await r.json();
+    if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}
+    if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}
+    if(!r.ok)throw Error(d.error||"Request failed");
+    return d;
+  }catch(error){
+    if(controller?.signal.aborted)throw Error("Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    throw error;
+  }finally{if(deadline!==null)clearTimeout(deadline)}
+}
 const keepScreenOn=$("keepScreenOn");
 let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
 try{
@@ -2411,8 +2427,8 @@ function renderPlaybackToggle(state){
 }
 function showJoinedRoom(){
   const entering=$("dashboard").hidden;
-  $("dashboard").hidden=false;
-  $("uploadCard").hidden=false;
+  if(entering)$("dashboard").hidden=false;
+  if($("uploadCard").hidden)$("uploadCard").hidden=false;
   if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
@@ -2597,14 +2613,26 @@ function renderNetworkActivity(entries){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;
+    renderPlaybackToggle(s.state);
+    document.querySelectorAll("[data-action]").forEach(b=>{
+      const action=b.dataset.action;
+      const allowed=action==="stop"?s.can_stop:action==="play_pause"?s.can_play_pause:undefined;
+      b.disabled=typeof allowed==="boolean"?!allowed:!!s.busy||!s.active;
+    });
+    $("state").textContent=!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable";
+    $("title").textContent=s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing";
+    $("receiver").textContent="Playing on: "+(s.receiver||"—");
+    // Optional lock-screen integration must not prevent core room controls.
+    try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
+if(statusFailures)showError("errorDash","");
+statusFailures=0;showJoinedRoom();
   return true;
 }
 async function refresh(){
@@ -2749,8 +2777,12 @@ window.addEventListener("keydown",event=>{
 async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
   if(busy){
+    // Stop supersedes waiting playback changes, not unrelated queue edits.
+    if(action==="stop")for(const [key,pending] of pendingControls){
+      if(["queue_play","play_pause","seek","next","previous"].includes(pending.action))pendingControls.delete(key);
+    }
     const key=action+":"+(extra.id||"");
-    if(!pendingControls.has(key)&&pendingControls.size>=16){
+    if(action!=="stop"&&!pendingControls.has(key)&&pendingControls.size>=16){
       showError("errorDash","Too many controls are waiting; try again shortly");
       return;
     }
@@ -2764,6 +2796,7 @@ async function act(action,value,extra={}){
     return;
   }
   busy=true;
+  showError("errorDash",action==="stop"?"Requesting Stop…":action==="queue_play"?"Requesting playback…":"Sending command…");
   statusRequest?.abort("superseded");
   try{
     const body={action,...extra};
@@ -2779,7 +2812,7 @@ async function act(action,value,extra={}){
   finally{
     busy=false;
     if(pendingControls.size&&csrf&&!stalePage){
-      const first=pendingControls.keys().next().value;
+      const first=pendingControls.has("stop:")?"stop:":pendingControls.keys().next().value;
       const next=pendingControls.get(first);
       pendingControls.delete(first);
       if(next)void act(next.action,next.value,next.extra);
