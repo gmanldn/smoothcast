@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -167,18 +168,33 @@ def verify_release(root: Path, commit: str) -> None:
         raise ActivationError("Cannot safely read staged generation") from exc
 
 
-def _lease_live(root: Path, now: float) -> bool:
-    """True while another owner's lease is unexpired. Liveness is by expiry, never PID."""
+def _finite_time(value: object) -> bool:
+    try:
+        return type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _validated_lease(root: Path) -> dict | None:
     path = Path(root) / LEASE
     lease = _read(path)
     if lease is None:
-        return False
+        return None
     if os.name != "nt" and (path.lstat().st_uid != os.getuid() or lease.get("uid") != os.getuid()):
         raise ActivationError("Activation lease belongs to another user")
-    expires = lease.get("expires")
-    if type(expires) not in (int, float):
+    txn = lease.get("txn")
+    if (not isinstance(txn, str) or not txn.isalnum() or len(txn) > 64
+            or not _finite_time(lease.get("expires"))):
         raise ActivationError("Activation lease is corrupt")
-    return expires > now
+    return lease
+
+
+def _lease_live(root: Path, now: float) -> bool:
+    """True while another owner's lease is unexpired. Liveness is by expiry, never PID."""
+    if not _finite_time(now):
+        raise ActivationError("Invalid activation clock")
+    lease = _validated_lease(root)
+    return lease is not None and lease["expires"] > now
 
 
 def _take_lease(root: Path, txn: str, now: float, ttl: float, hook) -> None:
@@ -245,6 +261,9 @@ def activate(root: Path, commit: str, *, probe: Callable[[Path], bool],
     mg._directory(root)
     commit = str(_commit(commit))
     now = clock()
+    if (not _finite_time(now) or not _finite_time(ack_seconds)
+            or ack_seconds <= 0 or not _finite_time(now + ack_seconds)):
+        raise ActivationError("Invalid activation lease duration or clock")
     txn = secrets.token_hex(8)
     _take_lease(root, txn, now, ack_seconds, hook)  # excludes every other activator
     try:
@@ -296,7 +315,13 @@ def acknowledge(root: Path, txn: str, commit: str, *,
     journal = _load_journal(root)
     if journal is None or journal.get("txn") != txn or journal.get("state") != "switched":
         raise ActivationError("No matching activation awaits acknowledgement")
-    if not _lease_live(root, clock()):
+    lease = _validated_lease(root)
+    if lease is not None and lease["txn"] != txn:
+        raise ActivationError("Acknowledgement does not own the activation lease")
+    now = clock()
+    if not _finite_time(now):
+        raise ActivationError("Invalid activation clock")
+    if lease is None or lease["expires"] <= now:
         _rollback(root, journal, hook)
         raise ActivationError("Acknowledgement arrived after the lease expired; rolled back")
     if commit != journal["to"] or read_active(root)["current"] != journal["to"]:
@@ -321,7 +346,7 @@ def recover(root: Path, *, clock: Callable[[], float] = time.time,
     journal = _load_journal(root)
     terminal = journal is not None and journal.get("state") in TERMINAL
     if terminal:
-        lease = _read(root / LEASE)
+        lease = _validated_lease(root)
         if lease and lease.get("txn") == journal.get("txn"):
             (root / LEASE).unlink(missing_ok=True)  # crashed between journal and unlink
     if _lease_live(root, clock()):
