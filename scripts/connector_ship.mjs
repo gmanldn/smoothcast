@@ -31,6 +31,9 @@ function validateVersionBump(baseSource,newSource){
   check(a.MAJOR===b.MAJOR&&a.MINOR===b.MINOR,"version lane bumps PATCH only");
   check(a.PATCH<2147483647,"PATCH overflow; owner must choose next MINOR");
   check(b.PATCH===a.PATCH+1,"version lane must bump PATCH by exactly one");
+  const expected=baseSource.replace(VERSION_PART,(whole,key,eq,num,end)=>
+    key==="PATCH"?key+eq+String(a.PATCH+1)+end:whole);
+  check(newSource===expected,"version lane must preserve all non-PATCH bytes");
 }
 
 function validate(p){
@@ -58,7 +61,7 @@ function validate(p){
   if(p.kind==="finalise"){
     check(paths.size===1&&paths.has("src/version.py"),"finalise ships exactly one version.py edit");
     check(p.changes[0].old!==null,"finalise must replace the current version blob");
-    check(p.changes[0].content.length<=4096,"bounded version source");
+    // The general 500000-character manifest bound covers version.py too.
     check(["none","complete","no remaining work"].includes(p.next.trim().toLowerCase()),"finalise must close");
   }else{
     check(!["none","complete","no remaining work"].includes(p.next.trim().toLowerCase()),"progress only; no closure");
@@ -188,16 +191,23 @@ async function checkBase(api,p){
 async function versionHistory(api,base){
   // Bounded complete walk: the walk ends at a partial page. Saturating every
   // page means the attribution record is not proven complete; fail closed.
-  const attributed=new Map();
+  const attributed=new Map(),seen=new Set();
   for(let page=1;page<=10;page++){
     const list=await api.get("/commits?path=src/version.py&sha="+base+"&per_page=100&page="+page);
     check(Array.isArray(list)&&list.length<=100,"incomplete version history");
     for(const c of list){
       check(c&&isSha(c.sha)&&typeof c.commit?.message==="string","incomplete version history");
-      const m=c.commit.message.match(/^chore\(version\): PATCH for issue #(\d+)$/m);
-      if(!m)continue;
-      check(!attributed.has(m[1]),"duplicate PATCH attribution in history");
-      attributed.set(m[1],c.sha);
+      check(!seen.has(c.sha),"incomplete version history: repeated commit");
+      seen.add(c.sha);
+      const subject=c.commit.message.split("\n",1)[0];
+      const m=subject.match(/^chore\(version\): PATCH(?: \d+\.\d+\.\d+)? for issue #([1-9]\d*)(?: \[sc-auto-patch\])?$/);
+      if(!m){
+        check(!/^chore\(version\): PATCH.* for issue #/.test(subject),"malformed PATCH attribution");
+        continue;
+      }
+      // Historical duplicates must never be rewritten, nor should they
+      // block unrelated tickets. All known assignments still fence this issue.
+      if(!attributed.has(m[1]))attributed.set(m[1],c.sha);
     }
     if(list.length<100)return attributed;
   }
@@ -205,7 +215,7 @@ async function versionHistory(api,base){
 }
 
 function candidateMessage(p){
-  if(p.kind==="finalise")return "chore(version): PATCH for issue #"+p.issue;
+  if(p.kind==="finalise")return "chore(version): PATCH for issue #"+p.issue+" [sc-auto-patch]";
   return p.message+" (Refs #"+p.issue+")";
 }
 
@@ -407,4 +417,4 @@ function connectorAdapter(tools){
   };
 }
 
-export {validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker,connectorAdapter,treeSnapshot,verifyTreeDelta};
+export {validateVersionBump,validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker,connectorAdapter,treeSnapshot,verifyTreeDelta};

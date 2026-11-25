@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import {validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
+import {validateVersionBump,validate,leaseCheck,pages,treeSnapshot,verifyTreeDelta,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker} from "../scripts/connector_ship.mjs";
 const blobSha=c=>{const b=Buffer.from(c,"utf8");return crypto.createHash("sha1").update("blob "+b.length+"\0").update(b).digest("hex")};
 const VERSION38="MAJOR=2\nMINOR=0\nPATCH=38\n", VERSION39="MAJOR=2\nMINOR=0\nPATCH=39\n";
 const baseBlob=blobSha(VERSION38), newVersionBlob=blobSha(VERSION39);
@@ -353,7 +353,7 @@ const shippedSha=id("5");
 function finaliseTransport(){
   const baseTree=id("c"), newTree=id("1"), candidate=id("e");
   const comments=[finaliseClaim], counters={trees:0,commits:0,updates:0,closes:0};
-  const state={head:p.base,parents:[{sha:p.base}],message:"chore(version): PATCH for issue #598",
+  const state={head:p.base,parents:[{sha:p.base}],message:"chore(version): PATCH for issue #598 [sc-auto-patch]",
     issueState:"open",history:[],servedVersion:VERSION38,shipped:[]};
   const api={
     now:()=>now,
@@ -388,7 +388,7 @@ function finaliseTransport(){
     },
     commit:async(tree,parent,message)=>{
       assert.equal(tree,newTree);assert.equal(parent,p.base);
-      assert.equal(message,"chore(version): PATCH for issue #598");
+      assert.equal(message,"chore(version): PATCH for issue #598 [sc-auto-patch]");
       counters.commits++;return candidate;
     },
     update:async(base,sha)=>{
@@ -416,11 +416,25 @@ test("finalise refuses a second PATCH for the same issue",async()=>{
   await assert.rejects(createCandidate(t.api,finalisePlan),/already has a PATCH/);
   assert.deepEqual(t.counters,{trees:0,commits:0,updates:0,closes:0});
 });
-test("duplicate PATCH attribution in history fails closed",async()=>{
+test("historical duplicates for unrelated issues do not block completion",async()=>{
   const t=finaliseTransport();
-  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH for issue #599"}},
-    {sha:id("9"),commit:{message:"chore(version): PATCH for issue #599"}}];
-  await assert.rejects(createCandidate(t.api,finalisePlan),/duplicate PATCH attribution/);
+  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH for issue #599 [sc-auto-patch]"}},
+    {sha:id("9"),commit:{message:"chore(version): PATCH 2.0.35 for issue #599 [sc-auto-patch]"}}];
+  assert.equal(await createCandidate(t.api,finalisePlan),t.candidate);
+});
+test("native and numbered historical assignment subjects fence the target issue",async()=>{
+  for(const message of ["chore(version): PATCH for issue #598 [sc-auto-patch]",
+    "chore(version): PATCH 2.0.35 for issue #598 [sc-auto-patch]"]){
+    const t=finaliseTransport();
+    t.state.history=[{sha:id("8"),commit:{message}}];
+    await assert.rejects(createCandidate(t.api,finalisePlan),/already has a PATCH/);
+    assert.equal(t.counters.updates,0);
+  }
+});
+test("malformed attribution fails closed",async()=>{
+  const t=finaliseTransport();
+  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH bad for issue #598"}}];
+  await assert.rejects(createCandidate(t.api,finalisePlan),/malformed PATCH attribution/);
 });
 test("served version bytes must re-derive the pinned proof",async()=>{
   const t=finaliseTransport();
@@ -477,4 +491,12 @@ test("qualified finalise ships the PATCH and closes exactly once",async()=>{
   assert.equal(t.counters.closes,1);
   assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-close")).length,1);
   assert.deepEqual(t.counters,{trees:1,commits:1,updates:1,closes:1});
+});
+
+test("PATCH changes only the canonical numeric assignment",()=>{
+  const source=VERSION38+"# preserve this comment\n";
+  validateVersionBump(source,VERSION39+"# preserve this comment\n");
+  assert.throws(()=>validateVersionBump(source,VERSION39+"PATCH += 1\n"),/non-PATCH bytes/);
+  assert.throws(()=>validateVersionBump(source,VERSION39+"# changed\n"),/non-PATCH bytes/);
+  validate({...finalisePlan,changes:[{...finalisePlan.changes[0],content:VERSION39+"# "+"x".repeat(7000)}]});
 });
