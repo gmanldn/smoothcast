@@ -14,6 +14,7 @@ from unittest import mock
 import process_identity as identity
 import startup_cleanup
 import streamer
+import streamer_generation as generation
 
 
 class FakeProcess:
@@ -85,6 +86,27 @@ def test_windows_and_posix_role_classification_is_exact_and_not_filename_only():
             argv, server_script=str(streamer.SERVER_SCRIPT),
             progress_file=str(streamer.PROGRESS_FILE),
         ) is None
+
+
+def test_frozen_hls_worker_is_still_recognised_as_our_server():
+    frozen = ("python3",
+              f"/home/u/.cache/cast-control/{generation.GENERATION_PREFIX}abc123/server.py",
+              "--bind", "192.168.1.10")
+    assert identity.role_of(
+        frozen, server_script=str(streamer.SERVER_SCRIPT),
+        progress_file=str(streamer.PROGRESS_FILE)) == "server"
+    assert identity.role_of(
+        ("python3", "/tmp/lookalike/server.py"),
+        server_script=str(streamer.SERVER_SCRIPT),
+        progress_file=str(streamer.PROGRESS_FILE)) is None
+
+
+def test_pid_is_ours_accepts_the_frozen_worker(monkeypatch):
+    frozen = server()
+    frozen.argv = ("python3",
+                   f"/home/u/.cache/cast-control/{generation.GENERATION_PREFIX}abc/server.py")
+    monkeypatch.setattr(identity, "psutil", fake_psutil(frozen))
+    assert streamer._pid_is_ours(frozen.pid, "server")
 
 
 def test_snapshot_requires_same_user_command_and_birth_timestamp(monkeypatch):

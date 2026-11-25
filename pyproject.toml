@@ -250,6 +250,7 @@ py-modules = [
     "state_labels",
     "stream_watchdog",
     "streamer",
+    "streamer_generation",
     "subtitle_delay",
     "subtitle_encoding",
     "subtitle_restart",

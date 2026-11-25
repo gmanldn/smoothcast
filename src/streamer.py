@@ -44,6 +44,7 @@ import audio_delay
 import subtitle_delay
 import subtitle_encoding
 import subtitle_style
+import streamer_generation
 import picture_adjustments
 import video_policy
 import aspect_override
@@ -51,6 +52,22 @@ import media_tools
 
 ROOT = pathlib.Path.home() / ".cache/cast-control"
 SERVER_SCRIPT = pathlib.Path(__file__).resolve().parent / "server.py"
+# Plan (PLAN_FIRST): a `git pull` while a movie plays must not swap the HLS
+# worker under the running parent. Launch the worker from a private snapshot of
+# the launch generation (streamer_generation.freeze_worker), computed once.
+_frozen_server_script: str | None = None
+
+
+def _hls_server_script() -> str:
+    """Worker path for the generation loaded at launch; frozen, else the live script."""
+    global _frozen_server_script
+    if _frozen_server_script is None:
+        if frozen_runtime.is_frozen():
+            _frozen_server_script = str(SERVER_SCRIPT)
+        else:
+            _frozen_server_script = str(
+                streamer_generation.freeze_worker(SERVER_SCRIPT, ROOT))
+    return _frozen_server_script
 SESSION_FILE = ROOT / "session.json"
 PROGRESS_FILE = ROOT / "progress.log"
 FFMPEG_LOG = ROOT / "ffmpeg.log"
@@ -1508,7 +1525,8 @@ class Session:
                     f"fallback port in {PORT}-{PORT + FALLBACK_PORTS - 1} is free")
             self.port = free
         self.server = subprocess.Popen(
-            frozen_runtime.server_command(SERVER_SCRIPT) + ["--port", str(self.port)]
+            frozen_runtime.server_command(pathlib.Path(_hls_server_script()))
+            + ["--port", str(self.port)]
             + (["--bind", bind_ip] if bind_ip else []),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
