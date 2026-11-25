@@ -40,7 +40,7 @@ jobs:
           .packaging-venv/bin/python -m pytest -q tests/test_frozen_runtime.py
           .packaging-venv/bin/python scripts/build_release.py
           .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-linux
           path: |
@@ -66,7 +66,7 @@ jobs:
           .packaging-venv/bin/python scripts/build_release.py
           .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
           .packaging-venv/bin/python scripts/ci/build_macos_dmg.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-macos
           path: |
@@ -151,7 +151,7 @@ jobs:
         run: |
           if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
           "$VENV_PY" scripts/ci/archive_frozen_artifact.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-windows
           path: |
@@ -177,7 +177,7 @@ jobs:
       - name: Install, repair and uninstall exact MSI (headless)
         shell: pwsh
         run: py -3 scripts/ci/smoke_windows_msi.py --disposable-ci --candidate-dir candidate --report dist/windows-msi-test-results.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: windows-msi-lifecycle
