@@ -177,9 +177,12 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
         marker = (commit + "\n").encode("ascii")
         marker_path = temporary / BUILD_MARKER
         marker_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        marker_path.write_bytes(marker)
-        if os.name != "nt":
-            marker_path.chmod(0o600)
+        # The build marker is part of the verified generation, not just
+        # metadata. Flush its bytes before publishing the release directory.
+        with os.fdopen(os.open(marker_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
+            output.write(marker)
+            output.flush()
+            os.fsync(output.fileno())
         payload[BUILD_MARKER] = {"size": len(marker),
                                  "sha256": hashlib.sha256(marker).hexdigest()}
         manifest_file = temporary / "stage-manifest.json"

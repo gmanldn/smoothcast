@@ -180,3 +180,25 @@ def test_failed_publication_directory_sync_removes_new_generation(tmp_path, monk
     assert (root / "current").read_text() == "old-verified-generation"
     assert not (root / "releases" / COMMIT).exists()
     assert not list((root / "releases").glob(".staging-*"))
+
+def test_build_marker_fsync_failure_prevents_generation_publication(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+    original = mg.os.fsync
+    marker_synced = []
+
+    def fail_marker(fd):
+        # Identify the marker by its exact bytes, without relying on /proc.
+        info = os.fstat(fd)
+        if info.st_size == len(COMMIT) + 1:
+            marker_synced.append(True)
+            raise OSError("build marker fsync failed")
+        original(fd)
+
+    monkeypatch.setattr(mg.os, "fsync", fail_marker)
+    with pytest.raises(OSError, match="build marker fsync failed"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert marker_synced
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
+    assert (root / "current").read_text() == "old-verified-generation"
+
