@@ -1924,11 +1924,19 @@ main{padding-top:6px}
 #dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
+#dashboard[data-room-blade="homePanel"]>:not(nav):not(#errorDash):not(#homePanel),
+#dashboard[data-room-blade="queuePanel"]>:not(nav):not(#errorDash):not(#queuePanel),
+#dashboard[data-room-blade="uploadCard"]>:not(nav):not(#errorDash):not(#uploadCard),
+#dashboard[data-room-blade="peoplePanel"]>:not(nav):not(#errorDash):not(#peoplePanel),
+#dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
+#dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
 #dashboard[data-room-blade="playback"]>:not(nav):not(#errorDash):not(#playback),
 #dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel),
 #dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel),
 #dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}
+#dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
 #dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
@@ -1974,6 +1982,32 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
+/* Ticket 624: a concise Home landing pane. It is the default room view: pick a
+   device, add media, and see the queue and who is here without the full wall of
+   panels. Every action is a plain anchor or button so keyboard and screen
+   readers work without custom widgets. */
+#homePanel{grid-column:1/-1;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px}
+#homePanel h2{font-size:clamp(1.45rem,4.5vw,1.95rem);margin:4px 0}
+#homePanel .home-lead{color:var(--text);font-size:.98rem}
+.home-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr));gap:10px;margin:16px 0 6px}
+.home-action{display:flex;flex-direction:column;gap:4px;min-height:92px;padding:14px 15px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--input);color:var(--text);text-decoration:none;transition:border-color .15s ease,background .15s ease,transform .1s ease}
+.home-action:hover{border-color:var(--accent);background:var(--nav-hover);transform:translateY(-1px)}
+.home-action:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.home-action:active{transform:scale(.99)}
+.home-icon{font-size:1.3rem;line-height:1}
+.home-action strong{font-size:.98rem}
+.home-action span{font-size:.8rem;color:var(--muted);line-height:1.35}
+.home-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
+@media(min-width:720px){.home-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.home-card{border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg);min-width:0}
+.home-card h3{margin:0 0 8px;font-size:1rem}
+.home-device{font-size:1.08rem;font-weight:700;margin:0;overflow-wrap:anywhere}
+.home-queue{display:grid;gap:9px;margin:0;padding:0}
+.home-queue li{padding:0;border:0;font-size:.86rem;min-width:0}
+.home-queue li strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-queue li .muted{font-size:.76rem}
+#homePanel #castEntry{border-radius:var(--r-md);margin-top:14px;box-shadow:none;background:var(--input)}
+#homePanel #quickCastCard{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
 </style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
@@ -1989,12 +2023,30 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
-<section id="quickCastCard" aria-labelledby="quickCastHeading" style="grid-column:1/-1">
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<section id="homePanel" aria-labelledby="homeHeading">
+<p class="eyebrow">Home</p>
+<h2 id="homeHeading" tabindex="-1">Your room</h2>
+<p class="home-lead">Add something to play, check which device is selected, and see what everyone is queueing. <span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a> · <a href="#castEntry">Cast with SmoothCast</a></p>
+<section id="quickCastCard" aria-labelledby="quickCastHeading">
 <div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
 <p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker, asks for your confirmation, then starts playback as soon as enough compatible media has arrived.</p>
 <div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
+</section>
+<div class="home-actions" role="group" aria-label="Quick actions">
+<a class="home-action" id="homeUpload" href="#uploadCard" title="Send a file from this phone or computer to the room"><span class="home-icon" aria-hidden="true">⬆</span><strong>Upload or transfer</strong><span>Send a file from this device</span></a>
+<a class="home-action" id="homeYoutube" href="#queuePanel" data-home-link="youtube" title="Open the add-link box to paste a YouTube video URL"><span class="home-icon" aria-hidden="true">▶</span><strong>Cast a YouTube link</strong><span>Paste a YouTube video URL</span></a>
+<a class="home-action" id="homeMagnet" href="#queuePanel" data-home-link="magnet" title="Open the add-link box to paste a magnet link"><span class="home-icon" aria-hidden="true">🧲</span><strong>Cast a magnet link</strong><span>Paste a torrent magnet link</span></a>
+<a class="home-action" id="homeFind" href="#findPanel" title="Search the house libraries and YouTube"><span class="home-icon" aria-hidden="true">🔍</span><strong>Find something</strong><span>Search the house and YouTube</span></a>
+</div>
+<div class="home-grid">
+<div class="home-card"><h3>Playing on</h3><p class="home-device" id="homeTarget">Waiting for room status…</p><p class="field-hint" id="homeNowPlaying">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a></div></div>
+<div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
+<div class="home-card"><h3>In the room</h3><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></div>
+</div>
+<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
+<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
@@ -2019,8 +2071,6 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
 </section>
 
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
@@ -2489,7 +2539,7 @@ function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   if(entering)$("dashboard").hidden=false;
   if($("uploadCard").hidden)$("uploadCard").hidden=false;
-  if(entering)$("queueHeading").focus({preventScroll:true});
+  if(entering)$("homeHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
 let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
@@ -2502,6 +2552,11 @@ function focusContributionControl(id){
 }
 $("openUploadEntry").addEventListener("click",()=>focusContributionControl("videoFile"));
 $("openFindEntry").addEventListener("click",()=>focusContributionControl("findInput"));
+document.querySelectorAll("[data-home-link]").forEach(link=>link.addEventListener("click",()=>{
+  openLinkAcquisition();
+  const input=$("linkInput");
+  if(input)setTimeout(()=>input.focus({preventScroll:true}),0);
+}));
 if(location.hash==="#linkAcquisition")openLinkAcquisition();
 window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){
@@ -2666,6 +2721,9 @@ function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
   if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  const homeTarget=$("homeTarget"),homePlaying=$("homeNowPlaying");
+  if(homeTarget&&target)homeTarget.textContent=target.textContent;
+  if(homePlaying&&playing)homePlaying.textContent=playing.textContent;
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
   if(liveTarget&&target)liveTarget.textContent=target.textContent;
   if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
@@ -2696,13 +2754,42 @@ function applyStatus(d){
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
+renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);
 if(statusFailures)showError("errorDash","");
 statusFailures=0;showJoinedRoom();
   return true;
+}
+let homeQueueKey=null,homePeopleKey=null;
+function renderHomeQueue(items){
+  const list=$("homeQueue");if(!list)return;
+  const rows=Array.isArray(items)?items:[];
+  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor]));
+  if(key===homeQueueKey)return;homeQueueKey=key;
+  const count=$("homeQueueCount");
+  if(count)count.textContent=rows.length?`${rows.length} waiting`:"";
+  if(!rows.length){const empty=document.createElement("li");empty.className="empty";empty.textContent="Nothing in Up Next yet";list.replaceChildren(empty);return}
+  list.replaceChildren(...rows.slice(0,3).map(item=>{
+    const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
+    title.textContent=item.title||"Video";meta.className="muted";
+    meta.textContent=(item.votes?`▲ ${item.votes} · `:"")+(item.contributor?`Added by ${item.contributor}`:"Waiting to be played");
+    li.append(title,meta);return li;
+  }));
+}
+function renderHomePeople(room){
+  const host=$("homePeople");if(!host)return;
+  const participants=Array.isArray(room?.participants)?room.participants:[];
+  const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
+  if(signature===homePeopleKey)return;homePeopleKey=signature;
+  if(!participants.length){const empty=document.createElement("span");empty.className="muted";empty.textContent="Just you so far.";host.replaceChildren(empty);return}
+  host.replaceChildren(...participants.map(person=>{
+    const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");
+    const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);
+    const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");
+    chip.append(avatar,name);return chip;
+  }));
 }
 async function refresh(){
   clearTimeout(statusTimer);
@@ -2733,7 +2820,7 @@ async function refresh(){
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
 let lastRoom=null,participantRenderKey=null;
-function renderRoom(room){lastRoom=room;const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderRoom(room){lastRoom=room;renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
@@ -3817,7 +3904,7 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#playback,#findPanel,#advancedPanel,#localLivePanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#playback,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#localLivePanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);
@@ -3829,7 +3916,7 @@ function syncMediaSession(s){
     if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
       target.scrollIntoView({block:"start",behavior:"auto"});
       if(blade===target&&!target.contains(document.activeElement)){
-        const heading=$(selected==="playback"?"playbackHeading":selected==="findPanel"?"findHeading":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+        const heading=$(selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="playback"?"playbackHeading":selected==="findPanel"?"findHeading":selected==="uploadCard"?"uploadHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
         if(heading&&heading.focus)heading.focus({preventScroll:true});
       }
     }

@@ -289,7 +289,7 @@ def test_joined_room_and_open_expiry_return_focus_to_visible_content():
     harness = r"""
 const assert=require("node:assert/strict");
 const elements={dashboard:{hidden:true},uploadCard:{hidden:true},
- queueHeading:{focusCount:0,focus(){this.focusCount++}},
+ homeHeading:{focusCount:0,focus(){this.focusCount++}},
  login:{hidden:true},loginButton:{disabled:false},
  pin:{focusCount:0,focus(){this.focusCount++}},
  name:{focusCount:0,focus(){this.focusCount++}},
@@ -306,10 +306,10 @@ function showError(id,msg){$(id).textContent=msg}
 """
     scenario = r"""
 showJoinedRoom();
-assert.equal(elements.queueHeading.focusCount,1);
+assert.equal(elements.homeHeading.focusCount,1);
 assert.equal(elements.dashboard.hidden,false);
 showJoinedRoom();
-assert.equal(elements.queueHeading.focusCount,1,"polls must not steal focus");
+assert.equal(elements.homeHeading.focusCount,1,"polls must not steal focus");
 const PIN_REQUIRED=false;
 expireSession();
 assert.equal(elements.name.focusCount,1);

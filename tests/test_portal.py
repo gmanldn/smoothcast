@@ -1784,7 +1784,7 @@ for(const id of ["dashboard","uploadCard"]){
   let hidden=true;
   elements[id]={get hidden(){return hidden},set hidden(v){writes++;hidden=v}};
 }
-elements.queueHeading={focus(){focuses++}};
+elements.homeHeading={focus(){focuses++}};
 const $=id=>elements[id];
 """
     scenario = r"""
