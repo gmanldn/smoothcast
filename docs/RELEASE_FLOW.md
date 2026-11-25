@@ -14,10 +14,10 @@ automatic release PR or dependency on main's version or CI verdict.
 - `agent.py ship` refreshes `origin/develop`, checks claims and version
   integrity, rebases only unpublished code and fast-forward pushes. It never
   automatically promotes a release or writes to main.
-- The guarded `ship --assign-patch` allocator remains available only for
-  explicit owner-authorised release intent. If a push races, it may remove
-  only its own generated unpublished version-only commit before retrying.
-  #583 tracks outstanding server-enforced exactly-once assignment.
+- Owner policy (25 Nov 2026): no per-ticket PATCH allocation. Closing a ticket
+  never requires a new SemVer. The legacy `ship --assign-patch` option is
+  ignored; release changes are separate explicit owner-directed commits.
+  Historical generated unpublished version-only commits remain recoverable.
 - Source checkout, downloaded, installed and running processes can differ;
   changing a file on disk does not activate a running build.
 
