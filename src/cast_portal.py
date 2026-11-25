@@ -257,7 +257,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             active = bool(self.session is not None or self.external)
             can_seek = bool(active and self.session is not None and not self.busy
                             and not self.external and self.tracker.known)
+            feedback = getattr(self, "_cast_feedback", None)
             state = {
+                "cast_feedback": feedback if feedback and feedback.get("receiver") == self._device() else None,
                 "title": title, "receiver": self._device(), "state": self.device_state,
                 "state_label": state_labels.present(self.device_state).label,
                 "state_short": state_labels.present(self.device_state).short,

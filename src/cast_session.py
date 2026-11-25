@@ -109,6 +109,8 @@ class SessionMixin:
         self.busy = True
         self._finished_handled = False
         device = self._device()
+        self._cast_feedback = {"receiver": device, "state": "preparing",
+                               "message": "Preparing media and connecting to the room receiver."}
         renderer = self._dlna_renderer(device)
         reliability_metrics.start_attempt(self, "dlna" if renderer is not None else "cast")
         cancel = threading.Event()
@@ -300,7 +302,11 @@ class SessionMixin:
                             if receiver_key:
                                 learned.record(receiver_key, codec_key, "direct", False)
                             raise streamer.StreamError("Receiver stayed idle after direct cast; trying HLS")
-                    except streamer.StreamError:
+                    except streamer.StreamError as exc:
+                        # Another media format cannot fix a receiver that never
+                        # returned status. Avoid a second long, doomed handoff.
+                        if getattr(exc, "code", None) == "cast.receiver_offline":
+                            raise
                         # The failed direct attempt can leave a catt subprocess.
                         session.stop(device, send_stop=False)
                         session = streamer.Session()
@@ -343,6 +349,8 @@ class SessionMixin:
 
         def done(result):
             session, media = result
+            self._cast_feedback = {"receiver": device, "state": "confirmed",
+                                   "message": "Receiver confirmed playback."}
             self._cast_starting = False
             self._dlna_cancel = None
             if self._closing:
@@ -400,6 +408,10 @@ class SessionMixin:
             self._poll_device()
 
         def failed(message):
+            self._cast_feedback = {
+                "receiver": device, "state": "cancelled" if cancel.is_set() else "failed",
+                "message": "Playback preparation cancelled." if cancel.is_set() else message,
+            }
             self._cast_starting = False
             self._dlna_cancel = None
             reliability_metrics.fail_attempt(self, Async.run)

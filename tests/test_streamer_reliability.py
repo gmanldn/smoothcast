@@ -394,3 +394,48 @@ class ProgressSamplerTests(unittest.TestCase):
             self.assertEqual(session.segment_count(), 3)
             session._stop_sampler()
         self.assertIsNone(session._sampler)
+
+def test_receiver_confirmation_allows_slow_connection_and_bounds_each_poll():
+    session = streamer.Session()
+    clock = [0.0]
+    calls = []
+
+    def info(_device, *, timeout):
+        calls.append(timeout)
+        clock[0] += min(7.0, timeout)
+        return {"player_state": "PLAYING", "content_id": "ours"} if clock[0] >= 21 else None
+
+    with mock.patch.object(streamer.time, "monotonic", side_effect=lambda: clock[0]), \
+         mock.patch.object(streamer.time, "sleep", side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay)), \
+         mock.patch.object(streamer.castctl, "info", side_effect=info):
+        session._await_receiver("Living Room TV", lambda state: bool(state and state.get("content_id") == "ours"))
+    assert clock[0] >= 21
+    assert all(0 < timeout <= 8 for timeout in calls)
+
+
+def test_receiver_confirmation_explains_missing_and_incomplete_status():
+    import pytest
+
+    for reply, code, message in (
+        (None, "cast.receiver_offline", "did not return status"),
+        ({"volume_level": 0.5}, "cast.command_failed", "did not report playback state"),
+        ({"player_state": "IDLE"}, "cast.command_failed", "did not confirm playback"),
+    ):
+        session = streamer.Session()
+        clock = [0.0]
+        calls = []
+
+        def info(_device, *, timeout):
+            calls.append(timeout)
+            clock[0] += timeout
+            return reply
+
+        with mock.patch.object(streamer.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(streamer.time, "sleep", side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay)), \
+             mock.patch.object(streamer.castctl, "info", side_effect=info):
+            with pytest.raises(streamer.StreamPreparationError, match=message) as error:
+                session._await_receiver("Living Room TV", lambda _: False, timeout=9)
+        assert error.value.code == code
+        assert clock[0] == 9
+        assert calls == [8.0, 0.75]
+

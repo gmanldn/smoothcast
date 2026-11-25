@@ -2611,10 +2611,19 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
+function playbackFeedback(state){
+  const feedback=state.cast_feedback;
+  if(feedback&&feedback.receiver===state.receiver&&typeof feedback.message==="string"){
+    if(feedback.state==="failed")return "Cast failed: "+feedback.message;
+    if(feedback.state==="cancelled")return feedback.message;
+    if(feedback.state==="preparing"&&state.busy)return feedback.message;
+  }
+  return "";
+}
 function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
-  if(playing)playing.textContent=(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
   if(liveTarget&&target)liveTarget.textContent=target.textContent;
   if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
@@ -2638,7 +2647,7 @@ function applyStatus(d){
       const allowed=action==="stop"?s.can_stop:action==="play_pause"?s.can_play_pause:undefined;
       b.disabled=typeof allowed==="boolean"?!allowed:!!s.busy||!s.active;
     });
-    monitorText("state",!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable");
+    monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
     monitorText("receiver","Playing on: "+(s.receiver||"—"));
     // Optional lock-screen integration must not prevent core room controls.

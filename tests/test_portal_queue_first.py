@@ -37,7 +37,7 @@ def test_destination_and_link_controls_without_receiver_or_provider():
     if not shutil.which("node"):
         pytest.skip("Node.js needed for headless browser checks")
     html = portal._HTML
-    target = html[html.index("function renderQueueDestination("):
+    target = html[html.index("function playbackFeedback("):
                   html.index("function applyStatus(")]
     links = html[html.index("function updateLinkControls("):
                  html.index("function renderLinkJobs(")]
@@ -58,6 +58,10 @@ assert.equal($("queueTarget").textContent,"Lounge TV");
 assert.equal($("queueNowPlaying").textContent,"Idle");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Playing",title:"Film",active:true});
 assert.equal($("queueNowPlaying").textContent,"Playing · Film");
+renderQueueDestination({receiver:"Lounge TV",state_label:"State unavailable",cast_feedback:{receiver:"Lounge TV",state:"failed",message:"Receiver did not return status."}});
+assert.equal($("queueNowPlaying").textContent,"Cast failed: Receiver did not return status.");
+renderQueueDestination({receiver:"Bedroom TV",state_label:"Idle",cast_feedback:{receiver:"Lounge TV",state:"failed",message:"Old failure"}});
+assert.equal($("queueNowPlaying").textContent,"Idle");
 updateLinkControls();
 assert.equal($("linkInput").disabled,false);
 assert.equal($("linkSubmit").disabled,true);
