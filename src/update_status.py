@@ -59,13 +59,13 @@ class UpdateStatus:
 
 
 def short(commit: str | None) -> str:
-    text = (commit or "").strip().lower()
+    text = commit.strip().lower() if isinstance(commit, str) else ""
     return text[:7] if _COMMIT.fullmatch(text) else "unknown"
 
 
 def _exact(commit: str | None) -> str | None:
     """Only a complete object ID can establish build identity."""
-    value = (commit or "").strip().lower()
+    value = commit.strip().lower() if isinstance(commit, str) else ""
     return value if _EXACT_COMMIT.fullmatch(value) else None
 
 
@@ -80,7 +80,7 @@ def _channel(value: str) -> tuple[str, str]:
 def describe(f: UpdateFacts) -> UpdateStatus:
     """Plain-language state and the safe actions for it."""
     channel, channel_line = _channel(f.channel)
-    version = f.running_version.strip() or "unknown version"
+    version = (f.running_version.strip() if isinstance(f.running_version, str) else "") or "unknown version"
     running = f"SmoothCast {version} ({short(f.running_commit)}) on {channel}"
     running_id, active_id, candidate_id, previous_id, staged_id = (
         _exact(value) for value in
@@ -90,9 +90,13 @@ def describe(f: UpdateFacts) -> UpdateStatus:
     def make(state: str, headline: str, detail: str, *actions: str, new: bool = False) -> UpdateStatus:
         return UpdateStatus(state, headline, detail, running, channel_line, actions, new)
 
-    if f.fault in FAULTS:
+    if isinstance(f.fault, str) and f.fault in FAULTS:
         retry = ("check_now",) if f.fault == "bad_signature" else ("retry", "check_now")
         return make("fault", "Update not installed", FAULTS[f.fault], *retry)
+    if (f.phase not in PHASES or f.journal_state not in
+            (None, "planned", "probed", "switched", "acked", "rolled_back", "aborted")):
+        return make("unconfirmed", "Update status not confirmed",
+                    "The saved update state was not recognised. Check again before restarting.", "check_now")
     if f.journal_state == "rolled_back" and f.phase == "idle":
         # active.json's previous is the pre-existing rollback reference,
         # not necessarily the generation that was just restored.
@@ -112,7 +116,10 @@ def describe(f: UpdateFacts) -> UpdateStatus:
         return make("confirming", "Waiting for the new version to confirm…",
                     "If it does not confirm, SmoothCast returns to the previous version.")
     if f.journal_state == "acked":
-        if active_id is not None and active_id != running_id:
+        if active_id is None or running_id is None:
+            return make("unconfirmed", "Update status not confirmed",
+                        "The running and activated builds must both be identified.", "check_now")
+        if active_id != running_id:
             return make("activation_mismatch", "Running build differs from the activated build",
                         "The activated generation is not the one reporting this status.", "check_now")
         # A durable terminal journal outlives its transaction; it must not
@@ -120,6 +127,10 @@ def describe(f: UpdateFacts) -> UpdateStatus:
         if (f.phase == "idle" and candidate_id in (None, running_id)
                 and active_id is not None and active_id == running_id
                 and previous_id and previous_id != running_id):
+            if f.playing:
+                return make("running_new", "Updated",
+                            f"SmoothCast is running {short(running_id)}. Rollback is unavailable during playback.",
+                            "check_now", new=True)
             return make("running_new", "Updated",
                         f"SmoothCast is running {short(running_id)}.", "rollback", "check_now", new=True)
     if not f.checks_enabled:
