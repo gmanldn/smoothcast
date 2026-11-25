@@ -8,6 +8,7 @@ import pytest
 
 import gui_link_add
 import link_acquisition as acquisition
+import link_sandbox_probe as probe
 
 YOUTUBE = "https://www.youtube.com/watch?v=abcdefghijk"
 
@@ -99,5 +100,8 @@ def test_unavailable_message_points_at_the_owner_switch_when_tools_exist(monkeyp
     launcher.write_text("#!/bin/sh\n")
     launcher.chmod(0o755)
     monkeypatch.setattr(acquisition.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(acquisition.media_tools, "find_media_tool", lambda name: "/usr/bin/ffprobe")
     monkeypatch.setenv("SMOOTHCAST_LINK_SANDBOX", str(launcher))
+    probe.save(str(launcher), probe.Qualification(
+        True, {n: "pass" for n in probe.CHECKS}, ""))
     assert "Let guests acquire YouTube links" in gui_link_add.unavailable_message(None)

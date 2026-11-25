@@ -440,9 +440,9 @@ class CommandProvider:
             "missing": [name for name, present in (
                 ("yt-dlp" if kind == "youtube" else "aria2c", self.tools[kind]),
                 ("ffprobe", self.probe), ("owner-configured isolation launcher", self.launcher),
-            ) if not present] + (["qualified isolation (run smoothcast --link-check --qualify)"]
-                                 if os.environ.get("SMOOTHCAST_LINK_REQUIRE_QUALIFIED") == "1"
-                                 and self.launcher and not self._isolation_verified() else []),
+                ("qualified isolation (run smoothcast --link-check --qualify)",
+                 not self.launcher or self._isolation_verified()),
+            ) if not present],
         } for kind in ("youtube", "magnet")}
 
     def capabilities(self) -> dict:

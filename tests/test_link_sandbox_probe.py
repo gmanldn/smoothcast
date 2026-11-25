@@ -90,7 +90,7 @@ def test_qualification_is_cached_only_for_the_exact_launcher_file(tmp_path):
     assert not probe.is_verified("") and not probe.is_verified("/does/not/exist")
 
 
-def test_provider_reports_verification_and_can_require_it(tmp_path, monkeypatch):
+def test_provider_reports_verification_and_requires_it(tmp_path, monkeypatch):
     import link_acquisition as links
     launcher = script(tmp_path, 'exec "$@"')
     monkeypatch.setenv("SMOOTHCAST_LINK_SANDBOX", launcher)
@@ -98,9 +98,7 @@ def test_provider_reports_verification_and_can_require_it(tmp_path, monkeypatch)
     monkeypatch.setattr(links.media_tools, "find_media_tool", lambda name: "/usr/bin/ffprobe")
     provider = links.CommandProvider(("youtube",))
     assert provider.readiness()["youtube"]["isolation_verified"] is False
-    assert provider.capabilities()["youtube"] is True  # default: owner-configured launcher suffices
-    monkeypatch.setenv("SMOOTHCAST_LINK_REQUIRE_QUALIFIED", "1")
-    assert provider.capabilities()["youtube"] is False
+    assert provider.capabilities()["youtube"] is False  # launcher configured: isolation required
     assert any("qualified isolation" in item for item in provider.readiness()["youtube"]["missing"])
     probe.save(launcher, probe.Qualification(True, {n: "pass" for n in probe.CHECKS}, ""))
     assert provider.readiness()["youtube"]["isolation_verified"] is True
