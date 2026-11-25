@@ -113,3 +113,29 @@ def test_oversized_file_and_symlink_are_refused(tmp_path):
 def test_missing_file_gives_an_empty_ledger_without_a_warning(tmp_path):
     ledger, problem = LedgerStore(tmp_path / "new").load_or_quarantine()
     assert problem is None and not ledger.jobs
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX named pipe")
+def test_fifo_ledger_is_refused_without_blocking(tmp_path):
+    import subprocess
+    store = LedgerStore(tmp_path)
+    os.mkfifo(store.path)
+    code = """
+import sys
+from pathlib import Path
+from mesh_acquisition_store import LedgerStore
+from mesh_acquisition_assignment import LedgerError
+try:
+    LedgerStore(Path(sys.argv[1])).load()
+except LedgerError as exc:
+    assert "ordinary file" in str(exc)
+else:
+    raise AssertionError("FIFO accepted")
+"""
+    src = Path(__file__).resolve().parents[1] / "src"
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path)], cwd=src,
+        capture_output=True, text=True, timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
+    assert store.path.exists()  # do not silently erase a damaged ledger
+
