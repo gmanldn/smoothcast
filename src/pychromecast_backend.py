@@ -217,11 +217,13 @@ class PyChromecastBackend:
         self._register(cast)
         return self._devices[str(identifier)]
 
-    def _resolve(self, target: str) -> tuple[str | None, str | None]:
+    def _resolve(self, target: str, *, allow_connect: bool = True) -> tuple[str | None, str | None]:
         value = target.strip()
         if not value:
             return None, NO_DEVICE_MESSAGE
         with self._lock:
+            if self._closed:
+                return None, "Cast backend is closed"
             matches = [
                 identifier
                 for identifier, device in self._devices.items()
@@ -232,6 +234,8 @@ class PyChromecastBackend:
             return matches[0], None
         if len(matches) > 1:
             return None, "Several Google Cast receivers have that name; select one by address."
+        if not allow_connect:
+            return None, "Receiver is not connected."
         try:
             manual = self.connect_manual(value)
         except ValueError:
@@ -346,10 +350,14 @@ class PyChromecastBackend:
     def subscribe(
         self, device: str, listener: StatusListener,
     ) -> Callable[[], None] | None:
-        identifier, _error = self._resolve(device)
+        # watch_status is called on GTK's main context. A new manual-IP
+        # connection must happen in the fallback status worker, never here.
+        identifier, _error = self._resolve(device, allow_connect=False)
         if identifier is None:
             return None
         with self._lock:
+            if self._closed:
+                return None
             subscribers = self._subscribers.setdefault(identifier, set())
             subscribers.add(listener)
             current = self._status.get(identifier)
