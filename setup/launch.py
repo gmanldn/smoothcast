@@ -353,6 +353,12 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     return result.returncode == 0
 
 
+# A relaunch of an already-running instance asks the primary to bounce its
+# background services in place (room, mesh, library indexer, heartbeat, MPRIS)
+# so a changed checkout or settings take effect without interrupting playback.
+RELOAD_SERVICES_ARG = "--reload-services"
+
+
 def ensure_single_instance(args: list[str], target: Path | None = None) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
     pids = gui_instances(all_installations=True)
@@ -370,10 +376,11 @@ def ensure_single_instance(args: list[str], target: Path | None = None) -> int |
         )
         return 3
     if activated:
-        if not args:
-            # Existing primary confirmed its activation; no extra GUI.
-            return 0
-        # Forward file and action arguments through GApplication.
+        # A confirmed primary owns the application id. Let this launch forward
+        # its command line so the running instance bounces its services in
+        # place and opens any files; GApplication never starts a second window.
+        if RELOAD_SERVICES_ARG not in args:
+            args.append(RELOAD_SERVICES_ARG)
         return None
     # A primary can exit normally while the activation request is in flight.
     # Re-scan instead of leaving a false stale-instance failure behind.

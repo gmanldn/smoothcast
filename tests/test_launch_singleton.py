@@ -99,18 +99,22 @@ class GuardBehaviourTests(unittest.TestCase):
                 mock.patch.object(launch.os, "kill",
                                   side_effect=AssertionError("never signal from a stale PID")):
             outcome = launch.ensure_single_instance(args)
-        return outcome, []
+        return outcome, args
 
     def test_no_running_instance_launches_normally(self):
         self.assertEqual(self.guard([], None, []), (None, []))
 
     @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
-    def test_second_launch_presents_and_does_not_start_again(self):
-        self.assertEqual(self.guard([101], True, []), (0, []))
+    def test_second_launch_asks_the_primary_to_reload_services(self):
+        # A confirmed primary is asked to bounce its services in place; the
+        # command line is forwarded so GApplication never starts a second GUI.
+        self.assertEqual(self.guard([101], True, []),
+                         (None, [launch.RELOAD_SERVICES_ARG]))
 
     def test_media_arguments_are_still_forwarded(self):
         # GApplication must forward the file, so let the GTK instance handle it.
-        self.assertEqual(self.guard([101], True, ["/films/a.mkv"]), (None, []))
+        self.assertEqual(self.guard([101], True, ["/films/a.mkv"]),
+                         (None, ["/films/a.mkv", launch.RELOAD_SERVICES_ARG]))
 
     @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
     def test_unresponsive_instance_refuses_duplicate_without_killing(self):

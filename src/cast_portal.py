@@ -171,6 +171,20 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         peer_discovery_ui.refresh_peer_links(
             self, [], available=False, status="Peer discovery stopped")
 
+    def reload_house_services(self) -> None:
+        """Restart the room, mesh, library indexer and heartbeat in place.
+
+        A relaunch of ``sc.py`` while SmoothCast runs reaches here so a changed
+        checkout or settings take effect without a full restart. Playback
+        ownership is untouched: the active cast, session and tracker keep
+        running while the room and its helpers come back on the current LAN.
+        """
+        if self._closing:
+            return
+        self._stop_portal()          # room, mesh and heartbeat
+        self._stop_house_services()  # library indexer, mesh-library, fingerprint keys
+        self._refresh_portal()       # rebuild everything on the current LAN
+
     def _sync_portal_activity_timer(self) -> None:
         """Room UI refreshes once per second only when the window is mapped."""
         if (self._closing or self._portal is None
