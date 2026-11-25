@@ -23,7 +23,8 @@ SPEC.loader.exec_module(msi)
 
 def options(**overrides):
     values = {"check": False, "output_dir": ROOT / "dist", "skip_pyinstaller": True,
-              "media_dir": None, "manufacturer": "SmoothCast", "force": False, "json": False}
+              "media_dir": None, "manufacturer": "SmoothCast", "force": False, "json": False,
+              "fixture_version": None}
     values.update(overrides)
     return argparse.Namespace(**values)
 
@@ -50,6 +51,16 @@ class EnvironmentTests(unittest.TestCase):
                                   return_value=SimpleNamespace(stdout="5.0.2.0\n")):
             with self.assertRaises(msi.PrereqError):
                 msi.check_environment()
+
+    def test_fixture_version_override_is_validated_and_never_a_release(self):
+        environment = {"version": "2.0.38"}
+        self.assertEqual(msi.resolve_version(options(), environment), "2.0.38")
+        self.assertEqual(msi.resolve_version(options(fixture_version="2.0.39"), environment),
+                         "2.0.39")
+        for bad in ("2.0", "2.0.39.1", "300.0.0", "2.0.70000", "x.y.z"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(msi.BuildError):
+                    msi.resolve_version(options(fixture_version=bad), environment)
 
     def test_output_directory_must_not_overwrite_sources(self):
         with self.assertRaises(msi.BuildError):

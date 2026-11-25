@@ -85,6 +85,22 @@ def release_version() -> str:
     return source_version.__version__
 
 
+def resolve_version(options: argparse.Namespace, environment: dict[str, str]) -> str:
+    """The MSI ProductVersion: the repo release, or a validated CI fixture override.
+
+    ``--fixture-version`` exists only so #535 can build two disposable A/B
+    fixtures with increasing versions without editing ``src/version.py``. It is
+    never a release and must stay inside the MSI field bounds.
+    """
+    override = getattr(options, "fixture_version", None)
+    if not override:
+        return environment["version"]
+    try:
+        return wix_payload.msi_version(override)
+    except wix_payload.WixError as exc:
+        raise BuildError(f"invalid --fixture-version: {exc}") from None
+
+
 def git_exe() -> str:
     # The MSYS2 CI shell does not inherit the Git-for-Windows PATH entry, so
     # fall back to its standard locations before giving up.
@@ -278,7 +294,7 @@ def build(options: argparse.Namespace) -> dict[str, object]:
     environment = check_environment()
     output_dir = ensure_output_dir(options.output_dir)
     commit = environment["commit"]
-    version = environment["version"]
+    version = resolve_version(options, environment)
     final = output_dir / f"SmoothCast-{version}-x64.msi"
     if final.exists() and not options.force:
         raise BuildError(f"{final} already exists; pass --force to replace this test build")
@@ -333,6 +349,8 @@ def main(argv: list[str] | None = None) -> int:
         "SMOOTHCAST_WINDOWS_MANUFACTURER", "SmoothCast"),
         help="installer publisher identity (default: SmoothCast)")
     parser.add_argument("--force", action="store_true", help="replace an existing test MSI")
+    parser.add_argument("--fixture-version", help="test-only ProductVersion override for CI "
+                        "fixtures (#535); never a release and never published")
     parser.add_argument("--json", action="store_true", help="machine-readable summary")
     options = parser.parse_args(argv)
     try:
