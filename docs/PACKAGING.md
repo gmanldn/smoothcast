@@ -145,14 +145,18 @@ touches a receiver or changes the firewall.
 
 `build_windows_msi.py --fixture-version X.Y.Z` builds temporary A/B fixtures
 with an increasing ProductVersion and the same permanent UpgradeCode **without
-editing `src/version.py`**; fixtures are never published. This is the enabler
-for the upgrade gate (#535 item 5), which is still `untested` in the smoke
-report.
+editing `src/version.py`**; fixtures are never published.
+`scripts/ci/msi_upgrade_matrix.py` consumes those fixtures on a disposable
+Windows target: install A, assert the registered DisplayVersion, upgrade to B,
+assert it again, prove a downgrade is **rejected**, then uninstall. It writes
+`dist/windows-msi-upgrade-results.json`, reuses the `msi_install_contract`
+primitives, and its `--dry-run` emits the untested contract off Windows.
 
-Still separate: the A/B upgrade/rollback driver on the fixtures, the signed
-release gate (#536/#538) and physical-device qualification (#537). A headless
-MSI CI pass is **not** evidence of a verified native GUI, HLS reachability,
-local preview or Cast.
+Still separate: the signed release gate (#536/#538), physical-device
+qualification (#537), and wiring `msi_upgrade_matrix.py` into the
+`windows-msi-install` job (it needs the two `--fixture-version` MSIs staged).
+A headless MSI CI pass is **not** evidence of a verified native GUI, HLS
+reachability, local preview or Cast.
 
 ## Unsigned macOS disk image (issue #556)
 
