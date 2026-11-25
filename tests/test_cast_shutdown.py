@@ -155,7 +155,7 @@ class GuardTests(unittest.TestCase):
         self.assertIn("self._finish_delayed_close()", cast)
         self.assertIn('raise streamer.StreamError("Cast cancelled because SmoothCast is closing")', cast)
         self.assertLess(cast.index("self._cast_starting = True"),
-                        cast.index('Async.run(work, done=done, failed=failed, domain="media")'))
+                        cast.index('Async.run(work, done=done, failed=failed, domain="cast_start")'))
 
 
 if __name__ == "__main__":
