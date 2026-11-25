@@ -1464,7 +1464,13 @@ class Session:
         predates this restriction, is replaced only if its PID is verified
         as our own server; otherwise the cast is refused.
         """
-        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip, token=token))
+        # CATT/yt-dlp probes the advertised HLS URL from this host's LAN IP.
+        # Authorise that exact interface as well as the known receiver; do
+        # not narrow the existing private-LAN fallback for unknown receivers.
+        policy = hls_server.make_policy(receiver_ip, token=token)
+        if bind_ip and not policy.any_private:
+            policy = hls_server.make_policy(receiver_ip, extra=(bind_ip,), token=token)
+        hls_server.write_policy(ROOT, policy)
         ports = candidate_ports(self.port)
         # Pass 1: reuse (or verifiably replace) a SmoothCast server that is
         # already listening on any candidate port, so a kept-alive server on a

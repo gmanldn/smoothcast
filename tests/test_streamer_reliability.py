@@ -200,8 +200,30 @@ class StreamerReliabilityTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
         self.assertNotIn("0.0.0.0", command)
         policy = server.load_policy(root)
-        self.assertEqual(policy.hosts, frozenset({"192.168.1.50"}))
+        self.assertEqual(policy.hosts, frozenset({"192.168.1.23", "192.168.1.50"}))
         self.assertFalse(policy.any_private)
+        self.assertTrue(server.client_allowed("192.168.1.23", policy))
+        self.assertTrue(server.client_allowed("192.168.1.50", policy))
+        self.assertTrue(server.client_allowed("127.0.0.1", policy))
+        self.assertFalse(server.client_allowed("192.168.1.99", policy))
+        self.assertFalse(server.client_allowed("8.8.8.8", policy))
+
+    def test_unknown_receiver_keeps_private_lan_fallback_on_reuse(self):
+        import server
+        root = self._server_env()
+        session = streamer.Session()
+        token = "a" * 32
+        with mock.patch.object(streamer, "_port_open", return_value=True), mock.patch.object(
+            streamer, "_server_probe", return_value=(True, "192.168.1.23", 4321)
+        ):
+            session._start_server("192.168.1.23", None, token=token)
+        policy = server.load_policy(root)
+        self.assertTrue(policy.any_private)
+        self.assertTrue(server.client_allowed("192.168.1.50", policy))
+        self.assertFalse(server.client_allowed("8.8.8.8", policy))
+        self.assertEqual(policy.token, token)
+        self.assertTrue(server.public_resource(f"/movie-{token}.m3u8", policy.token))
+        self.assertFalse(server.public_resource("/movie-" + "b" * 32 + ".m3u8", policy.token))
 
     def test_server_command_carries_port_bind_and_frozen_launcher(self):
         """Source and PyInstaller launches both pass --port and --bind through."""
