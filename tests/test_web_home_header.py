@@ -88,8 +88,8 @@ def test_every_page_has_a_visible_home_control_and_the_exact_host_version(server
     # Exactly one version badge, rendered by the server, never inside a hidden view.
     assert len(page.versions) == 1
     attrs, shown, hidden = page.versions[0]
-    assert shown == version.label()
-    assert attrs["aria-label"] == f"Host version {version.label()}"
+    assert shown == version.identity_label()
+    assert attrs["aria-label"] == f"Host version {version.identity_label()}"
     assert not hidden
 
     # Exactly one Home control, never inside a view that can be hidden, with a text label.

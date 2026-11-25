@@ -151,12 +151,29 @@ def _clean_source_revision(source: Path) -> str | None:
         return None
 
 
+def _clean_commit_date(source: Path, revision: str) -> str | None:
+    """Record the clean commit's display date beside its SHA."""
+    try:
+        value = subprocess.run(
+            ["git", "-C", str(source), "show", "-s", "--format=%cI", revision],
+            capture_output=True, text=True, timeout=8, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})", value):
+        return value[:10]
+    return None
+
+
 def _record_source_revision(source: Path, destination: Path, before: str | None) -> None:
     """Write only inside the newly copied src tree (covered by install rollback)."""
     if before and _clean_source_revision(source) == before:
         marker = destination / "src" / BUILD_MARKER
         if marker.parent.is_dir():
-            marker.write_text(before + "\n", encoding="ascii")
+            commit_date = _clean_commit_date(source, before)
+            marker.write_text(
+                before + "\n" + (commit_date + "\n" if commit_date else ""),
+                encoding="ascii")
             # Local installation provenance only. It is not remote trust
             # evidence and is never copied from another installed tree.
             (marker.parent / SOURCE_MARKER).write_text(

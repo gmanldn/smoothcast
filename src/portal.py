@@ -168,7 +168,7 @@ def _page() -> bytes:
     markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
                            + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
-            .replace("__SC_VERSION__", version.label())
+            .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
@@ -731,7 +731,7 @@ class _Handler(BaseHTTPRequestHandler):
         mine = html.escape(self.server.hostname_label or "This computer")
         body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
                 .replace("__MINE__", mine).replace("__ROWS__", rows)
-                .replace("__SC_VERSION__", version.label())
+                .replace("__SC_VERSION__", version.identity_label())
                 .replace("<!--SC_DEMO-->", _demo_badge()))
         return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
 
@@ -1680,13 +1680,14 @@ _NODES_HTML = r"""<!doctype html>
 .home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
 .home-btn svg{width:22px;height:22px;fill:currentColor}
 .app-bar strong{font-size:1.1rem;letter-spacing:-.02em}
-.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:normal;line-height:1.2;text-align:center}
 main{max-width:640px;margin:auto;padding:24px 16px}
 h1{font-size:clamp(1.5rem,5vw,2rem);letter-spacing:-.025em;margin:8px 0}p{color:var(--muted);line-height:1.5}
 ul{list-style:none;padding:0;display:grid;gap:10px}
 li a{display:flex;align-items:center;min-height:56px;padding:0 18px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--text);font-weight:650;text-decoration:none;overflow-wrap:anywhere}
 li a:hover{border-color:var(--accent)}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(max-width:560px){.app-bar{gap:8px;padding:0 12px}.home-btn{padding:0 15px 0 11px}.app-bar strong{display:none}}
 @media(forced-colors:active){.home-btn{border:2px solid ButtonText}}
 </style></head><body>
 <header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></header>
@@ -1869,7 +1870,7 @@ header.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;
 .home-btn:hover{filter:brightness(1.08)}.home-btn:active{transform:scale(.97)}
 .brand{display:flex;align-items:center;gap:10px;flex:none}
 .brand h1{margin:0;font-size:1.12rem;letter-spacing:-.02em;white-space:nowrap}
-.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:normal;line-height:1.2;text-align:center}
 .brand .site-mark{width:44px;height:44px;border-radius:13px;font-size:1.2rem;text-decoration:none;background:linear-gradient(135deg,var(--accent),var(--vote-on));transition:transform .12s ease,box-shadow .12s ease}
 .brand .site-mark:hover{transform:translateY(-1px);box-shadow:0 6px 16px var(--shadow)}
 .bar-now{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:9px;min-width:0;max-width:min(44vw,360px);min-height:44px;padding:0 15px;
@@ -1927,7 +1928,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
 @media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
 @media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
-@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}

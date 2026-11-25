@@ -40,9 +40,13 @@ class InstalledBuildIdentityTests(unittest.TestCase):
 
     def test_clean_checkout_identity_survives_copy_without_git(self):
         sha = self.git("rev-parse", "HEAD")
+        expected_date = self.git("show", "-s", "--format=%cI", sha)[:10]
         with install_location.installed_sources(self.source, self.target):
             self.assertFalse((self.target / ".git").exists())
             self.assertEqual(version.read_checkout_revision(self.target), sha)
+            self.assertEqual(version.read_checkout_commit_date(self.target), expected_date)
+            self.assertEqual(version.read_checkout_commit_date(self.target, sha),
+                             expected_date)
 
     def test_dirty_and_untracked_source_do_not_claim_clean_commit(self):
         for path in ("src/player.py", "src/new.py"):
@@ -59,6 +63,7 @@ class InstalledBuildIdentityTests(unittest.TestCase):
 
     def test_install_rollback_restores_previous_identity(self):
         old = self.git("rev-parse", "HEAD")
+        old_date = self.git("show", "-s", "--format=%cI", old)[:10]
         with install_location.installed_sources(self.source, self.target):
             pass
         self.git("commit", "--allow-empty", "-qm", "new")
@@ -67,6 +72,7 @@ class InstalledBuildIdentityTests(unittest.TestCase):
                 self.assertNotEqual(version.read_checkout_revision(self.target), old)
                 raise RuntimeError("installation failed")
         self.assertEqual(version.read_checkout_revision(self.target), old)
+        self.assertEqual(version.read_checkout_commit_date(self.target), old_date)
 
     def test_unknown_or_forged_source_marker_is_not_copied(self):
         shutil.rmtree(self.source / ".git")
@@ -80,6 +86,20 @@ class InstalledBuildIdentityTests(unittest.TestCase):
         for value in ("a" * 39, "g" * 40, "a" * 10000, "a" * 40 + "x"):
             marker.write_text(value)
             self.assertIsNone(version.read_checkout_revision(self.target))
+
+    def test_installed_marker_date_is_bound_to_its_revision(self):
+        (self.target / "src").mkdir(parents=True)
+        marker = self.target / "src" / install_location.BUILD_MARKER
+        sha = "a" * 40
+        marker.write_text(f"{sha}\n2026-11-09\n", encoding="ascii")
+        self.assertEqual(version.read_checkout_revision(self.target), sha)
+        self.assertEqual(version.read_checkout_commit_date(self.target), "2026-11-09")
+        self.assertIsNone(version.read_checkout_commit_date(self.target, "b" * 40))
+        for date in ("not-a-date", "2026-13-40", "2026-11-09T00:00:00Z"):
+            marker.write_text(f"{sha}\n{date}\n", encoding="ascii")
+            self.assertIsNone(version.read_checkout_commit_date(self.target), date)
+        marker.write_text(sha + "\n", encoding="ascii")
+        self.assertIsNone(version.read_checkout_commit_date(self.target))
 
     def test_running_label_is_independent_of_subsequent_disk_reads(self):
         with mock.patch.object(version, "RUNNING_REVISION", "a" * 40):
