@@ -161,3 +161,52 @@ def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
     monkeypatch.setattr(refresh.subprocess, "call", call)
     assert refresh.refresh(source, installed, "linux", lambda: []) == 1
     call.assert_not_called()
+
+
+@pytest.mark.parametrize("payload, expected", [
+    (b"a" * 40, "a" * 40),
+    (b"a" * 40 + b"\n2026-11-25\n", "a" * 40),
+    (b"A" * 64 + b"\n2026-11-25\n", "a" * 64),
+    (b"a" * 39, None),
+    (b"g" * 40, None),
+    (b"a" * 40 + b"x", None),
+    (b"a" * 40 + b"\n" + b"x" * 128, None),
+    (b"a" * 40 + b"\n\xff", None),
+    (b"", None),
+])
+def test_refresh_marker_bounded_and_compatible(tmp_path, payload, expected):
+    version(tmp_path, 3)
+    marker = tmp_path / "src" / refresh.install_location.BUILD_MARKER
+    marker.write_bytes(payload)
+    assert refresh.installed_revision(tmp_path) == expected
+
+
+def test_same_version_refresh_consumes_real_installer_marker(roots, monkeypatch):
+    source, installed = roots
+    version(installed, 3)
+    marker = installed / "src" / refresh.install_location.BUILD_MARKER
+    previous = "b" * 40
+    marker.write_text(previous + "\n2026-11-24\n")
+
+    def git(_root, *args):
+        if args == ("merge-base", "--is-ancestor", SHA, previous):
+            return Mock(returncode=1)
+        return Mock(returncode=0, stdout=(
+            "develop" if args[0] == "symbolic-ref" else SHA
+        ))
+
+    monkeypatch.setattr(refresh, "git", git)
+    monkeypatch.setattr(refresh.install_location, "_clean_commit_date",
+                        lambda *_: "2026-11-25")
+
+    def bootstrap(_args):
+        refresh.install_location._record_source_revision(source, installed, SHA)
+        return 0
+
+    call = Mock(side_effect=bootstrap)
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert marker.read_text() == SHA + "\n2026-11-25\n"
+    assert refresh.installed_revision(installed) == SHA
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    call.assert_called_once()

@@ -2103,7 +2103,23 @@ $("roomLinkCopy").addEventListener("click",async()=>{
   }
 });
 
-async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){
+  if(stalePage)throw Error("Reload required");
+  // A missing action response must not indefinitely block every room control.
+  const controller=path==="/api/action"?new AbortController():null;
+  const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
+  try{
+    const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
+    const d=await r.json();
+    if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}
+    if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}
+    if(!r.ok)throw Error(d.error||"Request failed");
+    return d;
+  }catch(error){
+    if(controller?.signal.aborted)throw Error("Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    throw error;
+  }finally{if(deadline!==null)clearTimeout(deadline)}
+}
 const keepScreenOn=$("keepScreenOn");
 let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
 try{
@@ -2358,20 +2374,38 @@ function scheduleRefresh(){
 function makeRoomEvents(env){
   let source=null,retry=null,watch=null,failures=0,last=0,healthy=false;
   const delays=[1000,2000,4000,8000,15000];
-  function stop(){env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;if(source){source.close();source=null}healthy=false}
-  function fail(){stop();if(!env.canRun())return;env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)])}
+  function stop(){
+    env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;
+    const previous=source;source=null;healthy=false;
+    if(previous)previous.close();
+  }
+  function fail(es){
+    // Late callbacks from a closed connection cannot tear down its replacement.
+    if(source!==es)return;
+    stop();if(!env.canRun())return;
+    env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)]);
+  }
   function start(){
     if(!env.EventSource||source||!env.canRun())return;
+    env.clearTimeout(retry);retry=null;
     const es=new env.EventSource("/api/events");source=es;last=env.now();
-    es.addEventListener("state",e=>{let d;try{d=JSON.parse(e.data)}catch(x){return}last=env.now();healthy=true;failures=0;env.apply(d)});
-    es.onerror=fail;
-    watch=env.setInterval(()=>{if(env.now()-last>30000)fail()},5000);
+    es.addEventListener("state",e=>{
+      if(source!==es||!env.canRun())return;
+      let d;try{d=JSON.parse(e.data)}catch(_){return}
+      if(!d||typeof d.state!=="object"||!d.state)return;
+      // Healthy means the frame was usable, not just that bytes arrived.
+      try{if(env.apply(d)===false){stop();return}}catch(_){fail(es);return}
+      if(source!==es)return;
+      last=env.now();healthy=true;failures=0;
+    });
+    es.onerror=()=>fail(es);
+    watch=env.setInterval(()=>{if(source===es&&env.now()-last>30000)fail(es)},5000);
   }
   return {start,stop,healthy:()=>healthy};
 }
 const roomEvents=makeRoomEvents({
   EventSource:typeof EventSource==="function"?EventSource:null,
-  apply:d=>{if(!busy)applyStatus(d)},
+  apply:d=>{if(!busy)return applyStatus(d)},
   canRun:()=>!!csrf&&!stalePage&&!document.hidden,
   fallback:()=>scheduleRefresh(),
   setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
@@ -2411,8 +2445,8 @@ function renderPlaybackToggle(state){
 }
 function showJoinedRoom(){
   const entering=$("dashboard").hidden;
-  $("dashboard").hidden=false;
-  $("uploadCard").hidden=false;
+  if(entering)$("dashboard").hidden=false;
+  if($("uploadCard").hidden)$("uploadCard").hidden=false;
   if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
@@ -2597,14 +2631,26 @@ function renderNetworkActivity(entries){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;
+    renderPlaybackToggle(s.state);
+    document.querySelectorAll("[data-action]").forEach(b=>{
+      const action=b.dataset.action;
+      const allowed=action==="stop"?s.can_stop:action==="play_pause"?s.can_play_pause:undefined;
+      b.disabled=typeof allowed==="boolean"?!allowed:!!s.busy||!s.active;
+    });
+    monitorText("state",!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable");
+    monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    monitorText("receiver","Playing on: "+(s.receiver||"—"));
+    // Optional lock-screen integration must not prevent core room controls.
+    try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
+if(statusFailures)showError("errorDash","");
+statusFailures=0;showJoinedRoom();
   return true;
 }
 async function refresh(){
@@ -2749,8 +2795,12 @@ window.addEventListener("keydown",event=>{
 async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
   if(busy){
+    // Stop supersedes waiting playback changes, not unrelated queue edits.
+    if(action==="stop")for(const [key,pending] of pendingControls){
+      if(["queue_play","play_pause","seek","next","previous"].includes(pending.action))pendingControls.delete(key);
+    }
     const key=action+":"+(extra.id||"");
-    if(!pendingControls.has(key)&&pendingControls.size>=16){
+    if(action!=="stop"&&!pendingControls.has(key)&&pendingControls.size>=16){
       showError("errorDash","Too many controls are waiting; try again shortly");
       return;
     }
@@ -2764,6 +2814,7 @@ async function act(action,value,extra={}){
     return;
   }
   busy=true;
+  showError("errorDash",action==="stop"?"Requesting Stop…":action==="queue_play"?"Requesting playback…":"Sending command…");
   statusRequest?.abort("superseded");
   try{
     const body={action,...extra};
@@ -2779,7 +2830,7 @@ async function act(action,value,extra={}){
   finally{
     busy=false;
     if(pendingControls.size&&csrf&&!stalePage){
-      const first=pendingControls.keys().next().value;
+      const first=pendingControls.has("stop:")?"stop:":pendingControls.keys().next().value;
       const next=pendingControls.get(first);
       pendingControls.delete(first);
       if(next)void act(next.action,next.value,next.extra);
@@ -2860,7 +2911,7 @@ $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAu
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
 let transferEvents=[];
-function monitorText(id,value){const node=$(id);if(node)node.textContent=value;}
+function monitorText(id,value){const node=$(id),text=String(value);if(node&&node.textContent!==text)node.textContent=text;}
 function transferEvent(message){
   const stamp=new Date().toLocaleTimeString();
   transferEvents.push(stamp+"  "+message);
@@ -3712,11 +3763,13 @@ function syncMediaSession(s){
   function syncPill(){
     const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
     const show=!dash.hidden&&!idle.has(text);
-    pill.hidden=!show;
+    if(pill.hidden===show)pill.hidden=!show;
     if(!show)return;
-    pillTitle.textContent=text;
-    pill.classList.toggle("paused",!/play|buffer/i.test(mode));
-    pill.setAttribute("aria-label","Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls");
+    if(pillTitle.textContent!==text)pillTitle.textContent=text;
+    const paused=!/play|buffer/i.test(mode);
+    pill.classList.toggle("paused",paused);
+    const label="Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls";
+    if(pill.getAttribute("aria-label")!==label)pill.setAttribute("aria-label",label);
   }
   if(typeof MutationObserver!=="function"){syncPill();return}
   const watch=new MutationObserver(syncPill);

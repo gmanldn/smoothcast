@@ -10,6 +10,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "setup"))
 sys.path.insert(0, str(ROOT / "src"))
+import checkout_refresh
 import install_location
 import version
 
@@ -44,6 +45,7 @@ class InstalledBuildIdentityTests(unittest.TestCase):
         with install_location.installed_sources(self.source, self.target):
             self.assertFalse((self.target / ".git").exists())
             self.assertEqual(version.read_checkout_revision(self.target), sha)
+            self.assertEqual(checkout_refresh.installed_revision(self.target), sha)
             self.assertEqual(version.read_checkout_commit_date(self.target), expected_date)
             self.assertEqual(version.read_checkout_commit_date(self.target, sha),
                              expected_date)
@@ -72,6 +74,7 @@ class InstalledBuildIdentityTests(unittest.TestCase):
                 self.assertNotEqual(version.read_checkout_revision(self.target), old)
                 raise RuntimeError("installation failed")
         self.assertEqual(version.read_checkout_revision(self.target), old)
+        self.assertEqual(checkout_refresh.installed_revision(self.target), old)
         self.assertEqual(version.read_checkout_commit_date(self.target), old_date)
 
     def test_unknown_or_forged_source_marker_is_not_copied(self):

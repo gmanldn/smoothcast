@@ -6,6 +6,7 @@ import pathlib
 import threading
 import time
 
+import action_state
 import castctl
 import accent
 import state_labels
@@ -271,6 +272,12 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "queue": queue, "queue_revision": self._portal_observe_queue(),
                 "library_copies": self._portal_copy_status(),
                 "active": active, "busy": bool(self.busy),
+                "preparing": bool(self.busy and getattr(self, "_dlna_cancel", None) is not None),
+                "can_stop": action_state.can_stop(
+                    self.device_state, self.session, self.external, None,
+                    self.busy, getattr(self, "_dlna_cancel", None)),
+                "can_play_pause": active and action_state.can_play_pause(
+                    self.device_state, self.session, self.external, None, self.busy),
                 "can_seek": can_seek,
                 "music_autogain": bool(self.cfg.get("music_autogain", False)),
                 "accent": accent.normalize(self.cfg.get("accent")),
