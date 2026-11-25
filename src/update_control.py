@@ -17,6 +17,16 @@ ELIGIBLE_BRANCHES = frozenset({"main", "master"})
 UPDATE_CHANNELS = frozenset({"develop", "main"})
 
 
+def is_installed_build() -> bool:
+    """True in a packaged/installed app, never a source checkout.
+
+    An installed (frozen) build is replaced by a new signed installer, never by
+    git: a nested ``.git`` or an unusual working directory must not re-enable
+    the source updater (#533).
+    """
+    return bool(getattr(sys, "frozen", False))
+
+
 def _git(repo: Path, args: list[str], timeout: int) -> str | None:
     """Run one bounded read-only git command; return stripped stdout or None."""
     try:
@@ -120,7 +130,7 @@ def check_release(repo: Path, timeout: int = 8, *, enabled: bool = False,
     not attempt source checkout updates.
     """
     if (not enabled or not isinstance(channel, str) or channel not in UPDATE_CHANNELS
-            or getattr(sys, "frozen", False) or not (repo / ".git").exists()):
+            or is_installed_build() or not (repo / ".git").exists()):
         return None
     branch = _git(repo, ["rev-parse", "--abbrev-ref", "HEAD"], timeout)
     if branch not in ELIGIBLE_BRANCHES:
@@ -183,6 +193,8 @@ def refresh_checkout(repo: Path, timeout: int = 8, *, enabled: bool = False,
     of pulling.
     """
     if not enabled:
+        return None
+    if is_installed_build():
         return None
     if not (repo / ".git").exists():
         return None
