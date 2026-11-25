@@ -444,6 +444,7 @@ class PyChromecastBackend:
         with self._lock:
             if self._closed:
                 return
+            previously = self._connection_state.get(identifier)
             self._connection_state[identifier] = value
             if value != "CONNECTED":
                 # Empty status is explicit unavailability, not IDLE or proof
@@ -451,6 +452,35 @@ class PyChromecastBackend:
                 self._status[identifier] = {}
         if value != "CONNECTED":
             self._publish(identifier, {})
+        elif previously != "CONNECTED":
+            # The receiver came back online. PyChromecast only emits media-status
+            # events on change, so a receiver that reconnects while still playing
+            # the same content fires no new event and would otherwise appear to
+            # stop reporting playback. Re-observe the current status so the device
+            # keeps reporting playback instead of going silent.
+            self._refresh_status(identifier)
+
+    def _refresh_status(self, identifier: str) -> None:
+        """Re-observe current receiver media status after a reconnect.
+
+        A disconnect discards the cached media evidence, and PyChromecast only
+        emits media-status events on change. When the receiver reconnects while
+        still playing the same content, no new event fires, so the device would
+        otherwise appear to stop reporting playback. Read the receiver's current
+        status and republish it.
+        """
+        with self._lock:
+            if self._closed or identifier not in self._casts:
+                return
+            cast = self._casts.get(identifier)
+        if cast is None:
+            return
+        try:
+            media_status = cast.media_controller.status
+            cast_status = cast.status
+        except Exception:
+            return
+        self._publish(identifier, self._status_dict(media_status, cast_status))
 
     def close(self) -> None:
         with self._changed:

@@ -412,7 +412,9 @@ def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation(
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room") is None
     cast.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
-    assert backend.info("Living Room") is None
+    # A reconnect re-observes the current playback status so the receiver keeps
+    # reporting instead of appearing silent.
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
     cast.media_controller.status.player_state = "PAUSED"
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room")["player_state"] == "PAUSED"
