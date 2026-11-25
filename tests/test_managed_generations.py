@@ -40,14 +40,29 @@ def test_stages_immutable_generation_without_touching_active_install(tmp_path):
     assert (released / "src/entry.py").read_bytes() == (
         source / "src/entry.py"
     ).read_bytes()
+    marker = (COMMIT + "\n").encode()
     saved = json.loads((released / "stage-manifest.json").read_text())
-    assert saved == {"commit": COMMIT, "files": files}
+    assert saved == {"commit": COMMIT, "files": {
+        **files,
+        "src/.smoothcast-build": {"size": len(marker),
+                                  "sha256": hashlib.sha256(marker).hexdigest()}}}
+    assert (released / "src" / ".smoothcast-build").read_bytes() == marker
     assert (root / "current").read_text() == "old-verified-generation"
     assert (root / "previous").read_text() == "previous-verified-generation"
     assert not list((root / "releases").glob(".staging-*"))
     with pytest.raises(mg.StageError, match="already exists"):
         mg.stage_local_snapshot(root, source, COMMIT, files)
     assert (root / "current").read_text() == "old-verified-generation"
+
+
+def test_rejects_candidate_supplied_build_marker(tmp_path):
+    source, root, files = sample(tmp_path)
+    data = b"forged\n"
+    (source / "src" / ".smoothcast-build").write_bytes(data)
+    files = {**files, "src/.smoothcast-build": {
+        "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}}
+    with pytest.raises(mg.StageError, match="reserved build marker"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
 
 
 @pytest.mark.parametrize("name", [

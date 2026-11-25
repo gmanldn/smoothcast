@@ -317,10 +317,13 @@ def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
     do not attach an older Handover line to a later Implementation update.
     """
     slices, latest, remaining = 0, "", ""
+    shipped: set[str] = set()
     ordered = sorted((c for c in comments if isinstance(c, dict)),
                      key=lambda c: int(c.get("id") or 0))
     for comment in ordered:
         body = str(comment.get("body") or "")
+        receipts = shipment_receipts(body)
+        shipped.update(receipts)
         progress, handover = "", ""
         for line in body.splitlines():
             match = re.match(r"^\s*(Implementation|Progress|Handover|Remaining):\s*(.+)$",
@@ -329,7 +332,7 @@ def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
                 continue
             label, value = match.groups()
             value = " ".join(value.split())[:160]
-            if label.lower() == "implementation":
+            if label.lower() == "implementation" and not receipts:
                 slices += 1
             if label.lower() in {"implementation", "progress"}:
                 progress = value
@@ -337,7 +340,13 @@ def summarize_history(comments: list[dict]) -> tuple[int, str, str]:
                 handover = value
         if progress or handover:
             latest, remaining = progress, handover
-    return slices, latest, remaining
+    return slices + len(shipped), latest, remaining
+
+
+def shipment_receipts(body: str) -> set[str]:
+    """Count durable shipment/finish SHAs, not unshipped progress prose."""
+    return set(re.findall(
+        r"(?m)^<!-- sc-(?:ship v1|finish v1 issue=\d+) sha=([0-9a-f]{40}) -->\s*$", body))
 
 
 def all_open_issue_pool(tiers: set[str], max_pages: int = 20) -> tuple[dict, set[int]]:
@@ -372,7 +381,12 @@ def all_open_issue_pool(tiers: set[str], max_pages: int = 20) -> tuple[dict, set
 
 def ranked_candidates(a: argparse.Namespace) -> tuple[list, list, list, set, str]:
     me, now = agent_id(), utcnow()
-    claims = active_claims(parse_events(recent_comments()), now)
+    recent = recent_comments()
+    claims = active_claims(parse_events(recent), now)
+    # Reuse the complete, bounded lease feed for a recent-shipment ranking hint.
+    # Never fetch N issue histories just to choose one ticket.
+    shipped = {c.get("issue") or int((c.get("issue_url") or "0").rsplit("/", 1)[-1] or 0)
+               for c in recent if shipment_receipts(str(c.get("body") or ""))}
     hot = hot_files()
     tiers = ["now", "next"] + (["later"] if a.later else [])
     pool, open_numbers = all_open_issue_pool(set(tiers))
@@ -390,7 +404,8 @@ def ranked_candidates(a: argparse.Namespace) -> tuple[list, list, list, set, str
             skipped.append((n, bad[0]))
             continue
         wait = tuple(blockers(raw.get("body") or "", open_numbers))
-        base, _ = score(issue, files, hot, any(c["issue"] == n and c["agent"] == me for c in claims), 0, wait)
+        base, _ = score(issue, files, hot, any(c["issue"] == n and c["agent"] == me for c in claims),
+                        int(n in shipped), wait)
         ranked.append((base, n, issue, files, wait))
     ranked.sort(key=lambda r: (-r[0], r[1]))
     return ranked, skipped, claims, hot, me
@@ -1072,6 +1087,8 @@ def publish_ship_handover(task: dict | None, sha: str, changed: list[str],
 
 
 def cmd_ship(a: argparse.Namespace) -> int:
+    if a.assign_patch:
+        print("--assign-patch is deprecated and ignored; development uses Git SHA identity")
     result = commit_private_slice(a)
     if result:
         return result
@@ -1206,27 +1223,6 @@ def cmd_ship(a: argparse.Namespace) -> int:
         if a.dry_run:
             print(f"dry run ok: {len(changed)} files, rebased={rebased}")
             return 0
-        if task is not None and a.assign_patch:
-            # Explicit owner-authorised version assignment only. Ordinary
-            # agent shipments use immutable Git SHAs as development identities.
-            try:
-                minted = ship_patch.assign_private_patch(ROOT, remote_before, task["issue"])
-            except (ship_patch.PatchAllocationError, OSError) as exc:
-                print(f"PATCH ASSIGNMENT REFUSED: {exc}; pending work preserved")
-                return 6
-            if minted:
-                print(f"  assigned next develop PATCH at {minted[:12]} (unpublished until push)")
-                changed = sorted(set(changed) | {"src/version.py"})
-                # Recheck the full unpublished range including our generated
-                # version-only commit, not just the agent's original code.
-                guarded = subprocess.run(
-                    [sys.executable, "scripts/ci/check_version_history.py",
-                     "--before", remote_before, "--after", git("rev-parse", "HEAD").strip()],
-                    cwd=ROOT, capture_output=True, text=True)
-                if guarded.returncode:
-                    print("PATCH INTEGRITY FAILED; no push.")
-                    print((guarded.stdout + guarded.stderr)[-1200:])
-                    return 6
         sha = git("rev-parse", "HEAD").strip()
         verification = shipment_verification(a.skip_checks, checks_run, unverified_checks)
         receipt = {"sha": sha, "files": changed,
@@ -1422,16 +1418,19 @@ def cmd_finish(a: argparse.Namespace) -> int:
               "update/review the ticket before finishing")
         return 3
     marker = f"<!-- sc-finish v1 issue={number} sha={latest} -->"
+    # A partial handover at the same SHA is not final acceptance evidence.
+    close_marker = f"<!-- sc-close v1 issue={number} sha={latest} -->"
+    receipt = close_marker if a.close else marker
     comments = issue_comments(number)
     if not isinstance(comments, list):
         raise td.DigestError("cannot verify prior handovers; refusing duplicate")
-    if not any(marker in str(c.get("body") or "") for c in comments):
+    if not any(receipt in str(c.get("body") or "") for c in comments):
         body = (f"Progress: {a.done.strip()}\n"
                 f"Handover: {a.next.strip()}\n"
                 f"Commit: {latest}\n"
                 f"Verification: {a.verification.strip() or 'not run (unverified)'}\n"
                 f"Checklist: {a.checklist.strip() or 'not supplied'}\n"
-                f"{marker}")
+                f"{marker}" + (f"\n{close_marker}" if a.close else ""))
         posted = gh("-X", "POST", f"repos/{REPO}/issues/{number}/comments",
                     "-f", f"body={body}")
         if not isinstance(posted, dict) or not isinstance(posted.get("id"), int):
@@ -1556,7 +1555,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--assign-patch", action="store_true",
-                   help="explicit owner-authorised release-number allocation; never automatic")
+                   help="deprecated compatibility flag; ignored (no per-ticket version bump)")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)

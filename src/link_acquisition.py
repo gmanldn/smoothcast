@@ -838,45 +838,71 @@ class LinkJobs:
                     if job.source != source:
                         raise LinkError(409, "Submission identifier was already used for another link.")
                     return job.id
-            same = [j for j in self._jobs.values() if j.source == source]
+            return self._enqueue(owner, source, request)
+
+    def retry(self, owner: str, job_id: object) -> str:
+        """One explicit retry of a failed/cancelled row; never a second download.
+
+        The canonical source is already stored privately, so no raw URL is needed.
+        A safe local fallback reuses verified retained media when it exists.
+        """
+        if not self.owner_active(owner):
+            raise LinkError(401, guest_messages.ACCESS_REMOVED)
+        with self._lock:
+            if self._closed:
+                raise LinkError(503, "The room is shutting down.")
+            if self._journal_error:
+                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+            job = self._jobs.get(job_id) if isinstance(job_id, str) else None
+            if job is None or job.owner != owner:
+                raise LinkError(404, "That download is not available to retry.")
+            if job.stage not in {"failed", "cancelled"}:
+                raise LinkError(409, "Only a failed or cancelled download can be retried.")
+            if not self.capabilities().get(job.source.kind):
+                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
+            return self._enqueue(owner, job.source, job.request)
+
+    def _enqueue(self, owner: str, source: Source, request: str) -> str:
+        """Caller holds _lock: create or join the one attempt for *source*."""
+        same = [j for j in self._jobs.values() if j.source == source]
+        for job in same:
+            if job.stage not in {"failed", "cancelled", "ready", "delivery_uncertain"}:
+                self._remember_request(owner, request, job.id)
+                return job.id  # still working: one external download per source
+        retained = next((j for j in reversed(same) if j.stage == "ready" and j.digest), None)
+        if retained is None:
             for job in same:
-                if job.stage not in {"failed", "cancelled", "ready", "delivery_uncertain"}:
+                if job.stage not in {"failed", "cancelled"}:
                     self._remember_request(owner, request, job.id)
-                    return job.id  # still working: one external download per source
-            retained = next((j for j in reversed(same) if j.stage == "ready" and j.digest), None)
-            if retained is None:
-                for job in same:
-                    if job.stage not in {"failed", "cancelled"}:
-                        self._remember_request(owner, request, job.id)
-                        return job.id
-            if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
-                raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
-            previous_jobs = self._jobs.copy()
-            previous_requests = self._requests.copy()
-            while len(self._jobs) >= MAX_RECORDS:
-                # Never forget an ambiguous dispatch merely to free a slot.
-                expired = next((j for j in self._jobs.values()
-                                if j.stage in TERMINAL - {"delivery_uncertain"}), None)
-                if expired is None:
-                    raise LinkError(429, "The room acquisition queue is full.")
-                self._jobs.pop(expired.id)
-                for key, value in tuple(self._requests.items()):
-                    if value == expired.id:
-                        self._requests.pop(key)
-            job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
-            if retained is not None:  # deliberate re-queue: no second download (#590)
-                job.size, job.digest = retained.size, retained.digest
-                job.home = retained.home or retained.id
-            self._jobs[job.id] = job
-            self._remember_request(owner, request, job.id)
-            if not self._save():
-                self._jobs, self._requests = previous_jobs, previous_requests
-                raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
-            self._revision += 1
-            if self._worker is None:
-                self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
-                self._worker.start()
-            return job.id
+                    return job.id
+        if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
+            raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
+        previous_jobs = self._jobs.copy()
+        previous_requests = self._requests.copy()
+        while len(self._jobs) >= MAX_RECORDS:
+            # Never forget an ambiguous dispatch merely to free a slot.
+            expired = next((j for j in self._jobs.values()
+                            if j.stage in TERMINAL - {"delivery_uncertain"}), None)
+            if expired is None:
+                raise LinkError(429, "The room acquisition queue is full.")
+            self._jobs.pop(expired.id)
+            for key, value in tuple(self._requests.items()):
+                if value == expired.id:
+                    self._requests.pop(key)
+        job = _Job(secrets.token_hex(12), owner, request, source, title=source.label)
+        if retained is not None:  # deliberate re-queue: no second download (#590)
+            job.size, job.digest = retained.size, retained.digest
+            job.home = retained.home or retained.id
+        self._jobs[job.id] = job
+        self._remember_request(owner, request, job.id)
+        if not self._save():
+            self._jobs, self._requests = previous_jobs, previous_requests
+            raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
+        self._revision += 1
+        if self._worker is None:
+            self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
+            self._worker.start()
+        return job.id
 
     def _remember_request(self, owner, request, job_id):
         # Keep bounded replay aliases even when another guest originally
@@ -1011,7 +1037,8 @@ class LinkJobs:
             return [{"id": j.id, "kind": j.source.kind, "title": j.title, "stage": j.stage,
                      "received": j.received, "total": j.total, "rate": j.rate, "error": j.error,
                      "executor": "room host",
-                     "can_cancel": bool(j.owner) and j.owner == owner and j.stage not in TERMINAL | {"queueing"}}
+                     "can_cancel": bool(j.owner) and j.owner == owner and j.stage not in TERMINAL | {"queueing"},
+                     "can_retry": bool(j.owner) and j.owner == owner and j.stage in {"failed", "cancelled"}}
                     for j in self._jobs.values()]
 
     def revision(self):

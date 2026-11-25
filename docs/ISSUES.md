@@ -28,11 +28,11 @@ integrity checks. It posts a durable SHA handover. Do not close untested,
 incomplete or hardware-pending issues.
 
 Normal agent ships **do not change the semantic release version**. The exact
-development identity is the Git SHA (`smoothcast --build-id`); explicitly
-owner-authorised version allocation is opt-in with `--assign-patch`.
+development identity is the Git SHA (`smoothcast --build-id`). Ticket closure
+does not require a version bump. The legacy `--assign-patch` option is ignored.
+Release changes are separate explicit owner-directed commits.
 `main` remains entirely owner-controlled. Raw pushes bypass the local
-preflight, so use the coordinator whenever possible. Enforceable exactly-once
-release assignment remains tracked in #583.
+preflight, so use the coordinator.
 
 `python3 scripts/ticket_digest.py --next --label agent-ready` is only a read-only
 fallback: it cannot fully detect concurrent structured comment leases.

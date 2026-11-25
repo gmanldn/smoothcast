@@ -48,6 +48,8 @@ PATHS: dict[str, dict] = {
                                    csrf=True, method_body="LinkStart", tag="acquisition")},
     "/api/link-jobs/cancel": {"post": _op("Cancel your pending or downloading acquisition",
                                           csrf=True, method_body="LinkCancel", tag="acquisition")},
+    "/api/link-jobs/retry": {"post": _op("Retry a failed or cancelled acquisition you own",
+                                         csrf=True, method_body="LinkRetry", tag="acquisition")},
     "/api/action": {"post": _op(
         "Transport and queue commands (play_pause, stop, seek, volume, next, previous, "
         "queue_play, queue_remove, queue_move, queue_next, queue_clear, queue_vote, "
@@ -133,6 +135,8 @@ SCHEMAS = {
         "request_id": {"type": "string", "maxLength": 80},
         "authorised": {"const": True}}},
     "LinkCancel": {"type": "object", "required": ["id"], "properties": {
+        "id": {"type": "string"}}},
+    "LinkRetry": {"type": "object", "required": ["id"], "properties": {
         "id": {"type": "string"}}},
     "UploadStart": {"type": "object", "required": ["name", "size"], "properties": {
         "name": {"type": "string"}, "size": {"type": "integer"}, "queue": {"type": "boolean"}}},

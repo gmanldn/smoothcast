@@ -11,8 +11,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 import bootstrap
+import managed_startup
 import native_runtime
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -273,9 +275,10 @@ def _flat_argv(command: str, target: str) -> list[str] | None:
 
 def gui_instances(proc_root: Path = Path("/proc"),
                   exclude: set[int] | None = None, *,
-                  all_installations: bool = False) -> list[int]:
+                  all_installations: bool = False,
+                  target: Path | None = None) -> list[int]:
     """Same-user GUI PIDs; optionally include recognised other installations."""
-    target = str((ROOT / "src" / "cast_control.py").resolve())
+    target = str((target or ROOT / "src" / "cast_control.py").resolve())
     skip = {os.getpid()} | ({os.getppid()} if hasattr(os, "getppid") else set()) | (exclude or set())
     found: list[int] = []
     if not proc_root.is_dir():  # not Linux: enumerate through psutil / ps
@@ -350,14 +353,14 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     return result.returncode == 0
 
 
-def ensure_single_instance(args: list[str]) -> int | None:
+def ensure_single_instance(args: list[str], target: Path | None = None) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
     pids = gui_instances(all_installations=True)
     if not pids:
         return None
     # Do not mistake successful activation of a different source tree for
     # successful startup of the selected installed runtime.
-    selected = set(gui_instances())
+    selected = set(gui_instances(target=target))
     activated = activate_existing()
     if activated and set(pids) - selected:
         print(
@@ -386,6 +389,51 @@ def ensure_single_instance(args: list[str]) -> int | None:
         file=sys.stderr,
     )
     return 3
+
+
+def managed_target() -> tuple[Path, Path] | None:
+    """The activated generation's ``(python, app)``, or None for the flat install.
+
+    Settles any interrupted activation first; every failure falls back so a
+    broken managed install can never stop SmoothCast from launching.
+    """
+    try:
+        if not managed_startup.activated(ROOT):
+            return None
+        managed_startup.settle(ROOT)
+        return managed_startup.active_launch(ROOT)
+    except Exception:  # noqa: BLE001 - launch must never depend on the updater
+        return None
+
+
+def run_managed(root: Path, command: list[str], env: dict[str, str]) -> int:
+    """Start the activated generation and confirm its exact commit.
+
+    The launcher stays resident so it can acknowledge the switch the moment the
+    primary publishes the commit it loaded; a generation that never confirms is
+    rolled back by ``managed_startup.settle`` on the next launch.
+    """
+    try:
+        pending = managed_startup.pending(root)
+    except Exception:  # noqa: BLE001 - a corrupt journal is settled, not fatal
+        pending = None
+    ready_dir = None
+    if pending is not None:
+        ready_dir = tempfile.mkdtemp(prefix="smoothcast-activation-")
+        os.chmod(ready_dir, 0o700)
+        env[managed_startup.READY_ENV] = str(Path(ready_dir) / "ready")
+    try:
+        if os.name != "nt":
+            os.chdir(root)
+        process = subprocess.Popen(command, cwd=str(root), env=env)
+        if pending is not None:
+            txn, commit = pending
+            managed_startup.await_acknowledgement(
+                root, txn, commit, Path(env[managed_startup.READY_ENV]))
+        return process.wait()
+    finally:
+        if ready_dir is not None:
+            shutil.rmtree(ready_dir, ignore_errors=True)
 
 
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
@@ -425,24 +473,30 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
               "python3 scripts/test_gui_isolated.py for opt-in Xvfb smoke.",
               file=sys.stderr)
         return 2
+    # An activated generation (managed install) runs instead of the flat tree.
+    target = managed_target()
+    app = target[1] if target is not None else ROOT / "src" / "cast_control.py"
     # Always activate/diagnose the existing primary BEFORE checking the venv.
     # Its environment may have been moved during an update, while it remains
     # healthy and able to forward the caller's request.
     if not prechecked:
-        guarded = ensure_single_instance(args)
+        guarded = ensure_single_instance(args, app)
         if guarded is not None:
             return guarded
     try:
-        installed = python_path()
+        installed = target[0] if target is not None else python_path()
     except FileNotFoundError as exc:
         print(f"SmoothCast: {exc}", file=sys.stderr)
         return 1
     # GTK's process cwd is intentionally ROOT; preserve the caller's media
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
-    command = [str(installed), str(ROOT / "src" / "cast_control.py"), *media_args]
+    command = [str(installed), str(app), *media_args]
     try:
         env = runtime_environment()
+        if target is not None:
+            # Keep the launcher resident to acknowledge the new primary.
+            return run_managed(ROOT, command, env)
         if os.name != "nt":
             # A .desktop launch may inherit HOME or / as its working directory.
             # Use the same project root as the Windows launcher.

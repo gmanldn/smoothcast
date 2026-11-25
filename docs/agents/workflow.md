@@ -54,7 +54,7 @@ to `main`. The owner manually decides when (and whether) to merge it.
 python3 scripts/agent.py start              # auto-select or: start 584
 cd /path/printed/by/start
 # implement and review the narrow acceptance slice
-python3 scripts/agent.py ship --message "fix: completed behaviour" --assign-patch --next none
+python3 scripts/agent.py ship --message "fix: completed behaviour" --next none
 # give real evidence; close only when every acceptance criterion passes
 python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
@@ -77,12 +77,13 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
 - Every coherent `agent.py ship` has an immutable Git commit SHA; `src/version.py`
-  is SemVer. Owner policy (24 Nov 2026): **one PATCH per completed ticket**, via
-  `--assign-patch` on the final slice; progress ships carry no bump. The allocator reuses
-  the issue's existing assignment on retries, and a losing concurrent worker
-  rebases rather than minting a second number. The version-history guard runs
-  regardless of `--skip-checks`; `main` promotion is manual; raw-push
-  enforcement stays advisory until #583.
+  is release SemVer. Owner policy (25 Nov 2026): **no per-ticket version bumps**.
+  Ship and close verified tickets immediately without waiting for a release
+  number. The old `--assign-patch` flag is an ignored compatibility option.
+  Only explicit owner-directed release changes edit SemVer. The version-history
+  guard runs regardless of `--skip-checks`; `main` promotion is manual.
+  If targeted checks already ran, use `--skip-checks` to avoid duplicate work
+  and record the actual evidence at finish; do not claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
@@ -105,21 +106,10 @@ testing. Always describe actual evidence accurately.
 | Weekly CodeQL schedule or manual dispatch | Static security analysis | Detect accumulated issues without per-commit scans |
 
 - The nightly deferred workflow checks out **`develop` explicitly**, even though GitHub's cron uses the default branch's workflow definition. Its 15-minute budget and coalescing prevent runaway checks, and it never merges, pushes or tags anything.
-- Portal push paths are intentionally narrow: cosmetic changes, general UI
-  tweaks and most docs/tests should not trigger its heavy integration tests.
-  Coalescing cancels obsolete security runs when a newer relevant revision
-  arrives, so only the latest result matters.
-- Individual agents may run small deterministic local or headless tests for
-  risky code, but they are not a push prerequisite. Avoid re-running checks
-  a different agent or successful containing run has already supplied.
-- **Before an owner-requested manual `develop → main` promotion**, use
-  GitHub Actions' **Run workflow** on `develop` for Verify and any relevant
-  security/packaging workflows. Read actual run results; do not assume success
-  from an older SHA. Manual `main` merging is always the owner's action.
-- A scheduled GitHub workflow executes from the **default branch**; weekly
-  CodeQL schedule modifications in `develop` only take effect after the
-  owner merges that workflow to default `main`. Manual runs on `develop`
-  use the current workflow immediately.
+- Portal push paths are intentionally narrow: cosmetic changes, general UI tweaks and most docs/tests do not trigger heavy integration tests. Obsolete security runs are cancelled when a newer revision arrives.
+- Individual agents may run small deterministic local or headless tests for risky code, but they are not a push prerequisite. Avoid re-running checks a different agent has already supplied.
+- **Before an owner-requested manual `develop → main` promotion**, use GitHub Actions' **Run workflow** on `develop` for Verify and security/packaging workflows. Read actual run results. Manual `main` merging is always the owner's action.
+- A scheduled GitHub workflow executes from the **default branch**; weekly CodeQL schedule modifications in `develop` take effect after merging to `main`. Manual runs on `develop` use the current workflow immediately.
 
 ## Main — manual owner action only
 

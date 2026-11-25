@@ -92,15 +92,22 @@ def published_assignment(root: Path, remote_sha: str, issue: int) -> str | None:
         raise PatchAllocationError("positive GitHub issue number required")
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", remote_sha):
         raise PatchAllocationError("full fetched remote SHA required")
-    subject = f"chore(version): PATCH for issue #{issue} {MARKER}"
+    suffix = f" for issue #{issue} {MARKER}"
+    subject = re.compile(r"chore\(version\): PATCH(?: (\d+\.\d+\.\d+))?"
+                         + re.escape(suffix))
     # Shallow history cannot establish that an issue was never assigned.
     if run(root, "rev-parse", "--is-shallow-repository") != "false":
         raise PatchAllocationError("complete remote history required; fetch --unshallow")
     matches = run(root, "log", "--reverse", "--topo-order", "--format=%H%x09%s",
-                  "--fixed-strings", f"--grep={subject}", remote_sha, "--")
+                  "--fixed-strings", f"--grep={suffix}", remote_sha, "--")
     for line in matches.splitlines():
         sha, sep, title = line.partition("\t")
-        if not sep or title != subject:
+        match = subject.fullmatch(title) if sep else None
+        if match is None:
+            # Unrelated commit bodies are not assignments. A malformed subject
+            # claiming this issue must not permit a second version allocation.
+            if title.startswith("chore(version): PATCH") and title.endswith(suffix):
+                raise PatchAllocationError("malformed published assignment subject")
             continue
         parents = run(root, "rev-list", "--parents", "-n", "1", sha).split()
         if len(parents) != 2:
@@ -111,6 +118,8 @@ def published_assignment(root: Path, remote_sha: str, issue: int) -> str | None:
         after = run(root, "show", sha + ":" + VERSION_PATH)
         if after != patch_source(before):
             raise PatchAllocationError("published assignment is not an exact one-step patch")
+        if match[1] is not None and match[1] != ".".join(map(str, parsed(after))):
+            raise PatchAllocationError("published assignment subject/version mismatch")
         return sha
     return None
 

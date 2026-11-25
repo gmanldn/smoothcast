@@ -68,6 +68,15 @@ def test_can_volume_needs_an_online_controllable_receiver():
     assert not action_state.can_volume("PLAYING", False)
 
 
+def test_can_seek_needs_a_live_known_duration_stream():
+    assert action_state.can_seek(_session(), False, True, False, 120)
+    assert not action_state.can_seek(None, False, True, False, 120)
+    assert not action_state.can_seek(_session(), True, True, False, 120)
+    assert not action_state.can_seek(_session(), False, False, False, 120)
+    assert not action_state.can_seek(_session(), False, True, True, 120)
+    assert not action_state.can_seek(_session(), False, True, False, 0)
+
+
 def test_portal_preconditions_no_longer_read_widget_sensitivity():
     source = (ROOT / "src" / "portal_commands.py").read_text(encoding="utf-8")
     start = source.index("def run_mutation(")
@@ -75,6 +84,7 @@ def test_portal_preconditions_no_longer_read_widget_sensitivity():
     assert "get_sensitive" not in body
     assert "action_state.can_play_pause(" in body
     assert "action_state.can_stop(" in body
+    assert "action_state.can_seek(" in body
     assert "action_state.can_volume(" in body
 
 

@@ -174,7 +174,11 @@ const listeners = new Map(), timers = new Map();
 const elements = new Map();
 function element(id) {
   if(!elements.has(id)){
-    elements.set(id, {files: [], addEventListener(){}, focus(){this.focused=true},
+    elements.set(id, {files: [], hidden: false, textContent: "", className: "",
+                      addEventListener(){}, focus(){this.focused=true},
+                      getAttribute(){return null}, setAttribute(){}, removeAttribute(){},
+                      contains(){return false}, querySelectorAll(){return []},
+                      classList: {add(){}, remove(){}, toggle(){}},
                       querySelector(){return element("loginButton")}});
   }
   return elements.get(id);
@@ -186,7 +190,8 @@ const document = {
   querySelectorAll(){return []},
 };
 const window = {addEventListener(){}};
-const location = {origin:"http://127.0.0.1:4321"}; // Browser origin for room-share controls.
+const location = {origin:"http://127.0.0.1:4321", hash:"", pathname:"/",
+                  search:"", reload(){}}; // Browser globals for room-share and blade controls.
 let timerId = 0, requests = 0, respond;
 const setTimeout = (callback, delay) => {
   timers.set(++timerId, {callback, delay});
@@ -367,6 +372,22 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
     assert "queue_revision=queueRevision" in page and "body.queue_command_id=" in page
     assert "Add to Up Next" in page
+
+
+def test_room_settings_and_local_live_are_persistent(rig):
+    status, body, _ = rig.request("GET", "/")
+    assert status == 200
+    page = body.decode()
+    nav = page.split('<nav aria-label="Jump to room section">', 1)[1].split("</nav>", 1)[0]
+    assert '<a href="#localLivePanel">Live</a>' in nav
+    assert '<a href="#advancedPanel">Settings</a>' in nav
+    assert '<section id="advancedPanel" aria-labelledby="roomSettingsHeading">' in page
+    assert '<section id="localLivePanel" aria-labelledby="localLiveHeading">' in page
+    for identity in ("nameForm", "lockControls", "musicAutogain", "activity",
+                     "peers", "networkActivity", "liveRoomTarget", "liveRoomPlayback"):
+        assert page.count(f'id="{identity}"') == 1
+    assert 'liveTarget.textContent=target.textContent' in page
+    assert 'livePlayback.textContent=playing.textContent' in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
@@ -1698,3 +1719,154 @@ def test_concurrent_upload_completion_never_acknowledges_unaccepted_action(tmp_p
             worker.join(3)
         rig.close()
         uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_play_now_timeout_unblocks_controls_and_prioritises_stop():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    post_source = source[source.index("async function post(path,body)"):
+                         source.index('const keepScreenOn=')]
+    act_source = source[source.index("async function act(action,value,extra={})"):
+                        source.index("function confirmClearQueue()")]
+    harness = r"""
+const assert=require("node:assert/strict");
+const pendingControls=new Map(),messages=[],requests=[],timers=new Map();
+let busy=false,csrf="session",stalePage=false,rateDelayUntil=0,queueRevision=0,queueCommandSeq=0;
+let statusRequest=null,refreshes=0,sequence=0,respond=null;
+const clientHeaders={},showError=(_id,value)=>messages.push(value),$=()=>({textContent:""});
+const refresh=()=>refreshes++;
+const setTimeout=(fn,ms)=>{timers.set(++sequence,{fn,ms});return sequence};
+const clearTimeout=id=>timers.delete(id);
+const fetch=(url,options)=>{
+  assert.equal(url,"/api/action");
+  requests.push(JSON.parse(options.body));
+  return new Promise((resolve,reject)=>{
+    respond=resolve;
+    options.signal.addEventListener("abort",()=>reject(Error("Aborted")),{once:true});
+  });
+};
+"""
+    scenario = r"""
+(async()=>{
+  const first=act("queue_play",undefined,{id:"first"});
+  await act("queue_play",undefined,{id:"second"});
+  await act("seek",15);
+  await act("stop");
+  assert.equal(pendingControls.size,1);
+  assert.equal(requests.length,1);
+  assert.equal([...timers.values()][0].ms,10000);
+  [...timers.values()][0].fn();
+  await first;
+  assert.ok(messages.some(m=>/timed out.*may have changed/i.test(m)));
+  assert.deepEqual(requests,[{action:"queue_play",id:"first"},{action:"stop"}]);
+  respond({ok:true,json:async()=>({message:"Stop requested"})});
+  for(let i=0;i<12;i++)await Promise.resolve();
+  assert.equal(busy,false);
+  assert.equal(pendingControls.size,0);
+  assert.equal(timers.size,0);
+  assert.equal(refreshes,1);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + post_source + act_source + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_joined_room_does_not_retrigger_navigation_on_each_status():
+    source = portal._HTML
+    script = source[source.index("function showJoinedRoom()"):
+                    source.index('const linkForm=')]
+    harness = r"""
+const assert=require("node:assert/strict");
+let writes=0,focuses=0;
+const elements={};
+for(const id of ["dashboard","uploadCard"]){
+  let hidden=true;
+  elements[id]={get hidden(){return hidden},set hidden(v){writes++;hidden=v}};
+}
+elements.queueHeading={focus(){focuses++}};
+const $=id=>elements[id];
+"""
+    scenario = r"""
+showJoinedRoom();showJoinedRoom();showJoinedRoom();
+assert.equal(writes,2);assert.equal(focuses,1);
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_room_events_recover_render_failure_and_ignore_closed_source():
+    source = portal._HTML
+    script = source[source.index("function makeRoomEvents(env)"):
+                    source.index("const roomEvents=makeRoomEvents(")]
+    harness = r"""
+const assert=require("node:assert/strict");
+const streams=[],timers=new Map(),intervals=new Map();
+let serial=0,now=0,fallbacks=0,applied=0,broken=false,running=true;
+class Events{
+  constructor(){streams.push(this)}
+  addEventListener(_name,fn){this.receive=fn}
+  close(){this.closed=true}
+  emit(data){this.receive({data:JSON.stringify(data)})}
+}
+const env={
+  EventSource:Events,now:()=>now,canRun:()=>running,
+  apply:()=>{if(broken)throw Error("Render failed");applied++},
+  fallback:()=>fallbacks++,
+  setTimeout:(fn,ms)=>{timers.set(++serial,{fn,ms});return serial},
+  clearTimeout:id=>timers.delete(id),
+  setInterval:fn=>{intervals.set(++serial,fn);return serial},
+  clearInterval:id=>intervals.delete(id)
+};
+"""
+    scenario = r"""
+const room=makeRoomEvents(env);
+room.start();
+const first=streams[0];
+first.emit({state:{}});
+assert.equal(room.healthy(),true);
+broken=true;
+first.emit({state:{}});
+assert.equal(first.closed,true);
+assert.equal(room.healthy(),false);
+assert.equal(fallbacks,1);
+assert.equal(timers.size,1);
+broken=false;
+room.start(); // A successful fallback poll may reconnect before the retry.
+const second=streams[1];
+second.emit({state:{}});
+assert.equal(room.healthy(),true);
+first.onerror();first.emit({state:{}});
+assert.equal(second.closed,undefined);
+assert.equal(applied,2);
+assert.equal(timers.size,0);
+assert.equal(intervals.size,1);
+room.stop();
+second.emit({state:{}});
+assert.equal(applied,2);
+assert.equal(room.healthy(),false);
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_monitor_text_avoids_identical_dom_mutations():
+    source = portal._HTML
+    script = source[source.index("function monitorText(id,value)"):
+                    source.index("\n", source.index("function monitorText(id,value)"))]
+    harness = r"""
+const assert=require("node:assert/strict");
+let text="",writes=0;
+const node={get textContent(){return text},set textContent(v){text=v;writes++}};
+const $=()=>node;
+"""
+    scenario = r"""
+monitorText("title","Film");monitorText("title","Film");
+monitorText("title","Next film");monitorText("title","Next film");
+assert.equal(writes,2);assert.equal(text,"Next film");
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+

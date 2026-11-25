@@ -99,6 +99,13 @@ def test_import_names_match_ignoring_case(dist):
     assert wp.verify(dist, VERSION) == []
 
 
+def test_real_windows_system_dlls_and_drivers_are_not_payload_imports(dist):
+    (dist / wp.CLI_EXE).write_bytes(make_pe(subsystem=3, imports=(
+        "gdiplus.dll", "d3d12.dll", "pdh.dll", "WINSPOOL.DRV")))
+    wp.write_manifest(dist, VERSION)
+    assert wp.verify(dist, VERSION) == []
+
+
 def test_subsystems_are_checked_by_pe_metadata_not_by_running(dist):
     (dist / wp.GUI_EXE).write_bytes(make_pe(subsystem=3, imports=("libgtk-4-1.dll",)))
     (dist / wp.CLI_EXE).write_bytes(make_pe(subsystem=2, imports=("KERNEL32.dll",)))

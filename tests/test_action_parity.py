@@ -98,6 +98,25 @@ def test_ids_are_unique_and_labelled():
     assert actions.BY_ID["play_pause"].on("mpris") == ("Play", "Pause", "PlayPause")
 
 
+def test_every_entry_declares_description_icon_capability_and_permission():
+    import action_state
+    predicates = {name for name in dir(action_state) if name.startswith("can_")}
+    for a in actions.REGISTRY:
+        assert a.description and a.icon, a.id
+        assert a.permission == actions.PARTICIPANT, a.id
+        assert a.capability in (predicates | {""}), a.id
+        if a.capability:
+            assert callable(getattr(action_state, a.capability))
+
+
+def test_transport_actions_share_the_state_capability_predicates():
+    # The registry names the same predicate the room handler evaluates.
+    assert actions.BY_ID["play_pause"].capability == "can_play_pause"
+    assert actions.BY_ID["stop"].capability == "can_stop"
+    assert actions.BY_ID["seek"].capability == "can_seek"
+    assert actions.BY_ID["volume"].capability == actions.BY_ID["mute"].capability == "can_volume"
+
+
 def test_print_parity_table(capsys):
     with capsys.disabled():
         print("\naction parity (X = offered):")

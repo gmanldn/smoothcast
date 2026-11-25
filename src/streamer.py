@@ -1464,7 +1464,13 @@ class Session:
         predates this restriction, is replaced only if its PID is verified
         as our own server; otherwise the cast is refused.
         """
-        hls_server.write_policy(ROOT, hls_server.make_policy(receiver_ip, token=token))
+        # CATT/yt-dlp probes the advertised HLS URL from this host's LAN IP.
+        # Authorise that exact interface as well as the known receiver; do
+        # not narrow the existing private-LAN fallback for unknown receivers.
+        policy = hls_server.make_policy(receiver_ip, token=token)
+        if bind_ip and not policy.any_private:
+            policy = hls_server.make_policy(receiver_ip, extra=(bind_ip,), token=token)
+        hls_server.write_policy(ROOT, policy)
         ports = candidate_ports(self.port)
         # Pass 1: reuse (or verifiably replace) a SmoothCast server that is
         # already listening on any candidate port, so a kept-alive server on a
@@ -2016,7 +2022,7 @@ class Session:
 
     def _await_receiver(
         self, device: str, matches: Callable[[dict | None], bool], *,
-        timeout: float = 10.0, interval: float = 0.25,
+        timeout: float = 40.0, interval: float = 0.25,
     ) -> None:
         """Confirm the receiver plays our media before a cast is treated as started.
 
@@ -2024,20 +2030,42 @@ class Session:
         later. Poll the receiver's own state until it reports our content, or a
         clear timeout; a catt process that exits non-zero fails immediately.
         """
+        # catt itself allows up to 30 seconds for connection, plus discovery.
+        # A 10-second confirmation deadline could kill a still-connecting load.
         deadline = time.monotonic() + timeout
+        observed = False
+        known_state = False
         while True:
             if self.caster is not None and self.caster.poll() not in (None, 0):
-                raise StreamError(self._caster_output("casting failed"))
+                raise StreamPreparationError(
+                    "Cast helper failed to start playback. Check the receiver connection.",
+                    detail=self._caster_output("casting failed"), code="cast.command_failed")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
-                info = castctl.info(device)
+                info = castctl.info(device, timeout=min(8.0, remaining))
             except (OSError, ValueError, TypeError):
                 info = None
+            if isinstance(info, dict) and info:
+                observed = True
+                known_state |= castctl.player_state(info) not in {"UNKNOWN", "OFFLINE"}
             if matches(info):
                 return
-            if time.monotonic() >= deadline:
-                raise StreamError(self._caster_output(
-                    "The receiver did not start playing this title in time"))
-            time.sleep(interval)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(interval, remaining))
+        if not observed:
+            raise StreamPreparationError(
+                "Receiver did not return status. Check its power, network and Cast connection.",
+                code="cast.receiver_offline")
+        if not known_state:
+            raise StreamPreparationError(
+                "Receiver responded but did not report playback state. Check the TV's Cast app.",
+                code="cast.command_failed")
+        raise StreamPreparationError(
+            "Receiver is reachable but did not confirm playback of this media. Check the TV.",
+            detail=self._caster_output("playback not confirmed"), code="cast.command_failed")
 
     def _caster_output(self, fallback: str) -> str:
         """Best-effort catt output for an error; never block on a live catt."""

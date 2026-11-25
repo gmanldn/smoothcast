@@ -100,12 +100,11 @@ ran before pushing.
 ## Build identity and release-number policy
 
 Development changes are identified by immutable Git SHAs. Ordinary private
-worktree `ship` calls leave `src/version.py` unchanged, preventing all
-routine patch-number contention. An explicit owner-authorised
-`ship --assign-patch` can allocate a guarded PATCH in a separate unpublished
-commit; this is **not** the normal development path. Even then, raw pushes
-and shared GitHub identities prevent true server-enforced exactly-once
-per-ticket attribution. See #583; do not claim the stronger guarantee exists.
+worktree `ship` calls leave `src/version.py` unchanged. Owner policy (25 Nov
+2026): no per-ticket version allocation, including at verified closure.
+The legacy `--assign-patch` flag is accepted but ignored. Release-number
+changes are separate explicit owner-directed commits, guarded by the same
+version-history check. Historical assignments and recovery remain intact.
 `main` remains exclusively owner-controlled.
 
 ## Tiers

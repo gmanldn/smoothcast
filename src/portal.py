@@ -168,7 +168,7 @@ def _page() -> bytes:
     markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
                            + portal_mesh_panel.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
-            .replace("__SC_VERSION__", version.label())
+            .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
             .replace("__SC_SCHEMA__", str(CLIENT_SCHEMA))
             .replace("__SC_SHORTCUTS__", shortcut_map.browser_json())
@@ -731,7 +731,7 @@ class _Handler(BaseHTTPRequestHandler):
         mine = html.escape(self.server.hostname_label or "This computer")
         body = (_NODES_HTML.replace("/*TOKENS*/", design_tokens.css())
                 .replace("__MINE__", mine).replace("__ROWS__", rows)
-                .replace("__SC_VERSION__", version.label())
+                .replace("__SC_VERSION__", version.identity_label())
                 .replace("<!--SC_DEMO-->", _demo_badge()))
         return self._send(200, body.encode("utf-8"), content_type="text/html; charset=utf-8")
 
@@ -1121,11 +1121,11 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube"}
                 or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
@@ -1247,7 +1247,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"results": jobs.search_youtube(owner, body.get("q"))})
             except link_acquisition.LinkError as exc:
                 return self._error(exc.status, exc.message)
-        if path in {"/api/link-jobs", "/api/link-jobs/cancel"}:
+        if path in {"/api/link-jobs", "/api/link-jobs/cancel", "/api/link-jobs/retry"}:
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
             jobs = self.server.link_jobs
@@ -1258,6 +1258,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if path.endswith("/cancel"):
                     jobs.cancel(owner, body.get("id"))
                     return self._send(202, {"ok": True, "message": "Cancellation requested"})
+                if path.endswith("/retry"):
+                    job_id = jobs.retry(owner, body.get("id"))
+                    return self._send(202, {"ok": True, "id": job_id,
+                                            "message": "Retry accepted; Up Next updates when the media is ready"})
                 if body.get("authorised") is not True:
                     return self._error(400, "Confirm that you are authorised to download this media")
                 job_id = jobs.submit(owner, body.get("url"), body.get("request_id"))
@@ -1676,13 +1680,14 @@ _NODES_HTML = r"""<!doctype html>
 .home-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none}
 .home-btn svg{width:22px;height:22px;fill:currentColor}
 .app-bar strong{font-size:1.1rem;letter-spacing:-.02em}
-.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.sc-version{font-size:.74rem;font-weight:650;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:normal;line-height:1.2;text-align:center}
 main{max-width:640px;margin:auto;padding:24px 16px}
 h1{font-size:clamp(1.5rem,5vw,2rem);letter-spacing:-.025em;margin:8px 0}p{color:var(--muted);line-height:1.5}
 ul{list-style:none;padding:0;display:grid;gap:10px}
 li a{display:flex;align-items:center;min-height:56px;padding:0 18px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--text);font-weight:650;text-decoration:none;overflow-wrap:anywhere}
 li a:hover{border-color:var(--accent)}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+@media(max-width:560px){.app-bar{gap:8px;padding:0 12px}.home-btn{padding:0 15px 0 11px}.app-bar strong{display:none}}
 @media(forced-colors:active){.home-btn{border:2px solid ButtonText}}
 </style></head><body>
 <header class="app-bar"><a class="home-btn" href="/" title="Back to this computer's room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><strong>SmoothCast</strong><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></header>
@@ -1732,7 +1737,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .field-hint{margin:6px 0}
 #dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 #dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
-#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
 #dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
 #dashboard nav a{white-space:nowrap;flex:none}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
@@ -1785,7 +1790,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .help .help-body{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:7px;font-size:.87rem;line-height:1.55}
 .help .help-body p{margin:.4rem 0}.help .help-body p:first-child{margin-top:0}.help .help-body p:last-child{margin-bottom:0}
 #advancedPanel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px;scroll-margin-top:78px}
-#advancedPanel>summary{cursor:pointer;font-size:1.05rem;font-weight:750;min-height:44px;align-content:center}
+#advancedPanel>h2,#localLivePanel>h2{margin:0 0 8px}
 #advancedPanel>p{font-size:.88rem;margin:6px 0}
 .advanced-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
 .advanced-grid>section{margin:0;box-shadow:none;border:1px solid var(--line);min-width:0}
@@ -1830,7 +1835,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
-  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
   #findPanel{grid-column:2}
   #queuePanel{grid-column:1/-1}
@@ -1865,7 +1870,7 @@ header.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;
 .home-btn:hover{filter:brightness(1.08)}.home-btn:active{transform:scale(.97)}
 .brand{display:flex;align-items:center;gap:10px;flex:none}
 .brand h1{margin:0;font-size:1.12rem;letter-spacing:-.02em;white-space:nowrap}
-.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.sc-version{flex:none;font-size:.74rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:normal;line-height:1.2;text-align:center}
 .brand .site-mark{width:44px;height:44px;border-radius:13px;font-size:1.2rem;text-decoration:none;background:linear-gradient(135deg,var(--accent),var(--vote-on));transition:transform .12s ease,box-shadow .12s ease}
 .brand .site-mark:hover{transform:translateY(-1px);box-shadow:0 6px 16px var(--shadow)}
 .bar-now{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:9px;min-width:0;max-width:min(44vw,360px);min-height:44px;padding:0 15px;
@@ -1883,6 +1888,12 @@ main{padding-top:6px}
 #dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
+#dashboard[data-room-blade="playback"]>:not(nav):not(#errorDash):not(#playback),
+#dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel),
+#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel),
+#dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}
+#dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
+#dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
 .advanced-grid>section,.transfer-journey,.help .help-body,#login .steps li{border-radius:var(--r-md)}
@@ -1923,7 +1934,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
 @media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
 @media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
-@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
@@ -1942,7 +1953,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">More</a></nav>
+<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
@@ -1982,7 +1993,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
-<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading">Find something to play</h2>
+<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
 <div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
@@ -2033,26 +2044,26 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
-<p class="section-desc">See who is connected, update your own name and follow recent room activity.</p>
+<p class="section-desc">See who is connected. <a href="#advancedPanel">Change your name in Settings</a> or <a href="#localLivePanel">follow room activity</a>.</p>
 <div id="people" class="participants"></div>
-<form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form>
-<h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div>
 <details class="help"><summary>Who can see my name and actions?</summary><div class="help-body"><p>Your display name and activity such as joining, voting and queue changes can be seen by people in this shared room. Only you can change your display name.</p></div></details>
 </section>
-<details id="advancedPanel"><summary>More settings and network information</summary><p>Optional controls for phones, music and other devices. Most guests will not need to change these.</p>
+<section id="advancedPanel" aria-labelledby="roomSettingsHeading"><h2 id="roomSettingsHeading" tabindex="-1">Settings</h2><p>Personal browser preferences and shared room playback settings. Host policy and library folders are managed in desktop Preferences.</p>
 <div class="advanced-grid">
-<section aria-labelledby="phoneHeading"><h3 id="phoneHeading">Phone remote</h3>
+<section aria-labelledby="profileHeading"><h3 id="profileHeading">Your profile</h3><form id="nameForm"><label for="displayName">Your display name</label><div class="actions"><input id="displayName" maxlength="40" autocomplete="nickname" required><button class="secondary" type="submit">Update name</button></div></form></section>
+<section aria-labelledby="phoneHeading"><h3 id="phoneHeading">This browser only</h3>
 <label class="toggle"><input id="lockControls" type="checkbox" checked><span><strong>Lock-screen controls</strong><span class="field-hint" style="display:block">Use play, pause and skip from your phone's lock screen or headphones while this page is open.</span></span></label>
 <label class="toggle"><input id="keepScreenOn" type="checkbox"><span><strong>Keep screen on</strong><span class="field-hint" style="display:block">Ask your browser to keep the display awake while you use this remote. Your device may not support it.</span></span></label>
 <p id="remoteDimHint" role="status" hidden>Your browser may still dim the screen. For an iPad on a stand, turn on Guided Access in its Settings to keep it awake.</p>
 </section>
-<section aria-labelledby="musicHeading"><h3 id="musicHeading">Music playback</h3>
+<section aria-labelledby="musicHeading"><h3 id="musicHeading">Shared room audio</h3>
 <label class="toggle"><input id="musicAutogain" type="checkbox"><span><strong>Normalise audio-only tracks</strong><span class="field-hint" style="display:block">Reduce big volume differences between tracks. Existing programme or album normalisation takes precedence.</span></span></label>
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
-<section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+</div></section>
+<section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading" tabindex="-1">Live room activity</h2><p class="section-desc">Current room activity is available even without a connected mesh.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">TV or speaker status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
 <section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
-</div></details></div>
+</div></section></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
@@ -2092,7 +2103,23 @@ $("roomLinkCopy").addEventListener("click",async()=>{
   }
 });
 
-async function post(path,body){if(stalePage)throw Error("Reload required");const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body)});const d=await r.json();if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}if(!r.ok)throw Error(d.error||"Request failed");return d}
+async function post(path,body){
+  if(stalePage)throw Error("Reload required");
+  // A missing action response must not indefinitely block every room control.
+  const controller=path==="/api/action"?new AbortController():null;
+  const deadline=controller?setTimeout(()=>controller.abort(),10000):null;
+  try{
+    const r=await fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,...clientHeaders},body:JSON.stringify(body),...(controller?{signal:controller.signal}:{})});
+    const d=await r.json();
+    if(d.code==="client_reload_required"){showUpdateNotice();throw Error(d.error||"Reload required")}
+    if(r.status===429){const retryAfter=Math.max(1,Number(r.headers.get("Retry-After"))||1);rateDelayUntil=Date.now()+retryAfter*1000;throw Object.assign(Error("Too many controls at once. Try again shortly."),{status:429,retryAfter})}
+    if(!r.ok)throw Error(d.error||"Request failed");
+    return d;
+  }catch(error){
+    if(controller?.signal.aborted)throw Error("Command response timed out; playback may have changed. Check Now Playing before retrying.");
+    throw error;
+  }finally{if(deadline!==null)clearTimeout(deadline)}
+}
 const keepScreenOn=$("keepScreenOn");
 let remoteWakeLock=null,requestingWakeLock=false,remoteDimHintSeen=false;
 try{
@@ -2347,20 +2374,38 @@ function scheduleRefresh(){
 function makeRoomEvents(env){
   let source=null,retry=null,watch=null,failures=0,last=0,healthy=false;
   const delays=[1000,2000,4000,8000,15000];
-  function stop(){env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;if(source){source.close();source=null}healthy=false}
-  function fail(){stop();if(!env.canRun())return;env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)])}
+  function stop(){
+    env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;
+    const previous=source;source=null;healthy=false;
+    if(previous)previous.close();
+  }
+  function fail(es){
+    // Late callbacks from a closed connection cannot tear down its replacement.
+    if(source!==es)return;
+    stop();if(!env.canRun())return;
+    env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)]);
+  }
   function start(){
     if(!env.EventSource||source||!env.canRun())return;
+    env.clearTimeout(retry);retry=null;
     const es=new env.EventSource("/api/events");source=es;last=env.now();
-    es.addEventListener("state",e=>{let d;try{d=JSON.parse(e.data)}catch(x){return}last=env.now();healthy=true;failures=0;env.apply(d)});
-    es.onerror=fail;
-    watch=env.setInterval(()=>{if(env.now()-last>30000)fail()},5000);
+    es.addEventListener("state",e=>{
+      if(source!==es||!env.canRun())return;
+      let d;try{d=JSON.parse(e.data)}catch(_){return}
+      if(!d||typeof d.state!=="object"||!d.state)return;
+      // Healthy means the frame was usable, not just that bytes arrived.
+      try{if(env.apply(d)===false){stop();return}}catch(_){fail(es);return}
+      if(source!==es)return;
+      last=env.now();healthy=true;failures=0;
+    });
+    es.onerror=()=>fail(es);
+    watch=env.setInterval(()=>{if(source===es&&env.now()-last>30000)fail(es)},5000);
   }
   return {start,stop,healthy:()=>healthy};
 }
 const roomEvents=makeRoomEvents({
   EventSource:typeof EventSource==="function"?EventSource:null,
-  apply:d=>{if(!busy)applyStatus(d)},
+  apply:d=>{if(!busy)return applyStatus(d)},
   canRun:()=>!!csrf&&!stalePage&&!document.hidden,
   fallback:()=>scheduleRefresh(),
   setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
@@ -2400,8 +2445,8 @@ function renderPlaybackToggle(state){
 }
 function showJoinedRoom(){
   const entering=$("dashboard").hidden;
-  $("dashboard").hidden=false;
-  $("uploadCard").hidden=false;
+  if(entering)$("dashboard").hidden=false;
+  if($("uploadCard").hidden)$("uploadCard").hidden=false;
   if(entering)$("queueHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
@@ -2529,6 +2574,7 @@ function renderLinkJobs(state){
     }
     if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
     if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
+    if(job.can_retry){const retry=document.createElement("button");retry.type="button";retry.className="secondary tiny";retry.textContent="Retry download";retry.setAttribute("aria-label","Retry "+(job.title||"acquisition"));retry.addEventListener("click",async()=>{retry.disabled=true;try{const reply=await post("/api/link-jobs/retry",{id:job.id});showError("linkFeedback",reply.message||"Retry accepted");void refresh()}catch(error){showError("linkFeedback",error.message);retry.disabled=false}});row.append(retry)}
     rows.push(row);
   }
   list.replaceChildren(...rows);
@@ -2565,10 +2611,22 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
+function playbackFeedback(state){
+  const feedback=state.cast_feedback;
+  if(feedback&&feedback.receiver===state.receiver&&typeof feedback.message==="string"){
+    if(feedback.state==="failed")return "Cast failed: "+feedback.message;
+    if(feedback.state==="cancelled")return feedback.message;
+    if(feedback.state==="preparing"&&state.busy)return feedback.message;
+  }
+  return "";
+}
 function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
-  if(playing)playing.textContent=(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
+  if(liveTarget&&target)liveTarget.textContent=target.textContent;
+  if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
   if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
 }
@@ -2582,14 +2640,26 @@ function renderNetworkActivity(entries){
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;syncMediaSession(s);renderPlaybackToggle(s.state);$("state").textContent=s.state_label||"State unavailable";$("title").textContent=s.title||"Nothing playing";$("receiver").textContent="Playing on: "+(s.receiver||"—");monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
+    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;
+    renderPlaybackToggle(s.state);
+    document.querySelectorAll("[data-action]").forEach(b=>{
+      const action=b.dataset.action;
+      const allowed=action==="stop"?s.can_stop:action==="play_pause"?s.can_play_pause:undefined;
+      b.disabled=typeof allowed==="boolean"?!allowed:!!s.busy||!s.active;
+    });
+    monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
+    monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    monitorText("receiver","Playing on: "+(s.receiver||"—"));
+    // Optional lock-screen integration must not prevent core room controls.
+    try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);
-document.querySelectorAll("[data-action]").forEach(b=>b.disabled=!!s.busy||!s.active);statusFailures=0;showJoinedRoom();showError("errorDash","");
+if(statusFailures)showError("errorDash","");
+statusFailures=0;showJoinedRoom();
   return true;
 }
 async function refresh(){
@@ -2734,8 +2804,12 @@ window.addEventListener("keydown",event=>{
 async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
   if(busy){
+    // Stop supersedes waiting playback changes, not unrelated queue edits.
+    if(action==="stop")for(const [key,pending] of pendingControls){
+      if(["queue_play","play_pause","seek","next","previous"].includes(pending.action))pendingControls.delete(key);
+    }
     const key=action+":"+(extra.id||"");
-    if(!pendingControls.has(key)&&pendingControls.size>=16){
+    if(action!=="stop"&&!pendingControls.has(key)&&pendingControls.size>=16){
       showError("errorDash","Too many controls are waiting; try again shortly");
       return;
     }
@@ -2749,6 +2823,7 @@ async function act(action,value,extra={}){
     return;
   }
   busy=true;
+  showError("errorDash",action==="stop"?"Requesting Stop…":action==="queue_play"?"Requesting playback…":"Sending command…");
   statusRequest?.abort("superseded");
   try{
     const body={action,...extra};
@@ -2764,7 +2839,7 @@ async function act(action,value,extra={}){
   finally{
     busy=false;
     if(pendingControls.size&&csrf&&!stalePage){
-      const first=pendingControls.keys().next().value;
+      const first=pendingControls.has("stop:")?"stop:":pendingControls.keys().next().value;
       const next=pendingControls.get(first);
       pendingControls.delete(first);
       if(next)void act(next.action,next.value,next.extra);
@@ -2845,7 +2920,7 @@ $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAu
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
 let transferEvents=[];
-function monitorText(id,value){const node=$(id);if(node)node.textContent=value;}
+function monitorText(id,value){const node=$(id),text=String(value);if(node&&node.textContent!==text)node.textContent=text;}
 function transferEvent(message){
   const stamp=new Date().toLocaleTimeString();
   transferEvents.push(stamp+"  "+message);
@@ -3663,10 +3738,32 @@ function syncMediaSession(s){
   const title=$("title"),state=$("state"),dash=$("dashboard");
   if(!home||!top||!pill||!pillTitle||!title||!state||!dash||!home.addEventListener)return;
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function syncRoomBlade(navigate=false){
+    const target=$(location.hash.slice(1));
+    const blade=target&&dash.contains(target)&&target.closest("#playback,#findPanel,#advancedPanel,#localLivePanel");
+    const selected=blade?blade.id:"";
+    const previous=dash.getAttribute("data-room-blade")||"";
+    if(selected)dash.setAttribute("data-room-blade",selected);
+    else dash.removeAttribute("data-room-blade");
+    for(const link of dash.querySelectorAll("nav a")){
+      if(selected&&link.getAttribute("href")==="#"+selected)link.setAttribute("aria-current","page");
+      else link.removeAttribute("aria-current");
+    }
+    if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
+      target.scrollIntoView({block:"start",behavior:"auto"});
+      if(blade===target&&!target.contains(document.activeElement)){
+        const heading=$(selected==="playback"?"playbackHeading":selected==="findPanel"?"findHeading":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+        if(heading&&heading.focus)heading.focus({preventScroll:true});
+      }
+    }
+  }
+  window.addEventListener("hashchange",()=>syncRoomBlade(true));
+  syncRoomBlade();
   const goHome=event=>{
     event.preventDefault();
-    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
     if(location.hash)history.replaceState(null,"",location.pathname+location.search);
+    syncRoomBlade();
+    window.scrollTo({top:0,behavior:still()?"auto":"smooth"});
     top.focus({preventScroll:true});
   };
   home.addEventListener("click",goHome);
@@ -3675,16 +3772,20 @@ function syncMediaSession(s){
   function syncPill(){
     const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
     const show=!dash.hidden&&!idle.has(text);
-    pill.hidden=!show;
+    if(pill.hidden===show)pill.hidden=!show;
     if(!show)return;
-    pillTitle.textContent=text;
-    pill.classList.toggle("paused",!/play|buffer/i.test(mode));
-    pill.setAttribute("aria-label","Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls");
+    if(pillTitle.textContent!==text)pillTitle.textContent=text;
+    const paused=!/play|buffer/i.test(mode);
+    pill.classList.toggle("paused",paused);
+    const label="Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls";
+    if(pill.getAttribute("aria-label")!==label)pill.setAttribute("aria-label",label);
   }
   if(typeof MutationObserver!=="function"){syncPill();return}
   const watch=new MutationObserver(syncPill);
   for(const node of [title,state])watch.observe(node,{childList:true,characterData:true,subtree:true});
   watch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
+  const routeWatch=new MutationObserver(()=>{if(!dash.hidden&&location.hash)syncRoomBlade(true)});
+  routeWatch.observe(dash,{attributes:true,attributeFilter:["hidden"]});
   syncPill();
 })();
 // Ticket 592: invite QR from the same origin. Handlers are attached before src so

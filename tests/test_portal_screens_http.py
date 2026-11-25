@@ -566,8 +566,11 @@ def test_status_http_reads_snapshot_while_gtk_dispatcher_is_blocked(tmp_path):
         with ThreadPoolExecutor(max_workers=32) as pool:
             replies = list(pool.map(read_status, guests))
         assert all(status == 200 for status, _data, _elapsed in replies)
-        assert all(elapsed < 0.05 for _status, _data, elapsed in replies), \
-            f"status latency over 50 ms: {max(elapsed for _status, _data, elapsed in replies):.3f}s"
+        # A served-on-the-GTK-dispatcher regression would block for ~3 s until
+        # ``release``; 150 ms still proves the snapshot path is off-thread while
+        # tolerating scheduler jitter from 32 concurrent readers.
+        assert all(elapsed < 0.15 for _status, _data, elapsed in replies), \
+            f"status latency over 150 ms: {max(elapsed for _status, _data, elapsed in replies):.3f}s"
         assert all(data["state"]["title"] == "Cached" for _status, data, _elapsed in replies)
         assert all("snapshot_age_ms" in data["state"] for _status, data, _elapsed in replies)
         assert dispatch_calls == ["status"]

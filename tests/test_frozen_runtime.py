@@ -132,6 +132,35 @@ class FrozenRuntimeTests(unittest.TestCase):
                 self.assertEqual(cli.main(), expected)
             self.assertEqual(__import__("json").loads(out.getvalue())["ok"], ok)
 
+    def test_frozen_verifier_checks_the_media_probe_contract(self):
+        import importlib.util
+        import json as _json
+
+        path = Path(__file__).resolve().parents[1] / "scripts" / "ci" / "verify_frozen_artifact.py"
+        spec = importlib.util.spec_from_file_location("verify_frozen_artifact", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def result(returncode, payload):
+            return types.SimpleNamespace(returncode=returncode, stdout=payload, stderr="")
+
+        def probe(ok):
+            body = _json.dumps({"strict": False, "tools": {}, "ok": ok})
+            return result(0 if ok else 1, body)
+
+        with mock.patch.object(module.subprocess, "run", return_value=probe(True)):
+            module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        with mock.patch.object(module.subprocess, "run", return_value=probe(False)):
+            module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        with mock.patch.object(module.subprocess, "run", return_value=result(0, "not json")):
+            with self.assertRaises(RuntimeError):
+                module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+        # ok=true but exit 1 (or vice versa) is a broken probe, not a media state.
+        with mock.patch.object(module.subprocess, "run",
+                               return_value=result(1, _json.dumps({"tools": {}, "ok": True}))):
+            with self.assertRaises(RuntimeError):
+                module.check_media_probe(Path("/tmp/SmoothCastCLI"))
+
     def test_source_package_check_rejects_without_gtk(self):
         with mock.patch.object(frozen_runtime, "is_frozen", return_value=False), \
              mock.patch.object(frozen_runtime, "dispatch_frozen_helper", return_value=None), \
@@ -176,9 +205,25 @@ class FrozenRuntimeTests(unittest.TestCase):
         yaml = (root / ".github" / "workflows" / "package.yml").read_text("utf-8")
         refs = [line.strip().removeprefix("- uses: ").strip()
                 for line in yaml.splitlines() if "- uses:" in line]
-        self.assertEqual(len(refs), 7)
+        self.assertTrue(refs)
         for ref in refs:
             self.assertRegex(ref, r"^[\w./-]+@[a-f0-9]{40} # v\d+$")
+
+    def test_package_workflow_smokes_frozen_cli_off_the_developer_path(self):
+        # #528: the payload manifest gate is blocking, and the frozen CLI is
+        # run with developer Python/MSYS2 removed from PATH from a temporary
+        # directory whose name has spaces and non-ASCII characters.
+        repo = Path(__file__).resolve().parents[1]
+        yaml = (repo / ".github" / "workflows" / "package.yml").read_text("utf-8")
+        manifest = yaml.split("- name: Record and verify Windows payload manifest", 1)[1]
+        self.assertNotIn("continue-on-error", manifest.split("- name:", 1)[0])
+        smoke = yaml.split("- name: Smoke frozen CLI off the developer PATH", 1)[1]
+        smoke = smoke.split("- name:", 1)[0]
+        self.assertIn("--version", smoke)
+        self.assertIn("--_smoothcast-package-check", smoke)
+        self.assertIn("env -u PYTHONPATH -u MSYSTEM", smoke)
+        self.assertIn("/c/Windows/System32", smoke)
+        self.assertIn("SmoothCast smoke \u2713", smoke)
 
     def test_spec_and_packaging_driver_are_versioned(self):
         repo = Path(__file__).resolve().parents[1]

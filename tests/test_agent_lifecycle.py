@@ -192,11 +192,37 @@ def test_claim_freshness_rejects_rival_and_reclaims_expired(monkeypatch):
     assert reclaimed == [584]
 
 
-def test_ship_patch_assignment_is_explicitly_opt_in():
-    default = agent.build_parser().parse_args(["ship"])
-    requested = agent.build_parser().parse_args(["ship", "--assign-patch"])
-    assert default.assign_patch is False
-    assert requested.assign_patch is True
+def test_legacy_assign_patch_flag_does_not_allocate(monkeypatch, tmp_path):
+    _, first, successor = seed_git(tmp_path)
+    monkeypatch.setattr(agent, "ROOT", successor)
+    task = {"issue": 584, "files": []}
+    monkeypatch.setattr(agent, "private_task", lambda: task)
+    monkeypatch.setattr(agent, "gh", lambda *args: {"state": "open"})
+    monkeypatch.setattr(agent, "ensure_live_task_claim", lambda task: True)
+    monkeypatch.setattr(agent, "persist_private_task", lambda task: True)
+    deliveries = []
+    monkeypatch.setattr(agent, "publish_ship_handover",
+                        lambda *args: deliveries.append(args) or True)
+    args = agent.build_parser().parse_args(
+        ["ship", "--assign-patch", "--next", "none", "--skip-checks"])
+    assert agent.cmd_ship(args) == 0
+    commit(first, "connector_result.txt", "delivered\n")
+    run(first, "push", "-q", "origin", "HEAD:develop")
+    assert agent.cmd_ship(args) == 0
+    tip = run(successor, "rev-parse", "origin/develop")
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
+    assert run(successor, "show", "HEAD:connector_result.txt") == "delivered"
+    assert len(deliveries) == 0
+    commit(successor, "native_result.txt", "finished\n")
+    assert agent.cmd_ship(args) == 0
+    shipped = run(successor, "rev-parse", "origin/develop")
+    assert shipped != tip
+    assert run(successor, "show", "HEAD:src/version.py").endswith("PATCH = 51")
+    assert run(successor, "show", "--format=", "--name-only", "HEAD") == "native_result.txt"
+    assert len(deliveries) == 1
+    assert agent.cmd_ship(args) == 0
+    assert run(successor, "rev-parse", "origin/develop") == shipped
+    assert len(deliveries) == 1
 
 
 def test_private_auto_commit_only_tracks_known_files(monkeypatch, tmp_path):
@@ -793,11 +819,18 @@ def test_finish_requires_closed_criteria_and_idempotently_posts(monkeypatch, tmp
     incomplete = agent.build_parser().parse_args(
         ["finish", "--done", "implementation", "--next", "still testing", "--close"])
     assert agent.cmd_finish(incomplete) == 2
+    partial = agent.build_parser().parse_args(
+        ["finish", "--done", "implementation", "--next", "still testing"])
+    assert agent.cmd_finish(partial) == 0
+    assert len(state) == 1 and "sc-close v1" not in state[0]
     complete = agent.build_parser().parse_args(
         ["finish", "--done", "completed", "--next", "none",
          "--verification", "tests: 10 passed", "--checklist", "all criteria", "--close"])
     assert agent.cmd_finish(complete) == 0
     assert agent.cmd_finish(complete) == 0
-    assert len(state) == 1
+    assert len(state) == 2
+    assert "sc-close v1" in state[1]
+    assert "Verification: tests: 10 passed" in state[1]
+    assert "Checklist: all criteria" in state[1]
     assert closed == [584, 584]  # REST closure itself is idempotent
-    assert released == [584, 584]
+    assert released == [584, 584, 584]

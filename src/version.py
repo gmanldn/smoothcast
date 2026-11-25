@@ -12,9 +12,11 @@ import ast
 from pathlib import Path
 import re
 
+import commit_identity
+
 MAJOR = 2
-MINOR = 0
-PATCH = 38
+MINOR = 1
+PATCH = 0
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
@@ -105,7 +107,8 @@ def _installed_revision(repo: Path) -> str | None:
     if marker.is_symlink() or not marker.is_file():
         return None
     raw = _read_small(marker, 128)
-    sha = raw.strip() if raw else ""
+    lines = raw.splitlines() if raw else []
+    sha = lines[0].strip() if lines else ""
     return sha.lower() if _SHA.fullmatch(sha) else None
 
 
@@ -163,14 +166,27 @@ def read_checkout_revision(repo: Path) -> str | None:
     return None
 
 
+def read_checkout_commit_date(repo: Path, revision: str | None = None) -> str | None:
+    """Read a commit's committer date without Git, network or app mutation."""
+    return commit_identity.read_checkout_commit_date(
+        repo, read_checkout_revision(repo) if revision is None else revision)
+
+
 # Freeze the identity when this module is loaded. A later installer copy
 # must never relabel an already-running process.
 RUNNING_REVISION = read_checkout_revision(Path(__file__).resolve().parents[1])
+RUNNING_COMMIT_DATE = read_checkout_commit_date(
+    Path(__file__).resolve().parents[1], RUNNING_REVISION)
 
 
 def running_label() -> str:
     """Display the source build loaded by this process, not the moving disk."""
     return build_label(RUNNING_REVISION)
+
+
+def identity_label() -> str:
+    """Prominent running-build identity: version, commit date and codename."""
+    return commit_identity.display_label(label(), RUNNING_REVISION, RUNNING_COMMIT_DATE)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install GTK4/libadwaita, Python GI and media prerequisites
         run: |
           sudo apt-get update
@@ -40,7 +40,7 @@ jobs:
           .packaging-venv/bin/python -m pytest -q tests/test_frozen_runtime.py
           .packaging-venv/bin/python scripts/build_release.py
           .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-linux
           path: |
@@ -53,7 +53,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Homebrew's matching native Python and GTK runtime
         run: |
           brew install python pygobject3 gtk4 libadwaita gstreamer gst-plugins-good ffmpeg
@@ -66,7 +66,7 @@ jobs:
           .packaging-venv/bin/python scripts/build_release.py
           .packaging-venv/bin/python scripts/ci/archive_frozen_artifact.py
           .packaging-venv/bin/python scripts/ci/build_macos_dmg.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-macos
           path: |
@@ -81,6 +81,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: msys2/setup-msys2@3c51bf698df1e37b2261f53cb67797b97761185c # v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           msystem: UCRT64
@@ -98,6 +100,14 @@ jobs:
             mingw-w64-ucrt-x86_64-libadwaita
             mingw-w64-ucrt-x86_64-gstreamer
             mingw-w64-ucrt-x86_64-ffmpeg
+      # Pinned WiX v6 CLI tool (#534). The build script refuses other majors.
+      - name: Install pinned WiX v6
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 6.0.2
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "SMOOTHCAST_WIX=$env:USERPROFILE\.dotnet\tools\wix.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SMOOTHCAST_GIT=$((Get-Command git).Source)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build and smoke native package without a desktop
         shell: msys2 {0}
         run: |
@@ -113,23 +123,63 @@ jobs:
           "$VENV_PY" -m pip install -e '.[packaging]' 'pytest>=8,<10'
           "$VENV_PY" -m pytest -q tests/test_frozen_runtime.py
           "$VENV_PY" scripts/build_release.py
-      # Static manifest + PE checks only (#528); nothing is launched. Advisory until
-      # the first native run shows the system-DLL allow-list needs no changes.
+      # Static manifest + PE checks only (#528); nothing is launched but the
+      # frozen CLI. Blocking: the allow-list is proven by native Windows runs.
       - name: Record and verify Windows payload manifest
-        continue-on-error: true
         shell: msys2 {0}
         run: |
           if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
           "$VENV_PY" scripts/ci/verify_windows_payload.py --dist dist/SmoothCast --write-manifest
+      # #528: prove the frozen CLI runs with developer Python/MSYS2 removed
+      # from PATH, from a temporary directory with spaces and non-ASCII chars.
+      - name: Smoke frozen CLI off the developer PATH
+        shell: msys2 {0}
+        run: |
+          SMOKE="$(mktemp -d "$(cygpath -u "$RUNNER_TEMP")/SmoothCast smoke ✓.XXXX")"
+          cp -r dist/SmoothCast "$SMOKE/"
+          RUNTIME_PATH="/c/Windows/System32:/c/Windows"
+          env -u PYTHONPATH -u MSYSTEM PATH="$RUNTIME_PATH" "$SMOKE/SmoothCast/SmoothCastCLI.exe" --version
+          env -u PYTHONPATH -u MSYSTEM PATH="$RUNTIME_PATH" "$SMOKE/SmoothCast/SmoothCastCLI.exe" --_smoothcast-package-check
+          rm -rf "$SMOKE"
+      - name: Build Windows MSI with one command
+        shell: msys2 {0}
+        run: |
+          if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
+          "$VENV_PY" scripts/build_windows_msi.py --skip-pyinstaller --json
       - name: Archive Windows artefact
         shell: msys2 {0}
         run: |
           if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
           "$VENV_PY" scripts/ci/archive_frozen_artifact.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: smoothcast-windows
           path: |
             dist/*.zip
+            dist/*.msi
             dist/*.sha256
           if-no-files-found: error
+
+  windows-msi-install:
+    name: Windows MSI / install repair uninstall
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: smoothcast-windows
+          path: candidate
+      - name: Validate lifecycle harness without installing
+        shell: pwsh
+        run: py -3 -m unittest discover -s tests -p 'test_smoke_windows_msi.py' -v
+      - name: Install, repair and uninstall exact MSI (headless)
+        shell: pwsh
+        run: py -3 scripts/ci/smoke_windows_msi.py --disposable-ci --candidate-dir candidate --report dist/windows-msi-test-results.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-msi-lifecycle
+          path: dist/windows-msi-test-results.json
+          if-no-files-found: warn

@@ -23,13 +23,18 @@ def server_command(source_script: Path) -> list[str]:
     return [sys.executable, str(source_script)]
 
 
+def install_root() -> Path:
+    """Folder holding the frozen executables and the bundled ffmpeg sidecars (#530)."""
+    return Path(sys.executable).parent
+
+
 def companion_executable() -> Path:
     """Return the shipped console-enabled executable; required for CATT JSON.
 
     Windows GUI-subsystem executables may not expose stdout or stderr to
     capture_output=True. Failing closed is safer than an empty scan response.
     """
-    executable = Path(sys.executable)
+    executable = install_root() / Path(sys.executable).name
     if executable.stem == "SmoothCastCLI":
         return executable
     companion = executable.with_name("SmoothCastCLI" + executable.suffix)

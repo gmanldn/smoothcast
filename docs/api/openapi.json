@@ -48,6 +48,17 @@
         ],
         "type": "object"
       },
+      "LinkRetry": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
       "LinkStart": {
         "properties": {
           "authorised": {
@@ -461,6 +472,50 @@
           }
         ],
         "summary": "Cancel your pending or downloading acquisition",
+        "tags": [
+          "acquisition"
+        ]
+      }
+    },
+    "/api/link-jobs/retry": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRetry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "csrf": []
+          }
+        ],
+        "summary": "Retry a failed or cancelled acquisition you own",
         "tags": [
           "acquisition"
         ]

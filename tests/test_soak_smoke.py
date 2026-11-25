@@ -77,6 +77,7 @@ def test_too_few_samples_is_a_failure_not_a_silent_pass():
 # --- the real thing -----------------------------------------------------------
 def test_a_150_cycle_soak_passes_quickly_and_writes_a_report(tmp_path):
     started = time.monotonic()
+    threads_before = threading.active_count()
     report_path = tmp_path / "soak-report.json"
     result = soak.run(150, report_path=report_path, quiet=True)
     assert time.monotonic() - started < 40, "smoke budget is ~20 s on a normal machine"
@@ -86,7 +87,7 @@ def test_a_150_cycle_soak_passes_quickly_and_writes_a_report(tmp_path):
     saved = json.loads(report_path.read_text(encoding="utf-8"))
     assert saved["verdict"] == "pass" and saved["series"] and saved["simulated_hours"] > 1
     assert {"threads", "fds", "rss_kb", "files", "maps"} <= set(saved["series"][0])
-    assert threading.active_count() <= 3, "the soak left threads running"
+    assert threading.active_count() <= threads_before, "the soak left threads running"
 
 
 def test_cli_returns_nonzero_on_a_failed_verdict(tmp_path, monkeypatch):

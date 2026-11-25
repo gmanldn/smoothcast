@@ -384,3 +384,41 @@ def test_release_directory_cannot_be_redirected_via_symlink(root, tmp_path):
     releases.symlink_to(moved, target_is_directory=True)
     with pytest.raises(ma.ActivationError, match="ordinary release directory"):
         ma.verify_release(root, B)
+
+@pytest.mark.parametrize("expires", [float("nan"), float("inf"), -float("inf"), True])
+def test_nonfinite_lease_cannot_authorise_recovery(root, expires):
+    clock = Clock()
+    txn = ma.activate(root, A, probe=ok, clock=clock)
+    lease = ma._read(root / ma.LEASE)
+    lease["expires"] = expires
+    ma._atomic_write(root / ma.LEASE, lease, ma._noop)
+    before = ma.read_active(root)
+    with pytest.raises(ma.ActivationError, match="lease is corrupt"):
+        ma.recover(root, clock=clock)
+    with pytest.raises(ma.ActivationError, match="lease is corrupt"):
+        ma.acknowledge(root, txn, A, clock=clock)
+    assert ma.read_active(root) == before
+
+
+def test_acknowledgement_cannot_borrow_another_transactions_lease(root):
+    clock = Clock()
+    txn = ma.activate(root, A, probe=ok, clock=clock)
+    lease = ma._read(root / ma.LEASE)
+    lease["txn"] = "differenttransaction"
+    ma._atomic_write(root / ma.LEASE, lease, ma._noop)
+    before = ma.read_active(root)
+    with pytest.raises(ma.ActivationError, match="does not own"):
+        ma.acknowledge(root, txn, A, clock=clock)
+    assert ma.read_active(root) == before
+    assert ma._read(root / ma.LEASE) == lease
+    assert ma._read(root / ma.JOURNAL)["state"] == "switched"
+
+
+@pytest.mark.parametrize("duration", [0, -1, float("nan"), float("inf"), True])
+def test_invalid_lease_duration_refused_before_state_mutation(root, duration):
+    with pytest.raises(ma.ActivationError, match="duration"):
+        ma.activate(root, A, probe=ok, clock=Clock(), ack_seconds=duration)
+    assert not (root / ma.LEASE).exists()
+    assert not (root / ma.JOURNAL).exists()
+    assert ma.read_active(root)["current"] is None
+

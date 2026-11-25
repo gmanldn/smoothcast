@@ -3,10 +3,16 @@
 In-process only: a dict-backed 'transport' connects a host and workers; no
 sockets, GUI, receiver or real download.
 """
+from pathlib import Path
+import os
+import subprocess
+import sys
+
 import mesh_acquisition_assignment as core
 import mesh_acquisition_rpc as rpc
 import pytest
 
+ROOT = Path(__file__).resolve().parents[1]
 JOB = "job-00000001"
 URL = "abcdefghijk"  # canonical video id (the only source form that crosses nodes)
 CONTENT = "c" * 64
@@ -177,3 +183,24 @@ def test_acquisition_wire_accepts_counter_boundaries():
         message = rpc.build("report", job=JOB, gen=1, stage="downloading",
                             received=received, total=total)
         assert rpc.parse(message) == message
+
+
+def test_acquisition_path_stays_gui_and_receiver_free():
+    """Acceptance: assert no GUI or receiver action in CI.
+
+    A fresh ``-I`` interpreter so GTK already imported in this process cannot
+    mask a leak: the whole remote-acquisition path must not pull in GTK or a
+    receiver controller merely by being imported.
+    """
+    modules = ["mesh_acquisition_assignment", "mesh_acquisition_rpc",
+               "mesh_acquisition_executor", "mesh_acquisition_transfer",
+               "mesh_acquisition_store", "mesh_acquisition_activity",
+               "mesh_acquisition_bridge", "mesh_acquisition_app", "link_acquisition"]
+    code = ("import sys; sys.path.insert(0, %r); import %s; "
+            "leaks = sorted(m for m in sys.modules if m == 'gi' or m.startswith('gi.')) "
+            "+ [m for m in ('cast_control', 'cast_session', 'dlna') if m in sys.modules]; "
+            "assert not leaks, leaks" % (str(ROOT / "src"), ", ".join(modules)))
+    env = {"PATH": os.environ.get("PATH", "")}
+    result = subprocess.run([sys.executable, "-I", "-c", code],
+                            capture_output=True, text=True, timeout=60, env=env)
+    assert result.returncode == 0, result.stderr

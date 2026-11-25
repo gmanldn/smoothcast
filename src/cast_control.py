@@ -445,10 +445,31 @@ class CastControlApp(Adw.Application):
         window._update_header_subtitle()
         window.toast(notice, error=True)
 
+    def _publish_activation_ready(self) -> None:
+        """Tell a waiting launcher which commit is live."""
+        path = os.environ.get("SMOOTHCAST_ACTIVATION_READY")
+        commit = version.RUNNING_REVISION
+        if not path or not commit:
+            return
+        tmp = f"{path}.{os.getpid()}.tmp"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="ascii") as out:
+                out.write(commit)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
     def do_activate(self) -> None:
         startup_timeline.mark("activate")
         window = self._window()
         window.present()
+        self._publish_activation_ready()
         self._show_stale_runtime_notice(window)
         startup_timeline.mark("presented")
         if not self._startup_reported:

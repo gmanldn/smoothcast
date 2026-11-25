@@ -70,13 +70,16 @@ def test_room_actions_have_touch_help_and_keep_existing_js_contract():
     assert 'function expireSession()' in text
 
 
-def test_advanced_controls_use_native_progressive_disclosure():
+def test_advanced_settings_are_visible_with_native_help_disclosure():
     page = room_html()
-    assert ("details", {"id": "advancedPanel"}) in [
-        (tag, {k: v for k, v in attrs.items() if k == "id"})
-        for tag, attrs in page.elements if tag == "details" and attrs.get("id") == "advancedPanel"
+    assert ("section", {"id": "advancedPanel", "aria-labelledby": "roomSettingsHeading"}) in [
+        (tag, {k: v for k, v in attrs.items() if k in ("id", "aria-labelledby")})
+        for tag, attrs in page.elements if tag == "section" and attrs.get("id") == "advancedPanel"
     ]
+    assert not any(tag == "details" and attrs.get("id") == "advancedPanel"
+                   for tag, attrs in page.elements)
     text = portal._HTML
+    assert text.count('<details class="help"><summary>') >= 5
     assert "@media(min-width:820px)" in text
     assert "@media(max-width:560px)" in text
     assert "[hidden]{display:none!important}" in text

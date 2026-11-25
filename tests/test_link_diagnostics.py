@@ -23,7 +23,7 @@ def test_missing_tools_are_named_with_platform_specific_repair():
     assert "winget" in win["repair"][0]
     linux = _by(diag.rows(readiness, platform="linux2"))["youtube"]
     assert "package manager" in linux["repair"][0]
-    assert "SMOOTHCAST_LINK_SANDBOX" in linux["repair"][-1] and "cannot supply or verify" in linux["repair"][-1]
+    assert "SMOOTHCAST_LINK_SANDBOX" in linux["repair"][-1] and "link_sandbox_bwrap" in linux["repair"][-1]
 
 
 def test_off_restart_ready_and_failed_states():
@@ -39,6 +39,31 @@ def test_off_restart_ready_and_failed_states():
 def test_ready_never_claims_isolation_was_verified():
     row = _by(diag.rows(_ready(youtube={"enabled_by_owner": True}), running={"youtube": True}))["youtube"]
     assert "cannot verify" in row["summary"] and "verified" not in row["summary"].replace("cannot verify", "")
+    assert row["repair"] == ["run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"]
+
+
+def test_ready_surfaced_isolation_verified_only_when_probe_passed():
+    row = _by(diag.rows(_ready(youtube={"enabled_by_owner": True, "isolation_verified": True}),
+                        running={"youtube": True}))["youtube"]
+    assert "attack-test probe" in row["summary"] and "cannot verify" not in row["summary"]
+    assert row["repair"] == []
+
+
+def test_strict_gate_missing_entry_maps_to_qualify_step_not_install():
+    readiness = _ready(youtube={"enabled_by_owner": True, "missing": [diag._QUALIFY]})
+    row = _by(diag.rows(readiness, platform="linux"))["youtube"]
+    assert row["status"] == "missing" and "qualified isolation" in row["summary"]
+    assert row["repair"] == ["run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"]
+
+
+def test_enabled_unverified_states_point_to_qualify_without_duplicates():
+    enabled = _ready(youtube={"enabled_by_owner": True})
+    assert _by(diag.rows(enabled, running=None))["youtube"]["repair"] == \
+        ["run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"]
+    assert _by(diag.rows(enabled, running={"youtube": False}))["youtube"]["repair"] == \
+        ["run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"]
+    verified = _ready(youtube={"enabled_by_owner": True, "isolation_verified": True})
+    assert _by(diag.rows(verified, running=None))["youtube"]["repair"] == []
 
 
 def test_subtitle_adds_only_the_first_repair_step():

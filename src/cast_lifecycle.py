@@ -28,6 +28,7 @@ from cast_widgets import APP_NAME, ICON_NAME, save_config, flush_config, fmt_tim
 class LifecycleMixin:
     def _cast_preflight_failed(self, message: str) -> None:
         """A rejected new cast must not tear down its still-owned predecessor."""
+        self._cast_feedback = {"receiver": self._device(), "state": "failed", "message": message}
         reliability_metrics.fail_attempt(self, Async.run)
         self._dlna_cancel = None
         prior = self.session

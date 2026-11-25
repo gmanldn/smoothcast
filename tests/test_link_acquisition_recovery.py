@@ -180,3 +180,108 @@ def test_every_journal_stage_recovers_deterministically_twice(tmp_path, stage):
             jobs.close()
     # The first restart may explain an interruption; the stage itself must never drift.
     assert outcomes[0][0] == outcomes[1][0] and outcomes[0][0] in SAFE_AFTER_RESTART
+
+
+class FullDiskProvider(Provider):
+    """Writes a partial file, then the filesystem runs out of space."""
+
+    def __init__(self):
+        super().__init__()
+        self.full = True
+
+    def acquire(self, source, root, stage, progress, cancelled):
+        if self.full:
+            self.calls.append(source)
+            stage("downloading")
+            (root / "partial.mp4").write_bytes(b"part")
+            raise OSError(28, "No space left on device")
+        return super().acquire(source, root, stage, progress, cancelled)
+
+
+def test_disk_full_during_download_cleans_staging_and_retries_exactly_once(tmp_path):
+    provider = FullDiskProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    try:
+        ident = jobs.submit("owner", YOUTUBE, "request-1")
+        _wait(lambda: any(r["id"] == ident and r["stage"] == "failed" for r in jobs.snapshot()))
+        row = next(r for r in jobs.snapshot("owner") if r["id"] == ident)
+        assert row["error"] == "Acquisition could not finish on this host." and row["can_retry"] is True
+        assert deliveries == [] and not (tmp_path / ident).exists()  # abandoned staging is cleaned
+        saved = (tmp_path / JOURNAL).read_text()
+        assert "partial.mp4" not in saved and str(tmp_path) not in saved
+        assert json.loads(saved)["jobs"][0]["stage"] == "failed"
+        provider.full = False
+        retry = jobs.retry("owner", ident)
+        _wait(lambda: any(r["id"] == retry and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 2 and len(deliveries) == 1
+        assert deliveries[0].read_bytes() == b"testdata"
+    finally:
+        jobs.close()
+
+
+def test_disk_full_while_cleaning_staging_keeps_the_room_usable(monkeypatch, tmp_path):
+    host_os = acquisition.os
+    frozen = {"full": True}
+    real_unlink, real_rmdir = host_os.unlink, host_os.rmdir
+
+    def full_unlink(*args, **kwargs):
+        if frozen["full"]:
+            raise OSError(28, "No space left on device")
+        return real_unlink(*args, **kwargs)
+
+    def full_rmdir(*args, **kwargs):
+        if frozen["full"]:
+            raise OSError(28, "No space left on device")
+        return real_rmdir(*args, **kwargs)
+
+    monkeypatch.setattr(host_os, "unlink", full_unlink)
+    monkeypatch.setattr(host_os, "rmdir", full_rmdir)
+    provider = FullDiskProvider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    try:
+        ident = jobs.submit("owner", YOUTUBE, "request-1")
+        _wait(lambda: any(r["id"] == ident and r["stage"] == "failed" for r in jobs.snapshot()))
+        assert (tmp_path / ident).exists()  # cleanup could not run; nothing unsafe was deleted
+        assert json.loads((tmp_path / JOURNAL).read_text())["jobs"][0]["stage"] == "failed"
+        frozen["full"] = False
+        provider.full = False
+        retry = jobs.retry("owner", ident)
+        _wait(lambda: any(r["id"] == retry and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(deliveries) == 1  # the worker survived the ENOSPC cleanup and still delivers
+    finally:
+        jobs.close()
+
+
+def test_disk_full_before_staging_preserves_existing_media_and_retries(tmp_path, monkeypatch):
+    provider = Provider()
+    deliveries = []
+    jobs = acquisition.LinkJobs(tmp_path, provider, lambda owner, path: deliveries.append(path),
+                                lambda owner: True)
+    try:
+        first = jobs.submit("owner", YOUTUBE, "request-1")
+        _wait(lambda: any(r["id"] == first and r["stage"] == "ready" for r in jobs.snapshot()))
+        real_mkdir = Path.mkdir
+
+        def full_mkdir(self, *args, **kwargs):
+            if kwargs.get("exist_ok"):  # room bookkeeping may ensure an existing directory
+                return real_mkdir(self, *args, **kwargs)
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(Path, "mkdir", full_mkdir)
+        other = "https://www.youtube.com/watch?v=zzzzzzzzzzz"  # different source: no reuse
+        second = jobs.submit("owner", other, "request-2")
+        _wait(lambda: any(r["id"] == second and r["stage"] == "failed" for r in jobs.snapshot()))
+        assert not (tmp_path / second).exists()
+        assert (tmp_path / first / "sample.mp4").read_bytes() == b"testdata"
+        assert len(deliveries) == 1
+        monkeypatch.setattr(Path, "mkdir", real_mkdir)
+        retry = jobs.retry("owner", second)
+        _wait(lambda: any(r["id"] == retry and r["stage"] == "ready" for r in jobs.snapshot()))
+        assert len(provider.calls) == 2 and len(deliveries) == 2
+        assert deliveries[1].read_bytes() == b"testdata"
+    finally:
+        jobs.close()

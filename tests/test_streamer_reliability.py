@@ -200,8 +200,30 @@ class StreamerReliabilityTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["--bind", "192.168.1.23"])
         self.assertNotIn("0.0.0.0", command)
         policy = server.load_policy(root)
-        self.assertEqual(policy.hosts, frozenset({"192.168.1.50"}))
+        self.assertEqual(policy.hosts, frozenset({"192.168.1.23", "192.168.1.50"}))
         self.assertFalse(policy.any_private)
+        self.assertTrue(server.client_allowed("192.168.1.23", policy))
+        self.assertTrue(server.client_allowed("192.168.1.50", policy))
+        self.assertTrue(server.client_allowed("127.0.0.1", policy))
+        self.assertFalse(server.client_allowed("192.168.1.99", policy))
+        self.assertFalse(server.client_allowed("8.8.8.8", policy))
+
+    def test_unknown_receiver_keeps_private_lan_fallback_on_reuse(self):
+        import server
+        root = self._server_env()
+        session = streamer.Session()
+        token = "a" * 32
+        with mock.patch.object(streamer, "_port_open", return_value=True), mock.patch.object(
+            streamer, "_server_probe", return_value=(True, "192.168.1.23", 4321)
+        ):
+            session._start_server("192.168.1.23", None, token=token)
+        policy = server.load_policy(root)
+        self.assertTrue(policy.any_private)
+        self.assertTrue(server.client_allowed("192.168.1.50", policy))
+        self.assertFalse(server.client_allowed("8.8.8.8", policy))
+        self.assertEqual(policy.token, token)
+        self.assertTrue(server.public_resource(f"/movie-{token}.m3u8", policy.token))
+        self.assertFalse(server.public_resource("/movie-" + "b" * 32 + ".m3u8", policy.token))
 
     def test_server_command_carries_port_bind_and_frozen_launcher(self):
         """Source and PyInstaller launches both pass --port and --bind through."""
@@ -394,3 +416,48 @@ class ProgressSamplerTests(unittest.TestCase):
             self.assertEqual(session.segment_count(), 3)
             session._stop_sampler()
         self.assertIsNone(session._sampler)
+
+def test_receiver_confirmation_allows_slow_connection_and_bounds_each_poll():
+    session = streamer.Session()
+    clock = [0.0]
+    calls = []
+
+    def info(_device, *, timeout):
+        calls.append(timeout)
+        clock[0] += min(7.0, timeout)
+        return {"player_state": "PLAYING", "content_id": "ours"} if clock[0] >= 21 else None
+
+    with mock.patch.object(streamer.time, "monotonic", side_effect=lambda: clock[0]), \
+         mock.patch.object(streamer.time, "sleep", side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay)), \
+         mock.patch.object(streamer.castctl, "info", side_effect=info):
+        session._await_receiver("Living Room TV", lambda state: bool(state and state.get("content_id") == "ours"))
+    assert clock[0] >= 21
+    assert all(0 < timeout <= 8 for timeout in calls)
+
+
+def test_receiver_confirmation_explains_missing_and_incomplete_status():
+    import pytest
+
+    for reply, code, message in (
+        (None, "cast.receiver_offline", "did not return status"),
+        ({"volume_level": 0.5}, "cast.command_failed", "did not report playback state"),
+        ({"player_state": "IDLE"}, "cast.command_failed", "did not confirm playback"),
+    ):
+        session = streamer.Session()
+        clock = [0.0]
+        calls = []
+
+        def info(_device, *, timeout):
+            calls.append(timeout)
+            clock[0] += timeout
+            return reply
+
+        with mock.patch.object(streamer.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(streamer.time, "sleep", side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay)), \
+             mock.patch.object(streamer.castctl, "info", side_effect=info):
+            with pytest.raises(streamer.StreamPreparationError, match=message) as error:
+                session._await_receiver("Living Room TV", lambda _: False, timeout=9)
+        assert error.value.code == code
+        assert clock[0] == 9
+        assert calls == [8.0, 0.75]
+

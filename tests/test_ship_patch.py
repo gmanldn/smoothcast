@@ -102,6 +102,28 @@ class PatchShipTests(unittest.TestCase):
         self.assertTrue((self.worker2 / "second.txt").exists())
         self.assertIsNone(ship_patch.published_assignment(self.worker2, tip, 58))
 
+    def test_numbered_historical_subject_is_reused(self):
+        remote = self.fetch(self.worker1)
+        ship_patch.assign_private_patch(self.worker1, remote, 583)
+        self.git(self.worker1, "commit", "--amend", "-m",
+                 "chore(version): PATCH 1.2.52 for issue #583 [sc-auto-patch]")
+        self.git(self.worker1, "push", "origin", "HEAD:develop")
+        remote = self.fetch(self.worker1)
+        self.assertEqual(ship_patch.published_assignment(self.worker1, remote, 583), remote)
+        self.assertIsNone(ship_patch.assign_private_patch(self.worker1, remote, 583))
+        self.assertIsNone(ship_patch.published_assignment(self.worker1, remote, 58))
+        self.assertEqual(ship_patch.parsed((self.worker1 / "src/version.py").read_text()),
+                         (1, 2, 52))
+
+    def test_numbered_subject_must_match_actual_version(self):
+        remote = self.fetch(self.worker1)
+        ship_patch.assign_private_patch(self.worker1, remote, 583)
+        self.git(self.worker1, "commit", "--amend", "-m",
+                 "chore(version): PATCH 1.2.99 for issue #583 [sc-auto-patch]")
+        self.git(self.worker1, "push", "origin", "HEAD:develop")
+        with self.assertRaises(ship_patch.PatchAllocationError):
+            ship_patch.published_assignment(self.worker1, self.fetch(self.worker1), 583)
+
     def test_published_marker_with_wrong_diff_fails_closed(self):
         self.pending_code(self.worker1, "not-a-version")
         self.git(self.worker1, "commit", "--amend", "-m",

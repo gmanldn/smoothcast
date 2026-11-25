@@ -1,23 +1,71 @@
-// Connector-only, develop-only progress transport (#598). No version allocation or closure.
-// versionBlob MUST come from offline canonical AST validation of exact pinned bytes.
+// Connector-only, develop-only progress transport (#598).
+// Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
+// versionBlob MUST come from offline
+// canonical AST validation of exact pinned bytes; the connector re-derives
+// the same proof from the served bytes and refuses mismatches.
+import crypto from "node:crypto";
 function check(ok,why){if(!ok)throw Error(why)}
 
+// Re-derive the pinned blob identity from served bytes: the tree ID alone is
+// not proof that the bytes the API serves match the offline AST validation.
+function blobSha(content){
+  const body=Buffer.from(content,"utf8");
+  return crypto.createHash("sha1").update("blob "+body.length+"\0").update(body).digest("hex");
+}
+
 function isSha(x){return typeof x==="string"&&/^[0-9a-f]{40}$/.test(x)}
+
+const VERSION_PART=/^(MAJOR|MINOR|PATCH)(\s*=\s*)(\d+)(\s*)$/gm;
+
+function parseVersion(source){
+  const found={};
+  for(const m of source.matchAll(VERSION_PART)){
+    if(m[1] in found)return null;
+    found[m[1]]=Number(m[3]);
+  }
+  return Object.keys(found).length===3?found:null;
+}
+
+function validateVersionBump(baseSource,newSource){
+  const a=parseVersion(baseSource), b=parseVersion(newSource);
+  check(a!==null&&b!==null,"non-canonical version source");
+  check(a.MAJOR===b.MAJOR&&a.MINOR===b.MINOR,"version lane bumps PATCH only");
+  check(a.PATCH<2147483647,"PATCH overflow; owner must choose next MINOR");
+  check(b.PATCH===a.PATCH+1,"version lane must bump PATCH by exactly one");
+  const expected=baseSource.replace(VERSION_PART,(whole,key,eq,num,end)=>
+    key==="PATCH"?key+eq+String(a.PATCH+1)+end:whole);
+  check(newSource===expected,"version lane must preserve all non-PATCH bytes");
+}
 
 function validate(p){
   check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
   check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
+  check(p.kind===undefined||p.kind==="progress"||p.kind==="finalise","invalid plan kind");
+  // Fence old manifests before they can create, publish or close anything.
+  // Native finish closes verified tickets without allocating a version.
+  check(p.kind!=="finalise","per-ticket PATCH finalise retired; ship progress and use native finish");
   check(Array.isArray(p.changes)&&p.changes.length>0&&p.changes.length<=30,"invalid change count");
   const paths=new Set();
   for(const c of p.changes){
     check(typeof c.path==="string"&&/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(c.path)&&!c.path.split("/").some(x=>[".","..",".git"].includes(x)),"invalid path");
-    check(c.path!=="src/version.py"&&!paths.has(c.path),"version edit or duplicate path");
+    check(p.kind==="finalise"||c.path!=="src/version.py","version edit or duplicate path");
     check(c.old===null||isSha(c.old),"invalid old blob");
     check(typeof c.content==="string"&&c.content.length<=500000,"bounded text only");
+    check(!paths.has(c.path),"version edit or duplicate path");
     paths.add(c.path);
   }
-  for(const k of ["message","verification","next"])check(typeof p[k]==="string"&&p[k].trim()&&!/[\r\n]/.test(p[k]),"missing or multiline "+k);
-  check(p.next!=="none","progress only; no closure");
+  for(const k of ["message","verification","next"]){
+    check(typeof p[k]==="string"&&p[k].trim()&&!/[\x00-\x1f\x7f]/.test(p[k]),"missing or multiline "+k);
+    check(!/<!--\s*sc-/i.test(p[k]),"reserved protocol marker in "+k);
+  }
+  if(p.kind==="finalise"){
+    check(paths.size===1&&paths.has("src/version.py"),"finalise ships exactly one version.py edit");
+    check(p.changes[0].old!==null,"finalise must replace the current version blob");
+    // The general 500000-character manifest bound covers version.py too.
+    check(["none","complete","no remaining work"].includes(p.next.trim().toLowerCase()),"finalise must close");
+  }else{
+    check(!["none","complete","no remaining work"].includes(p.next.trim().toLowerCase()),"progress only; no closure");
+  }
 }
 
 function leaseCheck(rows,p,now){
@@ -122,11 +170,53 @@ async function checkBase(api,p){
   const entries=await treeSnapshot(api,b.tree.sha);
   const v=entries.get("src/version.py");
   check(v?.sha===p.versionBlob&&v.mode==="100644","version does not match offline AST proof");
+  // Canonical AST proof: re-derive the pinned blob identity from the served
+  // bytes, not just the tree ID the API reports.
+  const served=await api.file(p.base,"src/version.py");
+  check(typeof served?.content==="string"&&blobSha(served.content)===p.versionBlob,"served version bytes disagree with the pinned proof");
+  if(p.kind==="finalise"){
+    // Complete historical PATCH attribution: walk every commit touching
+    // src/version.py back to the initial import and refuse a second PATCH
+    // for the same issue (one PATCH per completed ticket).
+    const attributed=await versionHistory(api,p.base);
+    check(!attributed.has(String(p.issue)),"issue already has a PATCH; one PATCH per completed ticket");
+  }
   for(const c of p.changes){
     const x=entries.get(c.path)??null;
     check(c.old===null?x===null:x?.sha===c.old&&x.type==="blob"&&x.mode==="100644","stale base blob or mode: "+c.path);
   }
   return {sha:b.tree.sha,entries};
+}
+
+async function versionHistory(api,base){
+  // Bounded complete walk: the walk ends at a partial page. Saturating every
+  // page means the attribution record is not proven complete; fail closed.
+  const attributed=new Map(),seen=new Set();
+  for(let page=1;page<=10;page++){
+    const list=await api.get("/commits?path=src/version.py&sha="+base+"&per_page=100&page="+page);
+    check(Array.isArray(list)&&list.length<=100,"incomplete version history");
+    for(const c of list){
+      check(c&&isSha(c.sha)&&typeof c.commit?.message==="string","incomplete version history");
+      check(!seen.has(c.sha),"incomplete version history: repeated commit");
+      seen.add(c.sha);
+      const subject=c.commit.message.split("\n",1)[0];
+      const m=subject.match(/^chore\(version\): PATCH(?: \d+\.\d+\.\d+)? for issue #([1-9]\d*)(?: \[sc-auto-patch\])?$/);
+      if(!m){
+        check(!/^chore\(version\): PATCH.* for issue #/.test(subject),"malformed PATCH attribution");
+        continue;
+      }
+      // Historical duplicates must never be rewritten, nor should they
+      // block unrelated tickets. All known assignments still fence this issue.
+      if(!attributed.has(m[1]))attributed.set(m[1],c.sha);
+    }
+    if(list.length<100)return attributed;
+  }
+  throw Error("incomplete version history");
+}
+
+function candidateMessage(p){
+  if(p.kind==="finalise")return "chore(version): PATCH for issue #"+p.issue+" [sc-auto-patch]";
+  return p.message+" (Refs #"+p.issue+")";
 }
 
 async function verifyCandidate(api,p,candidate){
@@ -135,9 +225,17 @@ async function verifyCandidate(api,p,candidate){
   const before=await checkBase(api,p);
   const c=await api.get("/git/commits/"+candidate);
   check(c.sha===candidate&&isSha(c.tree?.sha)&&c.parents?.length===1&&c.parents[0].sha===p.base,"candidate parent/tree mismatch");
+  check(c.message===candidateMessage(p),"candidate message/issue mismatch");
   const after=await treeSnapshot(api,c.tree.sha);
   const v=after.get("src/version.py");
-  check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
+  if(p.kind==="finalise"){
+    const baseVersion=await api.file(p.base,"src/version.py");
+    const newVersion=await api.file(candidate,"src/version.py");
+    validateVersionBump(baseVersion.content,newVersion.content);
+    check(v?.mode==="100644"&&v.sha!==p.versionBlob,"finalise must replace the version blob");
+  }else{
+    check(v?.sha===p.versionBlob&&v.mode==="100644","candidate version changed");
+  }
   verifyTreeDelta(before.entries,after,p.changes);
   for(const x of p.changes){
     const t=after.get(x.path), file=await api.file(candidate,x.path);
@@ -180,7 +278,7 @@ async function createCandidate(api,p){
   const baseTree=await checkBase(api,p);
   const tree=await api.tree(baseTree.sha,p.changes.map(x=>({path:x.path,mode:"100644",type:"blob",content:x.content})));
   check(isSha(tree),"invalid tree");
-  const candidate=await api.commit(tree,p.base,p.message+" (Refs #"+p.issue+")");
+  const candidate=await api.commit(tree,p.base,candidateMessage(p));
   check(isSha(candidate),"invalid candidate");
   return candidate;
 }
@@ -247,9 +345,58 @@ async function recordHandover(api,p,candidate){
   return candidate;
 }
 
+// Close lane: the PATCH commit is landed and verified before the issue state
+// flips. The close receipt is idempotent and must be visible before closing,
+// so a lost close is retryable without minting a second PATCH.
+function closeMarker(p,candidate){
+  return "<!-- sc-connector-close v1 sha="+candidate+" -->";
+}
+
+async function checkAcceptance(api,p,candidate,comments){
+  // Independent acceptance: the finalise must extend work already shipped and
+  // landed on develop for this issue, not merely assert completion.
+  const shipped=new Set();
+  for(const c of comments)
+    for(const m of (c.body||"").matchAll(/<!-- sc-ship v1 sha=([0-9a-f]{40}) -->/g))shipped.add(m[1]);
+  for(const sha of shipped){
+    const d=await api.get("/compare/"+sha+"..."+candidate);
+    if(d.base_commit?.sha===sha&&d.merge_base_commit?.sha===sha&&d.behind_by===0&&d.status==="ahead"&&d.ahead_by>0)return;
+  }
+  throw Error("independent acceptance missing: finalise must extend shipped work");
+}
+
+async function closeTicket(api,p,candidate){
+  validate(p);
+  check(p.kind==="finalise","close ticket requires a finalise plan");
+  await verifyCandidate(api,p,candidate);
+  check(await landed(api,candidate),"finalise commit unconfirmed; cannot close");
+  const comments=await pages(api,"/issues/"+p.issue+"/comments",10);
+  const marker=closeMarker(p,candidate);
+  const issue=await api.get("/issues/"+p.issue);
+  if(issue.state!=="closed"){
+    // Live close fencing: a competing lease or unshipped ancestry blocks the
+    // open→closed transition. Once closed, the PATCH commit is already
+    // immutable, so the fence does not run again on idempotent retries.
+    await checkClaims(api,p);
+    await checkAcceptance(api,p,candidate,comments);
+  }
+  if(!comments.some(c=>(c.body||"").includes(marker))){
+    const id=await api.comment(p.issue,"Progress: PATCH lane landed\nHandover: "+p.next+"\nVerification: "+p.verification+"\nCommit: "+candidate+"\n"+marker);
+    check(Number.isSafeInteger(id),"close receipt not acknowledged");
+    const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
+    check(confirmed.some(c=>c.id===id&&(c.body||"").includes(marker)),"close receipt not visible");
+  }
+  if(issue.state!=="closed"){
+    await api.close(p.issue);
+    check((await api.get("/issues/"+p.issue)).state==="closed","issue close not acknowledged");
+  }
+  return candidate;
+}
+
 async function ship(api,p,candidate){
   await recordPending(api,p,candidate);
   await publishPending(api,p,candidate);
+  if(p.kind==="finalise")return closeTicket(api,p,candidate);
   return recordHandover(api,p,candidate);
 }
 
@@ -262,8 +409,12 @@ function connectorAdapter(tools){
     tree:async(base,entries)=>(await tools.mcp__GitHub__create_tree({repository_full_name:repo,base_tree_sha:base,tree_elements:entries})).result.sha,
     commit:async(tree,parent,message)=>(await tools.mcp__GitHub__create_commit({repository_full_name:repo,tree_sha:tree,parent_sha:parent,message})).result.sha,
     update:async(base,candidate)=>{const x=await tools.mcp__GitHub__update_ref({repository_full_name:repo,branch_name:"develop",sha:candidate,expected_sha:base,force:false});check(x.result.success===true,"ref update rejected")},
-    comment:async(issue,comment)=>(await tools.mcp__GitHub__add_comment_to_issue({repo_full_name:repo,pr_number:issue,comment})).result.id
+    comment:async(issue,comment)=>(await tools.mcp__GitHub__add_comment_to_issue({repo_full_name:repo,pr_number:issue,comment})).result.id,
+    close:async issue=>{
+      const x=await tools.mcp__GitHub__update_issue({repo_full_name:repo,issue_number:issue,state:"closed"});
+      check(x.result&&(x.result.state==="closed"||x.result.success===true),"issue close rejected")
+    }
   };
 }
 
-export {validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,connectorAdapter,treeSnapshot,verifyTreeDelta};
+export {validateVersionBump,validate,leaseCheck,pages,createCandidate,verifyCandidate,prepare,ship,recordPending,publishPending,recordHandover,closeTicket,closeMarker,connectorAdapter,treeSnapshot,verifyTreeDelta};

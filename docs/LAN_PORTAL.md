@@ -200,7 +200,9 @@ The list shows pending/resolving/downloading/verifying/queueing/ready or a
 failure/cancellation. Bytes and rates come from worker reports; unknown totals
 remain indeterminate. No source URL, tracker, infohash, host path or peer IP
 is published in the acquisition feed. The submitting guest can cancel before
-the file enters Up Next.
+the file enters Up Next and can retry a failed or cancelled download
+(`POST /api/link-jobs/retry`); verified previously acquired media is reused
+instead of downloading again.
 
 External acquisition defaults to **off**. The owner can enable the YouTube
 and BitTorrent switches in **Preferences → Playback → Queue behaviour**,

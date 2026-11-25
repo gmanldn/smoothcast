@@ -24,7 +24,7 @@ def test_catt_adapter_preserves_scan_and_status_contract():
         '"model_name": "Chromecast", "uuid": "receiver-1"}}'
     )
     status_payload = '{"player_state": "PLAYING", "current_time": 12.5}'
-    with mock.patch.object(
+    with mock.patch.object(castctl, "_passive_cast_scan", side_effect=RuntimeError("mDNS unavailable")), mock.patch.object(
         castctl,
         "_run",
         side_effect=[
@@ -91,10 +91,21 @@ def test_status_watch_switches_receivers_and_releases_subscriptions():
         assert castctl.watch_status(owner, "A", True, deliver, receiver_update)
         assert castctl.watch_status(owner, "A", True, deliver, receiver_update)
         listeners[0][1]({"player_state": "PLAYING"})
-        assert dispatched == [(receiver_update, {"player_state": "PLAYING"})]
+        assert len(dispatched) == 1
+        callback, info = dispatched.pop()
+        callback(info)
+        receiver_update.assert_called_once_with({"player_state": "PLAYING"})
+        listeners[0][1]({"player_state": "PAUSED"})
+        assert len(dispatched) == 1
 
         assert castctl.watch_status(owner, "B", True, deliver, receiver_update)
         stops[0].assert_called_once_with()
+        # An old queued GLib idle must not update the newly chosen receiver.
+        callback, info = dispatched.pop()
+        callback(info)
+        listeners[0][1]({"player_state": "IDLE"})
+        assert not dispatched
+        receiver_update.assert_called_once_with({"player_state": "PLAYING"})
         assert not castctl.watch_status(owner, "B", False, deliver, receiver_update)
         stops[1].assert_called_once_with()
 
@@ -142,3 +153,68 @@ def test_queue_status_uses_push_events_without_receiver_polling():
         assert listener["device"] == "Receiver B"
         window._cast_status_watch.close()
         assert "_cast_status_watch" in main_window_methods()["_on_close"]
+
+
+def test_passive_scan_never_waits_for_an_unresponsive_receiver():
+    from types import SimpleNamespace
+    import sys
+
+    browser = mock.Mock()
+    records = [
+        SimpleNamespace(friendly_name="Living Room TV", host="192.168.1.20",
+                        port=8009, uuid="receiver-a", model_name="TV",
+                        manufacturer="Google"),
+        SimpleNamespace(friendly_name="Sleeping speaker", host="192.168.1.21",
+                        port=8009, uuid="receiver-b", model_name="Speaker",
+                        manufacturer="Google"),
+    ]
+    discover = mock.Mock(return_value=(records, browser))
+    package = SimpleNamespace(discover_chromecasts=discover)
+    with mock.patch.dict(sys.modules, {"pychromecast.discovery": package}), \
+         mock.patch.object(castctl, "_catt_scan") as legacy_scan:
+        found = castctl.CattBackend().scan()
+    assert [device.name for device in found] == ["Living Room TV", "Sleeping speaker"]
+    discover.assert_called_once_with(timeout=5.0)
+    browser.stop_discovery.assert_called_once_with()
+    legacy_scan.assert_not_called()
+
+
+def test_named_cast_and_status_share_verified_private_ip_route():
+    backend = castctl.CattBackend()
+    tv = castctl.Device("Living Room TV", "192.168.1.20", 8009, uuid="receiver-a")
+    with mock.patch.object(castctl, "_passive_cast_scan", return_value=[tv]):
+        backend.scan()
+    with mock.patch.object(castctl, "_backend", backend), \
+         mock.patch.object(castctl, "_receiver_identity_at", return_value="receiver-a"), \
+         mock.patch.object(castctl.frozen_runtime, "catt_command", side_effect=lambda _, args: args):
+        assert castctl.catt_command(["-d", tv.name, "info", "-j"])[1] == tv.host
+        assert castctl.catt_command(["-d", tv.name, "cast", "http://example.test/media"])[1] == tv.host
+    with mock.patch.object(castctl, "_receiver_identity_at", return_value="different-uuid"):
+        assert backend.receiver_route(tv.name) == tv.name
+    with mock.patch.object(castctl, "_receiver_identity_at", return_value=None):
+        assert backend.receiver_route(tv.name) == tv.name
+    duplicate = castctl.Device(tv.name, "192.168.1.21", 8009, uuid="receiver-b")
+    with mock.patch.object(castctl, "_passive_cast_scan", return_value=[tv, duplicate]):
+        backend.scan()
+    with mock.patch.object(castctl, "_receiver_identity_at") as check:
+        assert backend.receiver_route(tv.name) == tv.name
+        check.assert_not_called()
+
+
+def test_missing_dlna_receiver_does_not_fall_through_to_google_cast():
+    namespace = {
+        "castctl": castctl, "GLib": SimpleNamespace(idle_add=mock.Mock()),
+        "Async": SimpleNamespace(run=mock.Mock()),
+    }
+    source = main_window_methods()["_poll_device"]
+    exec(compile("class Window:\n" + textwrap.indent(source, "    "),
+                 "<missing-dlna>", "exec"), namespace)
+    window = namespace["Window"]()
+    window._device = lambda: "DLNA · Living Room TV"
+    window._dlna_renderer = lambda _: None
+    window.poll_busy = False
+    window._poll_done = mock.Mock()
+    with mock.patch.object(castctl, "watch_status", return_value=False):
+        window._poll_device()
+    window._poll_done.assert_called_once_with(None)
+    namespace["Async"].run.assert_not_called()

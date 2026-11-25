@@ -133,6 +133,31 @@ def test_ranking_prefers_now_then_priority_ready_and_unfinished_work():
     assert agent.score(issue("P3", ["later"]), set(), set(), True, 0)[0] > 1000  # resume own claim first
 
 
+def test_ranked_candidates_prefers_recent_shipment_without_per_issue_reads(monkeypatch):
+    rows = [
+        {"number": n, "title": "[P1] Work", "state": "open",
+         "labels": [{"name": "now"}], "body": ""}
+        for n in (100, 101, 102)
+    ]
+    sha = "a" * 40
+    recent = [
+        comment(1, 101, 5, f"Progress: landed\n<!-- sc-ship v1 sha={sha} -->"),
+        comment(2, 101, 4, f"Progress: same commit\n<!-- sc-finish v1 issue=101 sha={sha} -->"),
+        comment(3, 102, 2, "Progress: not shipped"),
+    ]
+    monkeypatch.setattr(agent, "gh", lambda *args: rows)
+    monkeypatch.setattr(agent, "recent_comments", lambda: recent)
+    monkeypatch.setattr(agent, "hot_files", lambda: set())
+    monkeypatch.setattr(agent, "agent_id", lambda: "ours")
+    monkeypatch.setattr(agent, "utcnow", lambda: NOW)
+    monkeypatch.setattr(agent, "issue_comments", lambda n: (_ for _ in ()).throw(
+        AssertionError("ranking must not fetch individual histories")))
+    ranked, _, _, _, _ = agent.ranked_candidates(agent.build_parser().parse_args(["next"]))
+    assert [r[1] for r in ranked] == [101, 100, 102]
+    assert agent.summarize_history(recent[:2])[0] == 1
+    assert agent.summarize_history(recent[2:])[0] == 0
+
+
 def test_ranked_candidates_count_dependencies_in_later_or_icebox(monkeypatch):
     """An open prerequisite cannot vanish because its priority tier differs."""
     ready = {"number": 100, "title": "[P1] Work now", "state": "open",

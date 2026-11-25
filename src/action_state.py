@@ -42,3 +42,9 @@ def can_stop(device_state: str, session: object, external: bool, preview_path: o
 def can_volume(device_state: str, volume_available: bool) -> bool:
     """Volume and mute share one availability rule: online and controllable."""
     return receiver_online(device_state) and bool(volume_available)
+
+
+def can_seek(session: object, external: bool, known: bool, busy: bool, duration: object) -> bool:
+    """Seeking needs a live, non-external stream with a known positive duration."""
+    return (session is not None and not external and bool(known) and not busy
+            and bool(duration))

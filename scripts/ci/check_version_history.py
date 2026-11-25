@@ -7,6 +7,7 @@ Check every commit in a push, including commits earlier than the pushed HEAD:
 The guard is read-only. It never assigns a version, rewrites history, promotes
 main, launches the app, or contacts receivers.  It verifies first-parent
 transitions; merge commits may not silently replace the inherited version.
+New ticket PATCH assignments must be unique across all reachable history.
 """
 from __future__ import annotations
 
@@ -93,6 +94,68 @@ def revision_version(rev: str) -> tuple[int, int, int]:
     return parse_version(source)
 
 
+_PATCH_SUBJECT = re.compile(
+    r"chore\(version\): PATCH(?: ([0-9]+\.[0-9]+\.[0-9]+))?"
+    r" for issue #([1-9][0-9]*)(?: \[sc-auto-patch\])?"
+)
+_PATCH_LINE = re.compile(r"^(PATCH[ \t]*=[ \t]*)[0-9]+([ \t]*)$", re.MULTILINE)
+
+
+def patch_attribution(subject: str, *, strict: bool = True) -> tuple[str, str | None] | None:
+    """Recognise native, connector and numbered historical assignment subjects."""
+    match = _PATCH_SUBJECT.fullmatch(subject)
+    if match:
+        return match[2], match[1]
+    if strict and subject.startswith("chore(version): PATCH") and " for issue #" in subject:
+        raise VersionHistoryError("malformed ticket PATCH attribution")
+    return None
+
+
+def prior_assignments(roots: list[str]) -> dict[str, str]:
+    """Reserve existing ticket IDs, including immutable historical duplicates."""
+    if git("rev-parse", "--is-shallow-repository") != "false":
+        raise VersionHistoryError("complete history required for ticket PATCH attribution")
+    if not roots:
+        return {}
+    rows = git("log", "--format=%H%x09%s", "--fixed-strings",
+               "--grep=chore(version): PATCH", *roots, "--") or ""
+    seen: dict[str, str] = {}
+    for row in rows.splitlines():
+        sha, sep, subject = row.partition("\t")
+        if not sep or not _SHA.fullmatch(sha):
+            raise VersionHistoryError("incomplete ticket PATCH history")
+        assignment = patch_attribution(subject, strict=False)
+        if assignment:
+            seen.setdefault(assignment[0], sha)
+    return seen
+
+
+def check_assignment(commit: str, parents: list[str], issue: str,
+                     declared: str | None, seen: dict[str, str]) -> None:
+    if issue in seen:
+        raise VersionHistoryError(
+            f"{commit[:12]} duplicate PATCH attribution for issue #{issue}; "
+            f"already assigned at {seen[issue][:12]}")
+    if len(parents) != 1:
+        raise VersionHistoryError("ticket PATCH must have exactly one parent")
+    parent = parents[0]
+    changed = git("diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+    if changed != VERSION_FILE:
+        raise VersionHistoryError("ticket PATCH must change only version.py")
+    old = git("show", f"{parent}:{VERSION_FILE}")
+    new = git("show", f"{commit}:{VERSION_FILE}")
+    assert old is not None and new is not None
+    major, minor, patch = parse_version(old)
+    actual = parse_version(new)
+    expected = _PATCH_LINE.sub(
+        lambda m: m[1] + str(patch + 1) + m[2], old, count=1)
+    if actual != (major, minor, patch + 1) or new != expected:
+        raise VersionHistoryError("ticket PATCH must be an exact one-step version edit")
+    if declared is not None and declared != ".".join(map(str, actual)):
+        raise VersionHistoryError("ticket PATCH subject/version mismatch")
+    seen[issue] = commit
+
+
 def check_range(before: str, after: str) -> int:
     if not _SHA.fullmatch(after) or not _SHA.fullmatch(before):
         raise VersionHistoryError("refs must be full Git SHAs")
@@ -105,8 +168,14 @@ def check_range(before: str, after: str) -> int:
         raw = git("rev-list", "--reverse", "--topo-order", f"{before}..{after}")
         commits = raw.splitlines() if raw else []
     checked = 0
+    seen: dict[str, str] | None = None
     for commit in commits:
         parents = (git("rev-list", "--parents", "-n", "1", commit) or "").split()[1:]
+        assignment = patch_attribution(git("show", "-s", "--format=%s", commit) or "")
+        if assignment:
+            if seen is None:
+                seen = prior_assignments(parents if before == ZERO else [before])
+            check_assignment(commit, parents, *assignment, seen)
         if not parents:
             revision_version(commit)
             checked += 1

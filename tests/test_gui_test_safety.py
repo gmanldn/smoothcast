@@ -189,7 +189,7 @@ class GuiTestSafetyTests(unittest.TestCase):
         self.assertIn("if selftest and not gui_test_safety.is_isolated_gui_test():",
                       source)
         self.assertIn("Gio.ApplicationFlags.NON_UNIQUE", source)
-        self.assertIn("if not self.selftest:", source)
+        self.assertIn("if not self.selftest and not demo_mode.active():", source)
         self.assertIn("return self._selftest_quit()", source)
 
 

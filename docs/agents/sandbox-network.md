@@ -88,5 +88,5 @@ agent advanced the base and the candidate is provably not reachable, record
 an explicit abandoned receipt with SHA after verifying ancestry and obtain
 fresh base blobs/version proof before preparing another. Release only your
 own lease after confirmed handover. Run `node --test tests/test_connector_ship.mjs`
-for guard regressions. Full transport qualification, version assignment and
-native closure integration remain open under #598.
+for guard regressions. Per-ticket PATCH allocation is retired (25 Nov 2026);
+native finish closes verified tickets without a version bump.

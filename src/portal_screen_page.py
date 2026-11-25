@@ -16,7 +16,7 @@ KNOWN_MIMES_JS = (
 
 def screen_page() -> bytes:
     return (_SCREEN_HTML.replace("__MIMES__", KNOWN_MIMES_JS)
-            .replace("__SC_VERSION__", version.label())
+            .replace("__SC_VERSION__", version.identity_label())
             .replace("/*TOKENS*/", design_tokens.css())).encode("utf-8")
 
 
@@ -84,7 +84,7 @@ video{width:100%;height:100%;object-fit:contain;background:rgb(0,0,0)}
 .home-link{position:fixed;z-index:40;top:max(14px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px 0 13px;border-radius:999px;background:var(--accent);color:var(--on-accent);font-weight:750;text-decoration:none;box-shadow:0 8px 22px rgba(0,0,0,.35);transition:opacity .3s}
 .home-link svg{width:22px;height:22px;fill:currentColor}
 .home-link.hide{opacity:0;pointer-events:none}.home-link:focus-visible{opacity:1;pointer-events:auto;outline:3px solid var(--focus);outline-offset:3px}
-.screen-version{position:fixed;z-index:40;top:max(24px,calc(env(safe-area-inset-top) + 10px));left:calc(max(14px,env(safe-area-inset-left)) + 118px);font-size:.74rem;font-weight:650;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;transition:opacity .3s}
+.screen-version{position:fixed;z-index:40;top:max(24px,calc(env(safe-area-inset-top) + 10px));left:calc(max(14px,env(safe-area-inset-left)) + 118px);max-width:calc(100vw - 150px);font-size:.74rem;font-weight:650;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;white-space:normal;line-height:1.2;text-align:center;transition:opacity .3s}
 .screen-version.hide{opacity:0}
 /* Reserve the corner so Home and the version never cover a card or the slate. */
 .stage{padding-top:max(80px,calc(env(safe-area-inset-top) + 70px))}

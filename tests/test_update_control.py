@@ -91,6 +91,18 @@ class UpdateControlTests(unittest.TestCase):
                 self.assertIsNone(update_control.check_release(repo, enabled=True))
                 self.assertIsNone(update_control.check_release(repo, enabled=False))
 
+    def test_installed_frozen_build_never_uses_the_source_updater(self):
+        # A hostile nested .git and an enabled flag must not re-enable git on an
+        # installed build: it is replaced by a new signed installer (#533).
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            with mock.patch.object(update_control.subprocess, "run",
+                                   side_effect=AssertionError("installed builds must not touch git")), \
+                 mock.patch.object(update_control.sys, "frozen", True, create=True):
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True))
+                self.assertIsNone(update_control.refresh_checkout(repo, enabled=True, verify=True))
+                self.assertIsNone(update_control.check_release(repo, enabled=True))
+
     def test_release_archive_skips_git(self):
         with tempfile.TemporaryDirectory() as d:
             with mock.patch.object(update_control.subprocess, "run") as run:

@@ -247,8 +247,12 @@ class PyChromecastBackend:
             return None
         cached = self._cached_status(identifier)
         if cached is not None:
-            return cached
+            return cached or None
         with self._lock:
+            # Once connection events are available, never reconstruct state
+            # from media-controller objects cached before a disconnect.
+            if identifier in self._connection_state or self._closed:
+                return None
             cast = self._casts.get(identifier)
         if cast is None:
             return None
@@ -411,6 +415,9 @@ class PyChromecastBackend:
 
     def _publish(self, identifier: str, status: ReceiverInfo) -> None:
         with self._lock:
+            if self._closed or (status and self._connection_state.get(
+                    identifier, "CONNECTED") != "CONNECTED"):
+                return
             self._status[identifier] = cast(ReceiverInfo, dict(status))
             listeners = tuple(self._subscribers.get(identifier, ()))
         for listener in listeners:
@@ -427,13 +434,23 @@ class PyChromecastBackend:
     def _connection_changed(self, identifier: str, status: Any) -> None:
         value = str(getattr(status, "status", status)).upper()
         with self._lock:
+            if self._closed:
+                return
             self._connection_state[identifier] = value
+            if value != "CONNECTED":
+                # Empty status is explicit unavailability, not IDLE or proof
+                # of completion. Discard all previously cached media evidence.
+                self._status[identifier] = {}
+        if value != "CONNECTED":
+            self._publish(identifier, {})
 
     def close(self) -> None:
         with self._changed:
             if self._closed:
                 return
             self._closed = True
+            self._status.clear()
+            self._subscribers.clear()
             browser = self._browser
             casts = tuple(self._casts.values())
             self._browser = None
