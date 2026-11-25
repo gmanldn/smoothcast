@@ -77,3 +77,23 @@ def test_both_pages_serve_forced_colors_support():
     import portal_screen_page
     assert "@media(forced-colors:active)" in portal._HTML
     assert "@media(forced-colors:active)" in portal_screen_page.screen_page().decode()
+
+
+def test_dark_gtk_and_web_tokens_golden_parity():
+    """#525 acceptance: golden parity test connecting dark GTK colors and web tokens."""
+    import accent
+    import ui_theme
+    assert dt.DARK["bg"] == "#101722"
+    assert dt.DARK["card"] == "#1c2735"
+    assert dt.DARK["text"] == "#f4f7fb"
+    default_accent = accent.accent_hex(accent.DEFAULT_ID)
+    assert default_accent == "#79baff"
+    web_presets = dt.web_accents()
+    for pid, _lbl, _hex in accent.PRESETS:
+        assert pid in web_presets
+        assert "dark" in web_presets[pid] and "light" in web_presets[pid]
+    css_str = ui_theme.CSS.decode("utf-8")
+    assert "@card_bg_color" in css_str
+    assert "@card_fg_color" in css_str
+    assert "@accent_bg_color" in css_str
+    assert "@accent_fg_color" in css_str

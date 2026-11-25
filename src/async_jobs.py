@@ -19,6 +19,8 @@ DEFAULT_LIMITS = {
     "transport": (2, 8),
     "status": (2, 6),
     "discovery": (1, 2),
+    # Interactive receiver handoff must not queue behind previews or file copies.
+    "cast_start": (1, 2),
     "media": (2, 4),
     "background": (2, 8),
 }
@@ -28,6 +30,7 @@ _FAILURE_MESSAGES = {
     "status": "Could not check the receiver. Check its power and network connection.",
     "discovery": "Could not scan for receivers. Check your network and scan again.",
     "media": "Check that the media file is available and try again.",
+    "cast_start": "Could not start playback. Check the receiver and media file, then retry.",
 }
 _DEFAULT_FAILURE = "SmoothCast could not complete the action. Try again."
 

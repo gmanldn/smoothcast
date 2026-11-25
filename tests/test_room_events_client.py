@@ -65,7 +65,7 @@ assert.equal(fallbacks, 0);
 def test_error_falls_back_to_polling_and_retries_with_capped_backoff():
     run("""
 const ev = makeRoomEvents(env);
-ev.start(); sources[0].emit({n:1});
+ev.start(); sources[0].emit({state:{n:1}});
 sources[0].onerror();
 assert.equal(sources[0].closed, true); assert.equal(ev.healthy(), false);
 assert.equal(fallbacks, 1);
@@ -76,7 +76,9 @@ for (let i = 0; i < 7; i++) {
   sources[sources.length - 1].onerror();
 }
 assert.deepEqual(delays, [1000, 2000, 4000, 8000, 15000, 15000, 15000]);
-sources[sources.length - 1].emit({n:2});
+const [[retryId, retryTimer]] = [...timers.entries()];
+timers.delete(retryId); retryTimer.f();
+sources[sources.length - 1].emit({state:{n:2}});
 sources[sources.length - 1].onerror();
 assert.equal([...timers.values()][0].ms, 1000, "a healthy event resets the backoff");
 """)
@@ -86,7 +88,7 @@ assert.equal([...timers.values()][0].ms, 1000, "a healthy event resets the backo
 def test_silent_stream_is_replaced_by_polling_after_30_seconds():
     run("""
 const ev = makeRoomEvents(env);
-ev.start(); sources[0].emit({n:1});
+ev.start(); sources[0].emit({state:{n:1}});
 const [watch] = [...intervals.values()];
 clock = 29000; watch.f(); assert.equal(ev.healthy(), true);
 clock = 31001; watch.f(); assert.equal(ev.healthy(), false);
@@ -99,7 +101,7 @@ assert.equal(intervals.size, 0, "watchdog is cleared");
 def test_hidden_tab_or_expired_session_closes_the_stream_and_blocks_restart():
     run("""
 const ev = makeRoomEvents(env);
-ev.start(); sources[0].emit({n:1});
+ev.start(); sources[0].emit({state:{n:1}});
 ev.stop();
 assert.equal(sources[0].closed, true); assert.equal(ev.healthy(), false);
 assert.equal(timers.size, 0); assert.equal(intervals.size, 0);
@@ -107,7 +109,7 @@ canRun = false; ev.start();
 assert.equal(sources.length, 1, "no stream while hidden or signed out");
 ev.start && (canRun = true, ev.start());
 assert.equal(sources.length, 2);
-sources[1].emit({n:3}); canRun = false; sources[1].onerror();
+sources[1].emit({state:{n:3}}); canRun = false; sources[1].onerror();
 assert.equal(fallbacks, 0, "no polling fallback when the page may not run");
 assert.equal(timers.size, 0);
 """)
@@ -130,4 +132,4 @@ def test_page_wires_the_stream_into_the_existing_poll_and_lifecycle():
     assert "function expireSession(){" in html
     expired = html.split("function expireSession(){", 1)[1].split("function clock(s){", 1)[0]
     assert 'csrf="";' in expired and "roomEvents.stop();" in expired
-    assert "apply:d=>{if(!busy)applyStatus(d)}" in html
+    assert "apply:d=>{if(!busy)return applyStatus(d)}" in html

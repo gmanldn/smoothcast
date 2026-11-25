@@ -202,5 +202,28 @@ def test_work_domains_are_inherited_by_real_gui_adapter_without_importing_gtk():
     assert "GLib.idle_add, on_error=error_log.log" in widget_source
     for domain in ("discovery", "status", "media"):
         assert f'domain="{domain}"' in queue_source
-    for domain in ("transport", "status", "media"):
+    for domain in ("transport", "status", "media", "cast_start"):
         assert f'domain="{domain}"' in session_source
+
+
+
+def test_cast_start_does_not_wait_behind_saturated_media_workers():
+    from async_jobs import DEFAULT_LIMITS
+
+    pool = WorkDomains(lambda callback: callback())
+    release = threading.Event()
+    started = [threading.Event() for _ in range(DEFAULT_LIMITS["media"][0])]
+    cast_started = threading.Event()
+    try:
+        for event in started:
+            assert pool.submit(lambda e=event: (e.set(), release.wait(5)),
+                               domain="media")
+        assert all(event.wait(2) for event in started)
+        for _ in range(DEFAULT_LIMITS["media"][1]):
+            assert pool.submit(lambda: release.wait(5), domain="media")
+        assert pool.submit(cast_started.set, domain="cast_start")
+        assert cast_started.wait(2), "Play Now queued behind background media"
+        assert not release.is_set()
+    finally:
+        release.set()
+        pool.shutdown()
