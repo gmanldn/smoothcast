@@ -53,7 +53,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     generation=lambda: (self.now_playing, id(self.session)),
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
-            self._portal = portal.Portal(address, self._portal_dispatch,
+            # A service bounce keeps the printed PIN valid (guests still rejoin).
+            pin, self._portal_reuse_pin = getattr(self, "_portal_reuse_pin", None), None
+            self._portal = portal.Portal(address, self._portal_dispatch, pin=pin,
                                          status_snapshot=snapshot.read,
                                          status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
@@ -181,8 +183,13 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         """
         if self._closing:
             return
+        current = getattr(self, "_portal", None)
+        # Keep the printed PIN valid across the bounce; guests still rejoin the
+        # restarted room and re-authenticate with the same code.
+        self._portal_reuse_pin = current.pin if current is not None else None
         self._stop_portal()          # room, mesh and heartbeat
-        self._stop_house_services()  # library indexer, mesh-library, fingerprint keys
+        # Keep the process-wide content key cache: only application exit closes it.
+        self._stop_house_services(keep_fingerprint=True)  # library indexer, mesh-library
         self._refresh_portal()       # rebuild everything on the current LAN
 
     def _sync_portal_activity_timer(self) -> None:

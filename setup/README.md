@@ -55,6 +55,13 @@ your arguments and working directory, and prints
 `SmoothCast: using installed application at <path>` to stderr. A hand-off is
 marked so two launchers can never bounce between each other.
 
+- **Already running:** relaunching `sc.py` (or a dock/menu entry) while
+  SmoothCast is running presents the existing window and asks it to bounce its
+  background services in place — the shared room, mesh, library indexer,
+  heartbeat and MPRIS restart so a changed checkout or settings take effect.
+  Playback is never interrupted: the active cast, session and tracker keep
+  running. A launch from a different installation is still refused.
+
 - **No installation found:** the first start runs setup (a normal copy to the
   per-user folder), then re-resolves the install location and launches the
   installed copy, not the checkout. If setup reports success but no usable
