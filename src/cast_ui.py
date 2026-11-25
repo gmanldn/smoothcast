@@ -1298,7 +1298,9 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         ready_to_cast = self.now_playing is not None or (
             self.selected_index is not None and 0 <= self.selected_index < len(self.queue)
         )
-        self.cast_button.set_sensitive(ready_to_cast and online and not busy)
+        # An explicit cast attempt can wake/reconnect a previously offline
+        # receiver. A failed background poll is not a permanent cast veto.
+        self.cast_button.set_sensitive(ready_to_cast and bool(self._device().strip()) and not busy)
         # Make the next useful action unmistakable: Open when empty, Cast when
         # a local video is ready. Avoid a bright, inert Cast button on startup.
         if ready_to_cast:

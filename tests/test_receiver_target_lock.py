@@ -178,3 +178,43 @@ def test_manual_controls_explicitly_disabled_with_dropdown_during_cast():
     assert "self.add_ip_button.set_sensitive(not target_locked)" in source
     assert "self.device_dropdown.set_sensitive(not target_locked)" in source
     assert "self._cast_starting or self.external" in source
+
+
+def test_failed_scan_retains_last_known_receivers():
+    namespace = {}
+    source = main_window_methods()["_scan_failed"]
+    exec(compile("class Window:\n" + textwrap.indent(source, "    "),
+                 "<failed-scan>", "exec"), namespace)
+    w = namespace["Window"]()
+    w.devices = [castctl.Device("Living Room TV")]
+    renderer = object()
+    w.dlna_devices = [renderer]
+    w._dlna_by_key = {"DLNA · Living Room TV": renderer}
+    w.device_detail = mock.Mock()
+    w._set_device_badge = mock.Mock()
+    w.toast = mock.Mock()
+    w._scan_failed("timeout")
+    assert w.devices == [castctl.Device("Living Room TV")]
+    assert w.dlna_devices == [renderer]
+    assert w._dlna_by_key == {"DLNA · Living Room TV": renderer}
+    assert w.scan_busy is False
+
+
+def test_explicit_cast_can_retry_offline_receiver_but_requires_selection():
+    import ast
+
+    source = textwrap.dedent(main_window_methods()["_refresh_controls"])
+    call = next(node for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.Call) and
+                ast.unparse(node.func) == "self.cast_button.set_sensitive")
+    expression = compile(ast.Expression(call.args[0]), "<cast-sensitivity>", "eval")
+    for target, ready, busy, expected in (
+        ("Living Room TV", True, False, True),
+        ("Living Room TV", True, True, False),
+        ("", True, False, False),
+        ("Living Room TV", False, False, False),
+    ):
+        self = SimpleNamespace(_device=lambda: target)
+        assert eval(expression, {"self": self, "ready_to_cast": ready,
+                                 "online": False, "busy": busy}) is expected
+

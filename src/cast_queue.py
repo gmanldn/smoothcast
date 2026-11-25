@@ -428,14 +428,14 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             try:
                 cast_devices = castctl.scan()
             except Exception as exc:
-                cast_devices = []
+                cast_devices = None
                 errors.append(f"Cast discovery: {exc}")
             try:
                 dlna_devices = dlna.discover()
             except Exception as exc:
-                dlna_devices = []
+                dlna_devices = None
                 errors.append(f"DLNA discovery: {exc}")
-            if errors and not cast_devices and not dlna_devices:
+            if cast_devices is None and dlna_devices is None:
                 raise RuntimeError("; ".join(errors))
             return cast_devices, dlna_devices
 
@@ -469,9 +469,15 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
     def _scan_done(self, devices) -> None:
         self.scan_busy = False
+        cast_fresh = dlna_fresh = True
         if isinstance(devices, tuple):
             cast_devices, discovered_dlna = devices
-            self.dlna_devices = discovered_dlna
+            cast_fresh = cast_devices is not None
+            dlna_fresh = discovered_dlna is not None
+            if cast_devices is None:
+                cast_devices = self.devices
+            if discovered_dlna is not None:
+                self.dlna_devices = discovered_dlna
         else:
             cast_devices = devices
         self.devices = cast_devices
@@ -479,7 +485,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         saved_uuid = self.cfg.get("device_uuid", "")
         unlocked = not (self.session is not None or self.busy
                         or self._cast_starting or self.external)
-        if unlocked and saved_uuid:
+        if unlocked and saved_uuid and cast_fresh:
             matched = castctl.uniquely_named_device(saved_uuid, cast_devices)
             if matched is not None and matched.name != self.cfg["device"]:
                 # Pending volume write targets the old receiver.
@@ -505,13 +511,17 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         selected = next((d for d in cast_devices if d.name == self.cfg["device"]), None)
         # Migrate older configurations when the selected display name itself
         # is unique. Do not adopt a duplicate name or overwrite a saved UUID.
-        if not saved_uuid and selected is not None and selected.uuid:
+        if cast_fresh and not saved_uuid and selected is not None and selected.uuid:
             unique = castctl.uniquely_named_device(selected.uuid, cast_devices)
             if unique is selected:
                 self.cfg["device_uuid"] = selected.uuid
                 save_config(self.cfg)
         dlna_selected = self._dlna_renderer()
-        if dlna_selected is not None:
+        if ((self._device().startswith("DLNA · ") and not dlna_fresh)
+                or (not self._device().startswith("DLNA · ") and not cast_fresh)):
+            self.device_detail.set_text("Discovery incomplete — checking the selected receiver")
+            self._set_device_badge("CHECKING")
+        elif dlna_selected is not None:
             self.device_detail.set_text(
                 f"DLNA/UPnP · {dlna_selected.model or 'MediaRenderer'} · {dlna_selected.host}"
             )
@@ -532,17 +542,17 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 if cast_devices or self.dlna_devices else "No Cast or DLNA receivers discovered. Check Wi-Fi/VPN or firewall."
             )
             self._set_device_badge("NOT FOUND", "offline")
+        if self._device() and self.device_state in {"OFFLINE", "UNKNOWN"}:
+            self._poll_device()
         if hasattr(self, "_refresh_network_activity"):
             self._refresh_network_activity()
 
 
     def _scan_failed(self, message) -> None:
         self.scan_busy = False
-        # Keep the selected target.
-        self.devices = []
-        self.dlna_devices = []
-        self._dlna_by_key = {}
-        self.device_detail.set_text("Scan failed — is the network reachable?")
+        # A failed scan is not a successful empty scan. Retain the last known
+        # targets and let the independent status query determine reachability.
+        self.device_detail.set_text("Scan failed — last known targets retained; check Wi-Fi or VPN")
         self._set_device_badge("SCAN FAILED", "offline")
         self.toast(str(message), error=True)
 
@@ -554,6 +564,10 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                                 GLib.idle_add, self._poll_done):
             return True
         if self.poll_busy:
+            return True
+        if device.startswith("DLNA · ") and renderer is None:
+            # A missing DLNA discovery record must never be sent to catt.
+            self._poll_done(None)
             return True
         self.poll_busy = True
 

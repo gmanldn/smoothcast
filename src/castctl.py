@@ -98,7 +98,35 @@ def _run(args: list[str], timeout: float = 10) -> subprocess.CompletedProcess:
 
 
 def catt_command(args: list[str]) -> list[str]:
+    # All catt invocations (including the encoder's raw cast subprocess) must
+    # use the same receiver route. Keep the public/session identity unchanged.
+    if len(args) >= 2 and args[0] == "-d" and isinstance(_backend, CattBackend):
+        args = [args[0], _backend.receiver_route(args[1]), *args[2:]]
     return frozen_runtime.catt_command(str(CATT), args)
+
+
+def _passive_cast_scan(timeout: float) -> list[Device]:
+    """Discover advertisements without waiting for every receiver to connect."""
+    from pychromecast.discovery import discover_chromecasts
+
+    records, browser = discover_chromecasts(timeout=min(max(timeout, 0), 5.0))
+    try:
+        return sorted([
+            Device(str(item.friendly_name or item.host), str(item.host),
+                   int(item.port), str(item.model_name or ""),
+                   str(item.manufacturer or ""), str(item.uuid or ""))
+            for item in records
+        ], key=lambda device: (device.name.casefold(), device.uuid))
+    finally:
+        browser.stop_discovery()
+
+
+def _receiver_identity_at(host: str) -> str | None:
+    """Bounded, read-only identity check; an address alone is not ownership."""
+    from pychromecast.dial import get_device_info
+
+    info = get_device_info(host, timeout=2.0)
+    return str(info.uuid) if info is not None and info.uuid else None
 
 
 def _catt_scan(timeout: float = 30) -> list[Device]:
@@ -228,8 +256,39 @@ class CattBackend:
 
     supports_push_status = False
 
+    def __init__(self) -> None:
+        self._advertisements: tuple[Device, ...] = ()
+
     def scan(self, timeout: float = 30) -> list[Device]:
-        return _catt_scan(timeout)
+        try:
+            devices = _passive_cast_scan(timeout)
+        except Exception:
+            # Older/broken discovery environments retain the compatibility
+            # path. Its JSON keys collapse duplicate names, so do not use
+            # that result as evidence for an automatic IP route.
+            self._advertisements = ()
+            return _catt_scan(timeout)
+        self._advertisements = tuple(devices)
+        return devices
+
+    def receiver_route(self, name: str) -> str:
+        """Avoid repeated mDNS lookups only for a uniquely verified receiver."""
+        matches = [device for device in self._advertisements if device.name == name]
+        if len(matches) != 1:
+            return name
+        selected = matches[0]
+        if not selected.uuid or selected.port != 8009:
+            return name
+        try:
+            host = validate_manual_target(selected.host)
+            identity = _receiver_identity_at(host)
+        except Exception:
+            return name
+        if identity and identity.replace("-", "").casefold() == selected.uuid.replace("-", "").casefold():
+            return host
+        # A DHCP reassignment or unavailable identity check is not permission
+        # to send a command to the cached IP.
+        return name
 
     def info(self, device: str, timeout: float = 8) -> ReceiverInfo | None:
         return _catt_info(device, timeout)
@@ -244,7 +303,7 @@ class CattBackend:
         return lambda: None
 
     def close(self) -> None:
-        return None
+        self._advertisements = ()
 
 
 _backend: CastBackend = CattBackend()
