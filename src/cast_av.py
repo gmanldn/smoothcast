@@ -303,20 +303,21 @@ class AvMixin:
 
 
 
-    def _resolve_subs(self, video: pathlib.Path) -> pathlib.Path | None:
-        mode = self.cfg["subs"]
+    def _resolve_subs(self, video: pathlib.Path, *, config: dict | None = None) -> pathlib.Path | None:
+        cfg = self.cfg if config is None else config
+        mode = cfg["subs"]
         if mode == "off":
             return None
         if mode == "pick":
-            path = pathlib.Path(self.cfg["subs_path"]).expanduser()
+            path = pathlib.Path(cfg["subs_path"]).expanduser()
             return path if path.is_file() and path.suffix.lower() in streamer.SUBTITLE_EXTS else None
         if mode != "auto":
             return None
         found = streamer.find_subtitles(video)
         if found is None:
             found = subtitle_search.find_subtitle(
-                video, self.cfg.get("subtitle_search_folders"),
-                preferred=self.cfg.get("preferred_subtitle_languages") or (),
+                video, cfg.get("subtitle_search_folders"),
+                preferred=cfg.get("preferred_subtitle_languages") or (),
             )
         return found
 

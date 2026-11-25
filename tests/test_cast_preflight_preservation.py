@@ -318,3 +318,37 @@ def test_missing_receiver_rejects_without_touching_current_playback():
     w._unload_local_video.assert_not_called()
     w.local_playback.stop.assert_not_called()
     w._cast_failed.assert_not_called()
+
+
+def test_automatic_subtitle_scan_is_deferred_until_cast_worker(monkeypatch):
+    import audio_delay
+    import subtitle_delay
+
+    submitted = []
+    def run(work, *, done, failed, domain):
+        submitted.append((work, domain))
+
+    w, previous = window(subs="auto", dependencies={
+        "Async": SimpleNamespace(run=run), "streamer": streamer,
+        "subtitle_style": subtitle_style, "subtitle_delay": subtitle_delay,
+        "audio_delay": audio_delay,
+    })
+    w.cfg.update(direct=True, audio="original")
+    previous.stop = mock.Mock()
+    path = pathlib.Path("/new-film.mp4")
+    assert w._cast_path(path, 0.0) is None
+    w._resolve_subs.assert_not_called()
+    previous.stop.assert_not_called()
+    assert w.busy and w._dlna_cancel is not None
+    assert len(submitted) == 1
+    work, domain = submitted[0]
+    assert domain == "cast_start"
+
+    # Cancellation while waiting for the worker never performs disk scans.
+    w._dlna_cancel.set()
+    import pytest
+    with pytest.raises(streamer.StreamError, match="cancelled"):
+        work()
+    w._resolve_subs.assert_not_called()
+    previous.stop.assert_not_called()
+

@@ -473,7 +473,9 @@ def run_mutation(controller: object, fence: CommandFence,
                 owner=controller._device())
     command_trace.stage("fenced")
     revision = fence.snapshot()[1]
-    if getattr(controller, "busy", False):
+    # A cancellable cast preparation is the one busy operation Stop may interrupt.
+    if getattr(controller, "busy", False) and not (
+            envelope.action == "stop" and getattr(controller, "_dlna_cancel", None) is not None):
         raise CommandError(409, "SmoothCast is finishing another command",
                            revision=revision, code="cast.command_in_progress")
     command_trace.stage("dispatched")

@@ -464,3 +464,20 @@ def test_per_participant_command_cap_preserves_a_second_guests_admission():
     finally:
         release.set()
         dispatcher.close()
+
+def test_busy_cast_preparation_accepts_stop_but_not_other_transport():
+    fence = commands.CommandFence()
+    window = FakeWindow(fence)
+    window.busy = True
+    window._dlna_cancel = threading.Event()
+    session_id, revision, _ = fence.snapshot()
+    for action in ("play_pause", "seek"):
+        with pytest.raises(commands.CommandError) as error:
+            commands.run_mutation(window, fence, envelope(
+                action=action, session_id=session_id, revision=revision))
+        assert error.value.status == 409
+    assert window.calls == []
+    receipt = commands.run_mutation(window, fence, envelope(
+        action="stop", session_id=session_id, revision=revision))
+    assert "Stop requested" in receipt.message
+    assert window.calls == ["stop"]
