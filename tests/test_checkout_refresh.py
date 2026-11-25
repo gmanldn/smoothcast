@@ -139,6 +139,8 @@ def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, caps
     version(installed, 3)
     (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
     def git(_root, *args):
+        if args[0] == "symbolic-ref":
+            return Mock(returncode=0, stdout="develop")
         if args[0] == "rev-parse":
             return Mock(returncode=0, stdout=("b" * 40 if "refs/remotes" in args[-1] else SHA))
         if args == ("merge-base", "--is-ancestor", "b" * 40, SHA):
@@ -147,6 +149,28 @@ def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, caps
     monkeypatch.setattr(refresh, "git", git)
     assert refresh.refresh(source, installed, "linux", lambda: []) == 3
     assert "behind known origin/develop" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("symbolic_ref", [
+    Mock(returncode=1, stdout=""),            # detached HEAD (agent/worktree launch)
+    Mock(returncode=0, stdout="main\n"),      # a checkout on another branch
+])
+def test_non_develop_checkout_is_never_refused_as_behind(roots, monkeypatch, capsys,
+                                                         symbolic_ref):
+    """Only a real develop checkout may be judged against origin/develop (#595)."""
+    source, installed = roots
+    version(installed, 3)
+    (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
+    def git(_root, *args):
+        if args[0] == "symbolic-ref":
+            return symbolic_ref
+        if args[0] == "rev-parse":
+            return Mock(returncode=0, stdout=("b" * 40 if "refs/remotes" in args[-1] else SHA))
+        return Mock(returncode=0)
+    monkeypatch.setattr(refresh, "git", git)
+    # The install already matches the checkout, so this must simply launch.
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert "behind known origin/develop" not in capsys.readouterr().err
 
 
 def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
