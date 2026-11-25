@@ -75,6 +75,9 @@ PATHS: dict[str, dict] = {
     "/api/mesh": {"get": _op("Snapshot of the live mesh (nodes, targets, clients)", tag="mesh")},
     "/api/mesh/events": {"get": _op("Live mesh updates (server-sent events)",
                                     content="text/event-stream", tag="mesh")},
+    "/api/mesh/heartbeat": {"get": _op(
+        "Dedicated primary-node heartbeat (coordinator, activities and counters)",
+        tag="mesh")},
     "/api/uploads": {"post": _op("Start a resumable upload", csrf=True, method_body="UploadStart",
                                  tag="uploads")},
     "/api/uploads/{id}": {
