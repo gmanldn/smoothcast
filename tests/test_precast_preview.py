@@ -73,7 +73,10 @@ class PreCastPreviewTests(unittest.TestCase):
         self.assertIn("self._preview_busy", METHODS["_start_preview"])
         self.assertIn("Async.run(", METHODS["_start_preview"])
         self.assertIn("screenshot.preview_frame(", METHODS["_start_preview"])
-        self.assertIn("GLib.timeout_add(180, self._start_preview)", METHODS["_queue_preview"])
+        self.assertIn("delay = 180 if sparse else 1", METHODS["_queue_preview"])
+        self.assertIn("GLib.source_remove(self._preview_timer_id)", METHODS["_queue_preview"])
+        self.assertIn("not stream.is_seeking()", METHODS["_tick"])
+        self.assertIn("self.elapsed_label.set_text(fmt_time(target))", METHODS["seek_to"])
         self.assertIn("Gdk.Texture.new_from_bytes(", METHODS["_start_preview"])
 
 

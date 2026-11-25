@@ -93,6 +93,7 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
     window.cfg = {}
     window.preview_picture = SimpleNamespace(set_paintable=show, set_visible=mock.Mock())
     window._start_preview()
+    show.assert_not_called()  # Hover bins never replace the actual preview.
     expected_picture = picture_adjustments.for_path({}, "film.mkv")
     decode.assert_called_once_with(pathlib.Path("film.mkv"), 10, video_stream_index=0,
                                    picture_config=expected_picture)
@@ -103,6 +104,7 @@ def test_cached_hover_avoids_another_ffmpeg_but_exact_seek_still_decodes():
     window._start_preview()
     assert decode.call_count == 2
     assert decode.call_args.args[1] == 19
+    show.assert_called_once_with(b"\xff\xd8JPEG")
 
     window.cfg["aspect_override"] = "4:3"
     window._preview_generation += 1
@@ -116,7 +118,9 @@ def test_hover_is_approximate_only_while_exact_frame_step_remains_precise():
     methods = main_window_methods()
     assert "self._queue_preview(value, sparse=True)" in methods["_on_hover"]
     assert "self._preview_sparse = sparse" in methods["_queue_preview"]
-    assert "GLib.timeout_add(180, self._start_preview)" in methods["_queue_preview"]
+    assert "delay = 180 if sparse else 1" in methods["_queue_preview"]
+    assert "if self.seekbar.scrubbing:" in methods["_on_hover"]
+    assert "if latest and sparse:" in methods["_start_preview"]
     assert "if self._preview_busy" in methods["_start_preview"]
     assert "cached = cache.get(key)" in methods["_start_preview"]
     assert "pathlib.Path(path), position, video_stream_index=video_index" in methods["_start_preview"]

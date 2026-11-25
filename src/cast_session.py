@@ -593,6 +593,8 @@ class SessionMixin:
             if self.seekbar is not None:
                 self.seekbar.set_state(target, duration, self.seekbar.buffered)
             self._preview_position = target
+            self.elapsed_label.set_text(fmt_time(target))
+            self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - target))}" if duration else "--:--")
             stream = self._local_stream()
             if stream is not None:
                 if stream.is_prepared():
@@ -973,7 +975,7 @@ class SessionMixin:
         if previewing:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
-                if stream.get_playing() and not self.seekbar.scrubbing:
+                if stream.get_playing() and not self.seekbar.scrubbing and not stream.is_seeking():
                     self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
                     position = self._preview_position
                 if not duration and stream.get_duration() > 0:

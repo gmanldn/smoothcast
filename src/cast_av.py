@@ -444,16 +444,21 @@ class AvMixin:
         if path != self._preview_path or generation != self._preview_generation:
             return False
         self._preview_busy = True
+        self._preview_inflight_sparse = sparse
 
         def finish(frame=None):
             self._preview_busy = False
             latest = (path == self._preview_path
                       and generation == self._preview_generation
                       and self.session is None and not self.external
+                      and not getattr(self, "_local_video_path", None)
+                      and not getattr(self, "_closing", False)
                       and self._preview_pending is None)
             # A finished decode must never overwrite a newer position the
             # user selected while FFmpeg was still extracting the old frame.
-            if latest:
+            if latest and sparse:
+                self._refresh_thumbnail_strip(position, visible=True)
+            elif latest:
                 if frame is not None:
                     try:
                         texture = Gdk.Texture.new_from_bytes(GLib.Bytes.new(frame))
@@ -463,10 +468,9 @@ class AvMixin:
                         self.preview_picture.set_visible(False)
                 else:
                     self.preview_picture.set_visible(False)
-                if sparse:
-                    self._refresh_thumbnail_strip(position, visible=True)
             if self._preview_pending is not None and not self._preview_timer_id:
-                self._preview_timer_id = GLib.timeout_add(120, self._start_preview)
+                delay = 120 if self._preview_sparse else 1
+                self._preview_timer_id = GLib.timeout_add(delay, self._start_preview)
 
         media = self.media if self.media is not None and str(self.media.path) == path else None
         if media is not None and media.is_audio_only:
@@ -580,11 +584,20 @@ class AvMixin:
         if (self._preview_path is None or self.session is not None or self.external
                 or self._local_stream() is not None):
             return
+        # Hover must neither replace a committed seek nor discard its result.
+        if sparse and ((self._preview_pending is not None and not self._preview_sparse)
+                       or (self._preview_busy and not getattr(self, "_preview_inflight_sparse", False))):
+            return
         self._preview_pending = (self._preview_path, max(0.0, position),
                                  self._preview_generation)
         self._preview_sparse = sparse
+        if not sparse and self._preview_timer_id:
+            GLib.source_remove(self._preview_timer_id)
+            self._preview_timer_id = 0
         if not self._preview_timer_id and not self._preview_busy:
-            self._preview_timer_id = GLib.timeout_add(180, self._start_preview)
+            # Exact seeks run on the next main-loop turn, not the hover debounce.
+            delay = 180 if sparse else 1
+            self._preview_timer_id = GLib.timeout_add(delay, self._start_preview)
 
 
     def _toggle_local_preview(self) -> None:
