@@ -302,6 +302,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             can_seek = bool(active and self.session is not None and not self.busy
                             and not self.external and self.tracker.known)
             feedback = getattr(self, "_cast_feedback", None)
+            media = getattr(self, "media", None) if active and not self.external else None
+            kind = ("video" if getattr(media, "has_video", False) else
+                    "audio" if getattr(media, "is_audio_only", False) else "")
             state = {
                 "cast_feedback": feedback if feedback and feedback.get("receiver") == self._device() else None,
                 "title": title, "receiver": self._device(), "state": self.device_state,
@@ -309,7 +312,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "state_short": state_labels.present(self.device_state).short,
                 "state_description": state_labels.present(self.device_state).accessible,
                 "state_icon": state_labels.present(self.device_state).icon,
-                "position": position, "duration": duration,
+                "position": position, "duration": duration, "media_kind": kind,
                 # Source seconds per wall second. The tracker is authoritative,
                 # not HLS segment timestamps or a browser-side playback guess.
                 "rate": (self.tracker.rate

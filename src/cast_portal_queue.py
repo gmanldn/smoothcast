@@ -14,6 +14,7 @@ import stat
 import secrets
 
 import portal
+import portal_uploads
 import queue_metadata
 
 
@@ -80,13 +81,29 @@ class PortalQueueMixin:
         self._portal_prune_queue_provenance()
         display_names = getattr(self, "_portal_queue_display_names", {})
         provenance = getattr(self, "_portal_queue_provenance", {})
-        rows = [{
-            "id": portal_queue_id(path),
-            "title": queue_metadata.display_title(path, getattr(self, "_media_cache", {}),
-                                                  display_names.get(path)),
-            "duration": self.queue_durations.get(path, 0.0),
-            **provenance.get(path, {}),
-        } for path in self.queue[:100]]
+        rows = []
+        cache = getattr(self, "_media_cache", {})
+        for path in self.queue[:100]:
+            name = display_names.get(path)
+            media = queue_metadata.cached_media(cache, path)
+            suffix = pathlib.Path(name or path).suffix.lower()
+            if media is not None and getattr(media, "has_video", False):
+                kind = "video"
+            elif media is not None and getattr(media, "is_audio_only", False):
+                kind = "audio"
+            elif suffix in portal_uploads.VIDEO_SUFFIXES:
+                kind = "video"
+            elif suffix in portal_uploads.AUDIO_SUFFIXES:
+                kind = "audio"
+            else:
+                kind = ""
+            rows.append({
+                "id": portal_queue_id(path),
+                "title": queue_metadata.media_title(path, media, name),
+                "duration": getattr(media, "duration", 0.0) or self.queue_durations.get(path, 0.0),
+                "media_kind": kind,
+                **provenance.get(path, {}),
+            })
         self._portal_observe_queue()
         return rows
 

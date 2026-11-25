@@ -80,3 +80,25 @@ def test_verified_media_tags_and_original_name_share_title_projection(tmp_path):
     assert queue_metadata.media_title(path, host._media_cache[str(path)][1],
                                       "Original film.mp4") == expected
     assert queue_metadata.media_title(path, display_name="Original film.mp4") == "Original film.mp4"
+
+
+def test_room_queue_projects_media_kind_and_fresh_duration(tmp_path):
+    import queue_metadata
+    path = tmp_path / "opaque.partial"
+    path.write_bytes(b"media")
+    host = Host()
+    host.queue.append(str(path))
+    host._portal_note_display_name(path, "Original film.mp4")
+    row = host._portal_queue_status()[0]
+    assert row["media_kind"] == "video" and row["duration"] == 0
+    host._media_cache = {str(path): (queue_metadata.file_fingerprint(path),
+                                    SimpleNamespace(has_video=False, is_audio_only=True,
+                                                    duration=123.5))}
+    host.queue_durations[str(path)] = 1.0
+    row = host._portal_queue_status()[0]
+    assert row["media_kind"] == "audio" and row["duration"] == 123.5
+
+
+def test_home_queue_refreshes_on_duration_and_kind_changes():
+    assert "item.contributor,item.media_kind,item.duration" in portal._HTML
+    assert "mediaKindLabel(item.media_kind),item.duration?clock(item.duration)" in portal._HTML

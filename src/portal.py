@@ -2380,12 +2380,13 @@ function releaseQueuePointer(){
 // Click follows pointerup, so retain the pressed button until its click runs.
 document.addEventListener("pointerup",()=>setTimeout(releaseQueuePointer,0));
 document.addEventListener("pointercancel",releaseQueuePointer);
+function mediaKindLabel(kind){return kind==="audio"?"Audio":kind==="video"?"Video":""}
 function renderQueue(items){
   const queue=queueElement,rows=Array.isArray(items)?items:[];
   if(queuePressed){deferredQueue=rows;return}
   queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
-    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,
+    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
   ]));
   if(key===queueRenderKey)return;
   const focused=document.activeElement;
@@ -2425,6 +2426,7 @@ function renderQueue(items){
     li.setAttribute("aria-setsize",String(rows.length));
     li.children[0].children[0].textContent=itemTitle;
     li.children[0].children[1].textContent="Position "+(index+1)+" of "+rows.length+" · "+(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
+      +(mediaKindLabel(item.media_kind)?" · "+mediaKindLabel(item.media_kind):"")
       +(item.duration?" · "+clock(item.duration):"")
       +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
       +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
@@ -2749,7 +2751,7 @@ function applyStatus(d){
     });
     monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
-    monitorText("receiver","Playing on: "+(s.receiver||"—"));
+    monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
@@ -2766,7 +2768,7 @@ let homeQueueKey=null,homePeopleKey=null;
 function renderHomeQueue(items){
   const list=$("homeQueue");if(!list)return;
   const rows=Array.isArray(items)?items:[];
-  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor]));
+  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration]));
   if(key===homeQueueKey)return;homeQueueKey=key;
   const count=$("homeQueueCount");
   if(count)count.textContent=rows.length?`${rows.length} waiting`:"";
@@ -2774,7 +2776,7 @@ function renderHomeQueue(items){
   list.replaceChildren(...rows.slice(0,3).map(item=>{
     const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
     title.textContent=item.title||"Video";meta.className="muted";
-    meta.textContent=(item.votes?`▲ ${item.votes} · `:"")+(item.contributor?`Added by ${item.contributor}`:"Waiting to be played");
+    meta.textContent=[mediaKindLabel(item.media_kind),item.duration?clock(item.duration):"",item.votes?`▲ ${item.votes}`:"",item.contributor?`Added by ${item.contributor}`:"Waiting to be played"].filter(Boolean).join(" · ");
     li.append(title,meta);return li;
   }));
 }
