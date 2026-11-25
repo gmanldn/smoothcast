@@ -1,5 +1,6 @@
-// Connector-only, develop-only transport (#598): progress slices and the
-// guarded finalisation/PATCH lane. versionBlob MUST come from offline
+// Connector-only, develop-only progress transport (#598).
+// Per-ticket PATCH allocation is retired (owner policy, 25 Nov 2026).
+// versionBlob MUST come from offline
 // canonical AST validation of exact pinned bytes; the connector re-derives
 // the same proof from the served bytes and refuses mismatches.
 import crypto from "node:crypto";
@@ -40,10 +41,9 @@ function validate(p){
   check(Number.isSafeInteger(p.issue)&&p.issue>0&&/^[A-Za-z0-9-]{1,80}$/.test(p.agent),"invalid issue/agent");
   check(isSha(p.base)&&isSha(p.versionBlob),"invalid base or version proof");
   check(p.kind===undefined||p.kind==="progress"||p.kind==="finalise","invalid plan kind");
-  // A numeric +1 alone is not a safe completion proof. Structural intent is
-  // enforced here; the four qualifications (#598) fail closed at every entry
-  // point: canonical AST proof and complete PATCH attribution in checkBase,
-  // independent acceptance and live closure fencing in closeTicket.
+  // Fence old manifests before they can create, publish or close anything.
+  // Native finish closes verified tickets without allocating a version.
+  check(p.kind!=="finalise","per-ticket PATCH finalise retired; ship progress and use native finish");
   check(Array.isArray(p.changes)&&p.changes.length>0&&p.changes.length<=30,"invalid change count");
   const paths=new Set();
   for(const c of p.changes){

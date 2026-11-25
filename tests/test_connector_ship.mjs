@@ -345,152 +345,25 @@ test("manifest cannot inject structured receipts or disguise completion intent",
     assert.throws(()=>validate({...p,next}),/progress only/);
 });
 
-const finalisePlan={...p,kind:"finalise",
-  changes:[{path:"src/version.py",old:p.versionBlob,content:VERSION39}],
-  next:"none",verification:"version bump only"};
-const finaliseClaim=row(1,598,"<!-- sc-claim v1 agent=test ttl=30 files=src/version.py -->");
-const shippedSha=id("5");
-function finaliseTransport(){
-  const baseTree=id("c"), newTree=id("1"), candidate=id("e");
-  const comments=[finaliseClaim], counters={trees:0,commits:0,updates:0,closes:0};
-  const state={head:p.base,parents:[{sha:p.base}],message:"chore(version): PATCH for issue #598 [sc-auto-patch]",
-    issueState:"open",history:[],servedVersion:VERSION38,shipped:[]};
-  const api={
-    now:()=>now,
-    get:async path=>{
-      if(path==="/issues/598")return {number:598,state:state.issueState};
-      if(path.startsWith("/issues/comments?"))return [...comments];
-      if(path.startsWith("/issues/598/comments?"))return comments.filter(c=>c.issue_url.endsWith("/598"));
-      if(path==="/git/ref/heads/develop")return {ref:"refs/heads/develop",object:{type:"commit",sha:state.head}};
-      if(path==="/git/commits/"+p.base)return {sha:p.base,tree:{sha:baseTree}};
-      if(path==="/git/commits/"+candidate)return {sha:candidate,tree:{sha:newTree},parents:state.parents,message:state.message};
-      if(path.startsWith("/commits?path=src/version.py"))return [...state.history];
-      if(path==="/git/trees/"+baseTree+"?recursive=1")return {sha:baseTree,truncated:false,tree:[leaf("src/version.py",baseBlob)]};
-      if(path==="/git/trees/"+newTree+"?recursive=1")return {sha:newTree,truncated:false,tree:[leaf("src/version.py",newVersionBlob)]};
-      if(path.startsWith("/compare/")){
-        const m=path.match(/^\/compare\/([0-9a-f]{40})\.\.\./);
-        if(m&&m[1]===shippedSha)
-          return {status:"ahead",behind_by:0,ahead_by:1,base_commit:{sha:m[1]},merge_base_commit:{sha:m[1]}};
-        return {status:"behind",behind_by:1};
-      }
-      throw Error("unexpected GET "+path);
-    },
-    file:async(ref,path)=>{
-      assert.equal(path,"src/version.py");
-      if(ref===p.base)return {sha:baseBlob,content:state.servedVersion};
-      assert.equal(ref,candidate);
-      return {sha:newVersionBlob,content:finalisePlan.changes[0].content};
-    },
-    tree:async(base,changes)=>{
-      assert.equal(base,baseTree);
-      assert.deepEqual(changes,[{path:"src/version.py",mode:"100644",type:"blob",content:VERSION39}]);
-      counters.trees++;return newTree;
-    },
-    commit:async(tree,parent,message)=>{
-      assert.equal(tree,newTree);assert.equal(parent,p.base);
-      assert.equal(message,"chore(version): PATCH for issue #598 [sc-auto-patch]");
-      counters.commits++;return candidate;
-    },
-    update:async(base,sha)=>{
-      counters.updates++;assert.equal(base,p.base);assert.equal(sha,candidate);
-      state.head=sha;
-    },
-    comment:async(issue,body)=>{
-      assert.equal(issue,598);
-      const nextId=comments.length+1;
-      comments.push(row(nextId,598,body));
-      return nextId;
-    },
-    close:async issue=>{
-      assert.equal(issue,598);
-      counters.closes++;
-      state.issueState="closed";
-    }
-  };
-  return {api,state,counters,comments,candidate};
-}
-
-test("finalise refuses a second PATCH for the same issue",async()=>{
-  const t=finaliseTransport();
-  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH for issue #598"}}];
-  await assert.rejects(createCandidate(t.api,finalisePlan),/already has a PATCH/);
-  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0,closes:0});
-});
-test("historical duplicates for unrelated issues do not block completion",async()=>{
-  const t=finaliseTransport();
-  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH for issue #599 [sc-auto-patch]"}},
-    {sha:id("9"),commit:{message:"chore(version): PATCH 2.0.35 for issue #599 [sc-auto-patch]"}}];
-  assert.equal(await createCandidate(t.api,finalisePlan),t.candidate);
-});
-test("native and numbered historical assignment subjects fence the target issue",async()=>{
-  for(const message of ["chore(version): PATCH for issue #598 [sc-auto-patch]",
-    "chore(version): PATCH 2.0.35 for issue #598 [sc-auto-patch]"]){
-    const t=finaliseTransport();
-    t.state.history=[{sha:id("8"),commit:{message}}];
-    await assert.rejects(createCandidate(t.api,finalisePlan),/already has a PATCH/);
-    assert.equal(t.counters.updates,0);
+test("retired finalise manifest cannot mutate any connector state",async()=>{
+  const t=transport(),plan={...p,kind:"finalise",next:"none",
+    changes:[{path:"src/version.py",old:p.versionBlob,content:VERSION39}]};
+  const c=t.candidate;
+  for(const run of [()=>createCandidate(t.api,plan),()=>prepare(t.api,plan),
+    ()=>verifyCandidate(t.api,plan,c),()=>recordPending(t.api,plan,c),
+    ()=>publishPending(t.api,plan,c),()=>recordHandover(t.api,plan,c),
+    ()=>closeTicket(t.api,plan,c),()=>ship(t.api,plan,c)]){
+    await assert.rejects(run(),/per-ticket PATCH finalise retired/);
   }
-});
-test("malformed attribution fails closed",async()=>{
-  const t=finaliseTransport();
-  t.state.history=[{sha:id("8"),commit:{message:"chore(version): PATCH bad for issue #598"}}];
-  await assert.rejects(createCandidate(t.api,finalisePlan),/malformed PATCH attribution/);
+  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0});
+  assert.equal(t.comments.length,1);
 });
 test("served version bytes must re-derive the pinned proof",async()=>{
-  const t=finaliseTransport();
-  t.state.servedVersion="MAJOR=2\nMINOR=0\nPATCH=37\n";
-  await assert.rejects(createCandidate(t.api,finalisePlan),/served version bytes/);
-  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0,closes:0});
-});
-test("truncated version history fails closed",async()=>{
-  const t=finaliseTransport();
-  const get=t.api.get;
-  t.api.get=async path=>path.startsWith("/commits?path=src/version.py")
-    ?Array.from({length:100},(_,i)=>({sha:id(String(i%16)),commit:{message:"maintenance"}}))
-    :get(path);
-  await assert.rejects(createCandidate(t.api,finalisePlan),/incomplete version history/);
-});
-test("finalise without shipped work cannot close the issue",async()=>{
-  const t=finaliseTransport();
-  t.state.head=t.candidate;
-  t.comments.push(row(2,598,"<!-- sc-connector-pending v1 sha="+t.candidate+" base="+p.base+" agent=test -->"));
-  await assert.rejects(closeTicket(t.api,finalisePlan,t.candidate),/independent acceptance missing/);
-  assert.equal(t.counters.closes,0);
-  assert.equal(t.state.issueState,"open");
-});
-test("finalise with an unrelated shipped commit cannot close the issue",async()=>{
-  const t=finaliseTransport();
-  t.state.head=t.candidate;
-  t.state.shipped=[id("7")];
-  t.comments.push(row(2,598,"<!-- sc-ship v1 sha="+id("7")+" -->"));
-  await assert.rejects(closeTicket(t.api,finalisePlan,t.candidate),/independent acceptance missing/);
-  assert.equal(t.counters.closes,0);
-});
-test("competing lease blocks the open-to-closed transition",async()=>{
-  const t=finaliseTransport();
-  t.state.head=t.candidate;
-  t.state.shipped=[shippedSha];
-  t.comments.push(row(2,598,"<!-- sc-ship v1 sha="+shippedSha+" -->"));
-  t.comments.push(row(3,599,"<!-- sc-claim v1 agent=other ttl=30 files=src/version.py -->"));
-  await assert.rejects(closeTicket(t.api,finalisePlan,t.candidate),/conflicting active lease/);
-  assert.equal(t.counters.closes,0);
-  assert.equal(t.state.issueState,"open");
-});
-test("qualified finalise ships the PATCH and closes exactly once",async()=>{
-  const t=finaliseTransport();
-  t.state.shipped=[shippedSha];
-  t.comments.push(row(2,598,"<!-- sc-ship v1 sha="+shippedSha+" -->"));
-  const c=await prepare(t.api,finalisePlan);
-  await ship(t.api,finalisePlan,c);
-  assert.equal(c,t.candidate);
-  assert.equal(t.state.head,t.candidate);
-  assert.equal(t.state.issueState,"closed");
-  assert.equal(t.counters.closes,1);
-  assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-close")).length,1);
-  await ship(t.api,finalisePlan,t.candidate);
-  assert.equal(t.counters.closes,1);
-  assert.equal(t.comments.filter(x=>x.body.includes("sc-connector-close")).length,1);
-  assert.deepEqual(t.counters,{trees:1,commits:1,updates:1,closes:1});
+  const t=transport(),file=t.api.file;
+  t.api.file=async(ref,path)=>ref===p.base&&path==="src/version.py"
+    ?{sha:baseBlob,content:VERSION39}:file(ref,path);
+  await assert.rejects(createCandidate(t.api,p),/served version bytes/);
+  assert.deepEqual(t.counters,{trees:0,commits:0,updates:0});
 });
 
 test("PATCH changes only the canonical numeric assignment",()=>{
@@ -498,5 +371,4 @@ test("PATCH changes only the canonical numeric assignment",()=>{
   validateVersionBump(source,VERSION39+"# preserve this comment\n");
   assert.throws(()=>validateVersionBump(source,VERSION39+"PATCH += 1\n"),/non-PATCH bytes/);
   assert.throws(()=>validateVersionBump(source,VERSION39+"# changed\n"),/non-PATCH bytes/);
-  validate({...finalisePlan,changes:[{...finalisePlan.changes[0],content:VERSION39+"# "+"x".repeat(7000)}]});
 });
