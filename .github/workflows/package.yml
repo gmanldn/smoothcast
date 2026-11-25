@@ -157,3 +157,27 @@ jobs:
             dist/*.msi
             dist/*.sha256
           if-no-files-found: error
+
+  windows-msi-install:
+    name: Windows MSI / install repair uninstall
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: smoothcast-windows
+          path: candidate
+      - name: Validate lifecycle harness without installing
+        shell: pwsh
+        run: py -3 -m unittest discover -s tests -p 'test_smoke_windows_msi.py' -v
+      - name: Install, repair and uninstall exact MSI (headless)
+        shell: pwsh
+        run: py -3 scripts/ci/smoke_windows_msi.py --disposable-ci --candidate-dir candidate --report dist/windows-msi-test-results.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-msi-lifecycle
+          path: dist/windows-msi-test-results.json
+          if-no-files-found: warn
