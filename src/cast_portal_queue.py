@@ -51,6 +51,16 @@ class PortalQueueMixin:
             return lookup(payload.get("_portal_auth_key"))
         return None
 
+    def _portal_note_display_name(self, path: object, name: object) -> None:
+        """Keep the guest-supplied filename so the queue never shows the opaque upload id."""
+        if not isinstance(name, str) or not name:
+            return
+        display_names = getattr(self, "_portal_queue_display_names", None)
+        if display_names is None:
+            display_names = {}
+            self._portal_queue_display_names = display_names
+        display_names[str(path)] = name
+
     def _portal_record_contribution(self, path: str, contributor: str | None,
                                     source: str) -> None:
         self.__dict__.setdefault("_portal_queue_provenance", {})[path] = {
@@ -228,13 +238,7 @@ class PortalQueueMixin:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
             source = "link" if payload.get("_portal_source") == "link" else "upload"
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), source)
-            name = payload.get("name")
-            if isinstance(name, str) and name:
-                display_names = getattr(self, "_portal_queue_display_names", None)
-                if display_names is None:
-                    display_names = {}
-                    self._portal_queue_display_names = display_names
-                display_names[str(path)] = name
+            self._portal_note_display_name(path, payload.get("name"))
             return "Added to the queue."
         if operation == "queue_remove":
             self._portal_check_queue_revision(payload)

@@ -137,7 +137,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         if row is not None:
             self.queue_list.select_row(row)
         if self.now_playing is None and not self.busy:
-            self.np_title.set_text(pathlib.Path(path).name)
+            display = (getattr(self, "_portal_queue_display_names", None) or {}).get(path)
+            self.np_title.set_text(display or pathlib.Path(path).name)
         # Re-selecting a queued film while casting must not change active
         # media metadata, its audio/subtitle tracks or the receiver clock.
         if self.session is not None or self.external or self.busy:

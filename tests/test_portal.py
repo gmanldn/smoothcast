@@ -1201,7 +1201,7 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
     for name in ("_portal_upload_path", "_portal_observe_queue",
                  "_portal_check_queue_revision", "_portal_queue_index",
                  "_portal_contributor", "_portal_record_contribution",
-                 "_portal_enqueue_contributed",
+                 "_portal_enqueue_contributed", "_portal_note_display_name",
                  "_portal_prune_queue_provenance"):
         setattr(host, name, MethodType(
             getattr(cast_portal_queue.PortalQueueMixin, name), host))
@@ -1611,7 +1611,7 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     host = SimpleNamespace(
         _closing=False, busy=False, _portal_queue_action=lambda *_: None,
         _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
-        _cast_path=cast,
+        _cast_path=cast, _portal_note_display_name=lambda *_: None,
     )
     payload = {"upload_id": "retry-me", "early": True}
     with pytest.raises(RuntimeError, match="submission failed"):
@@ -1625,6 +1625,30 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     assert "retry-me" in host._portal_accepted_uploads
     handle(host, "cast_upload", payload)
     assert cast.call_count == 2
+
+
+def test_cast_upload_keeps_the_guest_filename_in_the_queue(tmp_path):
+    """A played upload joins the queue under the guest's filename, not the opaque id."""
+    from textwrap import dedent
+
+    from gui_source import main_window_methods
+    import cast_portal_queue
+
+    namespace = {"portal": portal, "time": time}
+    exec(dedent(main_window_methods()["_portal_handle"]), namespace)
+    handle = namespace["_portal_handle"]
+    path = tmp_path / ("a" * 32 + ".mp4")     # the stored name is the upload id
+    assert path.name != "Holiday 2024.mp4"
+    host = SimpleNamespace(
+        _closing=False, busy=False, _portal_queue_action=lambda *_: None,
+        _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
+        _cast_path=lambda *_: None,
+    )
+    host._portal_note_display_name = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_note_display_name, host)
+    handle(host, "cast_upload", {"upload_id": "u1", "early": False,
+                                 "name": "Holiday 2024.mp4"})
+    assert host._portal_queue_display_names[str(path)] == "Holiday 2024.mp4"
 
 
 def test_upload_receipt_reports_declined_early_cast_without_leaking_path(tmp_path):
