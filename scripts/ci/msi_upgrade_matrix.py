@@ -28,7 +28,7 @@ from smoke_windows_msi import require_disposable  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = "smoothcast-windows-msi-upgrade/1"
 DISPLAY_NAME = "SmoothCast"
-_UNINSTALL = ("Get-ItemProperty "
+_UNINSTALL = ("$ErrorActionPreference = 'Stop'; Get-ItemProperty "
               "'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' "
               f"| Where-Object {{ $_.DisplayName -eq '{DISPLAY_NAME}' }} "
               "| Select-Object -ExpandProperty DisplayVersion")
@@ -68,17 +68,18 @@ def plan() -> list[dict]:
 
 
 def parse_registered_version(text: str) -> str:
-    """First non-blank line of ``Select-Object -ExpandProperty DisplayVersion``."""
-    for line in (text or "").splitlines():
-        line = line.strip()
-        if line:
-            return line
-    return ""
+    """Require at most one registered SmoothCast product."""
+    versions = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if len(versions) > 1:
+        raise UpgradeError("multiple SmoothCast products registered")
+    return versions[0] if versions else ""
 
 
 def registered_version(run=subprocess.run) -> str:
     result = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _UNINSTALL],
                  capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        raise UpgradeError("could not query registered MSI version")
     return parse_registered_version(result.stdout)
 
 
@@ -95,8 +96,24 @@ def record(*, commit: str, version: str, os_build: str, runner: str, started: st
             "ok": bool(steps) and all(step["status"] == "pass" for step in steps)}
 
 
-def _install(executable: Path, msi: Path, log: Path) -> None:
-    run_installer(installer_command(executable, "install", msi, log), timeout=300)
+def _operation(executable: Path, operation: str, msi: Path, log: Path) -> None:
+    run_installer(installer_command(executable, operation, msi, log), timeout=300)
+
+
+def _downgrade_rejected(executable: Path, msi: Path, log: Path) -> None:
+    """A timeout, reboot or unrelated installer failure is not a policy rejection."""
+    log.unlink(missing_ok=True)
+    try:
+        _operation(executable, "install", msi, log)
+    except InstallerError as exc:
+        if str(exc) != "Windows Installer failed (1603)" or not log.is_file():
+            raise
+        raw = log.read_bytes()
+        encoding = "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8"
+        if "A newer SmoothCast is already installed." not in raw.decode(encoding, errors="replace"):
+            raise UpgradeError("downgrade failed without the expected policy rejection") from exc
+    else:
+        raise UpgradeError("downgrade was accepted")
 
 
 def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str, *,
@@ -107,6 +124,8 @@ def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str,
     executable = windows / "System32" / "msiexec.exe"
     if not executable.is_file():
         raise UpgradeError("trusted system msiexec missing")
+    if registered_version(run):
+        raise UpgradeError("existing SmoothCast registration; target is not clean")
     digests = {"a": verify_candidate(fixture_a, _sha(fixture_a)),
                "b": verify_candidate(fixture_b, _sha(fixture_b))}
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -120,20 +139,27 @@ def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str,
         msi = fixtures[spec["fixture"]]
         expected = version_a if spec["fixture"] == "a" else version_b
         try:
-            if spec["action"] in {"install", "uninstall"}:
-                _install(executable, msi, logs / f"{spec['name']}.log")
-                steps.append(step_record(spec, ok=True, detail=f"{spec['action']} returned 0"))
-            elif spec["action"] == "expect_version":
+            action = spec["action"]
+            log = logs / f"{spec['name']}.log"
+            if action in {"install", "uninstall"}:
+                verify_candidate(msi, digests[spec["fixture"]])
+                _operation(executable, action, msi, log)
+                if action == "uninstall" and registered_version(run):
+                    raise UpgradeError("uninstall left a registered SmoothCast product")
+                steps.append(step_record(spec, ok=True, detail=f"{action} returned 0"))
+            elif action == "expect_version":
                 found = registered_version(run)
-                steps.append(step_record(spec, ok=found == expected,
-                                         detail=f"registered {found!r}, expected {expected!r}"))
-            else:  # reject: a downgrade must not succeed
-                try:
-                    _install(executable, msi, logs / f"{spec['name']}.log")
-                except InstallerError as exc:
-                    steps.append(step_record(spec, ok=True, detail=f"rejected: {exc}"))
-                else:
-                    steps.append(step_record(spec, ok=False, detail="downgrade was accepted"))
+                if found != expected:
+                    raise UpgradeError(f"registered {found!r}, expected {expected!r}")
+                steps.append(step_record(spec, ok=True, detail=f"registered {found!r}"))
+            elif action == "reject":
+                verify_candidate(msi, digests[spec["fixture"]])
+                _downgrade_rejected(executable, msi, log)
+                if registered_version(run) != version_b:
+                    raise UpgradeError("downgrade rejection did not preserve fixture B")
+                steps.append(step_record(spec, ok=True, detail="downgrade policy rejected A; B retained"))
+            else:
+                raise UpgradeError(f"unknown matrix operation: {action}")
         except (InstallerError, OSError, subprocess.SubprocessError) as exc:
             steps.append(step_record(spec, ok=False, detail=str(exc)))
             break
