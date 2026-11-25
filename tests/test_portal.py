@@ -1794,3 +1794,79 @@ assert.equal(writes,2);assert.equal(focuses,1);
     subprocess.run(["node", "-"], input=harness + script + scenario,
                    text=True, check=True, timeout=10)
 
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_room_events_recover_render_failure_and_ignore_closed_source():
+    source = portal._HTML
+    script = source[source.index("function makeRoomEvents(env)"):
+                    source.index("const roomEvents=makeRoomEvents(")]
+    harness = r"""
+const assert=require("node:assert/strict");
+const streams=[],timers=new Map(),intervals=new Map();
+let serial=0,now=0,fallbacks=0,applied=0,broken=false,running=true;
+class Events{
+  constructor(){streams.push(this)}
+  addEventListener(_name,fn){this.receive=fn}
+  close(){this.closed=true}
+  emit(data){this.receive({data:JSON.stringify(data)})}
+}
+const env={
+  EventSource:Events,now:()=>now,canRun:()=>running,
+  apply:()=>{if(broken)throw Error("Render failed");applied++},
+  fallback:()=>fallbacks++,
+  setTimeout:(fn,ms)=>{timers.set(++serial,{fn,ms});return serial},
+  clearTimeout:id=>timers.delete(id),
+  setInterval:fn=>{intervals.set(++serial,fn);return serial},
+  clearInterval:id=>intervals.delete(id)
+};
+"""
+    scenario = r"""
+const room=makeRoomEvents(env);
+room.start();
+const first=streams[0];
+first.emit({state:{}});
+assert.equal(room.healthy(),true);
+broken=true;
+first.emit({state:{}});
+assert.equal(first.closed,true);
+assert.equal(room.healthy(),false);
+assert.equal(fallbacks,1);
+assert.equal(timers.size,1);
+broken=false;
+room.start(); // A successful fallback poll may reconnect before the retry.
+const second=streams[1];
+second.emit({state:{}});
+assert.equal(room.healthy(),true);
+first.onerror();first.emit({state:{}});
+assert.equal(second.closed,undefined);
+assert.equal(applied,2);
+assert.equal(timers.size,0);
+assert.equal(intervals.size,1);
+room.stop();
+second.emit({state:{}});
+assert.equal(applied,2);
+assert.equal(room.healthy(),false);
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_monitor_text_avoids_identical_dom_mutations():
+    source = portal._HTML
+    script = source[source.index("function monitorText(id,value)"):
+                    source.index("\n", source.index("function monitorText(id,value)"))]
+    harness = r"""
+const assert=require("node:assert/strict");
+let text="",writes=0;
+const node={get textContent(){return text},set textContent(v){text=v;writes++}};
+const $=()=>node;
+"""
+    scenario = r"""
+monitorText("title","Film");monitorText("title","Film");
+monitorText("title","Next film");monitorText("title","Next film");
+assert.equal(writes,2);assert.equal(text,"Next film");
+"""
+    subprocess.run(["node", "-"], input=harness + script + scenario,
+                   text=True, check=True, timeout=10)
+

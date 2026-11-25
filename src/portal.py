@@ -2374,20 +2374,38 @@ function scheduleRefresh(){
 function makeRoomEvents(env){
   let source=null,retry=null,watch=null,failures=0,last=0,healthy=false;
   const delays=[1000,2000,4000,8000,15000];
-  function stop(){env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;if(source){source.close();source=null}healthy=false}
-  function fail(){stop();if(!env.canRun())return;env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)])}
+  function stop(){
+    env.clearTimeout(retry);retry=null;env.clearInterval(watch);watch=null;
+    const previous=source;source=null;healthy=false;
+    if(previous)previous.close();
+  }
+  function fail(es){
+    // Late callbacks from a closed connection cannot tear down its replacement.
+    if(source!==es)return;
+    stop();if(!env.canRun())return;
+    env.fallback();retry=env.setTimeout(start,delays[Math.min(failures++,4)]);
+  }
   function start(){
     if(!env.EventSource||source||!env.canRun())return;
+    env.clearTimeout(retry);retry=null;
     const es=new env.EventSource("/api/events");source=es;last=env.now();
-    es.addEventListener("state",e=>{let d;try{d=JSON.parse(e.data)}catch(x){return}last=env.now();healthy=true;failures=0;env.apply(d)});
-    es.onerror=fail;
-    watch=env.setInterval(()=>{if(env.now()-last>30000)fail()},5000);
+    es.addEventListener("state",e=>{
+      if(source!==es||!env.canRun())return;
+      let d;try{d=JSON.parse(e.data)}catch(_){return}
+      if(!d||typeof d.state!=="object"||!d.state)return;
+      // Healthy means the frame was usable, not just that bytes arrived.
+      try{if(env.apply(d)===false){stop();return}}catch(_){fail(es);return}
+      if(source!==es)return;
+      last=env.now();healthy=true;failures=0;
+    });
+    es.onerror=()=>fail(es);
+    watch=env.setInterval(()=>{if(source===es&&env.now()-last>30000)fail(es)},5000);
   }
   return {start,stop,healthy:()=>healthy};
 }
 const roomEvents=makeRoomEvents({
   EventSource:typeof EventSource==="function"?EventSource:null,
-  apply:d=>{if(!busy)applyStatus(d)},
+  apply:d=>{if(!busy)return applyStatus(d)},
   canRun:()=>!!csrf&&!stalePage&&!document.hidden,
   fallback:()=>scheduleRefresh(),
   setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
@@ -2620,9 +2638,9 @@ function applyStatus(d){
       const allowed=action==="stop"?s.can_stop:action==="play_pause"?s.can_play_pause:undefined;
       b.disabled=typeof allowed==="boolean"?!allowed:!!s.busy||!s.active;
     });
-    $("state").textContent=!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable";
-    $("title").textContent=s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing";
-    $("receiver").textContent="Playing on: "+(s.receiver||"—");
+    monitorText("state",!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable");
+    monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
+    monitorText("receiver","Playing on: "+(s.receiver||"—"));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
@@ -2893,7 +2911,7 @@ $("musicAutogain").addEventListener("change",()=>act("music_autogain",$("musicAu
 // A bounded, in-page diagnostic trail. Never log cookies, CSRF, upload IDs
 // or paths. Host ACKs and browser send progress are deliberately separate.
 let transferEvents=[];
-function monitorText(id,value){const node=$(id);if(node)node.textContent=value;}
+function monitorText(id,value){const node=$(id),text=String(value);if(node&&node.textContent!==text)node.textContent=text;}
 function transferEvent(message){
   const stamp=new Date().toLocaleTimeString();
   transferEvents.push(stamp+"  "+message);
@@ -3745,11 +3763,13 @@ function syncMediaSession(s){
   function syncPill(){
     const text=(title.textContent||"").trim(),mode=(state.textContent||"").trim();
     const show=!dash.hidden&&!idle.has(text);
-    pill.hidden=!show;
+    if(pill.hidden===show)pill.hidden=!show;
     if(!show)return;
-    pillTitle.textContent=text;
-    pill.classList.toggle("paused",!/play|buffer/i.test(mode));
-    pill.setAttribute("aria-label","Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls");
+    if(pillTitle.textContent!==text)pillTitle.textContent=text;
+    const paused=!/play|buffer/i.test(mode);
+    pill.classList.toggle("paused",paused);
+    const label="Now playing: "+text+(mode&&mode!=="—"?" ("+mode+")":"")+". Go to playback controls";
+    if(pill.getAttribute("aria-label")!==label)pill.setAttribute("aria-label",label);
   }
   if(typeof MutationObserver!=="function"){syncPill();return}
   const watch=new MutationObserver(syncPill);
