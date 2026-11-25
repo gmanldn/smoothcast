@@ -54,11 +54,9 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
   smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
   evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
 - Owner policy (25 Nov 2026): **no per-ticket version bumps**. Ship and close
-  verified tickets immediately using their commit SHA; only explicit owner-directed
-  release changes edit SemVer. The old `--assign-patch` flag is ignored.
-  Git commit SHA identifies every build (`--build-id`); `src/version.py` is
-  SemVer (`smoothcast --version`). Mandatory
-  version-history checks run on every ship, even with `--skip-checks`.
-  Never bypass them via raw pushes.
-  No automatic merging, tagging or publishing to `main`.
+  verified tickets immediately using Git commit SHA; only explicit owner-directed
+  release changes edit SemVer (`src/version.py`, `smoothcast --version`).
+  Old `--assign-patch` is ignored; Git commit SHA identifies every build (`--build-id`).
+  Mandatory version-history checks run on every ship, even with `--skip-checks`.
+  Never bypass via raw pushes. No automatic merging, tagging or publishing to `main`.
   Packaging authority: `packaging/SmoothCast.spec`.
