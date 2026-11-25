@@ -16,7 +16,7 @@ import commit_identity
 
 MAJOR = 2
 MINOR = 0
-PATCH = 39
+PATCH = 40
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
