@@ -45,6 +45,15 @@ file-count/byte budgets, compression-ratio bombs and truncated/corrupt data
 (including a cut gzip trailer), and removes the scratch tree on any failure.
 It does not authenticate the archive; that must happen first.
 
+`setup/managed_source.py` is the **trusted acquisition** step (#580). It pins
+the exact selected `refs/heads/<channel>` commit (never `FETCH_HEAD` or a tag),
+requires signed provenance through the user's own Git keyring (`git
+verify-commit`, or a signed tag on that commit), exports that commit through the
+archive gate and returns the complete SHA-256 manifest for
+`stage_local_snapshot`. Any failure raises before staging, leaving the
+installation, `current`, `previous` and user data untouched. It never switches a
+generation and never runs pip, GTK or candidate code.
+
 `setup/managed_activation.py` is the **offline activation state machine** (#581).
 `activate()` re-hashes a staged `releases/<sha>` (dirty, extra, missing or linked
 files refuse), runs a caller-supplied GUI-free health probe, then replaces ONE
