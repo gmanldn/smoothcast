@@ -107,7 +107,6 @@ class SessionMixin:
         self._preview_pending = None
         self._preview_position = offset
         self.busy = True
-        self._refresh_controls()
         self._finished_handled = False
         device = self._device()
         renderer = self._dlna_renderer(device)
@@ -119,7 +118,8 @@ class SessionMixin:
                 "Preparing DLNA MP4 (may require a full-film conversion). Press Stop to cancel."
             )
             self._console(f"DLNA handoff to {renderer.name}: preparing compatible MP4")
-            self._refresh_controls()
+        # Publish cancellability for Cast as well as DLNA before worker submission.
+        self._refresh_controls()
         if device.startswith("DLNA · ") and renderer is None:
             reason = "DLNA receiver is not currently discovered; scan your network again"
             self._cast_preflight_failed(reason)
@@ -129,18 +129,16 @@ class SessionMixin:
         previous = self.session
         prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
         subs_mode = cfg["subs"]
-        subs_path = self._resolve_subs(path)
-        if subs_mode == "pick" and subs_path is None:
+        # Keep immediate validation of an explicitly selected subtitle, but
+        # defer automatic directory scanning to the cast worker.
+        picked_subs_path = self._resolve_subs(path) if subs_mode == "pick" else None
+        if subs_mode == "pick" and picked_subs_path is None:
             reason = "Selected subtitle file is missing or unsupported; choose a valid .srt"
             self._cast_preflight_failed(reason)
             return reason
         delay = subtitle_delay.get(cfg, path)
         adelay = audio_delay.get(cfg, path)
         preset = subtitle_style.from_config(cfg)
-        burn = subs_path is not None and (
-            bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
-            or delay != 0 or preset != subtitle_style.DEFAULT
-        )
         speed = float(cfg.get("playback_speed", 1.0))
         rotation = streamer.normalize_rotation(cfg.get("rotation", 0))
         aspect_mode = cfg.get("aspect_override", "original")
@@ -163,6 +161,16 @@ class SessionMixin:
             self._cast_tried = []  # a fresh user-initiated cast starts a new attempt history
         self._retry_in_flight = False
         def work():
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before receiver handoff")
+            subs_path = (self._resolve_subs(path, config=cfg)
+                         if subs_mode == "auto" else picked_subs_path)
+            if cancel.is_set():
+                raise streamer.StreamError("Cast cancelled before receiver handoff")
+            burn = subs_path is not None and (
+                bool(cfg["burn_subs"]) or subs_path.suffix.lower() not in streamer.CAST_SUBTITLE_EXTS
+                or delay != 0 or preset != subtitle_style.DEFAULT
+            )
             media, prewarm_fingerprint = queue_metadata.media_for_cast(
                 prewarmed_entry, path, streamer.ffprobe,
             )
@@ -409,7 +417,7 @@ class SessionMixin:
                 self._cast_failed(message)
 
         self._cast_starting = True
-        Async.run(work, done=done, failed=failed, domain="media")
+        Async.run(work, done=done, failed=failed, domain="cast_start")
         return None
 
 

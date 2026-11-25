@@ -43,7 +43,11 @@ def installed_revision(root: Path) -> str | None:
         if marker.is_symlink() or not marker.is_file():
             return None
         with marker.open("rb") as stream:
-            value = stream.read(129).decode("ascii").strip()
+            raw = stream.read(129)
+        if len(raw) > 128:
+            return None
+        lines = raw.decode("ascii").splitlines()
+        value = lines[0].strip().lower() if lines else ""
     except (OSError, UnicodeError):
         return None
     return value if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value) else None
