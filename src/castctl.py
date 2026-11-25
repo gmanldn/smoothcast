@@ -359,24 +359,45 @@ def subscribe(
 class CastStatusWatch:
     """Keep one status subscription aligned with the currently selected Cast target."""
 
-    def __init__(self, listener: Callable[[ReceiverInfo], None]) -> None:
+    def __init__(self, listener: Callable[[ReceiverInfo], None], dispatch=None) -> None:
         self._listener = listener
+        self._dispatch = dispatch
         self._target: str | None = None
         self._unsubscribe: Callable[[], None] | None = None
+        self._generation = 0
 
     def select(self, target: str, enabled: bool) -> bool:
         if self._target == target and (self._unsubscribe is not None) == enabled:
             return enabled
         self.close()
         if enabled:
-            unsubscribe = subscribe(target, self._listener)
-            if unsubscribe is None:
-                return False
+            generation = self._generation
             self._target = target
+
+            def deliver(info):
+                # Check on the UI context, not only before scheduling an idle.
+                # The selected target may change while a callback is queued.
+                if generation == self._generation and self._target == target:
+                    self._listener(info)
+                return False
+
+            def receive(info):
+                if generation != self._generation:
+                    return
+                if self._dispatch is None:
+                    deliver(info)
+                else:
+                    self._dispatch(deliver, info)
+
+            unsubscribe = subscribe(target, receive)
+            if unsubscribe is None:
+                self.close()
+                return False
             self._unsubscribe = unsubscribe
         return enabled
 
     def close(self) -> None:
+        self._generation += 1
         unsubscribe, self._unsubscribe = self._unsubscribe, None
         self._target = None
         if unsubscribe is not None:
@@ -388,9 +409,7 @@ def watch_status(owner, target: str, eligible: bool, dispatch, listener) -> bool
     enabled = eligible and supports_push_status()
     watch = getattr(owner, "_cast_status_watch", None)
     if watch is None and enabled:
-        watch = owner._cast_status_watch = CastStatusWatch(
-            lambda info: dispatch(listener, info),
-        )
+        watch = owner._cast_status_watch = CastStatusWatch(listener, dispatch)
     return bool(watch and watch.select(target, enabled))
 
 

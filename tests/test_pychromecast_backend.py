@@ -397,3 +397,27 @@ def test_receiver_failure_message_is_catalogued_and_unchanged():
 
     assert errors.CATALOGUE["cast.command_failed"].message == (
         "The receiver command failed. Check the receiver connection and try again.")
+
+def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation():
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    updates = []
+    backend.subscribe("Living Room", updates.append)
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
+    cast.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+    assert backend.info("Living Room") is None
+    assert updates[-1] == {}
+    # Media events arriving while disconnected are not current evidence.
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
+    assert backend.info("Living Room") is None
+    cast.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
+    assert backend.info("Living Room") is None
+    cast.media_controller.status.player_state = "PAUSED"
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
+    assert backend.info("Living Room")["player_state"] == "PAUSED"
+    assert updates[-1]["player_state"] == "PAUSED"
+    backend.close()
+    cast.media_controller.listener.new_media_status(cast.media_controller.status)
+    assert backend.info("Living Room") is None
+

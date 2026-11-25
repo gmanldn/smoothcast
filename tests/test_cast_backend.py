@@ -91,10 +91,21 @@ def test_status_watch_switches_receivers_and_releases_subscriptions():
         assert castctl.watch_status(owner, "A", True, deliver, receiver_update)
         assert castctl.watch_status(owner, "A", True, deliver, receiver_update)
         listeners[0][1]({"player_state": "PLAYING"})
-        assert dispatched == [(receiver_update, {"player_state": "PLAYING"})]
+        assert len(dispatched) == 1
+        callback, info = dispatched.pop()
+        callback(info)
+        receiver_update.assert_called_once_with({"player_state": "PLAYING"})
+        listeners[0][1]({"player_state": "PAUSED"})
+        assert len(dispatched) == 1
 
         assert castctl.watch_status(owner, "B", True, deliver, receiver_update)
         stops[0].assert_called_once_with()
+        # An old queued GLib idle must not update the newly chosen receiver.
+        callback, info = dispatched.pop()
+        callback(info)
+        listeners[0][1]({"player_state": "IDLE"})
+        assert not dispatched
+        receiver_update.assert_called_once_with({"player_state": "PLAYING"})
         assert not castctl.watch_status(owner, "B", False, deliver, receiver_update)
         stops[1].assert_called_once_with()
 
