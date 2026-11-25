@@ -299,7 +299,7 @@ _PANEL = r"""
     lastMeshAt=Date.now();render();
   }
   function conn(text){$("meshConn").textContent=text}
-  // Dedicated primary-node heartbeat (#626): polled while the panel is visible,
+  // Dedicated primary-node heartbeat: polled while the panel is visible,
   // never on the SSE feed so a quiet mesh stays quiet.
   function heartbeatText(b){
     if(!b||typeof b!=="object")return "Heartbeat unavailable";

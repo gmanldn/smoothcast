@@ -49,7 +49,7 @@ const document={hidden:false,activeElement:null,
   addEventListener:(name,fn)=>{if(name==="visibilitychange")vis=fn}};
 const pending=[];
 const fetch=(url,opt)=>{
-  // The dedicated heartbeat poll is separate from mesh discovery (#626).
+  // The dedicated heartbeat poll is separate from mesh discovery.
   if(String(url).indexOf("/api/mesh/heartbeat")===0){
     return Promise.resolve({ok:true,status:200,json:async()=>({heartbeat:null})});
   }

@@ -1,4 +1,4 @@
-"""Dedicated mesh heartbeat coordinator and its HTTP surface (#626)."""
+"""Dedicated mesh heartbeat coordinator and its HTTP surface."""
 from __future__ import annotations
 
 from pathlib import Path

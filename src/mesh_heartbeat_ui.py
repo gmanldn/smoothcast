@@ -1,4 +1,4 @@
-"""GTK Info-tab card for the dedicated mesh heartbeat (issue #626).
+"""GTK Info-tab card for the dedicated mesh heartbeat.
 
 A small, self-contained read-only card: the window builds it once and calls
 ``update`` on the existing mesh refresh. All wording comes from

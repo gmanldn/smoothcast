@@ -1,4 +1,4 @@
-"""Dedicated mesh heartbeat thread (issue #626).
+"""Dedicated mesh heartbeat thread.
 
 One small coordinator thread per running mesh watches the read-only mesh view and
 publishes a single heartbeat describing the *first node up* — the mesh primary, the
