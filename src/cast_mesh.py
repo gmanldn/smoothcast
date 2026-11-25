@@ -56,8 +56,14 @@ def start(window: object, address: str) -> None:
             remote.original_provider = jobs.provider
             jobs.provider = mesh_acquisition_app.CompositeProvider(jobs.provider, remote)
             remote.jobs = jobs
-        entry = entry_name.EntryName(address, int(getattr(portal, "port", 0) or 0))
-        window._entry_name = entry                   # type: ignore[attr-defined]
+        entry = getattr(window, "_entry_name", None)
+        if entry is None:
+            # No app-owned stable address: create one and remember we must release it.
+            entry = entry_name.EntryName(address, int(getattr(portal, "port", 0) or 0))
+            window._mesh_entry_owned = True       # type: ignore[attr-defined]
+        else:
+            window._mesh_entry_owned = False      # type: ignore[attr-defined]
+        window._entry_name = entry                # type: ignore[attr-defined]
         service.primary_listeners.append(
             lambda change: entry.apply(change.new == service.node_id))
         window._mesh = service                       # type: ignore[attr-defined]
@@ -140,9 +146,14 @@ def stop(window: object) -> None:
                 remote.jobs.provider = remote.original_provider
             threading.Thread(target=remote.close, name="smoothcast-acq-stop", daemon=True).start()
         entry = getattr(window, "_entry_name", None)
-        window._entry_name = None                    # type: ignore[attr-defined]
-        if entry is not None:
-            threading.Thread(target=entry.close, name="smoothcast-entry-stop", daemon=True).start()
+        owned = bool(getattr(window, "_mesh_entry_owned", False))
+        window._mesh_entry_owned = False             # type: ignore[attr-defined]
+        if owned:
+            # Only release an address this hook created; an app-owned entry
+            # survives mesh restarts and is closed by the portal.
+            window._entry_name = None                # type: ignore[attr-defined]
+            if entry is not None:
+                threading.Thread(target=entry.close, name="smoothcast-entry-stop", daemon=True).start()
         if service is None:
             return
         portal = getattr(window, "_portal", None)

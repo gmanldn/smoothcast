@@ -614,6 +614,46 @@ def test_join_qr_is_public_png_for_bound_ip_and_never_contains_pin(rig, monkeypa
     assert rig.request("GET", "/join-qr.png", host="evil.example")[0] == 400
 
 
+def test_join_qr_prefers_the_stable_server_join_url_while_slate_stays_numeric(rig, monkeypatch):
+    seen_qr, seen_slate = [], []
+    actual_qr, actual_slate = portal_join.qr_png, portal_join.render_join_slate
+
+    def capture_qr(url):
+        seen_qr.append(url)
+        return actual_qr(url)
+
+    def capture_slate(url, name):
+        seen_slate.append(url)
+        return actual_slate(url, name)
+
+    monkeypatch.setattr(portal_join, "qr_png", capture_qr)
+    monkeypatch.setattr(portal_join, "render_join_slate", capture_slate)
+    stable = "http://smoothcast.local:8080/"
+    rig.server.join_url = lambda: stable
+    assert rig.request("GET", "/join-qr.png")[0] == 200
+    assert rig.request("GET", "/join-slate.png")[0] == 200
+    # The QR route encodes the stable name; slate rendering calls qr_png again
+    # with the numeric endpoint the TV reached.
+    assert seen_qr[0] == stable
+    assert f"http://127.0.0.1:{rig.port}/" in seen_qr
+    # The idle-TV slate keeps the numeric endpoint (#419 fallback).
+    assert seen_slate == [f"http://127.0.0.1:{rig.port}/"]
+
+
+def test_join_qr_falls_back_to_the_bound_ip_without_an_entry_name(rig, monkeypatch):
+    seen = []
+    actual = portal_join.qr_png
+
+    def capture(url):
+        seen.append(url)
+        return actual(url)
+
+    monkeypatch.setattr(portal_join, "qr_png", capture)
+    rig.server.join_url = lambda: None
+    assert rig.request("GET", "/join-qr.png")[0] == 200
+    assert seen == [f"http://127.0.0.1:{rig.port}/"]
+
+
 def test_join_qr_invalid_binding_fails_closed_without_secret(rig, monkeypatch):
     def invalid(_url):
         raise ValueError("invalid internal address")

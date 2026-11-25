@@ -1578,6 +1578,9 @@ class Portal:
                 self.server.session_key_active)
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
+        self._entry = None
+        # Screens/QR read the live join URL so a claimed stable name is used.
+        self.server.join_url = self.join_url
         self._zeroconf = None
         self._service_info = None
         self._advertise()
@@ -1594,6 +1597,16 @@ class Portal:
                                        kwargs={"poll_interval": 0.1},
                                        name="smoothcast-portal", daemon=True)
         self.thread.start()
+
+    def attach_entry(self, entry: object | None) -> None:
+        """Point the join URL at a claimed stable entry name, or back at the numeric URL."""
+        self._entry = entry
+
+    def join_url(self) -> str:
+        """The address a QR should encode: the stable entry name if claimed, else numeric."""
+        entry = self._entry
+        url = getattr(entry, "url", None) if entry is not None else None
+        return url if isinstance(url, str) and url else self.url
 
     def revoke_guest(self, participant_id: str) -> int:
         """Host desktop operation: eject one participant without affecting playback."""

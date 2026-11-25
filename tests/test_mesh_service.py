@@ -251,6 +251,18 @@ def test_app_hook_is_inert_when_disabled_and_never_raises(monkeypatch, tmp_path)
     assert getattr(window, "_mesh", None) is None and mesh_threads() == before
 
 
+class FakeEntry:
+    def __init__(self):
+        self.closed = False
+        self.primary = None
+
+    def apply(self, is_primary):
+        self.primary = is_primary
+
+    def close(self):
+        self.closed = True
+
+
 def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypatch, tmp_path):
     import cast_mesh
     monkeypatch.setattr(svc, "load_settings",
@@ -267,6 +279,40 @@ def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypa
     cast_mesh.stop(window)
     assert window._mesh is None and window._portal.server.mesh_feed is None
     assert wait_for(lambda: not mesh_threads())
+
+
+def test_mesh_reuses_an_app_owned_entry_name_and_never_closes_it(monkeypatch, tmp_path):
+    import cast_mesh
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": True, "strict": False, "seeds": ()})
+    monkeypatch.setattr(svc, "config_path", lambda: tmp_path / "config.json")
+    window = FakeWindow()
+    entry = FakeEntry()
+    window._entry_name = entry
+    cast_mesh.start(window, LOOP)
+    try:
+        assert window._entry_name is entry
+        assert window._mesh_entry_owned is False
+    finally:
+        cast_mesh.stop(window)
+        assert window._entry_name is entry and not entry.closed
+        assert wait_for(lambda: not mesh_threads())
+
+
+def test_mesh_releases_only_the_entry_name_it_created(monkeypatch, tmp_path):
+    import cast_mesh
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": False, "strict": False, "seeds": ()})
+    window = FakeWindow()
+    window._entry_name = FakeEntry()
+    window._mesh_entry_owned = True
+    owned = window._entry_name
+    cast_mesh.stop(window)
+    assert window._entry_name is None
+    assert wait_for(lambda: owned.closed)
+    # Second stop with no leftovers is a harmless no-op.
+    cast_mesh.stop(window)
+    assert window._entry_name is None
 
 
 def test_app_hook_advertises_only_enabled_local_link_workers(monkeypatch, tmp_path):

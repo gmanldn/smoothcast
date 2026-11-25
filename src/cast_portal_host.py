@@ -145,6 +145,9 @@ class PortalHostMixin:
         if label is None or getattr(self, "_closing", False):
             self._portal_activity_timer = None
             return False
+        refresh_qr = getattr(self, "_refresh_portal_qr", None)
+        if refresh_qr is not None:
+            refresh_qr()
         uploads = getattr(getattr(self, "_portal", None), "uploads", None)
         try:
             activity = uploads.snapshot() if uploads is not None else []

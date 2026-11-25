@@ -71,9 +71,12 @@ machine hostname, prefixes it with `smoothcast`, and advertises it with
 mDNS/Bonjour when the `zeroconf` dependency is available. The card also shows
 the numeric IP address as a fallback for networks that block multicast DNS.
 
-Scan the room QR with your phone camera to open the numeric room link,
-then enter your name (and the House PIN if enabled). The QR is generated locally
-and contains only the address. You can also use **Copy link**.
+Scan the room QR with your phone camera to open the room link — the stable
+`http://smoothcast.local:PORT/` entry name while it is claimed, or the numeric
+`IP:PORT` when multicast DNS is unavailable. The QR is generated locally and
+contains only the address, never a PIN. You can also use **Copy link**. Because
+the QR prefers the stable entry name, a code printed for the wall keeps working
+after the machine's address changes.
 
 The portal chooses a port by binding directly to an operating-system-assigned
 ephemeral port. It does not check a port and bind later. It uses Python's
@@ -122,8 +125,9 @@ room to send it something and keeps itself awake where the browser supports a
 screen wake lock.
 
 `GET /join-slate.png` is a public 1920×1080 PNG (room name, join QR and the
-numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it returns
-503 when the QR/imaging libraries or a numeric address are unavailable.
+numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it keeps the
+numeric endpoint so a phone on a network that blocks mDNS can still join. It
+returns 503 when the QR/imaging libraries or a numeric address are unavailable.
 
 From the **Screens** card on any paired guest's dashboard, pick an item from the
 shared queue and press **Play**. Screens are independent targets: controlling

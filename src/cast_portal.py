@@ -9,6 +9,7 @@ import time
 import action_state
 import castctl
 import accent
+import entry_name
 import state_labels
 import lan_interfaces
 import portal
@@ -67,6 +68,14 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             )
             self._set_room_join_link(None, "Room unavailable — check network settings")
             return True
+        # Claim the stable address so a printed QR survives DHCP changes; the
+        # mesh reuses this entry and only releases it when another node is primary.
+        entry = entry_name.EntryName(address, self._portal.port)
+        entry.apply(True)
+        self._entry_name = entry
+        self._portal.attach_entry(entry)
+        join_url = self._portal.join_url()
+        self._portal_qr_url = join_url
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.
         old_port = self.cfg.get("portal_port", 0)
@@ -75,19 +84,19 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             save_config(self.cfg)
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.url)
-        self._set_room_join_link(self._portal.url)
+        self.portal_url_label.set_text(join_url)
+        self._set_room_join_link(join_url)
         self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(
             self._portal.pin if self._portal.server.pin_required else "Not required")
         self._ensure_library_indexer()
         if self._portal.port_fallback:
             self.portal_status_label.set_text(
-                f"Previous room port {old_port} was in use. New link: {self._portal.url}"
+                f"Previous room port {old_port} was in use. New link: {join_url}"
             )
         else:
             self.portal_status_label.set_text("Listening on your local network")
-        self._show_portal_qr(self._portal.url)
+        self._show_portal_qr(join_url)
         import cast_mesh
         cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
@@ -110,15 +119,35 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
 
     def _copy_portal_link(self, _button: Gtk.Button) -> None:
         current = self._portal
-        if current is not None:
-            self.get_clipboard().set(current.url)
-            self.toast("Room link copied")
+        if current is None:
+            return
+        joiner = getattr(current, "join_url", None)
+        self.get_clipboard().set(joiner() if callable(joiner) else current.url)
+        self.toast("Room link copied")
+
+    def _refresh_portal_qr(self) -> None:
+        """Repaint the room QR/link when the stable entry name changes (e.g. mesh primary)."""
+        current = self._portal
+        if current is None:
+            return
+        url = current.join_url()
+        if url == getattr(self, "_portal_qr_url", None):
+            return
+        self._portal_qr_url = url
+        self.portal_url_label.set_text(url)
+        self._set_room_join_link(url)
+        self._show_portal_qr(url)
 
     def _stop_portal(self) -> None:
         import cast_mesh
         cast_mesh.stop(self)
+        entry, self._entry_name = getattr(self, "_entry_name", None), None
+        if entry is not None:
+            # Release the stable address synchronously so no stale A record lingers.
+            entry.close()
         current, self._portal = getattr(self, "_portal", None), None
         self._portal_ip = None
+        self._portal_qr_url = None
         timer = getattr(self, "_portal_activity_timer", None)
         if timer is not None:
             try:
