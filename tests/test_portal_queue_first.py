@@ -76,9 +76,13 @@ assert.equal($("linkSubmit").disabled,true);
 def test_find_and_now_playing_have_exclusive_full_width_blades():
     html = portal._HTML
     assert '#dashboard[data-room-blade="playback"]>:not(nav):not(#errorDash):not(#playback)' in html
-    assert '#dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel){display:none}' in html
-    assert '#dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel{grid-column:1/-1}' in html
+    assert '#dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel)' in html
+    assert '#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel)' in html
+    assert '#dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}' in html
+    assert '#dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}' in html
     assert 'id="findHeading" tabindex="-1"' in html
+    assert 'id="roomSettingsHeading" tabindex="-1"' in html
+    assert 'id="localLiveHeading" tabindex="-1"' in html
     assert 'syncRoomBlade();\n    window.scrollTo' in html
     if not shutil.which("node"):
         pytest.skip("Node.js needed for blade navigation checks")
@@ -87,11 +91,11 @@ def test_find_and_now_playing_have_exclusive_full_width_blades():
     harness = r"""
 const location={hash:""},document={activeElement:null};
 const make=(id,blade=null)=>({id,attrs:{},scrolls:0,focuses:0,closest(){return blade||null},contains(x){return x===this||x?.parent===this},scrollIntoView(){this.scrolls++},focus(){this.focuses++;document.activeElement=this},setAttribute(k,v){this.attrs[k]=v},removeAttribute(k){delete this.attrs[k]},getAttribute(k){return this.attrs[k]??null}});
-const playback=make("playback"),find=make("findPanel"),queue=make("queuePanel"),input=make("findInput",find),findHeading=make("findHeading"),playbackHeading=make("playbackHeading");
-playback.closest=()=>playback;find.closest=()=>find;input.parent=find;findHeading.parent=find;playbackHeading.parent=playback;
-const elements={playback,findPanel:find,queuePanel:queue,findInput:input,findHeading,playbackHeading};
+const playback=make("playback"),find=make("findPanel"),queue=make("queuePanel"),settings=make("advancedPanel"),live=make("localLivePanel"),input=make("findInput",find),findHeading=make("findHeading"),playbackHeading=make("playbackHeading"),settingsHeading=make("roomSettingsHeading"),liveHeading=make("localLiveHeading");
+playback.closest=()=>playback;find.closest=()=>find;settings.closest=()=>settings;live.closest=()=>live;input.parent=find;findHeading.parent=find;playbackHeading.parent=playback;settingsHeading.parent=settings;liveHeading.parent=live;
+const elements={playback,findPanel:find,queuePanel:queue,advancedPanel:settings,localLivePanel:live,findInput:input,findHeading,playbackHeading,roomSettingsHeading:settingsHeading,localLiveHeading:liveHeading};
 const $=id=>elements[id]||null;
-const links=["playback","findPanel","queuePanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
+const links=["playback","findPanel","queuePanel","advancedPanel","localLivePanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
 const dash=make("dashboard");dash.hidden=false;dash.contains=x=>Object.values(elements).includes(x);dash.querySelectorAll=()=>links;
 const check=(ok,msg)=>{if(!ok)throw Error(msg)};
 """
@@ -99,6 +103,8 @@ const check=(ok,msg)=>{if(!ok)throw Error(msg)};
 syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"overview");
 location.hash="#findPanel";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="findPanel"&&links[1].getAttribute("aria-current")==="page"&&findHeading.focuses===1,"find");
 location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="playback"&&!links[1].getAttribute("aria-current")&&links[0].getAttribute("aria-current")==="page"&&playbackHeading.focuses===1,"playback");
+location.hash="#advancedPanel";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="advancedPanel"&&links[3].getAttribute("aria-current")==="page"&&settingsHeading.focuses===1,"settings");
+location.hash="#localLivePanel";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="localLivePanel"&&links[4].getAttribute("aria-current")==="page"&&liveHeading.focuses===1,"live");
 location.hash="#findPanel";document.activeElement=input;syncRoomBlade(true);check(findHeading.focuses===1,"preserve focused search input");
 location.hash="#findInput";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="findPanel"&&input.scrolls===1,"nested deep link");
 location.hash="#queuePanel";syncRoomBlade(true);check(!dash.getAttribute("data-room-blade")&&queue.scrolls===1,"leave blade");
