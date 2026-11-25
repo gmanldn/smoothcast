@@ -23,8 +23,10 @@ namespaces cannot hide or fake it). Nothing external is contacted. Results:
 | `process_tree_terminated` | no probe descendant survived |
 
 The saved verdict (`~/.config/cast-control/link-qualification.json`) is bound
-to the launcher's path, size and modification time: edit the launcher and it
-must be re-qualified. `--qualify` exits non-zero unless every check passes.
+to the launcher's path, size, modification time and SHA-256 digest: edit the
+launcher and it must be re-qualified, even if its size and mtime are preserved.
+On a system without a host process inventory, process-tree termination is
+skipped rather than claimed verified. `--qualify` exits non-zero unless every check passes.
 
 Default behaviour is unchanged (an owner-configured launcher still enables a
 provider). To make qualification mandatory, set

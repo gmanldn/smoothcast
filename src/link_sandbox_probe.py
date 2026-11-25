@@ -15,11 +15,13 @@ canary is created and removed by this module. GTK-free.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
 import secrets
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -173,7 +175,11 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
         else:
             checks["private_lan_denied"] = "pass" if private.count == 0 and not report.get("lan") else "FAIL"
         checks["home_denied"] = "FAIL" if report.get("home") == secret[:64] else "pass"
-        checks["process_tree_terminated"] = "FAIL" if _tagged(tag) else "pass"
+        # Without a host process inventory, absence of a detected descendant
+        # is not evidence that the descendant was terminated.
+        checks["process_tree_terminated"] = (
+            "FAIL" if _tagged(tag) else "pass" if Path("/proc").is_dir() else "skipped"
+        )
         verified = all(value == "pass" for value in checks.values())
         failed = [name for name, value in checks.items() if value == "FAIL"]
         detail = ("isolation verified" if verified else
@@ -202,15 +208,31 @@ def cache_path() -> Path:
 
 
 def _identity(launcher: str) -> dict | None:
+    # A same-size edit with a preserved mtime must invalidate qualification.
+    # Bound the read; a launcher should never require hashing a huge file.
     try:
-        info = Path(launcher).stat()
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+        with os.fdopen(os.open(launcher, flags), "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size > 16 << 20:
+                return None
+            payload = handle.read((16 << 20) + 1)
+            after = os.fstat(handle.fileno())
+        current = Path(launcher).stat()
+        if (len(payload) != before.st_size or
+                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                != (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)):
+            return None
     except OSError:
         return None
-    return {"path": str(launcher), "size": info.st_size, "mtime_ns": info.st_mtime_ns}
+    return {"path": str(launcher), "size": before.st_size, "mtime_ns": before.st_mtime_ns,
+            "sha256": hashlib.sha256(payload).hexdigest()}
 
 
 def save(launcher: str, result: Qualification) -> bool:
-    """Remember a result only for this exact launcher file (path, size, mtime)."""
+    """Remember a result only for this exact launcher file and content digest."""
     identity = _identity(launcher)
     if identity is None:
         return False
@@ -235,4 +257,6 @@ def is_verified(launcher: str) -> bool:
     except (OSError, ValueError):
         return False
     return (isinstance(data, dict) and data.get("verified") is True
-            and data.get("launcher") == identity)
+            and data.get("launcher") == identity
+            and isinstance(data.get("checks"), dict)
+            and all(data["checks"].get(name) == "pass" for name in CHECKS))

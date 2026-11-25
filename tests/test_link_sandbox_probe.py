@@ -116,3 +116,24 @@ def test_link_check_qualify_prints_checks_and_fails_for_an_unsafe_launcher(tmp_p
     assert code == 1 and report["isolation_verified"] is False
     assert report["isolation_checks"]["loopback_denied"] == "FAIL"
     assert report["isolation_detail"].startswith("NOT isolated")
+
+def test_same_size_and_mtime_launcher_edit_invalidates_qualification(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(probe, "cache_path", lambda: tmp_path / "verdict.json")
+    launcher = Path(script(tmp_path, "exit 0"))
+    good = probe.Qualification(True, {n: "pass" for n in probe.CHECKS}, "")
+    assert probe.save(str(launcher), good)
+    before = launcher.stat()
+    launcher.write_text(launcher.read_text().replace("exit 0", "exit 1"))
+    os.utime(launcher, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert launcher.stat().st_size == before.st_size
+    assert not probe.is_verified(str(launcher))
+
+
+def test_incomplete_cached_evidence_cannot_enable_provider(tmp_path, monkeypatch):
+    monkeypatch.setattr(probe, "cache_path", lambda: tmp_path / "verdict.json")
+    launcher = script(tmp_path, "exit 0")
+    checks = {n: "pass" for n in probe.CHECKS if n != "process_tree_terminated"}
+    assert probe.save(launcher, probe.Qualification(True, checks, ""))
+    assert not probe.is_verified(launcher)
+
