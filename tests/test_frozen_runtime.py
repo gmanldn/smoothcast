@@ -180,6 +180,22 @@ class FrozenRuntimeTests(unittest.TestCase):
         for ref in refs:
             self.assertRegex(ref, r"^[\w./-]+@[a-f0-9]{40} # v\d+$")
 
+    def test_package_workflow_smokes_frozen_cli_off_the_developer_path(self):
+        # #528: the payload manifest gate is blocking, and the frozen CLI is
+        # run with developer Python/MSYS2 removed from PATH from a temporary
+        # directory whose name has spaces and non-ASCII characters.
+        repo = Path(__file__).resolve().parents[1]
+        yaml = (repo / ".github" / "workflows" / "package.yml").read_text("utf-8")
+        manifest = yaml.split("- name: Record and verify Windows payload manifest", 1)[1]
+        self.assertNotIn("continue-on-error", manifest.split("- name:", 1)[0])
+        smoke = yaml.split("- name: Smoke frozen CLI off the developer PATH", 1)[1]
+        smoke = smoke.split("- name:", 1)[0]
+        self.assertIn("--version", smoke)
+        self.assertIn("--_smoothcast-package-check", smoke)
+        self.assertIn("env -u PYTHONPATH -u MSYSTEM", smoke)
+        self.assertIn("/c/Windows/System32", smoke)
+        self.assertIn("SmoothCast smoke \u2713", smoke)
+
     def test_spec_and_packaging_driver_are_versioned(self):
         repo = Path(__file__).resolve().parents[1]
         spec = (repo / "packaging" / "SmoothCast.spec").read_text(encoding="utf-8")

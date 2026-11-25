@@ -121,14 +121,24 @@ jobs:
           "$VENV_PY" -m pip install -e '.[packaging]' 'pytest>=8,<10'
           "$VENV_PY" -m pytest -q tests/test_frozen_runtime.py
           "$VENV_PY" scripts/build_release.py
-      # Static manifest + PE checks only (#528); nothing is launched. Advisory until
-      # the first native run shows the system-DLL allow-list needs no changes.
+      # Static manifest + PE checks only (#528); nothing is launched but the
+      # frozen CLI. Blocking: the allow-list is proven by native Windows runs.
       - name: Record and verify Windows payload manifest
-        continue-on-error: true
         shell: msys2 {0}
         run: |
           if test -x .packaging-venv/bin/python; then VENV_PY=.packaging-venv/bin/python; else VENV_PY=.packaging-venv/Scripts/python.exe; fi
           "$VENV_PY" scripts/ci/verify_windows_payload.py --dist dist/SmoothCast --write-manifest
+      # #528: prove the frozen CLI runs with developer Python/MSYS2 removed
+      # from PATH, from a temporary directory with spaces and non-ASCII chars.
+      - name: Smoke frozen CLI off the developer PATH
+        shell: msys2 {0}
+        run: |
+          SMOKE="$(mktemp -d "$(cygpath -u "$RUNNER_TEMP")/SmoothCast smoke ✓.XXXX")"
+          cp -r dist/SmoothCast "$SMOKE/"
+          RUNTIME_PATH="/c/Windows/System32:/c/Windows"
+          env -u PYTHONPATH -u MSYSTEM PATH="$RUNTIME_PATH" "$SMOKE/SmoothCast/SmoothCastCLI.exe" --version
+          env -u PYTHONPATH -u MSYSTEM PATH="$RUNTIME_PATH" "$SMOKE/SmoothCast/SmoothCastCLI.exe" --_smoothcast-package-check
+          rm -rf "$SMOKE"
       - name: Build Windows MSI with one command
         shell: msys2 {0}
         run: |
