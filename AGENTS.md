@@ -42,12 +42,12 @@ GitHub Issues are authoritative ([issue rules](docs/ISSUES.md)); the read-only
 
 ## Quality and safety
 
-- Small, complete, well-scoped patches; explain real evidence and blockers.
-  Tests are optional on `develop`, but never assert unrun checks passed.
-- **Never launch the real GUI** or control real receivers during tests.
-  Read [testing](docs/agents/testing.md); use
-  `scripts/test_gui_isolated.py`; full suite:
-  `python3 -m pytest -q tests`.
+- Small, complete, well-scoped patches; explain real evidence.
+  Tests are deferred on `develop`: ship work, test lazily; never claim unrun
+  checks passed.
+- **Never launch the real GUI** or control real receivers during tests. See
+  [testing](docs/agents/testing.md); use `scripts/test_gui_isolated.py`; full
+  suite: `python3 -m pytest -q tests`.
 - Respect playback ownership, privacy, compatibility and errors; see
   [architecture](docs/agents/architecture.md).
 - **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the

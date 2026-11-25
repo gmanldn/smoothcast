@@ -94,6 +94,7 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
 `develop`; do not start long global pytest/GTK/native builds for every
 agent patch. A failed or unrun check is *not* a licence to say a ticket passed
 testing. Always describe actual evidence accurately.
+**Finish, then move on:** ship, record it untested, and test lazily to close tickets.
 
 | Event | Work scheduled | Purpose |
 | --- | --- | --- |
