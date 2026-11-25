@@ -24,14 +24,7 @@ def server_command(source_script: Path) -> list[str]:
 
 
 def install_root() -> Path:
-    """Directory holding the frozen executables and the bundled media sidecars.
-
-    PyInstaller onedir keeps ``SmoothCast.exe``/``SmoothCastCLI.exe`` and the
-    ``ffmpeg/`` sidecar folder at the top of the distribution; ``_internal``
-    holds only support libraries. A source run returns the interpreter
-    directory, which callers only consult in frozen mode. This is the single
-    packaging layout contract shared with ``media_tools`` (#530).
-    """
+    """Folder holding the frozen executables and the bundled ffmpeg sidecars (#530)."""
     return Path(sys.executable).parent
 
 
