@@ -46,39 +46,43 @@ _CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,13})-([0-9]{1,13})/([0-9]{1,13})\Z"
 _UPLOAD_ID = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 
 
-def _mp4_index_at_front(path: Path) -> bool:
-    """True when ``moov`` precedes ``mdat`` in a (possibly partial) MP4/MOV.
-
-    Only box headers are read, and the scan stops at the first ``moov`` or
-    ``mdat``, so it stays bounded while the file is still being written.
-    """
+def _mp4_index_state(path: Path) -> bool | None:
+    """True for complete front index, False for nonprogressive, None for pending bytes."""
     try:
         with open(path, "rb") as handle:
+            available = os.fstat(handle.fileno()).st_size
             scanned = 0
             while scanned < _MP4_SCAN_LIMIT:
                 header = handle.read(8)
                 if len(header) < 8:
-                    return False
+                    return None
                 size = int.from_bytes(header[:4], "big")
                 kind = header[4:8]
                 header_len = 8
+                if kind == b"mdat":
+                    return False
                 if size == 1:
                     extended = handle.read(8)
                     if len(extended) < 8:
-                        return False
+                        return None
                     size = int.from_bytes(extended, "big")
                     header_len = 16
-                if size < header_len:
+                if size < header_len or scanned + size > _MP4_SCAN_LIMIT:
                     return False
+                if scanned + size > available:
+                    return None
                 if kind == b"moov":
                     return True
-                if kind == b"mdat":
-                    return False
                 handle.seek(size - header_len, os.SEEK_CUR)
                 scanned += size
             return False
     except OSError:
         return False
+
+
+def _mp4_index_at_front(path: Path) -> bool:
+    """Only a fully received front index is safe for progressive playback."""
+    return _mp4_index_state(path) is True
 
 
 def is_progressively_castable(name: str, path: Path) -> bool:
@@ -442,16 +446,23 @@ class UploadManager:
                     "client": upload.client}
 
     def _maybe_start_early_cast(self, upload: _Upload) -> bool:
-        """Decide once whether this upload can cast before it finishes arriving.
+        """Decide whether this upload can cast before it finishes arriving.
 
         Called with ``upload.lock`` held. Returns True on the single append that
-        crosses the buffer threshold for a progressively castable container.
+        has enough buffered bytes and a complete progressive container index.
         """
         if (upload.audio_only or upload.queue_only or upload.early_cast != "idle"
                 or upload.received < self._early_cast_min_bytes
                 or upload.received >= upload.size):
             return False
-        if not is_progressively_castable(upload.name, upload.partial_path):
+        ready = (_mp4_index_state(upload.partial_path)
+                 if upload.suffix in _INDEXED_SUFFIXES
+                 else is_progressively_castable(upload.name, upload.partial_path))
+        if ready is None:
+            # The durable prefix has not reached a complete index. Recheck
+            # after the next acknowledged chunk rather than abandoning early cast.
+            return False
+        if not ready:
             upload.early_cast = "declined"
             return False
         upload.early_cast = "requested"

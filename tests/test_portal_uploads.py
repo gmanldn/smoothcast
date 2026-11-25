@@ -190,6 +190,37 @@ def test_faststart_mp4_is_cast_while_arriving(tmp_path):
     uploads.close()
 
 
+def test_faststart_mp4_waits_for_complete_front_index_and_retries(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    ftyp = _box(b"ftyp", b"isom")
+    moov = _box(b"moov", b"12345678")
+    data = ftyp + moov + _box(b"mdat", b"1234567890123456")
+    created = uploads.create("owner", "film.mp4", len(data))
+    offset = 0
+    for end, ready in ((len(ftyp), False), (len(ftyp) + 8, False),
+                       (len(ftyp + moov), True), (len(data), False)):
+        result = uploads.append("owner", created["id"],
+                                f"bytes {offset}-{end - 1}/{len(data)}",
+                                end - offset, BytesIO(data[offset:end]))
+        assert result["ready_to_cast"] is ready
+        offset = end
+    uploads.close()
+
+
+def test_rear_index_mp4_never_starts_early_after_later_chunks(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    data = INDEXED_MP4
+    created = uploads.create("owner", "film.mp4", len(data))
+    offset = 0
+    for end in (12, 20, len(data) - 1, len(data)):
+        result = uploads.append("owner", created["id"],
+                                f"bytes {offset}-{end - 1}/{len(data)}",
+                                end - offset, BytesIO(data[offset:end]))
+        assert result["ready_to_cast"] is False
+        offset = end
+    uploads.close()
+
+
 def test_declined_early_cast_falls_back_and_snapshot_reports_progress(tmp_path):
     uploads = manager(tmp_path, early_cast_min_bytes=1)
     created = uploads.create("owner", "film.mkv", 6)
