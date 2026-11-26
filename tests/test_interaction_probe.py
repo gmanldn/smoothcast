@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from pathlib import Path
 import sys
 
@@ -46,3 +47,13 @@ def test_write_samples_round_trips_through_the_budget_script(tmp_path):
     baseline = tmp_path / "baseline.json"
     assert bench.main(["--samples", str(path), "--write-baseline", str(baseline)]) == 0
     assert bench.main(["--samples", str(path), "--check", str(baseline)]) == 0
+
+
+def test_require_isolated_refuses_a_real_desktop(monkeypatch):
+    import gui_test_safety
+
+    monkeypatch.setattr(gui_test_safety, "is_isolated_gui_test", lambda env=None: False)
+    with pytest.raises(RuntimeError, match="only collected in the isolated Xvfb job"):
+        probe.require_isolated()
+    monkeypatch.setattr(gui_test_safety, "is_isolated_gui_test", lambda env=None: True)
+    assert probe.require_isolated() is None

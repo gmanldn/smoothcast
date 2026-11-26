@@ -10,6 +10,8 @@ from pathlib import Path
 import time
 from typing import Callable, Mapping
 
+import gui_test_safety
+
 SCHEMA = 1
 QUEUE_ITEMS = 1000
 PHONE_POLLERS = 32
@@ -55,3 +57,16 @@ def write_samples(path: str | Path, samples: Mapping[str, list[float]], *,
     destination.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
     return destination
+
+
+def require_isolated(env: Mapping[str, str] | None = None) -> None:
+    """Refuse to measure outside the authorised isolated-Xvfb environment (#627).
+
+    Samples must never come from the real desktop or a real receiver: the driver
+    calls this first, and it is the same fail-closed check the GTK self-tests use
+    (marker, X11 display, private XDG directories and a one-use token).
+    """
+    if not gui_test_safety.is_isolated_gui_test(env):
+        raise RuntimeError(
+            "interaction samples are only collected in the isolated Xvfb job "
+            "(scripts/test_gui_isolated.py); never against the real desktop")
