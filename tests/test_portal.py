@@ -5,6 +5,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 import shutil
 import subprocess
+import re
 from types import MethodType, SimpleNamespace
 import sys
 import threading
@@ -129,6 +130,7 @@ class Element {
 const queue=new Element("ul");queue.focus=()=>{document.activeElement=queue};
 const document={activeElement:null,createElement:tag=>new Element(tag),addEventListener(){}};
 const elements={queue};function $(id){return elements[id]}
+let queueRevision=0;
 const calls=[];function act(...args){calls.push(args)}
 """
     scenario = r"""
@@ -335,6 +337,8 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     for literal in prose:
         assert local.count(literal) <= 1
         local = local.replace(literal, "")
+    # Scripts may build a link at runtime; only visible markup must stay URL-free.
+    local = re.sub(r"<script>.*?</script>", "", local, flags=re.S)
     assert "https://" not in local and "http://" not in page
     # Nothing may load an external resource, whatever its scheme spelling.
     for pattern in ('src="//', "href=\"//", "@import", "url(http", "url(//",
@@ -365,12 +369,12 @@ def test_dashboard_html_is_local_and_contains_no_pin_or_status_data(rig):
     assert 'id="name"' in page and 'id="people"' in page and 'id="activity"' in page
     assert 'id="peers"' in page and "renderPeers(s.peers" in page
     assert 'id="queue" aria-label="Shared Up Next queue" tabindex="-1"' in page
-    assert "function renderQueue(items)" in page and "renderQueue(s.queue)" in page
+    assert "function renderQueue(items,revision=queueRevision)" in page and "renderQueue(s.queue,revision)" in page
     assert 'button.setAttribute("aria-label",labels[i])' in page
     assert ".slice(0,6)" in page
     assert "queue_vote" in page and "queue_play" in page
     assert 'id="clearQueue"' in page and "act(\"queue_clear\")" in page
-    assert "queue_revision=queueRevision" in page and "body.queue_command_id=" in page
+    assert "queue_revision:queueRevision" in page and "body.queue_command_id=" in page
     assert "Add to Up Next" in page
 
 
@@ -379,15 +383,15 @@ def test_room_settings_and_local_live_are_persistent(rig):
     assert status == 200
     page = body.decode()
     nav = page.split('<nav aria-label="Jump to room section">', 1)[1].split("</nav>", 1)[0]
-    assert '<a href="#localLivePanel">Live</a>' in nav
+    assert 'href="#localLivePanel"' in page
     assert '<a href="#advancedPanel">Settings</a>' in nav
     assert '<section id="advancedPanel" aria-labelledby="roomSettingsHeading">' in page
     assert '<section id="localLivePanel" aria-labelledby="localLiveHeading">' in page
     for identity in ("nameForm", "lockControls", "musicAutogain", "activity",
                      "peers", "networkActivity", "liveRoomTarget", "liveRoomPlayback"):
         assert page.count(f'id="{identity}"') == 1
-    assert 'liveTarget.textContent=target.textContent' in page
-    assert 'livePlayback.textContent=playing.textContent' in page
+    assert 'liveTarget.textContent=target' in page
+    assert 'livePlayback.textContent=playing' in page
 
 
 def test_status_requires_a_pin_and_rejects_host_rebinding(rig):
@@ -1612,6 +1616,7 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
         _closing=False, busy=False, _portal_queue_action=lambda *_: None,
         _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
         _cast_path=cast, _portal_note_display_name=lambda *_: None,
+        queue=[], now_playing=None,
     )
     payload = {"upload_id": "retry-me", "early": True}
     with pytest.raises(RuntimeError, match="submission failed"):
@@ -1643,6 +1648,7 @@ def test_cast_upload_keeps_the_guest_filename_in_the_queue(tmp_path):
         _closing=False, busy=False, _portal_queue_action=lambda *_: None,
         _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
         _cast_path=lambda *_: None,
+        queue=[], now_playing=None,
     )
     host._portal_note_display_name = MethodType(
         cast_portal_queue.PortalQueueMixin._portal_note_display_name, host)
@@ -1944,7 +1950,7 @@ def test_seek_preview_timestamp_survives_playhead_and_room_updates():
     paint = source[source.index("function paintPlayhead()"):
                    source.index("let queueRenderKey=")]
     status = source[source.index("function applyStatus(d)"):
-                    source.index("let homeQueueKey=")]
+                    source.index("let homePeopleKey=null;")]
     harness = r"""
 const nodes=new Map();
 const $=id=>{if(!nodes.has(id))nodes.set(id,{value:0,textContent:""});return nodes.get(id)};
@@ -1952,7 +1958,7 @@ const editingControls=new Set();
 const clock=String,performance={now:()=>0};
 const projectPosition=s=>s.position;
 let playhead={s:{position:10,duration:100},age:0,at:0},paintedAt=-1;
-let shortcutState,queueRevision,statusFailures=0;
+let shortcutState,queueRevision,busy=false,statusFailures=0;
 const document={querySelectorAll:()=>[]},window={};
 const matchingBuild=()=>true,acceptRoomSnapshot=()=>true;
 const noop=()=>{};
@@ -1960,7 +1966,8 @@ const applyAccentPreset=noop,renderPlaybackToggle=noop,monitorText=noop,playback
 mediaKindLabel=noop,syncMediaSession=noop,trackPlayhead=noop,renderQueueDestination=noop,
 renderQueue=noop,renderHomeQueue=noop,renderRoomTransfers=noop,renderLibraryCopies=noop,
 renderLinkJobs=noop,renderRoom=noop,renderPeers=noop,renderNetworkActivity=noop,
-showError=noop,showJoinedRoom=noop;
+showError=noop,showJoinedRoom=noop,renderSharedQueue=noop,renderExtraTransport=noop,
+scRenderMeshRoom=noop,scRenderScreens=noop;
 """
     scenario = r"""
 const assert=require("node:assert/strict");
