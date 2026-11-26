@@ -73,6 +73,8 @@ def fixture(mode="direct", *, paused=False):
             self._toggle_local_preview = mock.Mock()
             self._cast_path = mock.Mock()
             self._queue_preview = mock.Mock()
+            self.elapsed_label = mock.Mock()
+            self.remaining_label = mock.Mock()
 
         def _device(self):
             return self._current_device
