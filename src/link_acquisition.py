@@ -1111,6 +1111,25 @@ def diagnostics_main(argv=None) -> int:
         except OSError:
             tools[name] = "probe_failed"
     ready = all(status == "executable" for status in tools.values())
+    # Execute each engine *through* the launcher: a launcher that blocks
+    # everything, or refuses an engine (the reference launcher refuses aria2c),
+    # would pass an isolation-only probe yet could never download.
+    engines = {}
+    if provider.launcher:
+        for name, executable in (("yt-dlp", provider.tools["youtube"]),
+                                 ("aria2c", provider.tools["magnet"])):
+            if executable is None:
+                engines[name] = "missing"
+                continue
+            try:
+                result = subprocess.run([provider.launcher, executable, "--version"],
+                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL, timeout=10, check=False)
+                engines[name] = "executable" if result.returncode == 0 else "launcher_refused"
+            except subprocess.TimeoutExpired:
+                engines[name] = "probe_timed_out"
+            except OSError:
+                engines[name] = "probe_failed"
     qualification = None
     if args.qualify:
         import link_sandbox_probe
@@ -1120,6 +1139,7 @@ def diagnostics_main(argv=None) -> int:
     report = {
         "tools": tools,
         "launcher_configured": bool(provider.launcher),
+        **({"engines_via_launcher": engines} if provider.launcher else {}),
         "isolation_verified": bool(qualification.verified) if qualification else provider._isolation_verified(),
         **({"isolation_checks": qualification.checks, "isolation_detail": qualification.detail}
            if qualification else {}),
@@ -1130,6 +1150,7 @@ def diagnostics_main(argv=None) -> int:
             "The YouTube engine may also need a compatible JavaScript runtime and local EJS package.",
             "Executable presence does not prove supported versions or functioning downloads.",
             "An owner-configured isolation launcher is required; use --qualify to attack-test it.",
+            "An engine that does not run through the launcher (refused, timed out or failed) cannot acquire that kind.",
             "Enable providers in Preferences only after qualifying the isolated worker.",
         ],
     }

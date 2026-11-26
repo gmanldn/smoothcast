@@ -31,6 +31,12 @@ launcher and it must be re-qualified, even if its size and mtime are preserved.
 On a system without a host process inventory, process-tree termination is
 skipped rather than claimed verified. `--qualify` exits non-zero unless every check passes.
 
+When a launcher is configured, `--link-check` also runs each installed engine
+(`yt-dlp --version`, `aria2c --version`) **through** it and reports
+`engines_via_launcher`. This catches a launcher that passes an isolation-only
+probe but blocks or refuses the engine itself — for example the reference
+launcher below refuses `aria2c`, so magnets cannot be acquired through it.
+
 Default behaviour is unchanged (an owner-configured launcher still enables a
 provider). To make qualification mandatory, set
 `SMOOTHCAST_LINK_REQUIRE_QUALIFIED=1`: providers then advertise only for a
