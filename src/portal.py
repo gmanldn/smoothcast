@@ -817,6 +817,8 @@ class _Handler(BaseHTTPRequestHandler):
         state["link_search_available"] = (jobs.search_available() if jobs is not None
                                           and callable(getattr(jobs, "search_available", None))
                                           else bool(state["link_capabilities"].get("youtube")))
+        state["magnet_search_available"] = bool(jobs is not None
+            and callable(getattr(jobs, "magnet_search_available", None)) and jobs.magnet_search_available())
         state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
         provider = getattr(self.server, "link_readiness_provider", None)
         if provider is not None:
@@ -1128,11 +1130,11 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(403, guest_messages.WRONG_ORIGIN)
         path = self._path()
         if (path in {"/api/login", "/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/link-jobs/retry", "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")) and not self._client_compatible():
             return
         if (path in {"/api/action", "/api/profile", "/api/link-jobs", "/api/link-jobs/cancel",
-                     "/api/link-jobs/retry", "/api/search/youtube"}
+                     "/api/link-jobs/retry", "/api/search/youtube", "/api/search/magnets"}
                 or path.startswith("/api/uploads")):
             if self._authenticated(csrf=True) and self._throttle(
                     "upload" if path.startswith("/api/uploads") else "mutation"):
@@ -1265,6 +1267,17 @@ class _Handler(BaseHTTPRequestHandler):
                 "room": self.server.room.snapshot(participant.id),
                 "build": page_build(), "client_schema": CLIENT_SCHEMA,
             }, cookie=cookie)
+        if path == "/api/search/magnets":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            jobs = self.server.link_jobs
+            if jobs is None or not callable(getattr(jobs, "search_magnets", None)):
+                return self._error(503, "Archive search is unavailable in this room.")
+            owner = self.server._session_key(self._cookie_token() or "")
+            try:
+                return self._send(200, {"results": jobs.search_magnets(owner, body.get("q"))})
+            except link_acquisition.LinkError as exc:
+                return self._error(exc.status, exc.message)
         if path == "/api/search/youtube":
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
@@ -2179,11 +2192,11 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 
 <p id="errorDash" role="status" aria-live="polite"></p>
 <section id="findPanel" aria-labelledby="findHeading"><div class="find-intro"><h2 id="findHeading" tabindex="-1">Find something to play</h2><a href="#queuePanel">View Up Next</a></div>
-<p class="section-desc">Discover films, shows and music across your SmoothCast computers, or search YouTube.</p>
+<p class="section-desc">Search your house instantly, then discover YouTube or openly licensed torrent media.</p>
 <div class="find-search">
 <form id="findForm" role="search" aria-label="Search shared libraries">
-<label for="findInput">Search films, shows, music and YouTube</label><div class="find-field"><input id="findInput" type="search" placeholder="Title, artist, album or keyword" autocomplete="off" maxlength="200" enterkeyhint="search"><button id="findClear" type="button" class="secondary">Clear</button></div>
-<div class="find-sources"><div class="find-source"><button type="submit" id="findSubmit">Search shared libraries</button><p class="field-hint">Searches your house as you type. Stays on your local network.</p></div><div class="find-source"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button><p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p></div></div>
+<label for="findInput">Search films, shows, music and online sources</label><div class="find-field"><input id="findInput" type="search" placeholder="Title, artist, album or keyword" autocomplete="off" maxlength="200" enterkeyhint="search"><button id="findClear" type="button" class="secondary">Clear</button></div>
+<div class="find-sources"><div class="find-source"><button type="submit" id="findSubmit">Search shared libraries</button><p class="field-hint">Searches your house as you type. Stays on your local network.</p></div><div class="find-source"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button><p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p></div><div class="find-source"><button id="magnetSearch" type="button" class="secondary" disabled>Find open torrents</button><p id="magnetAvailability" class="field-hint">Checking Archive search availability…</p><label class="toggle"><input id="magnetAuto" type="checkbox"><span>Search open torrents as I type (sends terms to Internet Archive)</span></label></div></div>
 </form>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
 </div>
@@ -2192,6 +2205,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
 <p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
 <ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
+<section id="magnetResultsPanel" aria-labelledby="magnetResultsHeading" hidden><h3 id="magnetResultsHeading">Open torrents · Internet Archive</h3><p id="magnetSearchStatus" role="status" aria-live="polite"></p><label class="toggle"><input id="magnetAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label><ul id="magnetResults" class="find-list" aria-label="Open torrent results"></ul></section>
 <details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
 <details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <a href="#uploadCard">Add files in Queue</a> instead.</p></div></details>
 </section>
@@ -2640,6 +2654,11 @@ function updateLinkControls(){
     search.disabled=!ready||youtubeSearchBusy;
     availability.textContent=ready?"Search YouTube explicitly; your house search stays local.":"YouTube search is unavailable. "+linkWorkerExplanation("youtube");
   }
+  const magnetSearch=$("magnetSearch"),magnetAvailability=$("magnetAvailability");
+  if(magnetSearch&&magnetAvailability){
+    magnetSearch.disabled=!linkCapabilities.magnet_search;
+    magnetAvailability.textContent=linkCapabilities.magnet_search?"Openly licensed Archive media; ranked by title and downloads.":"Archive search needs a qualified local torrent worker and curl.";
+  }
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return false;
   const value=String(input.value||"").trim();
@@ -2703,7 +2722,7 @@ function updateLinkControls(){
   return !button.disabled;
 }
 function renderLinkJobs(state){
-  linkCapabilities={...(state.link_capabilities||{}),youtube_search:state.link_search_available};
+  linkCapabilities={...(state.link_capabilities||{}),youtube_search:state.link_search_available,magnet_search:state.magnet_search_available};
   linkOwnerEnabled=state.link_owner_enabled||null;
   linkLocalPrerequisites=state.link_local_prerequisites||null;
   linkStorageAvailable=state.link_storage_available;
@@ -4118,6 +4137,74 @@ function syncMediaSession(s){
     }catch(err){if(current===generation&&csrf===session)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
+})();
+(()=>{
+  const input=$("findInput"),button=$("magnetSearch"),auto=$("magnetAuto"),panel=$("magnetResultsPanel"),
+    status=$("magnetSearchStatus"),out=$("magnetResults"),consent=$("magnetAuthorised");
+  if(!input||!button||!auto||!panel||!status||!out||!consent)return;
+  let generation=0,timer=null,busy=false,pending=null;
+  function invalidate(){
+    generation++;clearTimeout(timer);pending=null;panel.hidden=true;out.replaceChildren();consent.checked=false;
+  }
+  function schedule(){
+    invalidate();
+    if(auto.checked&&input.value.trim().length>=3)timer=setTimeout(()=>request(),850);
+  }
+  function request(){
+    clearTimeout(timer);
+    const q=input.value.trim(),session=csrf;
+    if(!session||!linkCapabilities.magnet_search)return;
+    if(q.length<3){panel.hidden=false;status.textContent="Enter at least three characters.";input.focus();return}
+    pending={q,session,generation:++generation};
+    out.replaceChildren();consent.checked=false;panel.hidden=false;
+    status.textContent=busy?"Waiting for the previous search…":"Searching open torrents…";
+    void drain();
+  }
+  async function drain(){
+    if(busy||!pending)return;
+    const job=pending;pending=null;busy=true;
+    const current=()=>job.generation===generation&&csrf===job.session;
+    try{
+      if(!current())return;
+      status.textContent="Searching Internet Archive…";
+      const response=await post("/api/search/magnets",{q:job.q});
+      if(!current())return;
+      const results=Array.isArray(response.results)?response.results.slice(0,4):[];
+      for(const result of results){
+        if(!result||typeof result.id!=="string"||!/^[a-f0-9]{40}$/.test(result.id))continue;
+        const row=document.createElement("li");row.className="queue-item";
+        const info=document.createElement("div"),title=document.createElement("strong"),meta=document.createElement("div");
+        title.textContent=result.title||"Archive media";meta.className="muted";
+        const downloads=Number.isSafeInteger(result.downloads)?result.downloads.toLocaleString()+" Archive downloads":"";
+        meta.textContent=[result.source||"Internet Archive",downloads,Number.isFinite(result.size)?(result.size/1048576).toFixed(0)+" MiB":""].filter(Boolean).join(" · ");
+        info.append(title,meta);
+        const source=document.createElement("a");
+        if(typeof result.archive_id==="string"&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(result.archive_id)){
+          source.href="https://archive.org/details/"+encodeURIComponent(result.archive_id);source.target="_blank";source.rel="noopener noreferrer";source.textContent="Check source and licence";info.append(source);
+        }
+        const add=document.createElement("button");add.type="button";add.className="tiny";add.textContent="Download & add";
+        const actions=document.createElement("div");actions.className="queue-actions";actions.append(add);
+        const request_id="archive-"+Date.now()+"-"+Math.random().toString(36).slice(2);
+        add.addEventListener("click",async()=>{
+          if(add.disabled||!current())return;
+          if(!linkCapabilities.magnet||linkStorageAvailable===false){status.textContent="No eligible download worker or storage.";return}
+          if(!consent.checked){status.textContent="Confirm you have permission to download this media.";consent.focus();return}
+          add.disabled=true;add.textContent="Submitting…";
+          try{
+            const receipt=await post("/api/link-jobs",{url:"magnet:?xt=urn:btih:"+result.id,request_id,authorised:true});
+            if(current()){add.textContent="Download requested";status.textContent=receipt.message||"Download requested; follow Queue."}
+            void refresh();
+          }catch(err){if(current()){status.textContent=err.message;add.disabled=false;add.textContent="Retry download"}}
+        });
+        row.append(info,actions);out.append(row);
+      }
+      status.textContent=out.children.length?out.children.length+" compatible open torrents. Check the licence and choose a download.":"No compatible openly licensed torrents found.";
+    }catch(err){if(current())status.textContent=err.message||"Archive search unavailable."}
+    finally{busy=false;if(pending)void drain()}
+  }
+  input.addEventListener("input",schedule);
+  auto.addEventListener("change",schedule);
+  button.addEventListener("click",request);
 })();
 // #591: the Home control is always in the sticky app bar. It returns to the top
 // of the room and moves keyboard/screen-reader focus there; the now-playing pill

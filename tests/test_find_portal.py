@@ -121,3 +121,15 @@ def test_find_has_explicit_sources_and_recovery_controls():
     assert 'if(ul.children.length)out.append(h,ul)' in html
     assert 'if(current!==generation||csrf!==session)return;' in html
     assert 'No currently available matches. Turn off Available now' in html
+
+
+
+def test_find_open_torrents_are_explicit_and_use_existing_acquisition():
+    html = page()
+    for ident in ("magnetSearch", "magnetAuto", "magnetResultsPanel", "magnetAuthorised"):
+        assert html.count(f'id="{ident}"') == 1
+    assert 'type="checkbox"><span>Search open torrents as I type' in html
+    assert 'setTimeout(()=>request(),850)' in html
+    assert 'post("/api/search/magnets",{q:job.q})' in html
+    assert 'url:"magnet:?xt=urn:btih:"+result.id' in html
+    assert 'job.generation===generation&&csrf===job.session' in html

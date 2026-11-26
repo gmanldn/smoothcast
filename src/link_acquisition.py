@@ -26,7 +26,7 @@ import tempfile
 import threading
 import unicodedata
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from typing import Callable
 import media_tools
 
@@ -403,6 +403,149 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
         _SEARCH_SLOT.release()
 
 
+_ARCHIVE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\Z")
+_ARCHIVE_LICENSE = re.compile(
+    r"https?://creativecommons\.org/(?:licenses/(?:by|by-sa)/[1-4]\.0(?:/[a-z]{2})?"
+    r"|licenses/publicdomain|publicdomain/(?:zero|mark)/1\.0)/?\Z", re.I)
+
+
+def archive_candidates(raw: bytes, query: str) -> list[dict]:
+    """Only explicit open/public-domain licence claims; popularity is downloads, not seeds."""
+    if len(raw) > SEARCH_OUTPUT_LIMIT:
+        raise LinkError(502, "Archive search returned too much data.")
+    try:
+        envelope = json.loads(raw)
+        rows = envelope["response"]["docs"]
+    except (ValueError, KeyError, TypeError, RecursionError):
+        raise LinkError(502, "Archive search returned invalid data.") from None
+    if not isinstance(rows, list):
+        raise LinkError(502, "Archive search returned invalid results.")
+    terms = set(re.findall(r"\w+", query.casefold()))
+    found = []
+    seen = set()
+    for row in rows[:30]:
+        if not isinstance(row, dict):
+            continue
+        ident, license_url = row.get("identifier"), row.get("licenseurl")
+        if (not isinstance(ident, str) or not _ARCHIVE_ID.fullmatch(ident)
+                or ident in seen or not isinstance(license_url, str)
+                or not _ARCHIVE_LICENSE.fullmatch(license_url)):
+            continue
+        title = _search_label(row.get("title"), 200)
+        if not title:
+            continue
+        overlap = len(terms & set(re.findall(r"\w+", title.casefold())))
+        if not overlap:
+            continue
+        downloads = row.get("downloads")
+        downloads = downloads if type(downloads) is int and 0 <= downloads <= 10**12 else 0
+        seen.add(ident)
+        found.append((overlap, downloads, ident, {
+            "archive_id": ident, "title": title, "license": license_url,
+            "downloads": downloads,
+        }))
+    found.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    return [item[3] for item in found[:4]]
+
+
+def archive_torrent_result(candidate: dict, data: bytes) -> dict:
+    """Derive the exact v1 infohash and reuse the acquisition safety validator."""
+    if len(data) > 2 * 1024**2:
+        raise LinkError(422, "Archive torrent metadata is too large.")
+    try:
+        parser = _Bencode(data)
+        parser.read()
+        if parser.info is None or parser.pos != len(data):
+            raise ValueError("missing info")
+        digest = hashlib.sha1(parser.info).hexdigest()
+    except (ValueError, TypeError, RecursionError, IndexError):
+        raise LinkError(422, "Invalid Archive torrent metadata.") from None
+    media = inspect_torrent(data, digest)
+    return {**candidate, "id": digest, "size": media.size, "source": "Internet Archive"}
+
+
+def _archive_fetch(launcher: str, curl: str, url: str, limit: int, cancelled,
+                   deadline: float) -> bytes:
+    """Fixed public HTTPS URLs only, executed through the qualified egress sandbox."""
+    with tempfile.TemporaryDirectory(prefix="smoothcast-archive-") as directory:
+        with tempfile.TemporaryFile(dir=directory) as output:
+            seconds = max(1, min(6, int(deadline - time.monotonic())))
+            command = [launcher, curl, "--disable", "--silent", "--show-error",
+                       "--fail", "--location", "--max-redirs", "2", "--proto", "=https",
+                       "--proto-redir", "=https", "--max-time", str(seconds),
+                       "--max-filesize", str(limit), "--", url]
+            kwargs = {"start_new_session": True} if os.name == "posix" else {}
+            process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                                       stdout=output, stderr=subprocess.DEVNULL, **kwargs)
+            try:
+                while process.poll() is None:
+                    if cancelled():
+                        raise LinkError(403, guest_messages.ACCESS_REMOVED)
+                    if time.monotonic() >= deadline:
+                        raise LinkError(504, "Archive search timed out.")
+                    if os.fstat(output.fileno()).st_size > limit:
+                        raise LinkError(502, "Archive response exceeded its size limit.")
+                    time.sleep(0.05)
+                if process.returncode:
+                    raise LinkError(502, "Archive source unavailable.")
+                output.seek(0)
+                data = output.read(limit + 1)
+                if len(data) > limit:
+                    raise LinkError(502, "Archive response exceeded its size limit.")
+                return data
+            finally:
+                if process.poll() is None:
+                    try:
+                        if os.name == "posix":
+                            os.killpg(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
+                    except OSError:
+                        pass
+                    process.wait(timeout=5)
+
+
+def _archive_search_command(launcher: str, curl: str, text: str, cancelled) -> list[dict]:
+    if not _SEARCH_SLOT.acquire(blocking=False):
+        raise LinkError(429, "External search is busy. Try again shortly.")
+    try:
+        terms = re.findall(r"[^\W_]+", text, re.UNICODE)[:12]
+        if not terms:
+            return []
+        query = ('format:"Archive BitTorrent" AND mediatype:(movies OR audio) '
+                 'AND licenseurl:* AND title:('
+                 + " AND ".join('"' + term + '"' for term in terms) + ")")
+        params = [("q", query), ("rows", "30"), ("output", "json"), ("sort[]", "downloads desc")]
+        params += [("fl[]", field) for field in ("identifier", "title", "licenseurl", "downloads")]
+        deadline = time.monotonic() + SEARCH_SECONDS
+        raw = _archive_fetch(launcher, curl, "https://archive.org/advancedsearch.php?" + urlencode(params),
+                             SEARCH_OUTPUT_LIMIT, cancelled, deadline)
+        results = []
+        seen = set()
+        for candidate in archive_candidates(raw, text):
+            if cancelled():
+                raise LinkError(403, guest_messages.ACCESS_REMOVED)
+            if deadline - time.monotonic() < 1:
+                break
+            ident = quote(candidate["archive_id"], safe="")
+            url = f"https://archive.org/download/{ident}/{ident}_archive.torrent"
+            try:
+                data = _archive_fetch(launcher, curl, url, 2 * 1024**2, cancelled, deadline)
+                row = archive_torrent_result(candidate, data)
+            except LinkError as exc:
+                if exc.status == 403:
+                    raise
+                continue
+            if row["id"] not in seen:
+                seen.add(row["id"])
+                results.append(row)
+        return results
+    except (OSError, subprocess.TimeoutExpired):
+        raise LinkError(503, "The isolated Archive search worker is unavailable.") from None
+    finally:
+        _SEARCH_SLOT.release()
+
+
 class CommandProvider:
     """Real command adapters; only an owner-configured isolation launcher may run them.
 
@@ -419,6 +562,7 @@ class CommandProvider:
         self.tools = {kind: shutil.which(tool) for kind, tool in
                       (("youtube", "yt-dlp"), ("magnet", "aria2c"))}
         self.probe = media_tools.find_media_tool("ffprobe")
+        self.archive_curl = shutil.which("curl")
         self.kinds = frozenset(kinds)
 
     def _isolation_verified(self) -> bool:
@@ -454,6 +598,17 @@ class CommandProvider:
         if not self.capabilities().get("youtube"):
             raise LinkError(503, guest_messages.YOUTUBE_OFF)
         return _youtube_search_command(self.launcher, str(self.tools["youtube"]), text, cancelled)
+
+    def magnet_search_available(self) -> bool:
+        return bool(self.archive_curl and self.capabilities().get("magnet"))
+
+    def search_magnets(self, value: object, cancelled) -> list[dict]:
+        if not isinstance(value, str) or not 3 <= len(value.strip()) <= 200:
+            raise LinkError(400, "Enter a search of 3 to 200 characters.")
+        text = _search_text(value)
+        if not self.magnet_search_available():
+            raise LinkError(503, "Archive search requires a qualified local magnet worker and curl.")
+        return _archive_search_command(self.launcher, str(self.archive_curl), text, cancelled)
 
     def readiness_text(self, kind: str) -> str:
         row = self.readiness()[kind]
@@ -798,6 +953,24 @@ class LinkJobs:
         if cancelled():
             raise LinkError(403, guest_messages.ACCESS_REMOVED)
         results = search(text, cancelled)
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        return results
+
+    def magnet_search_available(self) -> bool:
+        available = getattr(self.provider, "magnet_search_available", None)
+        return bool(not self._journal_error and not self._closed
+                    and callable(available) and available())
+
+    def search_magnets(self, owner: str, value: object) -> list[dict]:
+        search = getattr(self.provider, "search_magnets", None)
+        if not self.magnet_search_available() or not callable(search):
+            raise LinkError(503, "Archive search is unavailable in this room.")
+        def cancelled():
+            return self._closed or not self.owner_active(owner)
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        results = search(value, cancelled)
         if cancelled():
             raise LinkError(403, guest_messages.ACCESS_REMOVED)
         return results

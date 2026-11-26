@@ -1044,3 +1044,30 @@ def test_room_http_retry_is_csrf_protected_owner_bound_and_truthful(tmp_path):
     finally:
         provider.resume.set()
         rig.close()
+
+
+
+def test_archive_search_ranks_explicit_licences_and_rejects_untrusted_metadata():
+    rows = [
+        {"identifier": "no-license", "title": "Open film", "downloads": 9000},
+        {"identifier": "../escape", "title": "Open film", "licenseurl": "https://creativecommons.org/publicdomain/zero/1.0/", "downloads": 9000},
+        {"identifier": "low", "title": "Open film", "licenseurl": "https://creativecommons.org/licenses/by/4.0/", "downloads": 10},
+        {"identifier": "high", "title": "Open film", "licenseurl": "https://creativecommons.org/publicdomain/mark/1.0/", "downloads": 20},
+        {"identifier": "fake", "title": "Open film", "licenseurl": "https://creativecommons.org.evil.example/publicdomain/zero/1.0/", "downloads": 1000},
+    ]
+    raw = json.dumps({"response": {"docs": rows}}).encode()
+    results = acquisition.archive_candidates(raw, "Open film")
+    assert [row["archive_id"] for row in results] == ["high", "low"]
+    assert results[0]["downloads"] == 20
+
+
+
+def test_archive_result_derives_exact_infohash_and_discards_tracker_metadata():
+    raw, digest, _ = _torrent(_info())
+    result = acquisition.archive_torrent_result(
+        {"archive_id": "demo", "title": "Demo", "downloads": 15}, raw)
+    assert result["id"] == digest and result["size"] == 8
+    assert "127.0.0.1" not in str(result) and "localhost" not in str(result)
+    unsafe, _, _ = _torrent(_info([{b"length": 8, b"path": [b"../escape.mp4"]}]))
+    with pytest.raises(acquisition.LinkError):
+        acquisition.archive_torrent_result({"archive_id": "demo"}, unsafe)

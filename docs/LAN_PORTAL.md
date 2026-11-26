@@ -534,3 +534,10 @@ root containment and durable-write checks remain authoritative.
 - Speed-up depends on the storage device, RTT and Wi-Fi link. No throughput
   improvement is claimed without measured benchmarks (#573). Adaptive chunk
   negotiation and cross-restart durable offsets remain tracked in #568.
+
+
+## Find: openly licensed torrents (issue #633)
+
+The browser Find pane searches the house immediately. Opt in to **Search open torrents as I type** to send debounced queries to the Internet Archive; manual search is also available. The qualified local magnet worker must have curl installed. Discovery searches the Archive's public Advanced Search API for movies/audio with explicit Creative Commons open/public-domain licence metadata, ranks bounded candidates by title terms and Archive download counts (not seeders), fetches bounded .torrent metadata and validates its exact BitTorrent v1 infohash and media using the existing acquisition inspector. It strips all ancillary tracker and webseed URLs. Source licence claims are not legal verification; users must check the source and confirm download authority before submitting an existing link job. Typing alone never starts a payload download. Other public providers and remote discovery are not yet implemented; real API/worker and torrent swarm availability require qualification.
+
+API references: https://archive.org/advancedsearch.php and https://archivesupport.zendesk.com/hc/en-us/articles/360004715251-Archive-BitTorrents.
