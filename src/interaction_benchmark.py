@@ -81,17 +81,23 @@ class InteractionBenchmarkMixin:
         return actions
 
     def _spin_frame(self, window: object) -> None:
-        """Drain the main loop until the frame clock reports the paint."""
+        """Acknowledge the interaction: drain the loop, repaint included.
+
+        Waiting on the frame clock's after-paint measured this function's own cap
+        whenever an action needed no repaint, so instead the pass asks for a
+        draw and drains the main context until three consecutive passes find no
+        pending work; SPIN_LIMIT_S stays only as a pathological guard (#627).
+        """
         from gi.repository import GLib
         context = GLib.MainContext.default()
-        clock = window.get_frame_clock()
-        painted: list[bool] = []
-        handler = (clock.connect("after-paint", lambda *_args: painted.append(True))
-                   if clock is not None else None)
+        window.queue_draw()
         deadline = time.monotonic() + SPIN_LIMIT_S
-        while not painted and time.monotonic() < deadline:
+        quiet = 0
+        while quiet < 3 and time.monotonic() < deadline:
+            worked = False
             while context.pending():
                 context.iteration(False)
-            time.sleep(0.001)
-        if clock is not None and handler is not None:
-            clock.disconnect(handler)
+                worked = True
+            quiet = 0 if worked else quiet + 1
+            if not worked:
+                time.sleep(0.001)
