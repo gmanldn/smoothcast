@@ -1120,3 +1120,27 @@ def test_archive_search_empty_when_all_metadata_is_incompatible(monkeypatch):
 
     monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
     assert acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False) == []
+
+
+def test_provisioned_wrapper_is_discovered_but_not_trusted(tmp_path, monkeypatch):
+    import link_provision
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("SMOOTHCAST_LINK_SANDBOX", raising=False)
+    assert acquisition.CommandProvider().launcher == ""
+    wrapper = link_provision.wrapper_path()
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text("#!/bin/sh\nexit 0\n")
+    wrapper.chmod(0o700)
+    provider = acquisition.CommandProvider(("youtube",))
+    assert provider.launcher == str(wrapper)
+    assert provider.capabilities()["youtube"] is False  # unqualified stays off
+
+
+def test_install_reports_actionable_repair_when_unsupported(tmp_path, monkeypatch):
+    import link_provision
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(link_provision.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(link_provision.sys, "platform", "linux")
+    ok, message = link_provision.install()
+    assert not ok and "bubblewrap" in message
+    assert not link_provision.wrapper_path().exists()

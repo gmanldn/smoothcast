@@ -580,6 +580,12 @@ class CommandProvider:
     """
     def __init__(self, kinds=(), *, launcher=None):
         raw = launcher or os.environ.get("SMOOTHCAST_LINK_SANDBOX", "")
+        if not raw:
+            try:
+                import link_provision
+                raw = link_provision.default_launcher()
+            except Exception:
+                raw = ""
         self.launcher = (str(raw) if raw and Path(raw).is_absolute()
                          and Path(raw).is_file() and os.access(raw, os.X_OK) else "")
         self.tools = {kind: shutil.which(tool) for kind, tool in
@@ -1294,7 +1300,18 @@ def diagnostics_main(argv=None) -> int:
                         help="Attack-test the configured launcher (IPv4/IPv6 loopback, LAN, "
                              "cloud metadata, home, leftover processes); saves the result for "
                              "this exact launcher file")
+    parser.add_argument("--setup", action="store_true",
+                        help="Install the reference launcher wrapper (Linux + bubblewrap) "
+                             "and attack-test it; never enables a provider by itself")
     args = parser.parse_args(argv)
+    setup_note = None
+    if args.setup:
+        import link_provision
+        ok, setup_note = link_provision.install()
+        if not ok:
+            print(json.dumps({"setup": "unsupported_or_failed", "repair": setup_note}, indent=2))
+            return 1
+        args.qualify = True
     provider = CommandProvider()
     tools = {}
     for name, executable, flag in (
@@ -1340,6 +1357,7 @@ def diagnostics_main(argv=None) -> int:
         if provider.launcher:
             link_sandbox_probe.save(provider.launcher, qualification)
     report = {
+        **({"setup_launcher": setup_note} if setup_note else {}),
         "tools": tools,
         "launcher_configured": bool(provider.launcher),
         **({"engines_via_launcher": engines} if provider.launcher else {}),

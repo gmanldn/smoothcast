@@ -152,6 +152,7 @@ py-modules = [
     "library_replication",
     "link_acquisition",
     "link_diagnostics",
+    "link_provision",
     "link_egress",
     "link_sandbox_probe",
     "local_playback",

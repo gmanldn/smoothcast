@@ -42,6 +42,18 @@ provider). To make qualification mandatory, set
 `SMOOTHCAST_LINK_REQUIRE_QUALIFIED=1`: providers then advertise only for a
 launcher with a current passing verdict.
 
+## One-step setup (Linux)
+
+```sh
+smoothcast --link-check --setup
+```
+
+Writes the wrapper below to `~/.config/cast-control/link-sandbox`, which
+SmoothCast finds without `SMOOTHCAST_LINK_SANDBOX`, then runs `--qualify`.
+It never enables a provider: the owner still switches YouTube/BitTorrent on in
+Preferences, and nothing needs installing by guests. Without bubblewrap, or on
+another platform, it prints the exact repair step and exits non-zero.
+
 ## Reference launcher: public-only egress (Linux, YouTube)
 
 `scripts/link_sandbox_bwrap.py` is a ready launcher built on bubblewrap
