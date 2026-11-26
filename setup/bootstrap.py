@@ -74,8 +74,15 @@ WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
     "mingw-w64-ucrt-x86_64-python-pip",
     "mingw-w64-ucrt-x86_64-python-gobject",
+    # UCRT64 cannot assume python.org binary wheels are ABI-compatible.
+    "mingw-w64-ucrt-x86_64-python-psutil",
+    "mingw-w64-ucrt-x86_64-python-zeroconf",
     "mingw-w64-ucrt-x86_64-gtk4",
     "mingw-w64-ucrt-x86_64-libadwaita",
+    "mingw-w64-ucrt-x86_64-gstreamer",
+    "mingw-w64-ucrt-x86_64-gst-plugins-base",
+    "mingw-w64-ucrt-x86_64-gst-plugins-good",
+    "mingw-w64-ucrt-x86_64-gst-libav",
     "mingw-w64-ucrt-x86_64-ffmpeg",
     "mingw-w64-ucrt-x86_64-gcc",  # pip may build pure/native dependencies
 )

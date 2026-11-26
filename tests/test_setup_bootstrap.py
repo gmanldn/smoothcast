@@ -66,6 +66,8 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn('set "SC_EXIT=%errorlevel%"', batch)
         self.assertIn("exit /b %SC_EXIT%", batch)
         self.assertIn("pause", batch)
+        self.assertIn("--silent --disable-interactivity", source)
+        self.assertIn("InstallLauncherAllUsers=0", source)
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell parser required")
     def test_windows_bootstrap_parses_without_running_installation(self):
@@ -336,6 +338,11 @@ class SetupContractTests(unittest.TestCase):
         run.assert_called_once()
         self.assertIn("python3-venv", run.call_args.args[0])
 
+    def test_windows_native_packages_avoid_cpython_binary_wheels(self):
+        for name in ("python-psutil", "python-zeroconf", "gstreamer",
+                     "gst-plugins-base", "gst-plugins-good", "gst-libav"):
+            self.assertIn("mingw-w64-ucrt-x86_64-" + name, bootstrap.WINDOWS_PACKAGES)
+
     def test_windows_runtime_paths_expose_native_gtk_dlls(self):
         env = bootstrap.windows_env(Path("C:/msys64"))
         self.assertIn("ucrt64", env["PATH"])
@@ -553,6 +560,27 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("O''Neil", source)
         self.assertIn("WScript.Shell", source)
         self.assertIn("CreateShortcut", source)
+
+    def test_windows_installed_shortcut_uses_bootstrap_and_verifies_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "App with spaces"
+            root.mkdir()
+            (root / "SmoothCast.bat").touch()
+            (root / "sc.py").touch()
+            roaming = Path(directory) / "Roaming"
+            with (mock.patch.object(shortcuts, "ROOT", root),
+                  mock.patch.dict(os.environ, {"LOCALAPPDATA": directory}),
+                  mock.patch.object(shortcuts, "write_windows_icon"),
+                  mock.patch.object(shortcuts.subprocess, "run") as run):
+                result = shortcuts.install_windows(appdata=roaming)
+            script = run.call_args.args[0][-1]
+            self.assertIn(str(root / "SmoothCast.bat"), script)
+            self.assertNotIn("python.exe", script)
+            self.assertIn("Test-Path -LiteralPath", script)
+            self.assertIn("$saved.TargetPath", script)
+            self.assertIn("$saved.WorkingDirectory", script)
+            self.assertEqual(result.name, "SmoothCast.lnk")
+            self.assertTrue(run.call_args.kwargs["check"])
 
     def test_macos_and_windows_never_try_linux_pid_cleanup(self):
         for system in ("Darwin", "Windows"):

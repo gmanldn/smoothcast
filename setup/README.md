@@ -104,7 +104,10 @@ bounded `-version` probes to confirm they actually execute.
 
 Application registration points at the installed location, never the source
 archive: Linux XDG desktop/icon, a macOS `~/Applications/SmoothCast.app`
-with branded ICNS, and a Windows Start Menu link with branded ICO.
+with branded ICNS, and a Windows Start Menu link with branded ICO. The Windows shortcut targets the
+installed `SmoothCast.bat`, which invokes canonical `sc.py` without relying on
+Explorer inheriting MSYS2 environment variables. Setup reads the saved shortcut
+back and fails if its target, arguments or working directory disagree.
 
 ## Optional guest media acquisition (#588)
 

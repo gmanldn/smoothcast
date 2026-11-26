@@ -56,7 +56,7 @@ function Install-Python {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($winget) {
         try {
-            & $winget.Source install --id Python.Python.3.14 --exact --source winget --scope user --silent --accept-source-agreements --accept-package-agreements
+            & $winget.Source install --id Python.Python.3.14 --exact --source winget --scope user --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
             if ($LASTEXITCODE -eq 0 -and (Find-Python)) { return }
             Write-Warning 'WinGet did not provide a working interpreter; trying verified python.org installer.'
         } catch { Write-Warning 'WinGet is unavailable; trying verified python.org installer.' }
@@ -85,7 +85,7 @@ function Install-Python {
             throw 'Python.org installer Authenticode signature is not valid for Python Software Foundation.'
         }
         $process = Start-Process -FilePath $installer -ArgumentList @(
-            '/quiet','InstallAllUsers=0','PrependPath=0','Include_pip=1','Include_launcher=1'
+            '/quiet','InstallAllUsers=0','PrependPath=0','Include_pip=1','Include_launcher=1','InstallLauncherAllUsers=0'
         ) -PassThru -Wait
         if ($process.ExitCode -ne 0) {
             throw "Python installer exited with $($process.ExitCode)"
