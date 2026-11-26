@@ -1844,9 +1844,6 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 @media(max-width:360px){#findPanel .find-field{grid-template-columns:minmax(0,1fr)}#findPanel #findClear{width:100%}}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
 #queuePanel{border-top:3px solid var(--accent)}
-#queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
-#queuePanel .queue-destination .eyebrow{margin:0 0 4px}
-#queuePanel #queueTarget{font-size:1.2rem;line-height:1.35;display:block}
 #queuePanel .contribute{margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input)}
 #queuePanel .contribute h3{margin:0;font-size:1.1rem}
 #queuePanel .queue-add-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px;margin-top:10px}
@@ -1974,7 +1971,6 @@ main{padding-top:6px}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
 #dashboard[data-room-blade="homePanel"]>:not(nav):not(#errorDash):not(#homePanel),
-#dashboard[data-room-blade="queuePanel"]>:not(nav):not(#errorDash):not(#queuePanel),
 #dashboard[data-room-blade="peoplePanel"]>:not(nav):not(#errorDash):not(#peoplePanel),
 #dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
 #dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
@@ -1982,7 +1978,7 @@ main{padding-top:6px}
 #dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel){display:none}
 #dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
 #dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel{grid-column:1/-1}
-#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
@@ -2048,10 +2044,6 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .home-card{border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg);min-width:0}
 .home-card h3{margin:0 0 8px;font-size:1rem}
 .home-device{font-size:1.08rem;font-weight:700;margin:0;overflow-wrap:anywhere}
-.home-queue{display:grid;gap:9px;margin:0;padding:0}
-.home-queue li{padding:0;border:0;font-size:.86rem;min-width:0}
-.home-queue li strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-queue li .muted{font-size:.76rem}
 #homePanel #castEntry{border-radius:var(--r-md);margin-top:14px;box-shadow:none;background:var(--input)}
 #homePanel #playback{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
 #homePanel #quickCastCard{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
@@ -2095,7 +2087,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
 <div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
@@ -2122,16 +2114,8 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <a class="home-action" id="homeMagnet" href="#queuePanel" data-home-link="magnet" title="Open the add-link box to paste a magnet link"><span class="home-icon" aria-hidden="true">🧲</span><strong>Cast a magnet link</strong><span>Paste a torrent magnet link</span></a>
 <a class="home-action" id="homeFind" href="#findPanel" title="Search the house libraries and YouTube"><span class="home-icon" aria-hidden="true">🔍</span><strong>Find something</strong><span>Search the house and YouTube</span></a>
 </div>
-<div class="home-grid">
-<div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
-<details class="home-card"><summary>In the room</summary><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></details>
-</div>
-<section id="homeIncomingPanel" aria-labelledby="homeIncomingHeading" hidden><h3 id="homeIncomingHeading">Incoming media</h3><ul id="homeIncomingRows" aria-label="Files arriving in this room"></ul><p class="field-hint">These transfers are not yet confirmed playable.</p></section>
-<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
-<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected receiver. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
-</section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
-<div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
+<div class="quick-links"><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
 <p class="section-desc">Choose <strong>Play now</strong> to request immediate room playback, or <strong>Next</strong> to put an item first in line without stopping the current film. Everyone here can reorder or remove waiting items.</p>
 <p id="queueFeedback" class="field-hint" role="status" aria-live="polite">Queue changes appear here once the SmoothCast computer accepts them.</p>
@@ -2189,6 +2173,12 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
 </details>
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+<div class="home-grid">
+<details class="home-card"><summary>In the room</summary><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></details>
+</div>
+<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
+<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected receiver. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
 </section>
 
 <p id="errorDash" role="status" aria-live="polite"></p>
@@ -2832,10 +2822,10 @@ function renderRoomTransfers(state){
   const signature=JSON.stringify(rows);
   if(signature===roomTransferSignature)return;roomTransferSignature=signature;
   const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
-  for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
+  for(const [panelId,listId] of [["queueIncomingPanel","queueIncomingRows"]]){
     const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
     if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
-    // Reuse stable rows so chunk ACKs do not rebuild two entire lists,
+    // Reuse stable rows so chunk ACKs do not rebuild the entire list,
     // interrupt assistive technology or disturb the user's scroll position.
     const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
     rows.forEach((row,index)=>{
@@ -2877,12 +2867,12 @@ function quickCastDestinationCopy(receiver){
 function renderQueueDestination(state){
   const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
   if(quickStatus&&quickStatus.textContent!==quickCopy)quickStatus.textContent=quickCopy;
-  const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
-  if(target)target.textContent=state.receiver||"No casting target selected";
-  if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  const mesh=$("queueMeshLink");
+  const target=state.receiver||"No casting target selected";
+  const playing=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
-  if(liveTarget&&target)liveTarget.textContent=target.textContent;
-  if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
+  if(liveTarget)liveTarget.textContent=target;
+  if(livePlayback)livePlayback.textContent=playing;
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
   if(mesh){const details=$("meshDetails");mesh.hidden=!details||details.hidden;}
 }
@@ -2895,7 +2885,7 @@ function renderNetworkActivity(entries){
 }
 function renderSharedQueue(s){
   const revision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;
-  renderQueue(s.queue,revision);renderHomeQueue(s.queue);
+  renderQueue(s.queue,revision);
   $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 }
 function applyStatus(d){
@@ -2930,24 +2920,7 @@ if(statusFailures)showError("errorDash","");
 statusFailures=0;showJoinedRoom();
   return true;
 }
-let homeQueueKey=null,homePeopleKey=null;
-function renderHomeQueue(items){
-  const list=$("homeQueue");if(!list)return;
-  const rows=Array.isArray(items)?items:[];
-  const preview=rows.slice(0,3);
-  const key=JSON.stringify([rows.length,preview.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration])]);
-  if(key===homeQueueKey)return;homeQueueKey=key;
-  const count=$("homeQueueCount");
-  const label=rows.length?`${rows.length} waiting`:"";
-  if(count&&count.textContent!==label)count.textContent=label;
-  if(!rows.length){const empty=document.createElement("li");empty.className="empty";empty.textContent="Nothing in Up Next yet";list.replaceChildren(empty);return}
-  list.replaceChildren(...preview.map(item=>{
-    const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
-    title.textContent=item.title||"Video";meta.className="muted";
-    meta.textContent=[mediaKindLabel(item.media_kind),item.duration?clock(item.duration):"",item.votes?`▲ ${item.votes}`:"",item.contributor?`Added by ${item.contributor}`:"Waiting to be played"].filter(Boolean).join(" · ");
-    li.append(title,meta);return li;
-  }));
-}
+let homePeopleKey=null;
 function renderHomePeople(room){
   const host=$("homePeople");if(!host)return;
   const participants=Array.isArray(room?.participants)?room.participants:[];
@@ -4247,7 +4220,7 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#findPanel,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);
@@ -4258,8 +4231,8 @@ function syncMediaSession(s){
     }
     if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
       target.scrollIntoView({block:"start",behavior:"auto"});
-      if((blade===target||target.id==="uploadCard")&&!target.contains(document.activeElement)){
-        const heading=$(target.id==="uploadCard"?"uploadHeading":target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="findPanel"?"findHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+      if((blade===target||["uploadCard","queuePanel","playback"].includes(target.id))&&!target.contains(document.activeElement)){
+        const heading=$(target.id==="queuePanel"?"queueHeading":target.id==="uploadCard"?"uploadHeading":target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="findPanel"?"findHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
         if(heading&&heading.focus)heading.focus({preventScroll:true});
       }
     }

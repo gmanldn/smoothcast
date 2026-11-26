@@ -399,8 +399,8 @@ _PANEL_HTML = r"""
     markScreenPending(li,key);
   }
   window.scRenderScreens=function(s){
-    const queuePanel=document.getElementById("queuePanel");
-    if(queuePanel&&panel.previousElementSibling!==queuePanel)queuePanel.after(panel);
+    const homePanel=document.getElementById("homePanel");
+    if(homePanel&&panel.previousElementSibling!==homePanel)homePanel.after(panel);
     panel.hidden=false;
     const screens=Array.isArray(s.screens)?s.screens:[];items=Array.isArray(s.queue)?s.queue:[];
     queueOptionsKey=JSON.stringify(items.map(q=>[q.id,q.title]));

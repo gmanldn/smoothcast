@@ -851,7 +851,7 @@ class Node{
   insertBefore(n,b){moves++;if(n.parent)n.remove();n.parent=this;this.children.splice(b?this.children.indexOf(b):this.children.length,0,n)}
   remove(){const p=this.parent;if(p){p.children.splice(p.children.indexOf(this),1);this.parent=null}}
 }
-const nodes=Object.fromEntries(["homeIncomingPanel","homeIncomingRows","queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
+const nodes=Object.fromEntries(["queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
 const $=id=>nodes[id], document={createElement(){made++;return new Node()}};
 const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 """
@@ -859,7 +859,7 @@ const mediaKindLabel=x=>x,fileUnits=x=>String(x);
 const a={id:"a",title:"Film",media_kind:"video",intent:"cast",stage:"receiving",received:0,size:100};
 const b={...a,id:"b",title:"Second",intent:"queue"};
 renderRoomTransfers({room_transfers:[a,b]});
-const list=nodes.homeIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
+const list=nodes.queueIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
 renderRoomTransfers({room_transfers:[{...a,received:60,stage:"buffering"},b]});
 assert.equal(made,count);assert.equal(moves,initialMoves);
 assert.equal(list.children[0],first);assert.equal(first.children[2].value,60);
@@ -868,7 +868,7 @@ renderRoomTransfers({room_transfers:[b]});
 assert.equal(list.children[0],second);assert.equal(list.children.length,1);
 assert.equal(made,count);
 renderRoomTransfers({room_transfers:[]});
-assert.equal(list.children.length,0);assert.equal(nodes.homeIncomingPanel.hidden,true);
+assert.equal(list.children.length,0);assert.equal(nodes.queueIncomingPanel.hidden,true);
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)
@@ -915,7 +915,7 @@ def test_home_is_media_first_without_duplicate_receiver_card():
     assert "homeTarget" not in page.ids
     assert "homeNowPlaying" not in page.ids
     for name in ("homePanel", "playback", "uploadCastNow", "quickQueueUpload",
-                 "homeQueue", "homeQueueCount", "homePeople", "roomInvite",
+                 "queue", "queueCount", "homePeople", "roomInvite",
                  "advancedPanel", "localLivePanel", "homeYoutube", "homeMagnet"):
         assert name in page.ids
     assert ("details", {"id": "castEntry", "class": "help"}) in page.elements
@@ -923,16 +923,13 @@ def test_home_is_media_first_without_duplicate_receiver_card():
                for tag, attrs in page.elements)
 
 
-def test_home_queue_signature_only_tracks_visible_preview_and_total():
+def test_home_uses_only_one_queue_and_transfer_projection():
     source = portal._HTML
-    start = source.index("function renderHomeQueue(items){")
-    end = source.index("function renderHomePeople", start)
-    preview = source[start:end]
-    assert "const preview=rows.slice(0,3)" in preview
-    assert "JSON.stringify([rows.length,preview.map(" in preview
-    assert "list.replaceChildren(...preview.map(" in preview
-    assert "rows.map(" not in preview
-
+    assert "function renderHomeQueue(" not in source
+    assert 'id="homeQueue"' not in source
+    assert 'id="homeIncomingRows"' not in source
+    assert source.count('id="queue"') == 1
+    assert source.count('id="queueIncomingRows"') == 1
 
 
 def test_web_fine_transport_buttons_use_authoritative_fences():
