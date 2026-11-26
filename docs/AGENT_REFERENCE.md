@@ -90,7 +90,7 @@ SmoothCast is a GTK4/libadwaita Chromecast companion app.
 - `setup/README.md` — install contract, safety and known portability gaps
 - `src/position_tracker.py` — authoritative source-time tracker with rate-aware pause/resume
 - `tests/` — pytest suite (runs without GTK/display)
-- `pytest.ini` — pytest config (testpaths, pythonpath=src)
+- `pyproject.toml` — build/metadata plus pytest config under `[tool.pytest.ini_options]`
 
 ## Architecture
 - GTK4 + libadwaita UI runs on the main thread via `Adw.Application`.

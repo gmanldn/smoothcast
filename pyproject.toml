@@ -282,6 +282,11 @@ smoothcast_assets = ["local.cast-control.png"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-q"
+markers = [
+    "multicast: requires loopback mDNS multicast support and skips cleanly when unavailable",
+    "perf: performance gates (opt-in with SMOOTHCAST_PERF=1; CI runs them in the search-performance job)",
+]
 # Lint gate (CI + pre-commit): correctness rules only, so the gate flags real
 # defects without churning the whole code base. Run: ruff check src scripts setup tests
 [tool.ruff]
