@@ -57,8 +57,8 @@ GitHub Issues ([docs/ISSUES.md](docs/ISSUES.md)) are authoritative; the read-onl
 - **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the
   smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
   evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
-- Owner policy (26 Nov 2026): **make new versions in `develop`**; bump
-  `src/version.py` SemVer there as owner-directed release commits, never on `main`.
-  The commit SHA identifies every build; version-history checks run on every ship,
-  even with `--skip-checks`. No auto merging/tagging/publishing to `main`.
+- Owner policy (26 Nov 2026): **make new versions in `develop`**, never on
+  `main`; bump `src/version.py` (`smoothcast --version`) as an owner-directed
+  release commit. Git commit SHA identifies every build; version-history checks
+  run on every ship, even with `--skip-checks`. No auto main merge/tag/publish.
   Packaging: `packaging/SmoothCast.spec`.
