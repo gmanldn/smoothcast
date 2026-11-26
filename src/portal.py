@@ -2381,15 +2381,16 @@ function releaseQueuePointer(){
   queuePressed=false;
   const pending=deferredQueue;
   deferredQueue=null;
-  if(pending)renderQueue(pending);
+  if(pending)renderQueue(pending.rows,pending.revision);
 }
 // Click follows pointerup, so retain the pressed button until its click runs.
 document.addEventListener("pointerup",()=>setTimeout(releaseQueuePointer,0));
 document.addEventListener("pointercancel",releaseQueuePointer);
 function mediaKindLabel(kind){return kind==="audio"?"Audio":kind==="video"?"Video":""}
-function renderQueue(items){
+function renderQueue(items,revision=queueRevision){
   const queue=queueElement,rows=Array.isArray(items)?items:[];
-  if(queuePressed){deferredQueue=rows;return}
+  if(queuePressed){deferredQueue={rows,revision};return}
+  queueRevision=revision;
   queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
     item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
@@ -2505,7 +2506,7 @@ function makeRoomEvents(env){
 }
 const roomEvents=makeRoomEvents({
   EventSource:typeof EventSource==="function"?EventSource:null,
-  apply:d=>{if(!busy)return applyStatus(d)},
+  apply:d=>applyStatus(d),
   canRun:()=>!!csrf&&!stalePage&&!document.hidden,
   fallback:()=>scheduleRefresh(),
   setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
@@ -2810,10 +2811,20 @@ function renderNetworkActivity(entries){
   if(signature===networkActivityKey)return;networkActivityKey=signature;
   activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 }
+function renderSharedQueue(s){
+  const revision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;
+  renderQueue(s.queue,revision);renderHomeQueue(s.queue);
+  $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;
+    const s=d.state||{};
+    // Queue and contribution progress are independent of pending transport commands.
+    // Do not discard their SSE snapshots while a control is awaiting acknowledgement.
+    renderSharedQueue(s);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
+    if(busy)return true;
+    applyAccentPreset(s.accent);shortcutState=s;
     renderPlaybackToggle(s.state);
     document.querySelectorAll("[data-action]").forEach(b=>{
       const action=b.dataset.action;
@@ -2825,10 +2836,9 @@ function applyStatus(d){
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
-$("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+renderQueueDestination(s);
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);
 if(statusFailures)showError("errorDash","");
@@ -3005,6 +3015,10 @@ window.addEventListener("keydown",event=>{
 
 async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
+  // A delayed positional edit must retain the revision on which it was made.
+  if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)&&extra.queue_revision===undefined){
+    extra={...extra,queue_revision:queueRevision};
+  }
   if(busy){
     // Stop supersedes waiting playback changes, not unrelated queue edits.
     if(action==="stop")for(const [key,pending] of pendingControls){
@@ -3030,7 +3044,7 @@ async function act(action,value,extra={}){
   try{
     const body={action,...extra};
     if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){
-      body.queue_revision=queueRevision;
+      body.queue_revision=extra.queue_revision;
       body.queue_command_id="q"+Date.now().toString(36)+"-"+(++queueCommandSeq).toString(36);
     }
     if(value!==undefined)body.value=value;
