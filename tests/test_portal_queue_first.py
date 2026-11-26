@@ -45,24 +45,26 @@ def test_destination_and_link_controls_without_receiver_or_provider():
     harness = """
 const assert=require("node:assert/strict");
 const elements={linkInput:{value:"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"},
-  linkAuthorised:{checked:true},meshNavLink:{hidden:true}};
+  linkAuthorised:{checked:true},meshNavLink:{hidden:true},meshDetails:{hidden:true}};
 const $=id=>elements[id] ||= {};
 let linkCapabilities={},linkStorageAvailable=null,linkPosting=false,
     youtubeSearchBusy=false;
 """
     checks = """
 renderQueueDestination({});
-assert.equal($("queueTarget").textContent,"No casting target selected");
-assert.equal($("queueNowPlaying").textContent,"Playback state unavailable");
+assert.equal($("quickCastStatus").textContent,"No room receiver selected. You can still add media to Up Next.");
+assert.equal($("liveRoomTarget").textContent,"No casting target selected");
+assert.equal($("liveRoomPlayback").textContent,"Playback state unavailable");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Idle",title:"Old",active:false});
-assert.equal($("queueTarget").textContent,"Lounge TV");
-assert.equal($("queueNowPlaying").textContent,"Idle");
+assert.equal($("quickCastStatus").textContent,"Selected receiver: Lounge TV. SmoothCast checks availability before sending any file.");
+assert.equal($("liveRoomTarget").textContent,"Lounge TV");
+assert.equal($("liveRoomPlayback").textContent,"Idle");
 renderQueueDestination({receiver:"Lounge TV",state_label:"Playing",title:"Film",active:true});
-assert.equal($("queueNowPlaying").textContent,"Playing · Film");
+assert.equal($("liveRoomPlayback").textContent,"Playing · Film");
 renderQueueDestination({receiver:"Lounge TV",state_label:"State unavailable",cast_feedback:{receiver:"Lounge TV",state:"failed",message:"Receiver did not return status."}});
-assert.equal($("queueNowPlaying").textContent,"Cast failed: Receiver did not return status.");
+assert.equal($("liveRoomPlayback").textContent,"Cast failed: Receiver did not return status.");
 renderQueueDestination({receiver:"Bedroom TV",state_label:"Idle",cast_feedback:{receiver:"Lounge TV",state:"failed",message:"Old failure"}});
-assert.equal($("queueNowPlaying").textContent,"Idle");
+assert.equal($("liveRoomPlayback").textContent,"Idle");
 updateLinkControls();
 assert.equal($("linkInput").disabled,false);
 assert.equal($("linkSubmit").disabled,true);
