@@ -2111,6 +2111,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking requires a supported receiver and known duration.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
+<div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
 <label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the receiver volume, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
@@ -2909,7 +2910,7 @@ function applyStatus(d){
     renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
     window.scRenderMeshRoom&&window.scRenderMeshRoom(s);renderNetworkActivity(s.network_activity);
     if(busy)return true;
-    applyAccentPreset(s.accent);shortcutState=s;
+    applyAccentPreset(s.accent);shortcutState=s;renderExtraTransport(s);
     renderPlaybackToggle(s.state);
     document.querySelectorAll("[data-action]").forEach(b=>{
       const action=b.dataset.action;
@@ -3075,6 +3076,36 @@ function shortcutCommand(action,state,seek,volume){
   return null;
 }
 
+const extraTransportClient="transport-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+let extraTransportSequence=0;
+function extraTransportEnvelope(action,state,seek,volume){
+  if(!["seek_back","seek_forward","mute"].includes(action)||!state||
+    typeof state.session_id!=="string"||!/^[a-f0-9]{32}$/.test(state.session_id)||
+    !Number.isSafeInteger(state.revision)||state.revision<0)return null;
+  if(action!=="mute"&&!Number.isFinite(seek))return null;
+  const command=shortcutCommand(action,state,seek,volume);
+  if(!command)return null;
+  return {action:command.action,client_id:extraTransportClient,command_id:"control-"+(++extraTransportSequence),
+    expected_session_id:state.session_id,expected_revision:state.revision,
+    payload:command.value===undefined?{}:{value:command.value}};
+}
+const extraTransportControls=[["seekBackTen","seek_back"],["seekForwardTen","seek_forward"],["toggleMute","mute"]];
+function renderExtraTransport(state){
+  const valid=state&&typeof state.session_id==="string"&&/^[a-f0-9]{32}$/.test(state.session_id)&&
+    Number.isSafeInteger(state.revision)&&state.revision>=0;
+  for(const [id,action] of extraTransportControls){
+    const button=$(id);if(button)button.disabled=!valid||!shortcutCommand(action,state,0,0);
+  }
+}
+for(const [id,action] of extraTransportControls){
+  $(id)?.addEventListener("click",()=>{
+    if(busy||stalePage||!csrf||editingControls.has("seek"))return;
+    const command=extraTransportEnvelope(action,shortcutState,Number($("seek").value),Number($("volume").value));
+    if(!command)return;
+    const {action:transportAction,...envelope}=command;
+    void act(transportAction,undefined,envelope);
+  });
+}
 window.addEventListener("keydown",event=>{
   if(event.defaultPrevented||event.repeat||event.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
   if(event.target instanceof Element&&event.target.closest("input,textarea,select,button,[contenteditable],[role=textbox],[role=slider]"))return;

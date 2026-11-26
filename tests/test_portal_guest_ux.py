@@ -932,3 +932,45 @@ def test_home_queue_signature_only_tracks_visible_preview_and_total():
     assert "JSON.stringify([rows.length,preview.map(" in preview
     assert "list.replaceChildren(...preview.map(" in preview
     assert "rows.map(" not in preview
+
+
+
+def test_web_fine_transport_buttons_use_authoritative_fences():
+    page = room_html()
+    for ident in ("seekBackTen", "seekForwardTen", "toggleMute"):
+        assert any(tag == "button" and attrs.get("id") == ident and "disabled" in attrs
+                   for tag, attrs in page.elements)
+    text = portal._HTML
+    assert "shortcutState=s;renderExtraTransport(s)" in text
+    assert "expected_session_id:state.session_id,expected_revision:state.revision" in text
+    assert "void act(transportAction,undefined,envelope)" in text
+
+
+def test_extra_transport_envelope_bounds_and_capabilities():
+    import shutil
+    import subprocess
+    import pytest
+
+    if not shutil.which("node"):
+        pytest.skip("Node.js unavailable")
+    script = portal._HTML
+    start = script.index("function shortcutCommand(")
+    end = script.index("const extraTransportControls=", start)
+    source = script[start:end]
+    checks = r"""
+const assert=require("node:assert/strict");
+const state={session_id:"a".repeat(32),revision:7,active:true,busy:false,can_seek:true,duration:120,volume:40};
+let command=extraTransportEnvelope("seek_back",state,3,40);
+assert.equal(command.payload.value,0);
+assert.equal(command.expected_revision,7);
+assert.equal(command.expected_session_id,state.session_id);
+assert.equal(extraTransportEnvelope("seek_forward",state,115,40).payload.value,120);
+assert.deepEqual(extraTransportEnvelope("mute",state,0,40).payload,{});
+assert.equal(extraTransportEnvelope("seek_forward",{...state,can_seek:false},10,40),null);
+assert.equal(extraTransportEnvelope("mute",{...state,volume:null},0,0),null);
+assert.equal(extraTransportEnvelope("seek_back",{...state,busy:true},10,40),null);
+assert.equal(extraTransportEnvelope("seek_back",{...state,session_id:"bad"},10,40),null);
+assert.equal(extraTransportEnvelope("seek_back",state,NaN,40),null);
+"""
+    result = subprocess.run(["node", "-e", source + checks], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
