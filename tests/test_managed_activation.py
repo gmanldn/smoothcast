@@ -422,3 +422,44 @@ def test_invalid_lease_duration_refused_before_state_mutation(root, duration):
     assert not (root / ma.JOURNAL).exists()
     assert ma.read_active(root)["current"] is None
 
+
+@pytest.mark.parametrize("name", [ma.ACTIVE, ma.JOURNAL, ma.LEASE])
+def test_deeply_nested_state_is_reported_as_activation_error(root, name):
+    clock = Clock()
+    settle_into_a(root, clock)
+    state = root / name
+    state.write_text('{"nested":' + "[" * 10000 + "]" * 10000 + "}")
+    with pytest.raises(ma.ActivationError, match="corrupt"):
+        ma.activate(root, B, probe=ok, clock=clock)
+    assert (root / "releases" / A / "main.py").is_file()
+
+
+@pytest.mark.parametrize("state", [[], {}, None, 123])
+def test_non_string_journal_state_is_refused_without_mutation(root, state):
+    clock = Clock()
+    settle_into_a(root, clock)
+    txn = ma.activate(root, B, probe=ok, clock=clock)
+    journal = ma._read(root / ma.JOURNAL)
+    journal["state"] = state
+    ma._atomic_write(root / ma.JOURNAL, journal, ma._noop)
+    before = ma.read_active(root)
+    with pytest.raises(ma.ActivationError, match="corrupt"):
+        ma.recover(root, clock=clock)
+    with pytest.raises(ma.ActivationError, match="corrupt"):
+        ma.rollback(root, txn)
+    assert ma.read_active(root) == before
+    assert ma._read(root / ma.JOURNAL) == journal
+
+
+def test_rollback_cannot_borrow_another_transactions_lease(root):
+    clock = Clock()
+    txn = ma.activate(root, A, probe=ok, clock=clock)
+    lease = ma._read(root / ma.LEASE)
+    lease["txn"] = "differenttransaction"
+    ma._atomic_write(root / ma.LEASE, lease, ma._noop)
+    before = ma.read_active(root)
+    with pytest.raises(ma.ActivationError, match="does not own"):
+        ma.rollback(root, txn)
+    assert ma.read_active(root) == before
+    assert ma._read(root / ma.LEASE) == lease
+    assert ma._read(root / ma.JOURNAL)["state"] == "switched"
