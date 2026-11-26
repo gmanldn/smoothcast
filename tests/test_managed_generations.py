@@ -224,3 +224,39 @@ def test_fifo_source_is_rejected_without_waiting_for_a_writer(tmp_path, monkeypa
     assert (root / "current").read_text() == "old-verified-generation"
     assert not (root / "releases" / COMMIT).exists()
     assert not list((root / "releases").glob(".staging-*"))
+
+@pytest.mark.parametrize("name", [
+    "src/CON.txt", "src/aux", "src/COM1.py", "src/LPT².log",
+    "src/file.", "src/dir /file.py", "src/bad?.py", "src/bad|name",
+    "src/bad\x01name", "STAGE-MANIFEST.JSON", "stage-manifest.json/child",
+    "src/.SMOOTHCAST-BUILD", "src/.smoothcast-build/child",
+])
+def test_nonportable_or_reserved_paths_rejected_before_staging(tmp_path, monkeypatch, name):
+    source, root, files = sample(tmp_path)
+    files[name] = next(iter(files.values()))
+
+    def no_io(_path):
+        pytest.fail("invalid manifest reached staging directory creation")
+
+    monkeypatch.setattr(mg, "_directory", no_io)
+    with pytest.raises(mg.StageError):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+
+
+@pytest.mark.parametrize("names", [
+    ("folder", "folder/file.py"), ("folder/file.py", "folder"),
+    ("folder", "FOLDER/file.py"),
+])
+def test_manifest_refuses_file_directory_collisions_in_either_order(names):
+    metadata = {"size": 0, "sha256": hashlib.sha256(b"").hexdigest()}
+    with pytest.raises(mg.StageError, match="collides with a directory"):
+        mg._manifest({name: metadata for name in names})
+
+
+def test_manifest_cannot_replace_build_marker_parent(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+    metadata = next(iter(files.values()))
+    monkeypatch.setattr(mg, "_directory", lambda _path: pytest.fail("unexpected staging I/O"))
+    for name in ("src", "SRC/entry.py"):
+        with pytest.raises(mg.StageError, match="reserved build marker"):
+            mg.stage_local_snapshot(root, source, COMMIT, {name: metadata})

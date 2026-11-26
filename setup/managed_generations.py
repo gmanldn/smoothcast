@@ -50,6 +50,14 @@ def _safe_name(name: object) -> str:
     if (path.is_absolute() or not path.parts or any(p in ("", ".", "..") for p in name.split("/"))
             or "/".join(path.parts) != name):
         raise StageError("Unsafe manifest path")
+    for part in path.parts:
+        # Win32 aliases trailing dots/spaces and treats these device names
+        # as special even with an extension. Reject them on every platform.
+        stem = part.split(".", 1)[0].rstrip(" ").upper()
+        if (part.endswith((".", " ")) or any(ord(ch) < 32 or ch in '<>"|?*' for ch in part)
+                or stem in {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+                or re.fullmatch(r"(?:COM|LPT)[1-9¹²³]", stem)):
+            raise StageError("Non-portable manifest path")
     return name
 
 
@@ -59,6 +67,7 @@ def _manifest(entries: object) -> list[tuple[str, int, str]]:
     planned: list[tuple[str, int, str]] = []
     names: set[str] = set()
     components: dict[str, str] = {}
+    directories: set[str] = set()
     total = 0
     for raw_name, attributes in entries.items():
         name = _safe_name(raw_name)
@@ -66,13 +75,21 @@ def _manifest(entries: object) -> list[tuple[str, int, str]]:
         folded = name.casefold()
         if folded in names:
             raise StageError("Duplicate or case-colliding manifest paths")
+        if folded in directories:
+            raise StageError("Manifest file collides with a directory")
         names.add(folded)
-        for i in range(1, len(name.split("/")) + 1):
-            prefix = "/".join(name.split("/")[:i])
+        parts = name.split("/")
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            if i < len(parts):
+                directory = prefix.casefold()
+                if directory in names:
+                    raise StageError("Manifest file collides with a directory")
+                directories.add(directory)
             prior = components.setdefault(prefix.casefold(), prefix)
             if prior != prefix:
                 raise StageError("Directory names collide by case")
-        if name == "stage-manifest.json":
+        if folded.split("/", 1)[0] == "stage-manifest.json":
             raise StageError("Candidate uses reserved stage manifest path")
         if not isinstance(attributes, dict):
             raise StageError("Invalid file metadata")
@@ -149,6 +166,12 @@ def stage_local_snapshot(root: Path, source: Path, commit: str, entries: object)
     if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
         raise StageError("Candidate commit must be an immutable lowercase SHA")
     planned = _manifest(entries)  # Reject unsafe names before any source I/O.
+    for name, _size, _digest in planned:
+        folded = name.casefold()
+        if (folded == BUILD_MARKER or folded.startswith(BUILD_MARKER + "/")
+                or BUILD_MARKER.startswith(folded + "/")
+                or (folded.startswith("src/") and not name.startswith("src/"))):
+            raise StageError("Candidate conflicts with the reserved build marker")
     root, source = Path(root), Path(source)
     if root.is_symlink() or source.is_symlink():
         raise StageError("Refusing a linked root/source")
