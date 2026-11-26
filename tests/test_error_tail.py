@@ -191,6 +191,30 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "owner/diag")
 
+    def test_new_observation_time_does_not_republish_identical_tail(self):
+        calls = []
+        target = error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag"},
+                                           transport=lambda *args: calls.append(args))
+        old = self._snapshot()
+        new = dict(old, observed_at=2)
+        fetch = lambda target: error_tail.render_envelope(old)
+        self.assertEqual(error_tail.publish(new, target, fetch_current=fetch), "unchanged")
+        self.assertFalse(calls)
+        for change in (dict(new, tail="different"), dict(new, build_sha="b" * 40),
+                       dict(new, platform_family="Windows")):
+            self.assertEqual(error_tail.publish(change, target, fetch_current=fetch), "published")
+        self.assertEqual(len(calls), 3)
+
+    def test_destination_rejects_ref_aliases_and_query_injection(self):
+        for branch in ("refs/heads/main", "MAIN", "HEAD", "snap?ref=main", "snap//x", "snap.lock"):
+            with self.subTest(branch=branch), self.assertRaises(error_tail.PublishDisabled):
+                error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag",
+                                           "SMOOTHCAST_ERRTAIL_BRANCH": branch})
+        for path in ("latest/x?ref=main", "latest/../x", "latest//x", "/latest/x"):
+            with self.subTest(path=path), self.assertRaises(error_tail.PublishDisabled):
+                error_tail.resolve_target({"SMOOTHCAST_ERRTAIL_REPO": "owner/diag",
+                                           "SMOOTHCAST_ERRTAIL_PATH": path})
+
     def test_transport_failure_propagates(self):
         def boom(repo, branch, path, content):
             raise error_tail.PublishDisabled("auth failed")

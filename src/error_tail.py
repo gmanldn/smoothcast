@@ -244,11 +244,17 @@ def resolve_target(env, *, transport=None) -> PublishTarget:
             "diagnostics repository (local --preview needs no configuration)."
         )
     if not _REPO.match(repo):
-        raise PublishDisabled(f"Invalid diagnostics repository '{repo}': expected owner/name.")
-    if branch in PROTECTED_BRANCHES:
-        raise PublishDisabled(f"Refusing protected branch '{branch}': use a diagnostics branch.")
-    if path.startswith("/") or ".." in path.split("/"):
-        raise PublishDisabled(f"Invalid diagnostics path '{path}'.")
+        raise PublishDisabled("Invalid diagnostics repository: expected owner/name.")
+    if (branch.casefold() in PROTECTED_BRANCHES or branch.startswith("refs/")
+            or branch == "HEAD"
+            or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", branch)
+            or ".." in branch or branch.endswith(".")
+            or any(not part or part.startswith(".") or part.endswith(".lock")
+                   for part in branch.split("/"))):
+        raise PublishDisabled("Invalid or protected diagnostics branch.")
+    if (not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", path)
+            or any(part in ("", ".", "..") for part in path.split("/"))):
+        raise PublishDisabled("Invalid diagnostics path.")
     return PublishTarget(repo, branch, path, transport or gh_transport)
 
 
@@ -261,7 +267,11 @@ def publish(snapshot: dict, target: PublishTarget, *, fetch_current=None) -> str
     body = render_envelope(snapshot)
     if fetch_current is not None:
         try:
-            if fetch_current(target) == body:
+            previous = json.loads(fetch_current(target))
+            # Observation time is metadata, not a change in the safe tail.
+            if isinstance(previous, dict) and {
+                k: value for k, value in previous.items() if k != "observed_at"
+            } == {k: value for k, value in snapshot.items() if k != "observed_at"}:
                 return "unchanged"
         except Exception:
             pass  # A failed read must never block an explicitly enabled write.
@@ -334,6 +344,10 @@ def main(argv: list[str] | None = None, env=None) -> int:
         status = publish(snapshot, target, fetch_current=http_fetch_current)
     except PublishDisabled as exc:
         print(f"SmoothCast error tail: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, subprocess.TimeoutExpired):
+        print("SmoothCast error tail: GitHub transport unavailable or timed out.",
+              file=sys.stderr)
         return 1
     print(f"SmoothCast error tail: {status} ({target.repo} {target.branch}:{target.path})",
           file=sys.stderr)
