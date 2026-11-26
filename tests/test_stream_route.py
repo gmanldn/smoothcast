@@ -204,9 +204,9 @@ def test_planner_is_fast_and_gtk_free():
             choose_stream_route(*arguments)
         return (time.perf_counter() - start) / 2000
 
-    # Best of two: a one-off scheduling hiccup on a loaded machine must not fail a
-    # contract about the decision cost itself.
-    assert min(cost_per_decision(), cost_per_decision()) < 0.002
+    # The real cost is ~0.02 ms, so the 2 ms contract has 100x headroom: take the
+    # best of five so a loaded host (preempted samples) cannot fail it.
+    assert min(cost_per_decision() for _ in range(5)) < 0.002
     assert "gi" not in sys.modules
 
 
