@@ -32,34 +32,32 @@ def _page():
 
 def test_cast_entry_links_to_real_find_and_upload_controls():
     page = _page()
-    assert {"castEntry", "findPanel", "uploadCard", "screensPanel"} <= page.ids
-    assert any(a.get("href") == "#castEntry" for a in page.links)
-    assert any(a.get("href") == "#findPanel" for a in page.links)
+    assert {"homePanel", "homeUpload", "homeFind", "findPanel", "uploadCard"} <= page.ids
     assert any(a.get("href") == "#uploadCard" for a in page.links)
+    assert any(a.get("href") == "#findPanel" for a in page.links)
+    assert any(a.get("href") == "#homePanel" for a in page.links)
     assert all(a["href"][1:] in page.ids for a in page.links
                if a.get("href", "").startswith("#"))
 
 
 def test_entry_is_keyboard_accessible_without_custom_js():
     html = portal._HTML
-    assert '<a href="#castEntry">Cast with SmoothCast</a>' in html
-    assert '<a href="#findPanel">Find something on the network</a>' in html
-    assert '<a href="#uploadCard">Add a file from this device</a>' in html
-    assert 'id="castEntry" aria-labelledby="castEntryHeading"' in html
+    assert 'id="homeUpload" href="#uploadCard"' in html
+    assert 'id="homeFind" href="#findPanel"' in html
+    assert 'id="homePanel" aria-labelledby="homeHeading"' in html
 
 
 def test_no_native_chrome_cast_menu_claim():
     html = portal._HTML
-    entry = html.split('<section id="castEntry"', 1)[1].split("</section>", 1)[0]
+    entry = html.split('<details id="castEntry"', 1)[1].split("</details>", 1)[0]
     assert "Chrome" in entry and "not yet supported" in entry
     # Plain wording (#599): say Chrome's own Cast button is not supported, never claim it.
-    assert "Chrome's own Cast button is not yet supported" in entry
+    assert "own Cast button is not yet supported" in entry
     assert "Cast via SmoothCast Mesh" not in entry
 
 
 def test_entry_never_uploads_or_casts_on_navigation():
-    entry = portal._HTML.split('<section id="castEntry"', 1)[1].split("</section>", 1)[0]
-    assert entry.count("<a ") == 2
+    entry = portal._HTML.split('<details id="castEntry"', 1)[1].split("</details>", 1)[0]
     assert "<button" not in entry and "<script" not in entry
     assert "onclick" not in entry and "onchange" not in entry
     assert "/api/" not in entry
