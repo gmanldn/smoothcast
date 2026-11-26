@@ -172,6 +172,15 @@ class TicketPatchHistoryTests(unittest.TestCase):
         with self.assertRaisesRegex(guard.VersionHistoryError, "duplicate PATCH.*#42"):
             guard.check_range(prior, merged)
 
+    def test_prefix_colliding_issue_ids_stay_distinct(self):
+        short = self.commit(2, "chore(version): PATCH for issue #12 [sc-auto-patch]")
+        long = self.commit(3, "chore(version): PATCH for issue #123 [sc-auto-patch]")
+        self.assertEqual(guard.check_range(self.base, long), 2)
+        self.assertEqual(guard.check_range(short, long), 1)
+        duplicate = self.commit(4, "chore(version): PATCH for issue #123")
+        with self.assertRaisesRegex(guard.VersionHistoryError, "duplicate PATCH.*#123"):
+            guard.check_range(long, duplicate)
+
 
 if __name__ == "__main__":
     unittest.main()
