@@ -1,8 +1,7 @@
 """SmoothCast's single authoritative semantic version.
 
-Owner policy: normal agent ships identify each develop revision by Git SHA
-without changing SemVer. Only explicit owner-authorised release operations
-assign release numbers; main integration and publication remain owner-manual.
+Owner policy: new versions are made in `develop`; the Git SHA also identifies
+each develop revision. Main integration and publication remain owner-manual.
 A running process retains its imported version until restart, even if the
 checkout changes asynchronously.
 """
@@ -16,7 +15,7 @@ import commit_identity
 
 MAJOR = 2
 MINOR = 1
-PATCH = 0
+PATCH = 4
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 

@@ -86,8 +86,7 @@ class StreamServerTests(unittest.TestCase):
             conn.close()
 
     def test_playlists_and_segments_send_no_cors_wildcard(self):
-        # A page on the network must not be able to read the stream through
-        # CORS; receivers use native media fetches that ignore it (issue #229).
+        # Legacy URLs and arbitrary origins must not gain browser access.
         for path in ("/movie.m3u8", "/segment-00000.ts"):
             for method in ("GET", "HEAD"):
                 with self.subTest(path=path, method=method):
@@ -96,6 +95,53 @@ class StreamServerTests(unittest.TestCase):
                     headers_ci = {name.lower(): value for name, value in headers.items()}
                     self.assertNotIn("access-control-allow-origin", headers_ci)
                     self.assertEqual(headers_ci.get("cache-control"), "no-store")
+    def test_active_hls_allows_only_default_cast_origin(self):
+        token = "a" * 32
+        server.write_policy(self.root, server.make_policy(None, token=token))
+        path = f"/segment-{token}-00000.m4s"
+        playlist = f"/movie-{token}-fmp4.m3u8"
+        for media in (path, playlist, f"/init-{token}.mp4"):
+            for method in ("GET", "HEAD"):
+                with self.subTest(media=media, method=method):
+                    status, _, headers = self.request(media, method, {"Origin": server.CAST_ORIGIN})
+                    self.assertEqual(status, 200)
+                    self.assertEqual(headers.get("Access-Control-Allow-Origin"), server.CAST_ORIGIN)
+                    self.assertNotIn("Access-Control-Allow-Credentials", headers)
+                    for origin in ("https://evil.example", "null", server.CAST_ORIGIN + ".evil.example"):
+                        status, _, headers = self.request(media, method, {"Origin": origin})
+                        self.assertEqual(status, 200)
+                        self.assertNotIn("Access-Control-Allow-Origin", headers)
+        status, _, headers = self.request(path, headers={"Origin": server.CAST_ORIGIN,
+                                                       "Range": "bytes=0-2"})
+        self.assertEqual(status, 206)
+        self.assertEqual(headers.get("Access-Control-Allow-Origin"), server.CAST_ORIGIN)
+        for denied in ("/session.json", "/movie.m3u8", "/movie-" + "b" * 32 + ".m3u8"):
+            status, _, headers = self.request(denied, headers={"Origin": server.CAST_ORIGIN})
+            self.assertEqual(status, 404)
+            self.assertNotIn("Access-Control-Allow-Origin", headers)
+        with mock.patch.object(server, "client_allowed", return_value=False):
+            status, _, headers = self.request(path, headers={"Origin": server.CAST_ORIGIN})
+            self.assertEqual(status, 403)
+            self.assertNotIn("Access-Control-Allow-Origin", headers)
+
+    def test_cast_preflight_preserves_host_origin_and_generation_checks(self):
+        token = "a" * 32
+        server.write_policy(self.root, server.make_policy(None, token=token))
+        path = f"/movie-{token}-fmp4.m3u8"
+        request = {"Origin": server.CAST_ORIGIN, "Access-Control-Request-Method": "GET",
+                   "Access-Control-Request-Headers": "Range, Content-Type"}
+        status, body, headers = self.request(path, "OPTIONS", request)
+        self.assertEqual((status, body), (204, b""))
+        self.assertEqual(headers.get("Access-Control-Allow-Origin"), server.CAST_ORIGIN)
+        for change in ({"Origin": "https://evil.example"},
+                       {"Access-Control-Request-Method": "POST"},
+                       {"Access-Control-Request-Headers": "Authorization"}):
+            self.assertEqual(self.request(path, "OPTIONS", {**request, **change})[0], 403)
+        self.assertEqual(self.request(path, "OPTIONS", {**request, "Host": "evil.example"})[0], 400)
+        self.assertEqual(self.request("/movie.m3u8", "OPTIONS", request)[0], 404)
+        with mock.patch.object(server, "client_allowed", return_value=False):
+            self.assertEqual(self.request(path, "OPTIONS", request)[0], 403)
+
     def test_hls_content_types_and_lengths_are_stable_for_get_and_head(self):
         samples = (
             ("/movie.m3u8", "application/vnd.apple.mpegurl",

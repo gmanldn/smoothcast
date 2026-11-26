@@ -1201,7 +1201,7 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
     for name in ("_portal_upload_path", "_portal_observe_queue",
                  "_portal_check_queue_revision", "_portal_queue_index",
                  "_portal_contributor", "_portal_record_contribution",
-                 "_portal_enqueue_contributed",
+                 "_portal_enqueue_contributed", "_portal_note_display_name",
                  "_portal_prune_queue_provenance"):
         setattr(host, name, MethodType(
             getattr(cast_portal_queue.PortalQueueMixin, name), host))
@@ -1611,7 +1611,7 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     host = SimpleNamespace(
         _closing=False, busy=False, _portal_queue_action=lambda *_: None,
         _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
-        _cast_path=cast,
+        _cast_path=cast, _portal_note_display_name=lambda *_: None,
     )
     payload = {"upload_id": "retry-me", "early": True}
     with pytest.raises(RuntimeError, match="submission failed"):
@@ -1625,6 +1625,30 @@ def test_cast_upload_submission_failure_can_retry_same_upload_id(tmp_path):
     assert "retry-me" in host._portal_accepted_uploads
     handle(host, "cast_upload", payload)
     assert cast.call_count == 2
+
+
+def test_cast_upload_keeps_the_guest_filename_in_the_queue(tmp_path):
+    """A played upload joins the queue under the guest's filename, not the opaque id."""
+    from textwrap import dedent
+
+    from gui_source import main_window_methods
+    import cast_portal_queue
+
+    namespace = {"portal": portal, "time": time}
+    exec(dedent(main_window_methods()["_portal_handle"]), namespace)
+    handle = namespace["_portal_handle"]
+    path = tmp_path / ("a" * 32 + ".mp4")     # the stored name is the upload id
+    assert path.name != "Holiday 2024.mp4"
+    host = SimpleNamespace(
+        _closing=False, busy=False, _portal_queue_action=lambda *_: None,
+        _portal_upload_path=lambda _: path, set_selection=mock.Mock(),
+        _cast_path=lambda *_: None,
+    )
+    host._portal_note_display_name = MethodType(
+        cast_portal_queue.PortalQueueMixin._portal_note_display_name, host)
+    handle(host, "cast_upload", {"upload_id": "u1", "early": False,
+                                 "name": "Holiday 2024.mp4"})
+    assert host._portal_queue_display_names[str(path)] == "Holiday 2024.mp4"
 
 
 def test_upload_receipt_reports_declined_early_cast_without_leaking_path(tmp_path):
@@ -1784,7 +1808,7 @@ for(const id of ["dashboard","uploadCard"]){
   let hidden=true;
   elements[id]={get hidden(){return hidden},set hidden(v){writes++;hidden=v}};
 }
-elements.queueHeading={focus(){focuses++}};
+elements.homeHeading={focus(){focuses++}};
 const $=id=>elements[id];
 """
     scenario = r"""
@@ -1870,3 +1894,93 @@ assert.equal(writes,2);assert.equal(text,"Next film");
     subprocess.run(["node", "-"], input=harness + script + scenario,
                    text=True, check=True, timeout=10)
 
+
+
+def test_concurrent_guest_uploads_visible_before_completion_without_private_handles(tmp_path):
+    import portal_uploads
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, first, a = login(rig, name="Alice")
+        _, second, b = login(rig, name="Bob")
+        origin = f"http://{rig.host}"
+        ids = []
+        for auth, cookie, filename in ((first, a, "film.mkv"), (second, b, "music.mp3")):
+            status, raw, _ = rig.request("POST", "/api/uploads",
+                {"name": filename, "size": 8}, cookie=cookie, csrf=auth["csrf"], origin=origin)
+            assert status == 201
+            ids.append(decode(raw)["id"])
+        status, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert status == 200
+        state = decode(raw)["state"]
+        assert state["queue"] == []
+        rows = state["room_transfers"]
+        assert [(row["title"], row["received"], row["media_kind"]) for row in rows] == [
+            ("film.mkv", 0, "video"), ("music.mp3", 0, "audio")]
+        assert all(set(row) == {"id", "title", "media_kind", "received", "size", "intent", "stage"} for row in rows)
+        assert all(upload_id not in json.dumps(rows) for upload_id in ids)
+        status, _, _ = rig.request("PUT", f"/api/uploads/{ids[0]}", b"abcd",
+            cookie=a, csrf=first["csrf"], origin=origin, content_type="application/octet-stream",
+            extra_headers={"Content-Range": "bytes 0-3/8"})
+        assert status == 200
+        status, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert status == 200
+        assert [row["received"] for row in decode(raw)["state"]["room_transfers"]] == [4, 0]
+        status, _, _ = rig.request("GET", f"/api/uploads/{ids[0]}", cookie=b)
+        assert status == 404
+        status, _, _ = rig.request("DELETE", f"/api/uploads/{ids[0]}",
+            cookie=a, csrf=first["csrf"], origin=origin)
+        assert status == 200
+        _, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert [row["title"] for row in decode(raw)["state"]["room_transfers"]] == ["music.mp3"]
+    finally:
+        rig.close()
+        uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_seek_preview_timestamp_survives_playhead_and_room_updates():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    paint = source[source.index("function paintPlayhead()"):
+                   source.index("let queueRenderKey=")]
+    status = source[source.index("function applyStatus(d)"):
+                    source.index("let homeQueueKey=")]
+    harness = r"""
+const nodes=new Map();
+const $=id=>{if(!nodes.has(id))nodes.set(id,{value:0,textContent:""});return nodes.get(id)};
+const editingControls=new Set();
+const clock=String,performance={now:()=>0};
+const projectPosition=s=>s.position;
+let playhead={s:{position:10,duration:100},age:0,at:0},paintedAt=-1;
+let shortcutState,queueRevision,statusFailures=0;
+const document={querySelectorAll:()=>[]},window={};
+const matchingBuild=()=>true,acceptRoomSnapshot=()=>true;
+const noop=()=>{};
+const applyAccentPreset=noop,renderPlaybackToggle=noop,monitorText=noop,playbackFeedback=noop,
+mediaKindLabel=noop,syncMediaSession=noop,trackPlayhead=noop,renderQueueDestination=noop,
+renderQueue=noop,renderHomeQueue=noop,renderRoomTransfers=noop,renderLibraryCopies=noop,
+renderLinkJobs=noop,renderRoom=noop,renderPeers=noop,renderNetworkActivity=noop,
+showError=noop,showJoinedRoom=noop;
+"""
+    scenario = r"""
+const assert=require("node:assert/strict");
+editingControls.add("seek");
+$("seek").value=65;$("elapsed").textContent="65";
+paintPlayhead();
+assert.equal($("progress").value,10,"real progress must advance");
+assert.equal($("seek").value,65);
+assert.equal($("elapsed").textContent,"65","timer overwrote drag preview");
+applyStatus({state:{position:12,duration:100,can_seek:true}});
+assert.equal($("progress").value,12);
+assert.equal($("seek").value,65);
+assert.equal($("elapsed").textContent,"65","snapshot overwrote drag preview");
+editingControls.delete("seek");
+applyStatus({state:{position:14,duration:100,can_seek:true}});
+assert.equal($("seek").value,14);
+assert.equal($("elapsed").textContent,"14");
+playhead.s.position=15;paintPlayhead();
+assert.equal($("seek").value,15);
+assert.equal($("elapsed").textContent,"15");
+"""
+    subprocess.run(["node", "-"], input=harness + paint + status + scenario,
+                   text=True, check=True, timeout=10)

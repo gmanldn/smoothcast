@@ -10,8 +10,10 @@ commit objects are read directly, without a Git subprocess or network. Anything
 malformed, oversized, delta-packed or unreadable fails closed to ``None`` so a
 caller never displays an invented identity.
 
-The weapon list and index rule are frozen identity data. Adding, removing or
-reordering a name would relabel every already-published commit.
+The codename is a disposable mnemonic, not canonical data: it is two weapons
+from :data:`WEAPON_NAMES` joined by ``-``, so consecutive commits almost never
+repeat. The committer date remains the authoritative high-water mark, and
+nothing depends on an alias staying stable across releases.
 """
 from __future__ import annotations
 
@@ -45,16 +47,22 @@ _MARKER = Path("src") / ".smoothcast-build"
 
 
 def codename(revision: str | None) -> str | None:
-    """Stable weapon alias for a commit; ``None`` without a valid full SHA.
+    """Disposable two-weapon alias for a commit; ``None`` without a valid SHA.
 
-    ``digest[0] % len(WEAPON_NAMES)`` is uniform while the tuple has 64
-    entries and is frozen: reordering, removing or adding a name would change
-    the alias of already-published commits.
+    Two words are drawn from :data:`WEAPON_NAMES` by independent digest bytes
+    (``64 * 64`` combinations) and joined by ``-``, so consecutive commits
+    almost never repeat. The alias is a pure function of the commit SHA but is
+    disposable: unlike the committer date it carries no canonical meaning.
     """
     if not revision or not _SHA.fullmatch(revision):
         return None
     digest = hashlib.sha256(revision.lower().encode("ascii")).digest()
-    return WEAPON_NAMES[digest[0] % len(WEAPON_NAMES)]
+    size = len(WEAPON_NAMES)
+    first = digest[0] % size
+    second = digest[1] % size
+    if second == first:
+        second = (second + 1) % size
+    return f"{WEAPON_NAMES[first]}-{WEAPON_NAMES[second]}"
 
 
 def _valid_date(value: str) -> bool:

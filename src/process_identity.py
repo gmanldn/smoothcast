@@ -10,6 +10,8 @@ import math
 import os
 import time
 
+import streamer_generation
+
 try:
     import psutil
 except ImportError:  # Source-only portable tests need not install runtime deps.
@@ -34,7 +36,10 @@ def role_of(argv: tuple[str, ...], *, server_script: str, progress_file: str) ->
     if not argv:
         return None
     executable = executable_name(argv[0])
-    if ((len(argv) >= 2 and argv[1] == server_script
+    cache_root = progress_file.replace("\\", "/").rpartition("/")[0]
+    if ((len(argv) >= 2
+         and (argv[1] == server_script or streamer_generation.is_frozen_worker(
+             argv[1], cache_root=cache_root))
          and executable.startswith(("python", "smoothcast")))
             or (executable.startswith("smoothcast")
                 and "--_smoothcast-hls-server" in argv)):

@@ -30,3 +30,128 @@ assert.equal(updateLinkControls(),false);assert($("linkAvailability").textConten
 """
     subprocess.run(["node", "-"], input=harness + controls + checks,
                    text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="requires Node.js")
+def test_download_progress_preserves_pending_cancel_control():
+    page = portal._HTML
+    render = page[page.index("function renderLinkJobs("):
+                  page.index("if(linkForm&&", page.index("function renderLinkJobs("))]
+    harness = r"""
+class Node{
+  constructor(){this.children=[];this.dataset={};this.attrs={};this.listeners={};this.textContent="";this.hidden=false;this.disabled=false}
+  append(...items){for(const item of items)this.insertBefore(item,null)}
+  insertBefore(item,before){if(item.parent)item.remove();const i=before?this.children.indexOf(before):this.children.length;this.children.splice(i,0,item);item.parent=this}
+  remove(){if(this.parent){const p=this.parent;p.children.splice(p.children.indexOf(this),1);this.parent=null}}
+  replaceChildren(...items){for(const item of [...this.children])item.remove();this.append(...items)}
+  addEventListener(name,fn){this.listeners[name]=fn}
+  setAttribute(k,v){this.attrs[k]=String(v)}
+  getAttribute(k){return this.attrs[k]??null}
+  hasAttribute(k){return k in this.attrs}
+  removeAttribute(k){delete this.attrs[k]}
+  set value(v){this.setAttribute("value",v)}
+  get value(){return Number(this.attrs.value||0)}
+}
+const elements={linkJobs:new Node(),linkJobPanel:new Node()};
+const $=id=>elements[id];
+const document={createElement:()=>new Node()};
+let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkStorageAvailable=null,linkSignature="";
+let disclosureOpens=0;
+const updateLinkControls=()=>{},openLinkAcquisition=()=>{disclosureOpens++},showError=()=>{},refresh=()=>{};
+const fileUnits=String,clock=String;
+let requests=[],resolvePost;
+const post=(url,body)=>{requests.push([url,body]);return new Promise(resolve=>{resolvePost=resolve})};
+"""
+    checks = r"""
+(async()=>{
+const assert=(ok,message)=>{if(!ok)throw Error(message)};
+const job={id:"a",kind:"youtube",title:"Film",stage:"downloading",received:10,total:100,can_cancel:true};
+const render=()=>renderLinkJobs({link_jobs:[job]});
+render();
+assert(disclosureOpens===1,"new download should open disclosure");
+render();assert(disclosureOpens===1,"identical snapshot reopened disclosure");
+const row=$("linkJobs").children[0];
+const cancel=row.children.find(n=>n.textContent==="Cancel download");
+assert(cancel,"cancel missing");
+const pending=cancel.listeners.click();
+job.received=20;render();
+assert(disclosureOpens===1,"progress reopened a manually closed disclosure");
+assert($("linkJobs").children[0]===row,"progress replaced row");
+assert(row.children.find(n=>n.textContent==="Cancel download")===cancel,"progress replaced cancel");
+assert(cancel.disabled,"pending cancel was re-enabled");
+await cancel.listeners.click();
+assert(requests.length===1,"duplicate cancel posted");
+assert(row.children[2].value===20,"progress did not update");
+job.total=null;render();
+assert(!row.children[2].hasAttribute("value"),"unknown total must be indeterminate");
+resolvePost({message:"Cancellation requested"});await pending;
+job.stage="cancelled";job.can_cancel=false;job.can_retry=true;render();
+assert(cancel.hidden&&!cancel.disabled,"cancel must be unavailable after cancellation");
+const retry=row.children.find(n=>n.textContent==="Retry download");
+assert(retry&&!retry.hidden,"retry missing");
+job.stage="pending";job.can_retry=false;render();
+assert(disclosureOpens===2,"retry should open the disclosure again");
+job.stage="resolving";render();assert(disclosureOpens===2,"active stage transition reopened disclosure");
+renderLinkJobs({link_jobs:[]});assert($("linkJobs").children.length===0,"stale row remains");
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + render + checks,
+                   text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="requires Node.js")
+def test_youtube_result_actions_respect_storage_and_request_lifecycle():
+    page = portal._HTML
+    start = page.index('(()=>{\n  const input=$("findInput"),search=$("youtubeSearch"),panel=')
+    render = page[start:page.index("// #591:", start)]
+    harness = r"""
+class Node {
+  constructor(){this.children=[];this.listeners={};this.value="";this.checked=false;this.disabled=false;this.hidden=true;this.textContent=""}
+  addEventListener(name,fn){this.listeners[name]=fn}
+  append(...nodes){this.children.push(...nodes)}
+  replaceChildren(){this.children=[]}
+  setAttribute(){}
+  focus(){this.focused=true}
+}
+const elements=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel","youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(id=>[id,new Node()]));
+const $=id=>elements[id],document={createElement:()=>new Node()};
+let youtubeSearchBusy=false,linkCapabilities={youtube:true},linkStorageAvailable=true;
+const clock=String,updateLinkControls=()=>{},refresh=()=>{};
+const requests=[];let finishAdd;
+const post=(url,body)=>{
+  requests.push([url,body]);
+  if(url==="/api/search/youtube")return Promise.resolve({results:[{id:"abcdefghijk",title:"Example"}]});
+  return new Promise(resolve=>{finishAdd=resolve});
+};
+"""
+    checks = r"""(async()=>{
+  const assert=(ok,msg)=>{if(!ok)throw Error(msg)};
+  $("findInput").value="example";
+  await $("youtubeSearch").listeners.click();
+  const add=$("youtubeResults").children[0].children[1].children[0];
+  $("youtubeAuthorised").checked=true;
+  linkStorageAvailable=false;
+  const blocked=add.listeners.click();
+  assert(requests.length===1,"unavailable storage must not submit");
+  await blocked;
+  assert($("youtubeSearchStatus").textContent.includes("storage is unavailable"),"explain storage problem");
+  assert($("youtubeResults").children.length===1,"preserve search results");
+  linkStorageAvailable=true;
+  const pending=add.listeners.click();
+  const duplicate=add.listeners.click();
+  assert(requests.length===2,"duplicate result action submitted");
+  await duplicate;
+  finishAdd({message:"Accepted"});await pending;
+  const accepted=add.listeners.click();
+  assert(requests.length===2,"accepted result submitted again");
+  await accepted;
+  await $("youtubeSearch").listeners.click();
+  const stale=$("youtubeResults").children[0].children[1].children[0];
+  $("findInput").value="new query";$("findInput").listeners.input();
+  $("youtubeAuthorised").checked=true;
+  const staleAttempt=stale.listeners.click();
+  assert(requests.length===3,"stale result submitted");
+  await staleAttempt;
+})().catch(error=>{console.error(error);process.exitCode=1});"""
+    subprocess.run(["node", "-"], input=harness + render + checks,
+                   text=True, check=True, timeout=10)

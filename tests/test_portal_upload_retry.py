@@ -114,6 +114,49 @@ if(validSavedUpload({...base,id:"bad"})||validSavedUpload({...base,size:0}))
     assert result.returncode == 0, result.stderr
 
 
+def _complete_js() -> str:
+    start = "async function completeUpload(path,queueOnly,headers){"
+    end = "// Keep only upload metadata."
+    assert SOURCE.count(start) == 1
+    return start + SOURCE.split(start, 1)[1].split(end, 1)[0]
+
+
+def test_final_room_action_is_retried_not_stalled():
+    js = _complete_js()
+    assert "client_reload_required" in js
+    assert "[408,409,429].includes(error.status)" in js
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_actual_complete_js_retries_transient_dispatch_and_stops_on_reload():
+    js = """
+let cancelUpload=false,pauseRequested=false,csrf="session",events=[],display=[];
+let uploadRequest=async()=>{throw Error("not configured")};
+const transferEvent=(m)=>events.push(m),showError=(...a)=>display.push(a);
+""" + _complete_js() + r"""
+(async()=>{
+ let calls=0;
+ uploadRequest=async()=>{calls++;if(calls===1)throw Object.assign(Error("busy"),{status:503});return {ok:true,queue_only:true}};
+ const ok=await completeUpload("/api/uploads/id",false,{});
+ if(calls!==2||ok.queue_only!==true)throw Error("transient dispatch was not retried");
+ calls=0;
+ uploadRequest=async()=>{calls++;throw Object.assign(Error("reload"),{status:409,code:"client_reload_required"})};
+ try{await completeUpload("/api/uploads/id",false,{});throw Error("reload stall retried")}
+ catch(error){if(error.code!=="client_reload_required")throw error}
+ if(calls!==1)throw Error("reload required must not retry");
+ calls=0;
+ uploadRequest=async()=>{calls++;throw Object.assign(Error("disk"),{status:413,code:"upload.disk_full"})};
+ try{await completeUpload("/api/uploads/id",false,{});throw Error("hard error retried")}
+ catch(error){if(error.status!==413)throw error}
+ if(calls!==1)throw Error("non-transient error must not retry");
+})().catch(err=>{console.error(err);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", js], capture_output=True, text=True, timeout=12, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def _recovery_order_js() -> str:
     start = '    const records=await uploadStorage("readonly",store=>store.getAll());'
     end = "    for(const record of candidates){"
@@ -153,3 +196,55 @@ async function run(storedRecords){
         ["node", "-e", js], capture_output=True, text=True, timeout=10, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_stale_cast_confirmation_keeps_selection_and_requires_reconfirmation():
+    start = "function recoverUnstartedCast(error){"
+    end = '$("uploadCastNow").addEventListener'
+    assert SOURCE.count(start) == 1
+    helper = start + SOURCE.split(start, 1)[1].split(end, 1)[0]
+    scenario = r"""
+let pendingUpload=null,batchFiles=[{name:"film.mp4"}],batchIndex=0,batchAdded=0,batchTotal=1,batchCastTarget="old",batchQueueOnly=false;
+const selected=batchFiles;
+if(!recoverUnstartedCast({status:409})||batchFiles!==null||batchCastTarget!==null||batchTotal!==0||selected[0].name!=="film.mp4")throw Error("stale confirmation retained");
+batchFiles=selected;batchCastTarget="new";batchTotal=1;
+for(const err of [{status:503},{status:409,code:"client_reload_required"}])if(recoverUnstartedCast(err))throw Error("unrelated failure reset");
+pendingUpload={id:"active"};
+if(recoverUnstartedCast({status:409})||batchFiles!==selected||batchCastTarget!=="new")throw Error("active upload lost");
+pendingUpload=null;batchIndex=1;
+if(recoverUnstartedCast({status:409}))throw Error("partially completed batch reset");
+batchIndex=0;batchQueueOnly=true;
+if(recoverUnstartedCast({status:409}))throw Error("queue-only intent reset");
+"""
+    result = subprocess.run(["node", "-e", helper + scenario], capture_output=True,
+                            text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "else if(recoverUnstartedCast(error))" in SOURCE
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_home_queue_shortcut_clears_cast_intent_without_touching_active_transfer():
+    start = "function chooseQueueUpload(){"
+    helper = start + SOURCE.split(start, 1)[1].split('$("quickQueueUpload").addEventListener', 1)[0]
+    start = "function quickCastDestinationCopy(receiver){"
+    helper += start + SOURCE.split(start, 1)[1].split("function renderQueueDestination", 1)[0]
+    scenario = r"""
+let uploading=false,pendingUpload=null,batchFiles=null,quickCastIntent=true,updates=0,focuses=0,errors=0;
+const controls={uploadQueue:{checked:false},videoFile:{focus(){focuses++}}};
+const $=id=>controls[id],updateUploadControls=()=>updates++,showError=()=>errors++;
+if(!chooseQueueUpload()||!controls.uploadQueue.checked||quickCastIntent||updates!==1||focuses!==1)throw Error("queue shortcut retained cast intent");
+for(const mode of ["uploading","pending","batch"]){
+  uploading=mode==="uploading";pendingUpload=mode==="pending"?{}:null;batchFiles=mode==="batch"?[]:null;
+  controls.uploadQueue.checked=false;quickCastIntent=true;
+  if(chooseQueueUpload()||controls.uploadQueue.checked||!quickCastIntent)throw Error("active transfer intent changed");
+}
+if(errors!==3||updates!==1)throw Error("locked transfer modified");
+if(!quickCastDestinationCopy("Living Room TV").includes("Living Room TV")||
+    !quickCastDestinationCopy(null).includes("Up Next"))throw Error("destination guidance missing");
+"""
+    result = subprocess.run(["node", "-e", helper + scenario], capture_output=True,
+                            text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert 'id="quickQueueUpload"' in SOURCE
+    assert '$("quickQueueUpload").addEventListener("click",chooseQueueUpload)' in SOURCE

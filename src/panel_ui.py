@@ -65,6 +65,18 @@ class PanelMixin:
             icon = Gtk.Image.new_from_icon_name(smoothcast_assets.ICON_NAME)
         icon.set_pixel_size(22)
         header.pack_start(icon)
+        identity_badge = Gtk.Label(label=version.identity_label())
+        identity_badge.add_css_class("dim-label")
+        identity_badge.add_css_class("caption")
+        identity_badge.set_ellipsize(Pango.EllipsizeMode.END)
+        identity_badge.set_max_width_chars(48)
+        identity_badge.set_tooltip_text(version.identity_label())
+        identity_badge.update_property(
+            [Gtk.AccessibleProperty.LABEL],
+            [f"Running {APP_NAME} {version.identity_label()}"],
+        )
+        header.pack_start(identity_badge)
+        self.version_badge = identity_badge
         if demo_mode.active():
             # Unmistakable in screenshots: nothing here controls a real receiver (#454).
             badge = Gtk.Label(label="DEMO")
@@ -139,6 +151,7 @@ class PanelMixin:
         settings = [self._build_settings_card()]
         console = self._build_console_card()
         details = self._build_details_card()
+        heartbeat = self._build_mesh_heartbeat_card()
         queue = self._build_queue()
         levels = self._build_live_levels()
         self.right_column.append(self._build_side_panel({
@@ -146,7 +159,7 @@ class PanelMixin:
             "devices": devices,
             "room": room,
             "settings": settings,
-            "info": [details, levels, console],
+            "info": [heartbeat, details, levels, console],
         }))
         self.page.append(self.left_column)
         self.page.append(self.right_column)

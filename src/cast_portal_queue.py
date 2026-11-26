@@ -14,6 +14,8 @@ import stat
 import secrets
 
 import portal
+import portal_uploads
+import queue_metadata
 
 
 def portal_queue_id(path: str) -> str:
@@ -38,10 +40,13 @@ class PortalQueueMixin:
 
     def _portal_prune_queue_provenance(self) -> None:
         queued_paths = set(self.queue)
+        active = getattr(self, "now_playing", None)
         for attr in ("_portal_queue_display_names", "_portal_queue_provenance"):
             records = getattr(self, attr, {})
             for path in tuple(records):
-                if path not in queued_paths:
+                if path not in queued_paths and not (
+                    attr == "_portal_queue_display_names" and path == active
+                ):
                     records.pop(path, None)
 
     def _portal_contributor(self, payload: dict) -> str | None:
@@ -50,6 +55,16 @@ class PortalQueueMixin:
         if callable(lookup):
             return lookup(payload.get("_portal_auth_key"))
         return None
+
+    def _portal_note_display_name(self, path: object, name: object) -> None:
+        """Keep the guest-supplied filename so the queue never shows the opaque upload id."""
+        if not isinstance(name, str) or not name:
+            return
+        display_names = getattr(self, "_portal_queue_display_names", None)
+        if display_names is None:
+            display_names = {}
+            self._portal_queue_display_names = display_names
+        display_names[str(path)] = name
 
     def _portal_record_contribution(self, path: str, contributor: str | None,
                                     source: str) -> None:
@@ -69,12 +84,29 @@ class PortalQueueMixin:
         self._portal_prune_queue_provenance()
         display_names = getattr(self, "_portal_queue_display_names", {})
         provenance = getattr(self, "_portal_queue_provenance", {})
-        rows = [{
-            "id": portal_queue_id(path),
-            "title": display_names.get(path, pathlib.Path(path).name),
-            "duration": self.queue_durations.get(path, 0.0),
-            **provenance.get(path, {}),
-        } for path in self.queue[:100]]
+        rows = []
+        cache = getattr(self, "_media_cache", {})
+        for path in self.queue[:100]:
+            name = display_names.get(path)
+            media = queue_metadata.cached_media(cache, path)
+            suffix = pathlib.Path(name or path).suffix.lower()
+            if media is not None and getattr(media, "has_video", False):
+                kind = "video"
+            elif media is not None and getattr(media, "is_audio_only", False):
+                kind = "audio"
+            elif suffix in portal_uploads.VIDEO_SUFFIXES:
+                kind = "video"
+            elif suffix in portal_uploads.AUDIO_SUFFIXES:
+                kind = "audio"
+            else:
+                kind = ""
+            rows.append({
+                "id": portal_queue_id(path),
+                "title": queue_metadata.media_title(path, media, name),
+                "duration": getattr(media, "duration", 0.0) or self.queue_durations.get(path, 0.0),
+                "media_kind": kind,
+                **provenance.get(path, {}),
+            })
         self._portal_observe_queue()
         return rows
 
@@ -211,7 +243,8 @@ class PortalQueueMixin:
             raise portal.PortalRequestError(404, "That media is no longer available")
         display_names = getattr(self, "_portal_queue_display_names", {})
         return {"path": str(path),
-                "title": display_names.get(str(path), path.name),
+                "title": queue_metadata.display_title(path, getattr(self, "_media_cache", {}),
+                                                      display_names.get(str(path))),
                 "duration": self.queue_durations.get(str(path), 0.0)}
 
     def _portal_queue_action(self, operation: str, payload: dict) -> str | dict | None:
@@ -224,17 +257,14 @@ class PortalQueueMixin:
             return "Up Next cleared. Current playback is unchanged."
         if operation == "queue_add":
             path = self._portal_upload_path(payload)
-            if self.busy:
-                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # Queue-only contributions do not own or mutate the receiver.
+            # Accept them while cast preparation is in flight.
             source = "link" if payload.get("_portal_source") == "link" else "upload"
+            if str(path) not in self.queue:
+                self._portal_note_display_name(path, payload.get("name"))
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), source)
-            name = payload.get("name")
-            if isinstance(name, str) and name:
-                display_names = getattr(self, "_portal_queue_display_names", None)
-                if display_names is None:
-                    display_names = {}
-                    self._portal_queue_display_names = display_names
-                display_names[str(path)] = name
+            if str(path) not in self.queue:
+                raise portal.PortalRequestError(503, "The room could not accept this media. Retry shortly.")
             return "Added to the queue."
         if operation == "queue_remove":
             self._portal_check_queue_revision(payload)
@@ -273,9 +303,10 @@ class PortalQueueMixin:
             except portal.PortalRequestError:
                 return self._portal_fetch_remote(payload.get("key"), self._portal_contributor(payload),
                                                  payload.get("_portal_auth_key"))
-            if self.busy:
-                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # Like validated uploads, a library queue edit does not own the receiver.
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), "library")
+            if str(path) not in self.queue:
+                raise portal.PortalRequestError(503, "The room could not accept this media. Retry shortly.")
             return "Added to the queue."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))

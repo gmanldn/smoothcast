@@ -76,7 +76,7 @@ def _read(path: Path, *, single_link: bool = False) -> dict | None:
         raise ActivationError(f"Cannot read {path.name}: {exc.strerror or exc}") from exc
     try:
         value = json.loads(raw) if len(raw) <= MAX_JSON else None
-    except ValueError:
+    except (ValueError, RecursionError):
         value = None
     if not isinstance(value, dict):
         raise ActivationError(f"{path.name} is corrupt; refusing to guess")
@@ -100,7 +100,8 @@ def _load_journal(root: Path) -> dict | None:
     if data is None:
         return None
     txn = data.get("txn")
-    if (data.get("state") not in STATES or not isinstance(txn, str)
+    state = data.get("state")
+    if (not isinstance(state, str) or state not in STATES or not isinstance(txn, str)
             or not txn.isalnum() or len(txn) > 64):
         raise ActivationError("journal.json is corrupt; refusing to guess")
     _commit(data.get("to"))
@@ -336,6 +337,9 @@ def rollback(root: Path, txn: str, *, hook: Callable[[str], None] = _noop) -> st
     journal = _load_journal(root)
     if journal is None or journal.get("txn") != txn or journal.get("state") in TERMINAL:
         raise ActivationError("No open activation to roll back")
+    lease = _validated_lease(root)
+    if lease is not None and lease["txn"] != txn:
+        raise ActivationError("Rollback does not own the activation lease")
     return _rollback(root, journal, hook)
 
 

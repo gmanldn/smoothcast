@@ -41,7 +41,7 @@ CAST_DEPENDENCIES_CHECK = (
     "pc=re.fullmatch(r'(\\d+)\\.(\\d+)\\.(\\d+)'"
     "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',p); "
     "pv=tuple(map(int,pc.groups())) if pc else (); "
-    "sys.exit(0 if c and (int(c[1]),int(c[2])) >= (0,12) "
+    "sys.exit(0 if c and (0,12) <= (int(c[1]),int(c[2])) < (0,14) "
     "and pc and (13,1,0) <= pv < (15,0,0) else 1)"
 )
 # pip dependencies installed into the isolated runtime. Keep in sync with the
@@ -74,8 +74,15 @@ WINDOWS_PACKAGES = (
     "mingw-w64-ucrt-x86_64-python",
     "mingw-w64-ucrt-x86_64-python-pip",
     "mingw-w64-ucrt-x86_64-python-gobject",
+    # UCRT64 cannot assume python.org binary wheels are ABI-compatible.
+    "mingw-w64-ucrt-x86_64-python-psutil",
+    "mingw-w64-ucrt-x86_64-python-zeroconf",
     "mingw-w64-ucrt-x86_64-gtk4",
     "mingw-w64-ucrt-x86_64-libadwaita",
+    "mingw-w64-ucrt-x86_64-gstreamer",
+    "mingw-w64-ucrt-x86_64-gst-plugins-base",
+    "mingw-w64-ucrt-x86_64-gst-plugins-good",
+    "mingw-w64-ucrt-x86_64-gst-libav",
     "mingw-w64-ucrt-x86_64-ffmpeg",
     "mingw-w64-ucrt-x86_64-gcc",  # pip may build pure/native dependencies
 )
@@ -333,7 +340,19 @@ def install_macos(*, check: bool = False) -> tuple[Path, dict[str, str]]:
 
 def msys2_root() -> Path:
     custom = os.environ.get("MSYS2_ROOT")
-    return Path(custom) if custom else Path(os.environ.get("SystemDrive", "C:") + "\\msys64")
+    if custom:
+        return Path(custom)
+    # Repair/check launched from Explorer must not forget a non-default
+    # runtime chosen during installation.
+    try:
+        record = native_runtime.load(VENV, target="windows")
+    except RuntimeError as exc:
+        raise SetupError(
+            f"{exc} Set MSYS2_ROOT to the intended runtime for explicit repair."
+        ) from exc
+    if record is not None:
+        return Path(str(record["prefix"]))
+    return Path(os.environ.get("SystemDrive", "C:") + "\\msys64")
 
 
 def download_verified_msys2() -> Path:
@@ -404,16 +423,35 @@ def windows_env(root: Path) -> dict[str, str]:
     return env
 
 
+def windows_packages_ready(root: Path, env: dict[str, str]) -> bool:
+    """Query the local package database; no upgrades, downloads or shell profiles."""
+    shell = root / "usr" / "bin" / "bash.exe"
+    if not shell.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [str(shell), "--noprofile", "--norc", "-c",
+             "pacman -Q " + " ".join(WINDOWS_PACKAGES)],
+            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=20, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     root = msys2_root()
     native_python = root / "ucrt64" / "bin" / "python.exe"
     env = windows_env(root)
     ready = python_ok(native_python) and works(native_python, GUI_CHECK, env=env)
+    packages_ready = windows_packages_ready(root, env)
     missing = check_tools(env)
     if check:
-        if not ready or missing:
+        if not ready or not packages_ready or missing:
             raise SetupError(f"Windows UCRT64 prerequisites missing: "
-                             f"GTK={not ready}, tools={', '.join(missing) or 'none'}")
+                             f"GTK={not ready}, native packages={not packages_ready}, "
+                             f"tools={', '.join(missing) or 'none'}")
         return native_python, env
     if not (root / "usr" / "bin" / "bash.exe").is_file():
         say("MSYS2 is missing: downloading the official checksum-verified installer.")
@@ -432,7 +470,7 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     shell = root / "usr" / "bin" / "bash.exe"
     if not shell.is_file():
         raise SetupError("MSYS2 installation incomplete: bash.exe is missing.")
-    if not ready or missing:
+    if not ready or not packages_ready or missing:
         # Updating MSYS2 is essential for its package trust database. Run a
         # second pass because first-time updates may replace the pacman binary.
         update = ["pacman", "-Syuu", "--noconfirm"]
@@ -442,6 +480,8 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
             str(shell), "-lc",
             "pacman -S --needed --noconfirm " + " ".join(WINDOWS_PACKAGES),
         ], env=env, timeout=1800)
+    if not windows_packages_ready(root, env):
+        raise SetupError("Windows UCRT64 package installation incomplete; rerun setup.")
     return pick_runtime([native_python], env=env), env
 
 
@@ -612,7 +652,19 @@ def main(argv: list[str] | None = None) -> int:
             if destination.resolve() == ROOT.resolve():
                 # The platform script may itself be run from an already installed
                 # application. This is a safe repair, not a recursive copy.
-                if not (ROOT / ".venv").exists():
+                registered = install_location.previous_directory(args.target)
+                known_install = (
+                    not destination.is_symlink()
+                    and registered is not None
+                    and registered.resolve() == ROOT.resolve()
+                    and (ROOT / "setup" / "bootstrap.py").is_file()
+                    and 'name = "smoothcast"' in
+                    (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+                )
+                # A missing venv is exactly the condition that requires repair.
+                # Only a known registered install (or an existing venv) may
+                # take this implicit in-place path; never adopt a checkout.
+                if not (ROOT / ".venv").exists() and not known_install:
                     raise SetupError("Use --in-place to install a source checkout in place")
                 say("Repairing existing installation in place")
             else:

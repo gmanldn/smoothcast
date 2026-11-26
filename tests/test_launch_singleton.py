@@ -99,18 +99,22 @@ class GuardBehaviourTests(unittest.TestCase):
                 mock.patch.object(launch.os, "kill",
                                   side_effect=AssertionError("never signal from a stale PID")):
             outcome = launch.ensure_single_instance(args)
-        return outcome, []
+        return outcome, args
 
     def test_no_running_instance_launches_normally(self):
         self.assertEqual(self.guard([], None, []), (None, []))
 
     @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
-    def test_second_launch_presents_and_does_not_start_again(self):
-        self.assertEqual(self.guard([101], True, []), (0, []))
+    def test_second_launch_asks_the_primary_to_reload_services(self):
+        # A confirmed primary is asked to bounce its services in place; the
+        # command line is forwarded so GApplication never starts a second GUI.
+        self.assertEqual(self.guard([101], True, []),
+                         (None, [launch.RELOAD_SERVICES_ARG]))
 
     def test_media_arguments_are_still_forwarded(self):
         # GApplication must forward the file, so let the GTK instance handle it.
-        self.assertEqual(self.guard([101], True, ["/films/a.mkv"]), (None, []))
+        self.assertEqual(self.guard([101], True, ["/films/a.mkv"]),
+                         (None, ["/films/a.mkv", launch.RELOAD_SERVICES_ARG]))
 
     @unittest.skipIf(os.name == "nt", "POSIX process signaling contract")
     def test_unresponsive_instance_refuses_duplicate_without_killing(self):
@@ -199,10 +203,11 @@ class EarlyActivationTests(unittest.TestCase):
              mock.patch.object(launch, "runtime_environment", return_value={}), \
              mock.patch.object(launch, "ensure_single_instance",
                                side_effect=AssertionError("guard must run once")), \
-             mock.patch.object(launch.os, "chdir"), \
-             mock.patch.object(launch.os, "execvpe", side_effect=OSError("stubbed exec")):
+             mock.patch.object(launch.subprocess, "call", side_effect=OSError("stubbed spawn")), \
+             mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery:
             with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}):
-                self.assertEqual(launch.main([], prechecked=True), 1)
+                self.assertEqual(launch.main([], prechecked=True), 130)
+            recovery.assert_called_once_with(1)
 
 
 class AppFailureTests(unittest.TestCase):
@@ -246,3 +251,52 @@ class AppFailureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_verified_managed_generation_is_used_instead_of_missing_flat_runtime():
+    python = Path("/managed/.venv/bin/python")
+    app = Path("/managed/src/cast_control.py")
+    with mock.patch.object(launch, "managed_target", return_value=(python, app)), \
+         mock.patch.object(launch, "runtime_python", side_effect=AssertionError("flat probe")):
+        assert launch.runtime_ready()
+        assert launch.python_path() == python
+
+
+def test_canonical_singleton_precheck_recognises_managed_primary():
+    app = Path("/managed/src/cast_control.py")
+    def instances(*, all_installations=False, target=None):
+        return [123] if all_installations or target == app else []
+    args = []
+    with mock.patch.object(launch, "managed_target", return_value=(Path("/managed/python"), app)), \
+         mock.patch.object(launch, "gui_instances", side_effect=instances), \
+         mock.patch.object(launch, "activate_existing", return_value=True):
+        assert launch.ensure_single_instance(args) is None
+    assert launch.RELOAD_SERVICES_ARG in args
+
+
+def test_desktop_failure_enters_recovery_but_normal_exit_does_not():
+    with mock.patch.object(launch, "gui_instances", return_value=[]), \
+         mock.patch.object(launch, "recovery_web", return_value=130) as recovery:
+        assert launch._desktop_exit(0) == 0
+        assert launch._desktop_exit(-2) == -2
+        recovery.assert_not_called()
+        assert launch._desktop_exit(1) == 130
+        recovery.assert_called_once_with(1)
+
+
+def test_failed_secondary_never_starts_another_recovery_server():
+    with mock.patch.object(launch, "gui_instances", return_value=[123]), \
+         mock.patch.object(launch, "recovery_web") as recovery:
+        assert launch._desktop_exit(1) == 1
+        recovery.assert_not_called()
+
+
+def test_missing_interpreter_enters_recovery_without_spawning_desktop():
+    with mock.patch.object(launch, "managed_target", return_value=None), \
+         mock.patch.object(launch, "python_path", side_effect=FileNotFoundError("missing")), \
+         mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery, \
+         mock.patch.object(launch.subprocess, "call") as spawn, \
+         mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
+        assert launch.main([], prechecked=True) == 130
+        recovery.assert_called_once_with(1)
+        spawn.assert_not_called()

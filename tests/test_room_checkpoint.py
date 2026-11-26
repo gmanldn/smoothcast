@@ -105,3 +105,30 @@ def test_checkpoint_rejects_nonlocal_urls_and_unbounded_queue(tmp_path):
 def test_checkpoint_module_is_in_the_installed_wheel_manifest():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     assert '"room_checkpoint"' in pyproject.read_text(encoding="utf-8")
+
+
+def test_original_display_names_survive_recovery_without_guest_state(tmp_path):
+    media = tmp_path / "opaque.mp4"
+    media.write_bytes(b"video")
+    missing = str(tmp_path / "missing.mp4")
+    checkpoint = tmp_path / "room.json"
+    room_checkpoint.write_checkpoint(checkpoint, [str(media), missing], display_names={
+        str(media): "Original film.mp4", missing: "Missing film", "/not/queued": "Never store this",
+    })
+    raw = json.loads(checkpoint.read_text())
+    assert set(raw) == {"schema_version", "items", "display_names"}
+    assert "/not/queued" not in raw["display_names"]
+    recovered = room_checkpoint.load_checkpoint(checkpoint)
+    assert recovered.display_names == ((str(media), "Original film.mp4"),)
+    assert recovered.unavailable == 1
+
+
+def test_invalid_display_names_do_not_prevent_queue_recovery(tmp_path):
+    media = tmp_path / "film.mkv"
+    media.write_bytes(b"film")
+    checkpoint = tmp_path / "room.json"
+    for bad in (123, "bad\nname", "x" * (room_checkpoint.MAX_TITLE_CHARS + 1)):
+        room_checkpoint.write_checkpoint(checkpoint, [str(media)], display_names={str(media): bad})
+        saved = room_checkpoint.load_checkpoint(checkpoint)
+        assert saved.items == (str(media),)
+        assert saved.display_names == ()

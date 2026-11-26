@@ -71,9 +71,11 @@ def test_disabled_service_opens_nothing(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_settings_default_off_and_are_validated(tmp_path):
+def test_settings_default_on_and_are_validated(tmp_path):
+    # VISION: trusted home LAN — nodes join automatically, so the mesh is on by
+    # default; only an explicit boolean false (or malformed input) turns it off.
     assert svc.load_settings(tmp_path / "missing.json") == {
-        "enabled": False, "strict": False, "seeds": (),
+        "enabled": True, "strict": False, "seeds": (),
         "remote_acquisition": False, "accept_acquisition": False}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"mesh_enabled": True, "mesh_strict": "yes",
@@ -82,6 +84,8 @@ def test_settings_default_off_and_are_validated(tmp_path):
     assert got == {"enabled": True, "strict": False, "seeds": ("192.168.1.4",),
                    "remote_acquisition": False, "accept_acquisition": False}
     path.write_text("[1,2")
+    assert svc.load_settings(path)["enabled"] is True
+    path.write_text(json.dumps({"mesh_enabled": False}))
     assert svc.load_settings(path)["enabled"] is False
     path.write_text(json.dumps({"mesh_enabled": "true"}))
     assert svc.load_settings(path)["enabled"] is False
@@ -144,6 +148,21 @@ def test_a_lonely_node_hints_that_multicast_may_be_blocked(tmp_path, monkeypatch
     time.sleep(0.2)
     assert "Multicast may be blocked" in s.diagnostics()["multicast_hint"]
     s.stop()
+
+
+def test_heartbeat_reports_the_first_node_up_and_stops_with_the_mesh(tmp_path):
+    s = make(tmp_path, "solo")
+    assert s.start()
+    try:
+        assert wait_for(lambda: (s.heartbeat_snapshot() or {}).get("state") == "up")
+        beat = s.heartbeat_snapshot()
+        assert beat["primary"]["self"] is True and beat["primary"]["name"] == "solo"
+        assert beat["seq"] >= 1 and beat["activities"]
+        assert "smoothcast-mesh-heartbeat" in mesh_threads()
+    finally:
+        s.stop()
+    assert s.heartbeat_snapshot() is None
+    assert wait_for(lambda: "smoothcast-mesh-heartbeat" not in mesh_threads())
 
 
 # -- lifecycle, leaks, containment ---------------------------------------------------------
@@ -251,6 +270,18 @@ def test_app_hook_is_inert_when_disabled_and_never_raises(monkeypatch, tmp_path)
     assert getattr(window, "_mesh", None) is None and mesh_threads() == before
 
 
+class FakeEntry:
+    def __init__(self):
+        self.closed = False
+        self.primary = None
+
+    def apply(self, is_primary):
+        self.primary = is_primary
+
+    def close(self):
+        self.closed = True
+
+
 def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypatch, tmp_path):
     import cast_mesh
     monkeypatch.setattr(svc, "load_settings",
@@ -267,6 +298,40 @@ def test_app_hook_runs_the_mesh_attaches_the_feed_and_publishes_clients(monkeypa
     cast_mesh.stop(window)
     assert window._mesh is None and window._portal.server.mesh_feed is None
     assert wait_for(lambda: not mesh_threads())
+
+
+def test_mesh_reuses_an_app_owned_entry_name_and_never_closes_it(monkeypatch, tmp_path):
+    import cast_mesh
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": True, "strict": False, "seeds": ()})
+    monkeypatch.setattr(svc, "config_path", lambda: tmp_path / "config.json")
+    window = FakeWindow()
+    entry = FakeEntry()
+    window._entry_name = entry
+    cast_mesh.start(window, LOOP)
+    try:
+        assert window._entry_name is entry
+        assert window._mesh_entry_owned is False
+    finally:
+        cast_mesh.stop(window)
+        assert window._entry_name is entry and not entry.closed
+        assert wait_for(lambda: not mesh_threads())
+
+
+def test_mesh_releases_only_the_entry_name_it_created(monkeypatch, tmp_path):
+    import cast_mesh
+    monkeypatch.setattr(svc, "load_settings",
+                        lambda path=None: {"enabled": False, "strict": False, "seeds": ()})
+    window = FakeWindow()
+    window._entry_name = FakeEntry()
+    window._mesh_entry_owned = True
+    owned = window._entry_name
+    cast_mesh.stop(window)
+    assert window._entry_name is None
+    assert wait_for(lambda: owned.closed)
+    # Second stop with no leftovers is a harmless no-op.
+    cast_mesh.stop(window)
+    assert window._entry_name is None
 
 
 def test_app_hook_advertises_only_enabled_local_link_workers(monkeypatch, tmp_path):

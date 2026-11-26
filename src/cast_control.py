@@ -511,8 +511,12 @@ class CastControlApp(Adw.Application):
         if window._closing:
             return False
         import mpris
+        import sc_core
 
         window._start_window_timers()
+        # Always-on house coordinator: keeps the mesh alive on a private LAN so
+        # nodes and web clients join automatically, even from a bare ZIP run.
+        sc_core.start(window)
         # Benchmark FFmpeg only after first paint, off GTK and at low priority.
         import low_end_policy
         low_end_policy.schedule_probe(enabled=bool(window.cfg.get("quality_auto", True)))
@@ -527,6 +531,42 @@ class CastControlApp(Adw.Application):
                 daemon=True,  # read-only probe must never delay GUI shutdown
             ).start()
         return False
+
+    def _reload_services(self) -> bool:
+        """Bounce background services in place; playback is never interrupted.
+
+        A relaunch of ``sc.py`` while SmoothCast runs reaches here so a changed
+        checkout or settings take effect. Only the room, mesh, library indexer,
+        heartbeat and MPRIS are restarted: the active cast, session and tracker
+        are untouched, so the film keeps playing.
+        """
+        window = self.window
+        if window is None or window._closing:
+            return False
+        # Before the first window timers run there is nothing to bounce; a cold
+        # start has already started every service.
+        if not getattr(window, "_timers_enabled", False):
+            return False
+        try:
+            window.reload_house_services()
+            window.toast("Services restarted; playback continues")
+        except Exception as exc:  # a failed bounce must never disturb the session
+            error_log.log(f"Service restart failed: {exc}")
+        self._restart_mpris()
+        return False
+
+    def _restart_mpris(self) -> None:
+        """Re-publish MPRIS2 after a bounce; best-effort like the first start."""
+        window = self.window
+        current, self._mpris = self._mpris, None
+        if current is not None:
+            try:
+                current.close()
+            except Exception:
+                pass
+        if window is not None:
+            import mpris
+            self._mpris = mpris.start(window)
 
     def _background_update(self) -> None:
         cfg = getattr(self.window, "cfg", None) or {}
@@ -623,6 +663,7 @@ class CastControlApp(Adw.Application):
         caller = command_line.get_cwd()
         caller_dir = pathlib.Path(os.fsdecode(caller)) if caller else pathlib.Path.cwd()
         action = None
+        reload_services = False
         paths: list[str] = []
         index = 0
         while index < len(raw):
@@ -630,6 +671,12 @@ class CastControlApp(Adw.Application):
             if argument == "--action" and index + 1 < len(raw):
                 action = raw[index + 1]
                 index += 2
+                continue
+            if argument == "--reload-services":
+                # A relaunch of sc.py asks the primary to bounce its services
+                # in place; playback is never interrupted (see _reload_services).
+                reload_services = True
+                index += 1
                 continue
             if argument.startswith("file://"):
                 path = GLib.filename_from_uri(argument)[0]
@@ -656,6 +703,8 @@ class CastControlApp(Adw.Application):
             GLib.timeout_add(250, self._guard_glib(
                 lambda: (window.perform_action(action), False)[1]
             ))
+        if reload_services:
+            GLib.timeout_add(250, self._guard_glib(self._reload_services))
         return 0
 
 

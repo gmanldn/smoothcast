@@ -66,6 +66,8 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn('set "SC_EXIT=%errorlevel%"', batch)
         self.assertIn("exit /b %SC_EXIT%", batch)
         self.assertIn("pause", batch)
+        self.assertIn("--silent --disable-interactivity", source)
+        self.assertIn("InstallLauncherAllUsers=0", source)
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell parser required")
     def test_windows_bootstrap_parses_without_running_installation(self):
@@ -222,7 +224,8 @@ class SetupContractTests(unittest.TestCase):
             ("0.12.0rc1", "13.1.0", False),
             ("0.13.dev0", "13.1.0", False),
             ("0.12", "13.1.0", True), ("0.12.0", "13.1.0", True),
-            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", True),
+            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", False),
+            ("0.13.9", "13.1.0", True), ("0.14.0", "13.1.0", False),
             ("0.12", "13.0.8", False), ("0.12", "15.0.0", False),
             ("0.12", "13.1.0rc1", False), ("0.12", "14.1.0", True),
         )
@@ -336,6 +339,11 @@ class SetupContractTests(unittest.TestCase):
         run.assert_called_once()
         self.assertIn("python3-venv", run.call_args.args[0])
 
+    def test_windows_native_packages_avoid_cpython_binary_wheels(self):
+        for name in ("python-psutil", "python-zeroconf", "gstreamer",
+                     "gst-plugins-base", "gst-plugins-good", "gst-libav"):
+            self.assertIn("mingw-w64-ucrt-x86_64-" + name, bootstrap.WINDOWS_PACKAGES)
+
     def test_windows_runtime_paths_expose_native_gtk_dlls(self):
         env = bootstrap.windows_env(Path("C:/msys64"))
         self.assertIn("ucrt64", env["PATH"])
@@ -343,10 +351,40 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("ucrt64", env["PYGI_DLL_PATH"])
         self.assertEqual(env["MSYSTEM"], "UCRT64")
 
+    def test_windows_check_rejects_missing_native_packages_without_installing(self):
+        with (mock.patch.object(bootstrap, "python_ok", return_value=True),
+              mock.patch.object(bootstrap, "works", return_value=True),
+              mock.patch.object(bootstrap, "check_tools", return_value=[]),
+              mock.patch.object(bootstrap, "windows_packages_ready", return_value=False),
+              mock.patch.object(bootstrap, "checked_run") as run,
+              mock.patch.object(bootstrap, "download_verified_msys2") as download):
+            with self.assertRaisesRegex(bootstrap.SetupError, "native packages=True"):
+                bootstrap.install_windows(check=True)
+        run.assert_not_called()
+        download.assert_not_called()
+
+    def test_windows_package_probe_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shell = root / "usr" / "bin" / "bash.exe"
+            shell.parent.mkdir(parents=True)
+            shell.touch()
+            with mock.patch.object(bootstrap.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                self.assertTrue(bootstrap.windows_packages_ready(root, {}))
+                self.assertEqual(run.call_args.args[0][1:4],
+                                 ["--noprofile", "--norc", "-c"])
+                self.assertTrue(run.call_args.args[0][-1].startswith("pacman -Q "))
+                run.return_value.returncode = 1
+                self.assertFalse(bootstrap.windows_packages_ready(root, {}))
+                run.side_effect = subprocess.TimeoutExpired("pacman", 20)
+                self.assertFalse(bootstrap.windows_packages_ready(root, {}))
+
     def test_windows_check_never_downloads_or_installs(self):
         with mock.patch.object(bootstrap, "python_ok", return_value=True), \
              mock.patch.object(bootstrap, "works", return_value=True), \
              mock.patch.object(bootstrap, "check_tools", return_value=[]), \
+             mock.patch.object(bootstrap, "windows_packages_ready", return_value=True), \
              mock.patch.object(bootstrap, "download_verified_msys2") as download, \
              mock.patch.object(bootstrap, "checked_run") as run:
             python, env = bootstrap.install_windows(check=True)
@@ -553,6 +591,27 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("O''Neil", source)
         self.assertIn("WScript.Shell", source)
         self.assertIn("CreateShortcut", source)
+
+    def test_windows_installed_shortcut_uses_bootstrap_and_verifies_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "App with spaces"
+            root.mkdir()
+            (root / "SmoothCast.bat").touch()
+            (root / "sc.py").touch()
+            roaming = Path(directory) / "Roaming"
+            with (mock.patch.object(shortcuts, "ROOT", root),
+                  mock.patch.dict(os.environ, {"LOCALAPPDATA": directory}),
+                  mock.patch.object(shortcuts, "write_windows_icon"),
+                  mock.patch.object(shortcuts.subprocess, "run") as run):
+                result = shortcuts.install_windows(appdata=roaming)
+            script = run.call_args.args[0][-1]
+            self.assertIn(str(root / "SmoothCast.bat"), script)
+            self.assertNotIn("python.exe", script)
+            self.assertIn("Test-Path -LiteralPath", script)
+            self.assertIn("$saved.TargetPath", script)
+            self.assertIn("$saved.WorkingDirectory", script)
+            self.assertEqual(result.name, "SmoothCast.lnk")
+            self.assertTrue(run.call_args.kwargs["check"])
 
     def test_macos_and_windows_never_try_linux_pid_cleanup(self):
         for system in ("Darwin", "Windows"):

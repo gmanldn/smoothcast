@@ -38,16 +38,22 @@ class PortalHostMixin:
                           f"{report['budget_ms']:.0f} ms); slow steps: {', '.join(report['overruns']) or 'none'}")
         shutdown_plan.ShutdownLedger().end(report)
 
-    def _stop_house_services(self) -> None:
-        """Stop the library indexer and mesh-library threads; safe to call twice."""
+    def _stop_house_services(self, *, keep_fingerprint: bool = False) -> None:
+        """Stop the library indexer and mesh-library threads; safe to call twice.
+
+        A service bounce passes ``keep_fingerprint`` so the process-wide content
+        key cache (used when casting and queueing) survives; only application
+        exit closes it.
+        """
         mesh, self._mesh_library = getattr(self, "_mesh_library", None), None
         indexer, self._library_indexer = getattr(self, "_library_indexer", None), None
         if mesh is not None:
             mesh.stop()
         if indexer is not None:
             indexer.stop(0.3)
-        import fingerprint
-        fingerprint.KEYS.close()
+        if not keep_fingerprint:
+            import fingerprint
+            fingerprint.KEYS.close()
 
     def _ensure_library_indexer(self, folders=None) -> None:
         """Start the shared-library indexer once folders exist (#408)."""
@@ -145,6 +151,9 @@ class PortalHostMixin:
         if label is None or getattr(self, "_closing", False):
             self._portal_activity_timer = None
             return False
+        refresh_qr = getattr(self, "_refresh_portal_qr", None)
+        if refresh_qr is not None:
+            refresh_qr()
         uploads = getattr(getattr(self, "_portal", None), "uploads", None)
         try:
             activity = uploads.snapshot() if uploads is not None else []

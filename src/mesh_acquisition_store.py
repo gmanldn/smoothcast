@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import stat
 from typing import Callable
 
 from mesh_acquisition_assignment import AssignmentLedger, LedgerError
@@ -68,8 +69,16 @@ class LedgerStore:
     def load(self, **kwargs) -> AssignmentLedger | None:
         """The stored ledger, None if never saved. Raises on any damage."""
         try:
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            # A corrupt FIFO/device must never block room startup or feed an
+            # unbounded stream. Check the opened object, not a pre-open stat.
+            flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0))
             with os.fdopen(os.open(self.path, flags), "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    raise LedgerError("ledger is not an ordinary file")
+                if info.st_size > MAX_BYTES:
+                    raise LedgerError("ledger file is oversized")
                 raw = handle.read(MAX_BYTES + 1)
         except FileNotFoundError:
             return None

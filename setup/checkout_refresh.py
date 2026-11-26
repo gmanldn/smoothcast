@@ -110,13 +110,30 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
     if source_version < installed_version:
         announce(installed_version, previous, "Loading newer installed version")
         return 0  # An old checkout must never downgrade a newer installation.
+    # ZIP downloads have no Git metadata. Do not invoke Git (including a
+    # parent's unrelated checkout), or refuse a repeat launch solely for that.
+    # An archive cannot prove ancestry, so keep the registered installation.
+    if not (root / ".git").exists():
+        if source_version > installed_version:
+            print("SmoothCast: this archive is newer than the registered install; "
+                  "explicit setup is needed to replace it.", file=sys.stderr, flush=True)
+        announce(installed_version, previous,
+                 "Loading registered installation; archive source revision unverified")
+        return 0
     head = git(root, "rev-parse", "--verify", "HEAD")
     revision = head.stdout.strip() if head is not None and head.returncode == 0 else None
-    # The local tracking ref is not a live remote check. But when it proves
-    # the checkout is behind, do not silently launch the outdated build.
+    branch = git(root, "symbolic-ref", "--short", "HEAD")
+    on_develop = (branch is not None and branch.returncode == 0
+                  and branch.stdout.strip() == "develop")
+    # The local tracking ref is not a live remote check, and it only describes
+    # the develop line. A detached HEAD (agent worktrees) or a checkout on any
+    # other branch must never be refused as "behind develop": only a real
+    # develop checkout can be compared against refs/remotes/origin/develop
+    # without a false staleness verdict that blocks a valid launch.
     tracked = git(root, "rev-parse", "--verify", "refs/remotes/origin/develop^{commit}")
     tracked_sha = tracked.stdout.strip() if tracked is not None and tracked.returncode == 0 else None
-    if (revision and tracked_sha and tracked_sha != revision and tracked_sha != previous
+    if (on_develop and revision and tracked_sha and tracked_sha != revision
+            and tracked_sha != previous
             and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", tracked_sha)):
         behind = git(root, "merge-base", "--is-ancestor", revision, tracked_sha)
         if behind is not None and behind.returncode == 0:
@@ -136,9 +153,7 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
             announce(installed_version, previous, "Loading newer installed build")
             return 0
     clean = install_location._clean_source_revision(root)
-    branch = git(root, "symbolic-ref", "--short", "HEAD")
-    if (not clean or clean != revision or branch is None or branch.returncode != 0
-            or branch.stdout.strip() != "develop"):
+    if not clean or clean != revision or not on_develop:
         print("SmoothCast: installed build differs; automatic refresh requires a clean "
               "develop checkout. Pull develop or run setup explicitly.", file=sys.stderr)
         return 1
@@ -155,7 +170,18 @@ def refresh(root: Path, installed: Path, target: str, running) -> int:
         print("SmoothCast: newer checkout available. Quit the application and run "
               "the platform setup script to update the installed copy.", file=sys.stderr)
         return 3
-    if running():
+    pids = running()
+    if pids:
+        # A running primary from this exact install can still be activated.
+        # Never copy over its files or start an older competing process.
+        import launch
+
+        app = installed / "src" / "cast_control.py"
+        if set(pids) & set(launch.gui_instances(target=app)):
+            print("SmoothCast: update deferred; activating the running installed build. "
+                  "Quit normally and rerun sc.py to apply the newer checkout.",
+                  file=sys.stderr, flush=True)
+            return 0
         print("SmoothCast: newer checkout available. Quit the existing SmoothCast "
               "window normally, then rerun sc.py to update it.",
               file=sys.stderr)

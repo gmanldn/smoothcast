@@ -24,6 +24,7 @@ def version(root, patch):
 def roots(tmp_path, monkeypatch):
     source, installed = tmp_path / "checkout", tmp_path / "installed"
     version(source, 3)
+    (source / ".git").mkdir()
     version(installed, 2)
     monkeypatch.setattr(refresh.install_location, "_clean_source_revision", lambda _: SHA)
     def git(_root, *args):
@@ -55,10 +56,24 @@ def test_never_downgrades_newer_install(roots, monkeypatch):
 
 
 def test_running_gui_is_not_overwritten(roots, monkeypatch):
+    import launch
+    monkeypatch.setattr(launch, "gui_instances", lambda **_kwargs: [])
     source, installed = roots
     call = Mock()
     monkeypatch.setattr(refresh.subprocess, "call", call)
     assert refresh.refresh(source, installed, "linux", lambda: [123]) == 3
+    call.assert_not_called()
+
+
+def test_running_installed_gui_can_activate_without_overwriting(roots, monkeypatch, capsys):
+    import launch
+    source, installed = roots
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    monkeypatch.setattr(launch, "gui_instances",
+                        lambda *, target: [123] if target == installed / "src" / "cast_control.py" else [])
+    assert refresh.refresh(source, installed, "linux", lambda: [123]) == 0
+    assert "update deferred" in capsys.readouterr().err
     call.assert_not_called()
 
 
@@ -139,6 +154,8 @@ def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, caps
     version(installed, 3)
     (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
     def git(_root, *args):
+        if args[0] == "symbolic-ref":
+            return Mock(returncode=0, stdout="develop")
         if args[0] == "rev-parse":
             return Mock(returncode=0, stdout=("b" * 40 if "refs/remotes" in args[-1] else SHA))
         if args == ("merge-base", "--is-ancestor", "b" * 40, SHA):
@@ -147,6 +164,28 @@ def test_known_behind_checkout_cannot_launch_stale_copy(roots, monkeypatch, caps
     monkeypatch.setattr(refresh, "git", git)
     assert refresh.refresh(source, installed, "linux", lambda: []) == 3
     assert "behind known origin/develop" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("symbolic_ref", [
+    Mock(returncode=1, stdout=""),            # detached HEAD (agent/worktree launch)
+    Mock(returncode=0, stdout="main\n"),      # a checkout on another branch
+])
+def test_non_develop_checkout_is_never_refused_as_behind(roots, monkeypatch, capsys,
+                                                         symbolic_ref):
+    """Only a real develop checkout may be judged against origin/develop (#595)."""
+    source, installed = roots
+    version(installed, 3)
+    (installed / "src" / refresh.install_location.BUILD_MARKER).write_text(SHA)
+    def git(_root, *args):
+        if args[0] == "symbolic-ref":
+            return symbolic_ref
+        if args[0] == "rev-parse":
+            return Mock(returncode=0, stdout=("b" * 40 if "refs/remotes" in args[-1] else SHA))
+        return Mock(returncode=0)
+    monkeypatch.setattr(refresh, "git", git)
+    # The install already matches the checkout, so this must simply launch.
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert "behind known origin/develop" not in capsys.readouterr().err
 
 
 def test_higher_version_does_not_override_diverged_build(roots, monkeypatch):
@@ -210,3 +249,17 @@ def test_same_version_refresh_consumes_real_installer_marker(roots, monkeypatch)
     assert refresh.installed_revision(installed) == SHA
     assert refresh.refresh(source, installed, "linux", lambda: []) == 0
     call.assert_called_once()
+
+
+@pytest.mark.parametrize("archive_version", [2, 3])
+def test_zip_repeat_launch_uses_registered_install_without_git(tmp_path, monkeypatch, capsys,
+                                                               archive_version):
+    source, installed = tmp_path / "extracted zip", tmp_path / "installed"
+    version(source, archive_version)
+    version(installed, 2)
+    monkeypatch.setattr(refresh, "git", Mock(side_effect=AssertionError("ZIP needs no Git")))
+    call = Mock()
+    monkeypatch.setattr(refresh.subprocess, "call", call)
+    assert refresh.refresh(source, installed, "linux", lambda: []) == 0
+    assert "archive source revision unverified" in capsys.readouterr().err
+    call.assert_not_called()

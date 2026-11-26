@@ -227,3 +227,25 @@ def test_cast_start_does_not_wait_behind_saturated_media_workers():
     finally:
         release.set()
         pool.shutdown()
+
+
+def test_thread_inventory_reports_live_threads_and_drops_finished_threads():
+    from async_jobs import thread_inventory
+    started, release = threading.Event(), threading.Event()
+
+    def work():
+        started.set()
+        release.wait(3)
+
+    thread = threading.Thread(target=work, name="sc-inventory-test", daemon=True)
+    thread.start()
+    try:
+        assert started.wait(2)
+        rows = thread_inventory()
+        assert any("sc-inventory-test" in row and "daemon" in row and "alive" in row
+                   for row in rows)
+        assert any(" · main · alive" in row for row in rows)
+    finally:
+        release.set()
+        thread.join(timeout=3)
+    assert not any("sc-inventory-test" in row for row in thread_inventory())

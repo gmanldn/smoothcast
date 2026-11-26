@@ -15,7 +15,7 @@ METHODS = main_window_methods()
 
 def lifecycle_type():
     """Execute only extracted lifecycle methods against a test double."""
-    names = ("_on_close", "_finish_delayed_close", "_stop_portal")
+    names = ("_on_close", "_finish_delayed_close", "_stop_portal", "_stop_sc_core")
     code = "class Lifecycle:\n" + "\n\n".join(
         textwrap.indent(textwrap.dedent(METHODS[name]), "    ") for name in names
     )

@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import statistics
@@ -112,6 +113,8 @@ def _safe_summary(value: object) -> dict | None:
     if not isinstance(value, Mapping) or value.get("schema") != SCHEMA_VERSION:
         return None
     protocol, mode, outcome = value.get("protocol"), value.get("mode"), value.get("outcome")
+    if not all(isinstance(item, str) for item in (protocol, mode, outcome)):
+        return None
     if protocol not in PROTOCOLS or mode not in MODES or outcome not in OUTCOMES:
         return None
     # Deliberately select fields. Paths, titles, receiver names/IPs, and future
@@ -127,7 +130,7 @@ def _safe_summary(value: object) -> dict | None:
         started = datetime.fromisoformat(str(safe["started_at"]).replace("Z", "+00:00"))
         if started.tzinfo is None:
             return None
-        if safe["encoder"] not in {"software", "hardware", "unknown"}:
+        if not isinstance(safe["encoder"], str) or safe["encoder"] not in {"software", "hardware", "unknown"}:
             safe["encoder"] = "unknown"
         for key in ("duration_ms", "playing_ms", "buffering_ms", "rebuffer_count"):
             number = safe[key]
@@ -146,11 +149,11 @@ def _safe_summary(value: object) -> dict | None:
             return None
         cpu = safe["cpu_peak_percent"]
         if cpu is not None and (
-                isinstance(cpu, bool) or not isinstance(cpu, (int, float)) or cpu < 0):
+                isinstance(cpu, bool) or not isinstance(cpu, (int, float)) or not math.isfinite(cpu) or cpu < 0):
             return None
         samples = safe["seek_latency_ms"]
         if not isinstance(samples, list) or len(samples) > 20 or any(
-                isinstance(item, bool) or not isinstance(item, (int, float)) or item < 0
+                isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(item) or item < 0
                 for item in samples):
             return None
     except (TypeError, ValueError, OverflowError):

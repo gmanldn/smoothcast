@@ -79,8 +79,8 @@ class DesktopIntegrationTests(unittest.TestCase):
 
     def test_runtime_launcher_uses_project_root_for_dock_launch(self):
         script = (Path(__file__).resolve().parents[1] / "setup/launch.py").read_text()
-        self.assertIn("os.chdir(ROOT)", script)
-        self.assertIn("os.execvpe(command[0], command, env)", script)
+        self.assertIn("subprocess.call(command, cwd=ROOT, env=env)", script)
+        self.assertIn("_desktop_exit(subprocess.call", script)
 
     def test_desktop_cli_parses_quiet_and_pin_without_crashing(self):
         # --quiet is invoked on every graphical startup. An invalid argparse

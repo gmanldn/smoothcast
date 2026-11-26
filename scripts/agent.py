@@ -891,10 +891,24 @@ def run_headless_check(cmd: list[str], timeout: int = 180
         return None, f"{cmd[0]} exceeded {timeout}s time budget"
 
 
+_NODE_ID = re.compile(r"(\S+::\S+)")
+
+
 def failing_ids(output: str) -> list[str]:
-    """Node ids of failed tests from pytest -q output."""
-    return sorted({line.split()[1] for line in output.splitlines()
-                   if line.startswith(("FAILED ", "ERROR ")) and len(line.split()) > 1})
+    """Node ids of failed tests from pytest -q output.
+
+    Includes ``SUBFAILED`` subtest lines so a pre-existing red (e.g. a size
+    ratchet tripped by an earlier commit) is not misattributed to this push;
+    the node id after the ``SUBFAILED(...)`` marker may contain spaces inside
+    the parentheses, so match the ``module::test`` token directly.
+    """
+    ids = set()
+    for line in output.splitlines():
+        if line.startswith(("FAILED ", "ERROR ", "SUBFAILED")):
+            match = _NODE_ID.search(line)
+            if match:
+                ids.add(match.group(1))
+    return sorted(ids)
 
 
 def failing_on_develop(ids: list[str]) -> set[str]:
@@ -1555,7 +1569,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--assign-patch", action="store_true",
-                   help="deprecated compatibility flag; ignored (no per-ticket version bump)")
+                   help="deprecated compatibility flag; ignored (make new versions in develop)")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)

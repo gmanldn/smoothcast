@@ -62,6 +62,9 @@ def window(*, durations=None, probe=None):
             self.queue_durations.owner_thread = threading.get_ident()
             self.now_playing = "current-film"
             self.selected_index = 0
+            self.busy = False
+            self.session = None
+            self.external = False
             self._closing = False
             self._media_cache = {}
             self._rebuild_queue = mock.Mock()
@@ -235,3 +238,46 @@ def test_media_publish_only_keeps_queued_current_files_and_respects_bound():
                                      max_entries=1)
         assert len(cache) == 1
         assert str(paths[2]) not in cache
+
+
+def test_background_enqueue_never_auto_selects_during_receiver_preparation():
+    w, jobs, _ = window()
+    w.now_playing = None
+    w.selected_index = None
+    w.busy = True
+    w._enqueue(["background.mkv"])
+    assert w.queue == ["background.mkv"]
+    assert len(jobs) == 1
+    w.set_selection.assert_not_called()
+
+
+def test_idle_empty_queue_still_selects_first_media():
+    w, _, _ = window()
+    w.now_playing = None
+    w.selected_index = None
+    w._enqueue(["first.mkv"])
+    w.set_selection.assert_called_once_with("first.mkv")
+
+
+def test_uncached_queue_titles_never_stat_files(monkeypatch):
+    fingerprint = mock.Mock(side_effect=AssertionError("cache miss must not access filesystem"))
+    monkeypatch.setattr(queue_metadata, "file_fingerprint", fingerprint)
+    for entry in (None, (), (None, object()), ((1, 2, 3, 4, 5), None), 123):
+        path = "/remote/opaque.mp4"
+        cache = {path: entry}
+        assert queue_metadata.cached_media(cache, path) is None
+        assert queue_metadata.display_title(path, cache, "Original film.mp4") == "Original film.mp4"
+    for index in range(100):
+        assert queue_metadata.display_title(f"/remote/{index}.mkv", {}) == f"{index}.mkv"
+    fingerprint.assert_not_called()
+
+
+def test_cast_cache_miss_probes_without_redundant_stat(monkeypatch):
+    fingerprint = mock.Mock(side_effect=AssertionError("no cached media to validate"))
+    monkeypatch.setattr(queue_metadata, "file_fingerprint", fingerprint)
+    media = SimpleNamespace(duration=20.0)
+    probe = mock.Mock(return_value=media)
+    for entry in (None, (), (None, media), ((1, 2, 3, 4, 5), None)):
+        assert queue_metadata.media_for_cast(entry, "/remote/film.mp4", probe) == (media, None)
+    assert probe.call_count == 4
+    fingerprint.assert_not_called()

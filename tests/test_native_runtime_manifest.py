@@ -126,7 +126,27 @@ def test_launcher_handles_corrupt_record_without_spawning_gui():
         with mock.patch.object(launch, "VENV", venv), \
              mock.patch.object(launch, "python_path", return_value=Path(sys.executable)), \
              mock.patch.object(launch, "ensure_single_instance", return_value=None), \
-             mock.patch.object(launch.os, "execvpe") as execvpe, \
+             mock.patch.object(launch.subprocess, "call") as spawn, \
+             mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery, \
              mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
-            assert launch.main([]) == 1
-        execvpe.assert_not_called()
+            assert launch.main([]) == 130
+        spawn.assert_not_called()
+        recovery.assert_called_once_with(1)
+
+
+
+def test_windows_setup_repair_uses_saved_msys2_root():
+    with tempfile.TemporaryDirectory() as directory:
+        temp = Path(directory)
+        prefix, python = fake_platform(temp, "windows")
+        venv = temp / ".venv"
+        native_runtime.save(
+            venv, target="windows", native_python=python,
+            env={"MSYS2_ROOT": str(prefix)},
+        )
+        with mock.patch.object(bootstrap, "VENV", venv), mock.patch.dict(
+                os.environ, {"MSYS2_ROOT": ""}):
+            assert bootstrap.msys2_root() == prefix
+        with mock.patch.object(bootstrap, "VENV", venv), mock.patch.dict(
+                os.environ, {"MSYS2_ROOT": str(temp / "Explicit repair")}):
+            assert bootstrap.msys2_root() == temp / "Explicit repair"

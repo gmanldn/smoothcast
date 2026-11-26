@@ -191,3 +191,26 @@ def test_old_terminal_journal_does_not_hide_new_staging_or_check(terminal):
     assert d(phase="checking", **facts).state == "checking"
     ready = d(candidate=B, candidate_signed=True, phase="staged", staged_commit=B, **facts)
     assert ready.state == "ready" and "restart_now" in ready.actions
+
+@pytest.mark.parametrize("changes", [
+    {"phase": "unknown"}, {"journal_state": "unknown"},
+    {"journal_state": "acked", "active_commit": None},
+    {"journal_state": "acked", "active_commit": "a" * 7},
+    {"journal_state": "acked", "running_commit": 123},
+])
+def test_inconsistent_update_state_never_claims_current_or_offers_restart(changes):
+    facts = dict(candidate=A, candidate_signed=True, active_commit=A)
+    facts.update(changes)
+    status = d(**facts)
+    assert status.state == "unconfirmed"
+    assert status.actions == ("check_now",)
+    assert not status.running_new_version
+
+
+def test_updated_build_does_not_offer_rollback_during_playback():
+    facts = dict(running_commit=B, active_commit=B, previous_commit=A, journal_state="acked")
+    assert "rollback" in d(**facts).actions
+    playing = d(playing=True, **facts)
+    assert playing.running_new_version and playing.actions == ("check_now",)
+    assert "unavailable during playback" in playing.detail
+

@@ -809,6 +809,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.room.remember({m["id"]: m.get("title") for m in merged})
         self.server.room.prune(live_ids)
         state["queue"] = merged
+        uploads = self.server.uploads
+        state["room_transfers"] = uploads.room_transfers() if uploads is not None else []
         state["room"] = self.server.room.snapshot(participant_id)
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
@@ -838,8 +840,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _event_key(self) -> tuple | None:
         """Cheap change detector over the published snapshot; ignores the moving playhead."""
         peeked = self.server.status_peek() if self.server.status_peek is not None else None
+        uploads = self.server.uploads
+        transfers = tuple(tuple(row.values()) for row in uploads.room_transfers()) if uploads is not None else ()
         if peeked is None:
-            return None
+            return (transfers,)
         state = peeked[1]
         queue = state.get("queue") if isinstance(state.get("queue"), list) else []
         items = tuple((q.get("id"), q.get("title")) for q in queue if isinstance(q, dict))
@@ -849,7 +853,7 @@ class _Handler(BaseHTTPRequestHandler):
         jobs = self.server.link_jobs
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         return (fields, items, self.server.room.seq, jobs.revision() if jobs is not None else 0,
-                activity.revision() if activity is not None else 0)
+                activity.revision() if activity is not None else 0, transfers)
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
@@ -861,6 +865,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not self.server.acquire_event_stream(participant_id):
             return self._send(429, {"ok": False, "error": "Too many room streams are open. Close one and retry.",
                                     "code": "room.rate_limited"}, extra_headers={"Retry-After": "5"})
+        key = self._event_key()
         try:
             first = self._room_payload(participant_id)
         except PortalRequestError as exc:
@@ -879,7 +884,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         clock, server = self.server.clock, self.server
-        key = self._event_key()
         last_write = last_state = clock()
         payload = first
         try:
@@ -1132,6 +1136,17 @@ class _Handler(BaseHTTPRequestHandler):
                 return
         if portal_screens_http.route(self, "POST", path):
             return  # parses its own body; must run before the generic parse
+        if path == "/api/uploads/target":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            try:
+                self._body()
+                target = self.server.dispatch("upload_target", {
+                    "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
+                })
+                return self._send(200, {"ok": True, **target})
+            except PortalRequestError as exc:
+                return self._exception_error(exc)
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
@@ -1140,9 +1155,19 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
                 body = self._body()
                 token = self._cookie_token() or ""
+                queue_only = bool(body.get("queue", True))
+                cast_target = body.get("cast_target")
+                if cast_target is not None and not queue_only:
+                    if not isinstance(cast_target, str) or not re.fullmatch(r"[0-9a-f]{64}", cast_target):
+                        raise PortalRequestError(400, "Invalid casting target confirmation")
+                    target = self.server.dispatch("upload_target", {
+                        "_portal_auth_key": self.server._session_key(token),
+                    })
+                    if target.get("target_id") != cast_target:
+                        raise PortalRequestError(409, "Casting target changed. Confirm the current receiver again.")
                 created = self.server.uploads.create(
                     token, body.get("name"), body.get("size"),
-                    self.client_address[0], queue_only=bool(body.get("queue", True)))
+                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None)
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
@@ -1182,6 +1207,7 @@ class _Handler(BaseHTTPRequestHandler):
                         self.server.dispatch("queue_add" if queue_only else "cast_upload", {
                             "path": str(media_path), "name": name,
                             "upload_id": upload_id, "early": False,
+                            "cast_target": self.server.uploads.cast_target(token, upload_id),
                             "_portal_source": "upload",
                             "client": self.client_address[0],
                             "_portal_auth_key": key,
@@ -1197,7 +1223,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self.server.uploads.finish_dispatch(token, upload_id, accepted=True)
                 message = ("Added to the shared queue." if queue_only else
                            "Upload received; playback request accepted.")
-                return self._send(202, {"ok": True, "message": message})
+                return self._send(202, {"ok": True, "message": message, "queue_only": queue_only})
             except PortalRequestError as exc:
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
@@ -1436,6 +1462,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.dispatch("cast_upload", {
                 "path": result["cast_path"], "name": result["name"],
                 "upload_id": upload_id, "early": True,
+                "cast_target": self.server.uploads.cast_target(self._cookie_token() or "", upload_id),
                 "client": result.get("client", ""),
                 "_portal_auth_key": self.server._session_key(self._cookie_token() or ""),
             })
@@ -1578,6 +1605,9 @@ class Portal:
                 self.server.session_key_active)
         self.url = f"http://{self.bind_ip}:{self.port}/"
         self.friendly_url = f"http://{self.name}.local:{self.port}/"
+        self._entry = None
+        # Screens/QR read the live join URL so a claimed stable name is used.
+        self.server.join_url = self.join_url
         self._zeroconf = None
         self._service_info = None
         self._advertise()
@@ -1594,6 +1624,16 @@ class Portal:
                                        kwargs={"poll_interval": 0.1},
                                        name="smoothcast-portal", daemon=True)
         self.thread.start()
+
+    def attach_entry(self, entry: object | None) -> None:
+        """Point the join URL at a claimed stable entry name, or back at the numeric URL."""
+        self._entry = entry
+
+    def join_url(self) -> str:
+        """The address a QR should encode: the stable entry name if claimed, else numeric."""
+        entry = self._entry
+        url = getattr(entry, "url", None) if entry is not None else None
+        return url if isinstance(url, str) and url else self.url
 
     def revoke_guest(self, participant_id: str) -> int:
         """Host desktop operation: eject one participant without affecting playback."""
@@ -1888,11 +1928,18 @@ main{padding-top:6px}
 #dashboard nav{top:calc(var(--bar-h) + 6px);z-index:20;margin-inline:-10px;padding:8px 10px;border-radius:20px;background:var(--bg);background:color-mix(in srgb,var(--bg) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #dashboard nav a{min-height:40px;padding:0 15px;border-radius:999px;font-size:.9rem;font-weight:620;border:1px solid var(--line);background:var(--card);color:var(--on-nav)}
 #dashboard nav a:hover{background:var(--nav-hover)}
-#dashboard[data-room-blade="playback"]>:not(nav):not(#errorDash):not(#playback),
+#dashboard[data-room-blade="homePanel"]>:not(nav):not(#errorDash):not(#homePanel),
+#dashboard[data-room-blade="queuePanel"]>:not(nav):not(#errorDash):not(#queuePanel),
+#dashboard[data-room-blade="uploadCard"]>:not(nav):not(#errorDash):not(#uploadCard),
+#dashboard[data-room-blade="peoplePanel"]>:not(nav):not(#errorDash):not(#peoplePanel),
+#dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
+#dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
 #dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel),
 #dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel),
 #dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}
-#dashboard[data-room-blade]>#playback,#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
+#dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
+#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
@@ -1938,6 +1985,33 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
+/* Ticket 624: a concise Home landing pane. It is the default room view: pick a
+   device, add media, and see the queue and who is here without the full wall of
+   panels. Every action is a plain anchor or button so keyboard and screen
+   readers work without custom widgets. */
+#homePanel{grid-column:1/-1;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px}
+#homePanel h2{font-size:clamp(1.45rem,4.5vw,1.95rem);margin:4px 0}
+#homePanel .home-lead{color:var(--text);font-size:.98rem}
+.home-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr));gap:10px;margin:16px 0 6px}
+.home-action{display:flex;flex-direction:column;gap:4px;min-height:92px;padding:14px 15px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--input);color:var(--text);text-decoration:none;transition:border-color .15s ease,background .15s ease,transform .1s ease}
+.home-action:hover{border-color:var(--accent);background:var(--nav-hover);transform:translateY(-1px)}
+.home-action:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.home-action:active{transform:scale(.99)}
+.home-icon{font-size:1.3rem;line-height:1}
+.home-action strong{font-size:.98rem}
+.home-action span{font-size:.8rem;color:var(--muted);line-height:1.35}
+.home-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
+@media(min-width:720px){.home-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.home-card{border:1px solid var(--line);border-radius:var(--r-md);padding:14px;background:var(--bg);min-width:0}
+.home-card h3{margin:0 0 8px;font-size:1rem}
+.home-device{font-size:1.08rem;font-weight:700;margin:0;overflow-wrap:anywhere}
+.home-queue{display:grid;gap:9px;margin:0;padding:0}
+.home-queue li{padding:0;border:0;font-size:.86rem;min-width:0}
+.home-queue li strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-queue li .muted{font-size:.76rem}
+#homePanel #castEntry{border-radius:var(--r-md);margin-top:14px;box-shadow:none;background:var(--input)}
+#homePanel #playback{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
+#homePanel #quickCastCard{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
 </style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
@@ -1953,7 +2027,45 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#queuePanel">Queue</a><a href="#playback">Now Playing</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<section id="homePanel" aria-labelledby="homeHeading">
+<p class="eyebrow">Home</p>
+<h2 id="homeHeading" tabindex="-1">Your room</h2>
+<p class="home-lead">Add something to play, check which device is selected, and see what everyone is queueing. <span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a> · <a href="#castEntry">Cast with SmoothCast</a></p>
+<section id="quickCastCard" aria-labelledby="quickCastHeading">
+<div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
+<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
+<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
+<p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
+</section>
+<section id="playback" aria-labelledby="playbackHeading">
+<div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
+<p class="section-desc">These controls affect the room's selected TV or speaker.</p>
+<p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
+<progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
+<div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
+<input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
+<div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
+<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
+<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
+<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
+</section>
+<div class="home-actions" role="group" aria-label="Quick actions">
+<a class="home-action" id="homeUpload" href="#uploadCard" title="Send a file from this phone or computer to the room"><span class="home-icon" aria-hidden="true">⬆</span><strong>Upload or transfer</strong><span>Send a file from this device</span></a>
+<a class="home-action" id="homeYoutube" href="#queuePanel" data-home-link="youtube" title="Open the add-link box to paste a YouTube video URL"><span class="home-icon" aria-hidden="true">▶</span><strong>Cast a YouTube link</strong><span>Paste a YouTube video URL</span></a>
+<a class="home-action" id="homeMagnet" href="#queuePanel" data-home-link="magnet" title="Open the add-link box to paste a magnet link"><span class="home-icon" aria-hidden="true">🧲</span><strong>Cast a magnet link</strong><span>Paste a torrent magnet link</span></a>
+<a class="home-action" id="homeFind" href="#findPanel" title="Search the house libraries and YouTube"><span class="home-icon" aria-hidden="true">🔍</span><strong>Find something</strong><span>Search the house and YouTube</span></a>
+</div>
+<div class="home-grid">
+<div class="home-card"><h3>Playing on</h3><p class="home-device" id="homeTarget">Waiting for room status…</p><p class="field-hint" id="homeNowPlaying">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a></div></div>
+<div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
+<div class="home-card"><h3>In the room</h3><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></div>
+</div>
+<section id="homeIncomingPanel" aria-labelledby="homeIncomingHeading" hidden><h3 id="homeIncomingHeading">Incoming media</h3><ul id="homeIncomingRows" aria-label="Files arriving in this room"></ul><p class="field-hint">These transfers are not yet confirmed playable.</p></section>
+<details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
+<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
+</section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
 <div class="contribute" aria-labelledby="contributeHeading"><h3 id="contributeHeading">Add something to play</h3><p class="field-hint">Choose a file, paste a link or find media. Up Next keeps current playback uninterrupted.</p><div class="queue-add-links"><a href="#uploadCard" id="openUploadEntry"><strong>Choose files</strong><span>From your phone or computer</span></a><a href="#linkAcquisition" id="openLinkAcquisition"><strong>Paste a video link</strong><span>YouTube or magnet</span></a><a href="#findPanel" id="openFindEntry"><strong>Find media</strong><span>Shared libraries and YouTube</span></a></div></div>
@@ -1962,6 +2074,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
 <details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
 <p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
@@ -1977,22 +2090,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
 </section>
 
-<div class="welcome"><p class="eyebrow">Connected to the room</p><h2>You're part of the queue</h2><p class="field-hint"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></p><p class="section-desc">Choose something to watch or listen to, or vote on what's next. Changes here are shared with everybody in the room.</p><div class="quick-links"><a href="#castEntry">Cast with SmoothCast</a><a href="#findPanel">Find something</a><a href="#uploadCard">Add from this device</a><a href="#queuePanel">See Up Next</a></div></div>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 <p id="errorDash" role="status" aria-live="polite"></p>
-<section id="playback" aria-labelledby="playbackHeading">
-<div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
-<p class="section-desc">These controls affect the room's selected TV or speaker.</p>
-<p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
-<progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
-<div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
-<input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
-<div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
-<input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
-<details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
-</section>
 <section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
@@ -2009,7 +2107,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
-<p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
+<p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Submitted filenames and transfer progress are visible to everyone in this room. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
@@ -2249,7 +2347,7 @@ function schedulePlayhead(){
   playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -2283,17 +2381,19 @@ function releaseQueuePointer(){
   queuePressed=false;
   const pending=deferredQueue;
   deferredQueue=null;
-  if(pending)renderQueue(pending);
+  if(pending)renderQueue(pending.rows,pending.revision);
 }
 // Click follows pointerup, so retain the pressed button until its click runs.
 document.addEventListener("pointerup",()=>setTimeout(releaseQueuePointer,0));
 document.addEventListener("pointercancel",releaseQueuePointer);
-function renderQueue(items){
+function mediaKindLabel(kind){return kind==="audio"?"Audio":kind==="video"?"Video":""}
+function renderQueue(items,revision=queueRevision){
   const queue=queueElement,rows=Array.isArray(items)?items:[];
-  if(queuePressed){deferredQueue=rows;return}
+  if(queuePressed){deferredQueue={rows,revision};return}
+  queueRevision=revision;
   queueState=rows;
   const key=JSON.stringify(rows.map(item=>[
-    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,
+    item.id,item.title,item.duration,item.votes,item.voted,item.contributor,item.source_kind,item.media_kind,
   ]));
   if(key===queueRenderKey)return;
   const focused=document.activeElement;
@@ -2333,6 +2433,7 @@ function renderQueue(items){
     li.setAttribute("aria-setsize",String(rows.length));
     li.children[0].children[0].textContent=itemTitle;
     li.children[0].children[1].textContent="Position "+(index+1)+" of "+rows.length+" · "+(item.votes?"▲ "+item.votes+" vote"+(item.votes===1?"":"s"):"No votes")
+      +(mediaKindLabel(item.media_kind)?" · "+mediaKindLabel(item.media_kind):"")
       +(item.duration?" · "+clock(item.duration):"")
       +" · "+(item.contributor?"Added by "+item.contributor:"Contributor not recorded")
       +({upload:" · File upload",library:" · Shared library",link:" · Link download",local:" · Local media"}[item.source_kind]||"");
@@ -2405,7 +2506,7 @@ function makeRoomEvents(env){
 }
 const roomEvents=makeRoomEvents({
   EventSource:typeof EventSource==="function"?EventSource:null,
-  apply:d=>{if(!busy)return applyStatus(d)},
+  apply:d=>applyStatus(d),
   canRun:()=>!!csrf&&!stalePage&&!document.hidden,
   fallback:()=>scheduleRefresh(),
   setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:id=>clearTimeout(id),
@@ -2447,7 +2548,7 @@ function showJoinedRoom(){
   const entering=$("dashboard").hidden;
   if(entering)$("dashboard").hidden=false;
   if($("uploadCard").hidden)$("uploadCard").hidden=false;
-  if(entering)$("queueHeading").focus({preventScroll:true});
+  if(entering)$("homeHeading").focus({preventScroll:true});
 }
 const linkForm=$("linkForm");
 let linkCapabilities={},linkOwnerEnabled=null,linkLocalPrerequisites=null,linkStorageAvailable=null,linkPosting=false,linkAttempt=null,linkSignature="",youtubeSearchBusy=false;
@@ -2460,6 +2561,11 @@ function focusContributionControl(id){
 }
 $("openUploadEntry").addEventListener("click",()=>focusContributionControl("videoFile"));
 $("openFindEntry").addEventListener("click",()=>focusContributionControl("findInput"));
+document.querySelectorAll("[data-home-link]").forEach(link=>link.addEventListener("click",()=>{
+  openLinkAcquisition();
+  const input=$("linkInput");
+  if(input)setTimeout(()=>input.focus({preventScroll:true}),0);
+}));
 if(location.hash==="#linkAcquisition")openLinkAcquisition();
 window.addEventListener("hashchange",()=>{if(location.hash==="#linkAcquisition")openLinkAcquisition()});
 function updateLinkControls(){
@@ -2550,34 +2656,68 @@ function renderLinkJobs(state){
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
   const panel=$("linkJobPanel");if(panel)panel.hidden=!jobs.length;
-  if(jobs.some(job=>["pending","resolving","downloading","verifying","queueing"].includes(job.stage)))openLinkAcquisition();
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
   const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
-  const rows=[];
-  for(const job of jobs.slice().reverse()){
-    const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
-    heading.textContent=job.title||"Download";
+  // Progress-only snapshots must not destroy a focused or pending action.
+  const previous=new Map(Array.from(list.children,row=>[row.dataset.linkJobId,row]));
+  // Open for a newly active job, not every progress snapshot. Respect a
+  // guest who closes the disclosure while a download continues.
+  const active=stage=>["pending","resolving","downloading","verifying","queueing"].includes(stage);
+  if(jobs.some(job=>active(job.stage)&&!active(previous.get(String(job.id))?.dataset.linkJobStage)))openLinkAcquisition();
+  jobs.slice().reverse().forEach((job,index)=>{
+    const id=String(job.id);
+    let row=previous.get(id);
+    if(!row){
+      row=document.createElement("li");row.dataset.linkJobId=id;
+      const heading=document.createElement("strong"),detail=document.createElement("p");
+      detail.className="muted";
+      const meter=document.createElement("progress"),stats=document.createElement("p"),error=document.createElement("p");
+      meter.setAttribute("aria-label","Download progress");
+      stats.className=error.className="field-hint";
+      const action=(verb,success)=>{
+        const button=document.createElement("button");
+        button.type="button";button.className="secondary tiny";button.textContent=verb==="cancel"?"Cancel download":"Retry download";
+        button.addEventListener("click",async()=>{
+          if(button.disabled||button.hidden)return;
+          button.disabled=true;
+          try{const reply=await post("/api/link-jobs/"+verb,{id});showError("linkFeedback",reply.message||success);void refresh()}
+          catch(error){showError("linkFeedback",error.message);button.disabled=false}
+        });
+        return button;
+      };
+      row.append(heading,detail,meter,stats,error,action("cancel","Cancellation requested"),action("retry","Retry accepted"));
+    }
+    previous.delete(id);
+    row.dataset.linkJobStage=job.stage;
+    const [heading,detail,meter,stats,error,cancel,retry]=row.children;
+    const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};
+    setText(heading,job.title||"Download");
     const sourceLabel=job.kind==="youtube"?"YouTube":job.kind==="magnet"?"BitTorrent magnet":"Link";
-    detail.className="muted";detail.textContent=sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
-    row.append(heading,detail);
+    setText(detail,sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown"));
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
-    if(job.stage==="downloading"||job.stage==="resolving"){
-      const meter=document.createElement("progress");meter.setAttribute("aria-label","Download progress");
-      if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
-      row.append(meter);
-      const stats=document.createElement("p");stats.className="field-hint";
+    const progressing=job.stage==="downloading"||job.stage==="resolving";
+    meter.hidden=stats.hidden=!progressing;
+    if(progressing){
+      if(received!==null&&total!==null&&received<=total){
+        if(meter.max!==total)meter.max=total;
+        if(!meter.hasAttribute("value")||meter.value!==received)meter.value=received;
+      }else if(meter.hasAttribute("value"))meter.removeAttribute("value");
       const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
-      stats.textContent=(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
-      row.append(stats);
+      setText(stats,(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":""));
     }
-    if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
-    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
-    if(job.can_retry){const retry=document.createElement("button");retry.type="button";retry.className="secondary tiny";retry.textContent="Retry download";retry.setAttribute("aria-label","Retry "+(job.title||"acquisition"));retry.addEventListener("click",async()=>{retry.disabled=true;try{const reply=await post("/api/link-jobs/retry",{id:job.id});showError("linkFeedback",reply.message||"Retry accepted");void refresh()}catch(error){showError("linkFeedback",error.message);retry.disabled=false}});row.append(retry)}
-    rows.push(row);
-  }
-  list.replaceChildren(...rows);
+    error.hidden=!job.error;setText(error,job.error||"");
+    for(const [button,allowed,verb] of [[cancel,job.can_cancel,"Cancel"],[retry,job.can_retry,"Retry"]]){
+      button.hidden=!allowed;
+      if(!allowed)button.disabled=false;
+      const label=verb+" "+(job.title||"acquisition");
+      if(button.getAttribute("aria-label")!==label)button.setAttribute("aria-label",label);
+    }
+    const current=list.children[index]||null;
+    if(current!==row)list.insertBefore(row,current);
+  });
+  for(const row of previous.values())row.remove();
 }
 if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
@@ -2611,6 +2751,41 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
+let roomTransferSignature=null;
+function renderRoomTransfers(state){
+  const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
+  const signature=JSON.stringify(rows);
+  if(signature===roomTransferSignature)return;roomTransferSignature=signature;
+  const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
+  for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
+    const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
+    if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
+    // Reuse stable rows so chunk ACKs do not rebuild two entire lists,
+    // interrupt assistive technology or disturb the user's scroll position.
+    const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
+    rows.forEach((row,index)=>{
+      const id=String(row.id);
+      let li=previous.get(id);
+      if(!li){
+        li=document.createElement("li");li.dataset.transferId=id;
+        const detail=document.createElement("p");detail.className="field-hint";
+        li.append(document.createElement("strong"),detail,document.createElement("progress"));
+      }
+      previous.delete(id);
+      const [title,detail,meter]=li.children;
+      const name=row.title||"Incoming media";
+      const description=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
+      if(detail.textContent!==description)detail.textContent=description;
+      const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
+      if(meter.max!==total)meter.max=total;
+      if(meter.value!==received)meter.value=received;
+      const current=list.children[index]||null;
+      if(current!==li)list.insertBefore(li,current);
+    });
+    for(const li of previous.values())li.remove();
+  }
+}
 function playbackFeedback(state){
   const feedback=state.cast_feedback;
   if(feedback&&feedback.receiver===state.receiver&&typeof feedback.message==="string"){
@@ -2620,10 +2795,19 @@ function playbackFeedback(state){
   }
   return "";
 }
+function quickCastDestinationCopy(receiver){
+  return receiver?"Selected receiver: "+receiver+". SmoothCast checks availability before sending any file.":
+    "No room receiver selected. You can still add media to Up Next.";
+}
 function renderQueueDestination(state){
+  const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
+  if(quickStatus&&quickStatus.textContent!==quickCopy)quickStatus.textContent=quickCopy;
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
   if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
+  const homeTarget=$("homeTarget"),homePlaying=$("homeNowPlaying");
+  if(homeTarget&&target)homeTarget.textContent=target.textContent;
+  if(homePlaying&&playing)homePlaying.textContent=playing.textContent;
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
   if(liveTarget&&target)liveTarget.textContent=target.textContent;
   if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
@@ -2637,10 +2821,24 @@ function renderNetworkActivity(entries){
   if(signature===networkActivityKey)return;networkActivityKey=signature;
   activityRows.replaceChildren();$("networkActivitySummary").textContent=streams.length?`${streams.length} active stream${streams.length===1?"":"s"} on reachable receivers`:"Nothing is playing on other TVs or speakers";if(!streams.length){const li=document.createElement("li");li.textContent="When someone starts casting on this network, it appears here. Unreachable receivers are omitted.";activityRows.append(li)}else for(const item of streams){const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("span");title.textContent=item.title||"Media title unavailable";detail.className="muted";const timing=item.position==null?"":` · ${clock(item.position)}${item.duration==null?"":` / ${clock(item.duration)}`}`;detail.textContent=`${item.receiver||"Unknown receiver"} · ${item.protocol||"Receiver"} · ${item.state||"ACTIVE"}${timing}${item.is_local?" · This SmoothCast":""}`;li.replaceChildren(title,document.createElement("br"),detail);activityRows.append(li)}
 }
+function renderSharedQueue(s){
+  const revision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;
+  renderQueue(s.queue,revision);renderHomeQueue(s.queue);
+  $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+}
 function applyStatus(d){
   if(!matchingBuild(d))return false;
   if(!acceptRoomSnapshot(d))return true;
-    const s=d.state||{};applyAccentPreset(s.accent);shortcutState=s;
+    const s=d.state||{};
+    // Queue and contribution progress are independent of pending transport commands.
+    // Do not discard their SSE snapshots while a control is awaiting acknowledgement.
+    renderSharedQueue(s);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
+    // Mesh and room observations are read-only and must remain live during a
+    // pending local playback command, just like the shared contribution queue.
+    renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
+    window.scRenderMeshRoom&&window.scRenderMeshRoom(s);renderNetworkActivity(s.network_activity);
+    if(busy)return true;
+    applyAccentPreset(s.accent);shortcutState=s;
     renderPlaybackToggle(s.state);
     document.querySelectorAll("[data-action]").forEach(b=>{
       const action=b.dataset.action;
@@ -2649,18 +2847,45 @@ function applyStatus(d){
     });
     monitorText("state",playbackFeedback(s)||(!s.active&&s.preparing?"Preparing playback":s.state_label||"State unavailable"));
     monitorText("title",s.active?(s.title||"Media title unavailable"):s.preparing?"Preparing playback…":"Nothing playing");
-    monitorText("receiver","Playing on: "+(s.receiver||"—"));
+    monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueueDestination(s);renderQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
-$("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
-renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
-renderNetworkActivity(s.network_activity);
+renderQueueDestination(s);
+window.scRenderScreens&&window.scRenderScreens(s);
 if(statusFailures)showError("errorDash","");
 statusFailures=0;showJoinedRoom();
   return true;
+}
+let homeQueueKey=null,homePeopleKey=null;
+function renderHomeQueue(items){
+  const list=$("homeQueue");if(!list)return;
+  const rows=Array.isArray(items)?items:[];
+  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration]));
+  if(key===homeQueueKey)return;homeQueueKey=key;
+  const count=$("homeQueueCount");
+  if(count)count.textContent=rows.length?`${rows.length} waiting`:"";
+  if(!rows.length){const empty=document.createElement("li");empty.className="empty";empty.textContent="Nothing in Up Next yet";list.replaceChildren(empty);return}
+  list.replaceChildren(...rows.slice(0,3).map(item=>{
+    const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
+    title.textContent=item.title||"Video";meta.className="muted";
+    meta.textContent=[mediaKindLabel(item.media_kind),item.duration?clock(item.duration):"",item.votes?`▲ ${item.votes}`:"",item.contributor?`Added by ${item.contributor}`:"Waiting to be played"].filter(Boolean).join(" · ");
+    li.append(title,meta);return li;
+  }));
+}
+function renderHomePeople(room){
+  const host=$("homePeople");if(!host)return;
+  const participants=Array.isArray(room?.participants)?room.participants:[];
+  const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
+  if(signature===homePeopleKey)return;homePeopleKey=signature;
+  if(!participants.length){const empty=document.createElement("span");empty.className="muted";empty.textContent="Just you so far.";host.replaceChildren(empty);return}
+  host.replaceChildren(...participants.map(person=>{
+    const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");
+    const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);
+    const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");
+    chip.append(avatar,name);return chip;
+  }));
 }
 async function refresh(){
   clearTimeout(statusTimer);
@@ -2691,7 +2916,7 @@ async function refresh(){
 function initials(name){return (name||"?").trim().split(/\s+/).slice(0,2).map(p=>p[0]).join("").toUpperCase()}
 const activityLines=new Map();
 let lastRoom=null,participantRenderKey=null;
-function renderRoom(room){lastRoom=room;const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
+function renderRoom(room){lastRoom=room;renderHomePeople(room);const people=$("people");const participants=Array.isArray(room?.participants)?room.participants:[];
 const signature=JSON.stringify([room?.me?.id,participants.map(person=>[person.id,person.name,person.color,person.online])]);
 if(signature!==participantRenderKey){participantRenderKey=signature;people.replaceChildren();for(const person of participants){const chip=document.createElement("span");chip.className="person"+(person.online?"":" offline");const avatar=document.createElement("span");avatar.className="avatar";avatar.style.background=person.color;avatar.textContent=initials(person.name);const name=document.createElement("span");name.textContent=person.name+(room.me&&room.me.id===person.id?" (you)":"");chip.append(avatar,name);people.append(chip)}}const activity=$("activity");if(room&&room.activity){const filter=$("activityFilter").value,events=[...room.activity].filter(e=>activityMatches(e,filter)).slice(-12);$("activityEmpty").hidden=events.length>0||!room.activity.length;const keep=new Set(events.map(e=>e.seq));for(const [seq,line] of activityLines)if(!keep.has(seq)){line.remove();activityLines.delete(seq)}for(const event of events){let line=activityLines.get(event.seq);if(!line){line=document.createElement("div");line.className="ev";const time=document.createElement("time"),text=document.createElement("span");text.textContent=describe(event);line.append(time,text);activityLines.set(event.seq,line)}const time=line.firstChild;time.textContent=ago(event.at);time.title=new Date(event.at*1000).toLocaleString()}[...events].reverse().forEach((event,index)=>{const line=activityLines.get(event.seq);if(activity.children[index]!==line)activity.insertBefore(line,activity.children[index]||null)})}}
 $("activityFilter").addEventListener("change",()=>{if(lastRoom)renderRoom(lastRoom)});
@@ -2803,6 +3028,10 @@ window.addEventListener("keydown",event=>{
 
 async function act(action,value,extra={}){
   if(!csrf||stalePage){showError("errorDash","Reconnect to control this room");return}
+  // A delayed positional edit must retain the revision on which it was made.
+  if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)&&extra.queue_revision===undefined){
+    extra={...extra,queue_revision:queueRevision};
+  }
   if(busy){
     // Stop supersedes waiting playback changes, not unrelated queue edits.
     if(action==="stop")for(const [key,pending] of pendingControls){
@@ -2828,7 +3057,7 @@ async function act(action,value,extra={}){
   try{
     const body={action,...extra};
     if(["queue_remove","queue_move","queue_next","queue_clear"].includes(action)){
-      body.queue_revision=queueRevision;
+      body.queue_revision=extra.queue_revision;
       body.queue_command_id="q"+Date.now().toString(36)+"-"+(++queueCommandSeq).toString(36);
     }
     if(value!==undefined)body.value=value;
@@ -2957,11 +3186,17 @@ function uploadTransport(path,options){
       options.signal.removeEventListener("abort",abort);
       callback(value);
     };
+    let lastProgressPaint=-Infinity;
     xhr.upload.onprogress=event=>{
       const total=event.lengthComputable?event.total:options.body.size;
+      const done=event.lengthComputable&&event.loaded===event.total;
+      const now=performance.now();
+      // Sender progress is diagnostic only; bound DOM writes to 10 Hz
+      // without slowing network transfer or suppressing the last event.
+      if(!done&&now-lastProgressPaint<100)return;
+      lastProgressPaint=now;
       monitorText("transferInFlight",fileUnits(event.loaded)+" of "+fileUnits(total)+" (not yet confirmed)");
-      if(event.lengthComputable&&event.loaded===event.total)
-        monitorText("transferOperation","Chunk sent — waiting for host storage");
+      if(done)monitorText("transferOperation","Chunk sent — waiting for host storage");
     };
     xhr.onload=()=>finish(resolve,{
       status:xhr.status,ok:xhr.status>=200&&xhr.status<300,
@@ -3040,6 +3275,26 @@ async function sendChunk(path,file,offset,end){
       }catch(statusError){
         if(statusError.offsetMismatch||statusError.status===404||statusError.status===401||statusError.status===403)throw statusError;
       }
+    }
+  }
+}
+// The final room action (queue or play) is idempotent server-side, so a
+// transient busy or network error must be retried instead of stalling a
+// multi-file batch after every byte has already arrived.
+async function completeUpload(path,queueOnly,headers){
+  for(let attempt=0;;attempt++){
+    if(cancelUpload)throw Error("Upload cancelled");
+    if(pauseRequested)throw Error("Transfer paused");
+    try{return await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),headers)}catch(error){
+      if(pauseRequested)throw Error("Transfer paused");
+      if(error.code==="client_reload_required")throw error;
+      const transient=!error.status||error.status>=500||[408,409,429].includes(error.status);
+      if(!transient||attempt===4||cancelUpload||!csrf)throw error;
+      transferEvent("Retry "+(attempt+1)+" of 4 — confirming room acceptance");
+      showError("uploadStatus","The room is busy. Retrying the queue request…");
+      await new Promise(resolve=>setTimeout(resolve,Math.max(500*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
+      if(cancelUpload)throw Error("Upload cancelled");
+      if(pauseRequested)throw Error("Transfer paused");
     }
   }
 }
@@ -3204,11 +3459,11 @@ async function restoreUpload(){
           showError("uploadStatus","Saved upload progress is invalid. Reload to check it again.");
           return;
         }
-        pendingUpload={...record,received:state.received};
+        pendingUpload={...record,received:state.received,queueOnly:state.queue_only??record.queueOnly};
         monitorText("transferFileName",record.name);
-        monitorText("transferDelivery",record.queueOnly?"Up Next requested":"Play now requested");
+        monitorText("transferDelivery",pendingUpload.queueOnly?"Up Next requested":"Play now requested");
         transferEvent("Interrupted upload found; choose the original file to resume");
-        $("uploadQueue").checked=record.queueOnly;
+        $("uploadQueue").checked=pendingUpload.queueOnly;
         transferView("transfer",state.received,record.size,"Resumable");
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
         return;
@@ -3249,7 +3504,37 @@ function updateUploadControls(){
   $("cancelUpload").hidden=!pendingUpload&&!batchFiles;
   $("cancelUpload").disabled=cancelUpload;
 }
+let batchCastTarget=null,quickCastIntent=false;
+function chooseQueueUpload(){
+  if(uploading||pendingUpload||batchFiles){
+    showError("uploadStatus","Finish or cancel your existing transfer first.");
+    return false;
+  }
+  quickCastIntent=false;
+  $("uploadQueue").checked=true;
+  updateUploadControls();
+  $("videoFile").focus({preventScroll:true});
+  return true;
+}
+$("quickQueueUpload").addEventListener("click",chooseQueueUpload);
+$("openUploadEntry").addEventListener("click",chooseQueueUpload);
+function recoverUnstartedCast(error){
+  // A target fence can fail after confirmation but before the first upload
+  // is created. Retain the file input, discard only the obsolete cast intent.
+  if(error.status!==409||error.code==="client_reload_required"||pendingUpload||
+      !batchFiles||batchIndex!==0||batchQueueOnly||!batchCastTarget)return false;
+  batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;batchCastTarget=null;
+  return true;
+}
+$("uploadCastNow").addEventListener("click",()=>{
+  if(uploading||pendingUpload||batchFiles){location.hash="#uploadCard";showError("uploadStatus","Finish or cancel your existing transfer first.");return}
+  quickCastIntent=true;
+  location.hash="#uploadCard";
+  $("videoFile").click();
+});
+$("videoFile").addEventListener("cancel",()=>{quickCastIntent=false;});
 function resetUploadBatch(){
+  batchCastTarget=null;quickCastIntent=false;
   resetTransferMonitor();
   pendingUpload=null;
   batchFiles=null;
@@ -3302,15 +3587,29 @@ $("uploadButton").addEventListener("click",async()=>{
       }
       if(cancelUpload){await discardUpload();return}
       if(!session||csrf!==session)return;
+      const queueIntent=pendingUpload?.queueOnly??$("uploadQueue").checked;
+      if(!pendingUpload&&!queueIntent){
+        showError("uploadStatus","Checking the pnode's selected receiver…");
+        const target=await uploadRequest("POST","/api/uploads/target",JSON.stringify({}),json);
+        if(!session||csrf!==session||cancelUpload)return;
+        if(typeof target.receiver!=="string"||!target.receiver||!(/^[0-9a-f]{64}$/.test(target.target_id||"")))
+          throw Error("No reachable casting target. Choose Add to Up Next instead.");
+        if(!window.confirm("Stream this upload via SmoothCast to "+target.receiver+"?"+(target.active?" This replaces current playback.":""))){
+          $("uploadQueue").checked=true;
+          showError("uploadStatus","Not sent. Choose Upload and add to keep it in Up Next.");
+          return;
+        }
+        batchCastTarget=target.target_id;
+      }
       batchFiles=selected;
       batchIndex=0;
       batchAdded=0;
       batchTotal=selected.length;
-      batchQueueOnly=pendingUpload?.queueOnly??$("uploadQueue").checked;
+      batchQueueOnly=queueIntent;
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
-      const queueOnly=audio||batchQueueOnly;
+      let queueOnly=pendingUpload?.queueOnly??(audio||batchQueueOnly||batchIndex>0);
       monitorText("transferFileName",(batchIndex+1)+"/"+batchFiles.length+" · "+file.name);
       monitorText("transferDelivery",queueOnly?"Up Next requested":"Play now requested");
       monitorText("transferAck",pendingUpload?fileUnits(pendingUpload.received):"0 B");
@@ -3323,16 +3622,22 @@ $("uploadButton").addEventListener("click",async()=>{
       }else{
         transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length,queueOnly);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
-        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly}),json);
+        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget}),json);
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
+        if(state.queue_only===true&&!queueOnly){
+          queueOnly=true;
+          transferEvent("Another upload has the Play now lane; this file will join Up Next");
+          monitorText("transferDelivery","Up Next — another upload has priority");
+        }
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
         monitorText("transferOperation","Reading local file fingerprint");
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
         transferEvent("Host reserved storage; chunk size "+fileUnits(chunkSize));
       }
+      if(state.queue_only===true){queueOnly=true;pendingUpload.queueOnly=true;}
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
         throw Error("Upload progress is invalid. Reload and choose the file again.");
@@ -3371,7 +3676,8 @@ $("uploadButton").addEventListener("click",async()=>{
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size,"",queueOnly);
       $("pauseUpload").hidden=true;
-      await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      const receipt=await completeUpload(path,queueOnly,json);
+      if(receipt.queue_only===true)queueOnly=true;
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
       monitorText("transferAck",fileUnits(file.size));
@@ -3415,6 +3721,12 @@ $("uploadButton").addEventListener("click",async()=>{
       showError("uploadStatus","Paused safely. Select Resume to carry on from where it stopped.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
+    }else if(recoverUnstartedCast(error)){
+      monitorText("transferDelivery","Destination needs confirmation");
+      transferView("choose");
+      showError("uploadStatus",error.message+" Your files are still selected. Select Upload and cast to confirm again, or Add to Up Next.");
+    }else if(error.status===409&&error.code!=="client_reload_required"&&!pendingUpload&&!batchFiles){
+      showError("uploadStatus",error.message+" Retry when a receiver is available, or select Add to Up Next.");
     }else {
       if(pendingUpload){
         const received=pendingUpload.received,total=pendingUpload.size,complete=received===total;
@@ -3451,7 +3763,19 @@ uploadPanel.addEventListener("drop",event=>{
   catch(_){showError("uploadStatus","This browser cannot accept dropped files. Use Choose files instead.");}
 });
 $("uploadQueue").addEventListener("change",updateUploadControls);
-$("videoFile").addEventListener("change",()=>{updateUploadControls();const file=$("videoFile").files[0];if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));});
+$("videoFile").addEventListener("change",()=>{
+  const file=$("videoFile").files[0],quick=quickCastIntent;quickCastIntent=false;
+  if(quick&&file){
+    if($("videoFile").files.length!==1||/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name)){
+      $("uploadQueue").checked=true;updateUploadControls();
+      showError("uploadStatus","Choose one video for Cast Now. Audio and batches can be added to Up Next.");return;
+    }
+    $("uploadQueue").checked=false;
+  }
+  updateUploadControls();
+  if(file)transferView("choose",0,file.size,($("videoFile").files.length>1?$("videoFile").files.length+" files":"Ready"));
+  if(quick&&file&&!$("uploadButton").disabled)$("uploadButton").click();
+});
 $("cancelUpload").addEventListener("click",async()=>{
   cancelUpload=true;if(activeUploadController)activeUploadController.abort();$("cancelUpload").disabled=true;showError("uploadStatus","Cancelling upload…");if(uploading)return;
   uploading=true;updateUploadControls();try{await discardUpload()}catch(error){showError("uploadStatus",error.message)}
@@ -3710,7 +4034,9 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
+          if(add.disabled||current!==generation)return;
           if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(linkStorageAvailable===false){status.textContent="Download storage is unavailable. Ask the host to check it and restart the room. Your search results are preserved.";return}
           if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";
           try{
@@ -3740,19 +4066,19 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#playback,#findPanel,#advancedPanel,#localLivePanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#localLivePanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);
     else dash.removeAttribute("data-room-blade");
     for(const link of dash.querySelectorAll("nav a")){
-      if(selected&&link.getAttribute("href")==="#"+selected)link.setAttribute("aria-current","page");
+      if(link.getAttribute("href")==="#"+(selected||"homePanel"))link.setAttribute("aria-current","page");
       else link.removeAttribute("aria-current");
     }
     if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
       target.scrollIntoView({block:"start",behavior:"auto"});
       if(blade===target&&!target.contains(document.activeElement)){
-        const heading=$(selected==="playback"?"playbackHeading":selected==="findPanel"?"findHeading":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+        const heading=$(target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="findPanel"?"findHeading":selected==="uploadCard"?"uploadHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
         if(heading&&heading.focus)heading.focus({preventScroll:true});
       }
     }

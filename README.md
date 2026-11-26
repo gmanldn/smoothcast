@@ -50,19 +50,17 @@ qualification.
 
 ## Install — Python-first, all three desktops
 
-**No preinstalled Python is required.** Each platform script probes for Python 3.10+ and acquires it automatically when missing (Linux distro package manager, macOS Homebrew, or Windows WinGet/verified python.org installer). Setup then installs GTK4, libadwaita, PyGObject, FFmpeg/ffplay/ffprobe and all declared Python dependencies. Native package provisioning needs Internet access and may require OS administrator or Apple Command Line Tools approval.
+**Python 3.10+ is the prerequisite for the canonical source launcher.** Download the repository ZIP, extract it to a folder, open a terminal in that folder and run:
 
-| OS | Setup command | Application shortcut |
-|---|---|---|
-| Debian/Ubuntu, Fedora, Arch | `bash setup/linuxsetup.sh` | Linux application menu / GNOME dock |
-| macOS | `bash setup/macsetup.sh` | `~/Applications/SmoothCast.app` |
-| Windows 10/11 x64 | Double-click `SmoothCast.bat` | Windows Start Menu |
+```sh
+python3 sc.py
+```
 
-**New Windows user:** clone the repository, select the `develop` branch and double-click `SmoothCast.bat` in File Explorer. It acquires Python if necessary, runs the canonical `sc.py`, prompts for the installation folder on first setup and launches the installed app. Allow Internet access and approve any genuine native installer prompts. If setup fails, the window stays open with its error. Use `setup/winsetup.bat` for installation/repair only, and the **SmoothCast** Start Menu entry for everyday use. Close SmoothCast before refreshing an older Windows installation from a pulled checkout.
+On Windows, use `py -3 sc.py` if Python is installed through the Windows launcher. Git is not required for an extracted ZIP. The first run prepares the isolated runtime and registered application directory; native dependencies require network access and may require OS package-manager approval. Subsequent runs activate the registered installation. Archive sources cannot prove Git ancestry, so an existing registered installation is retained rather than silently overwritten.
 
-The three scripts delegate to the same stdlib-only `setup/bootstrap.py`. They **ask where to install** the application, defaulting to a per-user program folder (or the last successful choice), copy only application files and provision an isolated `.venv` there. Use `--install-dir "<path>"` for a specific location, `--yes` to skip the prompt, `--check` for read-only diagnostics or `--no-shortcuts` to skip desktop integration. Linux adds an XDG icon/menu entry; macOS registers `~/Applications/SmoothCast.app` with a real ICNS icon; Windows creates a branded Start Menu shortcut. See [setup/README.md](setup/README.md) for dependencies, recovery and limitations.
+The web room URL is printed in the terminal when available. If the desktop process crashes after launch, a local recovery web URL is printed instead. That page reports the failure and is not a functioning casting room. Ctrl+C stops recovery.
 
-The canonical launcher is **`sc.py`** at the application root: run `python3 sc.py` on Linux/macOS or `py -3 sc.py` on Windows. On Unix, `./sc.py` also works. It discovers the registered installation, refreshes a stale Linux install from a clean local develop checkout when safe, prepares the runtime if needed, and hands off to GTK. The legacy `./smoothcast` command delegates to the same entry point; native shortcuts use the installed `sc.py`. Version lookup remains side-effect free: `python3 sc.py --version` (Unix), `py -3 sc.py --version` (Windows). `python src/version.py` reports the current source tree, not necessarily the installation.
+Platform-specific setup scripts under `setup/` remain available for explicit installation, dependency repair and Python provisioning. See [setup/README.md](setup/README.md). Native shortcuts open the installed `sc.py`. Version lookup remains side-effect free: `python3 sc.py --version` (Unix), `py -3 sc.py --version` (Windows).
 
 **Cross-platform status:** Linux is the existing working implementation. The Windows and macOS native setup/bootstrap paths are now implemented and covered by portable tests, but have **not** yet passed end-to-end GUI and Chromecast tests on those machines. Windows uses MSYS2 UCRT64, whose Python extension packaging differs from official CPython; the `catt` installation may require follow-up dependency work. Both systems initially use software libx264 rather than Linux VAAPI. See the dated [platform status matrix](docs/PLATFORM_STATUS.md) for the current CI evidence and unverified native checks.
 
@@ -84,7 +82,7 @@ For an environment where GTK4/libadwaita and FFmpeg are already available, the P
 ## Try it in 30 seconds (no TV needed)
 
 ```sh
-python3 sc.py --demo      # or: smoothcast --demo
+python3 sc.py --demo
 ```
 
 Demo mode starts the real app in a throwaway profile with generated sample
@@ -503,7 +501,7 @@ smoothcast --version
 
 The **window title** always shows the version of the **running** SmoothCast process; **About** uses exactly the same value. If an external installation or checkout operation changes the on-disk release while SmoothCast remains open, reactivating or focusing the window displays an explicit **installed versus running** notice. Python modules are never hot-reloaded; finish playback, quit and relaunch before relying on the new code.
 
-**Every pushed commit** also has a stable display identity shown next to the brand in the web room, screen and nodes headers: `vX.Y.Z - YYYY-MM-DD - Codename` (for example `v2.0.39 - 2026-11-25 - Bayonet`). The date is the commit's **committer date** in the timezone recorded in the commit; the word is chosen deterministically from a frozen weapon-of-war list by SHA-256 of the full commit SHA. The identity is bound to that commit—same commit, same date and word—whether it is a patch release or an ordinary development commit. Rebasing or amending creates a new commit and therefore a new identity. Installed source copies record the date with their revision marker; frozen releases without embedded provenance show SemVer only. If provenance cannot be read the badge never guesses: it falls back to SemVer, or to SemVer plus the codename when only the date is unavailable. The Git SHA remains the authoritative build identity (`smoothcast --build-id`); the weapon list is frozen identity data, so never reorder, remove or add names—that would relabel already-published commits.
+**Every pushed commit** also has a stable display identity shown next to the brand in the web room, screen and nodes headers: `vX.Y.Z - YYYY-MM-DD - Codename` (for example `v2.0.39 - 2026-11-25 - Bayonet-Katana`). The date is the commit's **committer date** in the timezone recorded in the commit; the codename is a disposable two-weapon mnemonic drawn from a weapon list by SHA-256 of the full commit SHA, so consecutive commits are almost always distinct and a changed codename signals a new commit. The identity is bound to that commit—same commit, same date and codename—whether it is a patch release or an ordinary development commit. Rebasing or amending creates a new commit and therefore a new identity. Installed source copies record the date with their revision marker; frozen releases without embedded provenance show SemVer only. If provenance cannot be read the badge never guesses: it falls back to SemVer, or to SemVer plus the codename when only the date is unavailable. The Git SHA remains the authoritative build identity (`smoothcast --build-id`); the codename is only a memorable cue, so it is disposable and may change between releases.
 
 CI includes `tests/test_version_integrity.py` to check the canonical source, CLI output, UI wiring and documentation; do not maintain a second hardcoded "Current: X.Y.Z" version elsewhere.
 
@@ -540,7 +538,7 @@ has an active Wayland or X11 session:
 
 ```sh
 python3 -m compileall -q src scripts setup tests
-ruff check src scripts setup tests sc.py smoothcast setup.py
+ruff check src scripts setup tests sc.py setup.py
 python3 -m pytest -q tests   # full lane: MINOR/MAJOR bumps only
 ```
 

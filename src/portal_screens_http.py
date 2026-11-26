@@ -61,19 +61,33 @@ def attach(server) -> None:
     server.media_paths = _PathCache(clock=server.clock)
 
 
+def _room_url(server) -> str:
+    """The stable join URL when the portal has claimed an entry name, else the bound endpoint."""
+    getter = getattr(server, "join_url", None)
+    if callable(getter):
+        try:
+            url = getter()
+        except Exception:
+            url = None
+        if isinstance(url, str) and url:
+            return url
+    ip, port = server.server_address[:2]
+    return f"http://{ip}:{port}/"
+
+
 def route(handler, method: str, path: str) -> bool:
     if path == "/join-qr.png" and method == "GET":
-        # Only the server's bound IPv4 endpoint, never a user-controlled Host or PIN.
-        ip, port = handler.server.server_address[:2]
+        # The stable entry name when claimed, else the bound IPv4 endpoint; never a PIN.
         try:
-            png = portal_join.qr_png(f"http://{ip}:{port}/")
+            png = portal_join.qr_png(_room_url(handler.server))
         except (ValueError, ImportError):
             handler._error(503, "Room join QR unavailable on this network")
         else:
             handler._send(200, png, content_type="image/png")
         return True
     if path == "/join-slate.png" and method == "GET":
-        # Same numeric endpoint rule as the QR; the TV idle slate must never carry a PIN.
+        # The TV idle slate keeps the numeric endpoint: it is the address the TV
+        # itself reached, so a scanning phone on a no-mDNS network still works.
         ip, port = handler.server.server_address[:2]
         try:
             png = portal_join.render_join_slate(f"http://{ip}:{port}/", "SmoothCast")

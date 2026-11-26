@@ -217,11 +217,13 @@ class PyChromecastBackend:
         self._register(cast)
         return self._devices[str(identifier)]
 
-    def _resolve(self, target: str) -> tuple[str | None, str | None]:
+    def _resolve(self, target: str, *, allow_connect: bool = True) -> tuple[str | None, str | None]:
         value = target.strip()
         if not value:
             return None, NO_DEVICE_MESSAGE
         with self._lock:
+            if self._closed:
+                return None, "Cast backend is closed"
             matches = [
                 identifier
                 for identifier, device in self._devices.items()
@@ -232,6 +234,8 @@ class PyChromecastBackend:
             return matches[0], None
         if len(matches) > 1:
             return None, "Several Google Cast receivers have that name; select one by address."
+        if not allow_connect:
+            return None, "Receiver is not connected."
         try:
             manual = self.connect_manual(value)
         except ValueError:
@@ -261,9 +265,11 @@ class PyChromecastBackend:
             cast_status = cast.status
             snapshot = self._status_dict(media_status, cast_status)
         except Exception:
-            return self._cached_status(identifier)
+            return self._cached_status(identifier) or None
         self._publish(identifier, snapshot)
-        return snapshot
+        # Publication may reject an observation raced by a disconnect or close.
+        # Return only the accepted cache, never the discarded local snapshot.
+        return self._cached_status(identifier) or None
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         if not args:
@@ -272,6 +278,8 @@ class PyChromecastBackend:
         if identifier is None:
             return False, error or NO_DEVICE_MESSAGE
         with self._lock:
+            if self._closed or self._connection_state.get(identifier, "CONNECTED") != "CONNECTED":
+                return _fail("cast.not_connected")
             cast = self._casts.get(identifier)
         if cast is None:
             return _fail("cast.not_connected")
@@ -285,10 +293,13 @@ class PyChromecastBackend:
                 _media_call(media.pause, timeout=timeout)
             elif action == "play_toggle":
                 status = self.info(device, timeout=timeout) or {}
-                if status.get("player_state") in {"PLAYING", "BUFFERING"}:
+                state = status.get("player_state")
+                if state in {"PLAYING", "BUFFERING"}:
                     _media_call(media.pause, timeout=timeout)
-                else:
+                elif state == "PAUSED":
                     _media_call(media.play, timeout=timeout)
+                else:
+                    return _fail("cast.command_failed")
             elif action == "stop":
                 _media_call(media.stop, timeout=timeout)
             elif action == "seek" and len(args) > 1:
@@ -346,10 +357,14 @@ class PyChromecastBackend:
     def subscribe(
         self, device: str, listener: StatusListener,
     ) -> Callable[[], None] | None:
-        identifier, _error = self._resolve(device)
+        # watch_status is called on GTK's main context. A new manual-IP
+        # connection must happen in the fallback status worker, never here.
+        identifier, _error = self._resolve(device, allow_connect=False)
         if identifier is None:
             return None
         with self._lock:
+            if self._closed:
+                return None
             subscribers = self._subscribers.setdefault(identifier, set())
             subscribers.add(listener)
             current = self._status.get(identifier)
@@ -436,6 +451,7 @@ class PyChromecastBackend:
         with self._lock:
             if self._closed:
                 return
+            previously = self._connection_state.get(identifier)
             self._connection_state[identifier] = value
             if value != "CONNECTED":
                 # Empty status is explicit unavailability, not IDLE or proof
@@ -443,6 +459,35 @@ class PyChromecastBackend:
                 self._status[identifier] = {}
         if value != "CONNECTED":
             self._publish(identifier, {})
+        elif previously != "CONNECTED":
+            # The receiver came back online. PyChromecast only emits media-status
+            # events on change, so a receiver that reconnects while still playing
+            # the same content fires no new event and would otherwise appear to
+            # stop reporting playback. Re-observe the current status so the device
+            # keeps reporting playback instead of going silent.
+            self._refresh_status(identifier)
+
+    def _refresh_status(self, identifier: str) -> None:
+        """Re-observe current receiver media status after a reconnect.
+
+        A disconnect discards the cached media evidence, and PyChromecast only
+        emits media-status events on change. When the receiver reconnects while
+        still playing the same content, no new event fires, so the device would
+        otherwise appear to stop reporting playback. Read the receiver's current
+        status and republish it.
+        """
+        with self._lock:
+            if self._closed or identifier not in self._casts:
+                return
+            cast = self._casts.get(identifier)
+        if cast is None:
+            return
+        try:
+            media_status = cast.media_controller.status
+            cast_status = cast.status
+        except Exception:
+            return
+        self._publish(identifier, self._status_dict(media_status, cast_status))
 
     def close(self) -> None:
         with self._changed:

@@ -19,7 +19,7 @@ import sys
 import tempfile
 
 APP_DIRS = ("src", "setup", "scripts", "data")
-APP_FILES = ("pyproject.toml", "setup.py", "smoothcast", "sc.py", "SmoothCast.bat",
+APP_FILES = ("pyproject.toml", "setup.py", "sc.py", "SmoothCast.bat",
              "README.md", "LICENSE")
 BUILD_MARKER = ".smoothcast-build"
 SOURCE_MARKER = ".smoothcast-source"
@@ -284,6 +284,13 @@ def _installed_sources(source: Path, destination: Path):
                 shutil.copytree(source_path, target_path, symlinks=False, ignore=_ignore)
             else:
                 shutil.copy2(source_path, target_path)
+        # Retire only the known legacy wrapper; leave unrelated files and
+        # symlinks untouched. The transaction restores it if setup fails.
+        legacy = destination / "smoothcast"
+        if not legacy.is_symlink() and legacy.is_file() and legacy.stat().st_size <= 4096:
+            if "Compatibility entry point" in legacy.read_text(encoding="utf-8", errors="replace") and "from sc import main" in legacy.read_text(encoding="utf-8", errors="replace"):
+                legacy.rename(backup / "smoothcast")
+                saved.append("smoothcast")
         _record_source_revision(source, destination, revision)
         yield
         discard_backup = True

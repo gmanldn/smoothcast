@@ -71,9 +71,12 @@ machine hostname, prefixes it with `smoothcast`, and advertises it with
 mDNS/Bonjour when the `zeroconf` dependency is available. The card also shows
 the numeric IP address as a fallback for networks that block multicast DNS.
 
-Scan the room QR with your phone camera to open the numeric room link,
-then enter your name (and the House PIN if enabled). The QR is generated locally
-and contains only the address. You can also use **Copy link**.
+Scan the room QR with your phone camera to open the room link — the stable
+`http://smoothcast.local:PORT/` entry name while it is claimed, or the numeric
+`IP:PORT` when multicast DNS is unavailable. The QR is generated locally and
+contains only the address, never a PIN. You can also use **Copy link**. Because
+the QR prefers the stable entry name, a code printed for the wall keeps working
+after the machine's address changes.
 
 The portal chooses a port by binding directly to an operating-system-assigned
 ephemeral port. It does not check a port and bind later. It uses Python's
@@ -122,8 +125,9 @@ room to send it something and keeps itself awake where the browser supports a
 screen wake lock.
 
 `GET /join-slate.png` is a public 1920×1080 PNG (room name, join QR and the
-numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it returns
-503 when the QR/imaging libraries or a numeric address are unavailable.
+numeric `IP:PORT` address, never a PIN) suited to an idle-TV slate; it keeps the
+numeric endpoint so a phone on a network that blocks mDNS can still join. It
+returns 503 when the QR/imaging libraries or a numeric address are unavailable.
 
 From the **Screens** card on any paired guest's dashboard, pick an item from the
 shared queue and press **Play**. Screens are independent targets: controlling
@@ -394,13 +398,17 @@ transcoding of a growing file on a device.
 The isolated GUI smoke checks that the shared-room card builds; real second-device
 and physical playback-control checks remain device qualification.
 
-## Mesh (experimental, off by default)
+## Mesh (on by default on a private LAN)
 
-Full nodes on the same LAN can discover each other and share a live inventory of
+Full nodes on the same LAN discover each other and share a live inventory of
 nodes, connected browsers and Cast/DLNA/browser targets (design:
 [MESH_DESIGN.md](MESH_DESIGN.md), threat model: [MESH_SECURITY.md](MESH_SECURITY.md)).
-It is disabled until the Network view ships. To try it, add to
-`~/.config/cast-control/config.json`:
+Following the [trusted home LAN](VISION.md#trust-model-the-trusted-home-lan)
+decision, the mesh is on by default: the always-on `sc_core` coordinator starts
+it on any private interface — even from a bare ZIP download run with no install —
+so new nodes and web clients join the house automatically. It binds only to
+private, link-local and loopback addresses and is never reachable from outside
+the home. Optional settings in `~/.config/cast-control/config.json`:
 
 ```json
 {"mesh_enabled": true, "mesh_seeds": ["192.168.1.20"], "mesh_strict": false}
@@ -408,10 +416,11 @@ It is disabled until the Network view ships. To try it, add to
 
 `mesh_seeds` are optional private addresses to contact when multicast is blocked;
 `mesh_strict` only lets nodes already seen by presence discovery sync with you.
-Turning `mesh_enabled` off restores the exact previous behaviour: no sockets and no
-threads. Paired browsers can read the live view at `/api/mesh` and `/api/mesh/events`
-(Server-Sent Events). The mesh runs on its own thread and its failures never affect
-playback or the portal; `mesh_service.MeshService.diagnostics()` reports redacted health.
+Setting `mesh_enabled` to `false` restores the previous behaviour: no sockets and
+no threads. Paired browsers can read the live view at `/api/mesh` and
+`/api/mesh/events` (Server-Sent Events). The mesh runs on its own thread and its
+failures never affect playback or the portal; `mesh_service.MeshService.diagnostics()`
+reports redacted health.
 
 ## Room event reconnects
 

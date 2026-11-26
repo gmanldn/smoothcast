@@ -35,6 +35,9 @@ def runtime_python() -> Path | None:
 
 
 def python_path() -> Path:
+    managed = managed_target()
+    if managed is not None:
+        return managed[0]
     candidate = runtime_python()
     if candidate is None:
         raise FileNotFoundError(
@@ -44,7 +47,9 @@ def python_path() -> Path:
 
 
 def runtime_ready() -> bool:
-    """True when the project runtime and media tools can start without setup."""
+    """True when the selected runtime can start without setup."""
+    if managed_target() is not None:
+        return True  # the activated generation already passed its health probe
     runtime = runtime_python()
     if runtime is None:
         return False
@@ -353,6 +358,12 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
     return result.returncode == 0
 
 
+# A relaunch of an already-running instance asks the primary to bounce its
+# background services in place (room, mesh, library indexer, heartbeat, MPRIS)
+# so a changed checkout or settings take effect without interrupting playback.
+RELOAD_SERVICES_ARG = "--reload-services"
+
+
 def ensure_single_instance(args: list[str], target: Path | None = None) -> int | None:
     """Exit code to stop launching, or None to start a new instance."""
     pids = gui_instances(all_installations=True)
@@ -360,6 +371,10 @@ def ensure_single_instance(args: list[str], target: Path | None = None) -> int |
         return None
     # Do not mistake successful activation of a different source tree for
     # successful startup of the selected installed runtime.
+    if target is None:
+        managed = managed_target()
+        if managed is not None:
+            target = managed[1]
     selected = set(gui_instances(target=target))
     activated = activate_existing()
     if activated and set(pids) - selected:
@@ -370,10 +385,11 @@ def ensure_single_instance(args: list[str], target: Path | None = None) -> int |
         )
         return 3
     if activated:
-        if not args:
-            # Existing primary confirmed its activation; no extra GUI.
-            return 0
-        # Forward file and action arguments through GApplication.
+        # A confirmed primary owns the application id. Let this launch forward
+        # its command line so the running instance bounces its services in
+        # place and opens any files; GApplication never starts a second window.
+        if RELOAD_SERVICES_ARG not in args:
+            args.append(RELOAD_SERVICES_ARG)
         return None
     # A primary can exit normally while the activation request is in flight.
     # Re-scan instead of leaving a false stale-instance failure behind.
@@ -436,6 +452,75 @@ def run_managed(root: Path, command: list[str], env: dict[str, str]) -> int:
             shutil.rmtree(ready_dir, ignore_errors=True)
 
 
+def recovery_web(exit_code: int) -> int:
+    """Keep a local, read-only recovery page alive after a desktop crash.
+
+    No GTK, media tools, app imports, LAN advertisement or receiver commands.
+    The terminal still owns this process; Ctrl+C stops the recovery server.
+    """
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    page = (
+        "<!doctype html><html lang='en'><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>SmoothCast recovery</title>"
+        "<main><h1>SmoothCast recovery mode</h1>"
+        f"<p>Desktop startup failed or the process exited with status {int(exit_code)}.</p>"
+        "<p>The casting engine and shared room are unavailable. "
+        "This page is local diagnostics only, not an active room.</p>"
+        "<p>Read the terminal error, stop recovery with Ctrl+C, "
+        "then retry <code>python3 sc.py</code>.</p></main></html>"
+    ).encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            self.request.settimeout(3)
+            super().setup()
+
+        def do_GET(self):
+            expected = f"127.0.0.1:{self.server.server_port}"
+            if self.headers.get("Host") != expected:
+                self.send_error(403)
+                return
+            if self.path != "/":
+                self.send_error(404)
+                return
+            self.send_response(503)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(page)
+
+        def log_message(self, *_args):
+            pass
+
+    try:
+        with HTTPServer(("127.0.0.1", 0), Handler) as server:
+            print(f"SmoothCast recovery web URL: http://127.0.0.1:{server.server_port}/ "
+                  "(local only; casting unavailable). Ctrl+C to stop.",
+                  file=sys.stderr, flush=True)
+            server.serve_forever()
+    except KeyboardInterrupt:
+        return 130
+    except OSError as exc:
+        print(f"SmoothCast recovery web unavailable: {exc}", file=sys.stderr, flush=True)
+    return exit_code
+
+
+def _desktop_exit(code: int) -> int:
+    if code in (0, 130, -2, -15):
+        return code  # normal exit or operator interrupt/termination
+    print(f"SmoothCast: desktop failed with status {code}.", file=sys.stderr, flush=True)
+    if gui_instances(all_installations=True):
+        print("SmoothCast: another primary is still present; not starting recovery.",
+              file=sys.stderr, flush=True)
+        return code
+    return recovery_web(code)
+
+
 def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     # Direct shortcut/launcher calls reach the same isolated demo as sc.py (#523):
@@ -486,8 +571,8 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     try:
         installed = target[0] if target is not None else python_path()
     except FileNotFoundError as exc:
-        print(f"SmoothCast: {exc}", file=sys.stderr)
-        return 1
+        print(f"SmoothCast: {exc}", file=sys.stderr, flush=True)
+        return _desktop_exit(1)
     # GTK's process cwd is intentionally ROOT; preserve the caller's media
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
@@ -496,16 +581,13 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
         env = runtime_environment()
         if target is not None:
             # Keep the launcher resident to acknowledge the new primary.
-            return run_managed(ROOT, command, env)
-        if os.name != "nt":
-            # A .desktop launch may inherit HOME or / as its working directory.
-            # Use the same project root as the Windows launcher.
-            os.chdir(ROOT)
-            os.execvpe(command[0], command, env)
-        return subprocess.call(command, cwd=ROOT, env=env)
+            return _desktop_exit(run_managed(ROOT, command, env))
+        # Supervise the desktop instead of replacing the launcher: even an
+        # import error or native crash must leave a browser recovery path.
+        return _desktop_exit(subprocess.call(command, cwd=ROOT, env=env))
     except (OSError, RuntimeError) as exc:
-        print(f"SmoothCast could not start: {exc}", file=sys.stderr)
-        return 1
+        print(f"SmoothCast could not start: {exc}", file=sys.stderr, flush=True)
+        return _desktop_exit(1)
 
 
 if __name__ == "__main__":

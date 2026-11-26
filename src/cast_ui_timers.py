@@ -12,6 +12,7 @@ import time
 import castctl
 import idle_timers
 import playback_state
+import portal_status
 import sleep_fade
 import stream_watchdog
 from cast_widgets import Async, save_config
@@ -20,14 +21,55 @@ from cast_widgets import Async, save_config
 class UiTimerMixin:
     def _start_window_timers(self) -> None:
         self._timers_enabled = True
+        if getattr(self, "_core_status", None) is None:
+            self._core_status = portal_status.PublishedStatus()
         self._refresh_portal()
         GLib.timeout_add_seconds(15, self._refresh_portal)
         GLib.timeout_add_seconds(15, self._refresh_network_activity)
+        GLib.timeout_add_seconds(1, self._mesh_heartbeat_tick)
+        GLib.timeout_add_seconds(2, self._publish_core_status)
         self._sync_ui_timers()
         GLib.timeout_add(900, lambda: (self._poll_device(), False)[1])
         GLib.timeout_add(400, self._initial_scan)
         GLib.timeout_add(600, self._adopt_session)
         GLib.timeout_add_seconds(600, self._theme_tick)
+
+    def _publish_core_status(self) -> bool:
+        """Publish a bounded cast summary for the always-on sc-core coordinator.
+
+        Reads only GTK-owned state on the GTK thread and publishes a detached
+        copy, so the coordinator thread never touches a widget (never raises).
+        """
+        if self._closing:
+            return False
+        snapshot = getattr(self, "_core_status", None)
+        if snapshot is None:
+            return True
+        try:
+            session = self.session
+            snapshot.publish({
+                "active": bool(session is not None or self.external
+                               or getattr(self, "_url_cast_url", None)),
+                "state": str(self.device_state or ""),
+                "mode": str(getattr(session, "mode", "") or ""),
+                "target": str(self._device() or ""),
+            })
+        except Exception:
+            pass
+        return True
+
+    def _mesh_heartbeat_tick(self) -> bool:
+        """Refresh the Info-tab heartbeat at ~1 Hz only while it is visible."""
+        if self._closing:
+            return False
+        try:
+            stack = getattr(self, "panel_stack", None)
+            if (self.get_mapped() and stack is not None
+                    and stack.get_visible_child_name() == "info"):
+                self._refresh_mesh_heartbeat()
+        except Exception:
+            pass
+        return True
 
     def _bind_surface_resize(self, *_args) -> None:
         """Listen to real GdkSurface allocations, not a periodic size poll."""

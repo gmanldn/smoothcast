@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import guest_messages
+import hashlib
 import pathlib
 import threading
 import time
@@ -9,6 +10,7 @@ import time
 import action_state
 import castctl
 import accent
+import entry_name
 import state_labels
 import lan_interfaces
 import portal
@@ -37,6 +39,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             return True
         self._stop_portal()
         if not address:
+            print("SmoothCast web GUI unavailable: no private LAN IPv4 address.",
+                  flush=True)
             self.portal_status_label.set_text("LAN portal unavailable: no private IPv4 address found.")
             self._set_room_join_link(None, "Room unavailable — connect to a private LAN")
             return True
@@ -51,7 +55,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                     generation=lambda: (self.now_playing, id(self.session)),
                     owner=self._device)
             commands = portal_commands.CommandDispatcher(self._portal_apply_command, fence=fence)
-            self._portal = portal.Portal(address, self._portal_dispatch,
+            # A service bounce keeps the printed PIN valid (guests still rejoin).
+            pin, self._portal_reuse_pin = getattr(self, "_portal_reuse_pin", None), None
+            self._portal = portal.Portal(address, self._portal_dispatch, pin=pin,
                                          status_snapshot=snapshot.read,
                                          status_peek=snapshot.peek,
                                          commands=commands, fence=fence,
@@ -60,6 +66,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                                          link_sources=tuple(kind for kind in ("youtube", "magnet")
                                                             if self.cfg.get("portal_link_" + kind) is True))
         except (OSError, portal.PortalError):
+            print("SmoothCast web GUI unavailable: room server could not bind.",
+                  flush=True)
             self._portal = None
             self._portal_ip = None
             self.portal_status_label.set_text(
@@ -67,6 +75,17 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             )
             self._set_room_join_link(None, "Room unavailable — check network settings")
             return True
+        print(f"SmoothCast web GUI: {self._portal.url}", flush=True)
+        # Claim the stable address so a printed QR survives DHCP changes; the
+        # mesh reuses this entry and only releases it when another node is primary.
+        entry = entry_name.EntryName(address, self._portal.port)
+        entry.apply(True)
+        self._entry_name = entry
+        self._portal.attach_entry(entry)
+        join_url = self._portal.join_url()
+        if join_url != self._portal.url:
+            print(f"SmoothCast room link: {join_url}", flush=True)
+        self._portal_qr_url = join_url
         self._portal_ip = address
         # Reuse the same port across launches; never store a failed preferred bind.
         old_port = self.cfg.get("portal_port", 0)
@@ -75,19 +94,19 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             save_config(self.cfg)
         self._portal_cast_uploads = {}
         self._portal_cast_retried = set()
-        self.portal_url_label.set_text(self._portal.url)
-        self._set_room_join_link(self._portal.url)
+        self.portal_url_label.set_text(join_url)
+        self._set_room_join_link(join_url)
         self.portal_copy_button.set_sensitive(True)
         self.portal_pin_label.set_text(
             self._portal.pin if self._portal.server.pin_required else "Not required")
         self._ensure_library_indexer()
         if self._portal.port_fallback:
             self.portal_status_label.set_text(
-                f"Previous room port {old_port} was in use. New link: {self._portal.url}"
+                f"Previous room port {old_port} was in use. New link: {join_url}"
             )
         else:
             self.portal_status_label.set_text("Listening on your local network")
-        self._show_portal_qr(self._portal.url)
+        self._show_portal_qr(join_url)
         import cast_mesh
         cast_mesh.start(self, address)
         self._sync_portal_activity_timer()
@@ -110,15 +129,35 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
 
     def _copy_portal_link(self, _button: Gtk.Button) -> None:
         current = self._portal
-        if current is not None:
-            self.get_clipboard().set(current.url)
-            self.toast("Room link copied")
+        if current is None:
+            return
+        joiner = getattr(current, "join_url", None)
+        self.get_clipboard().set(joiner() if callable(joiner) else current.url)
+        self.toast("Room link copied")
+
+    def _refresh_portal_qr(self) -> None:
+        """Repaint the room QR/link when the stable entry name changes (e.g. mesh primary)."""
+        current = self._portal
+        if current is None:
+            return
+        url = current.join_url()
+        if url == getattr(self, "_portal_qr_url", None):
+            return
+        self._portal_qr_url = url
+        self.portal_url_label.set_text(url)
+        self._set_room_join_link(url)
+        self._show_portal_qr(url)
 
     def _stop_portal(self) -> None:
         import cast_mesh
         cast_mesh.stop(self)
+        entry, self._entry_name = getattr(self, "_entry_name", None), None
+        if entry is not None:
+            # Release the stable address synchronously so no stale A record lingers.
+            entry.close()
         current, self._portal = getattr(self, "_portal", None), None
         self._portal_ip = None
+        self._portal_qr_url = None
         timer = getattr(self, "_portal_activity_timer", None)
         if timer is not None:
             try:
@@ -140,6 +179,25 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             self.portal_activity_label.set_text("No client activity")
         peer_discovery_ui.refresh_peer_links(
             self, [], available=False, status="Peer discovery stopped")
+
+    def reload_house_services(self) -> None:
+        """Restart the room, mesh, library indexer and heartbeat in place.
+
+        A relaunch of ``sc.py`` while SmoothCast runs reaches here so a changed
+        checkout or settings take effect without a full restart. Playback
+        ownership is untouched: the active cast, session and tracker keep
+        running while the room and its helpers come back on the current LAN.
+        """
+        if self._closing:
+            return
+        current = getattr(self, "_portal", None)
+        # Keep the printed PIN valid across the bounce; guests still rejoin the
+        # restarted room and re-authenticate with the same code.
+        self._portal_reuse_pin = current.pin if current is not None else None
+        self._stop_portal()          # room, mesh and heartbeat
+        # Keep the process-wide content key cache: only application exit closes it.
+        self._stop_house_services(keep_fingerprint=True)  # library indexer, mesh-library
+        self._refresh_portal()       # rebuild everything on the current LAN
 
     def _sync_portal_activity_timer(self) -> None:
         """Room UI refreshes once per second only when the window is mapped."""
@@ -228,6 +286,18 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         if isinstance(state, dict):
             snapshot.publish(state)
 
+    def _portal_upload_target(self) -> dict:
+        """Read GTK-owned selection/status only; never perform network I/O here."""
+        receiver = self._device()
+        host = self._device_host(receiver)
+        if not receiver or not host or not self.device_info or self.device_state == "OFFLINE":
+            raise portal.PortalRequestError(409, "No reachable room receiver. Ask the host to select a TV or speaker.")
+        # Target confirmation is read-only and remains available during
+        # preparation of another stream. Actual cast commands still check busy.
+        identity = "\\0".join((receiver, host, str(self.cfg.get("device_uuid") or "")))
+        return {"receiver": receiver, "target_id": hashlib.sha256(identity.encode()).hexdigest(),
+                "active": bool(self.session is not None or self.external or self.busy)}
+
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:
             raise portal.PortalRequestError(503, "SmoothCast is shutting down")
@@ -236,6 +306,8 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             current = getattr(self, "_portal", None)
             if current is None or not current.server.session_key_active(session_key):
                 raise portal.PortalRequestError(401, guest_messages.ACCESS_REMOVED)
+        if operation == "upload_target":
+            return self._portal_upload_target()
         if operation == "music_autogain":
             value = payload.get("value")
             if type(value) is not bool:
@@ -258,6 +330,9 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             can_seek = bool(active and self.session is not None and not self.busy
                             and not self.external and self.tracker.known)
             feedback = getattr(self, "_cast_feedback", None)
+            media = getattr(self, "media", None) if active and not self.external else None
+            kind = ("video" if getattr(media, "has_video", False) else
+                    "audio" if getattr(media, "is_audio_only", False) else "")
             state = {
                 "cast_feedback": feedback if feedback and feedback.get("receiver") == self._device() else None,
                 "title": title, "receiver": self._device(), "state": self.device_state,
@@ -265,7 +340,7 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 "state_short": state_labels.present(self.device_state).short,
                 "state_description": state_labels.present(self.device_state).accessible,
                 "state_icon": state_labels.present(self.device_state).icon,
-                "position": position, "duration": duration,
+                "position": position, "duration": duration, "media_kind": kind,
                 # Source seconds per wall second. The tracker is authoritative,
                 # not HLS segment timestamps or a browser-side playback guess.
                 "rate": (self.tracker.rate
@@ -304,9 +379,15 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
                 accepted_uploads = self._portal_accepted_uploads = set()
             if upload_id in accepted_uploads:
                 return "Upload received; casting started."
+            target = payload.get("cast_target")
+            if target is not None and self._portal_upload_target()["target_id"] != target:
+                raise portal.PortalRequestError(409, "Casting target changed. The upload has not been sent to another receiver.")
             path = self._portal_upload_path(payload)
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # A rejected request or duplicate contribution must not rename media.
+            if str(path) not in self.queue and str(path) != self.now_playing:
+                self._portal_note_display_name(path, payload.get("name"))
             if upload_id:
                 accepted_uploads.add(upload_id)
                 if early:

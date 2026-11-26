@@ -76,12 +76,20 @@ def web_accents() -> dict[str, dict[str, dict[str, str]]]:
         colour = accent.accent_hex(preset)
         variants = {}
         for scheme, values in SCHEMES.items():
-            candidate = colour
-            for fraction in range(11):
-                if contrast_ratio(candidate, values["card"]) >= 3:
+            # Accent is also used for normal-size links, not just controls.
+            # Preserve the preset where possible, but meet AA on every surface.
+            target = "#ffffff" if scheme == "dark" else "#000000"
+            for fraction in range(101):
+                candidate = accent.mix(colour, target, fraction / 100)
+                on_accent = accent.text_on(candidate)
+                if contrast_ratio(candidate, on_accent) < 4.5:
+                    on_accent = max(("#000000", "#ffffff"),
+                                    key=lambda text: contrast_ratio(candidate, text))
+                if (contrast_ratio(candidate, on_accent) >= 4.5
+                        and all(contrast_ratio(candidate, values[surface]) >= 4.5
+                                for surface in ("bg", "card", "input"))):
                     break
-                candidate = accent.mix(colour, "#000000", fraction / 10)
-            variants[scheme] = {"accent": candidate, "on_accent": accent.text_on(candidate)}
+            variants[scheme] = {"accent": candidate, "on_accent": on_accent}
         table[preset] = variants
     return table
 

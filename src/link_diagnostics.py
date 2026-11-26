@@ -23,12 +23,14 @@ _INSTALL = {
               "aria2c": "run 'winget install aria2.aria2'",
               "ffprobe": "run 'winget install Gyan.FFmpeg' (it provides ffprobe)"},
 }
-_LAUNCHER_HELP = ("set SMOOTHCAST_LINK_SANDBOX to the absolute path of an executable launcher "
-                  "that blocks local and private network access and limits files, disk, "
-                  "processes and time; a reference Linux launcher ships as scripts/link_sandbox_bwrap.py "
-                  "and 'smoothcast --link-check --qualify' attack-tests it before it is trusted")
+_LAUNCHER_HELP = "set SMOOTHCAST_LINK_SANDBOX to the absolute path of an executable launcher that blocks local and private network access and limits files, disk, processes and time; a reference Linux launcher ships as scripts/link_sandbox_bwrap.py and 'smoothcast --link-check --qualify' attack-tests it before it is trusted"
+_LAUNCHER_HELP_OTHER = "set SMOOTHCAST_LINK_SANDBOX to an executable launcher that blocks local and private network access and limits files, disk, processes and time; the shipped reference launcher uses bubblewrap and is Linux-only, so this platform needs its own launcher and 'smoothcast --link-check --qualify' must pass before it is trusted"
 _QUALIFY = "qualified isolation (run smoothcast --link-check --qualify)"
 _QUALIFY_STEP = "run 'smoothcast --link-check --qualify' to attack-test the launcher before it is trusted"
+
+
+def _launcher_help(system: str) -> str:
+    return _LAUNCHER_HELP if system == "linux" else _LAUNCHER_HELP_OTHER
 
 
 def _platform(name: str | None) -> str:
@@ -62,7 +64,7 @@ def rows(readiness: dict, *, running: dict | None = None, platform: str | None =
         else:
             status = "failed"
             summary = "Enabled but the room could not start the worker (check disk space and storage)."
-        steps = [_LAUNCHER_HELP if name == LAUNCHER else _QUALIFY_STEP if name == _QUALIFY
+        steps = [_launcher_help(system) if name == LAUNCHER else _QUALIFY_STEP if name == _QUALIFY
                  else _INSTALL[system].get(name, "install " + name) for name in missing]
         if enabled and not verified and _QUALIFY not in missing:
             steps.append(_QUALIFY_STEP)

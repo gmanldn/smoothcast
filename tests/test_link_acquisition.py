@@ -299,6 +299,7 @@ def test_torrent_adapter_authenticates_metadata_before_downloading_and_probes(mo
     provider.launcher = "/trusted/sandbox"
     provider.tools["magnet"] = "/trusted/aria2c"
     provider.probe = "/trusted/ffprobe"
+    monkeypatch.setattr(provider, "_isolation_verified", lambda: True)
     calls = []
     stages = []
 
@@ -336,6 +337,7 @@ def test_youtube_adapter_uses_canonical_video_not_playlist_or_user_options(monke
     provider.launcher = "/trusted/sandbox"
     provider.tools["youtube"] = "/trusted/yt-dlp"
     provider.probe = "/trusted/ffprobe"
+    monkeypatch.setattr(provider, "_isolation_verified", lambda: True)
     calls = []
     stages = []
 
@@ -639,6 +641,7 @@ def test_youtube_search_uses_isolated_metadata_only_command(monkeypatch):
     provider.launcher = "/trusted/sandbox"
     provider.tools["youtube"] = "/trusted/yt-dlp"
     provider.probe = "/trusted/ffprobe"
+    monkeypatch.setattr(provider, "_isolation_verified", lambda: True)
 
     def launch(command, **kwargs):
         assert command[:2] == [provider.launcher, provider.tools["youtube"]]

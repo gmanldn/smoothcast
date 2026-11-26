@@ -180,3 +180,83 @@ def test_failed_publication_directory_sync_removes_new_generation(tmp_path, monk
     assert (root / "current").read_text() == "old-verified-generation"
     assert not (root / "releases" / COMMIT).exists()
     assert not list((root / "releases").glob(".staging-*"))
+
+def test_build_marker_fsync_failure_prevents_generation_publication(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+    original = mg.os.fsync
+    marker_synced = []
+
+    def fail_marker(fd):
+        # Identify the marker by its exact bytes, without relying on /proc.
+        info = os.fstat(fd)
+        if info.st_size == len(COMMIT) + 1:
+            marker_synced.append(True)
+            raise OSError("build marker fsync failed")
+        original(fd)
+
+    monkeypatch.setattr(mg.os, "fsync", fail_marker)
+    with pytest.raises(OSError, match="build marker fsync failed"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert marker_synced
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
+    assert (root / "current").read_text() == "old-verified-generation"
+
+
+def test_fifo_source_is_rejected_without_waiting_for_a_writer(tmp_path, monkeypatch):
+    if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+        pytest.skip("POSIX named pipes are unavailable")
+    source, root, files = sample(tmp_path)
+    fifo = source / "src/entry.py"
+    fifo.unlink()
+    os.mkfifo(fifo)
+    original = mg.os.open
+
+    def guarded_open(path, flags, *args, **kwargs):
+        if Path(path) == fifo:
+            # Fail immediately on a regression instead of hanging pytest.
+            assert flags & os.O_NONBLOCK
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(mg.os, "open", guarded_open)
+    with pytest.raises(mg.StageError, match="ordinary private file"):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+    assert (root / "current").read_text() == "old-verified-generation"
+    assert not (root / "releases" / COMMIT).exists()
+    assert not list((root / "releases").glob(".staging-*"))
+
+@pytest.mark.parametrize("name", [
+    "src/CON.txt", "src/aux", "src/COM1.py", "src/LPT².log",
+    "src/file.", "src/dir /file.py", "src/bad?.py", "src/bad|name",
+    "src/bad\x01name", "STAGE-MANIFEST.JSON", "stage-manifest.json/child",
+    "src/.SMOOTHCAST-BUILD", "src/.smoothcast-build/child",
+])
+def test_nonportable_or_reserved_paths_rejected_before_staging(tmp_path, monkeypatch, name):
+    source, root, files = sample(tmp_path)
+    files[name] = next(iter(files.values()))
+
+    def no_io(_path):
+        pytest.fail("invalid manifest reached staging directory creation")
+
+    monkeypatch.setattr(mg, "_directory", no_io)
+    with pytest.raises(mg.StageError):
+        mg.stage_local_snapshot(root, source, COMMIT, files)
+
+
+@pytest.mark.parametrize("names", [
+    ("folder", "folder/file.py"), ("folder/file.py", "folder"),
+    ("folder", "FOLDER/file.py"),
+])
+def test_manifest_refuses_file_directory_collisions_in_either_order(names):
+    metadata = {"size": 0, "sha256": hashlib.sha256(b"").hexdigest()}
+    with pytest.raises(mg.StageError, match="collides with a directory"):
+        mg._manifest({name: metadata for name in names})
+
+
+def test_manifest_cannot_replace_build_marker_parent(tmp_path, monkeypatch):
+    source, root, files = sample(tmp_path)
+    metadata = next(iter(files.values()))
+    monkeypatch.setattr(mg, "_directory", lambda _path: pytest.fail("unexpected staging I/O"))
+    for name in ("src", "SRC/entry.py"):
+        with pytest.raises(mg.StageError, match="reserved build marker"):
+            mg.stage_local_snapshot(root, source, COMMIT, {name: metadata})

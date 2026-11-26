@@ -7,17 +7,17 @@ automatic release PR or dependency on main's version or CI verdict.
 
 ## Day-to-day versioning
 
-- `src/version.py` is the **canonical release SemVer**, not a counter of
-  commits or completed tickets. Normal agent shipments do not edit it.
-- Every development slice is identified by its Git SHA (`smoothcast
-  --build-id`). `smoothcast --version` remains the semantic baseline.
+- `src/version.py` is the **canonical release SemVer**. New versions are made in
+  `develop` and merged there; no agent, test or CI promotes `main`.
+- Every development slice is also identified by its Git SHA (`smoothcast
+  --build-id`); `smoothcast --version` remains the semantic baseline.
 - `agent.py ship` refreshes `origin/develop`, checks claims and version
   integrity, rebases only unpublished code and fast-forward pushes. It never
   automatically promotes a release or writes to main.
-- Owner policy (25 Nov 2026): no per-ticket PATCH allocation. Closing a ticket
-  never requires a new SemVer. The legacy `ship --assign-patch` option is
-  ignored; release changes are separate explicit owner-directed commits.
-  Historical generated unpublished version-only commits remain recoverable.
+- Owner policy (26 Nov 2026): merging into `develop` and making new versions in
+  `develop` are normal owner-directed release work. The legacy
+  `ship --assign-patch` option is ignored; historical generated unpublished
+  version-only commits remain recoverable.
 - Source checkout, downloaded, installed and running processes can differ;
   changing a file on disk does not activate a running build.
 
@@ -33,12 +33,14 @@ vX.Y.Z - YYYY-MM-DD - Codename
 - `vX.Y.Z` remains the SemVer in `src/version.py`; the badge never replaces it.
 - `YYYY-MM-DD` is the commit's **committer date** in the timezone recorded in
   the commit object, never the server's or viewer's local date.
-- `Codename` comes from the frozen 64-entry weapon-of-war tuple in
-  `src/commit_identity.py`: `sha256(full-lowercase-SHA)[0] % 64`.
+- `Codename` is a disposable two-weapon mnemonic from
+  `src/commit_identity.py`: two names from the weapon-of-war tuple chosen by
+  bytes of `sha256(full-lowercase-SHA)` (`64 * 64` combinations), joined by `-`.
 - Both parts are derived from the exact commit, so they stay bound to it.
   Rebase, amend or cherry-pick creates a new commit and a new identity.
-- The tuple and index rule are frozen identity data: reordering, removing or
-  adding a name would relabel already-published commits.
+- The codename is only a memorable high-water cue for spotting a new commit; the
+  committer date is the canonical marker, so the alias is disposable and may be
+  redefined between releases.
 - Reading is offline and bounded: loose and non-delta packed commit objects are
   parsed directly, with no Git subprocess, network, GUI or receiver work.
   Missing, malformed, oversized, delta-packed or unreadable provenance fails

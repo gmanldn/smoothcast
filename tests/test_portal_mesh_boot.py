@@ -20,9 +20,11 @@ const assert=require("node:assert/strict");
 const window={};  // the panel exports scRenderMeshRoom on window (#386)
 const panel={hidden:true,contains:()=>false,previousElementSibling:null};
 const nav={hidden:true},dash={hidden:false};
-let tick=()=>{},vis=()=>{},csrf="initial",timeId=0;
-const timers=new Map();
-const setInterval=fn=>{tick=fn};
+let vis=()=>{},csrf="initial",timeId=0;
+const timers=new Map(),intervals=[];
+const tick=()=>{for(const fn of intervals)fn()};
+const setInterval=fn=>{intervals.push(fn);return intervals.length};
+const clearInterval=()=>{};
 const setTimeout=(fn,ms)=>{const id=++timeId;timers.set(id,{fn,ms});return id};
 const clearTimeout=id=>timers.delete(id);
 class AbortController{
@@ -46,10 +48,16 @@ const document={hidden:false,activeElement:null,
   getElementById:id=>elements[id]||null,
   addEventListener:(name,fn)=>{if(name==="visibilitychange")vis=fn}};
 const pending=[];
-const fetch=(_url,opt)=>new Promise((resolve,reject)=>{
-  pending.push({resolve,signal:opt.signal});
-  opt.signal.addEventListener("abort",()=>reject(Error("aborted")));
-});
+const fetch=(url,opt)=>{
+  // The dedicated heartbeat poll is separate from mesh discovery.
+  if(String(url).indexOf("/api/mesh/heartbeat")===0){
+    return Promise.resolve({ok:true,status:200,json:async()=>({heartbeat:null})});
+  }
+  return new Promise((resolve,reject)=>{
+    pending.push({resolve,signal:opt.signal});
+    opt.signal.addEventListener("abort",()=>reject(Error("aborted")));
+  });
+};
 const events=[];
 class EventSource{
   constructor(url){this.url=url;events.push(this)}

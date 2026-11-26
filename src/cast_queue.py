@@ -10,7 +10,6 @@ gi.require_version("Adw", "1")
 from gi.repository import Gio, GLib, Gtk
 import pathlib
 
-from utils import pretty_title
 import time
 
 import castctl
@@ -136,8 +135,9 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         row = self.queue_list.get_row_at_index(index)
         if row is not None:
             self.queue_list.select_row(row)
-        if self.now_playing is None and not self.busy:
-            self.np_title.set_text(pathlib.Path(path).name)
+        display = (getattr(self, "_portal_queue_display_names", None) or {}).get(path)
+        if self.now_playing is None and not self.busy and not self.external and self.session is None:
+            self.np_title.set_text(queue_metadata.display_title(path, self._media_cache, display))
         # Re-selecting a queued film while casting must not change active
         # media metadata, its audio/subtitle tracks or the receiver clock.
         if self.session is not None or self.external or self.busy:
@@ -160,18 +160,15 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 None, (self.cfg.get("positions") or {}).get(path),
             )
             self.preview_picture.set_visible(False)
-            self.preview.set_video(pretty_title(path), "Reading media duration…")
+            self.preview.set_video(queue_metadata.media_title(path, display_name=display), "Reading media duration…")
             self.np_meta.set_text("Inspect the media and scrub to a starting point, then press Cast.")
             self.seekbar.set_state(0.0, 0.0, 0.0)
 
         generation = self._preview_generation
-        try:
-            info = pathlib.Path(path).stat()
-            fingerprint = (info.st_size, info.st_mtime_ns)
-        except OSError:
-            fingerprint = None
+        fingerprint = queue_metadata.file_fingerprint(path)
         cached = self._media_cache.get(path)
-        if cached is not None and cached[0] == fingerprint:
+        cache_hit = fingerprint is not None and cached is not None and cached[0] == fingerprint
+        if cache_hit:
             self.queue_durations[path] = cached[1].duration
             self.media = cached[1]
             self._update_embedded_choices(self.media)
@@ -193,17 +190,16 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
         def done(result):
             path_result, media = result
-            try:
-                info = pathlib.Path(path_result).stat()
-                current_fingerprint = (info.st_size, info.st_mtime_ns)
-            except OSError:
-                current_fingerprint = None
-            if current_fingerprint is not None:
-                self._media_cache[path_result] = (current_fingerprint, media)
+            current_fingerprint = queue_metadata.file_fingerprint(path_result)
+            if (fingerprint is None or current_fingerprint != fingerprint
+                    or path_result not in self.queue):
+                return
+            self._media_cache[path_result] = (current_fingerprint, media)
             self.queue_durations[path_result] = media.duration
             if (generation == self._preview_generation
                     and self.now_playing is None and self.session is None
-                    and not self.external and self._preview_path == path_result):
+                    and not self.busy and not self.external
+                    and self._preview_path == path_result):
                 self.media = media
                 self._update_embedded_choices(media)
                 self._update_audio_choices(media)
@@ -214,23 +210,29 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 self.elapsed_label.set_text(fmt_time(self._preview_position))
                 self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - self._preview_position))}" if duration else "--:--")
                 info = " · ".join(bit for bit in (streamer.media_summary(media), fmt_time(duration)) if bit)
-                self.preview.set_video(pretty_title(path_result), info)
+                name = (getattr(self, "_portal_queue_display_names", None) or {}).get(path_result)
+                title = queue_metadata.media_title(path_result, media, name)
+                self.np_title.set_text(title)
+                self.preview.set_video(title, info)
                 self._queue_preview(self._preview_position)
             self._rebuild_queue()
 
         def failed(message):
             if (generation == self._preview_generation
-                    and self.session is None and self._preview_path == path):
+                    and self.now_playing is None and self.session is None
+                    and not self.busy and not self.external and self._preview_path == path):
                 self.np_meta.set_text(f"Cannot inspect media: {message}")
-                self.preview.set_video(pretty_title(path), "Media inspection failed")
+                self.preview.set_video(queue_metadata.media_title(path, display_name=display), "Media inspection failed")
                 self.toast(f"Cannot inspect {pathlib.Path(path).name}: {message}", error=True)
             self._console(f"FFprobe failed for {pathlib.Path(path).name}: {message}")
 
-        if cached is None or cached[0] != fingerprint:
+        if not cache_hit:
             Async.run(work, done=done, failed=failed, domain="media")
         else:
             info = " · ".join(bit for bit in (streamer.media_summary(self.media), fmt_time(self.media.duration)) if bit)
-            self.preview.set_video(pretty_title(path), info)
+            title = queue_metadata.media_title(path, self.media, display)
+            self.np_title.set_text(title)
+            self.preview.set_video(title, info)
             self.elapsed_label.set_text(fmt_time(self._preview_position))
             self.remaining_label.set_text(f"-{fmt_time(max(0.0, self.media.duration - self._preview_position))}" if self.media.duration else "--:--")
         self._refresh_controls()
@@ -259,7 +261,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             return
         self._rebuild_queue()
         self.toast(f"Added {added} media item{'s' if added != 1 else ''} to the queue")
-        if self.now_playing is None and self.selected_index is None and self.queue:
+        if (self.now_playing is None and self.selected_index is None and self.queue
+                and not self.busy and self.session is None and not self.external):
             self.set_selection(self.queue[0])
 
         duration_paths = self._queue_duration_paths(paths)
@@ -323,12 +326,14 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             return
         checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
         items = tuple(self.queue)
-        if items == getattr(self, "_room_checkpoint_last", None):
+        names = room_checkpoint.queue_display_names(items, getattr(self, "_portal_queue_display_names", {}))
+        if (items == getattr(self, "_room_checkpoint_last", None)
+                and names == getattr(self, "_room_checkpoint_names_last", ())):
             return
         if not items and not checkpoint.exists():
             return
         try:
-            room_checkpoint.write_checkpoint(checkpoint, items)
+            room_checkpoint.write_checkpoint(checkpoint, items, display_names=dict(names))
         except (OSError, ValueError) as exc:
             if not getattr(self, "_room_checkpoint_error_shown", False):
                 self._room_checkpoint_error_shown = True
@@ -336,6 +341,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 self._console(f"Room queue checkpoint failed: {exc}")
             return
         self._room_checkpoint_last = items
+        self._room_checkpoint_names_last = names
 
 
     def _refresh_queue_visibility(self) -> None:
@@ -373,12 +379,20 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         )
         if (self.selected_index is not None
                 and 0 <= self.selected_index < len(self.queue)
-                and self.session is None and not self.external):
+                and self.session is None and not self.external and not self.busy):
             path = self.queue[self.selected_index]
             if path != self._preview_path:
                 # Delay to avoid mutating a Gtk.ListBox during its selection signal.
-                GLib.idle_add(lambda: (self.set_selection(path), False)[1]
-                              if path != self._preview_path else False)
+                def select_if_current():
+                    index = self.selected_index
+                    if (not self._closing and not self.busy and self.session is None
+                            and not self.external and index is not None
+                            and 0 <= index < len(self.queue) and self.queue[index] == path
+                            and path != self._preview_path):
+                        self.set_selection(path)
+                    return False
+
+                GLib.idle_add(select_if_current)
 
 
     def _on_queue_activated(self, _list, row) -> None:

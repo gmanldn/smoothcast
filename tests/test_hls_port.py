@@ -98,6 +98,19 @@ class PortHelperTests(unittest.TestCase):
         self.assertFalse(streamer._server_probe(port + 1)[0] and streamer._port_open(port + 1))
 
 
+    def test_obsolete_health_protocol_never_reports_compatible_bind(self):
+        response = mock.Mock(status=200)
+        response.read.return_value = b"SmoothCast HLS server v1\n"
+        response.getheader.side_effect = lambda name, default=None: {
+            "X-SmoothCast-Pid": "4242", "X-SmoothCast-Bind": IP,
+        }.get(name, default)
+        with mock.patch.object(streamer, "HTTPConnection") as connection:
+            connection.return_value.getresponse.return_value = response
+            self.assertEqual(streamer._server_probe(), (True, None, 4242))
+            response.read.return_value = server.HEALTH_BODY
+            self.assertEqual(streamer._server_probe(), (True, IP, 4242))
+
+
 class PortSelectionTests(unittest.TestCase):
     def start(self, *, open_ports=(), healthy=None, port=None, bind=IP):
         """Run the real _start_server with fake listeners: {port: (bound, pid)} for ours."""
@@ -164,6 +177,22 @@ class PortSelectionTests(unittest.TestCase):
         terminate.assert_called_once_with(4242, "server")
         self.assertEqual(session.port, 8768)
         self.assertEqual(popen.call_args.args[0][popen.call_args.args[0].index("--port") + 1], "8768")
+
+    def test_obsolete_kept_server_replaced_even_on_same_interface(self):
+        session = streamer.Session()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        with tempfile.TemporaryDirectory() as work, \
+             mock.patch.object(streamer, "ROOT", Path(work)), \
+             mock.patch.object(streamer, "_port_open", side_effect=[True, False]), \
+             mock.patch.object(streamer, "_server_probe", return_value=(True, None, 4242)), \
+             mock.patch.object(streamer, "_pid_is_ours", return_value=True), \
+             mock.patch.object(streamer, "_terminate_pid") as terminate, \
+             mock.patch.object(streamer, "_server_healthy", return_value=True), \
+             mock.patch.object(streamer.subprocess, "Popen", return_value=proc) as popen:
+            session._start_server(IP, "192.168.1.50")
+        terminate.assert_called_once_with(4242, "server")
+        popen.assert_called_once()
 
     def test_every_port_taken_gives_a_clear_error_and_starts_nothing(self):
         everything = set(range(streamer.PORT, streamer.PORT + streamer.FALLBACK_PORTS))

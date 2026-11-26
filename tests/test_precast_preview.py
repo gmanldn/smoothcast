@@ -1,6 +1,8 @@
 """Source-level guards for local pre-cast film inspection (GTK-free)."""
 from __future__ import annotations
 
+import ast
+from types import SimpleNamespace
 import unittest
 
 from gui_source import main_window_methods
@@ -57,9 +59,39 @@ class PreCastPreviewTests(unittest.TestCase):
     def test_duration_is_cached_without_reprobing_on_reselection(self):
         selection = METHODS["set_selection"]
         self.assertIn("self._media_cache.get(path)", selection)
-        self.assertIn("info.st_mtime_ns", selection)
-        self.assertIn("if cached is None or cached[0] != fingerprint:", selection)
+        self.assertIn("queue_metadata.file_fingerprint(path)", selection)
+        self.assertIn("current_fingerprint != fingerprint", selection)
+        self.assertIn("if not cache_hit:", selection)
         self.assertIn("if self._preview_path == path:", selection)
+
+    def test_preview_uses_shared_media_title_after_probe_and_cache_hit(self):
+        selection = METHODS["set_selection"]
+        self.assertIn("queue_metadata.media_title(path_result, media, name)", selection)
+        self.assertIn("queue_metadata.media_title(path, self.media, display)", selection)
+        self.assertIn("self.np_title.set_text(title)", selection)
+        self.assertNotIn("pretty_title(", selection)
+
+    def test_async_preview_callbacks_cannot_overwrite_active_playback(self):
+        tree = ast.parse(METHODS["set_selection"])
+        for name in ("done", "failed"):
+            callback = next(node for node in ast.walk(tree)
+                            if isinstance(node, ast.FunctionDef) and node.name == name)
+            guard = next(node.test for node in callback.body
+                         if isinstance(node, ast.If)
+                         and "generation" in ast.unparse(node.test))
+            condition = compile(ast.Expression(guard), "<preview guard>", "eval")
+            for overrides, expected in (
+                ({}, True), ({"busy": True}, False), ({"external": True}, False),
+                ({"session": object()}, False), ({"now_playing": "other"}, False),
+                ({"_preview_generation": 2}, False), ({"_preview_path": "other"}, False),
+            ):
+                with self.subTest(callback=name, overrides=overrides):
+                    state = dict(_preview_generation=1, now_playing=None, session=None,
+                                 busy=False, external=False, _preview_path="film")
+                    state.update(overrides)
+                    context = dict(self=SimpleNamespace(**state), generation=1,
+                                   path="film", path_result="film")
+                    self.assertEqual(eval(condition, context), expected)
 
     def test_local_preview_can_work_with_offline_cast_device(self):
         # The desktop and the web share one state rule (action_state); the pure
@@ -73,7 +105,10 @@ class PreCastPreviewTests(unittest.TestCase):
         self.assertIn("self._preview_busy", METHODS["_start_preview"])
         self.assertIn("Async.run(", METHODS["_start_preview"])
         self.assertIn("screenshot.preview_frame(", METHODS["_start_preview"])
-        self.assertIn("GLib.timeout_add(180, self._start_preview)", METHODS["_queue_preview"])
+        self.assertIn("delay = 180 if sparse else 1", METHODS["_queue_preview"])
+        self.assertIn("GLib.source_remove(self._preview_timer_id)", METHODS["_queue_preview"])
+        self.assertIn("not stream.is_seeking()", METHODS["_tick"])
+        self.assertIn("self.elapsed_label.set_text(fmt_time(target))", METHODS["seek_to"])
         self.assertIn("Gdk.Texture.new_from_bytes(", METHODS["_start_preview"])
 
 

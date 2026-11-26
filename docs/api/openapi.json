@@ -664,6 +664,37 @@
         ]
       }
     },
+    "/api/mesh/heartbeat": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "Success"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Dedicated primary-node heartbeat (coordinator, activities and counters)",
+        "tags": [
+          "mesh"
+        ]
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "responses": {

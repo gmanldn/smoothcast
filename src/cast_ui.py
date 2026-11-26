@@ -12,6 +12,7 @@ import pathlib
 import time
 
 from utils import pretty_title
+import queue_metadata
 import cast_targets
 
 import responsive_layout
@@ -19,6 +20,7 @@ import queue_accessibility
 import slider_accessibility
 import action_state
 
+import async_jobs
 import buffer_health
 import notifications
 import state_labels
@@ -839,7 +841,40 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self._last_stall_count = 0
         self.buffer_graph = BufferHealthGraph()
         body.append(self.buffer_graph)
+        heading = Gtk.Label(label="PYTHON THREADS", xalign=0.0)
+        heading.add_css_class("detail-section")
+        body.append(heading)
+        self.thread_status_label = Gtk.Label(
+            label="Sampling live threads…", xalign=0.0, wrap=True, selectable=True,
+        )
+        self.thread_status_label.add_css_class("mono")
+        self.thread_status_label.set_tooltip_text(
+            "Python-visible thread liveness only; native libraries and child processes are separate."
+        )
+        body.append(self.thread_status_label)
+        self._thread_status_at = float("-inf")
         return card
+
+
+    def _build_mesh_heartbeat_card(self) -> Gtk.Box:
+        import mesh_heartbeat_ui
+
+        self._heartbeat_card = mesh_heartbeat_ui.HeartbeatCard()
+        self._refresh_mesh_heartbeat()
+        return self._heartbeat_card.card
+
+    def _refresh_mesh_heartbeat(self) -> None:
+        card = getattr(self, "_heartbeat_card", None)
+        if card is None:
+            return
+        service = getattr(self, "_mesh", None)
+        beat = None
+        if service is not None:
+            try:
+                beat = service.heartbeat_snapshot()
+            except Exception:
+                beat = None
+        card.update(beat)
 
 
     def _card(self, title: str, subtitle: str = "") -> tuple[Gtk.Box, Gtk.Box]:
@@ -1077,6 +1112,15 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _update_details(self, snapshot: progress_model.Progress | None = None) -> None:
+        thread_label = getattr(self, "thread_status_label", None)
+        if thread_label is not None and time.monotonic() - self._thread_status_at >= 1.0:
+            self._thread_status_at = time.monotonic()
+            rows = async_jobs.thread_inventory()
+            report = f"{len(rows)} Python threads reporting alive"
+            if rows:
+                report += "\n" + "\n".join(rows)
+            if thread_label.get_text() != report:
+                thread_label.set_text(report)
         info = self.device_info
         session = self.session
         media = self.media
@@ -1209,7 +1253,13 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
 
     def _set_now_playing_labels(self, media, session) -> None:
-        title = pretty_title(media.path)
+        display_name = getattr(self, "_portal_queue_display_names", {}).get(str(media.path))
+        # The session already carries the title sent to the receiver. Queue
+        # edits and alias pruning must not rename an active stream.
+        title = getattr(getattr(session, "state", None), "title", None)
+        if not isinstance(title, str) or not title.strip():
+            title = queue_metadata.media_title(media.path, media, display_name,
+                                               fallback=pretty_title(media.path))
         meta = ([f"Audio · {media.acodec or 'unknown codec'}"]
                 if media.is_audio_only else [media.resolution])
         if media.duration:

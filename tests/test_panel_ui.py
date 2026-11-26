@@ -91,7 +91,7 @@ def test_room_join_link_is_always_visible_above_player_and_is_copyable():
 
 def test_room_join_link_tracks_portal_start_failure_and_shutdown():
     src = (ROOT / "src" / "cast_portal.py").read_text(encoding="utf-8")
-    assert 'self._set_room_join_link(self._portal.url)' in src
+    assert 'self._set_room_join_link(join_url)' in src
     assert 'self._set_room_join_link(None, "Room stopped")' in src
     assert 'self._set_room_join_link(None, "Room unavailable — connect to a private LAN")' in src
     assert 'self._set_room_join_link(None, "Room unavailable — check network settings")' in src

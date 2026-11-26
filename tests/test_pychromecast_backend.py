@@ -412,7 +412,9 @@ def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation(
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room") is None
     cast.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
-    assert backend.info("Living Room") is None
+    # A reconnect re-observes the current playback status so the receiver keeps
+    # reporting instead of appearing silent.
+    assert backend.info("Living Room")["player_state"] == "PLAYING"
     cast.media_controller.status.player_state = "PAUSED"
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room")["player_state"] == "PAUSED"
@@ -421,3 +423,96 @@ def test_disconnect_invalidates_status_and_reconnect_requires_fresh_observation(
     cast.media_controller.listener.new_media_status(cast.media_controller.status)
     assert backend.info("Living Room") is None
 
+def test_status_subscription_never_connects_a_manual_target_on_ui_context():
+    factory = mock.Mock(
+        side_effect=lambda host, **_kwargs: FakeCast(
+            name=host[0], host=host[0], identifier=host[2]
+        )
+    )
+    backend = PyChromecastBackend(discover=mock.Mock(return_value=FakeBrowser()),
+                                  connect_from_host=factory)
+    updates = []
+    assert backend.subscribe("192.168.1.30", updates.append) is None
+    factory.assert_not_called()
+    # The existing asynchronous polling fallback establishes the connection.
+    assert backend.info("192.168.1.30")["player_state"] == "PLAYING"
+    unsubscribe = backend.subscribe("192.168.1.30", updates.append)
+    assert unsubscribe is not None and updates[-1]["player_state"] == "PLAYING"
+    factory.assert_called_once()
+    unsubscribe()
+    backend.close()
+    assert backend.subscribe("192.168.1.30", updates.append) is None
+    assert backend.info("192.168.1.30") is None
+    factory.assert_called_once()
+
+
+@pytest.mark.parametrize("state,expected", [
+    ("PLAYING", "pause"),
+    ("BUFFERING", "pause"),
+    ("PAUSED", "play"),
+    ("UNKNOWN", None),
+    ("IDLE", None),
+    (None, None),
+])
+def test_toggle_requires_known_receiver_playback_state(state, expected):
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    try:
+        if state is None:
+            cast.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+        else:
+            cast.media_controller.status.player_state = state
+            cast.media_controller.listener.new_media_status(cast.media_controller.status)
+        cast.media_controller.calls.clear()
+        success, message = backend.command("Living Room", "play_toggle")
+        if expected is None:
+            assert not success and message
+            assert cast.media_controller.calls == []
+        else:
+            assert success
+            assert cast.media_controller.calls == [(expected, 12)]
+    finally:
+        backend.close()
+
+
+@pytest.mark.parametrize("event", ["LOST", "close"])
+def test_initial_status_read_rejects_observation_invalidated_during_read(event):
+    receiver = FakeCast()
+    backend, _browser = discovered_backend([receiver])
+    backend.scan(timeout=0)
+    original = backend._status_dict
+
+    def invalidated(media, status):
+        snapshot = original(media, status)
+        if event == "close":
+            backend.close()
+        else:
+            receiver.connection_listener.new_connection_status(SimpleNamespace(status=event))
+        return snapshot
+
+    try:
+        with mock.patch.object(backend, "_status_dict", side_effect=invalidated):
+            assert backend.info("Living Room") is None
+        assert backend.info("Living Room") is None
+    finally:
+        backend.close()
+
+
+def test_explicitly_disconnected_receiver_rejects_commands_until_reconnect():
+    receiver = FakeCast()
+    backend, _browser = discovered_backend([receiver])
+    backend.scan(timeout=0)
+    try:
+        receiver.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+        receiver.media_controller.calls.clear()
+        for action in ("play", "pause", "stop"):
+            success, message = backend.command("Living Room", action)
+            assert not success and message
+        assert receiver.media_controller.calls == []
+        receiver.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
+        success, _ = backend.command("Living Room", "pause")
+        assert success
+        assert receiver.media_controller.calls[-1] == ("pause", 12)
+    finally:
+        backend.close()

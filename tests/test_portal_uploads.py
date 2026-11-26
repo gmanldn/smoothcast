@@ -94,7 +94,7 @@ def test_reserves_space_caps_concurrency_and_cancels_partial(tmp_path):
 
 def test_close_discards_partials_but_keeps_completed_sources(tmp_path):
     uploads = manager(tmp_path)
-    partial = uploads.create("owner", "partial.mp4", 1)
+    partial = uploads.create("owner", "partial.mp4", 1, queue_only=True)
     complete = uploads.create("owner", "complete.mp4", 1)
     uploads.append("owner", complete["id"], "bytes 0-0/1", 1, BytesIO(b"x"))
     final, _, _ = uploads.finalize("owner", complete["id"])
@@ -187,6 +187,37 @@ def test_faststart_mp4_is_cast_while_arriving(tmp_path):
     result = uploads.append("owner", created["id"], f"bytes 0-{len(prefix) - 1}/{len(FASTSTART_MP4)}",
                             len(prefix), BytesIO(prefix))
     assert result["ready_to_cast"] is True
+    uploads.close()
+
+
+def test_faststart_mp4_waits_for_complete_front_index_and_retries(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    ftyp = _box(b"ftyp", b"isom")
+    moov = _box(b"moov", b"12345678")
+    data = ftyp + moov + _box(b"mdat", b"1234567890123456")
+    created = uploads.create("owner", "film.mp4", len(data))
+    offset = 0
+    for end, ready in ((len(ftyp), False), (len(ftyp) + 8, False),
+                       (len(ftyp + moov), True), (len(data), False)):
+        result = uploads.append("owner", created["id"],
+                                f"bytes {offset}-{end - 1}/{len(data)}",
+                                end - offset, BytesIO(data[offset:end]))
+        assert result["ready_to_cast"] is ready
+        offset = end
+    uploads.close()
+
+
+def test_rear_index_mp4_never_starts_early_after_later_chunks(tmp_path):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    data = INDEXED_MP4
+    created = uploads.create("owner", "film.mp4", len(data))
+    offset = 0
+    for end in (12, 20, len(data) - 1, len(data)):
+        result = uploads.append("owner", created["id"],
+                                f"bytes {offset}-{end - 1}/{len(data)}",
+                                end - offset, BytesIO(data[offset:end]))
+        assert result["ready_to_cast"] is False
+        offset = end
     uploads.close()
 
 
@@ -375,3 +406,56 @@ def test_rejected_media_does_not_exhaust_guest_upload_slots(tmp_path):
     assert good["received"] == 0
     assert len(uploads.snapshot()) == 1
     uploads.close()
+
+
+def test_overlapping_cast_uploads_reserve_one_lane_and_queue_the_rest(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    uploads = manager(tmp_path, early_cast_min_bytes=2)
+    gate = Barrier(3)
+    def create(index):
+        gate.wait(timeout=3)
+        owner = f"guest-{index}"
+        return owner, uploads.create(owner, f"film-{index}.mkv", 6, cast_target="target")
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        rows = list(pool.map(create, range(3)))
+    assert sum(not row["queue_only"] for _, row in rows) == 1
+    for owner, row in rows:
+        ident = row["id"]
+        assert uploads.status(owner, ident)["queue_only"] is row["queue_only"]
+        receipt = uploads.append(owner, ident, "bytes 0-2/6", 3, BytesIO(b"abc"))
+        assert bool(receipt["ready_to_cast"]) is not row["queue_only"]
+        assert uploads.cast_target(owner, ident) == (None if row["queue_only"] else "target")
+    uploads.close()
+
+
+def test_cancelled_cast_reservation_releases_lane(tmp_path):
+    uploads = manager(tmp_path)
+    first = uploads.create("a", "first.mkv", 6)
+    second = uploads.create("b", "second.mkv", 6)
+    assert second["queue_only"]
+    uploads.cancel("a", first["id"])
+    third = uploads.create("c", "third.mkv", 6)
+    assert not third["queue_only"]
+    uploads.close()
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_cancel_cannot_remove_progressive_cast_source(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "movie.mkv", 6)
+    upload_id = created["id"]
+    first = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert first["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(first["cast_path"])
+    with pytest.raises(portal_uploads.UploadError, match="Casting has already been requested") as exc:
+        uploads.cancel("owner", upload_id)
+    assert exc.value.status == 409
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.mark_early_cast(upload_id, accepted=False)
+    uploads.cancel("owner", upload_id)
+    assert not path.exists()

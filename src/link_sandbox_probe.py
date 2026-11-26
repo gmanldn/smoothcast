@@ -2,12 +2,14 @@
 
 ``CommandProvider`` cannot see an arbitrary launcher's OS policy, so it never
 claims isolation. This module *tests* it: the launcher runs a tiny probe that
-tries to (1) connect to a loopback service, (2) connect to a service bound on
-this computer's private LAN address, (3) read a canary file in the owner's home
-directory and (4) leave a detached child process behind. The evidence is
-collected host-side (connection counts at the listeners, the canary's content
-echoed back, whether the child outlived the launcher), not trusted from the
-probe's own report. Only a launcher that denies all four is "verified".
+tries to (1) connect to an IPv4 loopback service, (2) connect to an IPv6
+loopback service, (3) connect to a service bound on this computer's private LAN
+address, (4) reach the cloud metadata address (169.254.169.254, link-local),
+(5) read a canary file in the owner's home directory and (6) leave a detached
+child process behind. The evidence is collected host-side (connection counts at
+the listeners, the canary's content echoed back, whether the child outlived the
+launcher), not trusted from the probe's own report. Only a launcher that denies
+every reachable one of these is "verified".
 
 It contacts no external host, downloads nothing and starts no media tool. The
 canary is created and removed by this module. GTK-free.
@@ -15,18 +17,22 @@ canary is created and removed by this module. GTK-free.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 import os
 from pathlib import Path
 import secrets
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 
-CHECKS = ("probe_ran", "loopback_denied", "private_lan_denied", "home_denied", "process_tree_terminated")
+CHECKS = ("probe_ran", "loopback_denied", "ipv6_denied", "private_lan_denied",
+          "metadata_denied", "home_denied", "process_tree_terminated")
+METADATA_ADDRESS = "169.254.169.254"
 
 _PROBE = r"""
 import json, os, socket, subprocess, sys
@@ -39,7 +45,11 @@ def reach(host, port):
     except OSError:
         return False
 out["loopback"] = reach("127.0.0.1", spec["loopback"])
+out["loopback6"] = reach("::1", spec["loopback6"]) if spec.get("loopback6") else None
 out["lan"] = reach(spec["lan_ip"], spec["lan"]) if spec.get("lan_ip") else None
+# Link-local/cloud metadata has no listener we can bind, so a successful
+# connection here is itself the evidence; failing to connect passes.
+out["metadata"] = reach(spec["metadata"], 80)
 try:
     out["home"] = open(spec["canary"], "r").read(64)
 except OSError:
@@ -65,8 +75,8 @@ class Qualification:
 class _Listener:
     """Counts connection attempts: the host-side proof that egress was (not) denied."""
 
-    def __init__(self, host: str) -> None:
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def __init__(self, host: str, family: int = socket.AF_INET) -> None:
+        self.sock = socket.socket(family, socket.SOCK_STREAM)
         self.sock.bind((host, 0))
         self.sock.listen(4)
         self.sock.settimeout(0.2)
@@ -139,12 +149,17 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
     canary = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
     secret = secrets.token_hex(16)
     loop = _Listener("127.0.0.1")
+    try:
+        loop6 = _Listener("::1", socket.AF_INET6)
+    except OSError:
+        loop6 = None  # no host IPv6 loopback: nothing to reach, count as denied
     private = _Listener(lan) if lan else None
     tag = "smoothcast-qualify-" + secrets.token_hex(6)
     try:
         canary.write_text(secret)
         canary.chmod(0o600)
-        spec = {"loopback": loop.port, "lan": private.port if private else 0,
+        spec = {"loopback": loop.port, "loopback6": loop6.port if loop6 else 0,
+                "lan": private.port if private else 0, "metadata": METADATA_ADDRESS,
                 "lan_ip": lan, "canary": str(canary), "tag": tag}
         with tempfile.TemporaryDirectory(prefix="smoothcast-qualify-") as staging:
             try:
@@ -168,12 +183,22 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
         time.sleep(0.4)  # let a well-behaved launcher finish tearing the tree down
         checks = {"probe_ran": "pass"}
         checks["loopback_denied"] = "pass" if loop.count == 0 and not report.get("loopback") else "FAIL"
+        # No host IPv6 loopback means no IPv6 service to reach: treat as denied.
+        checks["ipv6_denied"] = ("pass" if loop6 is None
+                                 else "pass" if loop6.count == 0 and not report.get("loopback6") else "FAIL")
         if private is None:
             checks["private_lan_denied"] = "skipped"
         else:
             checks["private_lan_denied"] = "pass" if private.count == 0 and not report.get("lan") else "FAIL"
+        # The cloud metadata address (link-local) has no listener we can bind, so
+        # reaching it at all is the evidence; failing to connect passes.
+        checks["metadata_denied"] = "FAIL" if report.get("metadata") else "pass"
         checks["home_denied"] = "FAIL" if report.get("home") == secret[:64] else "pass"
-        checks["process_tree_terminated"] = "FAIL" if _tagged(tag) else "pass"
+        # Without a host process inventory, absence of a detected descendant
+        # is not evidence that the descendant was terminated.
+        checks["process_tree_terminated"] = (
+            "FAIL" if _tagged(tag) else "pass" if Path("/proc").is_dir() else "skipped"
+        )
         verified = all(value == "pass" for value in checks.values())
         failed = [name for name, value in checks.items() if value == "FAIL"]
         detail = ("isolation verified" if verified else
@@ -187,6 +212,8 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
             except OSError:
                 pass
         loop.close()
+        if loop6 is not None:
+            loop6.close()
         if private is not None:
             private.close()
         try:
@@ -202,15 +229,31 @@ def cache_path() -> Path:
 
 
 def _identity(launcher: str) -> dict | None:
+    # A same-size edit with a preserved mtime must invalidate qualification.
+    # Bound the read; a launcher should never require hashing a huge file.
     try:
-        info = Path(launcher).stat()
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+        with os.fdopen(os.open(launcher, flags), "rb") as handle:
+            before = os.fstat(handle.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size > 16 << 20:
+                return None
+            payload = handle.read((16 << 20) + 1)
+            after = os.fstat(handle.fileno())
+        current = Path(launcher).stat()
+        if (len(payload) != before.st_size or
+                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                != (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)):
+            return None
     except OSError:
         return None
-    return {"path": str(launcher), "size": info.st_size, "mtime_ns": info.st_mtime_ns}
+    return {"path": str(launcher), "size": before.st_size, "mtime_ns": before.st_mtime_ns,
+            "sha256": hashlib.sha256(payload).hexdigest()}
 
 
 def save(launcher: str, result: Qualification) -> bool:
-    """Remember a result only for this exact launcher file (path, size, mtime)."""
+    """Remember a result only for this exact launcher file and content digest."""
     identity = _identity(launcher)
     if identity is None:
         return False
@@ -235,4 +278,6 @@ def is_verified(launcher: str) -> bool:
     except (OSError, ValueError):
         return False
     return (isinstance(data, dict) and data.get("verified") is True
-            and data.get("launcher") == identity)
+            and data.get("launcher") == identity
+            and isinstance(data.get("checks"), dict)
+            and all(data["checks"].get(name) == "pass" for name in CHECKS))

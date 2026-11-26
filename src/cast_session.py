@@ -130,6 +130,7 @@ class SessionMixin:
         cfg = dict(self.cfg)  # Background task must use a consistent snapshot.
         previous = self.session
         prewarmed_entry = getattr(self, "_media_cache", {}).get(str(path))
+        display_name = getattr(self, "_portal_queue_display_names", {}).get(str(path))
         subs_mode = cfg["subs"]
         # Keep immediate validation of an explicitly selected subtitle, but
         # defer automatic directory scanning to the cast worker.
@@ -248,7 +249,7 @@ class SessionMixin:
             if self._closing:
                 raise streamer.StreamError("Cast cancelled because SmoothCast is closing")
             session = dlna.Session() if renderer is not None else streamer.Session()
-            title = pretty_title(path)
+            title = queue_metadata.media_title(path, media, display_name, fallback=pretty_title(path))
 
             def stop_if_cancelled_after_start():
                 if cancel.is_set():
@@ -395,14 +396,16 @@ class SessionMixin:
             self._note_device_used()
             self._record_watch("start")
             self._set_now_playing_labels(media, session)
+            # Keep the confirmed receiver title on every playback surface.
+            title = self.np_title.get_text()
             # Refresh preview metadata.
             if self.preview is not None and media:
                 info = streamer.media_summary(media)
                 if media.size_label:
                     info += f" · {media.size_label}"
-                self.preview.set_video(pretty_title(path), info)
-            self.toast(f"Casting {pretty_title(path)} to {device}")
-            self._console(f"Casting {pretty_title(path)} to {device} ({session.mode})")
+                self.preview.set_video(title, info)
+            self.toast(f"Casting {title} to {device}")
+            self._console(f"Casting {title} to {device} ({session.mode})")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()
@@ -593,6 +596,8 @@ class SessionMixin:
             if self.seekbar is not None:
                 self.seekbar.set_state(target, duration, self.seekbar.buffered)
             self._preview_position = target
+            self.elapsed_label.set_text(fmt_time(target))
+            self.remaining_label.set_text(f"-{fmt_time(max(0.0, duration - target))}" if duration else "--:--")
             stream = self._local_stream()
             if stream is not None:
                 if stream.is_prepared():
@@ -973,7 +978,7 @@ class SessionMixin:
         if previewing:
             stream = self._local_stream()
             if stream is not None and stream.is_prepared():
-                if stream.get_playing() and not self.seekbar.scrubbing:
+                if stream.get_playing() and not self.seekbar.scrubbing and not stream.is_seeking():
                     self._preview_position = max(0.0, stream.get_timestamp() / 1_000_000)
                     position = self._preview_position
                 if not duration and stream.get_duration() > 0:

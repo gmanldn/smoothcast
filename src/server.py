@@ -22,12 +22,16 @@ import error_log
 ROOT = Path.home() / ".cache" / "cast-control"
 PORT = 8767
 HEALTH_PATH = "/_smoothcast/health"
-HEALTH_BODY = b"SmoothCast HLS server v1\n"
+# v2 identifies the CORS-capable server. A new cast must not reuse v1.
+HEALTH_BODY = b"SmoothCast HLS server v2\n"
 # Written by the streamer before each cast; read per request so a server kept
 # alive between casts always honours the *current* receiver.
 POLICY_NAME = "server_access.json"
 LOG_NAME = "server.log"
 LOOPBACK = "127.0.0.1"
+# Google Cast Default Media Receiver origin (adaptive HLS requires CORS).
+CAST_ORIGIN = "https://www.gstatic.com"
+CAST_CORS_HEADERS = frozenset({"content-type", "accept-encoding", "range"})
 # Address this process was told to listen on (health header, for reuse checks).
 BIND = LOOPBACK
 # A unique 128-bit media generation binds the playlist and all its
@@ -271,10 +275,42 @@ class H(SimpleHTTPRequestHandler):
         return super().guess_type(path)
 
     def end_headers(self):
-        # Native receivers fetch HLS without browser CORS access.
-        # Do not expose stream bytes to arbitrary LAN web-page origins.
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
+
+    def _cast_origin_allowed(self) -> bool:
+        return self.headers.get_all("Origin", []) == [CAST_ORIGIN]
+
+    def _send_cast_cors(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", CAST_ORIGIN)
+        self.send_header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges")
+
+    def do_OPTIONS(self) -> None:
+        """Allow only the default receiver's read-only active-HLS preflight."""
+        policy = load_policy(ROOT)
+        if not client_allowed(self.client_address[0], policy):
+            self.send_error(403, "Forbidden")
+            return
+        if not self._host_allowed():
+            self.send_error(400, "Invalid HLS Host header")
+            return
+        if not policy.token or not public_resource(self.path, policy.token):
+            self.send_error(404, "Not found")
+            return
+        methods = self.headers.get_all("Access-Control-Request-Method", [])
+        requested = self.headers.get_all("Access-Control-Request-Headers", [])
+        fields = {field.strip().lower() for value in requested for field in value.split(",")}
+        if (not self._cast_origin_allowed() or methods not in (["GET"], ["HEAD"])
+                or not fields.issubset(CAST_CORS_HEADERS)):
+            self.send_error(403, "Forbidden")
+            return
+        self.send_response(204)
+        self._send_cast_cors()
+        self.send_header("Access-Control-Allow-Methods", "GET, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept-Encoding, Range")
+        self.send_header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _serve(self, head: bool) -> None:
         policy = load_policy(ROOT)
@@ -294,11 +330,11 @@ class H(SimpleHTTPRequestHandler):
             if not head:
                 self.wfile.write(HEALTH_BODY)
         elif public_resource(self.path, policy.token):
-            self._serve_media(head)
+            self._serve_media(head, cors=bool(policy.token) and self._cast_origin_allowed())
         else:
             self.send_error(404, "Not found")
 
-    def _serve_media(self, head: bool) -> None:
+    def _serve_media(self, head: bool, *, cors: bool = False) -> None:
         """Serve one allow-listed HLS file with ranges and cache validators."""
         path = _url_path(self.path).lstrip("/")
         target = ROOT / path
@@ -337,6 +373,9 @@ class H(SimpleHTTPRequestHandler):
             length = max(0, end - start + 1)
             status = 206 if requested is not None else 200
             self.send_response(status)
+            self.send_header("Vary", "Origin")
+            if cors:
+                self._send_cast_cors()
             self.send_header("Content-Type", self.guess_type(target))
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("ETag", etag)

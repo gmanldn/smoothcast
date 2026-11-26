@@ -14,6 +14,7 @@ from unittest import mock
 import process_identity as identity
 import startup_cleanup
 import streamer
+import streamer_generation as generation
 
 
 class FakeProcess:
@@ -85,6 +86,27 @@ def test_windows_and_posix_role_classification_is_exact_and_not_filename_only():
             argv, server_script=str(streamer.SERVER_SCRIPT),
             progress_file=str(streamer.PROGRESS_FILE),
         ) is None
+
+
+def test_frozen_hls_worker_is_still_recognised_as_our_server():
+    frozen = ("python3",
+              str(streamer.ROOT / f"{generation.GENERATION_PREFIX}0123456789ab" / "server.py"),
+              "--bind", "192.168.1.10")
+    assert identity.role_of(
+        frozen, server_script=str(streamer.SERVER_SCRIPT),
+        progress_file=str(streamer.PROGRESS_FILE)) == "server"
+    assert identity.role_of(
+        ("python3", "/tmp/lookalike/server.py"),
+        server_script=str(streamer.SERVER_SCRIPT),
+        progress_file=str(streamer.PROGRESS_FILE)) is None
+
+
+def test_pid_is_ours_accepts_the_frozen_worker(monkeypatch):
+    frozen = server()
+    frozen.argv = ("python3",
+                   str(streamer.ROOT / f"{generation.GENERATION_PREFIX}0123456789ab" / "server.py"))
+    monkeypatch.setattr(identity, "psutil", fake_psutil(frozen))
+    assert streamer._pid_is_ours(frozen.pid, "server")
 
 
 def test_snapshot_requires_same_user_command_and_birth_timestamp(monkeypatch):
@@ -267,3 +289,32 @@ def test_keep_streaming_never_erases_unverified_portable_hls(monkeypatch, tmp_pa
     assert report.retained_stream
     assert saved.exists() and playlist.exists()
     assert stop.call_args.args[0] == []
+
+
+def test_worker_identity_requires_the_exact_cache_root_and_digest(monkeypatch):
+    cache = str(streamer.ROOT)
+    generation_name = f"{generation.GENERATION_PREFIX}0123456789ab"
+    for path in (
+        f"/tmp/{generation_name}/server.py",
+        f"{cache}-other/{generation_name}/server.py",
+        f"{cache}/nested/{generation_name}/server.py",
+        f"{cache}/{generation.GENERATION_PREFIX}not-a-digest/server.py",
+        f"{cache}/{generation.GENERATION_PREFIX}0123456789AB/server.py",
+    ):
+        fake = server()
+        fake.argv = ("python3", path)
+        monkeypatch.setattr(identity, "psutil", fake_psutil(fake))
+        assert not streamer._pid_is_ours(fake.pid, "server", fake.started)
+        streamer._terminate_pid(fake.pid, "server", fake.started)
+        assert fake.actions == []
+
+
+def test_windows_worker_identity_uses_configured_cache_path():
+    kwargs = {
+        "server_script": r"C:\smoothcast\src\server.py",
+        "progress_file": r"C:\Users\me\.cache\cast-control\progress.log",
+    }
+    worker = r"C:\Users\me\.cache\cast-control\hls-generation-0123456789ab\server.py"
+    assert identity.role_of(("python.exe", worker), **kwargs) == "server"
+    assert identity.role_of(("python.exe", worker.replace("me", "other")), **kwargs) is None
+

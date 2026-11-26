@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import re
+import threading
 import time
 from typing import Callable
 
@@ -98,6 +99,11 @@ def describe(exc: object) -> UserFailure:
                 clean = errors.CATALOGUE[code].steps
             errors.record(code, getattr(exc, "context", None))
             return UserFailure(reviewed.strip()[:MAX_MESSAGE], clean, _detail(exc), True, code)
+        code = _code(exc)
+        if code != errors.FALLBACK.code:
+            spec = errors.CATALOGUE[code]
+            errors.record(code, getattr(exc, "context", None))
+            return UserFailure(spec.message, spec.steps, _detail(exc), True, code)
         errors.record(errors.FALLBACK.code)
         return UserFailure(TITLE, STEPS, _detail(exc))
     except Exception:
@@ -115,18 +121,20 @@ class Notifier:
         self._per_window = per_window
         self._last: dict[str, float] = {}
         self._recent: list[float] = []
+        self._lock = threading.Lock()
 
     def allow(self, failure: UserFailure) -> bool:
-        now = self._clock()
-        self._recent = [t for t in self._recent if now - t < self._window]
-        last = self._last.get(failure.key)
-        if last is not None and now - last < self._repeat:
-            return False
-        if len(self._recent) >= self._per_window:
-            return False
-        if len(self._last) >= MAX_KEYS:
-            oldest = min(self._last, key=self._last.__getitem__)
-            self._last.pop(oldest, None)
-        self._last[failure.key] = now
-        self._recent.append(now)
-        return True
+        with self._lock:
+            now = self._clock()
+            self._recent = [t for t in self._recent if now - t < self._window]
+            last = self._last.get(failure.key)
+            if last is not None and now - last < self._repeat:
+                return False
+            if len(self._recent) >= self._per_window:
+                return False
+            if len(self._last) >= MAX_KEYS:
+                oldest = min(self._last, key=self._last.__getitem__)
+                self._last.pop(oldest, None)
+            self._last[failure.key] = now
+            self._recent.append(now)
+            return True

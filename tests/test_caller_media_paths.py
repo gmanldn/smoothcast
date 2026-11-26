@@ -43,10 +43,6 @@ class CallerMediaPathTests(unittest.TestCase):
             (checkout / "film.mkv").write_text("wrong")
             observed = {}
 
-            def execvpe(_executable, command, _env):
-                observed["args"] = command
-                observed["cwd_at_exec"] = os.getcwd()
-
             def subprocess_call(command, *, cwd, env):
                 observed["args"] = command
                 observed["cwd_at_exec"] = os.getcwd()
@@ -56,7 +52,6 @@ class CallerMediaPathTests(unittest.TestCase):
             with mock.patch.object(launch, "ROOT", checkout), \
                  mock.patch.object(launch, "python_path", return_value=Path("/venv/python")), \
                  mock.patch.object(launch, "runtime_environment", return_value={}), \
-                 mock.patch.object(launch.os, "execvpe", side_effect=execvpe), \
                  mock.patch.object(launch.subprocess, "call",
                                    side_effect=subprocess_call), \
                  mock.patch.object(launch.os, "chdir") as chdir, \
@@ -65,11 +60,8 @@ class CallerMediaPathTests(unittest.TestCase):
                  mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
                 launch.main(["film.mkv"])
             self.assertEqual(observed["args"][-1], str((caller / "film.mkv").resolve()))
-            if os.name == "nt":
-                self.assertEqual(observed["child_cwd"], checkout)
-                chdir.assert_not_called()
-            else:
-                chdir.assert_called_once_with(checkout)
+            self.assertEqual(observed["child_cwd"], checkout)
+            chdir.assert_not_called()
             self.assertNotEqual(observed["args"][-1], str((checkout / "film.mkv").resolve()))
 
     def test_missing_caller_media_must_not_fall_back_to_checkout_decoy(self):

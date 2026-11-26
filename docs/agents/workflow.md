@@ -6,6 +6,17 @@ branch**. `main` is owner-controlled archival/release integration: nobody and
 no workflow automatically merges, promotes, creates a release PR or pushes
 to `main`. The owner manually decides when (and whether) to merge it.
 
+## Choose the transport first (P0)
+
+- Hosted ChatGPT execution containers: assume no native internet access. Use
+  the GitHub connector immediately for repository reads, claims and guarded
+  progress shipments. Follow [connector shipment](sandbox-network.md); do not
+  attempt native clone/pull/push, gh, curl or dependency downloads first.
+- Network-enabled developer machines: use the native agent CLI below.
+- Both paths preserve claim arbitration, SHA-pinned changes, non-force develop
+  publication, durable handover and truthful test evidence. Connector progress
+  cannot change SemVer or close tickets; do not bypass that guard.
+
 ## Many agents, one trunk
 
 1. Prefer `python3 scripts/agent.py start [ISSUE]` (auto-picks a free
@@ -61,9 +72,10 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
 
 ## Agent sandbox networking preflight
 
-On a network-related fetch, push or dependency failure, diagnose once before
-retrying: [sandbox networking](sandbox-network.md) (read-only probe; never
-bypass ship safeguards; skipped network checks are UNVERIFIED).
+For a known offline hosted container, skip network diagnostics and select the
+connector directly. On an otherwise network-enabled machine, diagnose a new
+failure once before retrying: [sandbox networking](sandbox-network.md).
+Never bypass ship safeguards; skipped network checks are UNVERIFIED.
 
 ## Concurrency and token efficiency
 
@@ -77,13 +89,12 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
 - Every coherent `agent.py ship` has an immutable Git commit SHA; `src/version.py`
-  is release SemVer. Owner policy (25 Nov 2026): **no per-ticket version bumps**.
-  Ship and close verified tickets immediately without waiting for a release
-  number. The old `--assign-patch` flag is an ignored compatibility option.
-  Only explicit owner-directed release changes edit SemVer. The version-history
-  guard runs regardless of `--skip-checks`; `main` promotion is manual.
-  If targeted checks already ran, use `--skip-checks` to avoid duplicate work
-  and record the actual evidence at finish; do not claim unrun checks passed.
+  is release SemVer. Owner policy (26 Nov 2026): **make new versions in
+  `develop`**. Merge work and bump SemVer there; the owner promotes `main` later.
+  The old `--assign-patch` flag is an ignored compatibility option. The
+  version-history guard runs regardless of `--skip-checks`; `main` promotion is
+  manual. If targeted checks already ran, use `--skip-checks` to avoid duplicate
+  work and record the actual evidence at finish; do not claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
@@ -94,6 +105,7 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
 `develop`; do not start long global pytest/GTK/native builds for every
 agent patch. A failed or unrun check is *not* a licence to say a ticket passed
 testing. Always describe actual evidence accurately.
+**Finish, then move on:** ship, record it untested, and test lazily to close tickets.
 
 | Event | Work scheduled | Purpose |
 | --- | --- | --- |

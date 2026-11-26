@@ -54,6 +54,7 @@ def _build_window(tmp_path, *, idle_add=None):
     methods = main_window_methods()
     code = "\n".join(textwrap.indent(methods[name], "    ") for name in (
         "_portal_upload_path", "_portal_queue_action", "_portal_handle",
+        "_portal_note_display_name",
         "_portal_dispatch", "_publish_portal_status",
         "_portal_apply_music_autogain", "_reconcile_portal_casts",
         "_retry_portal_cast"))

@@ -150,19 +150,26 @@ def ps_literal(value: str | Path) -> str:
 
 
 def windows_shortcut_command(
-    *, executable: Path, launcher: Path, destination: Path,
+    *, executable: Path, launcher: Path | None, destination: Path,
     working_dir: Path, icon: Path | None = None,
 ) -> str:
-    args = f'"{launcher}"'
+    args = f'"{launcher}"' if launcher is not None else ""
     icon_command = (f"$s.IconLocation={ps_literal(icon)}; " if icon else "")
     return (
+        "$ErrorActionPreference='Stop'; "
         "$w=New-Object -ComObject WScript.Shell; "
         f"$s=$w.CreateShortcut({ps_literal(destination)}); "
         f"$s.TargetPath={ps_literal(executable)}; "
         f"$s.Arguments={ps_literal(args)}; "
         f"$s.WorkingDirectory={ps_literal(working_dir)}; "
         f"{icon_command}"
-        "$s.Save()"
+        "$s.Save(); "
+        f"$saved=$w.CreateShortcut({ps_literal(destination)}); "
+        f"if (-not (Test-Path -LiteralPath {ps_literal(destination)} -PathType Leaf) "
+        f"-or $saved.TargetPath -ne {ps_literal(executable)} "
+        f"-or $saved.Arguments -ne {ps_literal(args)} "
+        f"-or $saved.WorkingDirectory -ne {ps_literal(working_dir)}) "
+        "{ throw 'SmoothCast shortcut verification failed' }"
     )
 
 
@@ -194,9 +201,14 @@ def install_windows(*, appdata: Path | None = None) -> Path:
     local = Path(os.environ.get("LOCALAPPDATA") or roaming.parent.parent / "Local")
     icon = local / "SmoothCast" / "SmoothCast.ico"
     write_windows_icon(ROOT / "data" / "cast-control.png", icon)
+    # Explorer does not inherit setup's UCRT64 DLL/PATH environment.
+    # The installed bootstrap calls canonical sc.py, which restores that env.
+    entry = ROOT / "SmoothCast.bat"
+    if not entry.is_file() or not (ROOT / "sc.py").is_file():
+        raise ValueError("Installed SmoothCast Windows launcher is missing")
     script = windows_shortcut_command(
-        executable=Path(sys.executable),
-        launcher=ROOT / "sc.py",
+        executable=entry,
+        launcher=None,
         destination=shortcut,
         working_dir=ROOT,
         icon=icon,

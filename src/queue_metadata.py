@@ -28,31 +28,41 @@ def file_fingerprint(path: str | Path) -> tuple[int, int, int, int, int] | None:
 def cached_media(cache: Mapping[str, tuple], path: str | Path) -> object | None:
     """Return cached media only while the source file has the same identity."""
     entry = cache.get(str(path))
+    # Queue/status rendering runs on the main context. A miss cannot reuse
+    # metadata, so do not touch the filesystem until a usable entry exists.
+    if not isinstance(entry, tuple) or len(entry) != 2 or entry[0] is None or entry[1] is None:
+        return None
     fingerprint = file_fingerprint(path)
-    if fingerprint is None or not entry or len(entry) != 2 or entry[0] != fingerprint:
+    if fingerprint is None or entry[0] != fingerprint:
         return None
     return entry[1]
 
 
-def display_title(path: str | Path, cache: Mapping[str, tuple]) -> str:
-    """Format verified embedded music tags, with the filename as fallback."""
-    media = cached_media(cache, path)
-    if media is None:
-        return Path(path).name
-    title = str(getattr(media, "title", "") or "").strip() or Path(path).name
+def media_title(path: str | Path, media: object | None = None,
+                display_name: str | None = None, *, fallback: str | None = None) -> str:
+    """Use verified tags and original contribution names, never an absolute path."""
+    name = display_name.strip() if isinstance(display_name, str) else ""
+    title = str(getattr(media, "title", "") or "").strip() or name or fallback or Path(path).name
     artist = str(getattr(media, "artist", "") or "").strip()
     album = str(getattr(media, "album", "") or "").strip()
     value = f"{artist} — {title}" if artist else title
     return f"{value} · {album}" if album else value
 
 
+def display_title(path: str | Path, cache: Mapping[str, tuple],
+                  display_name: str | None = None) -> str:
+    """Format verified embedded tags and the original contribution name."""
+    return media_title(path, cached_media(cache, path), display_name)
+
+
 def media_for_cast(
     entry: tuple | None, path: str | Path, probe: Callable[[Path], object],
 ) -> tuple[object, tuple[int, int, int, int, int] | None]:
     """Use a snapshot only while the source still has its cached identity."""
-    fingerprint = file_fingerprint(path)
-    if fingerprint is not None and entry is not None and len(entry) == 2 and entry[0] == fingerprint:
-        return entry[1], fingerprint
+    if isinstance(entry, tuple) and len(entry) == 2 and entry[0] is not None and entry[1] is not None:
+        fingerprint = file_fingerprint(path)
+        if fingerprint is not None and entry[0] == fingerprint:
+            return entry[1], fingerprint
     return probe(Path(path)), None
 
 

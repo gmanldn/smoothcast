@@ -93,8 +93,10 @@ class InstallLocationTests(unittest.TestCase):
             (source / "src" / "module.py").write_text("x = 1\n")
             (source / "setup" / "bootstrap.py").write_text("# bootstrap\n")
             (source / "pyproject.toml").write_text('[project]\nname = "smoothcast"\n')
+            (source / "smoothcast").write_text("# Compatibility entry point\nfrom sc import main\n")
             destination = base / "Installed apps" / "SmoothCast"
             with install_location.installed_sources(source, destination):
+                self.assertFalse((destination / "smoothcast").exists())
                 self.assertEqual((destination / "src" / "module.py").read_text(), "x = 1\n")
                 self.assertFalse((destination / ".git").exists())
                 self.assertFalse((destination / "src" / "__pycache__").exists())
@@ -116,10 +118,14 @@ class InstallLocationTests(unittest.TestCase):
             (target / ".venv").mkdir()
             (target / ".venv" / "important").write_text("preserve")
             (target / "my music.txt").write_text("preserve")
+            legacy = target / "smoothcast"
+            legacy.write_text("# Compatibility entry point\nfrom sc import main\n")
             with self.assertRaisesRegex(RuntimeError, "simulated failure"):
                 with install_location.installed_sources(source, target):
                     self.assertEqual((target / "src" / "player.py").read_text(), "new\n")
+                    self.assertFalse(legacy.exists())
                     raise RuntimeError("simulated failure")
+            self.assertTrue(legacy.is_file())
             self.assertEqual((target / "src" / "player.py").read_text(), "old\n")
             self.assertEqual((target / ".venv" / "important").read_text(), "preserve")
             self.assertEqual((target / "my music.txt").read_text(), "preserve")
@@ -156,6 +162,26 @@ class InstallLocationTests(unittest.TestCase):
             self.assertIn("--in-place", args)
             self.assertEqual(args[args.index("--target") + 1], "linux")
             remember.assert_called_once()
+
+    def test_registered_install_can_rebuild_a_missing_venv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "setup").mkdir()
+            (root / "setup" / "bootstrap.py").touch()
+            (root / "pyproject.toml").write_text('name = "smoothcast"')
+            self.assertFalse((root / ".venv").exists())
+            with mock.patch.object(bootstrap, "ROOT", root), \
+                 mock.patch.object(bootstrap, "VENV", root / ".venv"), \
+                 mock.patch.object(bootstrap.platform, "system", return_value="Linux"), \
+                 mock.patch.object(install_location, "select_directory", return_value=root), \
+                 mock.patch.object(install_location, "previous_directory", return_value=root), \
+                 mock.patch.object(install_location, "installed_sources") as copy, \
+                 mock.patch.object(bootstrap, "install_linux", return_value=(Path(sys.executable), {})), \
+                 mock.patch.object(bootstrap, "ensure_venv", return_value=root / ".venv/bin/python") as repair, \
+                 mock.patch.object(bootstrap.native_runtime, "save"):
+                self.assertEqual(bootstrap.main(["--target", "linux", "--yes", "--no-shortcuts"]), 0)
+                repair.assert_called_once()
+                copy.assert_not_called()
 
     def test_readonly_check_never_copies_or_installs(self):
         with tempfile.TemporaryDirectory() as directory:

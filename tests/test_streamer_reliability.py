@@ -228,10 +228,7 @@ class StreamerReliabilityTests(unittest.TestCase):
     def test_server_command_carries_port_bind_and_frozen_launcher(self):
         """Source and PyInstaller launches both pass --port and --bind through."""
         import frozen_runtime
-        for frozen, head in (
-            (False, [sys.executable, str(streamer.SERVER_SCRIPT)]),
-            (True, [sys.executable, frozen_runtime.SERVER_FLAG]),
-        ):
+        for frozen in (False, True):
             with self.subTest(frozen=frozen):
                 self._server_env()
                 session = streamer.Session()
@@ -241,9 +238,12 @@ class StreamerReliabilityTests(unittest.TestCase):
                      mock.patch.object(streamer.subprocess, "Popen") as popen:
                     popen.return_value.poll.return_value = None
                     session._start_server("192.168.1.23", "192.168.1.50")
+                worker = (frozen_runtime.SERVER_FLAG if frozen
+                          else streamer._hls_server_script())
                 self.assertEqual(
                     popen.call_args.args[0],
-                    head + ["--port", str(session.port), "--bind", "192.168.1.23"])
+                    [sys.executable, worker, "--port", str(session.port),
+                     "--bind", "192.168.1.23"])
 
     def test_reused_server_on_another_interface_is_replaced_only_if_ours(self):
         self._server_env()

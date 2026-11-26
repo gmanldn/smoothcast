@@ -33,10 +33,10 @@ External contributors without push access may propose PRs targeting
 
 ## Version and main
 
-`src/version.py` is release SemVer, not a per-ticket counter. Routine agent
-shipments retain the version and use the Git commit SHA as the unique build
-identity (`smoothcast --build-id`). `agent.py ship --assign-patch` is a
-strictly explicit, owner-authorised operation, never the default. `main`
-integration, release tags and publication are entirely manual owner actions.
+`src/version.py` is release SemVer. New versions are made in `develop` and
+merged there; the Git commit SHA is also the unique build identity
+(`smoothcast --build-id`). `agent.py ship --assign-patch` is accepted but
+ignored. `main` integration, release tags and publication are entirely manual
+owner actions.
 
 Security issues: [SECURITY.md](SECURITY.md).

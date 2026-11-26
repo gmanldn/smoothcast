@@ -46,39 +46,43 @@ _CONTENT_RANGE = re.compile(r"bytes ([0-9]{1,13})-([0-9]{1,13})/([0-9]{1,13})\Z"
 _UPLOAD_ID = re.compile(r"[A-Za-z0-9_-]{32}\Z")
 
 
-def _mp4_index_at_front(path: Path) -> bool:
-    """True when ``moov`` precedes ``mdat`` in a (possibly partial) MP4/MOV.
-
-    Only box headers are read, and the scan stops at the first ``moov`` or
-    ``mdat``, so it stays bounded while the file is still being written.
-    """
+def _mp4_index_state(path: Path) -> bool | None:
+    """True for complete front index, False for nonprogressive, None for pending bytes."""
     try:
         with open(path, "rb") as handle:
+            available = os.fstat(handle.fileno()).st_size
             scanned = 0
             while scanned < _MP4_SCAN_LIMIT:
                 header = handle.read(8)
                 if len(header) < 8:
-                    return False
+                    return None
                 size = int.from_bytes(header[:4], "big")
                 kind = header[4:8]
                 header_len = 8
+                if kind == b"mdat":
+                    return False
                 if size == 1:
                     extended = handle.read(8)
                     if len(extended) < 8:
-                        return False
+                        return None
                     size = int.from_bytes(extended, "big")
                     header_len = 16
-                if size < header_len:
+                if size < header_len or scanned + size > _MP4_SCAN_LIMIT:
                     return False
+                if scanned + size > available:
+                    return None
                 if kind == b"moov":
                     return True
-                if kind == b"mdat":
-                    return False
                 handle.seek(size - header_len, os.SEEK_CUR)
                 scanned += size
             return False
     except OSError:
         return False
+
+
+def _mp4_index_at_front(path: Path) -> bool:
+    """Only a fully received front index is safe for progressive playback."""
+    return _mp4_index_state(path) is True
 
 
 def is_progressively_castable(name: str, path: Path) -> bool:
@@ -191,6 +195,7 @@ class _Upload:
     keep_partial: bool = False
     queue_only: bool = False
     audio_only: bool = False
+    cast_target: str | None = None
     media_validated: bool = False
     # A successful rename and directory fsync are separate steps. If fsync
     # fails, retain the final path and retry durability without re-uploading.
@@ -250,7 +255,8 @@ class UploadManager:
                 upload.lock.release()
 
     def create(self, owner: str, name_value: object, size_value: object,
-               client: str = "", *, queue_only: bool = False) -> dict:
+               client: str = "", *, queue_only: bool = False,
+               cast_target: str | None = None) -> dict:
         name, suffix, audio_only = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
@@ -260,6 +266,17 @@ class UploadManager:
             raise UploadError(401, "Sign in to upload a file")
         with self._lock:
             self._expire_uploads()
+            # The first overlapping Play now request owns the ingress cast lane.
+            # Later arrivals can transfer immediately, but may never replace it
+            # merely because their upload finishes faster.
+            now = self._clock()
+            cast_reserved = any(
+                not row.cancelled and not row.queue_only
+                and not (row.cast_submitted and row.directory_synced)
+                and now - row.last_at <= PARTIAL_TTL_SECONDS
+                for row in self._uploads.values()
+            )
+            queue_only = bool(queue_only or audio_only or cast_reserved)
             pending = [upload for upload in self._uploads.values()
                        if not upload.cancelled and upload.complete_path is None]
             if len(pending) >= MAX_ACTIVE_UPLOADS:
@@ -285,10 +302,10 @@ class UploadManager:
             upload = _Upload(upload_id, owner_key, name, suffix, size_value, partial,
                              client=str(client or "")[:64], created_at=now, last_at=now,
                              queue_only=bool(queue_only or audio_only),
-                             audio_only=audio_only)
+                             audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
-                "received": 0, "chunk_size": CHUNK_SIZE}
+                "received": 0, "chunk_size": CHUNK_SIZE, "queue_only": upload.queue_only}
 
     def _get(self, owner: str, upload_id: str) -> _Upload:
         if not isinstance(upload_id, str) or not _UPLOAD_ID.fullmatch(upload_id):
@@ -304,6 +321,10 @@ class UploadManager:
         """Whether this upload was created with early casting disabled."""
         return self._get(owner, upload_id).queue_only
 
+    def cast_target(self, owner: str, upload_id: str) -> str | None:
+        """Immutable server-side destination consent, including resumed uploads."""
+        return self._get(owner, upload_id).cast_target
+
     def is_audio_only(self, owner: str, upload_id: str) -> bool:
         """Whether a validated source is audio-only and must never early-cast."""
         return self._get(owner, upload_id).audio_only
@@ -316,6 +337,7 @@ class UploadManager:
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received,
                     "complete": upload.complete_path is not None and upload.directory_synced,
+                    "queue_only": upload.queue_only,
                     "ready_to_cast": upload.early_cast in {"requested", "active"},
                     "dispatch_state": ("accepted" if upload.cast_submitted else
                                        "pending" if upload.dispatch_pending else "not_submitted")}
@@ -361,6 +383,43 @@ class UploadManager:
         with self._lock:
             uploads = list(self._uploads.values())
         return [self._summary(upload, now) for upload in uploads]
+
+    def room_transfers(self) -> list[dict]:
+        """Authenticated room projection of submitted, not-yet-delivered media.
+
+        Never expose the upload handle, owner, IP, path or target consent token.
+        Read published offsets without waiting on a network writer's file lock.
+        Completed accepted actions belong to the actual queue/playback status.
+        """
+        now = self._clock()
+        rows = []
+        with self._lock:
+            for upload in reversed(self._uploads.values()):
+                if upload.cancelled or (upload.cast_submitted and upload.directory_synced):
+                    continue
+                if now - upload.last_at > PARTIAL_TTL_SECONDS:
+                    continue
+                received = upload.received
+                if upload.dispatch_pending:
+                    stage = "submitting"
+                elif upload.early_cast in {"requested", "active"} and received < upload.size:
+                    stage = "buffering"
+                elif received >= upload.size:
+                    stage = "verifying" if not upload.directory_synced else "awaiting_acceptance"
+                else:
+                    stage = "receiving"
+                rows.append({
+                    "id": hashlib.sha256(("room-transfer:" + upload.upload_id).encode()).hexdigest()[:24],
+                    "title": upload.name,
+                    "media_kind": "audio" if upload.audio_only else "video",
+                    "received": received,
+                    "size": upload.size,
+                    "intent": "queue" if upload.queue_only else "cast",
+                    "stage": stage,
+                })
+                if len(rows) >= 24:
+                    break
+        return list(reversed(rows))
 
     def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
         """Record whether the GUI accepted an early-cast request for an upload."""
@@ -436,16 +495,23 @@ class UploadManager:
                     "client": upload.client}
 
     def _maybe_start_early_cast(self, upload: _Upload) -> bool:
-        """Decide once whether this upload can cast before it finishes arriving.
+        """Decide whether this upload can cast before it finishes arriving.
 
         Called with ``upload.lock`` held. Returns True on the single append that
-        crosses the buffer threshold for a progressively castable container.
+        has enough buffered bytes and a complete progressive container index.
         """
         if (upload.audio_only or upload.queue_only or upload.early_cast != "idle"
                 or upload.received < self._early_cast_min_bytes
                 or upload.received >= upload.size):
             return False
-        if not is_progressively_castable(upload.name, upload.partial_path):
+        ready = (_mp4_index_state(upload.partial_path)
+                 if upload.suffix in _INDEXED_SUFFIXES
+                 else is_progressively_castable(upload.name, upload.partial_path))
+        if ready is None:
+            # The durable prefix has not reached a complete index. Recheck
+            # after the next acknowledged chunk rather than abandoning early cast.
+            return False
+        if not ready:
             upload.early_cast = "declined"
             return False
         upload.early_cast = "requested"
@@ -551,7 +617,8 @@ class UploadManager:
         with upload.lock:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
-            if upload.cast_submitted or upload.dispatch_pending:
+            if (upload.cast_submitted or upload.dispatch_pending
+                    or upload.early_cast in {"requested", "active"}):
                 raise UploadError(409, "Casting has already been requested for this upload")
             try:
                 (upload.complete_path or upload.partial_path).unlink()
