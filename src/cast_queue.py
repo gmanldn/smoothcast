@@ -260,7 +260,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             return
         self._rebuild_queue()
         self.toast(f"Added {added} media item{'s' if added != 1 else ''} to the queue")
-        if self.now_playing is None and self.selected_index is None and self.queue:
+        if (self.now_playing is None and self.selected_index is None and self.queue
+                and not self.busy and self.session is None and not self.external):
             self.set_selection(self.queue[0])
 
         duration_paths = self._queue_duration_paths(paths)
@@ -377,12 +378,20 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         )
         if (self.selected_index is not None
                 and 0 <= self.selected_index < len(self.queue)
-                and self.session is None and not self.external):
+                and self.session is None and not self.external and not self.busy):
             path = self.queue[self.selected_index]
             if path != self._preview_path:
                 # Delay to avoid mutating a Gtk.ListBox during its selection signal.
-                GLib.idle_add(lambda: (self.set_selection(path), False)[1]
-                              if path != self._preview_path else False)
+                def select_if_current():
+                    index = self.selected_index
+                    if (not self._closing and not self.busy and self.session is None
+                            and not self.external and index is not None
+                            and 0 <= index < len(self.queue) and self.queue[index] == path
+                            and path != self._preview_path):
+                        self.set_selection(path)
+                    return False
+
+                GLib.idle_add(select_if_current)
 
 
     def _on_queue_activated(self, _list, row) -> None:

@@ -254,12 +254,14 @@ class PortalQueueMixin:
             return "Up Next cleared. Current playback is unchanged."
         if operation == "queue_add":
             path = self._portal_upload_path(payload)
-            if self.busy:
-                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # Queue-only contributions do not own or mutate the receiver.
+            # Accept them while cast preparation is in flight.
             source = "link" if payload.get("_portal_source") == "link" else "upload"
             if str(path) not in self.queue:
                 self._portal_note_display_name(path, payload.get("name"))
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), source)
+            if str(path) not in self.queue:
+                raise portal.PortalRequestError(503, "The room could not accept this media. Retry shortly.")
             return "Added to the queue."
         if operation == "queue_remove":
             self._portal_check_queue_revision(payload)
