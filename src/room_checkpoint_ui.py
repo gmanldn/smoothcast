@@ -79,6 +79,7 @@ class RoomCheckpointUiMixin:
             self.toast("No saved room queue is available to recover.", error=True)
             return
         self.queue = list(saved.items)
+        self._portal_queue_display_names = dict(saved.display_names)
         self.selected_index = None
         self.queue_durations = {}
         self._rebuild_queue()
@@ -97,4 +98,5 @@ class RoomCheckpointUiMixin:
             self._console(f"Room checkpoint discard failed: {exc}")
             return
         self._room_checkpoint_last = ()
+        self._room_checkpoint_names_last = ()
         self.toast("Previous room discarded")

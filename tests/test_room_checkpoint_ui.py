@@ -210,3 +210,24 @@ def test_empty_or_local_only_queue_does_not_create_a_room_checkpoint(tmp_path):
     host._portal = object()
     host._save_room_checkpoint()
     assert not checkpoint.exists()
+
+
+def test_name_only_change_is_saved_and_restored_before_queue_rebuild(tmp_path):
+    checkpoint = tmp_path / "room.json"
+    media = tmp_path / "opaque.mp4"
+    media.write_bytes(b"film")
+    host = window(checkpoint)
+    host.queue = [str(media)]
+    host._save_room_checkpoint()
+    host._portal_queue_display_names = {str(media): "Original movie.mp4"}
+    host._save_room_checkpoint()
+    assert room_checkpoint.load_checkpoint(checkpoint).display_names == (
+        (str(media), "Original movie.mp4"),
+    )
+    restored = window(checkpoint)
+    def rebuild():
+        assert restored._portal_queue_display_names == {str(media): "Original movie.mp4"}
+        restored.rebuilds += 1
+    restored._rebuild_queue = rebuild
+    restored._recover_room_checkpoint()
+    assert restored.rebuilds == 1

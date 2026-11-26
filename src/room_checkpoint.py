@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import Iterable
+from typing import Iterable, Mapping
 
 import cache_privacy
 
@@ -15,6 +15,7 @@ import cache_privacy
 SCHEMA_VERSION = 1
 MAX_ITEMS = 1000
 MAX_PATH_CHARS = 4096
+MAX_TITLE_CHARS = 512
 MAX_CHECKPOINT_BYTES = 20 * 1024 * 1024
 
 
@@ -23,9 +24,22 @@ class LoadResult:
     items: tuple[str, ...] = ()
     unavailable: int = 0
     error: str | None = None
+    display_names: tuple[tuple[str, str], ...] = ()
 
 
-def write_checkpoint(path: Path, items: Iterable[str]) -> None:
+def queue_display_names(items: Iterable[str], names: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
+    """Keep bounded public labels only for the queue, not guest/session state."""
+    result = {}
+    for item in items:
+        name = names.get(item)
+        if (isinstance(name, str) and name.strip() and len(name) <= MAX_TITLE_CHARS
+                and all(char.isprintable() for char in name)):
+            result[item] = name.strip()
+    return tuple(result.items())
+
+
+def write_checkpoint(path: Path, items: Iterable[str], *,
+                     display_names: Mapping[str, str] | None = None) -> None:
     """Atomically save queue order without session or participant credentials."""
     values = list(islice(items, MAX_ITEMS + 1))
     if len(values) > MAX_ITEMS:
@@ -35,6 +49,9 @@ def write_checkpoint(path: Path, items: Iterable[str]) -> None:
            for item in values):
         raise ValueError("Room queue checkpoint accepts absolute local file paths only")
     payload = {"schema_version": SCHEMA_VERSION, "items": values}
+    names = queue_display_names(values, display_names or {})
+    if names:
+        payload["display_names"] = dict(names)
     # Match the private writer's JSON encoding before replacing the last
     # readable checkpoint: escaped Unicode may be much larger than its path.
     if len(json.dumps(payload).encode("utf-8")) > MAX_CHECKPOINT_BYTES:
@@ -106,4 +123,8 @@ def load_checkpoint(path: Path) -> LoadResult:
             unavailable += 1
             continue
         restored.append(value)
-    return LoadResult(tuple(restored), unavailable)
+    names = payload.get("display_names", {})
+    if not isinstance(names, dict):
+        names = {}
+    return LoadResult(tuple(restored), unavailable,
+                      display_names=queue_display_names(restored, names))

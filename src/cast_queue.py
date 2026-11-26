@@ -136,9 +136,9 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
         row = self.queue_list.get_row_at_index(index)
         if row is not None:
             self.queue_list.select_row(row)
-        if self.now_playing is None and not self.busy:
+        if self.now_playing is None and not self.busy and not self.external and self.session is None:
             display = (getattr(self, "_portal_queue_display_names", None) or {}).get(path)
-            self.np_title.set_text(display or pathlib.Path(path).name)
+            self.np_title.set_text(queue_metadata.display_title(path, self._media_cache, display))
         # Re-selecting a queued film while casting must not change active
         # media metadata, its audio/subtitle tracks or the receiver clock.
         if self.session is not None or self.external or self.busy:
@@ -324,12 +324,14 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             return
         checkpoint = getattr(self, "_room_checkpoint_file", ROOM_CHECKPOINT_FILE)
         items = tuple(self.queue)
-        if items == getattr(self, "_room_checkpoint_last", None):
+        names = room_checkpoint.queue_display_names(items, getattr(self, "_portal_queue_display_names", {}))
+        if (items == getattr(self, "_room_checkpoint_last", None)
+                and names == getattr(self, "_room_checkpoint_names_last", ())):
             return
         if not items and not checkpoint.exists():
             return
         try:
-            room_checkpoint.write_checkpoint(checkpoint, items)
+            room_checkpoint.write_checkpoint(checkpoint, items, display_names=dict(names))
         except (OSError, ValueError) as exc:
             if not getattr(self, "_room_checkpoint_error_shown", False):
                 self._room_checkpoint_error_shown = True
@@ -337,6 +339,7 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
                 self._console(f"Room queue checkpoint failed: {exc}")
             return
         self._room_checkpoint_last = items
+        self._room_checkpoint_names_last = names
 
 
     def _refresh_queue_visibility(self) -> None:
