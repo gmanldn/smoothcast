@@ -1,7 +1,7 @@
 """Validated, fenced and idempotent LAN control commands.
 
 The LAN portal accepts a bounded mutation envelope from each client.  Commands
-are serialized through one dispatcher, de-duplicated per client request id and
+are serialized through one dispatcher, de-duplicated per authenticated participant and client request id and
 fenced to the media generation they were created against.  This module is
 deliberately GTK-free so the state machine and HTTP integration can be tested
 without a display.
@@ -324,7 +324,7 @@ class CommandDispatcher:
         self._per_client_cap = per_client_cap
         self._client_pending: dict[str, int] = {}
         self._slots = threading.BoundedSemaphore(queue_capacity)
-        self._cache: OrderedDict[tuple[str, str], _Entry] = OrderedDict()
+        self._cache: OrderedDict[tuple[str | None, str, str], _Entry] = OrderedDict()
         self._closed = False
 
     def execute(self, envelope: MutationEnvelope, *,
@@ -338,7 +338,9 @@ class CommandDispatcher:
     def _execute(self, envelope: MutationEnvelope, *,
                  participant_key: str | None = None) -> CommandReceipt:
         """Apply once; bound competing requests per authenticated participant."""
-        key = (envelope.client_id, envelope.command_id)
+        # Client IDs are supplied by browsers; they are not authentication.
+        # Scope cached successes, errors and in-flight duplicates to the caller.
+        key = (participant_key, envelope.client_id, envelope.command_id)
         owner = participant_key or envelope.client_id
         fingerprint = envelope.fingerprint()
         with self._lock:

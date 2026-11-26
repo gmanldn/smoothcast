@@ -481,3 +481,71 @@ def test_busy_cast_preparation_accepts_stop_but_not_other_transport():
         action="stop", session_id=session_id, revision=revision))
     assert "Stop requested" in receipt.message
     assert window.calls == ["stop"]
+
+
+def test_authenticated_participants_have_independent_command_receipts():
+    fence = commands.CommandFence()
+    calls = []
+
+    def dispatch(item):
+        calls.append(item)
+        return commands.CommandReceipt(item.command_id, SESSION, 0, str(len(calls)))
+
+    dispatcher = commands.CommandDispatcher(dispatch, fence=fence)
+    try:
+        first = envelope(action="seek", payload={"value": 1})
+        altered = envelope(action="seek", payload={"value": 2})
+        alice = dispatcher.execute(first, participant_key="alice")
+        bob = dispatcher.execute(altered, participant_key="bob")
+        assert alice.message == "1" and bob.message == "2"
+        assert dispatcher.execute(first, participant_key="alice") == alice
+        assert dispatcher.execute(altered, participant_key="bob") == bob
+        with pytest.raises(commands.CommandError) as error:
+            dispatcher.execute(altered, participant_key="alice")
+        assert error.value.status == 409
+        assert len(calls) == 2
+    finally:
+        dispatcher.close()
+
+
+def test_authenticated_participant_cannot_replay_another_participants_failure():
+    fence = commands.CommandFence()
+    calls = []
+
+    def dispatch(item):
+        calls.append(item)
+        if len(calls) == 1:
+            raise commands.CommandError(409, "Original command rejected")
+        return commands.CommandReceipt(item.command_id, SESSION, 0, "accepted")
+
+    dispatcher = commands.CommandDispatcher(dispatch, fence=fence)
+    try:
+        item = envelope()
+        with pytest.raises(commands.CommandError):
+            dispatcher.execute(item, participant_key="alice")
+        assert dispatcher.execute(item, participant_key="bob").message == "accepted"
+        with pytest.raises(commands.CommandError):
+            dispatcher.execute(item, participant_key="alice")
+        assert len(calls) == 2
+    finally:
+        dispatcher.close()
+
+
+def test_authenticated_and_unscoped_receipts_do_not_collide():
+    calls = []
+
+    def dispatch(item):
+        calls.append(item)
+        return commands.CommandReceipt(item.command_id, SESSION, 0, str(len(calls)))
+
+    dispatcher = commands.CommandDispatcher(dispatch, fence=commands.CommandFence())
+    try:
+        item = envelope(client_id="phone")
+        unscoped = dispatcher.execute(item)
+        authenticated = dispatcher.execute(item, participant_key="phone")
+        assert unscoped.message == "1" and authenticated.message == "2"
+        assert dispatcher.execute(item) == unscoped
+        assert dispatcher.execute(item, participant_key="phone") == authenticated
+        assert len(calls) == 2
+    finally:
+        dispatcher.close()
