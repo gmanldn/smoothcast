@@ -81,7 +81,7 @@ class VisualDesignTests(unittest.TestCase):
     def test_primary_action_changes_with_selection(self):
         self.assertIn("self.open_button = open_button", self.source)
         self.assertIn("ready_to_cast = self.now_playing is not None", self.source)
-        self.assertIn("self.cast_button.set_sensitive(ready_to_cast and online and not busy)", self.source)
+        self.assertIn("self.cast_button.set_sensitive(ready_to_cast and bool(self._device().strip()) and not busy)", self.source)
         self.assertIn('self.cast_button.add_css_class("primary-action")', self.source)
         self.assertIn('self.open_button.add_css_class("primary-action")', self.source)
 
