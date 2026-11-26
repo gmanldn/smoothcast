@@ -2833,6 +2833,10 @@ function applyStatus(d){
     // Queue and contribution progress are independent of pending transport commands.
     // Do not discard their SSE snapshots while a control is awaiting acknowledgement.
     renderSharedQueue(s);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
+    // Mesh and room observations are read-only and must remain live during a
+    // pending local playback command, just like the shared contribution queue.
+    renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);
+    window.scRenderMeshRoom&&window.scRenderMeshRoom(s);renderNetworkActivity(s.network_activity);
     if(busy)return true;
     applyAccentPreset(s.accent);shortcutState=s;
     renderPlaybackToggle(s.state);
@@ -2849,8 +2853,7 @@ function applyStatus(d){
 const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);
-renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
-renderNetworkActivity(s.network_activity);
+window.scRenderScreens&&window.scRenderScreens(s);
 if(statusFailures)showError("errorDash","");
 statusFailures=0;showJoinedRoom();
   return true;

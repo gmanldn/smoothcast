@@ -143,22 +143,28 @@ def test_pending_transport_does_not_hide_committed_queue_or_transfer_updates():
     functions = html[start:end] + "throw Error(\"transport rendering must remain deferred\"); }"
     harness = r"""
 const assert = require("node:assert/strict");
-let busy=true, last=-1, queues=[], progress=[], fields={queueCount:{},clearQueue:{}};
+let busy=true, last=-1, queues=[], progress=[], observed=[], fields={queueCount:{},clearQueue:{}};
 const $=id=>fields[id], matchingBuild=()=>true;
 function acceptRoomSnapshot(d){if(d.state.snapshot_version<last)return false;last=d.state.snapshot_version;return true}
 function renderQueue(q,r){queues.push([q,r])}
 function renderHomeQueue(q){assert.equal(q.length,1)}
 function renderRoomTransfers(s){progress.push(s.snapshot_version)}
 function renderLibraryCopies(s){}
-function renderLinkJobs(s){}
+function renderLinkJobs(s){observed.push(["links",s.link_jobs])}
+function renderRoom(r){observed.push(["room",r])}
+function renderPeers(p,a){observed.push(["peers",p,a])}
+const window={scRenderMeshRoom:s=>observed.push(["mesh",s.mesh_link_activity])};
+function renderNetworkActivity(n){observed.push(["streams",n])}
 """
     scenario = r"""
-assert.equal(applyStatus({state:{snapshot_version:4,queue_revision:8,queue:[{id:"new"}]}}),true);
+assert.equal(applyStatus({state:{snapshot_version:4,queue_revision:8,queue:[{id:"new"}],link_jobs:[{kind:"youtube"},{kind:"magnet"}],room:{participants:[]},peers:[],peer_discovery_available:true,mesh_link_activity:{nodes:[{name:"pnode"}]},network_activity:[{title:"Local video"}]}}),true);
 assert.deepEqual(queues,[[[{id:"new"}],8]]);
 assert.deepEqual(progress,[4]);
+assert.deepEqual(observed,[["links",[{kind:"youtube"},{kind:"magnet"}]],["room",{participants:[]}],["peers",[],true],["mesh",{nodes:[{name:"pnode"}]}],["streams",[{title:"Local video"}]]]);
 assert.equal(fields.queueCount.textContent,"1 waiting");
 assert.equal(fields.clearQueue.disabled,false);
 applyStatus({state:{snapshot_version:3,queue_revision:7,queue:[]}});
 assert.equal(queues.length,1,"stale snapshots cannot roll back the queue");
+assert.equal(observed.length,5,"stale snapshots cannot roll back live mesh activity");
 """
     subprocess.run(["node", "-"], input=harness + functions + scenario, text=True, check=True, timeout=10)
