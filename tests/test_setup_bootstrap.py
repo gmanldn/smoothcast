@@ -356,6 +356,7 @@ class SetupContractTests(unittest.TestCase):
               mock.patch.object(bootstrap, "works", return_value=True),
               mock.patch.object(bootstrap, "check_tools", return_value=[]),
               mock.patch.object(bootstrap, "windows_packages_ready", return_value=False),
+              mock.patch.object(bootstrap.native_runtime, "load", return_value=None),
               mock.patch.object(bootstrap, "checked_run") as run,
               mock.patch.object(bootstrap, "download_verified_msys2") as download):
             with self.assertRaisesRegex(bootstrap.SetupError, "native packages=True"):
@@ -385,6 +386,7 @@ class SetupContractTests(unittest.TestCase):
              mock.patch.object(bootstrap, "works", return_value=True), \
              mock.patch.object(bootstrap, "check_tools", return_value=[]), \
              mock.patch.object(bootstrap, "windows_packages_ready", return_value=True), \
+             mock.patch.object(bootstrap.native_runtime, "load", return_value=None), \
              mock.patch.object(bootstrap, "download_verified_msys2") as download, \
              mock.patch.object(bootstrap, "checked_run") as run:
             python, env = bootstrap.install_windows(check=True)
