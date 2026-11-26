@@ -45,7 +45,9 @@ def test_page_wires_projection_to_a_timer_without_overwriting_scrubs():
     assert "function schedulePlayhead(" in html and "playheadTimer=setTimeout(" in html
     assert "if(document.hidden||!csrf||stalePage)return;" in html  # hidden tabs do not paint
     paint = next(line for line in html.splitlines() if line.startswith("function paintPlayhead("))
-    assert 'if(!editingControls.has("seek"))$("seek").value' in paint
+    # The seek control is painted only when the guest is not editing it.
+    assert 'if(!editingControls.has("seek")){' in paint
+    assert '$("seek").value' in paint
     assert "trackPlayhead(s)" in html
 
 
