@@ -91,12 +91,12 @@ def test_default_view_is_home_and_every_panel_is_a_blade():
     html = portal._HTML
     assert ("#dashboard:not([data-room-blade])>:not(nav):not(#errorDash)"
             ":not(#homePanel){display:none}") in html
-    for panel in ("homePanel", "queuePanel", "uploadCard", "peoplePanel",
+    for panel in ("homePanel", "queuePanel", "peoplePanel",
                   "screensPanel", "meshPanel", "findPanel",
                   "advancedPanel"):
         assert f'#dashboard[data-room-blade="{panel}"]' in html
     assert ("#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel"
-            ",#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel"
+            ",#dashboard[data-room-blade]>#peoplePanel"
             ",#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel"
             "{grid-column:1/-1}") in html
 
@@ -120,22 +120,26 @@ def test_sync_home_blades_and_clears_back_to_home():
 const location={hash:""},document={activeElement:null};
 const make=(id,blade=null)=>({id,attrs:{},scrolls:0,focuses:0,closest(){return blade||null},contains(x){return x===this||x?.parent===this},scrollIntoView(){this.scrolls++},focus(){this.focuses++;document.activeElement=this},setAttribute(k,v){this.attrs[k]=v},removeAttribute(k){delete this.attrs[k]},getAttribute(k){return this.attrs[k]??null}});
 const home=make("homePanel"),queue=make("queuePanel"),upload=make("uploadCard"),people=make("peoplePanel"),mesh=make("meshPanel"),find=make("findPanel");
-home.closest=()=>home;queue.closest=()=>queue;upload.closest=()=>upload;people.closest=()=>people;mesh.closest=()=>mesh;find.closest=()=>find;
+home.closest=()=>home;queue.closest=()=>queue;upload.closest=()=>queue;upload.parent=queue;people.closest=()=>people;mesh.closest=()=>mesh;find.closest=()=>find;
 const playback=make("playback");playback.closest=()=>home;playback.parent=home;
 const live=make("localLivePanel");live.closest=()=>mesh;live.parent=mesh;
 const homeHeading=make("homeHeading");homeHeading.parent=home;
-const elements={homePanel:home,playback,localLivePanel:live,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
+const uploadHeading=make("uploadHeading");uploadHeading.parent=upload;
+const elements={homePanel:home,playback,localLivePanel:live,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading,uploadHeading};
 const $=id=>elements[id]||null;
-const links=["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel","findPanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
+const links=["homePanel","queuePanel","peoplePanel","meshPanel","findPanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
 const dash=make("dashboard");dash.hidden=false;dash.contains=x=>Object.values(elements).includes(x);dash.querySelectorAll=()=>links;
 const check=(ok,msg)=>{if(!ok)throw Error(msg)};
 """
     checks = r"""
 syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"default shows home via overview");
-for(const id of ["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel","findPanel"]){
+for(const id of ["homePanel","queuePanel","peoplePanel","meshPanel","findPanel"]){
   location.hash="#"+id;syncRoomBlade(true);
   check(dash.getAttribute("data-room-blade")===id,"blade "+id);
 }
+location.hash="#uploadCard";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="queuePanel","legacy upload deep link opens Queue");
+check(links[1].getAttribute("aria-current")==="page","Queue selected for upload");
+check(upload.scrolls===1&&uploadHeading.focuses===1,"upload anchor scrolls and focuses");
 location.hash="#localLivePanel";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="meshPanel","legacy Live deep link opens Mesh");
 location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="homePanel","playback deep link opens Home");
 check(links[0].getAttribute("aria-current")==="page","Home selected for playback");
@@ -155,3 +159,14 @@ def test_mesh_combines_local_and_remote_activity():
                for a in page.anchors) == 1
     assert '<a href="#localLivePanel">Live</a>' not in portal._HTML
     assert '#dashboard[data-room-blade="localLivePanel"]' not in portal._HTML
+
+
+def test_queue_embeds_the_complete_uploader_without_a_separate_blade():
+    page = _page()
+    assert page.parent["uploadCard"] == "queuePanel"
+    assert page.tags["uploadHeading"] == "h3"
+    assert '<a href="#uploadCard">Add files</a>' not in portal._HTML
+    assert '#dashboard[data-room-blade="uploadCard"]' not in portal._HTML
+    for element in ("videoFile", "uploadQueue", "uploadButton", "pauseUpload",
+                    "cancelUpload", "transferJourney", "transferTech", "uploadStatus"):
+        assert element in page.ids

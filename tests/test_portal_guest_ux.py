@@ -590,7 +590,7 @@ def test_optional_panels_are_dashboard_children_and_not_login_siblings():
     assert document.parents["meshDetails"] == "meshPanel"
     assert document.parents["localLivePanel"] == "meshPanel"
     assert document.parents["shortcutsHelp"] is None
-    assert document.parents["uploadCard"] == "dashboard"
+    assert document.parents["uploadCard"] == "queuePanel"
     assert document.parents["login"] is None  # main has no id; login is outside dashboard
     assert '#dashboard>#screensPanel' in portal._HTML
     assert '#dashboard>#meshPanel' in portal._HTML

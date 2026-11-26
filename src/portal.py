@@ -1839,6 +1839,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .advanced-grid>section{margin:0;box-shadow:none;border:1px solid var(--line);min-width:0}
 .advanced-grid h3{font-size:1rem;margin:0 0 8px}
 #dashboard #errorDash:not(:empty){background:var(--input);padding:12px;border-radius:10px}
+#queuePanel #uploadCard{min-width:0;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--input);box-shadow:none}
 #uploadCard #videoFile{max-width:100%}
 .transfer-journey{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--input);min-width:0}
 .transfer-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:0;margin:0 0 14px;list-style:none}
@@ -1879,7 +1880,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
   #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
-  #playback,#uploadCard{grid-column:1}
+  #playback{grid-column:1}
   #findPanel{grid-column:2}
   #queuePanel{grid-column:1/-1}
   #peoplePanel{grid-column:1/-1}
@@ -1933,7 +1934,6 @@ main{padding-top:6px}
 #dashboard nav a:hover{background:var(--nav-hover)}
 #dashboard[data-room-blade="homePanel"]>:not(nav):not(#errorDash):not(#homePanel),
 #dashboard[data-room-blade="queuePanel"]>:not(nav):not(#errorDash):not(#queuePanel),
-#dashboard[data-room-blade="uploadCard"]>:not(nav):not(#errorDash):not(#uploadCard),
 #dashboard[data-room-blade="peoplePanel"]>:not(nav):not(#errorDash):not(#peoplePanel),
 #dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
 #dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
@@ -1941,7 +1941,7 @@ main{padding-top:6px}
 #dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel){display:none}
 #dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
 #dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel{grid-column:1/-1}
-#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
 section,.welcome,#advancedPanel{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--text) 6%,transparent) inset,0 14px 34px var(--shadow)}
@@ -2054,7 +2054,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
 <div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
@@ -2098,35 +2098,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
 <section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
-<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
-<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
-<form id="linkForm">
-<label for="linkInput">YouTube video or magnet link</label>
-<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
-<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
-<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
-</form>
-<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
-<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
-</details>
-<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
-</section>
-
-<p id="errorDash" role="status" aria-live="polite"></p>
-<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
-<p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
-<label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
-<div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p>
-<div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
-<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
-<section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
-<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
-<ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
-<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
-<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <strong>Add files</strong> instead.</p></div></details>
-</section>
-<section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
+<section id="uploadCard" aria-labelledby="uploadHeading" hidden><h3 id="uploadHeading" tabindex="-1">Add files from this device</h3>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Submitted filenames and transfer progress are visible to everyone in this room. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
@@ -2162,6 +2134,34 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </div><p id="uploadStatus" role="status" aria-live="polite"></p>
 <div class="actions"><button id="uploadButton" type="button" title="Transfer the selected files to the room" aria-describedby="uploadSelectionHint" disabled>Upload and add</button><button id="pauseUpload" class="secondary" type="button" hidden>Pause transfer</button><button id="cancelUpload" class="secondary" type="button" hidden>Cancel upload</button><a class="upload-view-queue" href="#queuePanel">View shared Up Next</a></div>
 <details class="help"><summary>How uploads and Play now work</summary><div class="help-body"><p><strong>With Add to Up Next selected:</strong> media goes into the shared waiting queue when it is ready; current playback is not replaced.</p><p><strong>With it unticked:</strong> compatible video may start playing on the TV or speaker as it transfers. <strong>Audio always goes into Up Next</strong>, even when this option is unticked.</p><p>Transfers happen on the local network and may resume after a brief interruption. Keep this page open until the transfer has finished.</p></div></details>
+</section>
+<details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
+<p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
+<form id="linkForm">
+<label for="linkInput">YouTube video or magnet link</label>
+<input id="linkInput" type="text" inputmode="url" maxlength="1500" autocomplete="off" spellcheck="false" placeholder="https://youtu.be/… or magnet:…" aria-describedby="linkAvailability" required>
+<label class="toggle" for="linkAuthorised"><input id="linkAuthorised" type="checkbox" required><span>I have permission to download this media.</span></label>
+<button id="linkSubmit" type="submit" disabled>Download and add to Up Next</button>
+</form>
+<p id="linkFeedback" class="field-hint" role="status" aria-live="polite"></p>
+<section id="linkJobPanel" aria-labelledby="linkJobsHeading" hidden><h4 id="linkJobsHeading">Downloads</h4><ul id="linkJobs" aria-label="Room downloads"></ul></section>
+</details>
+<details class="help"><summary>What do the queue buttons mean?</summary><div class="help-body"><p><strong>Vote</strong> shows you want this item played; it does not automatically reorder the queue. <strong>Play now</strong> starts the item on the TV or speaker; <strong>Next</strong> moves it to be played after the current item.</p><p><strong>↑ / ↓</strong> move a waiting item earlier or later. <strong>×</strong> removes it from Up Next. <strong>Clear Up Next</strong> empties waiting items without stopping the currently playing item.</p><p>If someone else edits the queue at the same time, SmoothCast refreshes before letting you retry.</p></div></details>
+</section>
+
+<p id="errorDash" role="status" aria-live="polite"></p>
+<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
+<p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
+<label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
+<div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
+<p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p>
+<div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
+<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
+<section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
+<p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
+<ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
+<details id="libraries" class="help"><summary>Browse libraries on the network</summary><button id="libRefresh" type="button" class="tiny secondary">Refresh shared libraries</button><p id="libStatus" class="field-hint" role="status" aria-live="polite"></p><div id="libBody" class="muted">Loading libraries...</div></details>
+<details class="help"><summary>How search and availability work</summary><div class="help-body"><p>Search finds films and music on the SmoothCast computers in your home. <strong>Available now</strong> limits results to items that can currently be reached; a computer that is switched off may come back later.</p><p>Use a house result to add it to Up Next, or select <strong>Search YouTube</strong> to send your query to YouTube. YouTube results are downloaded and checked before they enter Up Next. If you have a file on your own device, use <a href="#uploadCard">Add files in Queue</a> instead.</p></div></details>
 </section>
 <section id="peoplePanel" aria-labelledby="peopleHeading"><h2 id="peopleHeading">People in the room</h2>
 <p class="section-desc">See who is connected. <a href="#advancedPanel">Change your name in Settings</a> or <a href="#localLivePanel">follow room activity</a>.</p>
@@ -4088,7 +4088,7 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);
@@ -4099,8 +4099,8 @@ function syncMediaSession(s){
     }
     if(navigate&&!dash.hidden&&target&&dash.contains(target)&&(selected||previous)){
       target.scrollIntoView({block:"start",behavior:"auto"});
-      if(blade===target&&!target.contains(document.activeElement)){
-        const heading=$(target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="findPanel"?"findHeading":selected==="uploadCard"?"uploadHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
+      if((blade===target||target.id==="uploadCard")&&!target.contains(document.activeElement)){
+        const heading=$(target.id==="uploadCard"?"uploadHeading":target.id==="playback"?"playbackHeading":selected==="homePanel"?"homeHeading":selected==="queuePanel"?"queueHeading":selected==="findPanel"?"findHeading":selected==="peoplePanel"?"peopleHeading":selected==="screensPanel"?"screensPanelHeading":selected==="meshPanel"?"meshTitle":selected==="advancedPanel"?"roomSettingsHeading":"localLiveHeading");
         if(heading&&heading.focus)heading.focus({preventScroll:true});
       }
     }
