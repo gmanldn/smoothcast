@@ -2659,30 +2659,60 @@ function renderLinkJobs(state){
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
   const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
-  const rows=[];
-  for(const job of jobs.slice().reverse()){
-    const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
-    heading.textContent=job.title||"Download";
+  // Progress-only snapshots must not destroy a focused or pending action.
+  const previous=new Map(Array.from(list.children,row=>[row.dataset.linkJobId,row]));
+  jobs.slice().reverse().forEach((job,index)=>{
+    const id=String(job.id);
+    let row=previous.get(id);
+    if(!row){
+      row=document.createElement("li");row.dataset.linkJobId=id;
+      const heading=document.createElement("strong"),detail=document.createElement("p");
+      detail.className="muted";
+      const meter=document.createElement("progress"),stats=document.createElement("p"),error=document.createElement("p");
+      meter.setAttribute("aria-label","Download progress");
+      stats.className=error.className="field-hint";
+      const action=(verb,success)=>{
+        const button=document.createElement("button");
+        button.type="button";button.className="secondary tiny";button.textContent=verb==="cancel"?"Cancel download":"Retry download";
+        button.addEventListener("click",async()=>{
+          if(button.disabled||button.hidden)return;
+          button.disabled=true;
+          try{const reply=await post("/api/link-jobs/"+verb,{id});showError("linkFeedback",reply.message||success);void refresh()}
+          catch(error){showError("linkFeedback",error.message);button.disabled=false}
+        });
+        return button;
+      };
+      row.append(heading,detail,meter,stats,error,action("cancel","Cancellation requested"),action("retry","Retry accepted"));
+    }
+    previous.delete(id);
+    const [heading,detail,meter,stats,error,cancel,retry]=row.children;
+    const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};
+    setText(heading,job.title||"Download");
     const sourceLabel=job.kind==="youtube"?"YouTube":job.kind==="magnet"?"BitTorrent magnet":"Link";
-    detail.className="muted";detail.textContent=sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
-    row.append(heading,detail);
+    setText(detail,sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown"));
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
-    if(job.stage==="downloading"||job.stage==="resolving"){
-      const meter=document.createElement("progress");meter.setAttribute("aria-label","Download progress");
-      if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
-      row.append(meter);
-      const stats=document.createElement("p");stats.className="field-hint";
+    const progressing=job.stage==="downloading"||job.stage==="resolving";
+    meter.hidden=stats.hidden=!progressing;
+    if(progressing){
+      if(received!==null&&total!==null&&received<=total){
+        if(meter.max!==total)meter.max=total;
+        if(!meter.hasAttribute("value")||meter.value!==received)meter.value=received;
+      }else if(meter.hasAttribute("value"))meter.removeAttribute("value");
       const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
-      stats.textContent=(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
-      row.append(stats);
+      setText(stats,(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":""));
     }
-    if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
-    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
-    if(job.can_retry){const retry=document.createElement("button");retry.type="button";retry.className="secondary tiny";retry.textContent="Retry download";retry.setAttribute("aria-label","Retry "+(job.title||"acquisition"));retry.addEventListener("click",async()=>{retry.disabled=true;try{const reply=await post("/api/link-jobs/retry",{id:job.id});showError("linkFeedback",reply.message||"Retry accepted");void refresh()}catch(error){showError("linkFeedback",error.message);retry.disabled=false}});row.append(retry)}
-    rows.push(row);
-  }
-  list.replaceChildren(...rows);
+    error.hidden=!job.error;setText(error,job.error||"");
+    for(const [button,allowed,verb] of [[cancel,job.can_cancel,"Cancel"],[retry,job.can_retry,"Retry"]]){
+      button.hidden=!allowed;
+      if(!allowed)button.disabled=false;
+      const label=verb+" "+(job.title||"acquisition");
+      if(button.getAttribute("aria-label")!==label)button.setAttribute("aria-label",label);
+    }
+    const current=list.children[index]||null;
+    if(current!==row)list.insertBefore(row,current);
+  });
+  for(const row of previous.values())row.remove();
 }
 if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
