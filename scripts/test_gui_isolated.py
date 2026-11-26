@@ -145,7 +145,7 @@ def main() -> int:
             # immediate xvfb-run shell and can leave children behind.
             process = subprocess.Popen(command, cwd=ROOT, env=env,
                                        start_new_session=True)
-            limit = 120 if interaction else MAX_SECONDS
+            limit = 120 if interaction or (a11y and os.environ.get("SMOOTHCAST_A11Y_KEYS")) else MAX_SECONDS
             try:
                 code = process.wait(timeout=limit)
             except subprocess.TimeoutExpired:

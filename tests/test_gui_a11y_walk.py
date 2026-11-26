@@ -77,3 +77,23 @@ def test_launcher_exposes_the_a11y_mode_without_the_user_bus():
     assert '["--a11y"]' in source and "gui_a11y_walk.py" in source
     walk = (ROOT / "scripts" / "gui_a11y_walk.py").read_text(encoding="utf-8")
     assert "<servicedir>" in walk and "DBUS_SESSION_BUS_ADDRESS" in walk
+
+
+def _stop(name, x=0, y=0, role="button"):
+    return {"role": role, "name": name, "x": x, "y": y}
+
+
+def test_tab_order_clean_cycle_has_no_problems():
+    stops = [_stop("A"), _stop("B"), _stop("A")]
+    assert gui_a11y_walk.check_tab_order(stops, [_node("button", "A"), _node("button", "B")]) == []
+
+
+def test_tab_order_reports_trap_and_unreachable_controls():
+    stops = [_stop("A"), _stop("B"), _stop("B")]
+    problems = gui_a11y_walk.check_tab_order(stops, [_node("button", "A"), _node("button", "C")])
+    assert any("stuck on button 'B'" in p for p in problems)
+    assert any("not reachable by Tab: button 'C'" in p for p in problems)
+
+
+def test_tab_order_no_focus_at_all_is_a_problem():
+    assert gui_a11y_walk.check_tab_order([], []) == ["Tab never moved focus to any control"]

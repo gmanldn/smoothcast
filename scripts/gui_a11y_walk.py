@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Walk the real AT-SPI tree of the isolated GUI and fail on unnamed controls (#449).
 
+Set SMOOTHCAST_A11Y_KEYS=1 to add an opt-in xdotool Tab walk (keyboard-only audit).
 Run only through ``python3 scripts/test_gui_isolated.py --a11y`` (private Xvfb
 and D-Bus session). The app is the normal ``--self-test`` window held open by
 ``selftest_hold``; this process reads it as an assistive technology would.
@@ -31,6 +32,80 @@ def find_unnamed(nodes: list[dict]) -> list[dict]:
             if n.get("role") in INTERACTIVE and n.get("showing") and not str(n.get("name", "")).strip()]
 
 
+def check_tab_order(stops: list[dict], controls: list[dict]) -> list[str]:
+    """Keyboard-only audit of Tab stops (in press order) against showing controls.
+    Pure: flags a trap (no focus movement), a repeat before the cycle completes,
+    and controls Tab never reached (excluding ones with a keyboard-less parent)."""
+    problems: list[str] = []
+    if not stops:
+        return ["Tab never moved focus to any control"]
+    seen: list[tuple] = []
+    if len(stops) > 1 and stops[-1] == stops[-2]:
+        problems.append(f"focus stuck on {stops[-1]['role']} {stops[-1]['name']!r}: Tab no longer moves")
+    for stop in stops:
+        key = (stop["role"], stop["name"], stop.get("x"), stop.get("y"))
+        if key in seen:
+            if seen.index(key) != 0:
+                problems.append(f"focus loop skips back to {stop['name']!r} before the cycle ends")
+            break
+        seen.append(key)
+    reached = {(k[0], k[1]) for k in seen}
+    for control in controls:
+        if (control["role"], control["name"]) not in reached:
+            problems.append(f"not reachable by Tab: {control['role']} {control['name']!r}")
+    return problems
+
+
+def _focused(root):
+    """The AT-SPI node holding keyboard focus under ``root``, with its position."""
+    from gi.repository import Atspi
+    stack = [(root, 0)]
+    while stack:
+        node, depth = stack.pop()
+        try:
+            if node.get_state_set().contains(Atspi.StateType.FOCUSED):
+                box = node.get_extents(Atspi.CoordType.WINDOW)
+                return {"role": node.get_role_name() or "", "name": node.get_name() or "",
+                        "x": box.x, "y": box.y}
+            if depth < MAX_DEPTH:
+                for index in range(node.get_child_count()):
+                    child = node.get_child_at_index(index)
+                    if child is not None:
+                        stack.append((child, depth + 1))
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _tab_stops(app, limit: int = 60) -> list[dict]:
+    """Press Tab with xdotool in the private display, recording each focus stop."""
+    xdotool = shutil.which("xdotool")
+    if xdotool is None:
+        return []
+    # No window manager in the private display: give the app window X focus by hand.
+    found = subprocess.run([xdotool, "search", "--onlyvisible", "--name", "."],
+                           capture_output=True, text=True, timeout=10, check=False).stdout.split()
+    if found:
+        subprocess.run([xdotool, "windowfocus", found[-1]], timeout=10, check=False)
+        time.sleep(0.5)
+    subprocess.run([xdotool, "key", "Escape"], timeout=5, check=False)  # self-test leaves a modal dialog up
+    time.sleep(0.5)
+    stops: list[dict] = []
+    for _ in range(limit):
+        subprocess.run([xdotool, "key", "Tab"], timeout=5, check=False)
+        time.sleep(0.25)
+        stop = _focused(app)
+        if stop is None:
+            continue
+        stops.append(stop)
+        if len(stops) > 1 and stop == stops[-2]:
+            break  # focus did not move: a keyboard trap, reported by check_tab_order
+        if len(stops) > 1 and (stop["role"], stop["name"], stop["x"], stop["y"]) == (
+                stops[0]["role"], stops[0]["name"], stops[0]["x"], stops[0]["y"]):
+            break
+    return stops
+
+
 def _collect(root) -> list[dict]:
     from gi.repository import Atspi
     out: list[dict] = []
@@ -54,7 +129,7 @@ def _collect(root) -> list[dict]:
     return out
 
 
-def _app_nodes(scratch: Path, child_pid: int, wait: float = 20.0) -> list[dict]:
+def _app_nodes(scratch: Path, child_pid: int, wait: float = 20.0, stops: list | None = None) -> list[dict]:
     import gi
     gi.require_version("Atspi", "2.0")
     from gi.repository import Atspi
@@ -65,7 +140,10 @@ def _app_nodes(scratch: Path, child_pid: int, wait: float = 20.0) -> list[dict]:
         for index in range(desktop.get_child_count()):
             app = desktop.get_child_at_index(index)
             if app is not None and app.get_process_id() == child_pid and app.get_child_count() > 0:
-                return _collect(app)
+                nodes = _collect(app)
+                if stops is not None:  # keyboard-only pass, after the tree is read
+                    stops.extend(_tab_stops(app))
+                return nodes
         time.sleep(0.3)
     return []
 
@@ -127,7 +205,8 @@ def main() -> int:
                 print("A11Y FAILED: window never reached the hold point", file=sys.stderr)
                 return 1
             time.sleep(0.2)
-        nodes = _app_nodes(scratch, child.pid)
+        stops: list[dict] | None = [] if os.environ.get("SMOOTHCAST_A11Y_KEYS") else None
+        nodes = _app_nodes(scratch, child.pid, stops=stops)
     finally:
         Path(prefix + ".done").write_text("1", encoding="ascii")
         try:
@@ -145,9 +224,16 @@ def main() -> int:
         print(f"A11Y control: {node['role']} / {node['name']!r}")
     for node in bad:
         print("A11Y UNNAMED:", json.dumps(node, sort_keys=True))
+    keyboard_bad: list[str] = []
+    if stops is not None:
+        keyboard_bad = check_tab_order(stops, interactive)
+        for stop in stops:
+            print(f"KEYS stop: {stop['role']} / {stop['name']!r} @({stop['x']},{stop['y']})")
+        for problem in keyboard_bad:
+            print("KEYS PROBLEM:", problem)
     if os.environ.get("SMOOTHCAST_A11Y_DUMP"):
         Path(os.environ["SMOOTHCAST_A11Y_DUMP"]).write_text(json.dumps(nodes, indent=1), encoding="utf-8")
-    return 1 if bad or not interactive else 0
+    return 1 if bad or keyboard_bad or not interactive else 0
 
 
 if __name__ == "__main__":
