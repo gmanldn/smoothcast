@@ -19,7 +19,8 @@ ACCESS_REMOVED_DURING_UPLOAD = (
     "Your access to this room was removed during the upload. "
     "Ask whoever runs SmoothCast to let you back in.")
 WRONG_ORIGIN = "This page was opened from an unexpected address. Open the room from its own link and try again."
-YOUTUBE_OFF = "YouTube search is unavailable on this SmoothCast computer. A ready, isolated search worker is required."
+YOUTUBE_OFF = ("YouTube search is unavailable on this SmoothCast computer. "
+               "Try again in a moment, or add a file from your device.")
 LINK_DOWNLOADS_OFF = "Downloads from links are turned off. Ask whoever runs SmoothCast to turn them on."
 NO_SPACE = "There is not enough space on the SmoothCast computer. Free some space and try again."
 UPLOAD_STORAGE_UNAVAILABLE = "The SmoothCast computer cannot save uploads right now. Try again in a moment."
