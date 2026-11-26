@@ -244,7 +244,10 @@ class UploadManager:
                     # dead records consume one of the three active slots.
                     self._uploads.pop(upload_id, None)
                     continue
-                if upload.complete_path is None and upload.last_at <= cutoff:
+                # A pending/active progressive cast still owns this path.
+                # Reclaim it only after the receiver outcome is reconciled.
+                if (upload.complete_path is None and upload.last_at <= cutoff
+                        and upload.early_cast not in {"requested", "active"}):
                     try:
                         upload.partial_path.unlink(missing_ok=True)
                     except OSError:
@@ -667,14 +670,15 @@ class UploadManager:
         return len(targets)
 
     def close(self) -> None:
-        """Discard unfinished transfers; keep completed files used by sessions."""
+        """Discard unfinished transfers not owned by a progressive cast."""
         with self._lock:
             uploads = list(self._uploads.values())
             self._uploads.clear()
         for upload in uploads:
             with upload.lock:
                 upload.cancelled = True
-                if upload.complete_path is None:
+                if (upload.complete_path is None
+                        and upload.early_cast not in {"requested", "active"}):
                     try:
                         upload.partial_path.unlink()
                     except FileNotFoundError:

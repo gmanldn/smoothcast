@@ -493,3 +493,42 @@ def test_oversized_source_read_preserves_acknowledged_prefix(tmp_path):
     uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
     assert path.read_bytes() == b"abcdef"
     uploads.close()
+
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_expiry_preserves_progressive_cast_until_declined(tmp_path, accepted):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3),
+        early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    receipt = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(receipt["cast_path"])
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    uploads.create("other", "next.mkv", 6, queue_only=True)
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.mark_early_cast(upload_id, accepted=False)
+    uploads.create("other", "another.mkv", 6, queue_only=True)
+    assert not path.exists()
+    uploads.close()
+
+
+@pytest.mark.parametrize("accepted", [None, True, False])
+def test_close_preserves_only_live_progressive_source(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    receipt = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(receipt["cast_path"])
+    uploads.close()
+    if accepted is False:
+        assert not path.exists()
+    else:
+        assert path.read_bytes() == b"abc"
