@@ -809,6 +809,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.server.room.remember({m["id"]: m.get("title") for m in merged})
         self.server.room.prune(live_ids)
         state["queue"] = merged
+        uploads = self.server.uploads
+        state["room_transfers"] = uploads.room_transfers() if uploads is not None else []
         state["room"] = self.server.room.snapshot(participant_id)
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
@@ -838,8 +840,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _event_key(self) -> tuple | None:
         """Cheap change detector over the published snapshot; ignores the moving playhead."""
         peeked = self.server.status_peek() if self.server.status_peek is not None else None
+        uploads = self.server.uploads
+        transfers = tuple(tuple(row.values()) for row in uploads.room_transfers()) if uploads is not None else ()
         if peeked is None:
-            return None
+            return (transfers,)
         state = peeked[1]
         queue = state.get("queue") if isinstance(state.get("queue"), list) else []
         items = tuple((q.get("id"), q.get("title")) for q in queue if isinstance(q, dict))
@@ -849,7 +853,7 @@ class _Handler(BaseHTTPRequestHandler):
         jobs = self.server.link_jobs
         activity = getattr(self.server, "mesh_acquisition_activity", None)
         return (fields, items, self.server.room.seq, jobs.revision() if jobs is not None else 0,
-                activity.revision() if activity is not None else 0)
+                activity.revision() if activity is not None else 0, transfers)
 
     def _events(self) -> None:
         """GET /api/events: server-sent room state, one event per change (#316 slice 1)."""
@@ -861,6 +865,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not self.server.acquire_event_stream(participant_id):
             return self._send(429, {"ok": False, "error": "Too many room streams are open. Close one and retry.",
                                     "code": "room.rate_limited"}, extra_headers={"Retry-After": "5"})
+        key = self._event_key()
         try:
             first = self._room_payload(participant_id)
         except PortalRequestError as exc:
@@ -879,7 +884,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         clock, server = self.server.clock, self.server
-        key = self._event_key()
         last_write = last_state = clock()
         payload = first
         try:
@@ -2058,6 +2062,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
 <div class="home-card"><h3>In the room</h3><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></div>
 </div>
+<section id="homeIncomingPanel" aria-labelledby="homeIncomingHeading" hidden><h3 id="homeIncomingHeading">Incoming media</h3><ul id="homeIncomingRows" aria-label="Files arriving in this room"></ul><p class="field-hint">These transfers are not yet confirmed playable.</p></section>
 <details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
 <section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
 </section>
@@ -2069,6 +2074,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 
 <button id="clearQueue" class="secondary tiny" type="button" title="Remove waiting items without stopping what is playing" disabled>Clear Up Next</button>
 <ul id="queue" aria-label="Shared Up Next queue" tabindex="-1"><li class="empty">Nothing in Up Next yet</li></ul>
+<section id="queueIncomingPanel" aria-labelledby="queueIncomingHeading" hidden><h3 id="queueIncomingHeading">Incoming media</h3><ul id="queueIncomingRows" aria-label="Files arriving before queue acceptance"></ul><p class="field-hint">Files appear here immediately, then move into playback or Up Next when accepted.</p></section>
 <section id="libraryCopiesPanel" aria-labelledby="libraryCopiesHeading" hidden><h3 id="libraryCopiesHeading">Shared-library transfers</h3><ul id="libraryCopyRows" aria-label="Shared library transfer activity"></ul></section>
 <details id="linkAcquisition"><summary id="linkHeading">Add a YouTube or magnet link</summary>
 <p id="linkAvailability" class="field-hint" role="status" aria-live="polite">Checking whether downloads are available…</p>
@@ -2101,7 +2107,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section id="uploadCard" aria-labelledby="uploadHeading" hidden><h2 id="uploadHeading">Add files from this device</h2>
 <p class="section-desc">Choose music or video stored on your phone or computer; SmoothCast sends it to the SmoothCast computer over your Wi-Fi.</p>
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
-<p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
+<p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Submitted filenames and transfer progress are visible to everyone in this room. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
 <label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
@@ -2710,6 +2716,25 @@ function renderLibraryCopies(state){
     li.append(title,detail);return li;
   }));
 }
+let roomTransferSignature=null;
+function renderRoomTransfers(state){
+  const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
+  const signature=JSON.stringify(rows);
+  if(signature===roomTransferSignature)return;roomTransferSignature=signature;
+  const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
+  for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
+    const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
+    panel.hidden=!rows.length;
+    list.replaceChildren(...rows.map(row=>{
+      const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p"),meter=document.createElement("progress");
+      title.textContent=row.title||"Incoming media";
+      detail.className="field-hint";
+      detail.textContent=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      meter.max=Math.max(1,Number(row.size)||1);meter.value=Math.max(0,Math.min(meter.max,Number(row.received)||0));meter.setAttribute("aria-label","Transfer progress for "+title.textContent);
+      li.append(title,detail,meter);return li;
+    }));
+  }
+}
 function playbackFeedback(state){
   const feedback=state.cast_feedback;
   if(feedback&&feedback.receiver===state.receiver&&typeof feedback.message==="string"){
@@ -2756,7 +2781,7 @@ function applyStatus(d){
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
 queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
-renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderLibraryCopies(s);renderLinkJobs(s);
+renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 renderRoom(s.room);renderPeers(s.peers,s.peer_discovery_available);window.scRenderScreens&&window.scRenderScreens(s);window.scRenderMeshRoom&&window.scRenderMeshRoom(s);
 renderNetworkActivity(s.network_activity);

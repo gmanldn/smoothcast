@@ -1894,3 +1894,45 @@ assert.equal(writes,2);assert.equal(text,"Next film");
     subprocess.run(["node", "-"], input=harness + script + scenario,
                    text=True, check=True, timeout=10)
 
+
+
+def test_concurrent_guest_uploads_visible_before_completion_without_private_handles(tmp_path):
+    import portal_uploads
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads")
+    rig = PortalRig(uploads)
+    try:
+        _, first, a = login(rig, name="Alice")
+        _, second, b = login(rig, name="Bob")
+        origin = f"http://{rig.host}"
+        ids = []
+        for auth, cookie, filename in ((first, a, "film.mkv"), (second, b, "music.mp3")):
+            status, raw, _ = rig.request("POST", "/api/uploads",
+                {"name": filename, "size": 8}, cookie=cookie, csrf=auth["csrf"], origin=origin)
+            assert status == 201
+            ids.append(decode(raw)["id"])
+        status, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert status == 200
+        state = decode(raw)["state"]
+        assert state["queue"] == []
+        rows = state["room_transfers"]
+        assert [(row["title"], row["received"], row["media_kind"]) for row in rows] == [
+            ("film.mkv", 0, "video"), ("music.mp3", 0, "audio")]
+        assert all(set(row) == {"id", "title", "media_kind", "received", "size", "intent", "stage"} for row in rows)
+        assert all(upload_id not in json.dumps(rows) for upload_id in ids)
+        status, _, _ = rig.request("PUT", f"/api/uploads/{ids[0]}", b"abcd",
+            cookie=a, csrf=first["csrf"], origin=origin, content_type="application/octet-stream",
+            extra_headers={"Content-Range": "bytes 0-3/8"})
+        assert status == 200
+        status, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert status == 200
+        assert [row["received"] for row in decode(raw)["state"]["room_transfers"]] == [4, 0]
+        status, _, _ = rig.request("GET", f"/api/uploads/{ids[0]}", cookie=b)
+        assert status == 404
+        status, _, _ = rig.request("DELETE", f"/api/uploads/{ids[0]}",
+            cookie=a, csrf=first["csrf"], origin=origin)
+        assert status == 200
+        _, raw, _ = rig.request("GET", "/api/status", cookie=b)
+        assert [row["title"] for row in decode(raw)["state"]["room_transfers"]] == ["music.mp3"]
+    finally:
+        rig.close()
+        uploads.close()

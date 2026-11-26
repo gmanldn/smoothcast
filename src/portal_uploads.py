@@ -372,6 +372,43 @@ class UploadManager:
             uploads = list(self._uploads.values())
         return [self._summary(upload, now) for upload in uploads]
 
+    def room_transfers(self) -> list[dict]:
+        """Authenticated room projection of submitted, not-yet-delivered media.
+
+        Never expose the upload handle, owner, IP, path or target consent token.
+        Read published offsets without waiting on a network writer's file lock.
+        Completed accepted actions belong to the actual queue/playback status.
+        """
+        now = self._clock()
+        rows = []
+        with self._lock:
+            for upload in reversed(self._uploads.values()):
+                if upload.cancelled or (upload.cast_submitted and upload.directory_synced):
+                    continue
+                if now - upload.last_at > PARTIAL_TTL_SECONDS:
+                    continue
+                received = upload.received
+                if upload.dispatch_pending:
+                    stage = "submitting"
+                elif upload.early_cast in {"requested", "active"} and received < upload.size:
+                    stage = "buffering"
+                elif received >= upload.size:
+                    stage = "verifying" if not upload.directory_synced else "awaiting_acceptance"
+                else:
+                    stage = "receiving"
+                rows.append({
+                    "id": hashlib.sha256(("room-transfer:" + upload.upload_id).encode()).hexdigest()[:24],
+                    "title": upload.name,
+                    "media_kind": "audio" if upload.audio_only else "video",
+                    "received": received,
+                    "size": upload.size,
+                    "intent": "queue" if upload.queue_only else "cast",
+                    "stage": stage,
+                })
+                if len(rows) >= 24:
+                    break
+        return list(reversed(rows))
+
     def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
         """Record whether the GUI accepted an early-cast request for an upload."""
         with self._lock:
