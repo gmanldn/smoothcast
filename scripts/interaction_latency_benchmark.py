@@ -45,6 +45,8 @@ def summarize(samples: dict[str, list[float]]) -> dict:
     """Report with p50/p95/p99 per scenario; unknown scenarios keep their samples."""
     scenarios = {}
     for name, values in sorted(samples.items()):
+        if not isinstance(values, list):   # e.g. the probe's "load" metadata
+            continue
         numbers = [float(value) for value in values]
         if not numbers:
             continue

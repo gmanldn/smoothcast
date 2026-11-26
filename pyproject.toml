@@ -133,6 +133,7 @@ py-modules = [
     "idle_chrome",
     "idle_slate",
     "idle_timers",
+    "interaction_probe",
     "issue_report",
     "jank_ui",
     "jank_watchdog",
