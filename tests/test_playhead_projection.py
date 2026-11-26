@@ -114,6 +114,7 @@ def test_server_snapshot_uses_tracked_source_playback_rate():
         "castctl": SimpleNamespace(volume_percent=lambda _: 50),
         "state_labels": SimpleNamespace(present=lambda _: state_label),
         "network_activity": SimpleNamespace(portal_entries=lambda *_: []),
+        "action_state": __import__("action_state"),
         "accent": __import__("accent"),
     }
     exec(compile("class Window:\n" + textwrap.indent(method, "    "),

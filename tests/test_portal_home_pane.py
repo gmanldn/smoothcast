@@ -54,9 +54,9 @@ def test_home_is_the_default_dashboard_pane_with_unique_ids():
     assert len(page.ids) == len(set(page.ids)), "duplicate ids break DOM binding"
     assert page.tags["homePanel"] == "section"
     assert page.parent["homePanel"] == "dashboard"
-    assert page.parent["playback"] == "homePanel"
+    assert page.parent["playback"] == "dashboard"
     assert page.tags["homeHeading"] == "h2"
-    assert '<a href="#playback">Now Playing</a>' not in portal._HTML
+    assert '<a href="#playback">Now Playing</a>' in portal._HTML
     assert 'id="homeHeading" tabindex="-1"' in portal._HTML
 
 
@@ -135,7 +135,7 @@ for(const id of ["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel"
   location.hash="#"+id;syncRoomBlade(true);
   check(dash.getAttribute("data-room-blade")===id,"blade "+id);
 }
-location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="homePanel","legacy playback link opens Home");
+location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="playback","playback blade opens Now Playing");
 location.hash="";syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"home clears the blade");
 check(links[0].getAttribute("aria-current")==="page","Home selected by default");
 """

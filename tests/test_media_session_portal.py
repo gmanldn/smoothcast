@@ -145,7 +145,7 @@ def test_unsupported_browser_is_a_silent_noop():
 
 def test_page_wires_status_updates_the_toggle_and_the_silent_audio_route():
     html = portal._page().decode("utf-8")
-    assert "shortcutState=s;syncMediaSession(s);" in html
+    assert "shortcutState=s;" in html and "syncMediaSession(s)" in html
     assert 'id="lockControls"' in html and "Lock-screen controls" in html
     harness = RoomHarness(count=1)
     try:
