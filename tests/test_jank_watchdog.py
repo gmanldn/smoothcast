@@ -137,3 +137,24 @@ def test_diagnostics_summary_is_disabled_when_unwired():
             "threshold_ms": 100.0}
     finally:
         jank_watchdog.install(None)
+
+
+def test_enabled_from_is_off_unless_asked_for():
+    assert jank_watchdog.enabled_from(env={}) is False
+    assert jank_watchdog.enabled_from(env={"SMOOTHCAST_JANK_WATCHDOG": "0"}) is False
+    assert jank_watchdog.enabled_from(env={"SMOOTHCAST_JANK_WATCHDOG": "no"}) is False
+    assert jank_watchdog.enabled_from(env={"SMOOTHCAST_JANK_WATCHDOG": "maybe"}) is False
+    for truthy in ("1", "true", "TRUE", " yes ", "On"):
+        assert jank_watchdog.enabled_from(env={jank_watchdog.JANK_ENV: truthy}) is True
+
+
+def test_enabled_from_honours_the_preference_and_the_isolated_smoke():
+    assert jank_watchdog.enabled_from(env={}, config={"jank_watchdog": True}) is True
+    assert jank_watchdog.enabled_from(env={}, config={"jank_watchdog": "true"}) is False
+    assert jank_watchdog.enabled_from(env={}, config={}) is False
+    # The isolated GUI smoke always monitors, whatever the preference says.
+    smoke = {"SMOOTHCAST_GUI_TEST_ISOLATED": "1"}
+    assert jank_watchdog.enabled_from(env=smoke, config={"jank_watchdog": False}) is True
+    # An explicit env off still loses to the smoke marker.
+    assert jank_watchdog.enabled_from(
+        env={**smoke, jank_watchdog.JANK_ENV: "0"}) is True

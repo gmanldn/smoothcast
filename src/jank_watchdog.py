@@ -12,8 +12,11 @@ from dataclasses import dataclass
 import os
 import re
 import time
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
 
+JANK_ENV = "SMOOTHCAST_JANK_WATCHDOG"
+_SMOKE_ENV = "SMOOTHCAST_GUI_TEST_ISOLATED"
+_TRUTHY = {"1", "true", "yes", "on"}
 DEFAULT_THRESHOLD_MS = 100.0
 DEFAULT_RATE_LIMIT_S = 1.0
 MAX_SAMPLES = 200
@@ -166,3 +169,23 @@ def diagnostics_summary() -> dict[str, float | int | bool]:
         return {"enabled": False, "stalls": 0, "p99_ms": 0.0, "last_lag_ms": 0.0,
                 "threshold_ms": DEFAULT_THRESHOLD_MS}
     return watchdog.summary()
+
+
+def enabled_from(*, env: Mapping[str, str] | None = None,
+                 config: Mapping[str, object] | None = None) -> bool:
+    """Whether the wired build should run the watchdog (#442).
+
+    Off in a release build unless the person turns it on in
+    Preferences → Diagnostics (``jank_watchdog: true``) or sets
+    ``SMOOTHCAST_JANK_WATCHDOG`` to a truthy value; always on in the isolated GUI
+    smoke, which marks itself with ``SMOOTHCAST_GUI_TEST_ISOLATED=1``.
+    """
+    values = env if env is not None else os.environ
+    if str(values.get(_SMOKE_ENV, "")).strip() == "1":
+        return True
+    raw = values.get(JANK_ENV)
+    if raw is not None:
+        return str(raw).strip().lower() in _TRUTHY
+    if config is not None:
+        return config.get("jank_watchdog") is True
+    return False
