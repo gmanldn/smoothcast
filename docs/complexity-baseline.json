@@ -6,7 +6,7 @@
   "accent.py": 112,
   "action_state.py": 50,
   "actions.py": 96,
-  "api_spec.py": 167,
+  "api_spec.py": 173,
   "aspect_override.py": 35,
   "async_jobs.py": 214,
   "audio_delay.py": 85,
@@ -21,9 +21,10 @@
   "capability_gate.py": 36,
   "capability_plan.py": 218,
   "cast_ab_repeat_ui.py": 41,
+  "cast_app_lifecycle.py": 75,
   "cast_audio_sync.py": 55,
   "cast_av.py": 853,
-  "cast_control.py": 754,
+  "cast_control.py": 692,
   "cast_lifecycle.py": 310,
   "cast_lifecycle_actions.py": 127,
   "cast_mesh.py": 214,
@@ -77,7 +78,7 @@
   "font_attachments.py": 172,
   "frozen_entry.py": 10,
   "frozen_runtime.py": 86,
-  "guest_messages.py": 31,
+  "guest_messages.py": 36,
   "gui_link_add.py": 182,
   "gui_test_safety.py": 54,
   "hdr_tonemap.py": 62,
@@ -111,7 +112,7 @@
   "media_names.py": 44,
   "media_tools.py": 130,
   "mesh_acquisition_activity.py": 255,
-  "mesh_acquisition_app.py": 347,
+  "mesh_acquisition_app.py": 348,
   "mesh_acquisition_assignment.py": 335,
   "mesh_acquisition_bridge.py": 206,
   "mesh_acquisition_executor.py": 219,
@@ -231,6 +232,6 @@
   "video_policy.py": 281,
   "watch_history.py": 208
  },
- "src_lines": 54197,
- "src_modules": 228
+ "src_lines": 54222,
+ "src_modules": 229
 }
