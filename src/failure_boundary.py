@@ -98,6 +98,11 @@ def describe(exc: object) -> UserFailure:
                 clean = errors.CATALOGUE[code].steps
             errors.record(code, getattr(exc, "context", None))
             return UserFailure(reviewed.strip()[:MAX_MESSAGE], clean, _detail(exc), True, code)
+        code = _code(exc)
+        if code != errors.FALLBACK.code:
+            spec = errors.CATALOGUE[code]
+            errors.record(code, getattr(exc, "context", None))
+            return UserFailure(spec.message, spec.steps, _detail(exc), True, code)
         errors.record(errors.FALLBACK.code)
         return UserFailure(TITLE, STEPS, _detail(exc))
     except Exception:

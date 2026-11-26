@@ -187,3 +187,32 @@ def test_every_route_family_answers_a_crash_with_civil_json(rig, method, path, b
     assert "Traceback" not in text and "secret" not in text and "/home/sam" not in text
     assert decode(data)["code"] == "unexpected_error"
     assert log.call_count == 1 and "/home/sam" not in log.call_args[0][0]
+
+
+def test_catalogued_code_without_reviewed_copy_uses_safe_catalogue():
+    import errors
+
+    class CodedError(RuntimeError):
+        code = "cast.receiver_offline"
+
+    errors.reset_recent()
+    try:
+        failure = fb.describe(CodedError("private receiver details"))
+        spec = errors.CATALOGUE[CodedError.code]
+        assert failure.code == spec.code
+        assert failure.message == spec.message
+        assert failure.steps == spec.steps
+        assert "private receiver details" not in failure.message
+        assert errors.recent()[-1]["code"] == spec.code
+    finally:
+        errors.reset_recent()
+
+
+def test_unknown_code_without_reviewed_copy_still_uses_generic_failure():
+    class UnknownError(RuntimeError):
+        code = "cast.not_a_real_code"
+
+    failure = fb.describe(UnknownError("private details"))
+    assert failure.code == "internal.unexpected"
+    assert failure.title == fb.TITLE
+    assert "private details" not in failure.message
