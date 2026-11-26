@@ -60,3 +60,16 @@ def test_catalogue_entries_are_sound_and_referenced():
         assert spec.message.strip(), code
         assert all(step.strip() for step in spec.steps), code
         assert code in references, f"{code} is only defined in the catalogue"
+
+
+# The failure classes #207 names as the "top 20" must each have a catalogued code.
+_REQUIRED_PREFIXES = ("discovery.", "cast.receiver_offline", "ffmpeg.decoder_failed",
+                      "ffmpeg.too_old", "ffmpeg.missing", "subtitle.", "dlna.",
+                      "network.port_in_use", "upload.disk_full", "media.unavailable")
+
+
+def test_issue_207_named_failure_classes_are_all_catalogued():
+    codes = list(errors.CATALOGUE)
+    for prefix in _REQUIRED_PREFIXES:
+        assert any(c.startswith(prefix) for c in codes), prefix
+    assert len(codes) >= 20

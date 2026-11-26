@@ -15,7 +15,8 @@ from dataclasses import dataclass
 import threading
 import time
 
-CATEGORIES = ("app", "cast", "ffmpeg", "media", "room", "subtitle", "upload", "internal")
+CATEGORIES = ("app", "cast", "discovery", "dlna", "ffmpeg", "media", "network", "room",
+              "subtitle", "upload", "internal")
 SEVERITIES = ("info", "warning", "error")
 
 
@@ -138,6 +139,18 @@ CATALOGUE: dict[str, ErrorSpec] = {s.code: s for s in (
     _spec("media.type_unsupported", "error", False,
           "The media URL has no supported content type.",
           "Choose media with a known file type.", "Cast a local file instead."),
+    _spec("discovery.failed", "warning", True,
+          "SmoothCast could not search for receivers. Check your network and scan again.",
+          "Check that this computer is on the same network as your receivers.",
+          "Scan the network again.", "Turn off any VPN that blocks local devices."),
+    _spec("dlna.command_failed", "error", True,
+          "The DLNA receiver rejected the command. Try again or choose another receiver.",
+          "Retry the action.", "Restart the receiver if it keeps failing.",
+          "Choose a Google Cast target instead."),
+    _spec("network.port_in_use", "error", True,
+          "SmoothCast could not open its streaming port because another program is using it.",
+          "Retry the action; SmoothCast picks a free port when it can.",
+          "Close other media servers on this computer.", "Restart SmoothCast."),
     _spec("internal.unexpected", "error", True,
           "SmoothCast hit an unexpected problem. Retry the action.",
           "Retry the action.",

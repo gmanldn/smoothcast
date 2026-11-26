@@ -288,6 +288,36 @@ Codes are never translated. See [UX copy](UX_COPY.md) for the voice.
   1. Choose media with a known file type.
   2. Cast a local file instead.
 
+<a id="errors-discovery-failed"></a>
+## `discovery.failed`
+
+- Severity: warning; retryable: yes
+- Message: SmoothCast could not search for receivers. Check your network and scan again.
+- Try:
+  1. Check that this computer is on the same network as your receivers.
+  2. Scan the network again.
+  3. Turn off any VPN that blocks local devices.
+
+<a id="errors-dlna-command-failed"></a>
+## `dlna.command_failed`
+
+- Severity: error; retryable: yes
+- Message: The DLNA receiver rejected the command. Try again or choose another receiver.
+- Try:
+  1. Retry the action.
+  2. Restart the receiver if it keeps failing.
+  3. Choose a Google Cast target instead.
+
+<a id="errors-network-port-in-use"></a>
+## `network.port_in_use`
+
+- Severity: error; retryable: yes
+- Message: SmoothCast could not open its streaming port because another program is using it.
+- Try:
+  1. Retry the action; SmoothCast picks a free port when it can.
+  2. Close other media servers on this computer.
+  3. Restart SmoothCast.
+
 <a id="errors-internal-unexpected"></a>
 ## `internal.unexpected`
 
