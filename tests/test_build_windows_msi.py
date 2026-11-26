@@ -282,6 +282,20 @@ class WixTests(unittest.TestCase):
                            commit=commit, expected_files=2)
 
 
+    def test_msi_does_not_accept_upgrade_guid_in_unrelated_property(self):
+        text = self._msi(upgrade_code="").replace(
+            'UpgradeCode=""', "").replace(
+            "</Package>", f'<Property Id="Unrelated" Value="{msi.product_upgrade_code()}" />'
+            "</Package>")
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(msi, "BUILD_DIR", Path(folder)), \
+                mock.patch.object(msi, "wix_exe", return_value="wix"), \
+                mock.patch.object(msi, "_run", side_effect=self._decompile(text)):
+            with self.assertRaisesRegex(msi.BuildError, "UpgradeCode"):
+                msi.verify_msi(Path(folder) / "test.msi", version="2.0.38",
+                               commit="a" * 40, expected_files=2)
+
+
 class BuildTests(unittest.TestCase):
     def test_failure_leaves_no_canonical_msi(self):
         with tempfile.TemporaryDirectory() as folder:
