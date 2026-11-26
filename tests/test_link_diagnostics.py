@@ -23,7 +23,7 @@ def test_missing_tools_are_named_with_platform_specific_repair():
     assert "winget" in win["repair"][0]
     linux = _by(diag.rows(readiness, platform="linux2"))["youtube"]
     assert "package manager" in linux["repair"][0]
-    assert "SMOOTHCAST_LINK_SANDBOX" in linux["repair"][-1] and "link_sandbox_bwrap" in linux["repair"][-1]
+    assert "--link-check --setup" in linux["repair"][-1] and "SMOOTHCAST_LINK_SANDBOX" in linux["repair"][-1]
 
 
 def test_off_restart_ready_and_failed_states():
