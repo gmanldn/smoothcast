@@ -197,3 +197,24 @@ def test_stale_move_is_rejected_explained_and_the_list_catches_up():
                 "() => document.querySelector('#queue .queue-item').textContent.includes('song3')", timeout=8000)
         finally:
             browser.close()
+
+
+@pytest.mark.skipif(not OPT_IN, reason="explicit opt-in: installed Playwright Chromium")
+def test_320px_with_200_percent_text_has_no_horizontal_scroll():
+    from playwright.sync_api import sync_playwright
+
+    rig = _RealQueueRig([f"/p/Some quite long song title number {i}.mp3" for i in range(6)])
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--disable-background-networking"])
+        page = browser.new_page(viewport={"width": 320, "height": 640}, service_workers="block")
+        try:
+            page.goto(f"http://{rig.host}/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Ann")
+            page.locator("#loginForm button").click()
+            page.locator("#queue .queue-item").nth(5).wait_for()
+            page.add_style_tag(content="html{font-size:200% !important}")
+            page.wait_for_timeout(300)
+            width, inner = page.evaluate("[document.documentElement.scrollWidth, innerWidth]")
+            assert width <= inner, f"{width}px wide in {inner}px at 200% text"
+        finally:
+            browser.close()

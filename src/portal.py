@@ -2060,7 +2060,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #playback::before{display:none}
 #homePanel #playbackHeading{font-size:1rem}
 #homePanel #playback .actions button[data-action="play_pause"]{min-height:44px;flex-basis:auto;flex-grow:2}
-#homePanel .home-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}
+#homePanel .home-actions{grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));gap:6px;margin:10px 0}
 #homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
 #homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
 #homePanel .home-action span:not(.home-icon){display:none}
