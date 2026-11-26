@@ -135,3 +135,48 @@ def test_incomplete_cached_evidence_cannot_enable_provider(tmp_path, monkeypatch
     assert probe.save(launcher, probe.Qualification(True, checks, ""))
     assert not probe.is_verified(launcher)
 
+
+
+@pytest.mark.parametrize("missing", ["ran", "loopback", "loopback6", "lan",
+                                      "metadata", "home", "child"])
+def test_incomplete_probe_evidence_is_rejected(missing):
+    report = dict(ran=True, loopback=False, loopback6=False, lan=False,
+                  metadata=False, home=None, child=True)
+    assert probe._complete_report(report, ipv6=True, private=True)
+    del report[missing]
+    assert not probe._complete_report(report, ipv6=True, private=True)
+
+
+@pytest.mark.parametrize("key,value", [("loopback", 0), ("metadata", "false"),
+                                      ("child", False), ("home", []), ("lan", None)])
+def test_malformed_probe_evidence_is_rejected(key, value):
+    report = dict(ran=True, loopback=False, loopback6=False, lan=False,
+                  metadata=False, home=None, child=True)
+    report[key] = value
+    assert not probe._complete_report(report, ipv6=True, private=True)
+
+
+def test_incomplete_launcher_report_never_qualifies(tmp_path):
+    launcher = script(tmp_path, """printf '%s\\n' 'QUALIFY {"ran":true}'""")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified and set(result.checks.values()) == {"not_run"}
+
+
+def test_nonzero_launcher_exit_never_qualifies(tmp_path):
+    launcher = script(tmp_path, """printf '%s\\n' 'QUALIFY {"ran":true,"loopback":false,"loopback6":null,"lan":null,"metadata":false,"home":null,"child":true}'
+exit 1""")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified and set(result.checks.values()) == {"not_run"}
+
+
+def test_old_cache_schema_requires_requalification(tmp_path, monkeypatch):
+    import json
+    target = tmp_path / "verdict.json"
+    monkeypatch.setattr(probe, "cache_path", lambda: target)
+    launcher = script(tmp_path, "exit 0")
+    good = probe.Qualification(True, {n: "pass" for n in probe.CHECKS}, "")
+    assert probe.save(launcher, good) and probe.is_verified(launcher)
+    data = json.loads(target.read_text())
+    del data["schema"]
+    target.write_text(json.dumps(data))
+    assert not probe.is_verified(launcher)

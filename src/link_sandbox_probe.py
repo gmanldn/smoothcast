@@ -33,6 +33,7 @@ import time
 CHECKS = ("probe_ran", "loopback_denied", "ipv6_denied", "private_lan_denied",
           "metadata_denied", "home_denied", "process_tree_terminated")
 METADATA_ADDRESS = "169.254.169.254"
+CACHE_SCHEMA = 2
 
 _PROBE = r"""
 import json, os, socket, subprocess, sys
@@ -138,6 +139,25 @@ def _tagged(tag: str) -> list[int]:
     return found
 
 
+def _complete_report(report: object, *, ipv6: bool, private: bool) -> bool:
+    """Absence of a probe observation is not evidence of isolation."""
+    if not isinstance(report, dict) or report.get("ran") is not True:
+        return False
+    if report.get("child") is not True or "home" not in report:
+        return False
+    if report["home"] is not None and not isinstance(report["home"], str):
+        return False
+    for key, enabled in (("loopback", True), ("metadata", True),
+                         ("loopback6", ipv6), ("lan", private)):
+        if key not in report:
+            return False
+        if enabled and type(report[key]) is not bool:
+            return False
+        if not enabled and report[key] is not None:
+            return False
+    return True
+
+
 def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0,
             python: str | None = None) -> Qualification:
     """Run the probe through *launcher* (``launcher EXECUTABLE ARGV...``)."""
@@ -177,9 +197,11 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
                     report = json.loads(line[8:])
                 except ValueError:
                     report = None
-        if not isinstance(report, dict) or report.get("ran") is not True:
+        if done.returncode != 0 or not _complete_report(
+                report, ipv6=loop6 is not None, private=private is not None):
             return Qualification(False, {n: "not_run" for n in CHECKS},
-                                 f"launcher did not run the probe (exit {done.returncode})")
+                                 f"launcher did not run the probe successfully (exit {done.returncode}); "
+                                 "complete qualification evidence required")
         time.sleep(0.4)  # let a well-behaved launcher finish tearing the tree down
         checks = {"probe_ran": "pass"}
         checks["loopback_denied"] = "pass" if loop.count == 0 and not report.get("loopback") else "FAIL"
@@ -261,7 +283,8 @@ def save(launcher: str, result: Qualification) -> bool:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(json.dumps({"launcher": identity, **result.as_dict()}, sort_keys=True))
+        tmp.write_text(json.dumps({"schema": CACHE_SCHEMA, "launcher": identity, **result.as_dict()},
+                                  sort_keys=True))
         os.replace(tmp, target)
         return True
     except OSError:
@@ -277,7 +300,8 @@ def is_verified(launcher: str) -> bool:
         data = json.loads(cache_path().read_text())
     except (OSError, ValueError):
         return False
-    return (isinstance(data, dict) and data.get("verified") is True
+    return (isinstance(data, dict) and data.get("schema") == CACHE_SCHEMA
+            and data.get("verified") is True
             and data.get("launcher") == identity
             and isinstance(data.get("checks"), dict)
             and all(data["checks"].get(name) == "pass" for name in CHECKS))
