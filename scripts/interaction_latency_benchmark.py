@@ -20,6 +20,10 @@ import argparse
 import json
 import math
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from interaction_probe import PHONE_POLLERS, QUEUE_ITEMS  # noqa: E402
 
 SLO_MS = {
     "play_pause": 16.0,
@@ -31,8 +35,6 @@ SLO_MS = {
 TOLERANCE = 0.20  # allowed p95 regression against the baseline
 FLOOR_MS = 1.0    # ...but never tighter than baseline + 1 ms: below that is timer noise
 SCHEMA = 1
-QUEUE_ITEMS = 1000
-PHONE_POLLERS = 32
 
 
 def percentile(values: list[float], fraction: float) -> float:

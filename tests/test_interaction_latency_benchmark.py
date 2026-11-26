@@ -64,3 +64,12 @@ def test_cli_writes_and_checks_a_baseline(tmp_path):
     assert bench.main(["--samples", str(slow), "--check", str(baseline)]) == 1
     assert bench.main(["--samples", str(slow), "--check", str(baseline),
                        "--slack", "10"]) == 0
+
+
+def test_the_load_definition_is_single_sourced_from_the_probe():
+    import interaction_probe
+
+    assert bench.QUEUE_ITEMS == interaction_probe.QUEUE_ITEMS == 1000
+    assert bench.PHONE_POLLERS == interaction_probe.PHONE_POLLERS == 32
+    report = bench.summarize(_samples())
+    assert (report["queue_items"], report["phone_pollers"]) == (1000, 32)
