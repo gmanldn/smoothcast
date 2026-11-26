@@ -2886,7 +2886,8 @@ function renderNetworkActivity(entries){
 function renderSharedQueue(s){
   const revision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;
   renderQueue(s.queue,revision);
-  $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
+  const qTotal=Number.isSafeInteger(s.queue_total)&&s.queue&&s.queue_total>s.queue.length?s.queue_total:0;
+  $("queueCount").textContent=s.queue&&s.queue.length?(qTotal?`${s.queue.length} of ${qTotal} shown`:`${s.queue.length} waiting`):"";$("clearQueue").disabled=!s.queue||!s.queue.length;
 }
 function applyStatus(d){
   if(!matchingBuild(d))return false;

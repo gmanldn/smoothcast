@@ -82,7 +82,7 @@ class _RealQueueRig(PortalRig):
             if action == "status":
                 rows = host._portal_queue_status()
                 return {"title": "", "state": "STOPPED", "queue": rows,
-                        "queue_revision": host._portal_queue_revision}
+                        "queue_total": len(host.queue), "queue_revision": host._portal_queue_revision}
             return host._portal_queue_action(action, payload)
 
         self.queue = []
@@ -93,8 +93,9 @@ class _RealQueueRig(PortalRig):
         self.server.pin_required = False
         # The desktop publishes a snapshot that SSE watches; mirror that seam.
         self.server.status_peek = lambda: (host._portal_queue_revision if hasattr(host, "_portal_queue_revision") else 0,
-                                           {"queue": host._portal_queue_status(), "queue_revision":
-                                            getattr(host, "_portal_queue_revision", 0), "state": "STOPPED"})
+                                           {"queue": host._portal_queue_status(), "queue_total": len(host.queue),
+                                            "queue_revision": getattr(host, "_portal_queue_revision", 0),
+                                            "state": "STOPPED"})
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02},
                          daemon=True).start()
@@ -135,5 +136,23 @@ def test_two_browsers_see_each_others_moves_and_stale_move_recovers():
             assert time.monotonic() - started < 1.0, "owner budget is 0.5s p95; 1s guards flakes"
             assert after_ben != before and after_ben == titles(ann), (before, after_ben, titles(ann))
             assert not errors, errors
+        finally:
+            browser.close()
+
+
+@pytest.mark.skipif(not OPT_IN, reason="explicit opt-in: installed Playwright Chromium")
+def test_queue_over_the_status_cap_is_disclosed_not_silently_truncated():
+    from playwright.sync_api import sync_playwright
+
+    rig = _RealQueueRig([f"/p/s{i}.mp3" for i in range(130)])
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--disable-background-networking"])
+        page = browser.new_page(viewport={"width": 390, "height": 800}, service_workers="block")
+        try:
+            page.goto(f"http://{rig.host}/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Ann")
+            page.locator("#loginForm button").click()
+            page.locator("#queue .queue-item").nth(99).wait_for()
+            assert page.locator("#queueCount").text_content() == "100 of 130 shown"
         finally:
             browser.close()

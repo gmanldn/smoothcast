@@ -242,7 +242,8 @@ class PortalMixin(PortalRoomMixin, PortalHostMixin, PortalUploadRecoveryMixin, N
                 "rate": (self.tracker.rate
                          if 0.05 <= self.tracker.rate <= 4.0 else 1.0),
                 "volume": volume,
-                "queue": queue, "queue_revision": self._portal_observe_queue(),
+                "queue": queue, "queue_total": len(self.queue),
+                "queue_revision": self._portal_observe_queue(),
                 "library_copies": self._portal_copy_status(),
                 "active": active, "busy": bool(self.busy),
                 "preparing": bool(self.busy and getattr(self, "_dlna_cancel", None) is not None),
