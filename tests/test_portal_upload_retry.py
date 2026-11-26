@@ -221,3 +221,30 @@ if(recoverUnstartedCast({status:409}))throw Error("queue-only intent reset");
                             text=True, timeout=10, check=False)
     assert result.returncode == 0, result.stderr
     assert "else if(recoverUnstartedCast(error))" in SOURCE
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_home_queue_shortcut_clears_cast_intent_without_touching_active_transfer():
+    start = "function chooseQueueUpload(){"
+    helper = start + SOURCE.split(start, 1)[1].split('$("quickQueueUpload").addEventListener', 1)[0]
+    start = "function quickCastDestinationCopy(receiver){"
+    helper += start + SOURCE.split(start, 1)[1].split("function renderQueueDestination", 1)[0]
+    scenario = r"""
+let uploading=false,pendingUpload=null,batchFiles=null,quickCastIntent=true,updates=0,focuses=0,errors=0;
+const controls={uploadQueue:{checked:false},videoFile:{focus(){focuses++}}};
+const $=id=>controls[id],updateUploadControls=()=>updates++,showError=()=>errors++;
+if(!chooseQueueUpload()||!controls.uploadQueue.checked||quickCastIntent||updates!==1||focuses!==1)throw Error("queue shortcut retained cast intent");
+for(const mode of ["uploading","pending","batch"]){
+  uploading=mode==="uploading";pendingUpload=mode==="pending"?{}:null;batchFiles=mode==="batch"?[]:null;
+  controls.uploadQueue.checked=false;quickCastIntent=true;
+  if(chooseQueueUpload()||controls.uploadQueue.checked||!quickCastIntent)throw Error("active transfer intent changed");
+}
+if(errors!==3||updates!==1)throw Error("locked transfer modified");
+if(!quickCastDestinationCopy("Living Room TV").includes("Living Room TV")||
+    !quickCastDestinationCopy(null).includes("Up Next"))throw Error("destination guidance missing");
+"""
+    result = subprocess.run(["node", "-e", helper + scenario], capture_output=True,
+                            text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert 'id="quickQueueUpload"' in SOURCE
+    assert '$("quickQueueUpload").addEventListener("click",chooseQueueUpload)' in SOURCE

@@ -2035,7 +2035,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
 <p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
-<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard">Add to Up Next instead</a></div>
+<div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
 </section>
 <div class="home-actions" role="group" aria-label="Quick actions">
@@ -2791,7 +2791,13 @@ function playbackFeedback(state){
   }
   return "";
 }
+function quickCastDestinationCopy(receiver){
+  return receiver?"Selected receiver: "+receiver+". SmoothCast checks availability before sending any file.":
+    "No room receiver selected. You can still add media to Up Next.";
+}
 function renderQueueDestination(state){
+  const quickStatus=$("quickCastStatus"),quickCopy=quickCastDestinationCopy(state.receiver);
+  if(quickStatus&&quickStatus.textContent!==quickCopy)quickStatus.textContent=quickCopy;
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
   if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
@@ -3492,6 +3498,19 @@ function updateUploadControls(){
   $("cancelUpload").disabled=cancelUpload;
 }
 let batchCastTarget=null,quickCastIntent=false;
+function chooseQueueUpload(){
+  if(uploading||pendingUpload||batchFiles){
+    showError("uploadStatus","Finish or cancel your existing transfer first.");
+    return false;
+  }
+  quickCastIntent=false;
+  $("uploadQueue").checked=true;
+  updateUploadControls();
+  $("videoFile").focus({preventScroll:true});
+  return true;
+}
+$("quickQueueUpload").addEventListener("click",chooseQueueUpload);
+$("openUploadEntry").addEventListener("click",chooseQueueUpload);
 function recoverUnstartedCast(error){
   // A target fence can fail after confirmation but before the first upload
   // is created. Retain the file input, discard only the obsolete cast intent.
