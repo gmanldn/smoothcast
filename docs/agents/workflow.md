@@ -6,6 +6,17 @@ branch**. `main` is owner-controlled archival/release integration: nobody and
 no workflow automatically merges, promotes, creates a release PR or pushes
 to `main`. The owner manually decides when (and whether) to merge it.
 
+## Choose the transport first (P0)
+
+- Hosted ChatGPT execution containers: assume no native internet access. Use
+  the GitHub connector immediately for repository reads, claims and guarded
+  progress shipments. Follow [connector shipment](sandbox-network.md); do not
+  attempt native clone/pull/push, gh, curl or dependency downloads first.
+- Network-enabled developer machines: use the native agent CLI below.
+- Both paths preserve claim arbitration, SHA-pinned changes, non-force develop
+  publication, durable handover and truthful test evidence. Connector progress
+  cannot change SemVer or close tickets; do not bypass that guard.
+
 ## Many agents, one trunk
 
 1. Prefer `python3 scripts/agent.py start [ISSUE]` (auto-picks a free
@@ -61,9 +72,10 @@ python3 scripts/agent.py finish --done "acceptance met" --next none --verificati
 
 ## Agent sandbox networking preflight
 
-On a network-related fetch, push or dependency failure, diagnose once before
-retrying: [sandbox networking](sandbox-network.md) (read-only probe; never
-bypass ship safeguards; skipped network checks are UNVERIFIED).
+For a known offline hosted container, skip network diagnostics and select the
+connector directly. On an otherwise network-enabled machine, diagnose a new
+failure once before retrying: [sandbox networking](sandbox-network.md).
+Never bypass ship safeguards; skipped network checks are UNVERIFIED.
 
 ## Concurrency and token efficiency
 

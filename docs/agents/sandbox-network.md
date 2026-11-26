@@ -1,11 +1,21 @@
-# Agent sandbox networking preflight
+# Agent sandbox networking and connector-first workflow
 
-On a network-related fetch, push or dependency failure, diagnose the agent
-environment once before retrying. Some hosted ChatGPT execution sandboxes
-have returned temporary DNS resolution failures for GitHub and PyPI
-(for example with resolver `168.63.129.16`); this is not evidence of a
-SmoothCast runtime defect. The GitHub connector may use independent
-networking and remain available.
+**Owner policy (26 Nov 2026): hosted ChatGPT execution containers are offline
+for native repository and dependency access.** Treat this as an environment
+constraint, not a transient SmoothCast defect. The GitHub connector uses a
+separate transport and can read and publish without container internet access.
+Do not attempt repeated native Git/gh/curl commands, DNS checks, pip downloads,
+proxy changes or network workarounds. Begin with the connector: resolve the
+current develop SHA, read the relevant rules and issue, check complete lease
+feeds, claim the scope, edit pinned text, run available offline checks and ship
+using the guarded procedure below. If the connector is unavailable, report
+that blocker; never invent a push or a test result.
+
+## Native network-enabled environments only
+
+On a new network-related failure on a machine expected to have internet access,
+diagnose once before retrying. Skip this diagnostic entirely in known offline
+ChatGPT containers.
 
 From the repository root, run the bounded, read-only diagnostic (no GUI,
 package installation or interactive credential prompts):
@@ -45,9 +55,9 @@ Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
   merely to work around an agent sandbox outage.
 
 
-## Experimental connector shipment
+## Guarded connector shipment (default for hosted ChatGPT agents)
 
-This is a connector code-runner fallback, not a local gh CLI or a DNS change.
+This is the normal hosted-container workflow, not a local gh CLI or DNS change.
 Read `scripts/connector_ship.mjs` at the current develop SHA and load its
 functions in a connector-capable runner (paste definitions without the ES
 module export when imports are unavailable). Confirm a structured claim
@@ -63,7 +73,8 @@ const p = {issue: 123, agent: "agent-unique", base: "<full develop SHA>",
   next: "remaining acceptance and native finish"};
 const candidate = await prepare(api, p);
 await ship(api, p, candidate);
-// Or in separate bounded runner calls, with the same exact manifest and SHA:
+// Prefer separate bounded runner calls when connector call budgets are tight.
+// Preserve the same exact manifest and SHA across calls:
 // const candidate = await createCandidate(api, p); // immutable objects only
 // await verifyCandidate(api, p, candidate);       // read-only validation
 // await recordPending(api, p, candidate);

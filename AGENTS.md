@@ -5,6 +5,18 @@ Python 3.10+, GTK4/libadwaita, Chromecast/DLNA. Read only the relevant
 `python3 scripts/agent_context.py route <task-or-path>`.
 The [archive](docs/AGENT_REFERENCE.md) is historical, not policy.
 
+## Hosted ChatGPT containers: connector-first (P0)
+
+**Treat hosted ChatGPT execution containers as offline.** They have no usable
+native internet access for GitHub or dependency downloads. Use the GitHub
+connector for repository reads, issue claims, commits and guarded pushes to
+`develop` from the outset. Do not waste time on repeated `git pull`, `gh`,
+`curl`, DNS probes, package downloads or network workarounds in these containers.
+Use available local tools for offline checks only; report unavailable checks as
+UNVERIFIED. This is an agent environment restriction, not a SmoothCast runtime
+networking bug. Follow the [connector shipment procedure](docs/agents/sandbox-network.md).
+Native Git remains the preferred workflow on machines with working access.
+
 ## Fast agent lifecycle (P0)
 
 **Only develop receives agent code. Main is manually promoted by the owner.**
