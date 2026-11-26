@@ -2012,6 +2012,31 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 #homePanel #castEntry{border-radius:var(--r-md);margin-top:14px;box-shadow:none;background:var(--input)}
 #homePanel #playback{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
 #homePanel #quickCastCard{border-radius:var(--r-md);margin:0 0 14px;box-shadow:none;background:var(--input)}
+/* Flat, compact Home: one focal player, one quick cast action and a short queue. */
+#dashboard nav{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);border-radius:0;gap:4px}
+#dashboard nav a{min-height:44px;border-color:transparent;background:transparent;padding:0 12px}
+#dashboard nav a[aria-current="page"]{background:var(--input);border-color:var(--accent)}
+#homePanel{background:transparent;border:0;box-shadow:none;padding:0;min-width:0}
+#homePanel>.room-heading{margin:0 0 12px;flex-wrap:wrap;gap:6px}
+#homePanel .home-lead{font-size:.84rem;color:var(--muted);margin:0}
+#homePanel #quickCastCard{padding:14px 16px}
+#homePanel #quickCastHeading{font-size:1rem;margin:0 0 8px}
+#homePanel #playback{padding:16px;background:var(--card)}
+#homePanel #playback::before{display:none}
+#homePanel #playbackHeading{font-size:1rem}
+#homePanel #playback .actions button[data-action="play_pause"]{min-height:44px;flex-basis:auto;flex-grow:2}
+#homePanel .home-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}
+#homePanel .home-action{min-height:44px;flex-direction:row;align-items:center;gap:8px;padding:9px 10px;border-color:var(--line);background:transparent;transition:none}
+#homePanel .home-action:hover,#homePanel .home-action:active{transform:none}
+#homePanel .home-action span:not(.home-icon){display:none}
+#homePanel .home-action strong{font-size:.85rem}
+#homePanel .home-icon{font-size:1rem}
+#homePanel .home-grid{grid-template-columns:minmax(0,1fr);gap:8px;margin-top:10px}
+#homePanel .home-card{padding:12px;background:var(--card)}
+#homePanel .home-card summary{cursor:pointer;min-height:32px;font-weight:650}
+#homePanel #castEntry{padding:0;margin-top:0;background:transparent;border:0}
+body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePanel"])) #roomInvite{display:none}
+@media(min-width:720px){#homePanel .home-actions{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style></head><body><noscript><p style="margin:0;padding:14px 16px;text-align:center;font:16px/1.4 system-ui,sans-serif">SmoothCast needs JavaScript to work. Turn it on in your browser settings, then reload this page.</p></noscript><header class="app-bar" id="appBar"><a class="home-btn" id="homeButton" href="#roomTop" title="Back to the top of the room"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 3.2 2.6 11a1 1 0 0 0 1.3 1.5l.8-.7V20a1 1 0 0 0 1 1h4.3v-5.5h4v5.5h4.3a1 1 0 0 0 1-1v-8.2l.8.7a1 1 0 1 0 1.3-1.5z"/></svg><span>Home</span></a><div class="brand"><a class="site-mark" id="homeLogo" href="#roomTop" aria-label="SmoothCast home" title="SmoothCast home">S</a><h1>SmoothCast</h1><span class="sc-version" id="scVersion" aria-label="Host version __SC_VERSION__">__SC_VERSION__</span><!--SC_DEMO--></div><a class="bar-now" id="barNow" href="#playback" hidden><span class="bar-dot" aria-hidden="true"></span><span class="bar-now-text"><span class="bar-now-label">Now playing</span> <span id="barNowTitle"></span></span></a></header><main><p class="site-intro" id="roomTop" tabindex="-1">Watch, listen and build the queue together, on your own Wi-Fi.</p>
 <div id="updateNotice" role="alert" hidden><strong>SmoothCast was updated</strong><p>Reload to reconnect safely.</p><button id="reloadNow" type="button">Reload page</button></div>
 <section id="login" aria-labelledby="joinTitle"><p class="eyebrow">Welcome to the shared room</p><h2 id="joinTitle">Join the house</h2>
@@ -2029,25 +2054,21 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <div id="dashboard" hidden>
 <nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
-<p class="eyebrow">Home</p>
-<h2 id="homeHeading" tabindex="-1">Your room</h2>
-<p class="home-lead">Add something to play, check which device is selected, and see what everyone is queueing. <span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a> · <a href="#castEntry">Cast with SmoothCast</a></p>
+<div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
-<div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
-<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
+<h2 id="quickCastHeading">Cast from this device</h2>
 <div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard" id="quickQueueUpload">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
 </section>
 <section id="playback" aria-labelledby="playbackHeading">
 <div class="room-heading"><h2 id="playbackHeading" tabindex="-1">Now Playing</h2><span id="state" class="muted">—</span></div>
-<p class="section-desc">These controls affect the room's selected TV or speaker.</p>
 <p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Drag to a point in the film or track. Seeking is unavailable if its length is unknown or the TV or speaker cannot skip within it.</p>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking requires a supported receiver and known duration.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
-<label for="volume">TV or speaker volume</label><p class="field-hint" id="volumeHelp">Changes the volume on the TV or speaker, not on this phone.</p>
+<label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the receiver volume, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
@@ -2058,13 +2079,12 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <a class="home-action" id="homeFind" href="#findPanel" title="Search the house libraries and YouTube"><span class="home-icon" aria-hidden="true">🔍</span><strong>Find something</strong><span>Search the house and YouTube</span></a>
 </div>
 <div class="home-grid">
-<div class="home-card"><h3>Playing on</h3><p class="home-device" id="homeTarget">Waiting for room status…</p><p class="field-hint" id="homeNowPlaying">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a></div></div>
 <div class="home-card"><h3>Up next <span id="homeQueueCount" class="muted"></span></h3><ul id="homeQueue" class="home-queue" aria-label="Up Next preview"><li class="empty">Nothing in Up Next yet</li></ul><div class="quick-links"><a href="#queuePanel">Open the shared queue</a></div></div>
-<div class="home-card"><h3>In the room</h3><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></div>
+<details class="home-card"><summary>In the room</summary><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></details>
 </div>
 <section id="homeIncomingPanel" aria-labelledby="homeIncomingHeading" hidden><h3 id="homeIncomingHeading">Incoming media</h3><ul id="homeIncomingRows" aria-label="Files arriving in this room"></ul><p class="field-hint">These transfers are not yet confirmed playable.</p></section>
 <details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
-<section id="castEntry" aria-labelledby="castEntryHeading"><h2 id="castEntryHeading">Cast with SmoothCast</h2><p class="section-desc">Play something that is already in your home, or send a file from this device to the TV. Use the buttons on this page: Chrome's own Cast button is not yet supported.</p><div class="quick-links"><a href="#findPanel">Find something on the network</a><a href="#uploadCard">Add a file from this device</a></div></section>
+<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected receiver. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
 </section>
 <section id="queuePanel" aria-labelledby="queueHeading"><div class="room-heading"><h2 id="queueHeading" tabindex="-1">Shared Up Next</h2><span id="queueCount" class="muted"></span></div>
 <div class="queue-destination" aria-label="Current room casting destination"><p class="eyebrow">Selected casting target</p><strong id="queueTarget">Waiting for room status…</strong><p id="queueNowPlaying" class="field-hint">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#meshPanel" id="queueMeshLink" hidden>Mesh targets</a></div></div>
@@ -2805,9 +2825,6 @@ function renderQueueDestination(state){
   const target=$("queueTarget"),playing=$("queueNowPlaying"),mesh=$("queueMeshLink");
   if(target)target.textContent=state.receiver||"No casting target selected";
   if(playing)playing.textContent=playbackFeedback(state)||(state.state_label||"Playback state unavailable")+(state.active&&state.title?" · "+state.title:"");
-  const homeTarget=$("homeTarget"),homePlaying=$("homeNowPlaying");
-  if(homeTarget&&target)homeTarget.textContent=target.textContent;
-  if(homePlaying&&playing)homePlaying.textContent=playing.textContent;
   const liveTarget=$("liveRoomTarget"),livePlayback=$("liveRoomPlayback");
   if(liveTarget&&target)liveTarget.textContent=target.textContent;
   if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
@@ -2862,12 +2879,14 @@ let homeQueueKey=null,homePeopleKey=null;
 function renderHomeQueue(items){
   const list=$("homeQueue");if(!list)return;
   const rows=Array.isArray(items)?items:[];
-  const key=JSON.stringify(rows.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration]));
+  const preview=rows.slice(0,3);
+  const key=JSON.stringify([rows.length,preview.map(item=>[item.id,item.title,item.votes,item.contributor,item.media_kind,item.duration])]);
   if(key===homeQueueKey)return;homeQueueKey=key;
   const count=$("homeQueueCount");
-  if(count)count.textContent=rows.length?`${rows.length} waiting`:"";
+  const label=rows.length?`${rows.length} waiting`:"";
+  if(count&&count.textContent!==label)count.textContent=label;
   if(!rows.length){const empty=document.createElement("li");empty.className="empty";empty.textContent="Nothing in Up Next yet";list.replaceChildren(empty);return}
-  list.replaceChildren(...rows.slice(0,3).map(item=>{
+  list.replaceChildren(...preview.map(item=>{
     const li=document.createElement("li"),title=document.createElement("strong"),meta=document.createElement("span");
     title.textContent=item.title||"Video";meta.className="muted";
     meta.textContent=[mediaKindLabel(item.media_kind),item.duration?clock(item.duration):"",item.votes?`▲ ${item.votes}`:"",item.contributor?`Added by ${item.contributor}`:"Waiting to be played"].filter(Boolean).join(" · ");

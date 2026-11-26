@@ -905,3 +905,28 @@ class XMLHttpRequest{
 """
     subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
                    text=True, check=True, timeout=10)
+
+
+def test_home_is_media_first_without_duplicate_receiver_card():
+    """Home combines playback and casting; secondary blades keep their controls."""
+    page = room_html()
+    assert "homeTarget" not in page.ids
+    assert "homeNowPlaying" not in page.ids
+    for name in ("homePanel", "playback", "uploadCastNow", "quickQueueUpload",
+                 "homeQueue", "homeQueueCount", "homePeople", "roomInvite",
+                 "advancedPanel", "localLivePanel", "homeYoutube", "homeMagnet"):
+        assert name in page.ids
+    assert ("details", {"id": "castEntry", "class": "help"}) in page.elements
+    assert any(tag == "details" and attrs.get("class") == "home-card"
+               for tag, attrs in page.elements)
+
+
+def test_home_queue_signature_only_tracks_visible_preview_and_total():
+    source = portal._HTML
+    start = source.index("function renderHomeQueue(items){")
+    end = source.index("function renderHomePeople", start)
+    preview = source[start:end]
+    assert "const preview=rows.slice(0,3)" in preview
+    assert "JSON.stringify([rows.length,preview.map(" in preview
+    assert "list.replaceChildren(...preview.map(" in preview
+    assert "rows.map(" not in preview
