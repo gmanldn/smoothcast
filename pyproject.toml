@@ -7,7 +7,7 @@ name = "smoothcast"
 dynamic = ["version"]
 description = "Chromecast companion app with GTK4/libadwaita UI"
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
