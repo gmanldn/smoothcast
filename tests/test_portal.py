@@ -1280,7 +1280,8 @@ def test_three_phone_audio_uploads_join_shared_queue_once_each(tmp_path):
         cast_portal_queue.PortalQueueMixin._portal_queue_status(host)
         queue.clear()
         assert cast_portal_queue.PortalQueueMixin._portal_queue_status(host) == []
-        assert host._portal_queue_display_names == {}
+        # The friendly title is retained for the now-playing item after it leaves Up Next.
+        assert host._portal_queue_display_names == {active_path: "guest-track-1.mp3"}
     finally:
         rig.close()
         uploads.close()
