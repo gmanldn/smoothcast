@@ -93,7 +93,7 @@ def test_default_view_is_home_and_every_panel_is_a_blade():
             ":not(#homePanel){display:none}") in html
     for panel in ("homePanel", "queuePanel", "uploadCard", "peoplePanel",
                   "screensPanel", "meshPanel", "findPanel",
-                  "advancedPanel", "localLivePanel"):
+                  "advancedPanel"):
         assert f'#dashboard[data-room-blade="{panel}"]' in html
     assert ("#dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel"
             ",#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel"
@@ -122,8 +122,9 @@ const make=(id,blade=null)=>({id,attrs:{},scrolls:0,focuses:0,closest(){return b
 const home=make("homePanel"),queue=make("queuePanel"),upload=make("uploadCard"),people=make("peoplePanel"),mesh=make("meshPanel"),find=make("findPanel");
 home.closest=()=>home;queue.closest=()=>queue;upload.closest=()=>upload;people.closest=()=>people;mesh.closest=()=>mesh;find.closest=()=>find;
 const playback=make("playback");playback.closest=()=>home;playback.parent=home;
+const live=make("localLivePanel");live.closest=()=>mesh;live.parent=mesh;
 const homeHeading=make("homeHeading");homeHeading.parent=home;
-const elements={homePanel:home,playback,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
+const elements={homePanel:home,playback,localLivePanel:live,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
 const $=id=>elements[id]||null;
 const links=["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel","findPanel"].map(id=>{const a=make(id);a.attrs.href="#"+id;return a});
 const dash=make("dashboard");dash.hidden=false;dash.contains=x=>Object.values(elements).includes(x);dash.querySelectorAll=()=>links;
@@ -135,6 +136,7 @@ for(const id of ["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel"
   location.hash="#"+id;syncRoomBlade(true);
   check(dash.getAttribute("data-room-blade")===id,"blade "+id);
 }
+location.hash="#localLivePanel";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="meshPanel","legacy Live deep link opens Mesh");
 location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="homePanel","playback deep link opens Home");
 check(links[0].getAttribute("aria-current")==="page","Home selected for playback");
 location.hash="";syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"home clears the blade");
@@ -142,3 +144,14 @@ check(links[0].getAttribute("aria-current")==="page","Home selected by default")
 """
     subprocess.run(["node", "-"], input=harness + router + checks,
                    text=True, check=True, timeout=10)
+
+
+def test_mesh_combines_local_and_remote_activity():
+    page = _page()
+    assert page.parent["meshPanel"] == "dashboard"
+    assert page.parent["localLivePanel"] == "meshPanel"
+    assert page.parent["meshDetails"] == "meshPanel"
+    assert sum(a.get("id") == "meshNavLink" and a.get("href") == "#meshPanel"
+               for a in page.anchors) == 1
+    assert '<a href="#localLivePanel">Live</a>' not in portal._HTML
+    assert '#dashboard[data-room-blade="localLivePanel"]' not in portal._HTML

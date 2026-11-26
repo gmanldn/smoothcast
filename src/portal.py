@@ -165,8 +165,8 @@ def _page() -> bytes:
     # Keep optional panels inside #dashboard: their grid placement and login
     # visibility must follow the rest of the authenticated room controls.
     dashboard_close = '</div>\n<dialog id="shortcutsHelp"'
-    markup = _HTML.replace(dashboard_close, portal_screen_page.panel_html()
-                           + portal_mesh_panel.panel_html() + dashboard_close, 1)
+    markup = _HTML.replace("<!--SC_MESH_DETAILS-->", portal_mesh_panel.panel_html(), 1)
+    markup = markup.replace(dashboard_close, portal_screen_page.panel_html() + dashboard_close, 1)
     return (markup.replace("__SC_BUILD__", page_build())
             .replace("__SC_VERSION__", version.identity_label())
             .replace("<!--SC_DEMO-->", _demo_badge())
@@ -1777,7 +1777,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 .field-hint{margin:6px 0}
 #dashboard{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 #dashboard>section,#dashboard>details,#dashboard>.welcome,#dashboard>p{margin:0;min-width:0}
-#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+#dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
 #dashboard nav{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;margin:0;padding:8px 0;background:var(--bg);scrollbar-width:thin}
 #dashboard nav a{white-space:nowrap;flex:none}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 20px}
@@ -1875,7 +1875,7 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 
 @media(min-width:820px){
   #dashboard{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
-  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#localLivePanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
+  #dashboard>nav,#dashboard>.welcome,#dashboard>#errorDash,#dashboard>#advancedPanel,#dashboard>#castEntry,#dashboard>#screensPanel,#dashboard>#meshPanel{grid-column:1/-1}
   #playback,#uploadCard{grid-column:1}
   #findPanel{grid-column:2}
   #queuePanel{grid-column:1/-1}
@@ -1935,10 +1935,9 @@ main{padding-top:6px}
 #dashboard[data-room-blade="screensPanel"]>:not(nav):not(#errorDash):not(#screensPanel),
 #dashboard[data-room-blade="meshPanel"]>:not(nav):not(#errorDash):not(#meshPanel),
 #dashboard[data-room-blade="findPanel"]>:not(nav):not(#errorDash):not(#findPanel),
-#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel),
-#dashboard[data-room-blade="localLivePanel"]>:not(nav):not(#errorDash):not(#localLivePanel){display:none}
+#dashboard[data-room-blade="advancedPanel"]>:not(nav):not(#errorDash):not(#advancedPanel){display:none}
 #dashboard:not([data-room-blade])>:not(nav):not(#errorDash):not(#homePanel){display:none}
-#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel,#dashboard[data-room-blade]>#localLivePanel{grid-column:1/-1}
+#dashboard[data-room-blade]>#findPanel,#dashboard[data-room-blade]>#advancedPanel{grid-column:1/-1}
 #dashboard[data-room-blade]>#homePanel,#dashboard[data-room-blade]>#queuePanel,#dashboard[data-room-blade]>#uploadCard,#dashboard[data-room-blade]>#peoplePanel,#dashboard[data-room-blade]>#screensPanel,#dashboard[data-room-blade]>#meshPanel{grid-column:1/-1}
 #dashboard nav a[aria-current="page"]{border-color:var(--accent);font-weight:750}
 #dashboard section,#advancedPanel{scroll-margin-top:calc(var(--bar-h) + 70px)}
@@ -2052,7 +2051,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 <section id="roomInvite" class="invite" aria-labelledby="inviteHeading"><div class="invite-text"><h2 id="inviteHeading">Invite someone</h2><p class="invite-how" id="inviteHow">Point a phone camera at the code to join this room. The phone must be on the same Wi-Fi.</p><div class="room-link"><label for="roomLinkText">Or send this link</label><input id="roomLinkText" type="text" readonly aria-describedby="roomLinkHint" title="Local address guests can open in their browser"><button id="roomLinkCopy" type="button">Copy link</button><p id="roomLinkHint" class="field-hint">Send this address to someone on the same Wi-Fi. The link contains no PIN or account information.</p><p id="roomLinkStatus" role="status" aria-live="polite"></p></div></div><figure class="invite-qr"><img id="inviteQr" width="144" height="144" alt="QR code that opens this SmoothCast room" hidden><figcaption id="inviteQrFallback" hidden>The code isn't available right now. Send the link instead.</figcaption></figure></section>
 <div id="dashboard" hidden>
-<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a><a href="#peoplePanel">People</a><a href="#localLivePanel">Live</a><a href="#advancedPanel">Settings</a></nav>
+<nav aria-label="Jump to room section"><a href="#homePanel">Home</a><a href="#queuePanel">Queue</a><a href="#findPanel">Find</a><a href="#uploadCard">Add files</a><a href="#screensPanel">Screens</a><a id="meshNavLink" href="#meshPanel">Mesh</a><a href="#peoplePanel">People</a><a href="#advancedPanel">Settings</a></nav>
 <section id="homePanel" aria-labelledby="homeHeading">
 <div class="room-heading"><h2 id="homeHeading" tabindex="-1">Your room</h2><span class="home-lead"><span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a></span></div>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
@@ -2179,9 +2178,9 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <details class="help"><summary>Audio normalisation details</summary><div class="help-body"><p>Targets -16 LUFS with a -1.5 dBTP true-peak ceiling. This applies to music and other audio-only playback when the SmoothCast computer supports it.</p></div></details>
 </section>
 </div></section>
-<section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading" tabindex="-1">Live room activity</h2><p class="section-desc">Current room activity is available even without a connected mesh.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">TV or speaker status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
+<section id="meshPanel" aria-labelledby="meshTitle"><h2 id="meshTitle" tabindex="-1">Mesh</h2><p class="section-desc">Live room and network activity, transfers, playback targets, connected computers and mesh health in one place.</p><p id="meshAvailability" class="field-hint" role="status">Checking mesh availability…</p><section id="localLivePanel" aria-labelledby="localLiveHeading"><h2 id="localLiveHeading" tabindex="-1">This room · live activity</h2><p class="section-desc">Local activity remains available even when the mesh service is offline.</p><div class="advanced-grid"><section aria-labelledby="livePlaybackHeading"><h3 id="livePlaybackHeading">Current playback</h3><p id="liveRoomTarget">TV or speaker status unavailable</p><p id="liveRoomPlayback">Playback state unavailable</p><div class="quick-links"><a href="#playback">Playback controls</a><a href="#queuePanel">Shared queue</a><a href="#uploadCard">Transfer monitor</a></div></section><section aria-label="Recent room activity"><h3 style="margin:18px 0 8px;font-size:1rem">Recent activity</h3><label for="activityFilter" class="muted">Show</label> <select id="activityFilter" aria-controls="activity"><option value="all">Everything</option><option value="playback">Playback</option><option value="queue">Up Next</option><option value="people">People</option><option value="problems">Problems</option></select><p id="activityEmpty" class="muted" hidden>Nothing here yet for this filter.</p><div id="activity" class="activity" role="log" aria-live="polite" aria-relevant="additions" aria-label="Room activity"></div></section><section aria-labelledby="peerHeading"><h3 id="peerHeading">Other SmoothCast computers</h3><p class="section-desc">Open another SmoothCast computer's room to switch to it. It has its own House PIN and settings; seeing it here does not give you access.</p><ul id="peers"><li class="empty">No other SmoothCast computers found</li></ul></section>
 <section id="networkActivity" aria-labelledby="networkHeading"><h3 id="networkHeading">On your network</h3><p class="section-desc">Shows what is playing on other TVs and speakers in your home, updated every 15 seconds. Nothing here controls them.</p><p id="networkActivitySummary" class="muted" role="status" aria-live="polite">Looking for other TVs and speakers…</p><ul id="networkActivityRows"><li>Nothing is playing on other TVs or speakers</li></ul></section>
-</div></section></div>
+</div></section><!--SC_MESH_DETAILS--></section></div>
 <dialog id="shortcutsHelp" aria-labelledby="shortcutsHeading"><h2 id="shortcutsHeading">Keyboard shortcuts</h2><p>Available when you are not typing in a field.</p><ul id="shortcutsList"></ul><button id="shortcutsClose" type="button">Close</button></dialog></main>
 <script>
 const PAGE_BUILD="__SC_BUILD__",CLIENT_SCHEMA=Number("__SC_SCHEMA__");
@@ -2829,7 +2828,7 @@ function renderQueueDestination(state){
   if(liveTarget&&target)liveTarget.textContent=target.textContent;
   if(livePlayback&&playing)livePlayback.textContent=playing.textContent;
   // The mesh panel owns visibility. Never infer remote readiness from room selection.
-  if(mesh){const nav=$("meshNavLink");mesh.hidden=!nav||nav.hidden;}
+  if(mesh){const details=$("meshDetails");mesh.hidden=!details||details.hidden;}
 }
 let networkActivityKey=null;
 function renderNetworkActivity(entries){
@@ -4085,7 +4084,7 @@ function syncMediaSession(s){
   const still=()=>typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   function syncRoomBlade(navigate=false){
     const target=$(location.hash.slice(1));
-    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#localLivePanel,#advancedPanel");
+    const blade=target&&dash.contains(target)&&target.closest("#homePanel,#queuePanel,#findPanel,#uploadCard,#peoplePanel,#screensPanel,#meshPanel,#advancedPanel");
     const selected=blade?blade.id:"";
     const previous=dash.getAttribute("data-room-blade")||"";
     if(selected)dash.setAttribute("data-room-blade",selected);

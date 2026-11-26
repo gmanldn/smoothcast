@@ -519,8 +519,8 @@ def test_mesh_network_help_defines_target_states_without_cast_permissions():
     assert 'id="meshConn" class="conn" role="status" aria-live="polite"' in panel
 
 
-def test_network_navigation_only_appears_when_mesh_is_available():
-    """Do not send guests from the sticky menu to a hidden mesh section."""
+def test_network_navigation_is_available_even_without_remote_mesh():
+    """Local activity remains accessible while remote target links are gated."""
     import shutil
     import subprocess
     import pytest
@@ -529,7 +529,7 @@ def test_network_navigation_only_appears_when_mesh_is_available():
     page = room_html()
     assert "meshNavLink" in page.ids and "meshPanel" in page.ids
     assert "meshPanel" in page.anchors
-    assert '<a id="meshNavLink" href="#meshPanel" hidden>Live mesh</a>' in portal._HTML
+    assert '<a id="meshNavLink" href="#meshPanel">Mesh</a>' in portal._HTML
     panel = panel_html()
     assert 'panel.hidden=false;showNetworkNavigation(true)' in panel
     assert 'panel.hidden=true;showNetworkNavigation(false)' in panel
@@ -548,7 +548,7 @@ showNetworkNavigation(true);
 assert.equal(navLink.hidden,false);
 assert.equal(queueLink.hidden,false);
 showNetworkNavigation(false);
-assert.equal(navLink.hidden,true);
+assert.equal(navLink.hidden,false);
 assert.equal(queueLink.hidden,true);
 navLink=null;
 assert.doesNotThrow(()=>showNetworkNavigation(true));
@@ -587,6 +587,8 @@ def test_optional_panels_are_dashboard_children_and_not_login_siblings():
     document.feed(portal._page().decode("utf-8"))
     assert document.parents["screensPanel"] == "dashboard"
     assert document.parents["meshPanel"] == "dashboard"
+    assert document.parents["meshDetails"] == "meshPanel"
+    assert document.parents["localLivePanel"] == "meshPanel"
     assert document.parents["shortcutsHelp"] is None
     assert document.parents["uploadCard"] == "dashboard"
     assert document.parents["login"] is None  # main has no id; login is outside dashboard

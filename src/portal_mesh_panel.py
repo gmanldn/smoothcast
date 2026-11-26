@@ -5,7 +5,7 @@ Reads ``/api/mesh`` and ``/api/mesh/events`` (guest tier), keeps rows updated in
 place (focus and scroll are never disturbed), states always carry text and not
 only colour, arrivals and departures are announced politely at most every 3 s,
 and a dropped stream shows a visible reconnecting state and recovers with a fresh
-snapshot. Hidden entirely when the host runs no mesh.
+snapshot. Only remote diagnostics are hidden when the host runs no mesh.
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ _PANEL = r"""
 @media(prefers-reduced-motion:no-preference){#meshPanel li.row{animation:meshin .2s ease-out}}
 @keyframes meshin{from{opacity:0}to{opacity:1}}
 </style>
-<section id="meshPanel" hidden aria-labelledby="meshTitle"><div class="mesh-head"><h2 id="meshTitle">Live mesh</h2><span id="meshFeedState" class="mesh-feed" role="status">Connecting…</span></div>
+<section id="meshDetails" hidden aria-labelledby="meshDetailsHeading"><div class="mesh-head"><h2 id="meshDetailsHeading">Mesh · network diagnostics</h2><span id="meshFeedState" class="mesh-feed" role="status">Connecting…</span></div>
 <p id="meshSum" class="mesh-sum" role="status">Looking for devices…</p><p id="meshHeartbeat" class="mesh-heartbeat" role="status" aria-live="polite">Waiting for the coordinating node…</p><p id="meshConn" class="conn" role="status" aria-live="polite"></p>
 <p id="meshHint" class="muted"></p>
 <div class="mesh-metrics" aria-label="Latest reported mesh totals">
@@ -88,10 +88,10 @@ _PANEL = r"""
 <div id="meshLive" class="sr-only" aria-live="polite" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div></section>
 <script>
 (function(){
-  const panel=document.getElementById("meshPanel");if(!panel)return;
+  const panel=document.getElementById("meshDetails");if(!panel)return;
   const navLink=document.getElementById("meshNavLink");
   function showNetworkNavigation(visible){
-    if(navLink)navLink.hidden=!visible;
+    if(navLink)navLink.hidden=false;
     const queueLink=document.getElementById("queueMeshLink");
     if(queueLink){queueLink.hidden=!visible;queueLink.href="#meshReceiverInventory";}
   }
@@ -351,22 +351,21 @@ _PANEL = r"""
     try{
       const r=await fetch("/api/mesh",{credentials:"same-origin",cache:"no-store",signal:request.signal});
       if(!current())return;
-      if(r.status===503||r.status===404){panel.hidden=true;showNetworkNavigation(false);return schedule()}
-      if(!r.ok)return schedule();
+      if(r.status===503||r.status===404){panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Mesh service unavailable · local room activity remains live.");return schedule()}
+      if(!r.ok){put("meshAvailability","Mesh status unavailable · retrying.");return schedule()}
       const d=await r.json();
       if(!current())return;
       nodes=new Map((d.mesh.nodes||[]).map(n=>[n.node_id,n]));local=d.mesh.local;primary=d.mesh.primary||"";
-      panel.hidden=false;showNetworkNavigation(true);started=true;backoff=3000;lastMeshAt=Date.now();render();open();
+      panel.hidden=false;showNetworkNavigation(true);put("meshAvailability","Mesh service available · see network diagnostics below.");started=true;backoff=3000;lastMeshAt=Date.now();render();open();
       put("meshHeartbeat",heartbeatText(d.mesh&&d.mesh.heartbeat));startHeartbeat();
-    }catch(_){if(current())schedule()}
+    }catch(_){if(current()){put("meshAvailability","Mesh status unavailable · retrying.");schedule()}}
     finally{if(bootRequest===request)bootRequest=null}
   }
   document.addEventListener("visibilitychange",()=>{
     if(document.hidden){cancelMeshBoot();cancelMeshRetry();stopHeartbeat();hiddenTimer=setTimeout(()=>{close()},30000)}
     else{clearTimeout(hiddenTimer);if(!es){cancelMeshRetry();boot()}}
   });
-  const anchor=()=>{const s=document.getElementById("screensPanel")||document.getElementById("queuePanel");if(s&&s.parentElement&&panel.previousElementSibling!==s)s.after(panel)};
-  setInterval(()=>{anchor();if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot()},1500);
+  setInterval(()=>{if(dash&&dash.hidden){panel.hidden=true;showNetworkNavigation(false);put("meshAvailability","Checking mesh availability…");cancelMeshBoot();stopHeartbeat();cancelMeshRetry();backoff=3000;close();started=false;prev=null;lastMeshAt=0;markMesh("Connecting…")}else if(!started&&!retry)boot()},1500);
 })();
 </script>
 """

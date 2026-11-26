@@ -40,7 +40,7 @@ class AbortController{
     for(const fn of this.callbacks)fn();
   }
 }
-const elements={meshPanel:panel,meshNavLink:nav,dashboard:dash,
+const elements={meshDetails:panel,meshNavLink:nav,dashboard:dash,
   meshNodes:{children:[]},meshTargets:{children:[]},
   meshSum:{textContent:""},meshHint:{textContent:""},
   meshConn:{textContent:""},meshLive:{textContent:""}};
