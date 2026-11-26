@@ -1478,24 +1478,6 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
         self.toast(f"{'Pinned' if pinned else 'Unpinned'}: {pathlib.Path(path).name}")
 
 
-    def _clear_favourites(self) -> None:
-        self.cfg["favourites"] = []
-        save_config(self.cfg)
-        self.menu_button.set_menu_model(self._build_menu())
-        self.toast("Favourites cleared")
-
-
-    def _open_favourite(self, index: int) -> None:
-        favourites = self.cfg.get("favourites", [])
-        if not 0 <= index < len(favourites):
-            return
-        path = pathlib.Path(favourites[index])
-        if not path.is_file():
-            self.toast("That file has moved or been deleted", error=True)
-            return
-        self.open_paths([str(path)])
-
-
     def _note_device_used(self) -> None:
         """Remember the last successful receiver so the picker can sort by it."""
         self.cfg["device_last_used"] = cast_targets.record_use(

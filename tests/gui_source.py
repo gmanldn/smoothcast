@@ -40,10 +40,12 @@ GUI_MODULES = (
     "cast_queue.py",
     "queue_row_ui.py",
     "playlist_ui.py",
+    "cast_ab_repeat_ui.py",
     "cast_session.py",
     "cast_retry_ui.py",
     "cast_av.py",
     "cast_subtitle_files.py",
+    "cast_lifecycle_actions.py",
     "cast_lifecycle.py",
     "cast_ui_timers.py",
     "find_ui.py",
@@ -51,6 +53,7 @@ GUI_MODULES = (
     "cast_portal_queue.py",
     "cast_portal_host.py",
     "portal_upload_recovery.py",
+    "cast_portal_room.py",
     "cast_portal.py",
     "cast_subtitles.py",
     "cast_audio_sync.py",
@@ -58,7 +61,7 @@ GUI_MODULES = (
 )
 
 # Mixin classes that contribute MainWindow methods.
-MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin")
+MIXIN_CLASSES = ("UiMixin", "PanelMixin", "BookmarkUiMixin", "SettingsCardMixin", "QueueMixin", "QueueRowMixin", "PlaylistMixin", "AbRepeatUiMixin", "SessionMixin", "AvMixin", "SubtitleFileMixin", "LifecycleMixin", "LifecycleActionsMixin", "UiTimerMixin", "FindMixin", "RoomCheckpointUiMixin", "PortalUploadRecoveryMixin", "PortalMixin", "PortalRoomMixin", "PortalHostMixin", "PortalQueueMixin", "SubtitleMixin", "AudioSyncMixin", "RetryMixin")
 
 
 def gui_paths() -> tuple[Path, ...]:
