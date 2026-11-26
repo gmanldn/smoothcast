@@ -2115,7 +2115,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
 <label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
 <div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">YouTube search is turned off on the SmoothCast computer.</p>
+<p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
 <p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
@@ -2603,7 +2603,7 @@ function updateLinkControls(){
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
     search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
-    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"Ask whoever runs SmoothCast to turn on YouTube downloads.";
+    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"YouTube search is unavailable. "+linkWorkerExplanation("youtube");
   }
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return false;

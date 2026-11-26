@@ -59,9 +59,12 @@ DEFAULTS: dict = {
     "portal_screens": True,
     "show_cover_art": True,  # embedded artwork for audio tracks in the preview (#130)
     "house_pin_enabled": False,
-    # External acquisition is explicitly owner-authorised, never guest-enabled.
-    "portal_link_youtube": False,
-    "portal_link_magnet": False,
+    # Normal media capabilities; qualified workers and per-request consent still apply.
+    "acquisition_defaults_applied": True,
+    "portal_link_youtube": True,
+    "portal_link_magnet": True,
+    "mesh_remote_acquisition": True,
+    "mesh_accept_acquisition": True,
     "library_indexer": True,
     "library_folders": [],
     "keep_streaming": True,

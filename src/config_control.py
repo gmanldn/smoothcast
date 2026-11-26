@@ -79,7 +79,15 @@ def sanitise_config(raw: object, defaults: dict) -> dict:
     if ("quality_auto" in defaults and "quality" in raw
             and "quality_auto" not in raw):
         cfg["quality_auto"] = False
+    # Legacy profiles wrote these switches as false by default. Adopt the new
+    # standard once, then retain deliberate administrator overrides on later saves.
+    legacy_acquisition = ("acquisition_defaults_applied" in defaults
+                          and raw.get("acquisition_defaults_applied") is not True)
     for key, value in raw.items():
+        if legacy_acquisition and key in {"acquisition_defaults_applied",
+                                          "portal_link_youtube", "portal_link_magnet",
+                                          "mesh_remote_acquisition", "mesh_accept_acquisition"}:
+            continue
         if key not in defaults:
             continue
         baseline = defaults[key]
