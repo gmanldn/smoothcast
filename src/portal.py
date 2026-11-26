@@ -1767,7 +1767,7 @@ dialog#shortcutsHelp::backdrop{background:var(--scrim)}
 #shortcutsList{display:grid;gap:8px}
 #shortcutsList li{display:flex;justify-content:space-between;gap:12px;align-items:center}
 #shortcutsList kbd{border:1px solid var(--border);border-radius:6px;padding:4px 7px;white-space:nowrap}
-button.secondary{background:var(--secondary);color:var(--on-secondary)}button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap}
+button.secondary{background:var(--secondary);color:var(--on-secondary)}button:disabled,input:disabled{opacity:.55;cursor:default}.actions{display:flex;gap:8px;flex-wrap:wrap}
 .actions button{flex:1 1 120px}.actions input{flex:1 1 160px;min-width:0}.muted{color:var(--muted)}.big{font-size:1.35rem;font-weight:700}.row{display:flex;justify-content:space-between;gap:12px}
 progress{width:100%;height:10px}ul{padding-left:0;list-style:none}li{padding:4px 0;overflow-wrap:anywhere}#error{color:var(--danger);min-height:1.4em}
 .participants{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 0}.person{display:flex;align-items:center;gap:6px;background:var(--input);border:1px solid var(--chip-line);border-radius:999px;padding:4px 9px 4px 4px;font-size:.82rem}.person.offline{opacity:.45}.avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:750;color:var(--avatar-text)}
@@ -2129,7 +2129,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <label for="videoFile">Audio or video files</label><input id="videoFile" type="file" accept=".mp4,.m4v,.mkv,.mov,.avi,.webm,.ts,.mpeg,.mpg,.wmv,.mp3,.aac,.m4a,.flac,.ogg,.opus,.wav,.aiff,.aif" multiple title="Choose media stored on this device">
 <p id="uploadSelectionHint" class="field-hint">Choose files, or drop them anywhere in this panel. Submitted filenames and transfer progress are visible to everyone in this room. Audio always goes to Up Next. You can pause safely and resume while this browser still has the file.</p>
 <p id="uploadSelectionSummary" class="field-hint" aria-live="polite">No files selected. Choose a video or audio file to begin.</p>
-<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Recommended. Keep what's playing uninterrupted. Untick to request Play now for video.</span></span></label>
+<label class="toggle" for="uploadQueue"><input id="uploadQueue" type="checkbox" checked><span><strong>Add to Up Next</strong><span class="field-hint" style="display:block">Default. Files transfer with smart buffering and join Up Next without interrupting what's playing. Untick to request Play now for video.</span></span></label>
 <div id="transferJourney" class="transfer-journey" aria-label="File transfer stages">
 <ol id="transferSteps" class="transfer-steps" aria-label="Transfer stages">
 <li data-stage="choose" class="done"><span class="stage-dot">1</span><span>Choose file</span></li>
