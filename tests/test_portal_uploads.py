@@ -532,3 +532,27 @@ def test_close_preserves_only_live_progressive_source(tmp_path, accepted):
         assert not path.exists()
     else:
         assert path.read_bytes() == b"abc"
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_progressive_upload_cannot_switch_to_queue_during_finalize(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    upload_id = uploads.create("owner", "film.mkv", 6)["id"]
+    first = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert first["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    source = Path(first["cast_path"])
+    with patch("streamer.ffprobe") as probe:
+        with pytest.raises(portal_uploads.UploadError) as error:
+            uploads.finalize("owner", upload_id, queue_only=True)
+        assert error.value.status == 409
+        probe.assert_not_called()
+    assert source.read_bytes() == b"abcdef"
+    assert uploads.status("owner", upload_id)["ready_to_cast"]
+    uploads.mark_early_cast(upload_id, accepted=False)
+    media = SimpleNamespace(has_video=True, audio_streams=[], is_audio_only=False, duration=2.0)
+    with patch("streamer.ffprobe", return_value=media):
+        path, _, dispatch = uploads.finalize("owner", upload_id, queue_only=True)
+    assert path == source and dispatch
+    uploads.close()

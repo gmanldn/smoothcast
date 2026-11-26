@@ -537,6 +537,10 @@ class UploadManager:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
             intent = upload.queue_only or bool(queue_only)
+            if intent and upload.early_cast in {"requested", "active"}:
+                # A progressive cast owns this source. Queue validation can
+                # discard unreadable media, so never change the action here.
+                raise UploadError(409, "Casting has already been requested for this upload")
             if upload.dispatch_pending:
                 raise UploadError(409, "The host is still processing this upload. Retry shortly.")
             if upload.cast_submitted and upload.dispatch_queue_only != intent:
