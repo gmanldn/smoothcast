@@ -24,15 +24,16 @@ automatic release PR or dependency on main's version or CI verdict.
 ## Commit display identity (critical canonical tracking)
 
 Every pushed commit—patch release or ordinary commit—has a stable display
-identity shown next to the brand in the web room, screen and nodes pages:
+identity shown in the GTK header and next to the brand in the web room, screen and nodes pages:
 
 ```
-vX.Y.Z - YYYY-MM-DD - Codename
+vX.Y.Z - YYYY-MM-DD HHMM - Codename
 ```
 
 - `vX.Y.Z` remains the SemVer in `src/version.py`; the badge never replaces it.
-- `YYYY-MM-DD` is the commit's **committer date** in the timezone recorded in
-  the commit object, never the server's or viewer's local date.
+- `YYYY-MM-DD HHMM` is the commit's **committer date and time** in the timezone
+  recorded in the commit object, never the server's or viewer's local clock.
+  HHMM is zero-padded 24-hour time without a colon.
 - `Codename` is a disposable two-weapon mnemonic from
   `src/commit_identity.py`: two names from the weapon-of-war tuple chosen by
   bytes of `sha256(full-lowercase-SHA)` (`64 * 64` combinations), joined by `-`.
@@ -46,8 +47,8 @@ vX.Y.Z - YYYY-MM-DD - Codename
   Missing, malformed, oversized, delta-packed or unreadable provenance fails
   closed: show SemVer only, or SemVer plus the codename when only the date is
   unavailable. Never invent a date or word.
-- Installed source copies carry the commit date in `src/.smoothcast-build`
-  beside their SHA. Frozen distributions without embedded provenance report
+- Installed source copies carry the commit date and time in `src/.smoothcast-build`
+  beside their SHA. Legacy date-only markers remain valid; no time is fabricated. Frozen distributions without embedded provenance report
   SemVer only; the Git SHA remains authoritative (`smoothcast --build-id`).
 
 ## Owner-controlled integration and publishing

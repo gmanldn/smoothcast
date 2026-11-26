@@ -7,6 +7,7 @@ the source checkout, its worktrees and user data are not an install target.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -152,7 +153,7 @@ def _clean_source_revision(source: Path) -> str | None:
 
 
 def _clean_commit_date(source: Path, revision: str) -> str | None:
-    """Record the clean commit's display date beside its SHA."""
+    """Record the clean commit's display date and time beside its SHA."""
     try:
         value = subprocess.run(
             ["git", "-C", str(source), "show", "-s", "--format=%cI", revision],
@@ -161,7 +162,11 @@ def _clean_commit_date(source: Path, revision: str) -> str | None:
     except (OSError, subprocess.SubprocessError, UnicodeError):
         return None
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})", value):
-        return value[:10]
+        try:
+            moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return f"{moment.date().isoformat()} {moment:%H%M}"
     return None
 
 

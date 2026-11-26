@@ -1,7 +1,7 @@
 """Canonical commit display identity: committer date plus a stable weapon alias.
 
-The web room, screen and nodes headers show ``vX.Y.Z - YYYY-MM-DD - Codename``
-for the commit the running process was loaded from. The date comes from the
+The web room, screen and nodes headers show ``vX.Y.Z - YYYY-MM-DD HHMM - Codename``
+for the commit the running process was loaded from. The date and time come from the
 commit object in its recorded timezone and the codename is derived
 deterministically from the full SHA, so both stay bound to that commit.
 
@@ -38,7 +38,7 @@ WEAPON_NAMES = (
 )
 
 _SHA = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\Z")
-_DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2}(?: [0-9]{4})?\Z")
 _OFFSET = re.compile(rb"[+-]\d{4}\Z")
 _OBJECT_LIMIT = 4 * 1024 * 1024
 _INDEX_LIMIT = 64 * 1024 * 1024
@@ -69,7 +69,11 @@ def _valid_date(value: str) -> bool:
     if not isinstance(value, str) or not _DATE.fullmatch(value):
         return False
     try:
-        date.fromisoformat(value)
+        date.fromisoformat(value[:10])
+        # Legacy installed markers have a date only; never invent midnight.
+        if len(value) > 10:
+            if int(value[11:13]) > 23 or int(value[13:15]) > 59:
+                return False
     except ValueError:
         return False
     return True
@@ -336,7 +340,10 @@ def _commit_date(content: bytes) -> str | None:
         if not stamp.isdigit() or len(stamp) > 12 or not _OFFSET.fullmatch(zone):
             return None
         sign = -1 if zone[:1] == b"-" else 1
-        offset = sign * (int(zone[1:3]) * 3600 + int(zone[3:5]) * 60)
+        hours, minutes = int(zone[1:3]), int(zone[3:5])
+        if hours > 23 or minutes > 59:
+            return None
+        offset = sign * (hours * 3600 + minutes * 60)
         if abs(offset) >= 86_400:
             return None
         try:
@@ -344,12 +351,12 @@ def _commit_date(content: bytes) -> str | None:
                 int(stamp), timezone(timedelta(seconds=offset)))
         except (OverflowError, OSError, ValueError):
             return None
-        return moment.date().isoformat()
+        return f"{moment.date().isoformat()} {moment:%H%M}"
     return None
 
 
 def read_checkout_commit_date(repo: Path, revision: str | None) -> str | None:
-    """Committer date (commit's own timezone) for a full SHA; fail closed."""
+    """Committer date and HHMM (commit's own timezone); legacy marker date allowed."""
     if not revision or not _SHA.fullmatch(revision):
         return None
     rev = revision.lower()
