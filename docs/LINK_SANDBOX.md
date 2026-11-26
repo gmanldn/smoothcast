@@ -9,16 +9,19 @@ smoothcast --link-check --tools-only --qualify
 ```
 
 The qualifier runs a tiny probe through the launcher and collects evidence
-**host-side**: whether it reached a loopback service, a service on this
-computer's private LAN address, a canary file in your home directory, and whether
-a detached child process outlived the launcher (matched by tag, so PID
+**host-side**: whether it reached a loopback (IPv4) service, an IPv6 loopback
+service, a service on this computer's private LAN address, the cloud metadata
+address (`169.254.169.254`, link-local), a canary file in your home directory,
+and whether a detached child process outlived the launcher (matched by tag, so PID
 namespaces cannot hide or fake it). Nothing external is contacted. Results:
 
 | check | passes when |
 | --- | --- |
 | `probe_ran` | the launcher really executed the probe |
-| `loopback_denied` | zero connections reached the loopback listener |
+| `loopback_denied` | zero connections reached the IPv4 loopback listener |
+| `ipv6_denied` | zero connections reached the IPv6 `::1` listener (passes when the host has no IPv6 loopback) |
 | `private_lan_denied` | zero connections reached the LAN-address listener (`skipped` with no private address) |
+| `metadata_denied` | the probe could not reach the cloud metadata address `169.254.169.254` |
 | `home_denied` | the canary in `$HOME` was not readable |
 | `process_tree_terminated` | no probe descendant survived |
 
@@ -70,6 +73,8 @@ IPv6 literals and for port 22, and a public site was reachable through it
 (one manual `HEAD https://example.com`). Real YouTube downloads were not run.
 
 ## Not covered (still the launcher's and your responsibility)
-the probe itself does not test metadata/link-local, IPv6, rebinding or redirects
-(`tests/test_link_egress.py` does, for the reference proxy), nor disk quotas. A
-launcher that denies *all* network passes the probe but cannot download.
+the probe tests IPv4/IPv6 loopback, one private-LAN listener, the cloud metadata
+address and a home canary, but not arbitrary private/link-local IPv6 ranges,
+rebinding or redirects (`tests/test_link_egress.py` does, for the reference
+proxy), nor disk quotas. A launcher that denies *all* network passes the probe
+but cannot download.

@@ -1088,8 +1088,9 @@ def diagnostics_main(argv=None) -> int:
     parser.add_argument("--tools-only", action="store_true",
                         help="Check engine binaries without requiring an isolation launcher")
     parser.add_argument("--qualify", action="store_true",
-                        help="Attack-test the configured launcher (loopback, LAN, home, leftover "
-                             "processes); saves the result for this exact launcher file")
+                        help="Attack-test the configured launcher (IPv4/IPv6 loopback, LAN, "
+                             "cloud metadata, home, leftover processes); saves the result for "
+                             "this exact launcher file")
     args = parser.parse_args(argv)
     provider = CommandProvider()
     tools = {}
