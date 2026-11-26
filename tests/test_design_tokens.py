@@ -97,3 +97,13 @@ def test_dark_gtk_and_web_tokens_golden_parity():
     assert "@card_fg_color" in css_str
     assert "@accent_bg_color" in css_str
     assert "@accent_fg_color" in css_str
+
+
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_custom_accent_presets_meet_text_contrast_on_room_surfaces(scheme):
+    colours = dt.SCHEMES[scheme]
+    for preset, variants in dt.web_accents().items():
+        pair = variants[scheme]
+        assert dt.contrast_ratio(pair["on_accent"], pair["accent"]) >= 4.5, (preset, scheme)
+        for surface in ("bg", "card", "input"):
+            assert dt.contrast_ratio(pair["accent"], colours[surface]) >= 4.5, (preset, scheme, surface)
