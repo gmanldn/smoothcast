@@ -300,9 +300,10 @@ class PortalQueueMixin:
             except portal.PortalRequestError:
                 return self._portal_fetch_remote(payload.get("key"), self._portal_contributor(payload),
                                                  payload.get("_portal_auth_key"))
-            if self.busy:
-                raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # Like validated uploads, a library queue edit does not own the receiver.
             self._portal_enqueue_contributed(str(path), self._portal_contributor(payload), "library")
+            if str(path) not in self.queue:
+                raise portal.PortalRequestError(503, "The room could not accept this media. Retry shortly.")
             return "Added to the queue."
         if operation == "queue_play":
             index = self._portal_queue_index(payload.get("id"))

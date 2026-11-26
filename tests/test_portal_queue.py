@@ -152,3 +152,34 @@ def test_two_guests_see_the_same_queue_next_and_replay_is_idempotent():
         assert [action for action, _ in room.calls].count("queue_next") == 2
     finally:
         room.close()
+
+
+@pytest.mark.parametrize("busy", [False, True])
+@pytest.mark.parametrize("accept", [False, True])
+def test_local_library_queue_add_preserves_receiver_and_reports_real_acceptance(busy, accept):
+    host = QueueHost()
+    host.busy = busy
+    session, playing = host.session, host.now_playing
+    path = "/shared/film.mp4"
+    host._portal_library_path = lambda key: Path(path)
+    host._portal_contributor = lambda payload: "Guest"
+
+    def enqueue(paths):
+        if accept:
+            host.queue.extend(paths)
+
+    host._enqueue = enqueue
+    before = list(host.queue)
+    for _ in range(2):
+        if accept:
+            assert host._portal_queue_action("queue_add_key", {"key": "opaque"}) == "Added to the queue."
+        else:
+            with pytest.raises(portal.PortalRequestError) as error:
+                host._portal_queue_action("queue_add_key", {"key": "opaque"})
+            assert error.value.status == 503
+    assert host.queue == before + ([path] if accept else [])
+    assert host.session is session and host.now_playing == playing
+    if accept:
+        assert host._portal_queue_provenance[path] == {
+            "contributor": "Guest", "source_kind": "library",
+        }
