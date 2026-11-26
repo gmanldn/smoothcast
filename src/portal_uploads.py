@@ -276,7 +276,9 @@ class UploadManager:
             cast_reserved = any(
                 not row.cancelled and not row.queue_only
                 and not (row.cast_submitted and row.directory_synced)
-                and now - row.last_at <= PARTIAL_TTL_SECONDS
+                and (row.early_cast in {"requested", "active"}
+                     or row.dispatch_pending
+                     or now - row.last_at <= PARTIAL_TTL_SECONDS)
                 for row in self._uploads.values()
             )
             queue_only = bool(queue_only or audio_only or cast_reserved)

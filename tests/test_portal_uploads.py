@@ -576,3 +576,44 @@ def test_close_continues_after_inaccessible_partial(tmp_path):
     assert blocked.exists()
     assert not other.exists()
     assert uploads.snapshot() == []
+
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_stale_live_progressive_upload_keeps_cast_lane(tmp_path, accepted):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3),
+        early_cast_min_bytes=1)
+    first = uploads.create("first", "film.mkv", 6, cast_target="first-target")
+    receipt = uploads.append("first", first["id"], "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert receipt["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(first["id"], accepted=accepted)
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    second = uploads.create("second", "next.mkv", 6, cast_target="second-target")
+    assert second["queue_only"] is True
+    assert uploads.cast_target("second", second["id"]) is None
+    assert not uploads.append("second", second["id"], "bytes 0-2/6", 3,
+                              BytesIO(b"abc"))["ready_to_cast"]
+    assert Path(receipt["cast_path"]).read_bytes() == b"abc"
+    uploads.mark_early_cast(first["id"], accepted=False)
+    third = uploads.create("third", "another.mkv", 6, cast_target="third-target")
+    assert third["queue_only"] is False
+    uploads.close()
+
+
+def test_stale_pending_final_dispatch_keeps_cast_lane(tmp_path):
+    now = [100.0]
+    uploads = portal_uploads.UploadManager(
+        tmp_path / "uploads", clock=lambda: now[0],
+        disk_usage=lambda _: SimpleNamespace(free=10 * 1024**3))
+    first = uploads.create("first", "film.mkv", 3)
+    uploads.append("first", first["id"], "bytes 0-2/3", 3, BytesIO(b"abc"))
+    _, _, dispatch = uploads.finalize("first", first["id"])
+    assert dispatch
+    now[0] += portal_uploads.PARTIAL_TTL_SECONDS + 1
+    assert uploads.create("second", "next.mkv", 3)["queue_only"]
+    uploads.finish_dispatch("first", first["id"], accepted=True)
+    assert not uploads.create("third", "another.mkv", 3)["queue_only"]
+    uploads.close()
