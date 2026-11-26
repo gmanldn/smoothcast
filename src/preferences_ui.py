@@ -203,6 +203,11 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
                      "Only read-only checks work so far; installing safely in the background is pending.")
         self.update_status_row = Adw.ActionRow(title="Current version", subtitle="")
         self.update_status_row.set_subtitle_lines(0)
+        self.update_check_button = Gtk.Button(label="Check now", valign=Gtk.Align.CENTER)
+        self.update_check_button.set_tooltip_text(
+            "Contacts the update source once, read-only. Nothing is installed or restarted.")
+        self.update_check_button.connect("clicked", lambda _b: self._check_updates_now())
+        self.update_status_row.add_suffix(self.update_check_button)
         updates.add(self.update_status_row)
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
@@ -210,6 +215,25 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         self._switch(updates, "release_check_verify", "Require a trusted signature",
                      "On by default. Updates without a signature trusted by "
                      "your Git keyring are not offered as safe to install.")
+
+    def _check_updates_now(self) -> None:
+        import threading
+        from pathlib import Path
+        import update_facts
+        self.update_check_button.set_sensitive(False)
+        self.update_status_row.set_subtitle("Checking for updates… playback is not interrupted.")
+        cfg, root = dict(self.owner.cfg), Path(__file__).resolve().parent.parent
+
+        def work() -> None:
+            text = update_facts.check_now(cfg, root)
+            GLib.idle_add(done, text)
+
+        def done(text: str) -> bool:
+            self.update_status_row.set_subtitle(text)
+            self.update_check_button.set_sensitive(True)
+            return False
+
+        threading.Thread(target=work, daemon=True, name="update-check").start()
 
     def _sync_update_status(self, cfg: dict) -> None:
         """Offline, read-only: shows the running build and channel, never a check result."""

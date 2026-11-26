@@ -239,3 +239,20 @@ def test_managed_install_facts_show_staged_reference_and_corrupt_records_fail_qu
     facts = uf.facts_for_preferences({}, root=app)
     assert facts.active_commit is None and facts.journal_state is None
     assert uf.facts_for_preferences({}, root=tmp_path).active_commit is None  # checkout: not managed
+
+
+def test_check_now_reports_notice_or_honest_not_found(tmp_path, monkeypatch):
+    import update_control as uc
+    seen = {}
+    def fake(root, **kw):
+        seen.update(kw)
+        return seen.get("notice")
+    monkeypatch.setattr(uc, "check_release", fake)
+    assert uf.check_now({"update_channel": "bogus"}, tmp_path) == uf.NOT_FOUND
+    assert seen["enabled"] is True and seen["channel"] == "develop" and seen["verify"] is True
+    monkeypatch.setattr(uc, "check_release", lambda *a, **k: "SmoothCast v9 is available")
+    assert uf.check_now({}, tmp_path).startswith("SmoothCast v9")
+    def boom(*a, **k):
+        raise RuntimeError("x")
+    monkeypatch.setattr(uc, "check_release", boom)
+    assert "failed" in uf.check_now({}, tmp_path)

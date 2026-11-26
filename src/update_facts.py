@@ -44,3 +44,25 @@ def _managed_facts(app_root) -> tuple[str | None, str | None, str | None]:
         return ref["current"], ref["previous"], journal["state"] if journal else None
     except Exception:
         return None, None, None
+
+
+NOT_FOUND = ("No newer release was found on this channel, or this install cannot be "
+             "checked from here (installed builds update through their installer).")
+
+
+def check_now(cfg: dict, root) -> str:
+    """Explicit user-requested read-only check; blocking, so call off the GTK thread.
+
+    The click is the consent, so ``enabled`` does not depend on the startup
+    preference. Never changes files; an unchecked/ineligible install is said so
+    rather than reported as up to date.
+    """
+    import update_control
+    channel = cfg.get("update_channel")
+    try:
+        notice = update_control.check_release(
+            root, enabled=True, verify=cfg.get("release_check_verify") is not False,
+            channel=channel if channel in update_control.UPDATE_CHANNELS else "develop")
+    except Exception:
+        return "The update check failed. Check your network connection and try again."
+    return notice or NOT_FOUND
