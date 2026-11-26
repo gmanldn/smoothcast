@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import platform
 import re
@@ -31,6 +32,8 @@ MAX_READ_BYTES = 256 * 1024
 DEFAULT_BRANCH = "diagnostics"
 DEFAULT_PATH = "latest/error-tail.json"
 PROTECTED_BRANCHES = frozenset({"main", "master", "develop"})
+DEFAULT_MIN_INTERVAL = 900
+_MIN_LOCK_SECONDS = 60
 
 _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 _FRAME = re.compile(r'File "([^"]+)", line (\d+)(?:, in ([A-Za-z_][A-Za-z0-9_]*))?')
@@ -321,10 +324,92 @@ def http_fetch_current(target: PublishTarget) -> str:
         return ""
 
 
+def publisher_paths(log_path: str | None, env) -> tuple[Path, Path]:
+    """State and lock files, beside the log unless explicitly overridden."""
+    override = str(env.get("SMOOTHCAST_ERRTAIL_STATE", "")).strip()
+    base = (Path(override) if override
+            else Path(log_path or default_log_path()).parent / "error-tail-publish.json")
+    return base, base.with_name(base.name + ".lock")
+
+
+def min_interval(env) -> int:
+    """Configured minimum seconds between publishes; <=0 disables rate limiting."""
+    try:
+        return int(str(env.get("SMOOTHCAST_ERRTAIL_MIN_INTERVAL", "")).strip()
+                   or DEFAULT_MIN_INTERVAL)
+    except ValueError:
+        return DEFAULT_MIN_INTERVAL
+
+
+def rate_limit_reason(state_path: Path, *, now: float, interval: int) -> str | None:
+    """Civil message while a recent publish is still inside the cooldown."""
+    if interval <= 0:
+        return None
+    try:
+        data = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        last = data.get("published_at")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(last, (int, float)) or isinstance(last, bool):
+        return None
+    age = now - last
+    if 0 <= age < interval:
+        return (f"rate limited: last publish {int(age)}s ago (< {interval}s); "
+                f"retry in ~{int(interval - age)}s")
+    return None
+
+
+def record_publish(state_path: Path, snapshot: dict, *, now: float) -> None:
+    """Atomically remember the last successful publication for rate limiting."""
+    path = Path(state_path)
+    payload = {"published_at": now, "build": snapshot.get("build"),
+               "observed_at": snapshot.get("observed_at")}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def acquire_publisher_lock(lock_path: Path, *, now: float, stale_after: int) -> bool:
+    """Cross-process writer lock; replaces a lock abandoned beyond *stale_after*."""
+    path = Path(lock_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        try:
+            abandoned = now - path.stat().st_mtime > stale_after
+        except OSError:
+            return False
+        if not abandoned:
+            return False
+        try:
+            path.unlink()
+        except OSError:
+            return False
+        return acquire_publisher_lock(path, now=now, stale_after=stale_after)
+    except OSError:
+        return False
+    try:
+        os.write(fd, str(int(now)).encode("ascii"))
+    finally:
+        os.close(fd)
+    return True
+
+
+def release_publisher_lock(lock_path: Path) -> None:
+    try:
+        Path(lock_path).unlink()
+    except OSError:
+        pass
+
+
 def main(argv: list[str] | None = None, env=None) -> int:
     """CLI: ``--preview`` (offline) or ``--publish`` (explicitly configured)."""
     import argparse
-    import os
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--preview", action="store_true", help="print the snapshot (offline)")
@@ -339,16 +424,34 @@ def main(argv: list[str] | None = None, env=None) -> int:
     if args.preview:
         sys.stdout.write(render_envelope(snapshot))
         return 0
-    try:
-        target = resolve_target(os.environ if env is None else env)
-        status = publish(snapshot, target, fetch_current=http_fetch_current)
-    except PublishDisabled as exc:
-        print(f"SmoothCast error tail: {exc}", file=sys.stderr)
-        return 1
-    except (OSError, subprocess.TimeoutExpired):
-        print("SmoothCast error tail: GitHub transport unavailable or timed out.",
+    environment = os.environ if env is None else env
+    interval = min_interval(environment)
+    state_path, lock_path = publisher_paths(args.log, environment)
+    now = time.time()
+    reason = rate_limit_reason(state_path, now=now, interval=interval)
+    if reason:
+        print(f"SmoothCast error tail: {reason}", file=sys.stderr)
+        return 0
+    if not acquire_publisher_lock(lock_path, now=now,
+                                  stale_after=max(_MIN_LOCK_SECONDS, interval)):
+        print("SmoothCast error tail: another publisher is running; skipped.",
               file=sys.stderr)
-        return 1
+        return 0
+    try:
+        try:
+            target = resolve_target(environment)
+            status = publish(snapshot, target, fetch_current=http_fetch_current)
+        except PublishDisabled as exc:
+            print(f"SmoothCast error tail: {exc}", file=sys.stderr)
+            return 1
+        except (OSError, subprocess.TimeoutExpired):
+            print("SmoothCast error tail: GitHub transport unavailable or timed out.",
+                  file=sys.stderr)
+            return 1
+        if status == "published":
+            record_publish(state_path, snapshot, now=time.time())
+    finally:
+        release_publisher_lock(lock_path)
     print(f"SmoothCast error tail: {status} ({target.repo} {target.branch}:{target.path})",
           file=sys.stderr)
     return 0
