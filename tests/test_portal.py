@@ -1936,3 +1936,51 @@ def test_concurrent_guest_uploads_visible_before_completion_without_private_hand
     finally:
         rig.close()
         uploads.close()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="requires Node.js")
+def test_seek_preview_timestamp_survives_playhead_and_room_updates():
+    source = portal._HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+    paint = source[source.index("function paintPlayhead()"):
+                   source.index("let queueRenderKey=")]
+    status = source[source.index("function applyStatus(d)"):
+                    source.index("let homeQueueKey=")]
+    harness = r"""
+const nodes=new Map();
+const $=id=>{if(!nodes.has(id))nodes.set(id,{value:0,textContent:""});return nodes.get(id)};
+const editingControls=new Set();
+const clock=String,performance={now:()=>0};
+const projectPosition=s=>s.position;
+let playhead={s:{position:10,duration:100},age:0,at:0},paintedAt=-1;
+let shortcutState,queueRevision,statusFailures=0;
+const document={querySelectorAll:()=>[]},window={};
+const matchingBuild=()=>true,acceptRoomSnapshot=()=>true;
+const noop=()=>{};
+const applyAccentPreset=noop,renderPlaybackToggle=noop,monitorText=noop,playbackFeedback=noop,
+mediaKindLabel=noop,syncMediaSession=noop,trackPlayhead=noop,renderQueueDestination=noop,
+renderQueue=noop,renderHomeQueue=noop,renderRoomTransfers=noop,renderLibraryCopies=noop,
+renderLinkJobs=noop,renderRoom=noop,renderPeers=noop,renderNetworkActivity=noop,
+showError=noop,showJoinedRoom=noop;
+"""
+    scenario = r"""
+const assert=require("node:assert/strict");
+editingControls.add("seek");
+$("seek").value=65;$("elapsed").textContent="65";
+paintPlayhead();
+assert.equal($("progress").value,10,"real progress must advance");
+assert.equal($("seek").value,65);
+assert.equal($("elapsed").textContent,"65","timer overwrote drag preview");
+applyStatus({state:{position:12,duration:100,can_seek:true}});
+assert.equal($("progress").value,12);
+assert.equal($("seek").value,65);
+assert.equal($("elapsed").textContent,"65","snapshot overwrote drag preview");
+editingControls.delete("seek");
+applyStatus({state:{position:14,duration:100,can_seek:true}});
+assert.equal($("seek").value,14);
+assert.equal($("elapsed").textContent,"14");
+playhead.s.position=15;paintPlayhead();
+assert.equal($("seek").value,15);
+assert.equal($("elapsed").textContent,"15");
+"""
+    subprocess.run(["node", "-"], input=harness + paint + status + scenario,
+                   text=True, check=True, timeout=10)

@@ -12,17 +12,23 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
+import re
 import shutil
 from pathlib import Path
 
 GENERATION_PREFIX = "hls-generation-"
 
 
-def is_frozen_worker(path: str) -> bool:
-    """True for a worker launched from a private generation snapshot."""
+def is_frozen_worker(path: str, *, cache_root: str | None = None) -> bool:
+    """Recognise a canonical snapshot, optionally only under our exact cache."""
     parts = str(path).replace("\\", "/").split("/")
-    return (len(parts) >= 2 and parts[-1] == "server.py"
-            and parts[-2].startswith(GENERATION_PREFIX))
+    if (len(parts) < 3 or parts[-1] != "server.py"
+            or not re.fullmatch(r"hls-generation-[0-9a-f]{12}", parts[-2])):
+        return False
+    if cache_root is None:
+        return True
+    root = str(cache_root).replace("\\", "/").rstrip("/")
+    return bool(root) and "/".join(parts[:-2]) == root
 
 
 def _collect_local(module: Path, src_dir: Path, found: dict[str, bytes]) -> None:

@@ -1223,7 +1223,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self.server.uploads.finish_dispatch(token, upload_id, accepted=True)
                 message = ("Added to the shared queue." if queue_only else
                            "Upload received; playback request accepted.")
-                return self._send(202, {"ok": True, "message": message})
+                return self._send(202, {"ok": True, "message": message, "queue_only": queue_only})
             except PortalRequestError as exc:
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
@@ -2034,7 +2034,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 <p class="home-lead">Add something to play, check which device is selected, and see what everyone is queueing. <span id="joinedAs" aria-live="polite"></span> · <a href="#nameForm">Change name</a> · <a href="#castEntry">Cast with SmoothCast</a></p>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
-<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker, asks for your confirmation, then starts playback as soon as enough compatible media has arrived.</p>
+<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
 <div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
 </section>
@@ -2347,7 +2347,7 @@ function schedulePlayhead(){
   playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -2659,30 +2659,60 @@ function renderLinkJobs(state){
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
   const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
-  const rows=[];
-  for(const job of jobs.slice().reverse()){
-    const row=document.createElement("li"),heading=document.createElement("strong"),detail=document.createElement("p");
-    heading.textContent=job.title||"Download";
+  // Progress-only snapshots must not destroy a focused or pending action.
+  const previous=new Map(Array.from(list.children,row=>[row.dataset.linkJobId,row]));
+  jobs.slice().reverse().forEach((job,index)=>{
+    const id=String(job.id);
+    let row=previous.get(id);
+    if(!row){
+      row=document.createElement("li");row.dataset.linkJobId=id;
+      const heading=document.createElement("strong"),detail=document.createElement("p");
+      detail.className="muted";
+      const meter=document.createElement("progress"),stats=document.createElement("p"),error=document.createElement("p");
+      meter.setAttribute("aria-label","Download progress");
+      stats.className=error.className="field-hint";
+      const action=(verb,success)=>{
+        const button=document.createElement("button");
+        button.type="button";button.className="secondary tiny";button.textContent=verb==="cancel"?"Cancel download":"Retry download";
+        button.addEventListener("click",async()=>{
+          if(button.disabled||button.hidden)return;
+          button.disabled=true;
+          try{const reply=await post("/api/link-jobs/"+verb,{id});showError("linkFeedback",reply.message||success);void refresh()}
+          catch(error){showError("linkFeedback",error.message);button.disabled=false}
+        });
+        return button;
+      };
+      row.append(heading,detail,meter,stats,error,action("cancel","Cancellation requested"),action("retry","Retry accepted"));
+    }
+    previous.delete(id);
+    const [heading,detail,meter,stats,error,cancel,retry]=row.children;
+    const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};
+    setText(heading,job.title||"Download");
     const sourceLabel=job.kind==="youtube"?"YouTube":job.kind==="magnet"?"BitTorrent magnet":"Link";
-    detail.className="muted";detail.textContent=sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown");
-    row.append(heading,detail);
+    setText(detail,sourceLabel+" · "+(stages[job.stage]||"State unavailable")+" · "+(job.executor||"Executor unknown"));
     const received=Number.isSafeInteger(job.received)&&job.received>=0?job.received:null;
     const total=Number.isSafeInteger(job.total)&&job.total>0?job.total:null;
-    if(job.stage==="downloading"||job.stage==="resolving"){
-      const meter=document.createElement("progress");meter.setAttribute("aria-label","Download progress");
-      if(received!==null&&total!==null&&received<=total){meter.max=total;meter.value=received;}
-      row.append(meter);
-      const stats=document.createElement("p");stats.className="field-hint";
+    const progressing=job.stage==="downloading"||job.stage==="resolving";
+    meter.hidden=stats.hidden=!progressing;
+    if(progressing){
+      if(received!==null&&total!==null&&received<=total){
+        if(meter.max!==total)meter.max=total;
+        if(!meter.hasAttribute("value")||meter.value!==received)meter.value=received;
+      }else if(meter.hasAttribute("value"))meter.removeAttribute("value");
       const rate=Number.isFinite(job.rate)&&job.rate>0?job.rate:null;
-      stats.textContent=(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":"");
-      row.append(stats);
+      setText(stats,(received===null?"Waiting for progress":fileUnits(received)+(total===null?" reported":(" / "+fileUnits(total))))+(rate===null?"":" · "+fileUnits(rate)+"/s")+(rate!==null&&received!==null&&total!==null&&total>=received?" · approx. "+clock((total-received)/rate)+" remaining":""));
     }
-    if(job.error){const error=document.createElement("p");error.className="field-hint";error.textContent=job.error;row.append(error)}
-    if(job.can_cancel){const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary tiny";cancel.textContent="Cancel download";cancel.setAttribute("aria-label","Cancel "+(job.title||"acquisition"));cancel.addEventListener("click",async()=>{cancel.disabled=true;try{const reply=await post("/api/link-jobs/cancel",{id:job.id});showError("linkFeedback",reply.message||"Cancellation requested");void refresh()}catch(error){showError("linkFeedback",error.message);cancel.disabled=false}});row.append(cancel)}
-    if(job.can_retry){const retry=document.createElement("button");retry.type="button";retry.className="secondary tiny";retry.textContent="Retry download";retry.setAttribute("aria-label","Retry "+(job.title||"acquisition"));retry.addEventListener("click",async()=>{retry.disabled=true;try{const reply=await post("/api/link-jobs/retry",{id:job.id});showError("linkFeedback",reply.message||"Retry accepted");void refresh()}catch(error){showError("linkFeedback",error.message);retry.disabled=false}});row.append(retry)}
-    rows.push(row);
-  }
-  list.replaceChildren(...rows);
+    error.hidden=!job.error;setText(error,job.error||"");
+    for(const [button,allowed,verb] of [[cancel,job.can_cancel,"Cancel"],[retry,job.can_retry,"Retry"]]){
+      button.hidden=!allowed;
+      if(!allowed)button.disabled=false;
+      const label=verb+" "+(job.title||"acquisition");
+      if(button.getAttribute("aria-label")!==label)button.setAttribute("aria-label",label);
+    }
+    const current=list.children[index]||null;
+    if(current!==row)list.insertBefore(row,current);
+  });
+  for(const row of previous.values())row.remove();
 }
 if(linkForm&&typeof linkForm.addEventListener==="function"){
   $("linkInput").addEventListener("input",updateLinkControls);
@@ -2724,15 +2754,31 @@ function renderRoomTransfers(state){
   const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
   for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
     const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
-    panel.hidden=!rows.length;
-    list.replaceChildren(...rows.map(row=>{
-      const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p"),meter=document.createElement("progress");
-      title.textContent=row.title||"Incoming media";
-      detail.className="field-hint";
-      detail.textContent=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
-      meter.max=Math.max(1,Number(row.size)||1);meter.value=Math.max(0,Math.min(meter.max,Number(row.received)||0));meter.setAttribute("aria-label","Transfer progress for "+title.textContent);
-      li.append(title,detail,meter);return li;
-    }));
+    if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
+    // Reuse stable rows so chunk ACKs do not rebuild two entire lists,
+    // interrupt assistive technology or disturb the user's scroll position.
+    const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
+    rows.forEach((row,index)=>{
+      const id=String(row.id);
+      let li=previous.get(id);
+      if(!li){
+        li=document.createElement("li");li.dataset.transferId=id;
+        const detail=document.createElement("p");detail.className="field-hint";
+        li.append(document.createElement("strong"),detail,document.createElement("progress"));
+      }
+      previous.delete(id);
+      const [title,detail,meter]=li.children;
+      const name=row.title||"Incoming media";
+      const description=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
+      if(detail.textContent!==description)detail.textContent=description;
+      const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
+      if(meter.max!==total)meter.max=total;
+      if(meter.value!==received)meter.value=received;
+      const current=list.children[index]||null;
+      if(current!==li)list.insertBefore(li,current);
+    });
+    for(const li of previous.values())li.remove();
   }
 }
 function playbackFeedback(state){
@@ -2779,7 +2825,7 @@ function applyStatus(d){
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
@@ -3113,11 +3159,17 @@ function uploadTransport(path,options){
       options.signal.removeEventListener("abort",abort);
       callback(value);
     };
+    let lastProgressPaint=-Infinity;
     xhr.upload.onprogress=event=>{
       const total=event.lengthComputable?event.total:options.body.size;
+      const done=event.lengthComputable&&event.loaded===event.total;
+      const now=performance.now();
+      // Sender progress is diagnostic only; bound DOM writes to 10 Hz
+      // without slowing network transfer or suppressing the last event.
+      if(!done&&now-lastProgressPaint<100)return;
+      lastProgressPaint=now;
       monitorText("transferInFlight",fileUnits(event.loaded)+" of "+fileUnits(total)+" (not yet confirmed)");
-      if(event.lengthComputable&&event.loaded===event.total)
-        monitorText("transferOperation","Chunk sent — waiting for host storage");
+      if(done)monitorText("transferOperation","Chunk sent — waiting for host storage");
     };
     xhr.onload=()=>finish(resolve,{
       status:xhr.status,ok:xhr.status>=200&&xhr.status<300,
@@ -3360,11 +3412,11 @@ async function restoreUpload(){
           showError("uploadStatus","Saved upload progress is invalid. Reload to check it again.");
           return;
         }
-        pendingUpload={...record,received:state.received};
+        pendingUpload={...record,received:state.received,queueOnly:state.queue_only??record.queueOnly};
         monitorText("transferFileName",record.name);
-        monitorText("transferDelivery",record.queueOnly?"Up Next requested":"Play now requested");
+        monitorText("transferDelivery",pendingUpload.queueOnly?"Up Next requested":"Play now requested");
         transferEvent("Interrupted upload found; choose the original file to resume");
-        $("uploadQueue").checked=record.queueOnly;
+        $("uploadQueue").checked=pendingUpload.queueOnly;
         transferView("transfer",state.received,record.size,"Resumable");
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
         return;
@@ -3489,7 +3541,7 @@ $("uploadButton").addEventListener("click",async()=>{
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
-      const queueOnly=audio||batchQueueOnly;
+      let queueOnly=pendingUpload?.queueOnly??(audio||batchQueueOnly||batchIndex>0);
       monitorText("transferFileName",(batchIndex+1)+"/"+batchFiles.length+" · "+file.name);
       monitorText("transferDelivery",queueOnly?"Up Next requested":"Play now requested");
       monitorText("transferAck",pendingUpload?fileUnits(pendingUpload.received):"0 B");
@@ -3506,12 +3558,18 @@ $("uploadButton").addEventListener("click",async()=>{
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
+        if(state.queue_only===true&&!queueOnly){
+          queueOnly=true;
+          transferEvent("Another upload has the Play now lane; this file will join Up Next");
+          monitorText("transferDelivery","Up Next — another upload has priority");
+        }
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
         monitorText("transferOperation","Reading local file fingerprint");
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
         transferEvent("Host reserved storage; chunk size "+fileUnits(chunkSize));
       }
+      if(state.queue_only===true){queueOnly=true;pendingUpload.queueOnly=true;}
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
         throw Error("Upload progress is invalid. Reload and choose the file again.");
@@ -3550,7 +3608,8 @@ $("uploadButton").addEventListener("click",async()=>{
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size,"",queueOnly);
       $("pauseUpload").hidden=true;
-      await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      const receipt=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      if(receipt.queue_only===true)queueOnly=true;
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
       monitorText("transferAck",fileUnits(file.size));

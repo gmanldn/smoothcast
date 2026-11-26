@@ -102,3 +102,33 @@ def test_room_queue_projects_media_kind_and_fresh_duration(tmp_path):
 def test_home_queue_refreshes_on_duration_and_kind_changes():
     assert "item.contributor,item.media_kind,item.duration" in portal._HTML
     assert "mediaKindLabel(item.media_kind),item.duration?clock(item.duration)" in portal._HTML
+
+
+def test_completed_guest_upload_joins_queue_during_cast_preparation():
+    import pathlib
+    host = Host()
+    host.busy = True
+    host.queue = ["/private/priority.mkv"]
+    host.now_playing = None
+    host.selected_index = 0
+    host.session = object()
+    active_session = host.session
+    host._portal_upload_path = lambda payload: pathlib.Path("/private/background.mp4")
+    payload = {"name": "Background film.mp4", "_portal_auth_key": "guest-b"}
+    for _ in range(2):
+        assert host._portal_queue_action("queue_add", payload) == "Added to the queue."
+    assert host.queue == ["/private/priority.mkv", "/private/background.mp4"]
+    assert host.busy and host.selected_index == 0 and host.session is active_session
+    row = host._portal_queue_status()[1]
+    assert row["title"] == "Background film.mp4" and row["contributor"] == "Sam"
+
+
+def test_queue_acceptance_does_not_acknowledge_missing_item():
+    import pathlib
+    import pytest
+    host = Host()
+    host.busy = True
+    host._portal_upload_path = lambda payload: pathlib.Path("/private/rejected.mp4")
+    host._enqueue = lambda paths: None
+    with pytest.raises(portal.PortalRequestError, match="could not accept"):
+        host._portal_queue_action("queue_add", {"name": "Rejected.mp4"})

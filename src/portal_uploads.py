@@ -266,6 +266,17 @@ class UploadManager:
             raise UploadError(401, "Sign in to upload a file")
         with self._lock:
             self._expire_uploads()
+            # The first overlapping Play now request owns the ingress cast lane.
+            # Later arrivals can transfer immediately, but may never replace it
+            # merely because their upload finishes faster.
+            now = self._clock()
+            cast_reserved = any(
+                not row.cancelled and not row.queue_only
+                and not (row.cast_submitted and row.directory_synced)
+                and now - row.last_at <= PARTIAL_TTL_SECONDS
+                for row in self._uploads.values()
+            )
+            queue_only = bool(queue_only or audio_only or cast_reserved)
             pending = [upload for upload in self._uploads.values()
                        if not upload.cancelled and upload.complete_path is None]
             if len(pending) >= MAX_ACTIVE_UPLOADS:
@@ -294,7 +305,7 @@ class UploadManager:
                              audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
-                "received": 0, "chunk_size": CHUNK_SIZE}
+                "received": 0, "chunk_size": CHUNK_SIZE, "queue_only": upload.queue_only}
 
     def _get(self, owner: str, upload_id: str) -> _Upload:
         if not isinstance(upload_id, str) or not _UPLOAD_ID.fullmatch(upload_id):
@@ -326,6 +337,7 @@ class UploadManager:
             return {"id": upload.upload_id, "name": upload.name, "size": upload.size,
                     "received": upload.received,
                     "complete": upload.complete_path is not None and upload.directory_synced,
+                    "queue_only": upload.queue_only,
                     "ready_to_cast": upload.early_cast in {"requested", "active"},
                     "dispatch_state": ("accepted" if upload.cast_submitted else
                                        "pending" if upload.dispatch_pending else "not_submitted")}
