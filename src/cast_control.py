@@ -35,6 +35,7 @@ import error_log
 import desktop_failure_notice
 import error_banner_ui
 from cast_app_lifecycle import AppLifecycleMixin
+import jank_ui
 import local_playback
 import demo_mode
 import startup_cleanup
@@ -154,7 +155,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._refresh_controls()
 
 
-class CastControlApp(AppLifecycleMixin, Adw.Application):
+class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin, Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
         if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
             raise RuntimeError("Refusing a GTK application inside pytest")
@@ -181,6 +182,7 @@ class CastControlApp(AppLifecycleMixin, Adw.Application):
         self._run_revision = version.RUNNING_REVISION
         self._noticed_runtime_key: tuple[str | None, str | None] | None = None
         self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
+        self.jank_monitor = None
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -462,6 +464,7 @@ class CastControlApp(AppLifecycleMixin, Adw.Application):
 
     def _after_paint_idle(self, window: MainWindow) -> bool:
         startup_timeline.mark_idle()
+        self._start_jank_monitor()
         GLib.idle_add(self._guard_glib(self._start_optional_services), window,
                       priority=GLib.PRIORITY_LOW)
         return False
@@ -556,9 +559,12 @@ class CastControlApp(AppLifecycleMixin, Adw.Application):
             injected = RuntimeError("private /home/agent/secret.mkv")
             if not bridge.report(injected) or bridge.report(injected):
                 raise RuntimeError("failure notification was not rate limited")
+            # The scripted journey must not stall the main loop (#442).
+            self._check_jank_gate()
             GLib.idle_add(self._finish_selftest_failures, observed)
         except Exception as exc:  # pragma: no cover - defensive
             self.selftest_failed = True
+            self._stop_jank_monitor()
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
             self.quit()
         return False
