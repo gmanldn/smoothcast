@@ -1071,3 +1071,52 @@ def test_archive_result_derives_exact_infohash_and_discards_tracker_metadata():
     unsafe, _, _ = _torrent(_info([{b"length": 8, b"path": [b"../escape.mp4"]}]))
     with pytest.raises(acquisition.LinkError):
         acquisition.archive_torrent_result({"archive_id": "demo"}, unsafe)
+
+
+
+def _archive_search_rows(count):
+    return json.dumps({"response": {"docs": [
+        {"identifier": f"film-{i}", "title": "Open film",
+         "licenseurl": ["https://creativecommons.org/publicdomain/zero/1.0/"],
+         "downloads": count - i} for i in range(count)
+    ]}}).encode()
+
+
+def test_archive_search_checks_fallback_candidates_after_failures(monkeypatch):
+    raw, digest, _ = _torrent(_info())
+    calls = []
+
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        calls.append(url)
+        if "advancedsearch" in url:
+            return _archive_search_rows(12)
+        if len(calls) <= 5:
+            raise acquisition.LinkError(502, "Source unavailable.")
+        return raw
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    results = acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False)
+    assert [result["id"] for result in results] == [digest]
+    assert results[0]["archive_id"] == "film-4"
+    assert len(calls) == 1 + acquisition.ARCHIVE_CANDIDATE_LIMIT
+
+
+@pytest.mark.parametrize("status", [502, 504])
+def test_archive_search_reports_provider_failure_instead_of_empty(monkeypatch, status):
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        if "advancedsearch" in url:
+            return _archive_search_rows(2)
+        raise acquisition.LinkError(status, "Provider failure.")
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    with pytest.raises(acquisition.LinkError) as exc:
+        acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False)
+    assert exc.value.status == status
+
+
+def test_archive_search_empty_when_all_metadata_is_incompatible(monkeypatch):
+    def fetch(_launcher, _curl, url, _limit, _cancelled, _deadline):
+        return _archive_search_rows(2) if "advancedsearch" in url else b"invalid torrent"
+
+    monkeypatch.setattr(acquisition, "_archive_fetch", fetch)
+    assert acquisition._archive_search_command("launcher", "curl", "Open film", lambda: False) == []

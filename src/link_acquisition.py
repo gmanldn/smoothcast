@@ -403,6 +403,8 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
         _SEARCH_SLOT.release()
 
 
+ARCHIVE_CANDIDATE_LIMIT = 8
+ARCHIVE_RESULT_LIMIT = 4
 _ARCHIVE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\Z")
 _ARCHIVE_LICENSE = re.compile(
     r"https?://creativecommons\.org/(?:licenses/(?:by|by-sa)/[1-4]\.0(?:/[a-z]{2})?"
@@ -427,6 +429,9 @@ def archive_candidates(raw: bytes, query: str) -> list[dict]:
         if not isinstance(row, dict):
             continue
         ident, license_url = row.get("identifier"), row.get("licenseurl")
+        # Advanced Search may represent a single metadata value as an array.
+        if isinstance(license_url, list) and len(license_url) == 1:
+            license_url = license_url[0]
         if (not isinstance(ident, str) or not _ARCHIVE_ID.fullmatch(ident)
                 or ident in seen or not isinstance(license_url, str)
                 or not _ARCHIVE_LICENSE.fullmatch(license_url)):
@@ -445,7 +450,7 @@ def archive_candidates(raw: bytes, query: str) -> list[dict]:
             "downloads": downloads,
         }))
     found.sort(key=lambda item: (-item[0], -item[1], item[2]))
-    return [item[3] for item in found[:4]]
+    return [item[3] for item in found[:ARCHIVE_CANDIDATE_LIMIT]]
 
 
 def archive_torrent_result(candidate: dict, data: bytes) -> dict:
@@ -486,6 +491,10 @@ def _archive_fetch(launcher: str, curl: str, url: str, limit: int, cancelled,
                     if os.fstat(output.fileno()).st_size > limit:
                         raise LinkError(502, "Archive response exceeded its size limit.")
                     time.sleep(0.05)
+                if cancelled():
+                    raise LinkError(403, guest_messages.ACCESS_REMOVED)
+                if process.returncode == 28:
+                    raise LinkError(504, "Archive search timed out.")
                 if process.returncode:
                     raise LinkError(502, "Archive source unavailable.")
                 output.seek(0)
@@ -522,23 +531,37 @@ def _archive_search_command(launcher: str, curl: str, text: str, cancelled) -> l
                              SEARCH_OUTPUT_LIMIT, cancelled, deadline)
         results = []
         seen = set()
+        failure: LinkError | None = None
         for candidate in archive_candidates(raw, text):
             if cancelled():
                 raise LinkError(403, guest_messages.ACCESS_REMOVED)
             if deadline - time.monotonic() < 1:
+                failure = LinkError(504, "Archive search timed out before all candidates could be checked.")
                 break
             ident = quote(candidate["archive_id"], safe="")
             url = f"https://archive.org/download/{ident}/{ident}_archive.torrent"
             try:
                 data = _archive_fetch(launcher, curl, url, 2 * 1024**2, cancelled, deadline)
+            except LinkError as exc:
+                if exc.status not in (502, 503, 504):
+                    raise
+                failure = exc
+                continue
+            try:
                 row = archive_torrent_result(candidate, data)
             except LinkError as exc:
-                if exc.status == 403:
+                if exc.status not in (413, 422):
                     raise
                 continue
             if row["id"] not in seen:
                 seen.add(row["id"])
                 results.append(row)
+                if len(results) >= ARCHIVE_RESULT_LIMIT:
+                    break
+        if cancelled():
+            raise LinkError(403, guest_messages.ACCESS_REMOVED)
+        if not results and failure is not None:
+            raise failure
         return results
     except (OSError, subprocess.TimeoutExpired):
         raise LinkError(503, "The isolated Archive search worker is unavailable.") from None
