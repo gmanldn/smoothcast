@@ -779,10 +779,17 @@ class LinkJobs:
             return {"youtube": False, "magnet": False}
         return self.provider.capabilities()
 
+    def search_available(self) -> bool:
+        if self._journal_error or self._closed:
+            return False
+        available = getattr(self.provider, "search_available", None)
+        return bool(available()) if callable(available) else bool(
+            self.capabilities().get("youtube") and callable(getattr(self.provider, "search_youtube", None)))
+
     def search_youtube(self, owner: str, value: object) -> list[dict]:
         text = _search_text(value)
         search = getattr(self.provider, "search_youtube", None)
-        if not self.capabilities().get("youtube") or not callable(search):
+        if not self.search_available() or not callable(search):
             raise LinkError(503, guest_messages.YOUTUBE_OFF)
 
         def cancelled():

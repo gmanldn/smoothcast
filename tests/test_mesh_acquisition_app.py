@@ -254,3 +254,26 @@ def test_gui_owner_without_a_local_worker_adds_a_video_through_a_mesh_worker(tmp
     finally:
         jobs.close()
         srv.close()
+
+
+def test_composite_routes_search_to_capable_peer_not_legacy_worker(tmp_path):
+    remote, _, _, srv = make(tmp_path, caps=("acquire-youtube-local", bridge_mod.SEARCH_HINT))
+    calls = []
+    try:
+        remote.local_provider = links.CommandProvider(("youtube",))
+        local = NS(capabilities=lambda: {"youtube": False})
+        composite = app.CompositeProvider(local, remote)
+        def send(node, msg):
+            calls.append((node, msg))
+            if msg["t"] == "search_start":
+                return {"ok": True, "verdict": "pending"}
+            return {"ok": True, "verdict": "ready", "results": [{"id": VIDEO, "title": "Music"}]}
+        remote.bridge.send = send
+        assert composite.search_available()
+        assert composite.search_youtube("music", lambda: False)[0]["id"] == VIDEO
+        assert [msg["t"] for _, msg in calls] == ["search_start", "search_poll"]
+        assert calls[0][0] == WORKER
+        remote.bridge.record(WORKER).capabilities = (bridge_mod.HINT, "acquire-youtube-local")
+        assert not composite.search_available()
+    finally:
+        srv.close()

@@ -814,6 +814,9 @@ class _Handler(BaseHTTPRequestHandler):
         state["room"] = self.server.room.snapshot(participant_id)
         jobs = self.server.link_jobs
         state["link_capabilities"] = jobs.capabilities() if jobs is not None else {"youtube": False, "magnet": False}
+        state["link_search_available"] = (jobs.search_available() if jobs is not None
+                                          and callable(getattr(jobs, "search_available", None))
+                                          else bool(state["link_capabilities"].get("youtube")))
         state["link_storage_available"] = jobs.storage_available() if jobs is not None else None
         provider = getattr(self.server, "link_readiness_provider", None)
         if provider is not None:
@@ -2601,8 +2604,9 @@ function updateLinkControls(){
   }
   const search=$("youtubeSearch"),availability=$("youtubeAvailability");
   if(search&&availability){
-    search.disabled=!linkCapabilities.youtube||youtubeSearchBusy;
-    availability.textContent=linkCapabilities.youtube?"Search YouTube explicitly; your house search stays local.":"YouTube search is unavailable. "+linkWorkerExplanation("youtube");
+    const ready=linkCapabilities.youtube_search??linkCapabilities.youtube;
+    search.disabled=!ready||youtubeSearchBusy;
+    availability.textContent=ready?"Search YouTube explicitly; your house search stays local.":"YouTube search is unavailable. "+linkWorkerExplanation("youtube");
   }
   const input=$("linkInput"),consent=$("linkAuthorised"),button=$("linkSubmit"),label=$("linkAvailability");
   if(!input||!consent||!button||!label)return false;
@@ -2667,7 +2671,7 @@ function updateLinkControls(){
   return !button.disabled;
 }
 function renderLinkJobs(state){
-  linkCapabilities=state.link_capabilities||{};
+  linkCapabilities={...(state.link_capabilities||{}),youtube_search:state.link_search_available};
   linkOwnerEnabled=state.link_owner_enabled||null;
   linkLocalPrerequisites=state.link_local_prerequisites||null;
   linkStorageAvailable=state.link_storage_available;
@@ -4031,7 +4035,7 @@ function syncMediaSession(s){
   });
   search.addEventListener("click",async()=>{
     const q=input.value.trim();
-    if(youtubeSearchBusy||!linkCapabilities.youtube)return;
+    if(youtubeSearchBusy||!(linkCapabilities.youtube_search??linkCapabilities.youtube))return;
     panel.hidden=false;out.replaceChildren();consent.checked=false;
     if(!q){status.textContent="Type something to search on YouTube.";input.focus();return}
     const current=++generation;
@@ -4053,7 +4057,7 @@ function syncMediaSession(s){
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
           if(add.disabled||current!==generation)return;
-          if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(!linkCapabilities.youtube){status.textContent="No eligible YouTube download worker is currently available.";return}
           if(linkStorageAvailable===false){status.textContent="Download storage is unavailable. Ask the host to check it and restart the room. Your search results are preserved.";return}
           if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";

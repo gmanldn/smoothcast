@@ -180,7 +180,10 @@ class MeshService:
                             capabilities=("room", "screens", mesh_acquisition_activity.HINT,
                                           *((mesh_acquisition_bridge.HINT,)
                                             if cfg.acquisition_worker is not None
-                                            or cfg.acquisition_attach is not None else ()), *(
+                                            or cfg.acquisition_attach is not None else ()),
+                                          *((mesh_acquisition_bridge.SEARCH_HINT,)
+                                            if cfg.acquisition_worker is not None and cfg.acquisition_accept()
+                                            and "youtube" in cfg.link_acquisition_sources else ()), *(
                                 "acquire-" + kind + "-local" for kind in ("youtube", "magnet")
                                 if kind in cfg.link_acquisition_sources)),
                             addresses=(cfg.bind_ip,))

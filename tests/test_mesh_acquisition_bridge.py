@@ -172,3 +172,26 @@ def test_mesh_service_only_advertises_and_builds_the_bridge_when_configured():
     assert fields["acquisition_accept"].default() is False  # never accepting by default
     source = open(mesh_service.__file__).read()
     assert "acquisition_bridge.HINT" in source and "acquisition_bridge.AcquisitionBridge(" in source
+
+
+def test_search_worker_is_bounded_to_authenticated_owner_and_returns_projected_metadata():
+    import threading
+
+    p = pair()
+    gate = threading.Event()
+    p.wb.search_provider = NS(capabilities=lambda: {"youtube": True},
+                              search_youtube=lambda q, cancelled: (
+                                  gate.wait(2) and [{"id": URL, "title": q, "secret": "discard"}] or []))
+    member = p.wb.members()[0]
+    request = "1" * 32
+    p.hb.record(WORK).capabilities = (bridge.HINT, bridge.SEARCH_HINT)
+    assert p.hb.send(WORK, {"t": "search_start", "id": request, "q": "music"})["verdict"] == "pending"
+    assert p.wb._search_answer(member, {"t": "search_start", "id": "2" * 32, "q": "other"})["verdict"] == "busy"
+    stranger = NS(node_id="e" * 32, boot_id=BOOT_H)
+    assert p.wb._search_answer(stranger, {"t": "search_poll", "id": request})["verdict"] == "unknown"
+    gate.set()
+    assert p.wb._search_job["done"].wait(2)
+    reply = p.hb.send(WORK, {"t": "search_poll", "id": request})
+    assert reply == {"ok": True, "verdict": "ready", "results": [
+        {"id": URL, "title": "music", "channel": "", "duration": None}]}
+    assert p.wb._search_job is None
