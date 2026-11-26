@@ -180,3 +180,49 @@ def test_old_cache_schema_requires_requalification(tmp_path, monkeypatch):
     del data["schema"]
     target.write_text(json.dumps(data))
     assert not probe.is_verified(launcher)
+
+
+def test_listener_closes_socket_when_bind_fails(monkeypatch):
+    from unittest.mock import Mock
+
+    sock = Mock()
+    sock.bind.side_effect = OSError("bind failed")
+    monkeypatch.setattr(probe.socket, "socket", lambda *args: sock)
+    with pytest.raises(OSError):
+        probe._Listener("127.0.0.1")
+    sock.close.assert_called_once_with()
+
+
+def test_failed_private_listener_closes_prepared_listeners(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    loop, loop6 = Mock(), Mock()
+
+    def listener(host, *args):
+        if host == "127.0.0.1":
+            return loop
+        if host == "::1":
+            return loop6
+        raise OSError("private interface disappeared")
+
+    monkeypatch.setattr(probe, "_Listener", listener)
+    result = probe.qualify(script(tmp_path, "exit 0"), lan_ip="192.168.0.2")
+    assert not result.verified
+    assert set(result.checks.values()) == {"not_run"}
+    loop.close.assert_called_once_with()
+    loop6.close.assert_called_once_with()
+
+
+def test_failed_canary_creation_closes_prepared_listeners(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    launcher = script(tmp_path, "exit 0")
+    loop, loop6 = Mock(), Mock()
+    monkeypatch.setattr(probe, "_Listener",
+                        lambda host, *args: loop if host == "127.0.0.1" else loop6)
+    monkeypatch.setattr(probe.Path, "home", lambda: tmp_path / "missing")
+    result = probe.qualify(launcher, lan_ip=None)
+    assert not result.verified
+    assert set(result.checks.values()) == {"not_run"}
+    loop.close.assert_called_once_with()
+    loop6.close.assert_called_once_with()

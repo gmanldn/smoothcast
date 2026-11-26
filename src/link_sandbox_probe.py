@@ -78,14 +78,18 @@ class _Listener:
 
     def __init__(self, host: str, family: int = socket.AF_INET) -> None:
         self.sock = socket.socket(family, socket.SOCK_STREAM)
-        self.sock.bind((host, 0))
-        self.sock.listen(4)
-        self.sock.settimeout(0.2)
-        self.port = self.sock.getsockname()[1]
-        self.count = 0
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        try:
+            self.sock.bind((host, 0))
+            self.sock.listen(4)
+            self.sock.settimeout(0.2)
+            self.port = self.sock.getsockname()[1]
+            self.count = 0
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+        except (OSError, RuntimeError):
+            self.sock.close()
+            raise
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -165,24 +169,31 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
     if path is None or not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
         return Qualification(False, {name: "not_run" for name in CHECKS}, "launcher missing or not executable")
     python = python or sys.executable
-    lan = lan_address() if lan_ip == "auto" else lan_ip
-    canary = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
-    secret = secrets.token_hex(16)
-    loop = _Listener("127.0.0.1")
-    try:
-        loop6 = _Listener("::1", socket.AF_INET6)
-    except OSError:
-        loop6 = None  # no host IPv6 loopback: nothing to reach, count as denied
-    private = _Listener(lan) if lan else None
+    loop = loop6 = private = None
+    canary = None
     tag = "smoothcast-qualify-" + secrets.token_hex(6)
+    secret = secrets.token_hex(16)
+    started = False
     try:
-        canary.write_text(secret)
-        canary.chmod(0o600)
+        lan = lan_address() if lan_ip == "auto" else lan_ip
+        loop = _Listener("127.0.0.1")
+        try:
+            loop6 = _Listener("::1", socket.AF_INET6)
+        except OSError:
+            loop6 = None  # no host IPv6 loopback: nothing to reach, count as denied
+        private = _Listener(lan) if lan else None
+        candidate = Path.home() / f".smoothcast-qualify-{secrets.token_hex(6)}"
+        # Reserve a fresh owner-only file; never overwrite a pre-existing path.
+        fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        canary = candidate
+        with os.fdopen(fd, "w") as handle:
+            handle.write(secret)
         spec = {"loopback": loop.port, "loopback6": loop6.port if loop6 else 0,
                 "lan": private.port if private else 0, "metadata": METADATA_ADDRESS,
                 "lan_ip": lan, "canary": str(canary), "tag": tag}
         with tempfile.TemporaryDirectory(prefix="smoothcast-qualify-") as staging:
             try:
+                started = True
                 done = subprocess.run([str(path), python, "-c", _PROBE, json.dumps(spec)],
                                       cwd=staging, stdin=subprocess.DEVNULL, capture_output=True,
                                       text=True, timeout=timeout, env={"PATH": os.environ.get("PATH", "")})
@@ -227,21 +238,29 @@ def qualify(launcher: str, *, lan_ip: str | None = "auto", timeout: float = 30.0
                   "NOT isolated: " + ", ".join(failed) if failed else
                   "not fully verified: " + ", ".join(n for n, v in checks.items() if v != "pass"))
         return Qualification(verified, checks, detail)
+    except (OSError, RuntimeError):
+        return Qualification(False, {n: "not_run" for n in CHECKS},
+                             "Could not prepare or inspect local isolation checks.")
     finally:
-        for pid in _tagged(tag):
-            try:
-                os.kill(pid, 9)
-            except OSError:
-                pass
-        loop.close()
-        if loop6 is not None:
-            loop6.close()
-        if private is not None:
-            private.close()
         try:
-            canary.unlink()
+            for pid in _tagged(tag) if started else ():
+                try:
+                    os.kill(pid, 9)
+                except OSError:
+                    pass
         except OSError:
             pass
+        for listener in (loop, loop6, private):
+            if listener is not None:
+                try:
+                    listener.close()
+                except (OSError, RuntimeError):
+                    pass
+        if canary is not None:
+            try:
+                canary.unlink()
+            except OSError:
+                pass
 
 
 # -- cached result, tied to the exact launcher file ---------------------------------------
