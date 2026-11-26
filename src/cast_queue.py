@@ -346,7 +346,13 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
     def _refresh_queue_visibility(self) -> None:
         query = self.queue_search.get_text()
-        visible = [p for p in self.queue if playlist_control.matches_query(p, query)]
+        # Use the same rendered rows and predicate as GTK's filter. No
+        # metadata re-probe or filesystem access on each keystroke.
+        visible = [
+            path for index, path in enumerate(self.queue)
+            if (row := self.queue_list.get_row_at_index(index)) is not None
+            and self._queue_row_matches(row)
+        ] if query.strip() else self.queue
         has_queue = bool(self.queue)
         self.queue_search.set_visible(has_queue)
         self.queue_empty.set_visible(not has_queue)

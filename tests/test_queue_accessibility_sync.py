@@ -97,3 +97,13 @@ def test_refresh_controls_wires_accessibility_without_gtk_import_in_helper():
     assert imports == {"__future__"}
     assert all(node.names[0].name != "gi" for node in ast.walk(helper)
                if isinstance(node, ast.Import))
+
+
+def test_handoff_reuses_rendered_title_without_metadata_lookup(monkeypatch):
+    window, rows = _window()
+    rows.rows[0].display_title = "Original guest upload.mp4"
+    window.now_playing = window.queue[0]
+    monkeypatch.setattr(queue_accessibility.queue_metadata, "display_title",
+                        lambda *args: (_ for _ in ()).throw(AssertionError("unexpected lookup")))
+    queue_accessibility.sync_rows(window, _Gtk)
+    assert rows.rows[0].labels[-1] == "Original guest upload.mp4, 1 of 2, Now playing"

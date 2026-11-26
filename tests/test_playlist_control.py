@@ -127,6 +127,16 @@ class PlaylistTests(unittest.TestCase):
         self.assertTrue(all(playlist_control.matches_query(p, "   ") for p in paths))
         self.assertFalse(playlist_control.matches_query(paths[0], "missing title"))
 
+    def test_search_matches_display_title_and_original_source_terms(self):
+        match = playlist_control.matches_query
+        self.assertTrue(match("/uploads/opaque.mp4", "original film",
+                              display_title="Original Film.mp4"))
+        self.assertTrue(match("/music/opaque.flac", "artist music",
+                              display_title="Artist — Track · Album"))
+        self.assertTrue(match("/uploads/opaque.mp4", "OPAQUE"))
+        self.assertFalse(match("/uploads/opaque.mp4", "different",
+                               display_title="Original Film.mp4"))
+
     def test_queue_filter_preserves_original_index_and_focus_shortcut(self):
         source = combined_source()
         self.assertIn("self.queue_list.set_filter_func(self._queue_row_matches)", source)
