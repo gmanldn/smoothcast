@@ -167,7 +167,13 @@ def _bounded_context(context: object) -> dict[str, str]:
 
 def record(code: str, context: object = None) -> None:
     """Remember that ``code`` reached a user (bounded ring; context is clipped)."""
-    entry = (time.time(), code if code in CATALOGUE else FALLBACK.code, _bounded_context(context))
+    # The failure-reporting path must tolerate invalid third-party metadata.
+    canonical = code if type(code) is str and code in CATALOGUE else FALLBACK.code
+    try:
+        facts = _bounded_context(context)
+    except Exception:
+        facts = {}
+    entry = (time.time(), canonical, facts)
     with _RECENT_LOCK:
         _RECENT.append(entry)
 
@@ -194,7 +200,7 @@ class SmoothCastError(Exception):
 
     def __init__(self, code: str, *, context: dict[str, str] | None = None,
                  detail: str = "") -> None:
-        self.spec = CATALOGUE.get(code, FALLBACK)
+        self.spec = CATALOGUE.get(code, FALLBACK) if type(code) is str else FALLBACK
         self.context = dict(context or {})
         super().__init__(f"{self.spec.code}: {detail}" if detail else self.spec.code)
 
@@ -209,5 +215,12 @@ class SmoothCastError(Exception):
 
 def describe(exc: object) -> ErrorSpec:
     """Catalogue entry for ``exc``; anything uncatalogued is ``internal.unexpected``."""
-    spec = getattr(exc, "spec", None)
-    return spec if isinstance(spec, ErrorSpec) else FALLBACK
+    try:
+        spec = getattr(exc, "spec", None)
+        if isinstance(spec, ErrorSpec) and type(spec.code) is str:
+            # Do not trust arbitrary messages or remediation supplied by an
+            # exception; the catalogue is the sole authority for public copy.
+            return CATALOGUE.get(spec.code, FALLBACK)
+    except Exception:
+        pass
+    return FALLBACK

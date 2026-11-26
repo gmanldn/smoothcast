@@ -133,3 +133,34 @@ def test_recent_ring_context_is_clipped_and_redacted_in_diagnostics():
     errors.record("cast.receiver_offline")
     assert "context" not in errors.recent()[-1]
     errors.reset_recent()
+
+
+def test_error_reporting_rejects_hostile_metadata_and_uncatalogued_copy():
+    class BrokenSpec(Exception):
+        @property
+        def spec(self):
+            raise RuntimeError("broken metadata")
+
+    class Forged(Exception):
+        spec = errors.ErrorSpec("cast.receiver_offline", "cast", "error", True,
+                                "private device information", ("unsafe step",))
+
+    assert errors.describe(BrokenSpec()) is errors.FALLBACK
+    assert errors.describe(Forged()) is errors.CATALOGUE["cast.receiver_offline"]
+    assert errors.SmoothCastError([]).spec is errors.FALLBACK
+
+
+def test_recent_ring_survives_invalid_error_code_and_context():
+    class BrokenContext(dict):
+        def items(self):
+            raise RuntimeError("broken context")
+
+    errors.reset_recent()
+    try:
+        errors.record([], BrokenContext())
+        assert errors.recent()[-1]["code"] == errors.FALLBACK.code
+        assert "context" not in errors.recent()[-1]
+        errors.record("cast.receiver_offline", BrokenContext())
+        assert errors.recent()[-1]["code"] == "cast.receiver_offline"
+    finally:
+        errors.reset_recent()
