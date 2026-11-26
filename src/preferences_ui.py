@@ -201,12 +201,27 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         self._choice(updates, "update_channel", "Update channel",
                      "Develop (default) receives frequent tested builds; Main follows releases. "
                      "Only read-only checks work so far; installing safely in the background is pending.")
+        self.update_status_row = Adw.ActionRow(title="Current version", subtitle="")
+        self.update_status_row.set_subtitle_lines(0)
+        updates.add(self.update_status_row)
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
         self._switch(updates, "release_check_verify", "Require a trusted signature",
                      "On by default. Updates without a signature trusted by "
                      "your Git keyring are not offered as safe to install.")
+
+    def _sync_update_status(self, cfg: dict) -> None:
+        """Offline, read-only: shows the running build and channel, never a check result."""
+        try:
+            from pathlib import Path
+            import update_status
+            facts = update_status.facts_for_preferences(cfg, root=Path(__file__).resolve().parent.parent)
+            status = update_status.describe(facts)
+            self.update_status_row.set_title(status.running_line)
+            self.update_status_row.set_subtitle(status.channel_line + ". Checking is manual until you enable it below.")
+        except Exception:
+            self.update_status_row.set_subtitle("Version details are unavailable.")
 
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""
@@ -227,6 +242,7 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
             if "portal_link_youtube" in self._switches and "portal_link_magnet" in self._switches:
                 import link_diagnostics
                 link_diagnostics.describe_switches(self.owner, cfg, self._switches)
+            self._sync_update_status(cfg)
             self.portal_port_spin.set_value(max(49152, int(cfg.get("portal_port") or 49152)))
             refresh_search = getattr(self, "_refresh_subtitle_search_rows", None)
             if callable(refresh_search):

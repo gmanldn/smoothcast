@@ -179,3 +179,19 @@ def describe(f: UpdateFacts) -> UpdateStatus:
                     f"Build {short(candidate_id)} is available on {channel}. Nothing is installed yet.",
                     "check_now")
     return make("current", "SmoothCast is up to date", f"You are running the latest {channel} build.", "check_now")
+
+
+def facts_for_preferences(cfg: dict, *, root, playing: bool = False) -> UpdateFacts:
+    """Offline facts for the Preferences row: no network, Git, import or file writes.
+
+    A check or staging result is not known here, so the phase stays ``idle``;
+    the row therefore never claims an update is available, staged or running.
+    """
+    import version
+    return UpdateFacts(
+        running_version=version.__version__,
+        running_commit=version.read_checkout_revision(root),
+        channel=str(cfg.get("update_channel", "develop")),
+        checks_enabled=cfg.get("check_release_updates") is True,
+        require_signature=cfg.get("release_check_verify") is not False,
+        playing=bool(playing))

@@ -214,3 +214,12 @@ def test_updated_build_does_not_offer_rollback_during_playback():
     assert playing.running_new_version and playing.actions == ("check_now",)
     assert "unavailable during playback" in playing.detail
 
+
+
+def test_preferences_facts_are_offline_and_never_claim_a_phase(tmp_path):
+    facts = us.facts_for_preferences({"update_channel": "main", "check_release_updates": True}, root=tmp_path)
+    assert facts.channel == "main" and facts.checks_enabled and facts.phase == "idle"
+    assert facts.running_commit is None and facts.require_signature is True
+    status = us.describe(facts)
+    assert "main" in status.running_line and not status.running_new_version
+    assert facts.playing is False
