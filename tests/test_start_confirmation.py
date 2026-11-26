@@ -63,7 +63,18 @@ class AwaitReceiverTests(unittest.TestCase):
         with mock.patch.object(streamer.castctl, "info", return_value=None), \
              mock.patch.object(streamer.time, "monotonic", side_effect=clock), \
              mock.patch.object(streamer.time, "sleep"):
-            with self.assertRaisesRegex(streamer.StreamError, "did not start playing"):
+            with self.assertRaisesRegex(streamer.StreamError, "did not return status"):
+                session._await_receiver("TV", lambda value: False, timeout=5.0)
+
+    def test_a_reachable_receiver_that_never_confirms_is_reported(self):
+        session = streamer.Session()
+        session.caster = _fake_caster(code=None)
+        clock = _ticking([0.0] + [float(n) for n in range(1, 400)])
+        with mock.patch.object(streamer.castctl, "info",
+                               return_value={"player_state": "IDLE"}), \
+             mock.patch.object(streamer.time, "monotonic", side_effect=clock), \
+             mock.patch.object(streamer.time, "sleep"):
+            with self.assertRaisesRegex(streamer.StreamError, "did not confirm playback"):
                 session._await_receiver("TV", lambda value: False, timeout=5.0)
 
     def test_unavailable_info_does_not_crash_the_poll(self):
@@ -73,7 +84,7 @@ class AwaitReceiverTests(unittest.TestCase):
         with mock.patch.object(streamer.castctl, "info", side_effect=OSError("no catt")), \
              mock.patch.object(streamer.time, "monotonic", side_effect=clock), \
              mock.patch.object(streamer.time, "sleep"):
-            with self.assertRaisesRegex(streamer.StreamError, "did not start playing"):
+            with self.assertRaisesRegex(streamer.StreamError, "did not return status"):
                 session._await_receiver("TV", lambda value: False, timeout=5.0)
 
 
@@ -97,7 +108,7 @@ class StartDirectConfirmationTests(unittest.TestCase):
                     self._media(root), device="TV", title="Film",
                     subs_file=None, subs_disabled=True)
             self.assertIsNotNone(session.state)
-            info.assert_called_with("TV")
+            self.assertEqual(info.call_args.args[0], "TV")
 
     def test_start_direct_fails_when_the_receiver_never_confirms(self):
         from tempfile import TemporaryDirectory
@@ -111,7 +122,7 @@ class StartDirectConfirmationTests(unittest.TestCase):
                  mock.patch.object(streamer.castctl, "info", return_value=None), \
                  mock.patch.object(streamer.subprocess, "Popen",
                                    return_value=_fake_caster(code=0)):
-                with self.assertRaisesRegex(streamer.StreamError, "did not start playing"):
+                with self.assertRaisesRegex(streamer.StreamError, "did not return status"):
                     session.start_direct(
                         self._media(root), device="TV", title="Film",
                         subs_file=None, subs_disabled=True)
