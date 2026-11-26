@@ -41,7 +41,7 @@ CAST_DEPENDENCIES_CHECK = (
     "pc=re.fullmatch(r'(\\d+)\\.(\\d+)\\.(\\d+)'"
     "r'(?:\\.post\\d+)?(?:\\+[A-Za-z0-9.]+)?',p); "
     "pv=tuple(map(int,pc.groups())) if pc else (); "
-    "sys.exit(0 if c and (int(c[1]),int(c[2])) >= (0,12) "
+    "sys.exit(0 if c and (0,12) <= (int(c[1]),int(c[2])) < (0,14) "
     "and pc and (13,1,0) <= pv < (15,0,0) else 1)"
 )
 # pip dependencies installed into the isolated runtime. Keep in sync with the
@@ -340,7 +340,19 @@ def install_macos(*, check: bool = False) -> tuple[Path, dict[str, str]]:
 
 def msys2_root() -> Path:
     custom = os.environ.get("MSYS2_ROOT")
-    return Path(custom) if custom else Path(os.environ.get("SystemDrive", "C:") + "\\msys64")
+    if custom:
+        return Path(custom)
+    # Repair/check launched from Explorer must not forget a non-default
+    # runtime chosen during installation.
+    try:
+        record = native_runtime.load(VENV, target="windows")
+    except RuntimeError as exc:
+        raise SetupError(
+            f"{exc} Set MSYS2_ROOT to the intended runtime for explicit repair."
+        ) from exc
+    if record is not None:
+        return Path(str(record["prefix"]))
+    return Path(os.environ.get("SystemDrive", "C:") + "\\msys64")
 
 
 def download_verified_msys2() -> Path:
@@ -411,16 +423,35 @@ def windows_env(root: Path) -> dict[str, str]:
     return env
 
 
+def windows_packages_ready(root: Path, env: dict[str, str]) -> bool:
+    """Query the local package database; no upgrades, downloads or shell profiles."""
+    shell = root / "usr" / "bin" / "bash.exe"
+    if not shell.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [str(shell), "--noprofile", "--norc", "-c",
+             "pacman -Q " + " ".join(WINDOWS_PACKAGES)],
+            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=20, check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     root = msys2_root()
     native_python = root / "ucrt64" / "bin" / "python.exe"
     env = windows_env(root)
     ready = python_ok(native_python) and works(native_python, GUI_CHECK, env=env)
+    packages_ready = windows_packages_ready(root, env)
     missing = check_tools(env)
     if check:
-        if not ready or missing:
+        if not ready or not packages_ready or missing:
             raise SetupError(f"Windows UCRT64 prerequisites missing: "
-                             f"GTK={not ready}, tools={', '.join(missing) or 'none'}")
+                             f"GTK={not ready}, native packages={not packages_ready}, "
+                             f"tools={', '.join(missing) or 'none'}")
         return native_python, env
     if not (root / "usr" / "bin" / "bash.exe").is_file():
         say("MSYS2 is missing: downloading the official checksum-verified installer.")
@@ -439,7 +470,7 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
     shell = root / "usr" / "bin" / "bash.exe"
     if not shell.is_file():
         raise SetupError("MSYS2 installation incomplete: bash.exe is missing.")
-    if not ready or missing:
+    if not ready or not packages_ready or missing:
         # Updating MSYS2 is essential for its package trust database. Run a
         # second pass because first-time updates may replace the pacman binary.
         update = ["pacman", "-Syuu", "--noconfirm"]
@@ -449,6 +480,8 @@ def install_windows(*, check: bool = False) -> tuple[Path, dict[str, str]]:
             str(shell), "-lc",
             "pacman -S --needed --noconfirm " + " ".join(WINDOWS_PACKAGES),
         ], env=env, timeout=1800)
+    if not windows_packages_ready(root, env):
+        raise SetupError("Windows UCRT64 package installation incomplete; rerun setup.")
     return pick_runtime([native_python], env=env), env
 
 

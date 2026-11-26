@@ -132,3 +132,21 @@ def test_launcher_handles_corrupt_record_without_spawning_gui():
             assert launch.main([]) == 130
         spawn.assert_not_called()
         recovery.assert_called_once_with(1)
+
+
+
+def test_windows_setup_repair_uses_saved_msys2_root():
+    with tempfile.TemporaryDirectory() as directory:
+        temp = Path(directory)
+        prefix, python = fake_platform(temp, "windows")
+        venv = temp / ".venv"
+        native_runtime.save(
+            venv, target="windows", native_python=python,
+            env={"MSYS2_ROOT": str(prefix)},
+        )
+        with mock.patch.object(bootstrap, "VENV", venv), mock.patch.dict(
+                os.environ, {"MSYS2_ROOT": ""}):
+            assert bootstrap.msys2_root() == prefix
+        with mock.patch.object(bootstrap, "VENV", venv), mock.patch.dict(
+                os.environ, {"MSYS2_ROOT": str(temp / "Explicit repair")}):
+            assert bootstrap.msys2_root() == temp / "Explicit repair"

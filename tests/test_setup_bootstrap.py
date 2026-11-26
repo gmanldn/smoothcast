@@ -224,7 +224,8 @@ class SetupContractTests(unittest.TestCase):
             ("0.12.0rc1", "13.1.0", False),
             ("0.13.dev0", "13.1.0", False),
             ("0.12", "13.1.0", True), ("0.12.0", "13.1.0", True),
-            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", True),
+            ("0.12.post1", "13.1.0", True), ("1.0", "13.1.0", False),
+            ("0.13.9", "13.1.0", True), ("0.14.0", "13.1.0", False),
             ("0.12", "13.0.8", False), ("0.12", "15.0.0", False),
             ("0.12", "13.1.0rc1", False), ("0.12", "14.1.0", True),
         )
@@ -350,10 +351,40 @@ class SetupContractTests(unittest.TestCase):
         self.assertIn("ucrt64", env["PYGI_DLL_PATH"])
         self.assertEqual(env["MSYSTEM"], "UCRT64")
 
+    def test_windows_check_rejects_missing_native_packages_without_installing(self):
+        with (mock.patch.object(bootstrap, "python_ok", return_value=True),
+              mock.patch.object(bootstrap, "works", return_value=True),
+              mock.patch.object(bootstrap, "check_tools", return_value=[]),
+              mock.patch.object(bootstrap, "windows_packages_ready", return_value=False),
+              mock.patch.object(bootstrap, "checked_run") as run,
+              mock.patch.object(bootstrap, "download_verified_msys2") as download):
+            with self.assertRaisesRegex(bootstrap.SetupError, "native packages=True"):
+                bootstrap.install_windows(check=True)
+        run.assert_not_called()
+        download.assert_not_called()
+
+    def test_windows_package_probe_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shell = root / "usr" / "bin" / "bash.exe"
+            shell.parent.mkdir(parents=True)
+            shell.touch()
+            with mock.patch.object(bootstrap.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                self.assertTrue(bootstrap.windows_packages_ready(root, {}))
+                self.assertEqual(run.call_args.args[0][1:4],
+                                 ["--noprofile", "--norc", "-c"])
+                self.assertTrue(run.call_args.args[0][-1].startswith("pacman -Q "))
+                run.return_value.returncode = 1
+                self.assertFalse(bootstrap.windows_packages_ready(root, {}))
+                run.side_effect = subprocess.TimeoutExpired("pacman", 20)
+                self.assertFalse(bootstrap.windows_packages_ready(root, {}))
+
     def test_windows_check_never_downloads_or_installs(self):
         with mock.patch.object(bootstrap, "python_ok", return_value=True), \
              mock.patch.object(bootstrap, "works", return_value=True), \
              mock.patch.object(bootstrap, "check_tools", return_value=[]), \
+             mock.patch.object(bootstrap, "windows_packages_ready", return_value=True), \
              mock.patch.object(bootstrap, "download_verified_msys2") as download, \
              mock.patch.object(bootstrap, "checked_run") as run:
             python, env = bootstrap.install_windows(check=True)
