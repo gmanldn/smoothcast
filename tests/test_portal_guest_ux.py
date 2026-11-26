@@ -828,3 +828,80 @@ def test_front_page_contribution_links_reuse_existing_controls():
     assert page.ids.count("linkInput") == 1
     assert page.ids.count("findInput") == 1
     assert 'aria-labelledby="contributeHeading"' in portal._HTML
+
+
+def test_incoming_transfer_updates_reuse_rows_and_remove_only_finished_items():
+    import shutil
+    import subprocess
+    import pytest
+    if not shutil.which("node"):
+        pytest.skip("Node is needed for the browser contract")
+    source = portal._HTML
+    start = source.index("let roomTransferSignature=null;")
+    end = source.index("function playbackFeedback", start)
+    harness = r"""
+const assert=require("node:assert/strict");
+let made=0, moves=0;
+class Node{
+  constructor(){this.children=[];this.dataset={};this.textContent="";this.hidden=true;this.max=1;this.value=0;}
+  append(...nodes){for(const n of nodes){n.parent=this;this.children.push(n)}}
+  setAttribute(){}
+  insertBefore(n,b){moves++;if(n.parent)n.remove();n.parent=this;this.children.splice(b?this.children.indexOf(b):this.children.length,0,n)}
+  remove(){const p=this.parent;if(p){p.children.splice(p.children.indexOf(this),1);this.parent=null}}
+}
+const nodes=Object.fromEntries(["homeIncomingPanel","homeIncomingRows","queueIncomingPanel","queueIncomingRows"].map(id=>[id,new Node()]));
+const $=id=>nodes[id], document={createElement(){made++;return new Node()}};
+const mediaKindLabel=x=>x,fileUnits=x=>String(x);
+"""
+    scenario = r"""
+const a={id:"a",title:"Film",media_kind:"video",intent:"cast",stage:"receiving",received:0,size:100};
+const b={...a,id:"b",title:"Second",intent:"queue"};
+renderRoomTransfers({room_transfers:[a,b]});
+const list=nodes.homeIncomingRows,first=list.children[0],second=list.children[1],count=made,initialMoves=moves;
+renderRoomTransfers({room_transfers:[{...a,received:60,stage:"buffering"},b]});
+assert.equal(made,count);assert.equal(moves,initialMoves);
+assert.equal(list.children[0],first);assert.equal(first.children[2].value,60);
+assert.equal(list.children[1],second);
+renderRoomTransfers({room_transfers:[b]});
+assert.equal(list.children[0],second);assert.equal(list.children.length,1);
+assert.equal(made,count);
+renderRoomTransfers({room_transfers:[]});
+assert.equal(list.children.length,0);assert.equal(nodes.homeIncomingPanel.hidden,true);
+"""
+    subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
+                   text=True, check=True, timeout=10)
+
+
+def test_upload_sender_progress_is_throttled_but_final_progress_is_immediate():
+    import shutil
+    import subprocess
+    import pytest
+    if not shutil.which("node"):
+        pytest.skip("Node is needed for the browser contract")
+    source = portal._HTML
+    start = source.index("function uploadTransport(")
+    end = source.index("async function uploadRequest(", start)
+    harness = r"""
+const assert=require("node:assert/strict");
+let now=0,xhr,paints=[];
+const performance={now:()=>now},monitorText=(id,text)=>paints.push([id,text]),fileUnits=String;
+class XMLHttpRequest{
+  constructor(){xhr=this;this.upload={};this.status=200;this.responseText="{}"}
+  open(){}setRequestHeader(){}send(){}getResponseHeader(){return null}
+}
+"""
+    scenario = r"""
+(async()=>{
+  const pending=uploadTransport("/chunk",{method:"PUT",headers:{},body:{size:1000},signal:new AbortController().signal});
+  for(let n=0;n<100;n++){now=n;xhr.upload.onprogress({loaded:n,total:1000,lengthComputable:true})}
+  assert.equal(paints.length,1);
+  now=100;xhr.upload.onprogress({loaded:500,total:1000,lengthComputable:true});
+  assert.equal(paints.length,2);
+  now=101;xhr.upload.onprogress({loaded:1000,total:1000,lengthComputable:true});
+  assert.equal(paints.length,4);
+  assert.match(paints[2][1],/not yet confirmed/);assert.match(paints[3][1],/waiting for host storage/);
+  xhr.onload();assert.equal((await pending).ok,true);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run(["node", "-"], input=harness + source[start:end] + scenario,
+                   text=True, check=True, timeout=10)

@@ -2724,15 +2724,31 @@ function renderRoomTransfers(state){
   const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
   for(const [panelId,listId] of [["homeIncomingPanel","homeIncomingRows"],["queueIncomingPanel","queueIncomingRows"]]){
     const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
-    panel.hidden=!rows.length;
-    list.replaceChildren(...rows.map(row=>{
-      const li=document.createElement("li"),title=document.createElement("strong"),detail=document.createElement("p"),meter=document.createElement("progress");
-      title.textContent=row.title||"Incoming media";
-      detail.className="field-hint";
-      detail.textContent=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
-      meter.max=Math.max(1,Number(row.size)||1);meter.value=Math.max(0,Math.min(meter.max,Number(row.received)||0));meter.setAttribute("aria-label","Transfer progress for "+title.textContent);
-      li.append(title,detail,meter);return li;
-    }));
+    if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
+    // Reuse stable rows so chunk ACKs do not rebuild two entire lists,
+    // interrupt assistive technology or disturb the user's scroll position.
+    const previous=new Map(Array.from(list.children,li=>[li.dataset.transferId,li]));
+    rows.forEach((row,index)=>{
+      const id=String(row.id);
+      let li=previous.get(id);
+      if(!li){
+        li=document.createElement("li");li.dataset.transferId=id;
+        const detail=document.createElement("p");detail.className="field-hint";
+        li.append(document.createElement("strong"),detail,document.createElement("progress"));
+      }
+      previous.delete(id);
+      const [title,detail,meter]=li.children;
+      const name=row.title||"Incoming media";
+      const description=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
+      if(detail.textContent!==description)detail.textContent=description;
+      const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
+      if(meter.max!==total)meter.max=total;
+      if(meter.value!==received)meter.value=received;
+      const current=list.children[index]||null;
+      if(current!==li)list.insertBefore(li,current);
+    });
+    for(const li of previous.values())li.remove();
   }
 }
 function playbackFeedback(state){
@@ -3113,11 +3129,17 @@ function uploadTransport(path,options){
       options.signal.removeEventListener("abort",abort);
       callback(value);
     };
+    let lastProgressPaint=-Infinity;
     xhr.upload.onprogress=event=>{
       const total=event.lengthComputable?event.total:options.body.size;
+      const done=event.lengthComputable&&event.loaded===event.total;
+      const now=performance.now();
+      // Sender progress is diagnostic only; bound DOM writes to 10 Hz
+      // without slowing network transfer or suppressing the last event.
+      if(!done&&now-lastProgressPaint<100)return;
+      lastProgressPaint=now;
       monitorText("transferInFlight",fileUnits(event.loaded)+" of "+fileUnits(total)+" (not yet confirmed)");
-      if(event.lengthComputable&&event.loaded===event.total)
-        monitorText("transferOperation","Chunk sent — waiting for host storage");
+      if(done)monitorText("transferOperation","Chunk sent — waiting for host storage");
     };
     xhr.onload=()=>finish(resolve,{
       status:xhr.status,ok:xhr.status>=200&&xhr.status<300,
