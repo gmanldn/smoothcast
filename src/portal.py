@@ -2100,11 +2100,11 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <p id="title" class="big">Nothing playing</p><p id="receiver">Playing on: —</p>
 <progress id="progress" max="1" value="0" aria-label="Playback progress"></progress>
 <div class="row"><span id="elapsed">0:00</span><span id="duration">—</span></div>
-<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking requires a supported receiver and known duration.</p>
+<label for="seek">Playback position</label><p id="seekHelp" class="field-hint">Seeking needs a connected TV or speaker and a known length.</p>
 <input id="seek" type="range" min="0" max="1" value="0" aria-describedby="seekHelp" title="Seek within the current film or track" disabled>
 <div class="actions"><button data-action="play_pause" title="Play or pause for everyone watching this TV or speaker">Play / pause</button><button class="secondary" data-action="stop" title="Stop playing on the TV or speaker">Stop</button><button class="secondary" data-action="previous" title="Go to the previous item for everyone">Previous</button><button class="secondary" data-action="next" title="Skip to the next item for everyone">Next</button></div>
 <div class="actions" role="group" aria-label="Fine playback controls"><button id="seekBackTen" type="button" class="secondary" disabled aria-label="Seek back 10 seconds">−10 s</button><button id="seekForwardTen" type="button" class="secondary" disabled aria-label="Seek forward 10 seconds">+10 s</button><button id="toggleMute" type="button" class="secondary" disabled>Toggle mute</button></div>
-<label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the receiver volume, not this device.</span>
+<label for="volume">TV or speaker volume</label><span class="field-hint" id="volumeHelp" hidden>Changes the volume on the TV or speaker, not this device.</span>
 <input id="volume" type="range" min="0" max="100" value="0" aria-describedby="volumeHelp" title="Change the TV or speaker volume" disabled><p id="volumeText" class="muted">—</p>
 <details class="help"><summary>Explain playback controls</summary><div class="help-body"><p><strong>Play / pause</strong> resumes or pauses the TV or speaker. <strong>Stop</strong> ends its current playback. <strong>Previous</strong> and <strong>Next</strong> change what everybody hears or sees.</p><p><strong>Seek</strong> changes the current position without changing the shared queue. If a control is dimmed, the TV or speaker is not ready or cannot do that.</p></div></details>
 </section>
@@ -2178,7 +2178,7 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 <details class="home-card"><summary>In the room</summary><div id="homePeople" class="participants"></div><div class="quick-links"><a href="#peoplePanel">See everyone</a></div></details>
 </div>
 <details class="help"><summary>How the room works</summary><div class="help-body"><p><strong>1. Pick a device.</strong> SmoothCast plays on the TV or speaker selected above; use the playback controls to move it.</p><p><strong>2. Add media.</strong> Upload a file, paste a YouTube or magnet link, or find something already in the house. New items go to <strong>Up Next</strong> without interrupting what is playing.</p><p><strong>3. Share the room.</strong> Everyone here sees the same queue and can vote, reorder or remove waiting items. See who is here under <strong>In the room</strong>.</p></div></details>
-<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected receiver. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
+<details id="castEntry" class="help"><summary id="castEntryHeading">Casting compatibility</summary><div class="help-body"><p>Use SmoothCast room controls to send media to the selected TV or speaker. Chrome’s own Cast button is not yet supported. If simultaneous Play now requests overlap, the first takes priority; other files go to Up Next.</p></div></details>
 </section>
 
 <p id="errorDash" role="status" aria-live="polite"></p>
