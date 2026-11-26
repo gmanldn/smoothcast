@@ -16,6 +16,12 @@ RETIRED = (
     "external media acquisition", "Not enough space on the SmoothCast host",
     "Upload storage is unavailable", "Upload timed out. Resume from the saved position",
     "Seek position is out of range",
+    "The isolated YouTube search worker is unavailable.",
+    "The isolated Archive search worker is unavailable.",
+    "No trusted YouTube search worker is available.",
+    "The mesh YouTube search worker is unavailable.",
+    "No trusted worker is available.",
+    "No trusted worker is free right now.",
 )
 
 

@@ -167,7 +167,7 @@ class RemoteAcquisition:
                 if verdict == "busy":
                     raise links.LinkError(429, "YouTube search is busy. Try again shortly.")
                 if reply.get("ok") is not True or verdict != "pending":
-                    raise links.LinkError(503, "The mesh YouTube search worker is unavailable.")
+                    raise links.LinkError(503, guest_messages.YOUTUBE_OFF)
                 if self._clock() >= deadline:
                     raise links.LinkError(504, "YouTube search timed out. Try again.")
                 self._sleep(POLL_SECONDS)
@@ -184,7 +184,7 @@ class RemoteAcquisition:
     def acquire(self, source, directory: Path, stage, progress, cancelled) -> Path:
         host, ledger, collector = self.host, self.ledger, self.collector
         if host is None or ledger is None or collector is None:
-            raise links.LinkError(503, "No trusted worker is available.")
+            raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
         job_id = secrets.token_hex(12)  # 24 hex: also a valid telemetry row id
         with self._lock:
             _, selection, outcome = host.submit(
@@ -196,7 +196,7 @@ class RemoteAcquisition:
                     ledger.cancel(job_id)
                     self.store.save(ledger)
             if outcome in {"no_executor", "refused", "duplicate"}:
-                raise links.LinkError(503, "No trusted worker is free right now.")
+                raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             raise links.LinkError(502, "The worker did not confirm the assignment.")
         deadline, shown, last = self._clock() + MAX_WAIT_SECONDS, "", None
         room_job = Path(directory).name  # LinkJobs names each job's directory by its id
