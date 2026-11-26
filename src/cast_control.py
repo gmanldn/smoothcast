@@ -34,6 +34,7 @@ import version
 import error_log
 import desktop_failure_notice
 import error_banner_ui
+import selftest_hold
 from cast_app_lifecycle import AppLifecycleMixin
 import jank_ui
 import interaction_benchmark
@@ -581,8 +582,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
             self.selftest_failed = True
             print(f"SELFTEST FAILED: {exc}", file=sys.stderr)
         finally:
-            # Even a broken probe must exit under the isolated runner's bound.
-            self.quit()
+            selftest_hold.quit_when_released(self)  # bounded; quits at once by default
         return False
 
     def do_open(self, files, n_files, _hint) -> None:

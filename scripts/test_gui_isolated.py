@@ -102,6 +102,7 @@ def discard_scratch(folder: Path | str) -> None:
 def main() -> int:
     demo = sys.argv[1:] == ["--demo"]
     interaction = sys.argv[1:] == ["--interaction"]
+    a11y = sys.argv[1:] == ["--a11y"]  # AT-SPI tree walk of the real window (#449)
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
               file=sys.stderr)
@@ -129,6 +130,10 @@ def main() -> int:
             "-screen 0 1280x800x24 -nolisten tcp",
             sys.executable, str(ROOT / "src" / "cast_control.py"), "--self-test",
         ]
+        if a11y:  # the walker starts its own private session bus; never the user's
+            command[-3:] = [sys.executable, str(ROOT / "scripts" / "gui_a11y_walk.py")]
+            env.pop("NO_AT_BRIDGE", None)
+            env["GTK_A11Y"] = "atspi"
         if demo:  # demo mode end to end inside the disposable display (#454)
             import site
             env.setdefault("PYTHONUSERBASE", site.getuserbase())
