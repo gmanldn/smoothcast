@@ -2656,12 +2656,15 @@ function renderLinkJobs(state){
   const list=$("linkJobs");if(!list||typeof list.replaceChildren!=="function")return;
   const jobs=Array.isArray(state.link_jobs)?state.link_jobs.slice(-24):[];
   const panel=$("linkJobPanel");if(panel)panel.hidden=!jobs.length;
-  if(jobs.some(job=>["pending","resolving","downloading","verifying","queueing"].includes(job.stage)))openLinkAcquisition();
   const signature=JSON.stringify(jobs);
   if(signature===linkSignature)return;linkSignature=signature;
   const stages={pending:"Waiting to start",resolving:"Resolving source / torrent metadata",downloading:"Downloading",verifying:"Checking completed media",queueing:"Submitting to Up Next",ready:"Added to Up Next",failed:"Failed",cancelled:"Cancelled",delivery_uncertain:"Queue acceptance uncertain — check Up Next"};
   // Progress-only snapshots must not destroy a focused or pending action.
   const previous=new Map(Array.from(list.children,row=>[row.dataset.linkJobId,row]));
+  // Open for a newly active job, not every progress snapshot. Respect a
+  // guest who closes the disclosure while a download continues.
+  const active=stage=>["pending","resolving","downloading","verifying","queueing"].includes(stage);
+  if(jobs.some(job=>active(job.stage)&&!active(previous.get(String(job.id))?.dataset.linkJobStage)))openLinkAcquisition();
   jobs.slice().reverse().forEach((job,index)=>{
     const id=String(job.id);
     let row=previous.get(id);
@@ -2686,6 +2689,7 @@ function renderLinkJobs(state){
       row.append(heading,detail,meter,stats,error,action("cancel","Cancellation requested"),action("retry","Retry accepted"));
     }
     previous.delete(id);
+    row.dataset.linkJobStage=job.stage;
     const [heading,detail,meter,stats,error,cancel,retry]=row.children;
     const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};
     setText(heading,job.title||"Download");
