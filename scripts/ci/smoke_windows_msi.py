@@ -61,7 +61,7 @@ def cli_check(cli: Path, args: list[str], expected: str, env: dict[str, str],
     result = subprocess.run([str(cli), *args], cwd=cwd, env=env,
                             stdin=subprocess.DEVNULL, capture_output=True,
                             text=True, errors="replace", timeout=60, check=False)
-    if result.returncode or expected not in result.stdout:
+    if result.returncode or (expected and result.stdout.strip() != expected):
         raise InstallerError(f"installed CLI {args[0]} failed ({result.returncode})")
 
 
