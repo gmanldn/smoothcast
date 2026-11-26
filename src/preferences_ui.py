@@ -14,10 +14,11 @@ import preference_choices
 import picture_adjustments
 from preferences_picture_ui import PicturePreferencesMixin
 from preferences_tracks_ui import TrackPreferencesMixin
+from preferences_update_ui import UpdatePreferencesMixin
 from cast_widgets import save_config
 
 
-class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.PreferencesWindow):
+class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, UpdatePreferencesMixin, Adw.PreferencesWindow):
     def __init__(self, owner) -> None:
         super().__init__(transient_for=owner, modal=True)
         self.owner = owner
@@ -201,54 +202,13 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         self._choice(updates, "update_channel", "Update channel",
                      "Develop (default) receives frequent tested builds; Main follows releases. "
                      "Only read-only checks work so far; installing safely in the background is pending.")
-        self.update_status_row = Adw.ActionRow(title="Current version", subtitle="")
-        self.update_status_row.set_subtitle_lines(0)
-        self.update_check_button = Gtk.Button(label="Check now", valign=Gtk.Align.CENTER)
-        self.update_check_button.set_tooltip_text(
-            "Contacts the update source once, read-only. Nothing is installed or restarted.")
-        self.update_check_button.connect("clicked", lambda _b: self._check_updates_now())
-        self.update_status_row.add_suffix(self.update_check_button)
-        updates.add(self.update_status_row)
+        self._build_update_row(updates)
         self._switch(updates, "check_release_updates", "Check for releases on startup",
                      "Off by default. Uses the Internet only when enabled, after "
                      "the window appears; a check never changes the running code.")
         self._switch(updates, "release_check_verify", "Require a trusted signature",
                      "On by default. Updates without a signature trusted by "
                      "your Git keyring are not offered as safe to install.")
-
-    def _check_updates_now(self) -> None:
-        import threading
-        from pathlib import Path
-        import update_facts
-        self.update_check_button.set_sensitive(False)
-        self.update_status_row.set_subtitle("Checking for updates… playback is not interrupted.")
-        cfg, root = dict(self.owner.cfg), Path(__file__).resolve().parent.parent
-
-        def work() -> None:
-            text = update_facts.check_now(cfg, root)
-            GLib.idle_add(done, text)
-
-        def done(text: str) -> bool:
-            self.update_status_row.set_subtitle(text)
-            self.update_check_button.set_sensitive(True)
-            return False
-
-        threading.Thread(target=work, daemon=True, name="update-check").start()
-
-    def _sync_update_status(self, cfg: dict) -> None:
-        """Offline, read-only: shows the running build and channel, never a check result."""
-        try:
-            from pathlib import Path
-            import update_facts
-            import update_status
-            facts = update_facts.facts_for_preferences(cfg, root=Path(__file__).resolve().parent.parent)
-            status = update_status.describe(facts)
-            self.update_status_row.set_title(status.running_line)
-            self.update_status_row.set_subtitle(
-                f"{status.headline}. {status.detail} {status.channel_line}." if status.state != "current"
-                else status.channel_line + ". Checking is manual until you enable it below.")
-        except Exception:
-            self.update_status_row.set_subtitle("Version details are unavailable.")
 
     def sync_from_owner(self) -> None:
         """Read live values whenever shown or after an action; never emit edits."""

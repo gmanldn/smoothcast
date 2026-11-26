@@ -230,6 +230,7 @@ py-modules = [
     "preferences_picture_ui",
     "preferences_tracks_ui",
     "preferences_ui",
+    "preferences_update_ui",
     "preflight",
     "process_identity",
     "process_priority",

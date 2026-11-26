@@ -66,3 +66,10 @@ def check_now(cfg: dict, root) -> str:
     except Exception:
         return "The update check failed. Check your network connection and try again."
     return notice or NOT_FOUND
+
+
+def start_check(cfg: dict, root, on_done) -> None:
+    """Run ``check_now`` on a daemon thread; ``on_done(text)`` is called from it."""
+    import threading
+    threading.Thread(target=lambda: on_done(check_now(cfg, root)),
+                     daemon=True, name="update-check").start()
