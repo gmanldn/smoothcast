@@ -3492,6 +3492,14 @@ function updateUploadControls(){
   $("cancelUpload").disabled=cancelUpload;
 }
 let batchCastTarget=null,quickCastIntent=false;
+function recoverUnstartedCast(error){
+  // A target fence can fail after confirmation but before the first upload
+  // is created. Retain the file input, discard only the obsolete cast intent.
+  if(error.status!==409||error.code==="client_reload_required"||pendingUpload||
+      !batchFiles||batchIndex!==0||batchQueueOnly||!batchCastTarget)return false;
+  batchFiles=null;batchIndex=0;batchAdded=0;batchTotal=0;batchCastTarget=null;
+  return true;
+}
 $("uploadCastNow").addEventListener("click",()=>{
   if(uploading||pendingUpload||batchFiles){location.hash="#uploadCard";showError("uploadStatus","Finish or cancel your existing transfer first.");return}
   quickCastIntent=true;
@@ -3687,6 +3695,12 @@ $("uploadButton").addEventListener("click",async()=>{
       showError("uploadStatus","Paused safely. Select Resume to carry on from where it stopped.");
     }else if(cancelUpload){
       try{await discardUpload()}catch(cancelError){showError("uploadStatus",cancelError.message)}
+    }else if(recoverUnstartedCast(error)){
+      monitorText("transferDelivery","Destination needs confirmation");
+      transferView("choose");
+      showError("uploadStatus",error.message+" Your files are still selected. Select Upload and cast to confirm again, or Add to Up Next.");
+    }else if(error.status===409&&error.code!=="client_reload_required"&&!pendingUpload&&!batchFiles){
+      showError("uploadStatus",error.message+" Retry when a receiver is available, or select Add to Up Next.");
     }else {
       if(pendingUpload){
         const received=pendingUpload.received,total=pendingUpload.size,complete=received===total;

@@ -196,3 +196,28 @@ async function run(storedRecords){
         ["node", "-e", js], capture_output=True, text=True, timeout=10, check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js unavailable")
+def test_stale_cast_confirmation_keeps_selection_and_requires_reconfirmation():
+    start = "function recoverUnstartedCast(error){"
+    end = '$("uploadCastNow").addEventListener'
+    assert SOURCE.count(start) == 1
+    helper = start + SOURCE.split(start, 1)[1].split(end, 1)[0]
+    scenario = r"""
+let pendingUpload=null,batchFiles=[{name:"film.mp4"}],batchIndex=0,batchAdded=0,batchTotal=1,batchCastTarget="old",batchQueueOnly=false;
+const selected=batchFiles;
+if(!recoverUnstartedCast({status:409})||batchFiles!==null||batchCastTarget!==null||batchTotal!==0||selected[0].name!=="film.mp4")throw Error("stale confirmation retained");
+batchFiles=selected;batchCastTarget="new";batchTotal=1;
+for(const err of [{status:503},{status:409,code:"client_reload_required"}])if(recoverUnstartedCast(err))throw Error("unrelated failure reset");
+pendingUpload={id:"active"};
+if(recoverUnstartedCast({status:409})||batchFiles!==selected||batchCastTarget!=="new")throw Error("active upload lost");
+pendingUpload=null;batchIndex=1;
+if(recoverUnstartedCast({status:409}))throw Error("partially completed batch reset");
+batchIndex=0;batchQueueOnly=true;
+if(recoverUnstartedCast({status:409}))throw Error("queue-only intent reset");
+"""
+    result = subprocess.run(["node", "-e", helper + scenario], capture_output=True,
+                            text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "else if(recoverUnstartedCast(error))" in SOURCE
