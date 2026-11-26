@@ -100,8 +100,10 @@ def test_room_queue_projects_media_kind_and_fresh_duration(tmp_path):
 
 
 def test_home_queue_refreshes_on_duration_and_kind_changes():
-    assert "item.contributor,item.media_kind,item.duration" in portal._HTML
-    assert "mediaKindLabel(item.media_kind),item.duration?clock(item.duration)" in portal._HTML
+    assert ("item.duration,item.votes,item.voted,item.contributor,"
+            "item.source_kind,item.media_kind") in portal._HTML
+    assert 'mediaKindLabel(item.media_kind)?" · "+mediaKindLabel(item.media_kind):""' in portal._HTML
+    assert 'item.duration?" · "+clock(item.duration):""' in portal._HTML
 
 
 def test_completed_guest_upload_joins_queue_during_cast_preparation():
