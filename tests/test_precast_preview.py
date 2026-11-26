@@ -1,6 +1,8 @@
 """Source-level guards for local pre-cast film inspection (GTK-free)."""
 from __future__ import annotations
 
+import ast
+from types import SimpleNamespace
 import unittest
 
 from gui_source import main_window_methods
@@ -68,6 +70,28 @@ class PreCastPreviewTests(unittest.TestCase):
         self.assertIn("queue_metadata.media_title(path, self.media, display)", selection)
         self.assertIn("self.np_title.set_text(title)", selection)
         self.assertNotIn("pretty_title(", selection)
+
+    def test_async_preview_callbacks_cannot_overwrite_active_playback(self):
+        tree = ast.parse(METHODS["set_selection"])
+        for name in ("done", "failed"):
+            callback = next(node for node in ast.walk(tree)
+                            if isinstance(node, ast.FunctionDef) and node.name == name)
+            guard = next(node.test for node in callback.body
+                         if isinstance(node, ast.If)
+                         and "generation" in ast.unparse(node.test))
+            condition = compile(ast.Expression(guard), "<preview guard>", "eval")
+            for overrides, expected in (
+                ({}, True), ({"busy": True}, False), ({"external": True}, False),
+                ({"session": object()}, False), ({"now_playing": "other"}, False),
+                ({"_preview_generation": 2}, False), ({"_preview_path": "other"}, False),
+            ):
+                with self.subTest(callback=name, overrides=overrides):
+                    state = dict(_preview_generation=1, now_playing=None, session=None,
+                                 busy=False, external=False, _preview_path="film")
+                    state.update(overrides)
+                    context = dict(self=SimpleNamespace(**state), generation=1,
+                                   path="film", path_result="film")
+                    self.assertEqual(eval(condition, context), expected)
 
     def test_local_preview_can_work_with_offline_cast_device(self):
         # The desktop and the web share one state rule (action_state); the pure

@@ -198,7 +198,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
             self.queue_durations[path_result] = media.duration
             if (generation == self._preview_generation
                     and self.now_playing is None and self.session is None
-                    and not self.external and self._preview_path == path_result):
+                    and not self.busy and not self.external
+                    and self._preview_path == path_result):
                 self.media = media
                 self._update_embedded_choices(media)
                 self._update_audio_choices(media)
@@ -218,7 +219,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
         def failed(message):
             if (generation == self._preview_generation
-                    and self.session is None and self._preview_path == path):
+                    and self.now_playing is None and self.session is None
+                    and not self.busy and not self.external and self._preview_path == path):
                 self.np_meta.set_text(f"Cannot inspect media: {message}")
                 self.preview.set_video(queue_metadata.media_title(path, display_name=display), "Media inspection failed")
                 self.toast(f"Cannot inspect {pathlib.Path(path).name}: {message}", error=True)
