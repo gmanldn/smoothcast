@@ -207,7 +207,7 @@ class FrozenRuntimeTests(unittest.TestCase):
                 for line in yaml.splitlines() if "- uses:" in line]
         self.assertTrue(refs)
         for ref in refs:
-            self.assertRegex(ref, r"^[\w./-]+@[a-f0-9]{40} # v\d+$")
+            self.assertRegex(ref, r"^[\w./-]+@[a-f0-9]{40} # v\d+(?:\.\d+){0,2}$")
 
     def test_package_workflow_smokes_frozen_cli_off_the_developer_path(self):
         # #528: the payload manifest gate is blocking, and the frozen CLI is
