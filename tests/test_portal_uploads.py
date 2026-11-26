@@ -440,3 +440,22 @@ def test_cancelled_cast_reservation_releases_lane(tmp_path):
     third = uploads.create("c", "third.mkv", 6)
     assert not third["queue_only"]
     uploads.close()
+
+@pytest.mark.parametrize("accepted", [None, True])
+def test_cancel_cannot_remove_progressive_cast_source(tmp_path, accepted):
+    uploads = manager(tmp_path, early_cast_min_bytes=1)
+    created = uploads.create("owner", "movie.mkv", 6)
+    upload_id = created["id"]
+    first = uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    assert first["ready_to_cast"]
+    if accepted is not None:
+        uploads.mark_early_cast(upload_id, accepted=accepted)
+    path = Path(first["cast_path"])
+    with pytest.raises(portal_uploads.UploadError, match="Casting has already been requested") as exc:
+        uploads.cancel("owner", upload_id)
+    assert exc.value.status == 409
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.mark_early_cast(upload_id, accepted=False)
+    uploads.cancel("owner", upload_id)
+    assert not path.exists()

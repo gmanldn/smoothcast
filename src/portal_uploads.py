@@ -617,7 +617,8 @@ class UploadManager:
         with upload.lock:
             if upload.cancelled:
                 raise UploadError(404, "Upload not found. Choose the file again.", code="upload.not_found")
-            if upload.cast_submitted or upload.dispatch_pending:
+            if (upload.cast_submitted or upload.dispatch_pending
+                    or upload.early_cast in {"requested", "active"}):
                 raise UploadError(409, "Casting has already been requested for this upload")
             try:
                 (upload.complete_path or upload.partial_path).unlink()
