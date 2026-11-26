@@ -50,7 +50,8 @@ class JankWatchdog:
                  clock: Callable[[], float] = time.monotonic,
                  capture_stack: Callable[[], Iterable[str]] | None = None,
                  scrub: Callable[..., tuple[str, ...]] = scrub_frames,
-                 home: str | None = None) -> None:
+                 home: str | None = None,
+                 on_stall: Callable[[Stall], None] | None = None) -> None:
         self.threshold_ms = float(threshold_ms)
         self.rate_limit_s = float(rate_limit_s)
         self.max_samples = max(1, int(max_samples))
@@ -58,6 +59,7 @@ class JankWatchdog:
         self._capture_stack = capture_stack
         self._scrub = scrub
         self._home = home
+        self._on_stall = on_stall
         self._last_beat = clock()
         self._last_stall_at: float | None = None
         self._count = 0
@@ -84,6 +86,12 @@ class JankWatchdog:
         self._samples.append(stall)
         del self._samples[:-self.max_samples]
         del self._lags[:-self.max_samples]
+        if self._on_stall is not None:
+            try:
+                self._on_stall(stall)
+            except Exception:
+                # A counter hook must never break the loop either.
+                pass
         return stall
 
     def reset(self) -> None:
@@ -110,6 +118,10 @@ class JankWatchdog:
         return {"stalls": self._count, "p99_ms": round(self.p99_ms, 1),
                 "last_lag_ms": round(last, 1), "threshold_ms": self.threshold_ms}
 
+    def summary(self) -> dict[str, float | int | bool]:
+        """Diagnostics view of this watchdog."""
+        return {"enabled": True, **self.stats()}
+
     def _capture(self, moment: float) -> tuple[str, ...]:
         if self._capture_stack is None:
             return ()
@@ -131,3 +143,26 @@ def _percentile(values: list[float], fraction: float) -> float:
     ordered = sorted(values)
     index = max(0, min(len(ordered) - 1, int(fraction * len(ordered) + 0.9999) - 1))
     return ordered[index]
+
+
+_CURRENT: "JankWatchdog | None" = None
+
+
+def install(watchdog: "JankWatchdog | None") -> "JankWatchdog | None":
+    """Make *watchdog* the process-wide instance diagnostics report on."""
+    global _CURRENT
+    previous, _CURRENT = _CURRENT, watchdog
+    return previous
+
+
+def current() -> "JankWatchdog | None":
+    return _CURRENT
+
+
+def diagnostics_summary() -> dict[str, float | int | bool]:
+    """Jank snapshot for the diagnostics bundle; disabled when unwired."""
+    watchdog = _CURRENT
+    if watchdog is None:
+        return {"enabled": False, "stalls": 0, "p99_ms": 0.0, "last_lag_ms": 0.0,
+                "threshold_ms": DEFAULT_THRESHOLD_MS}
+    return watchdog.summary()

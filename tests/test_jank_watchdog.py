@@ -9,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+import jank_watchdog  # noqa: E402
 from jank_watchdog import JankWatchdog, scrub_frames  # noqa: E402
 
 
@@ -94,3 +95,45 @@ def test_importing_the_detector_pulls_in_no_gtk():
          "assert 'gi' not in sys.modules, sorted(sys.modules)" % str(ROOT / "src")],
         capture_output=True, text=True, timeout=30)
     assert probe.returncode == 0, probe.stderr
+
+
+def test_install_registry_round_trip():
+    dog = JankWatchdog()
+    assert jank_watchdog.current() is None
+    try:
+        assert jank_watchdog.install(dog) is None
+        assert jank_watchdog.current() is dog
+        assert jank_watchdog.install(None) is dog
+        assert jank_watchdog.current() is None
+    finally:
+        jank_watchdog.install(None)
+
+
+def test_on_stall_callback_runs_and_cannot_break_poll():
+    seen = []
+
+    def record(stall):
+        seen.append(stall)
+        raise RuntimeError("counter is broken")
+
+    dog = JankWatchdog(threshold_ms=100.0, on_stall=record)
+    dog.beat(0.0)
+    stall = dog.poll(0.400)
+    assert stall is not None and seen == [stall] and dog.count == 1
+
+
+def test_diagnostics_summary_is_disabled_when_unwired():
+    jank_watchdog.install(None)
+    assert jank_watchdog.diagnostics_summary() == {
+        "enabled": False, "stalls": 0, "p99_ms": 0.0, "last_lag_ms": 0.0,
+        "threshold_ms": jank_watchdog.DEFAULT_THRESHOLD_MS}
+    dog = JankWatchdog(threshold_ms=100.0)
+    dog.beat(0.0)
+    dog.poll(0.300)
+    try:
+        jank_watchdog.install(dog)
+        assert jank_watchdog.diagnostics_summary() == {
+            "enabled": True, "stalls": 1, "p99_ms": 300.0, "last_lag_ms": 300.0,
+            "threshold_ms": 100.0}
+    finally:
+        jank_watchdog.install(None)
