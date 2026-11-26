@@ -116,6 +116,7 @@ class Node {
 const elements=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel","youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(id=>[id,new Node()]));
 const $=id=>elements[id],document={createElement:()=>new Node()};
 let youtubeSearchBusy=false,linkCapabilities={youtube:true},linkStorageAvailable=true;
+let csrf="csrf-token";
 const clock=String,updateLinkControls=()=>{},refresh=()=>{};
 const requests=[];let finishAdd;
 const post=(url,body)=>{

@@ -36,7 +36,7 @@ def test_upload_journey_and_queue_accessibility():
     assert "Cross-node routing will appear only when" in portal._HTML
     assert 'if(pauseRequested)throw Error("Transfer paused")' in portal._HTML
     assert 'state=await uploadRequest("GET","/api/uploads/"+pendingUpload.id)' in portal._HTML
-    assert 'body.queue_revision=queueRevision' in portal._HTML
+    assert 'queue_revision:queueRevision' in portal._HTML
     assert 'body.queue_command_id=' in portal._HTML
     assert "Queue action was not applied:" in portal._HTML
     assert "Play requested; waiting for the TV or speaker to start." in portal._HTML
