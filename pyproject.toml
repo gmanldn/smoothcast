@@ -279,9 +279,6 @@ py-modules = [
 [tool.setuptools.package-data]
 smoothcast_assets = ["local.cast-control.png"]
 
-[tool.setuptools.dynamic]
-version = {attr = "version.__version__"}
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
