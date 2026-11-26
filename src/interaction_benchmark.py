@@ -74,11 +74,17 @@ class InteractionBenchmarkMixin:
     def _interaction_actions(self, window: object) -> dict[str, object]:
         actions = {"play_pause": window.toggle_play,
                    "seek": lambda: window.seek_to(30.0),
-                   "queue_rebuild_1000": window._rebuild_queue}
+                   "queue_rebuild_1000": window._rebuild_queue,
+                   "queue_remove_1000": lambda: self._remove_one(window)}
         volume = getattr(window, "volume_step", None) or getattr(window, "_volume_step", None)
         if callable(volume):
             actions["volume"] = lambda: volume(1)
         return actions
+
+    def _remove_one(self, window: object) -> None:
+        """One removal from a full queue; today it rebuilds every row (#462)."""
+        self._seed_interaction_queue(window)
+        window._remove_queue(0)
 
     def _spin_frame(self, window: object) -> None:
         """Acknowledge the interaction: drain the loop, repaint included.

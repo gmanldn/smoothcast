@@ -30,6 +30,7 @@ SLO_MS = {
     "seek": 16.0,
     "volume": 16.0,
     "queue_rebuild_1000": 150.0,
+    "queue_remove_1000": 16.0,
     "stall_worst": 250.0,
 }
 TOLERANCE = 0.20  # allowed p95 regression against the baseline
