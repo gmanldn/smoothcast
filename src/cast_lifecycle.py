@@ -7,7 +7,6 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gtk
 import pathlib
 
 import threading
@@ -21,7 +20,7 @@ import screenshot
 
 
 from cast_lifecycle_actions import LifecycleActionsMixin
-from cast_widgets import save_config, flush_config, fmt_time
+from cast_widgets import save_config, flush_config, fmt_time, Async
 
 
 class LifecycleMixin(LifecycleActionsMixin):

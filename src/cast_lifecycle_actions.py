@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import shortcut_map
 import version
-from cast_widgets import APP_NAME, ICON_NAME, Async
+from cast_widgets import APP_NAME, ICON_NAME
 from gi.repository import Adw, Gtk
 
 
