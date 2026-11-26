@@ -132,6 +132,28 @@ on an SLO breach or a p95 more than 20% over the baseline (never tighter than
 `python3 scripts/control_latency_benchmark.py --check docs/control-latency-baseline.json`;
 refresh the baseline after an intended change with `--write-baseline`.
 
+## Native interaction latency (#627)
+
+How quickly the desktop itself answers: the milliseconds between a synthetic
+interaction in the isolated Xvfb window and the frame that acknowledges it, plus
+the worst main-loop stall the jank detector (#442) saw in the same run. The load
+is the worst realistic case: a 1,000-item queue and a simulated 32-phone poll
+load. SLOs: play/pause, seek and volume p95 under 16 ms; the 1,000-item queue
+rebuild p95 under 150 ms; no main-loop stall over 250 ms.
+
+The budget and its baseline check live in
+`scripts/interaction_latency_benchmark.py`. Check with
+`python3 scripts/interaction_latency_benchmark.py --samples <samples.json> --check docs/interaction-latency-baseline.json`,
+and refresh the baseline after an intended change with `--write-baseline`. A p95
+more than 20% over the baseline (never tighter than +1 ms, which is timer noise)
+fails. Samples come **only** from the authorised isolated-Xvfb job under
+`scripts/test_gui_isolated.py`'s environment; never measure against the real
+desktop or a real receiver.
+
+Status: the budget script, the SLOs and their tests are in place (#678). The
+Xvfb harness that drives the interactions and writes the samples, the committed
+baseline and the results table land with the rest of #627.
+
 ## Cross-surface freshness (#629)
 
 How quickly an action on one surface shows on the other, measured against the
