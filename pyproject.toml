@@ -251,6 +251,7 @@ py-modules = [
     "startup_cleanup",
     "startup_timeline",
     "state_labels",
+    "state_parity",
     "stream_route",
     "stream_watchdog",
     "streamer",
