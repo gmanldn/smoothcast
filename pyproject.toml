@@ -396,6 +396,7 @@ files = [
     "src/search_query.py",
     "src/server.py",
     "src/slider_accessibility.py",
+    "src/state_parity.py",
     "src/subtitle_search.py",
     "src/update_status.py",
     "src/utils.py",
