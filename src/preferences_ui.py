@@ -219,7 +219,9 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
             facts = update_status.facts_for_preferences(cfg, root=Path(__file__).resolve().parent.parent)
             status = update_status.describe(facts)
             self.update_status_row.set_title(status.running_line)
-            self.update_status_row.set_subtitle(status.channel_line + ". Checking is manual until you enable it below.")
+            self.update_status_row.set_subtitle(
+                f"{status.headline}. {status.detail} {status.channel_line}." if status.state != "current"
+                else status.channel_line + ". Checking is manual until you enable it below.")
         except Exception:
             self.update_status_row.set_subtitle("Version details are unavailable.")
 

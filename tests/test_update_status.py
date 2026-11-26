@@ -223,3 +223,18 @@ def test_preferences_facts_are_offline_and_never_claim_a_phase(tmp_path):
     status = us.describe(facts)
     assert "main" in status.running_line and not status.running_new_version
     assert facts.playing is False
+
+
+def test_managed_install_facts_show_staged_reference_and_corrupt_records_fail_quiet(tmp_path):
+    old, new = "a" * 40, "b" * 40
+    install = tmp_path / "inst"
+    app = install / "releases" / old
+    app.mkdir(parents=True)
+    (install / "active.json").write_text(
+        '{"current": "%s", "previous": "%s", "seq": 2}' % (new, old))
+    facts = us.facts_for_preferences({"check_release_updates": True}, root=app)
+    assert (facts.active_commit, facts.previous_commit) == (new, old)
+    (install / "active.json").write_text("{not json")
+    facts = us.facts_for_preferences({}, root=app)
+    assert facts.active_commit is None and facts.journal_state is None
+    assert us.facts_for_preferences({}, root=tmp_path).active_commit is None  # checkout: not managed
