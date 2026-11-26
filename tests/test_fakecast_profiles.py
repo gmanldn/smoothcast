@@ -145,6 +145,9 @@ def test_generic_profile_does_not_apply_model_limits():
 
 
 def test_standalone_cli_accepts_the_documented_chromecast_gen2_profile():
+    if subprocess.run([sys.executable, "-c", "import pychromecast"],
+                      capture_output=True).returncode != 0:
+        pytest.skip("the fakecast profiles need pychromecast in this interpreter")
     result = subprocess.run(
         [sys.executable, "-m", "fakecast", "--profile", "chromecast-gen2", "--help"],
         capture_output=True,

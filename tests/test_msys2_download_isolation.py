@@ -136,6 +136,7 @@ class IsolatedInstallerDownloadTests(unittest.TestCase):
                  mock.patch.object(bootstrap, "python_ok", return_value=True), \
                  mock.patch.object(bootstrap, "works", return_value=True), \
                  mock.patch.object(bootstrap, "check_tools", return_value=[]), \
+                 mock.patch.object(bootstrap, "windows_packages_ready", return_value=True), \
                  mock.patch.object(bootstrap, "download_verified_msys2",
                                    return_value=staged), \
                  mock.patch.object(bootstrap, "checked_run", side_effect=installed) as execute, \
