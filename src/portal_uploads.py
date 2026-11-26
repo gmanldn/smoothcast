@@ -685,5 +685,8 @@ class UploadManager:
                         and upload.early_cast not in {"requested", "active"}):
                     try:
                         upload.partial_path.unlink()
-                    except FileNotFoundError:
-                        pass
+                    except OSError:
+                        # A locked or inaccessible partial must not prevent
+                        # cleanup of the remaining transfers. Startup expiry
+                        # can reclaim it once the filesystem permits removal.
+                        continue

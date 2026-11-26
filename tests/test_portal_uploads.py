@@ -556,3 +556,23 @@ def test_progressive_upload_cannot_switch_to_queue_during_finalize(tmp_path, acc
         path, _, dispatch = uploads.finalize("owner", upload_id, queue_only=True)
     assert path == source and dispatch
     uploads.close()
+
+
+def test_close_continues_after_inaccessible_partial(tmp_path):
+    uploads = manager(tmp_path)
+    first = uploads.create("owner", "locked.mp4", 1, queue_only=True)
+    second = uploads.create("owner", "other.mp4", 1, queue_only=True)
+    blocked = uploads.root / f"{first['id']}.partial"
+    other = uploads.root / f"{second['id']}.partial"
+    unlink = Path.unlink
+
+    def selective_unlink(path, *args, **kwargs):
+        if path == blocked:
+            raise PermissionError("file locked")
+        return unlink(path, *args, **kwargs)
+
+    with patch.object(Path, "unlink", selective_unlink):
+        uploads.close()
+    assert blocked.exists()
+    assert not other.exists()
+    assert uploads.snapshot() == []
