@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -53,4 +54,86 @@ def test_queue_320px_no_overflow_named_buttons_and_keyboard_move():
             assert not errors, errors
         finally:
             context.close()
+            browser.close()
+
+
+class _RealQueueRig(PortalRig):
+    """Portal over the production queue mixin: real ids, revisions and 409 fencing."""
+
+    def __init__(self, paths):
+        from cast_portal_queue import PortalQueueMixin
+
+        class Host(PortalQueueMixin):
+            queue_durations: dict = {}
+            now_playing = None
+            session = None
+            busy = False
+            selected_index = None
+
+            def _rebuild_queue(self):
+                pass
+
+        self.host_obj = host = Host()
+        host.queue = list(paths)
+        self.calls = []
+
+        def dispatch(action, payload):
+            self.calls.append((action, payload))
+            if action == "status":
+                rows = host._portal_queue_status()
+                return {"title": "", "state": "STOPPED", "queue": rows,
+                        "queue_revision": host._portal_queue_revision}
+            return host._portal_queue_action(action, payload)
+
+        self.queue = []
+        import threading
+        import time
+        self.server = portal._PortalHTTPServer(("127.0.0.1", 0), "1234", dispatch,
+                                               uploads=None, clock=time.monotonic)
+        self.server.pin_required = False
+        # The desktop publishes a snapshot that SSE watches; mirror that seam.
+        self.server.status_peek = lambda: (host._portal_queue_revision if hasattr(host, "_portal_queue_revision") else 0,
+                                           {"queue": host._portal_queue_status(), "queue_revision":
+                                            getattr(host, "_portal_queue_revision", 0), "state": "STOPPED"})
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02},
+                         daemon=True).start()
+
+
+@pytest.mark.skipif(not OPT_IN, reason="explicit opt-in: installed Playwright Chromium")
+def test_two_browsers_see_each_others_moves_and_stale_move_recovers():
+    from playwright.sync_api import sync_playwright
+
+    rig = _RealQueueRig([f"/private/song{i}.mp3" for i in range(5)])
+    origin = f"http://{rig.host}"
+
+    def titles(page):
+        return page.evaluate("[...document.querySelectorAll('#queue .queue-item')].map(e=>e.querySelector('.queue-title,strong,span').textContent.trim())")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--disable-background-networking"])
+        pages = []
+        errors = []
+        for name in ("Ann", "Ben"):
+            context = browser.new_context(viewport={"width": 390, "height": 800}, service_workers="block")
+            page = context.new_page()
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill(name)
+            page.locator("#loginForm button").click()
+            page.locator("#queue .queue-item").nth(4).wait_for()
+            pages.append(page)
+        ann, ben = pages
+        try:
+            before = titles(ben)
+            started = time.monotonic()
+            ann.locator("#queue .queue-item").nth(1).get_by_role("button", name="later in Up Next").first.click()
+            ben.wait_for_function(
+                "(first) => document.querySelector('#queue .queue-item').parentElement.children[1].textContent !== first",
+                arg=ben.locator("#queue .queue-item").nth(1).text_content(), timeout=8000)
+            after_ben = titles(ben)
+            assert time.monotonic() - started < 1.0, "owner budget is 0.5s p95; 1s guards flakes"
+            assert after_ben != before and after_ben == titles(ann), (before, after_ben, titles(ann))
+            assert not errors, errors
+        finally:
             browser.close()
