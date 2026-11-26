@@ -78,3 +78,17 @@ def test_qr_emits_a_square_image_for_the_current_endpoint():
     width, height = unpack(">II", first[16:24])
     assert width == height and 100 <= width <= 180
     assert first != second
+
+
+@pytest.mark.parametrize("url", [
+    "http://999.168.1.2:8080/",
+    "http://192.168.001.2:8080/",
+    "http://192.168.1.2:0/",
+    "http://192.168.1.2:65536/",
+    "http://smoothcast.local:0/",
+    "http://smoothcast-2.local:99999/",
+])
+def test_qr_rejects_invalid_address_or_port(url):
+    assert not portal_join.is_join_url(url)
+    with pytest.raises(ValueError):
+        qr_png(url)
