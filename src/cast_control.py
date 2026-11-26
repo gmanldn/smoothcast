@@ -34,6 +34,7 @@ import version
 import error_log
 import desktop_failure_notice
 import error_banner_ui
+from cast_app_lifecycle import AppLifecycleMixin
 import local_playback
 import demo_mode
 import startup_cleanup
@@ -153,7 +154,7 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._refresh_controls()
 
 
-class CastControlApp(Adw.Application):
+class CastControlApp(AppLifecycleMixin, Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
         if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
             raise RuntimeError("Refusing a GTK application inside pytest")
@@ -355,20 +356,6 @@ class CastControlApp(Adw.Application):
             save_config(window.cfg)
             window._apply_color_scheme()
 
-    def _failure_notice_available(self) -> bool:
-        window = self.window
-        return bool(window is not None and not window._closing and not self.fatal
-                    and hasattr(window, "toasts"))
-
-    def _present_unexpected_failure(self, failure) -> None:
-        window = self.window
-        if not self._failure_notice_available() or window is None:
-            return
-        error_banner_ui.present(window, failure, timeout=8)
-
-    def _guard_glib(self, callback):
-        bridge = self._failure_bridge
-        return bridge.guard_glib(callback) if bridge is not None else callback
 
     def _window(self) -> MainWindow:
         window = self.window
@@ -388,13 +375,6 @@ class CastControlApp(Adw.Application):
             startup_timeline.mark("window_built")
             self.scheme_action.set_state(GLib.Variant("s", window.cfg["color_scheme"]))
         return window
-
-
-    def _mpris_tick(self) -> bool:
-        """Push a fresh MPRIS2 snapshot; cheap when nothing changed (#266)."""
-        if self._mpris is not None:
-            self._mpris.refresh()
-        return True
 
 
     def _quit_fatal(self) -> bool:
@@ -445,25 +425,6 @@ class CastControlApp(Adw.Application):
         window._update_header_subtitle()
         window.toast(notice, error=True)
 
-    def _publish_activation_ready(self) -> None:
-        """Tell a waiting launcher which commit is live."""
-        path = os.environ.get("SMOOTHCAST_ACTIVATION_READY")
-        commit = version.RUNNING_REVISION
-        if not path or not commit:
-            return
-        tmp = f"{path}.{os.getpid()}.tmp"
-        try:
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "w", encoding="ascii") as out:
-                out.write(commit)
-                out.flush()
-                os.fsync(out.fileno())
-            os.replace(tmp, path)
-        except OSError:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
 
     def do_activate(self) -> None:
         startup_timeline.mark("activate")
@@ -555,18 +516,6 @@ class CastControlApp(Adw.Application):
         self._restart_mpris()
         return False
 
-    def _restart_mpris(self) -> None:
-        """Re-publish MPRIS2 after a bounce; best-effort like the first start."""
-        window = self.window
-        current, self._mpris = self._mpris, None
-        if current is not None:
-            try:
-                current.close()
-            except Exception:
-                pass
-        if window is not None:
-            import mpris
-            self._mpris = mpris.start(window)
 
     def _background_update(self) -> None:
         cfg = getattr(self.window, "cfg", None) or {}
@@ -583,17 +532,6 @@ class CastControlApp(Adw.Application):
             # the title remains the imported *running* release until restart.
             GLib.idle_add(self._guard_glib(self._present_update_notice), notice)
 
-    def _present_update_notice(self, notice: str) -> bool:
-        window = self.window
-        if window is not None and not window._closing:
-            # A remote candidate cannot replace the higher-priority warning
-            # that this process is already using an older installed generation.
-            if not getattr(window, "_installed_version_stale", False):
-                window.update_notice = notice
-                window._update_header_subtitle()
-            window._console(notice)
-            window.toast(notice)
-        return False
 
     def _selftest_quit(self) -> bool:
         try:

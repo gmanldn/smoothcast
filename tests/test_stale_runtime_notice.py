@@ -103,10 +103,11 @@ def test_missing_git_metadata_does_not_fabricate_new_version():
 
 def test_update_candidate_does_not_hide_stale_installed_generation():
     """An available remote release must not mask a mandatory restart."""
-    source = (ROOT / "src" / "cast_control.py").read_text(encoding="utf-8")
+    # The notice presenter lives in the lifecycle mixin after the #634 split.
+    source = (ROOT / "src" / "cast_app_lifecycle.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     owner = next(node for node in tree.body
-                 if isinstance(node, ast.ClassDef) and node.name == "CastControlApp")
+                 if isinstance(node, ast.ClassDef) and node.name == "AppLifecycleMixin")
     method = next(node for node in owner.body
                   if isinstance(node, ast.FunctionDef)
                   and node.name == "_present_update_notice")
