@@ -445,3 +445,32 @@ def test_status_subscription_never_connects_a_manual_target_on_ui_context():
     assert backend.info("192.168.1.30") is None
     factory.assert_called_once()
 
+
+@pytest.mark.parametrize("state,expected", [
+    ("PLAYING", "pause"),
+    ("BUFFERING", "pause"),
+    ("PAUSED", "play"),
+    ("UNKNOWN", None),
+    ("IDLE", None),
+    (None, None),
+])
+def test_toggle_requires_known_receiver_playback_state(state, expected):
+    cast = FakeCast()
+    backend, _browser = discovered_backend([cast])
+    backend.scan(timeout=0)
+    try:
+        if state is None:
+            cast.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+        else:
+            cast.media_controller.status.player_state = state
+            cast.media_controller.listener.new_media_status(cast.media_controller.status)
+        cast.media_controller.calls.clear()
+        success, message = backend.command("Living Room", "play_toggle")
+        if expected is None:
+            assert not success and message
+            assert cast.media_controller.calls == []
+        else:
+            assert success
+            assert cast.media_controller.calls == [(expected, 12)]
+    finally:
+        backend.close()

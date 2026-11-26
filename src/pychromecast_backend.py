@@ -289,10 +289,13 @@ class PyChromecastBackend:
                 _media_call(media.pause, timeout=timeout)
             elif action == "play_toggle":
                 status = self.info(device, timeout=timeout) or {}
-                if status.get("player_state") in {"PLAYING", "BUFFERING"}:
+                state = status.get("player_state")
+                if state in {"PLAYING", "BUFFERING"}:
                     _media_call(media.pause, timeout=timeout)
-                else:
+                elif state == "PAUSED":
                     _media_call(media.play, timeout=timeout)
+                else:
+                    return _fail("cast.command_failed")
             elif action == "stop":
                 _media_call(media.stop, timeout=timeout)
             elif action == "seek" and len(args) > 1:
