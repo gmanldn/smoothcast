@@ -108,3 +108,16 @@ def test_add_button_is_enabled_for_any_online_copy_and_disabled_when_all_are_off
     html = page()
     assert 'if(!(it.copies||[]).some(c=>c.online)){add.disabled=true;add.title="Its computer is offline"}' in html
     assert "coming soon" not in html.split('const input=$("findInput")')[1]
+
+
+def test_find_has_explicit_sources_and_recovery_controls():
+    html = page()
+    for ident in ("findForm", "findSubmit", "findClear", "findReset", "findEmpty", "findBrowse"):
+        assert html.count(f'id="{ident}"') == 1
+    assert 'role="search" aria-label="Search shared libraries"' in html
+    assert 'id="youtubeSearch" type="button"' in html
+    assert 'Searches your house as you type' in html
+    assert 'input.dispatchEvent(new Event("input"));run()' in html
+    assert 'if(ul.children.length)out.append(h,ul)' in html
+    assert 'if(current!==generation||csrf!==session)return;' in html
+    assert 'No currently available matches. Turn off Available now' in html

@@ -1800,7 +1800,35 @@ main{max-width:1120px;padding:clamp(12px,3vw,28px)}
 #playback .actions button{min-height:52px}
 #playback #title{overflow-wrap:anywhere}
 #playback #volume{margin-top:5px}
+#findPanel .find-intro{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+#findPanel .find-intro h2{margin:0}
+#findPanel .find-search{background:var(--input);border:1px solid var(--line);border-radius:16px;padding:clamp(12px,2.5vw,22px);margin:14px 0 18px;min-width:0}
+#findPanel .find-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+#findPanel #findInput{min-width:0;margin:0;font-size:1.05rem;min-height:48px;background:var(--card)}
+#findPanel #findClear{min-height:48px;padding-inline:12px}
+#findPanel .find-sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:8px;margin-top:12px}
+#findPanel .find-source{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);min-width:0}
+#findPanel .find-source button{width:100%;min-height:44px}
+#findPanel .find-source p{margin:6px 0 0}
 #findChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#findPanel #findChips button{min-height:44px;padding:8px 13px}
+#findPanel #findChips button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+#findPanel .find-results-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:18px}
+#findPanel .find-results-head h3{margin:0;font-size:1.1rem}
+#findPanel #findStatus{margin:6px 0 12px;overflow-wrap:anywhere}
+#findPanel .find-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:8px;margin:8px 0 18px}
+#findPanel .find-list .queue-item{display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--input);min-width:0}
+#findPanel .find-list .queue-item strong{font-size:1rem;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+#findPanel .find-list .queue-item .muted{font-size:.85rem;line-height:1.45}
+#findPanel .find-list .queue-actions{justify-content:flex-start}
+#findPanel .find-list .queue-actions button{min-height:44px;padding:8px 12px;width:100%}
+#findPanel .find-list .field-hint:empty{display:none}
+#findPanel .find-availability{font-weight:650}
+#findPanel #youtubeResultsPanel{box-shadow:none;margin-top:12px}
+#findPanel #libraries{margin-top:16px}
+#findPanel #findEmpty{padding:18px;text-align:left}
+#findPanel #findEmpty p{margin:5px 0}
+@media(max-width:360px){#findPanel .find-field{grid-template-columns:minmax(0,1fr)}#findPanel #findClear{width:100%}}
 #findChips button[aria-pressed="true"]{outline:2px solid var(--focus);outline-offset:1px}
 #queuePanel{border-top:3px solid var(--accent)}
 #queuePanel .queue-destination{background:var(--input);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;overflow-wrap:anywhere}
@@ -2150,13 +2178,17 @@ body:has(#dashboard:not([hidden])[data-room-blade]:not([data-room-blade="homePan
 </section>
 
 <p id="errorDash" role="status" aria-live="polite"></p>
-<section id="findPanel" aria-labelledby="findHeading"><h2 id="findHeading" tabindex="-1">Find something to play</h2>
-<p class="section-desc">Search shared libraries on nearby SmoothCast computers, then choose an available result.</p>
-<label for="findInput">Search films, shows, music and YouTube</label><input id="findInput" type="search" placeholder="Search the house or YouTube" autocomplete="off" maxlength="200">
-<div class="actions"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button></div>
-<p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p>
+<section id="findPanel" aria-labelledby="findHeading"><div class="find-intro"><h2 id="findHeading" tabindex="-1">Find something to play</h2><a href="#queuePanel">View Up Next</a></div>
+<p class="section-desc">Discover films, shows and music across your SmoothCast computers, or search YouTube.</p>
+<div class="find-search">
+<form id="findForm" role="search" aria-label="Search shared libraries">
+<label for="findInput">Search films, shows, music and YouTube</label><div class="find-field"><input id="findInput" type="search" placeholder="Title, artist, album or keyword" autocomplete="off" maxlength="200" enterkeyhint="search"><button id="findClear" type="button" class="secondary">Clear</button></div>
+<div class="find-sources"><div class="find-source"><button type="submit" id="findSubmit">Search shared libraries</button><p class="field-hint">Searches your house as you type. Stays on your local network.</p></div><div class="find-source"><button id="youtubeSearch" type="button" class="secondary" aria-describedby="youtubeAvailability" disabled>Search YouTube</button><p id="youtubeAvailability" class="field-hint">Checking YouTube search availability…</p></div></div>
+</form>
 <div id="findChips" role="group" aria-label="Filter search results"><button type="button" class="tiny secondary" data-kind="film" aria-pressed="false">Films</button><button type="button" class="tiny secondary" data-kind="show" aria-pressed="false">Shows</button><button type="button" class="tiny secondary" data-kind="music" aria-pressed="false">Music</button><button type="button" class="tiny secondary" data-kind="video" aria-pressed="false">Videos</button><button type="button" class="tiny secondary" data-available="1" aria-pressed="false">Available now</button></div>
-<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findResults" aria-label="House search results"></div>
+</div>
+<div class="find-results-head"><h3>Shared library results</h3><button id="findReset" class="tiny secondary" type="button" hidden>Reset filters</button></div>
+<p id="findStatus" class="muted" role="status" aria-live="polite"></p><div id="findEmpty" class="empty"><strong>Find something you want to play</strong><p class="field-hint">Search by title or artist, select a media type, or browse the shared folders below.</p><div class="quick-links"><a href="#libraries" id="findBrowse">Browse shared libraries</a><a href="#uploadCard">Add your own files</a><a href="#linkAcquisition">Paste a video link</a></div></div><div id="findResults" aria-label="House search results"></div>
 <section id="youtubeResultsPanel" aria-labelledby="youtubeResultsHeading" hidden><h3 id="youtubeResultsHeading">YouTube results</h3>
 <p id="youtubeSearchStatus" role="status" aria-live="polite"></p><label class="toggle" for="youtubeAuthorised"><input id="youtubeAuthorised" type="checkbox"><span>I am authorised to download the selected media.</span></label>
 <ul id="youtubeResults" class="find-list" aria-label="YouTube videos"></ul></section>
@@ -3859,12 +3891,13 @@ function syncMediaSession(s){
 
 (()=>{
   const input=$("findInput"),out=$("findResults"),status=$("findStatus");
+  const empty=$("findEmpty"),reset=$("findReset");
   if(!input||!out||!status)return;
   let timer=null,source=null,controller=null,searchGeneration=0;
   const clock=s=>{s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(s%60).padStart(2,"0")};
   const LABELS={films:"Films",shows:"Shows",artists:"Artists",albums:"Albums",songs:"Songs",other:"Other"};
   function where(copies){
-    const list=copies||[];if(!list.length)return"";
+    const list=copies||[];if(!list.length)return"Availability unknown";
     const online=list.filter(c=>c.online),names=c=>c.origin==="local"?"This computer":(c.origin_name||"Another computer");
     if(!online.length)return names(list[0])+" is offline"+(list[0].last_seen?" - last seen "+new Date(list[0].last_seen*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"");
     return"On "+online.map(names).join(" - also on ");
@@ -3877,7 +3910,7 @@ function syncMediaSession(s){
       meta.textContent=(it.artist?it.artist+" - ":"")+it.count+" "+(it.count===1?"song":"songs");
       text.append(title,meta);li.append(text);
       const go=document.createElement("button");go.className="tiny secondary";go.type="button";go.textContent="Show";
-      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);run()});
+      go.addEventListener("click",()=>{input.value=(type==="artists"?"artist:":"album:")+JSON.stringify(it.name);input.dispatchEvent(new Event("input"));run()});
       const a=document.createElement("div");a.className="queue-actions";a.append(go);li.append(a);return li;
     }
     if(type==="shows"){
@@ -3885,7 +3918,7 @@ function syncMediaSession(s){
     }
     const bits=[it.year,it.artist,it.album,it.duration?clock(it.duration):""].filter(Boolean);
     meta.textContent=bits.join(" - ");
-    const where_=document.createElement("div");where_.className="muted";where_.textContent=where(it.copies);
+    const where_=document.createElement("div");where_.className="muted find-availability";where_.textContent=where(it.copies);
     text.append(title,meta,where_);li.append(text);
     const feedback=document.createElement("p");feedback.className="field-hint";feedback.setAttribute("role","status");text.append(feedback);
     const add=document.createElement("button");add.className="tiny";add.type="button";add.textContent="Add to Up Next";add.setAttribute("aria-label","Add "+(it.title||it.name||"media")+" to Up Next");
@@ -3913,11 +3946,11 @@ function syncMediaSession(s){
       for(const it of g.items||[]){
         if(availableOnly&&g.type!=="artists"&&g.type!=="albums"&&g.type!=="shows"&&!(it.copies||[]).some(c=>c.online))continue;
         ul.append(item(it,g.type));n++}
-      out.append(h,ul);
+      if(ul.children.length)out.append(h,ul);
     }
     const pending=(d.pending_origins||[]).length;
     status.textContent=n?n+(n===1?" result":" results")+(pending?" - still checking "+pending+(pending===1?" computer":" computers"):""):
-      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"...":"Nothing in the house matches "+JSON.stringify(input.value.trim())+".");
+      (pending?"Still checking "+pending+(pending===1?" computer":" computers")+"…":availableOnly?"No currently available matches. Turn off Available now to see offline media.":input.value.trim()?"No shared library matches "+JSON.stringify(input.value.trim())+". Try another title or search YouTube.":"No shared media matches this filter.");
   }
   function stop(){searchGeneration++;if(source){source.close();source=null}if(controller){controller.abort();controller=null}}
   async function run(){
@@ -3925,7 +3958,9 @@ function syncMediaSession(s){
     const generation=searchGeneration,session=csrf;
     const current=()=>generation===searchGeneration&&csrf===session;
     if(!session)return;
-    if(!typed&&!kind){out.replaceChildren();status.textContent="";return}
+    if(reset)reset.hidden=!kind&&!availableOnly;
+    if(empty)empty.hidden=Boolean(typed||kind);
+    if(!typed&&!kind){out.replaceChildren();status.textContent=availableOnly?"Choose a media type or enter a search term to filter available media.":"";return}
     const q=(typed+(kind?" kind:"+kind:"")).trim();
     const url="/api/search"+(typeof EventSource==="function"?"/stream":"")+"?q="+encodeURIComponent(q);
     out.replaceChildren();status.textContent="Searching shared libraries…";
@@ -3954,6 +3989,12 @@ function syncMediaSession(s){
     });
   }
   const lib=$("libraries"),body=$("libBody");
+  const form=$("findForm"),clear=$("findClear"),browseLink=$("findBrowse");
+  if(form)form.addEventListener("submit",event=>{event.preventDefault();run()});
+  function resetFilters(){kind="";availableOnly=false;for(const chip of document.querySelectorAll("#findChips button"))chip.setAttribute("aria-pressed","false");}
+  if(reset)reset.addEventListener("click",()=>{resetFilters();run()});
+  if(clear)clear.addEventListener("click",()=>{resetFilters();input.value="";input.dispatchEvent(new Event("input"));run();input.focus()});
+  if(browseLink)browseLink.addEventListener("click",()=>{lib.open=true});
   let libLoaded=false,libraryGeneration=0,libraryBusy=false;
   const libStatus=$("libStatus"),libRefresh=$("libRefresh");
   const libraryStatus=message=>{if(libStatus)libStatus.textContent=message};
@@ -4023,7 +4064,7 @@ function syncMediaSession(s){
   }
   if(libRefresh)libRefresh.addEventListener("click",showAll);
   lib.addEventListener("toggle",()=>{if(lib.open&&!libLoaded)showAll()});
-  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();status.textContent="";timer=setTimeout(run,120)});
+  input.addEventListener("input",()=>{clearTimeout(timer);stop();out.replaceChildren();if(empty)empty.hidden=Boolean(input.value.trim()||kind);status.textContent="";timer=setTimeout(run,120)});
 })();
 (()=>{
   const input=$("findInput"),search=$("youtubeSearch"),panel=$("youtubeResultsPanel"),
@@ -4038,11 +4079,11 @@ function syncMediaSession(s){
     if(youtubeSearchBusy||!(linkCapabilities.youtube_search??linkCapabilities.youtube))return;
     panel.hidden=false;out.replaceChildren();consent.checked=false;
     if(!q){status.textContent="Type something to search on YouTube.";input.focus();return}
-    const current=++generation;
+    const current=++generation,session=csrf;
     youtubeSearchBusy=true;updateLinkControls();status.textContent="Searching YouTube…";
     try{
       const response=await post("/api/search/youtube",{q});
-      if(current!==generation)return;
+      if(current!==generation||csrf!==session)return;
       const results=Array.isArray(response.results)?response.results.slice(0,10):[];
       for(const result of results){
         if(!result||typeof result.id!=="string"||!/^[A-Za-z0-9_-]{11}$/.test(result.id))continue;
@@ -4056,7 +4097,7 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
-          if(add.disabled||current!==generation)return;
+          if(add.disabled||current!==generation||csrf!==session)return;
           if(!linkCapabilities.youtube){status.textContent="No eligible YouTube download worker is currently available.";return}
           if(linkStorageAvailable===false){status.textContent="Download storage is unavailable. Ask the host to check it and restart the room. Your search results are preserved.";return}
           if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
@@ -4064,17 +4105,17 @@ function syncMediaSession(s){
           try{
             const receipt=await post("/api/link-jobs",{url:"https://www.youtube.com/watch?v="+result.id,request_id,authorised:true});
             add.textContent="Download requested";
-            if(current===generation)status.textContent=receipt.message||"Download accepted; follow its progress below.";
+            if(current===generation&&csrf===session)status.textContent=receipt.message||"Download accepted; follow its progress in Queue.";
             void refresh();
           }catch(err){
-            if(current===generation)status.textContent=err.message;
+            if(current===generation&&csrf===session)status.textContent=err.message;
             add.disabled=false;add.textContent="Retry add to Up Next";
           }
         });
         actions.append(add);row.append(info,actions);out.append(row);
       }
       status.textContent=out.children.length?out.children.length+" YouTube results. Choose a video to download.":"No YouTube videos found.";
-    }catch(err){if(current===generation)status.textContent=err.message}
+    }catch(err){if(current===generation&&csrf===session)status.textContent=err.message}
     finally{youtubeSearchBusy=false;updateLinkControls()}
   });
 })();
