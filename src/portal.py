@@ -2347,7 +2347,7 @@ function schedulePlayhead(){
   playheadTimer=setTimeout(()=>{playheadTimer=null;if(document.hidden||!csrf||stalePage)return;paintPlayhead();schedulePlayhead()},200);
 }
 function trackPlayhead(s){stopPlayhead();playhead={s,age:Number(s.snapshot_age_ms)||0,at:performance.now()};paintedAt=-1;paintPlayhead();schedulePlayhead()}
-function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);$("elapsed").textContent=clock(pos);if(!editingControls.has("seek"))$("seek").value=Math.min(pos,dur||pos)}
+function paintPlayhead(){if(!playhead)return;const pos=projectPosition(playhead.s,playhead.age,performance.now()-playhead.at);const dur=Number(playhead.s.duration)||0;if(Math.abs(pos-paintedAt)<0.2&&!(dur>0&&pos>=dur&&paintedAt<dur))return;paintedAt=pos;$("progress").value=Math.min(pos,dur||pos);if(!editingControls.has("seek")){$("elapsed").textContent=clock(pos);$("seek").value=Math.min(pos,dur||pos)}}
 let queueRenderKey=null,queuePressed=false,deferredQueue=null,queueState=[];
 const queueElement=$("queue");
 function queueAction(button){
@@ -2795,7 +2795,7 @@ function applyStatus(d){
     monitorText("receiver","Playing on: "+(s.receiver||"—")+(s.active&&mediaKindLabel(s.media_kind)?" · "+mediaKindLabel(s.media_kind):""));
     // Optional lock-screen integration must not prevent core room controls.
     try{syncMediaSession(s)}catch(_){}monitorText("transferRoomState",(s.receiver||"No TV or speaker chosen")+" · "+(s.state_label||"State unavailable"));
-queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;}$("elapsed").textContent=clock(position);$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
+queueRevision=Number.isSafeInteger(s.queue_revision)?s.queue_revision:0;const duration=Number(s.duration)||0,position=Number(s.position)||0;$("progress").max=duration||1;$("progress").value=Math.min(position,duration||position);if(!editingControls.has("seek")){$("seek").max=duration||1;$("seek").value=Math.min(position,duration||position);$("seek").disabled=!s.can_seek||!duration;$("elapsed").textContent=clock(position);}$("duration").textContent=clock(duration);trackPlayhead(s);if(!editingControls.has("volume")){$("volume").disabled=s.volume==null;$("volume").value=s.volume||0;$("volumeText").textContent=s.volume==null?"Volume unavailable":`${s.volume}%`;}
 $("musicAutogain").checked=!!s.music_autogain;
 renderQueueDestination(s);renderQueue(s.queue);renderHomeQueue(s.queue);renderRoomTransfers(s);renderLibraryCopies(s);renderLinkJobs(s);
 $("queueCount").textContent=s.queue&&s.queue.length?`${s.queue.length} waiting`:"";$("clearQueue").disabled=!s.queue||!s.queue.length;
