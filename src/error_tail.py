@@ -2,7 +2,7 @@
 
 GTK-free and standard-library only. The public projection emits ONLY
 catalogue-known error codes, their approved static messages, bounded
-source-relative frame fields drawn from known repository source, and a UTC
+source module basenames drawn from known repository source, and a UTC
 timestamp. It never emits raw log text, exception strings, media names, paths,
 addresses, credentials or arbitrary markup, so the result is safe to store in a
 public branch. Publishing is disabled unless explicitly enabled and configured;
@@ -35,7 +35,6 @@ PROTECTED_BRANCHES = frozenset({"main", "master", "develop"})
 _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 _FRAME = re.compile(r'File "([^"]+)", line (\d+)(?:, in ([A-Za-z_][A-Za-z0-9_]*))?')
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _MAX_LINE = 40
 
 
@@ -95,13 +94,16 @@ def read_records(path=None, *, max_bytes: int = MAX_READ_BYTES) -> list[str]:
 
     Missing, empty, unreadable and rotated files yield ``[]`` without raising.
     """
+    max_bytes = max(0, min(max_bytes, MAX_READ_BYTES))
+    if not max_bytes:
+        return []
     target = Path(path) if path is not None else default_log_path()
     try:
         with target.open("rb") as handle:
             size = handle.seek(0, 2)
             offset = max(0, size - max_bytes)
             handle.seek(offset)
-            data = handle.read()
+            data = handle.read(max_bytes)
     except (OSError, ValueError):
         return []
     if not data:
@@ -148,14 +150,15 @@ def _codes_in(record: str) -> list[str]:
 
 
 def _first_frame(record: str, known: frozenset[str]) -> str | None:
-    """A source-relative ``module.py:line func`` for a known repo module only."""
+    """Only a known module basename; log-supplied line/function fields are untrusted.
+
+    Until exact source locations can be verified, omit them rather than
+    allowing arbitrary identifiers or digit strings into a public snapshot.
+    """
     for match in _FRAME.finditer(record):
-        raw, line, func = match.group(1), match.group(2), match.group(3) or "<module>"
-        name = Path(raw.replace("\\", "/")).name
-        if name not in known or not _IDENTIFIER.match(func):
-            continue
-        location = f"{name}:{line}"
-        return f"{location} {func}" if func != "<module>" else location
+        name = Path(match.group(1).replace("\\", "/")).name
+        if name in known:
+            return name
     return None
 
 
@@ -165,11 +168,12 @@ def sanitize_records(
     """Allowlisted projection of the newest records that fit in ``max_chars``.
 
     Each output line is built solely from approved data: a catalogue code, its
-    static severity and message, and an optional known-source frame. Records
+    static severity and message, and an optional known-source module. Records
     with no recognised code, and every unrecognised byte of text, are omitted.
     Complete records are kept newest-first until the cap is reached; a record
     that would overflow the cap is dropped whole, never cut.
     """
+    max_chars = max(0, min(max_chars, MAX_TAIL_CHARS))
     names = known if known is not None else known_source_names()
     lines: list[str] = []
     for record in records:

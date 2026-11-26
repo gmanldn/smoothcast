@@ -10,7 +10,7 @@ diagnostics repository and branch:
         python3 scripts/publish_error_tail.py --publish
 
 Only catalogue-known error codes, their approved static messages, bounded
-source-relative frames from this repository and a UTC timestamp are emitted;
+source module basenames from this repository and a UTC timestamp are emitted;
 never raw log text, paths, addresses, media names or credentials.
 """
 from __future__ import annotations

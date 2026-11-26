@@ -52,7 +52,16 @@ class SanitizeCanaryTests(unittest.TestCase):
         # Approved static catalogue data does survive.
         self.assertIn("cast.command_failed", out)
         self.assertIn("The receiver command failed.", out)
-        self.assertIn("cast_ui.py:42 send", out)
+        self.assertIn("at cast_ui.py", out)
+        self.assertNotIn(":42 send", out)
+
+    def test_known_module_does_not_authorise_arbitrary_frame_fields(self):
+        record = ('2026-11-26T04:00:00 cast.command_failed\n'
+                  '  File "/home/alice/src/cast_ui.py", line 987654321, in secret_token_ABC')
+        out = error_tail.sanitize_records([record], known=frozenset({"cast_ui.py"}))
+        self.assertIn("at cast_ui.py", out)
+        self.assertNotIn("987654321", out)
+        self.assertNotIn("secret_token_ABC", out)
 
     def test_records_without_a_known_code_are_omitted(self):
         out = error_tail.sanitize_records(
@@ -89,6 +98,12 @@ class BoundsTests(unittest.TestCase):
         )
         self.assertEqual(out, "")
 
+    def test_requested_cap_cannot_exceed_hard_limit(self):
+        records = ["2026-11-26T04:00:00 cast.receiver_offline"] * 100
+        self.assertLessEqual(len(error_tail.sanitize_records(
+            records, known=frozenset(), max_chars=100_000)), 2000)
+        self.assertEqual(error_tail.sanitize_records(records, max_chars=-1), "")
+
     def test_default_cap_is_two_thousand(self):
         self.assertEqual(error_tail.MAX_TAIL_CHARS, 2000)
 
@@ -113,6 +128,17 @@ class ReadRecordsTests(unittest.TestCase):
             records = error_tail.read_records(log)
             self.assertEqual(len(records), 1)
             self.assertIn("cast.command_failed", records[0])
+
+    def test_read_limit_cannot_be_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "errors.log"
+            log.write_bytes(b"2026-11-26T04:00:00 cast.command_failed\n"
+                            + b"x" * error_tail.MAX_READ_BYTES
+                            + b"\n2026-11-26T05:00:00 cast.receiver_offline\n")
+            records = error_tail.read_records(log, max_bytes=10**9)
+            self.assertEqual(len(records), 1)
+            self.assertIn("cast.receiver_offline", records[0])
+            self.assertEqual(error_tail.read_records(log, max_bytes=-1), [])
 
     def test_invalid_utf8_is_replaced_not_raised(self):
         with tempfile.TemporaryDirectory() as directory:
