@@ -3251,6 +3251,26 @@ async function sendChunk(path,file,offset,end){
     }
   }
 }
+// The final room action (queue or play) is idempotent server-side, so a
+// transient busy or network error must be retried instead of stalling a
+// multi-file batch after every byte has already arrived.
+async function completeUpload(path,queueOnly,headers){
+  for(let attempt=0;;attempt++){
+    if(cancelUpload)throw Error("Upload cancelled");
+    if(pauseRequested)throw Error("Transfer paused");
+    try{return await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),headers)}catch(error){
+      if(pauseRequested)throw Error("Transfer paused");
+      if(error.code==="client_reload_required")throw error;
+      const transient=!error.status||error.status>=500||[408,409,429].includes(error.status);
+      if(!transient||attempt===4||cancelUpload||!csrf)throw error;
+      transferEvent("Retry "+(attempt+1)+" of 4 — confirming room acceptance");
+      showError("uploadStatus","The room is busy. Retrying the queue request…");
+      await new Promise(resolve=>setTimeout(resolve,Math.max(500*2**attempt,(error.status===429?error.retryAfter:0)*1000)));
+      if(cancelUpload)throw Error("Upload cancelled");
+      if(pauseRequested)throw Error("Transfer paused");
+    }
+  }
+}
 // Keep only upload metadata. The server still owns the offset and checks the cookie.
 async function uploadStorage(mode, operation){
   try{
@@ -3608,7 +3628,7 @@ $("uploadButton").addEventListener("click",async()=>{
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size,"",queueOnly);
       $("pauseUpload").hidden=true;
-      const receipt=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      const receipt=await completeUpload(path,queueOnly,json);
       if(receipt.queue_only===true)queueOnly=true;
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
