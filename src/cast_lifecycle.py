@@ -42,6 +42,11 @@ class LifecycleMixin:
         self._cast_failed(message)
 
 
+    def _stop_sc_core(self) -> None:
+        """Stop the always-on house coordinator before the mesh is torn down."""
+        import sc_core
+        sc_core.stop(self)
+
     def _on_close(self, _window) -> bool:
         self._closing = True
         plan = self._shutdown_plan()            # ordered steps, per-step deadlines, 1 s budget (#465)
@@ -50,6 +55,7 @@ class LifecycleMixin:
         plan.run("background_work", lambda: (
             getattr(self, "_cancel_music_import", lambda: None)(), self._cancel_queue_prewarm()))
         plan.run("join_slate", getattr(self, "_join_slate_clear_now", bool), deadline=0.4, threaded=True)
+        plan.run("sc_core", self._stop_sc_core, deadline=0.4, threaded=True)
         plan.run("portal", self._stop_portal)
         plan.run("house_services", self._stop_house_services, deadline=0.4, threaded=True)
 

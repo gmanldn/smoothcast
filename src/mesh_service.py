@@ -59,7 +59,7 @@ def load_settings(path: Path | None = None) -> dict[str, Any]:
     except (OSError, ValueError, RuntimeError):
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
-    return {"enabled": raw.get("mesh_enabled") is True,
+    return {"enabled": raw.get("mesh_enabled", True) is True,
             "strict": raw.get("mesh_strict") is True,
             "seeds": mb.parse_seeds(raw.get("mesh_seeds", [])
                                     if isinstance(raw.get("mesh_seeds"), list) else []),

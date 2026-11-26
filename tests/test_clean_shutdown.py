@@ -153,8 +153,9 @@ def test_lifecycle_close_uses_named_steps_and_records_a_clean_exit():
     text = (Path(__file__).resolve().parents[1] / "src" / "cast_lifecycle.py").read_text(encoding="utf-8")
     body = text.split("def _on_close", 1)[1].split("def _finish_delayed_close", 1)[0]
     steps = [line.split('"')[1] for line in body.splitlines() if "plan.run(" in line]
-    assert steps == ["ui_timers", "metrics", "background_work", "join_slate", "portal", "house_services",
-                     "receiver_watch", "media", "settings"]
+    assert steps == ["ui_timers", "metrics", "background_work", "join_slate", "sc_core", "portal",
+                     "house_services", "receiver_watch", "media", "settings"]
+    assert body.index('plan.run("sc_core"') < body.index('plan.run("portal"')
     assert body.index('plan.run("portal"') < body.index('plan.run("house_services"')
     assert body.rstrip().endswith("return False") and "self._finish_shutdown()" in body
     host = (Path(__file__).resolve().parents[1] / "src" / "cast_portal_host.py").read_text(encoding="utf-8")

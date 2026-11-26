@@ -1,10 +1,11 @@
 """Thin, failure-proof hook that runs the mesh next to the LAN portal (#405).
 
 Called by ``cast_portal`` when the portal starts/stops and from its 1 s activity
-timer. Everything is optional: with ``mesh_enabled`` off (the default until the
-Network UI ships, #403) nothing here opens a socket or starts a thread, and any
-failure is swallowed so the portal, playback and GTK are never affected.
-No GTK imports.
+timer, and by the always-on ``sc_core`` coordinator. The mesh is on by default
+on a private LAN (VISION: trusted home LAN, discovery is membership); setting
+``mesh_enabled`` false turns it off and then nothing here opens a socket or
+starts a thread. Any failure is swallowed so the portal, playback and GTK are
+never affected. No GTK imports.
 """
 from __future__ import annotations
 

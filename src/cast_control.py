@@ -511,8 +511,12 @@ class CastControlApp(Adw.Application):
         if window._closing:
             return False
         import mpris
+        import sc_core
 
         window._start_window_timers()
+        # Always-on house coordinator: keeps the mesh alive on a private LAN so
+        # nodes and web clients join automatically, even from a bare ZIP run.
+        sc_core.start(window)
         # Benchmark FFmpeg only after first paint, off GTK and at low priority.
         import low_end_policy
         low_end_policy.schedule_probe(enabled=bool(window.cfg.get("quality_auto", True)))

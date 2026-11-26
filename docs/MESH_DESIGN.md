@@ -24,7 +24,8 @@ ticket disagree, the ticket's acceptance criteria win; update both.
 | Primary role, target visibility | `src/mesh_roles.py`, `src/mesh_visibility.py` | done (#399, #400) |
 | Cache, web clients and live feed | `src/mesh_cache.py`, `src/mesh_clients.py`, `src/portal_mesh_http.py` | done (#401, #402) |
 | Abuse resistance | `src/mesh_policy.py`, `docs/MESH_SECURITY.md` | done (#404) |
-| Runtime, HTTP request channel, app hook | `src/mesh_service.py`, `src/mesh_http.py`, `src/cast_mesh.py` | done (#405), **off by default** |
+| Runtime, HTTP request channel, app hook | `src/mesh_service.py`, `src/mesh_http.py`, `src/cast_mesh.py` | done (#405), **on by default on a private LAN** (VISION trusted home LAN) |
+| Always-on coordinator ("sc-core") | `src/sc_core.py` | done — keeps the mesh alive and publishes a bounded house snapshot |
 | Network UI (desktop popover + browser card) | `src/mesh_view_model.py`, `src/mesh_ui.py`, `src/portal_mesh_panel.py` | done (#403) |
 
 Deviations from the sketch below, decided while implementing: indirect probes are

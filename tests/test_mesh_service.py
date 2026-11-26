@@ -71,9 +71,11 @@ def test_disabled_service_opens_nothing(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_settings_default_off_and_are_validated(tmp_path):
+def test_settings_default_on_and_are_validated(tmp_path):
+    # VISION: trusted home LAN — nodes join automatically, so the mesh is on by
+    # default; only an explicit boolean false (or malformed input) turns it off.
     assert svc.load_settings(tmp_path / "missing.json") == {
-        "enabled": False, "strict": False, "seeds": (),
+        "enabled": True, "strict": False, "seeds": (),
         "remote_acquisition": False, "accept_acquisition": False}
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"mesh_enabled": True, "mesh_strict": "yes",
@@ -82,6 +84,8 @@ def test_settings_default_off_and_are_validated(tmp_path):
     assert got == {"enabled": True, "strict": False, "seeds": ("192.168.1.4",),
                    "remote_acquisition": False, "accept_acquisition": False}
     path.write_text("[1,2")
+    assert svc.load_settings(path)["enabled"] is True
+    path.write_text(json.dumps({"mesh_enabled": False}))
     assert svc.load_settings(path)["enabled"] is False
     path.write_text(json.dumps({"mesh_enabled": "true"}))
     assert svc.load_settings(path)["enabled"] is False

@@ -398,13 +398,17 @@ transcoding of a growing file on a device.
 The isolated GUI smoke checks that the shared-room card builds; real second-device
 and physical playback-control checks remain device qualification.
 
-## Mesh (experimental, off by default)
+## Mesh (on by default on a private LAN)
 
-Full nodes on the same LAN can discover each other and share a live inventory of
+Full nodes on the same LAN discover each other and share a live inventory of
 nodes, connected browsers and Cast/DLNA/browser targets (design:
 [MESH_DESIGN.md](MESH_DESIGN.md), threat model: [MESH_SECURITY.md](MESH_SECURITY.md)).
-It is disabled until the Network view ships. To try it, add to
-`~/.config/cast-control/config.json`:
+Following the [trusted home LAN](VISION.md#trust-model-the-trusted-home-lan)
+decision, the mesh is on by default: the always-on `sc_core` coordinator starts
+it on any private interface — even from a bare ZIP download run with no install —
+so new nodes and web clients join the house automatically. It binds only to
+private, link-local and loopback addresses and is never reachable from outside
+the home. Optional settings in `~/.config/cast-control/config.json`:
 
 ```json
 {"mesh_enabled": true, "mesh_seeds": ["192.168.1.20"], "mesh_strict": false}
@@ -412,10 +416,11 @@ It is disabled until the Network view ships. To try it, add to
 
 `mesh_seeds` are optional private addresses to contact when multicast is blocked;
 `mesh_strict` only lets nodes already seen by presence discovery sync with you.
-Turning `mesh_enabled` off restores the exact previous behaviour: no sockets and no
-threads. Paired browsers can read the live view at `/api/mesh` and `/api/mesh/events`
-(Server-Sent Events). The mesh runs on its own thread and its failures never affect
-playback or the portal; `mesh_service.MeshService.diagnostics()` reports redacted health.
+Setting `mesh_enabled` to `false` restores the previous behaviour: no sockets and
+no threads. Paired browsers can read the live view at `/api/mesh` and
+`/api/mesh/events` (Server-Sent Events). The mesh runs on its own thread and its
+failures never affect playback or the portal; `mesh_service.MeshService.diagnostics()`
+reports redacted health.
 
 ## Room event reconnects
 

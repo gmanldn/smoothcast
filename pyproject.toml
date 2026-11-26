@@ -239,6 +239,7 @@ py-modules = [
     "room_checkpoint",
     "room_checkpoint_ui",
     "room_event_replay",
+    "sc_core",
     "screenshot",
     "search_engine",
     "search_query",
