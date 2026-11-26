@@ -77,6 +77,7 @@ DESKTOP_STATE = {
     "rate": 1.0,
     "volume": 42,
     "queue": [{"id": "abc123", "title": "Next.mp3", "duration": 30.0}],
+    "queue_total": 0,
     "queue_revision": 7,
     "library_copies": [],
     "active": True,
