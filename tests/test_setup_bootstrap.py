@@ -147,6 +147,8 @@ class SetupContractTests(unittest.TestCase):
                                    return_value=mock.Mock(returncode=0)), \
                  mock.patch.object(bootstrap, "checked_run") as install, \
                  mock.patch.object(bootstrap, "find_brew", return_value="/trusted/brew"), \
+                 mock.patch.object(bootstrap, "msys2_root",
+                                   return_value=bootstrap.Path("/trusted/msys64")), \
                  mock.patch.object(bootstrap.Path, "is_file", return_value=True):
                 bootstrap.install_link_tools(target, env)
                 command = install.call_args.args[0]

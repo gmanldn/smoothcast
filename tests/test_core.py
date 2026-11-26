@@ -4,6 +4,7 @@ Uses only the Python standard library (``unittest``): no GTK, no display, no
 ffmpeg, no network, no third-party packages.  Imports the pure-python modules
 directly so the suite runs in milliseconds on any machine.
 """
+import contextlib
 from pathlib import Path
 import subprocess
 import sys
@@ -280,7 +281,17 @@ class CastctlSubprocessTests(unittest.TestCase):
             if exc is not None:
                 raise exc
             return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
-        return mock.patch.object(castctl.subprocess, "run", side_effect=fake_run)
+        @contextlib.contextmanager
+        def patched():
+            with mock.patch.object(castctl.subprocess, "run",
+                                   side_effect=fake_run) as run:
+                # Force the documented catt fallback: the passive mDNS path needs a
+                # live stack and would otherwise short-circuit the mocked output.
+                with mock.patch.object(castctl, "_passive_cast_scan",
+                                       side_effect=RuntimeError("no mdns")):
+                    yield run
+
+        return patched()
 
     def test_command_success(self):
         with self._patched_run(returncode=0, stdout="ok"):

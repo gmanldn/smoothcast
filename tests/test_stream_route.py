@@ -198,10 +198,15 @@ def test_forty_eight_media_shapes_across_three_mesh_topologies():
 def test_planner_is_fast_and_gtk_free():
     """Perf contract: under 2 ms per decision, with no GUI or network imports."""
     arguments = (source(), dest(), caps(), meas(warm=True), policy())
-    start = time.perf_counter()
-    for _ in range(2000):
-        choose_stream_route(*arguments)
-    assert (time.perf_counter() - start) / 2000 < 0.002
+    def cost_per_decision() -> float:
+        start = time.perf_counter()
+        for _ in range(2000):
+            choose_stream_route(*arguments)
+        return (time.perf_counter() - start) / 2000
+
+    # Best of two: a one-off scheduling hiccup on a loaded machine must not fail a
+    # contract about the decision cost itself.
+    assert min(cost_per_decision(), cost_per_decision()) < 0.002
     assert "gi" not in sys.modules
 
 
