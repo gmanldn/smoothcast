@@ -398,7 +398,7 @@ def _youtube_search_command(launcher: str, executable: str, text: str, cancelled
                             pass
                         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
-        raise LinkError(503, "The isolated YouTube search worker is unavailable.") from None
+        raise LinkError(503, guest_messages.YOUTUBE_OFF) from None
     finally:
         _SEARCH_SLOT.release()
 
@@ -564,7 +564,7 @@ def _archive_search_command(launcher: str, curl: str, text: str, cancelled) -> l
             raise failure
         return results
     except (OSError, subprocess.TimeoutExpired):
-        raise LinkError(503, "The isolated Archive search worker is unavailable.") from None
+        raise LinkError(503, guest_messages.ARCHIVE_OFF) from None
     finally:
         _SEARCH_SLOT.release()
 

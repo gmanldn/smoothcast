@@ -22,6 +22,7 @@ import shutil
 import threading
 import time
 
+import guest_messages
 import link_acquisition as links
 import mesh_acquisition_assignment as core
 import mesh_acquisition_bridge as bridge_mod
@@ -141,7 +142,7 @@ class RemoteAcquisition:
         query = links._search_text(value)
         offers = sorted(self.search_offers(), key=lambda offer: offer.node_id)
         if not offers:
-            raise links.LinkError(503, "No trusted YouTube search worker is available.")
+            raise links.LinkError(503, guest_messages.YOUTUBE_OFF)
         bridge = self._bridge()
         request = secrets.token_hex(16)
         node = offers[0].node_id
