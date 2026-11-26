@@ -97,3 +97,61 @@ renderLinkJobs({link_jobs:[]});assert($("linkJobs").children.length===0,"stale r
 """
     subprocess.run(["node", "-"], input=harness + render + checks,
                    text=True, check=True, timeout=10)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="requires Node.js")
+def test_youtube_result_actions_respect_storage_and_request_lifecycle():
+    page = portal._HTML
+    start = page.index('(()=>{\n  const input=$("findInput"),search=$("youtubeSearch"),panel=')
+    render = page[start:page.index("// #591:", start)]
+    harness = r"""
+class Node {
+  constructor(){this.children=[];this.listeners={};this.value="";this.checked=false;this.disabled=false;this.hidden=true;this.textContent=""}
+  addEventListener(name,fn){this.listeners[name]=fn}
+  append(...nodes){this.children.push(...nodes)}
+  replaceChildren(){this.children=[]}
+  setAttribute(){}
+  focus(){this.focused=true}
+}
+const elements=Object.fromEntries(["findInput","youtubeSearch","youtubeResultsPanel","youtubeSearchStatus","youtubeResults","youtubeAuthorised"].map(id=>[id,new Node()]));
+const $=id=>elements[id],document={createElement:()=>new Node()};
+let youtubeSearchBusy=false,linkCapabilities={youtube:true},linkStorageAvailable=true;
+const clock=String,updateLinkControls=()=>{},refresh=()=>{};
+const requests=[];let finishAdd;
+const post=(url,body)=>{
+  requests.push([url,body]);
+  if(url==="/api/search/youtube")return Promise.resolve({results:[{id:"abcdefghijk",title:"Example"}]});
+  return new Promise(resolve=>{finishAdd=resolve});
+};
+"""
+    checks = r"""(async()=>{
+  const assert=(ok,msg)=>{if(!ok)throw Error(msg)};
+  $("findInput").value="example";
+  await $("youtubeSearch").listeners.click();
+  const add=$("youtubeResults").children[0].children[1].children[0];
+  $("youtubeAuthorised").checked=true;
+  linkStorageAvailable=false;
+  const blocked=add.listeners.click();
+  assert(requests.length===1,"unavailable storage must not submit");
+  await blocked;
+  assert($("youtubeSearchStatus").textContent.includes("storage is unavailable"),"explain storage problem");
+  assert($("youtubeResults").children.length===1,"preserve search results");
+  linkStorageAvailable=true;
+  const pending=add.listeners.click();
+  const duplicate=add.listeners.click();
+  assert(requests.length===2,"duplicate result action submitted");
+  await duplicate;
+  finishAdd({message:"Accepted"});await pending;
+  const accepted=add.listeners.click();
+  assert(requests.length===2,"accepted result submitted again");
+  await accepted;
+  await $("youtubeSearch").listeners.click();
+  const stale=$("youtubeResults").children[0].children[1].children[0];
+  $("findInput").value="new query";$("findInput").listeners.input();
+  $("youtubeAuthorised").checked=true;
+  const staleAttempt=stale.listeners.click();
+  assert(requests.length===3,"stale result submitted");
+  await staleAttempt;
+})().catch(error=>{console.error(error);process.exitCode=1});"""
+    subprocess.run(["node", "-"], input=harness + render + checks,
+                   text=True, check=True, timeout=10)

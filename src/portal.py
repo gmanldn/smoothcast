@@ -4031,7 +4031,9 @@ function syncMediaSession(s){
         add.setAttribute("aria-label","Add "+title.textContent+" to Up Next");
         const request_id="yt-"+Date.now()+"-"+Math.random().toString(36).slice(2);
         add.addEventListener("click",async()=>{
+          if(add.disabled||current!==generation)return;
           if(!linkCapabilities.youtube){status.textContent="YouTube downloads are turned off on the SmoothCast computer.";return}
+          if(linkStorageAvailable===false){status.textContent="Download storage is unavailable. Ask the host to check it and restart the room. Your search results are preserved.";return}
           if(!consent.checked){status.textContent="Confirm that you are authorised to download this media.";consent.focus();return}
           add.disabled=true;add.textContent="Submitting…";
           try{
