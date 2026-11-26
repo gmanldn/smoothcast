@@ -2020,7 +2020,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 .invite-qr figcaption{max-width:12rem;font-size:.85rem;color:var(--muted);text-align:center}
 @media(max-width:560px){.invite{gap:12px;padding:14px}.invite-qr img{width:112px;height:112px;padding:6px}.invite #roomLinkHint{display:none}.invite .room-link{grid-template-columns:minmax(0,1fr)}.invite .room-link button{width:100%}}
 @media(max-width:360px){.invite{grid-template-columns:minmax(0,1fr)}.invite-qr{justify-items:start}}
-@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
+@media(max-width:560px){:root{--bar-h:60px}header.app-bar{gap:8px}.home-btn{padding:0 15px 0 11px}.brand{gap:7px;flex:1 1 auto;min-width:0}.brand h1{display:none}.sc-version{flex:0 1 auto;min-width:0;overflow-wrap:anywhere;text-align:left}.bar-now{max-width:none;padding:0 12px}.bar-now-label{display:none}}
 @media(max-width:340px){.brand .site-mark{display:none}}
 @media(forced-colors:active){header.app-bar{background:Canvas;backdrop-filter:none}.home-btn{border:2px solid ButtonText}#playback::before{display:none}}
 @media(prefers-reduced-transparency:reduce){header.app-bar,#dashboard nav{background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}}
