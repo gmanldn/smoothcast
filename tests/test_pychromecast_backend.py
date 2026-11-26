@@ -474,3 +474,45 @@ def test_toggle_requires_known_receiver_playback_state(state, expected):
             assert cast.media_controller.calls == [(expected, 12)]
     finally:
         backend.close()
+
+
+@pytest.mark.parametrize("event", ["LOST", "close"])
+def test_initial_status_read_rejects_observation_invalidated_during_read(event):
+    receiver = FakeCast()
+    backend, _browser = discovered_backend([receiver])
+    backend.scan(timeout=0)
+    original = backend._status_dict
+
+    def invalidated(media, status):
+        snapshot = original(media, status)
+        if event == "close":
+            backend.close()
+        else:
+            receiver.connection_listener.new_connection_status(SimpleNamespace(status=event))
+        return snapshot
+
+    try:
+        with mock.patch.object(backend, "_status_dict", side_effect=invalidated):
+            assert backend.info("Living Room") is None
+        assert backend.info("Living Room") is None
+    finally:
+        backend.close()
+
+
+def test_explicitly_disconnected_receiver_rejects_commands_until_reconnect():
+    receiver = FakeCast()
+    backend, _browser = discovered_backend([receiver])
+    backend.scan(timeout=0)
+    try:
+        receiver.connection_listener.new_connection_status(SimpleNamespace(status="LOST"))
+        receiver.media_controller.calls.clear()
+        for action in ("play", "pause", "stop"):
+            success, message = backend.command("Living Room", action)
+            assert not success and message
+        assert receiver.media_controller.calls == []
+        receiver.connection_listener.new_connection_status(SimpleNamespace(status="CONNECTED"))
+        success, _ = backend.command("Living Room", "pause")
+        assert success
+        assert receiver.media_controller.calls[-1] == ("pause", 12)
+    finally:
+        backend.close()

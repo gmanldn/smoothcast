@@ -265,9 +265,11 @@ class PyChromecastBackend:
             cast_status = cast.status
             snapshot = self._status_dict(media_status, cast_status)
         except Exception:
-            return self._cached_status(identifier)
+            return self._cached_status(identifier) or None
         self._publish(identifier, snapshot)
-        return snapshot
+        # Publication may reject an observation raced by a disconnect or close.
+        # Return only the accepted cache, never the discarded local snapshot.
+        return self._cached_status(identifier) or None
 
     def command(self, device: str, *args: str, timeout: float = 12) -> tuple[bool, str]:
         if not args:
@@ -276,6 +278,8 @@ class PyChromecastBackend:
         if identifier is None:
             return False, error or NO_DEVICE_MESSAGE
         with self._lock:
+            if self._closed or self._connection_state.get(identifier, "CONNECTED") != "CONNECTED":
+                return _fail("cast.not_connected")
             cast = self._casts.get(identifier)
         if cast is None:
             return _fail("cast.not_connected")
