@@ -7,6 +7,7 @@ no fallback to DISPLAY or WAYLAND_DISPLAY from the developer's desktop.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import secrets
@@ -100,6 +101,7 @@ def discard_scratch(folder: Path | str) -> None:
 
 def main() -> int:
     demo = sys.argv[1:] == ["--demo"]
+    interaction = sys.argv[1:] == ["--interaction"]
     if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         print("GUI smoke tests are opt-in and must run outside pytest.",
               file=sys.stderr)
@@ -118,6 +120,9 @@ def main() -> int:
         scratch = Path(folder)
         env = isolated_environment(scratch)
         seeded = seed_isolated_state(scratch, env)
+        samples = scratch / "interaction-samples.json"
+        if interaction:
+            env["SMOOTHCAST_INTERACTION_SAMPLES"] = str(samples)
         before = {name: path.read_bytes() for name, path in seeded.items()}
         command = [
             shutil.which("xvfb-run"), "-a", "-s",
@@ -135,17 +140,34 @@ def main() -> int:
             # immediate xvfb-run shell and can leave children behind.
             process = subprocess.Popen(command, cwd=ROOT, env=env,
                                        start_new_session=True)
+            limit = 120 if interaction else MAX_SECONDS
             try:
-                code = process.wait(timeout=MAX_SECONDS)
+                code = process.wait(timeout=limit)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
-                print(f"GUI self-test exceeded {MAX_SECONDS}s; terminated.",
+                print(f"GUI self-test exceeded {limit}s; terminated.",
                       file=sys.stderr)
                 return 124
             after = {name: path.read_bytes() for name, path in seeded.items()}
             if demo:
                 return code
+            if interaction:
+                if not samples.is_file():
+                    print("interaction benchmark produced no samples", file=sys.stderr)
+                    return 1
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "interaction_latency_benchmark", ROOT / "scripts" / "interaction_latency_benchmark.py")
+                bench = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(bench)
+                payload = json.loads(samples.read_text(encoding="utf-8"))
+                print(bench.table(bench.summarize(payload)))
+                keep = os.environ.get("SMOOTHCAST_INTERACTION_KEEP")
+                if keep:
+                    shutil.copyfile(samples, keep)
+                    print(f"INTERACTION: samples kept at {keep}")
+                return 0
             changed = [name for name in before if before[name] != after[name]]
             if changed:
                 print("GUI self-test touched seeded state: " + ", ".join(changed),

@@ -36,6 +36,7 @@ import desktop_failure_notice
 import error_banner_ui
 from cast_app_lifecycle import AppLifecycleMixin
 import jank_ui
+import interaction_benchmark
 import local_playback
 import demo_mode
 import startup_cleanup
@@ -155,7 +156,8 @@ class MainWindow(UiMixin, SettingsCardMixin, QueueMixin, SessionMixin, AvMixin, 
         self._refresh_controls()
 
 
-class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin, Adw.Application):
+class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
+                     interaction_benchmark.InteractionBenchmarkMixin, Adw.Application):
     def __init__(self, *, selftest: bool = False) -> None:
         if os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
             raise RuntimeError("Refusing a GTK application inside pytest")
@@ -177,8 +179,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin, Adw.Applicatio
         self._pending_files: list[str] = []
         self._mpris = None
         self._paint_handler: int | None = None
-        # Immutable identity captured before later checkout changes; never
-        # shell out or import replacement modules while the GUI is running.
+        # Identity captured before checkout changes; never swap modules live.
         self._run_revision = version.RUNNING_REVISION
         self._noticed_runtime_key: tuple[str | None, str | None] | None = None
         self._failure_bridge: desktop_failure_notice.DesktopFailureBridge | None = None
@@ -186,8 +187,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin, Adw.Applicatio
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
-        # Primary-only and before MainWindow; reactivation and --self-test must
-        # never stop the active user's cast.
+        # Primary-only and before MainWindow; never stop the active user's cast.
         if not self.selftest and not demo_mode.active():
             # Demo skips recovery: it scans /proc and could stop the user's real helpers.
             shutdown_plan.begin_ledger()  # previous exit clean? (#465)
@@ -465,6 +465,7 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin, Adw.Applicatio
     def _after_paint_idle(self, window: MainWindow) -> bool:
         startup_timeline.mark_idle()
         self._start_jank_monitor()
+        self._run_interaction_benchmark()
         GLib.idle_add(self._guard_glib(self._start_optional_services), window,
                       priority=GLib.PRIORITY_LOW)
         return False
