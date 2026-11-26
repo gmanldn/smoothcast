@@ -14,7 +14,8 @@ def test_obsolete_search_cannot_replace_new_results_or_close_new_stream():
     harness = """
 const assert=require("node:assert/strict");
 let timer=null,source=null,controller=null,searchGeneration=0,csrf="session",kind="";
-const input={value:"old"},out={replaceChildren(){}},status={};
+const input={value:"old"},out={replaceChildren(){}},status={},reset={},empty={};
+let availableOnly=false;
 const streams=[],rendered=[];
 function render(data){rendered.push(data)}
 class EventSource{
