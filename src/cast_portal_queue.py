@@ -40,10 +40,13 @@ class PortalQueueMixin:
 
     def _portal_prune_queue_provenance(self) -> None:
         queued_paths = set(self.queue)
+        active = getattr(self, "now_playing", None)
         for attr in ("_portal_queue_display_names", "_portal_queue_provenance"):
             records = getattr(self, attr, {})
             for path in tuple(records):
-                if path not in queued_paths:
+                if path not in queued_paths and not (
+                    attr == "_portal_queue_display_names" and path == active
+                ):
                     records.pop(path, None)
 
     def _portal_contributor(self, payload: dict) -> str | None:

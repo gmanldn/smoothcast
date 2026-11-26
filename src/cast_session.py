@@ -396,14 +396,16 @@ class SessionMixin:
             self._note_device_used()
             self._record_watch("start")
             self._set_now_playing_labels(media, session)
+            # Keep the confirmed receiver title on every playback surface.
+            title = self.np_title.get_text()
             # Refresh preview metadata.
             if self.preview is not None and media:
                 info = streamer.media_summary(media)
                 if media.size_label:
                     info += f" · {media.size_label}"
-                self.preview.set_video(pretty_title(path), info)
-            self.toast(f"Casting {pretty_title(path)} to {device}")
-            self._console(f"Casting {pretty_title(path)} to {device} ({session.mode})")
+                self.preview.set_video(title, info)
+            self.toast(f"Casting {title} to {device}")
+            self._console(f"Casting {title} to {device} ({session.mode})")
             self._rebuild_queue()
             self._refresh_controls()
             self._poll_device()

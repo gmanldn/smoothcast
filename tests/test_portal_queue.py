@@ -183,3 +183,18 @@ def test_local_library_queue_add_preserves_receiver_and_reports_real_acceptance(
         assert host._portal_queue_provenance[path] == {
             "contributor": "Guest", "source_kind": "library",
         }
+
+
+def test_active_upload_title_survives_clear_until_playback_ends():
+    host = QueueHost()
+    active, waiting = host.queue
+    host._portal_note_display_name(active, "Original film.mp4")
+    host._portal_note_display_name(waiting, "Waiting film.mp4")
+    host._portal_record_contribution(active, "Guest", "upload")
+    host.clear_queue()
+    host._portal_queue_status()
+    assert host._portal_queue_display_names == {active: "Original film.mp4"}
+    assert host._portal_queue_provenance == {}
+    host.now_playing = None
+    host._portal_queue_status()
+    assert host._portal_queue_display_names == {}

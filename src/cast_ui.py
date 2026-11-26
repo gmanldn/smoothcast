@@ -1254,8 +1254,12 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
     def _set_now_playing_labels(self, media, session) -> None:
         display_name = getattr(self, "_portal_queue_display_names", {}).get(str(media.path))
-        title = queue_metadata.media_title(media.path, media, display_name,
-                                           fallback=pretty_title(media.path))
+        # The session already carries the title sent to the receiver. Queue
+        # edits and alias pruning must not rename an active stream.
+        title = getattr(getattr(session, "state", None), "title", None)
+        if not isinstance(title, str) or not title.strip():
+            title = queue_metadata.media_title(media.path, media, display_name,
+                                               fallback=pretty_title(media.path))
         meta = ([f"Audio · {media.acodec or 'unknown codec'}"]
                 if media.is_audio_only else [media.resolution])
         if media.duration:

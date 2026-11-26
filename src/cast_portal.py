@@ -383,11 +383,11 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
             if target is not None and self._portal_upload_target()["target_id"] != target:
                 raise portal.PortalRequestError(409, "Casting target changed. The upload has not been sent to another receiver.")
             path = self._portal_upload_path(payload)
-            # The played item also joins the shared queue, so keep the guest's
-            # filename; otherwise the queue shows the opaque upload id.
-            self._portal_note_display_name(path, payload.get("name"))
             if self.busy:
                 raise portal.PortalRequestError(409, "SmoothCast is finishing another command")
+            # A rejected request or duplicate contribution must not rename media.
+            if str(path) not in self.queue and str(path) != self.now_playing:
+                self._portal_note_display_name(path, payload.get("name"))
             if upload_id:
                 accepted_uploads.add(upload_id)
                 if early:
