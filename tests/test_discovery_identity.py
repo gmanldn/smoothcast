@@ -96,6 +96,7 @@ def window(name="Old TV", uuid="uuid-a"):
             self._volume_target = None
             self._syncing = False
             self.session = None
+            self.device_state = "IDLE"
             self.busy = False
             self._cast_starting = False
             self.external = False
@@ -111,6 +112,9 @@ def window(name="Old TV", uuid="uuid-a"):
 
         def _dlna_renderer(self, device=None):
             return None
+
+        def _device(self):
+            return self.cfg["device"]
 
         def _set_device_badge(self, name, kind=None):
             self.badges.append(name)
@@ -217,8 +221,9 @@ def test_discovered_host_requires_one_current_name_match():
     ]
     assert w._device_host("Living Room") is None
 
-    # A failed refresh invalidates the old address while preserving selection.
+    # A failed refresh retains the last known targets (#210); the independent
+    # status query decides reachability, and the selection is preserved.
     w.devices = [device("Living Room", "uuid-a", "192.168.1.41")]
     w._scan_failed("network unavailable")
     assert w.cfg["device"] == "Living Room"
-    assert w._device_host("Living Room") is None
+    assert w._device_host("Living Room") == "192.168.1.41"
