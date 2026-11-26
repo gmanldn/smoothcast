@@ -292,11 +292,11 @@ class PortalMixin(PortalHostMixin, PortalUploadRecoveryMixin, NetworkActivityMix
         host = self._device_host(receiver)
         if not receiver or not host or not self.device_info or self.device_state == "OFFLINE":
             raise portal.PortalRequestError(409, "No reachable room receiver. Ask the host to select a TV or speaker.")
-        if self.busy:
-            raise portal.PortalRequestError(409, "SmoothCast is finishing another command. Try again shortly.")
+        # Target confirmation is read-only and remains available during
+        # preparation of another stream. Actual cast commands still check busy.
         identity = "\\0".join((receiver, host, str(self.cfg.get("device_uuid") or "")))
         return {"receiver": receiver, "target_id": hashlib.sha256(identity.encode()).hexdigest(),
-                "active": bool(self.session is not None or self.external)}
+                "active": bool(self.session is not None or self.external or self.busy)}
 
     def _portal_handle(self, operation: str, payload: dict) -> object:
         if self._closing:

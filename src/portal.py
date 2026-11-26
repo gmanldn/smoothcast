@@ -1223,7 +1223,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self.server.uploads.finish_dispatch(token, upload_id, accepted=True)
                 message = ("Added to the shared queue." if queue_only else
                            "Upload received; playback request accepted.")
-                return self._send(202, {"ok": True, "message": message})
+                return self._send(202, {"ok": True, "message": message, "queue_only": queue_only})
             except PortalRequestError as exc:
                 return self._exception_error(exc)
             except portal_uploads.UploadError as exc:
@@ -2047,7 +2047,7 @@ body:has(#dashboard:not([hidden])) .invite{max-width:none}
 </section>
 <section id="quickCastCard" aria-labelledby="quickCastHeading">
 <div class="room-heading"><h2 id="quickCastHeading">Play a video from this device</h2><span class="muted">SmoothCast primary node · pnode</span></div>
-<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker, asks for your confirmation, then starts playback as soon as enough compatible media has arrived.</p>
+<p class="section-desc">Choose a video. SmoothCast checks the selected TV or speaker and asks for confirmation. The first overlapping Play now request gets priority; other files transfer to Up Next.</p>
 <div class="actions"><button id="uploadCastNow" type="button" aria-describedby="quickCastStatus">Upload &amp; Cast Now</button><a href="#uploadCard">Add to Up Next instead</a></div>
 <p id="quickCastStatus" class="field-hint" role="status" aria-live="polite">No file is sent until you confirm the destination.</p>
 </section>
@@ -3360,11 +3360,11 @@ async function restoreUpload(){
           showError("uploadStatus","Saved upload progress is invalid. Reload to check it again.");
           return;
         }
-        pendingUpload={...record,received:state.received};
+        pendingUpload={...record,received:state.received,queueOnly:state.queue_only??record.queueOnly};
         monitorText("transferFileName",record.name);
-        monitorText("transferDelivery",record.queueOnly?"Up Next requested":"Play now requested");
+        monitorText("transferDelivery",pendingUpload.queueOnly?"Up Next requested":"Play now requested");
         transferEvent("Interrupted upload found; choose the original file to resume");
-        $("uploadQueue").checked=record.queueOnly;
+        $("uploadQueue").checked=pendingUpload.queueOnly;
         transferView("transfer",state.received,record.size,"Resumable");
         showError("uploadStatus",`Choose ${record.name} again to resume from ${state.received} bytes.`);
         return;
@@ -3489,7 +3489,7 @@ $("uploadButton").addEventListener("click",async()=>{
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);
-      const queueOnly=audio||batchQueueOnly;
+      let queueOnly=pendingUpload?.queueOnly??(audio||batchQueueOnly||batchIndex>0);
       monitorText("transferFileName",(batchIndex+1)+"/"+batchFiles.length+" · "+file.name);
       monitorText("transferDelivery",queueOnly?"Up Next requested":"Play now requested");
       monitorText("transferAck",pendingUpload?fileUnits(pendingUpload.received):"0 B");
@@ -3506,12 +3506,18 @@ $("uploadButton").addEventListener("click",async()=>{
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");
+        if(state.queue_only===true&&!queueOnly){
+          queueOnly=true;
+          transferEvent("Another upload has the Play now lane; this file will join Up Next");
+          monitorText("transferDelivery","Up Next — another upload has priority");
+        }
         pendingUpload={id,chunkSize,name:file.name,size:file.size,lastModified:file.lastModified,queueOnly,started:Date.now(),received:0};
         monitorText("transferOperation","Reading local file fingerprint");
         const record={...pendingUpload,hashVersion:3,hash:await firstChunkHash(file,chunkSize)};
         await uploadStorage("readwrite",store=>store.put(record));
         transferEvent("Host reserved storage; chunk size "+fileUnits(chunkSize));
       }
+      if(state.queue_only===true){queueOnly=true;pendingUpload.queueOnly=true;}
       const {id,chunkSize}=pendingUpload,path="/api/uploads/"+id;
       if(!validUploadChunkSize(chunkSize)||!validUploadProgress(state.received,file.size))
         throw Error("Upload progress is invalid. Reload and choose the file again.");
@@ -3550,7 +3556,8 @@ $("uploadButton").addEventListener("click",async()=>{
       $("cancelUpload").disabled=true;
       transferView("verify",file.size,file.size,"",queueOnly);
       $("pauseUpload").hidden=true;
-      await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      const receipt=await uploadRequest("POST",path+"/complete",JSON.stringify({queue:queueOnly}),json);
+      if(receipt.queue_only===true)queueOnly=true;
       monitorText("transferOperation","Transfer complete");
       monitorText("transferDelivery",queueOnly?"Added to Up Next":"Play requested — waiting for the TV or speaker");
       monitorText("transferAck",fileUnits(file.size));
