@@ -171,7 +171,11 @@ class ReceiverTests(unittest.TestCase):
                          "model_name": "Nest Hub"},
         }
         result = subprocess.CompletedProcess([], 0, json.dumps(data), "")
-        with mock.patch.object(castctl, "_run", return_value=result):
+        # Force the catt fallback: the passive path needs a live mDNS stack and
+        # would otherwise short-circuit the mocked JSON in this unit test.
+        with mock.patch.object(castctl, "_passive_cast_scan",
+                               side_effect=RuntimeError("no mdns")), \
+                mock.patch.object(castctl, "_run", return_value=result):
             devices = castctl.scan()
         self.assertEqual(len(devices), 2)
         self.assertEqual(devices[0].port, 0)
