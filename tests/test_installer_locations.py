@@ -163,6 +163,26 @@ class InstallLocationTests(unittest.TestCase):
             self.assertEqual(args[args.index("--target") + 1], "linux")
             remember.assert_called_once()
 
+    def test_registered_install_can_rebuild_a_missing_venv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "setup").mkdir()
+            (root / "setup" / "bootstrap.py").touch()
+            (root / "pyproject.toml").write_text('name = "smoothcast"')
+            self.assertFalse((root / ".venv").exists())
+            with mock.patch.object(bootstrap, "ROOT", root), \
+                 mock.patch.object(bootstrap, "VENV", root / ".venv"), \
+                 mock.patch.object(bootstrap.platform, "system", return_value="Linux"), \
+                 mock.patch.object(install_location, "select_directory", return_value=root), \
+                 mock.patch.object(install_location, "previous_directory", return_value=root), \
+                 mock.patch.object(install_location, "installed_sources") as copy, \
+                 mock.patch.object(bootstrap, "install_linux", return_value=(Path(sys.executable), {})), \
+                 mock.patch.object(bootstrap, "ensure_venv", return_value=root / ".venv/bin/python") as repair, \
+                 mock.patch.object(bootstrap.native_runtime, "save"):
+                self.assertEqual(bootstrap.main(["--target", "linux", "--yes", "--no-shortcuts"]), 0)
+                repair.assert_called_once()
+                copy.assert_not_called()
+
     def test_readonly_check_never_copies_or_installs(self):
         with tempfile.TemporaryDirectory() as directory:
             dest = Path(directory) / "nonexistent app"

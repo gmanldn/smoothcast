@@ -612,7 +612,19 @@ def main(argv: list[str] | None = None) -> int:
             if destination.resolve() == ROOT.resolve():
                 # The platform script may itself be run from an already installed
                 # application. This is a safe repair, not a recursive copy.
-                if not (ROOT / ".venv").exists():
+                registered = install_location.previous_directory(args.target)
+                known_install = (
+                    not destination.is_symlink()
+                    and registered is not None
+                    and registered.resolve() == ROOT.resolve()
+                    and (ROOT / "setup" / "bootstrap.py").is_file()
+                    and 'name = "smoothcast"' in
+                    (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+                )
+                # A missing venv is exactly the condition that requires repair.
+                # Only a known registered install (or an existing venv) may
+                # take this implicit in-place path; never adopt a checkout.
+                if not (ROOT / ".venv").exists() and not known_install:
                     raise SetupError("Use --in-place to install a source checkout in place")
                 say("Repairing existing installation in place")
             else:

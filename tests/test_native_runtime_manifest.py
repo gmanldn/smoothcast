@@ -126,7 +126,9 @@ def test_launcher_handles_corrupt_record_without_spawning_gui():
         with mock.patch.object(launch, "VENV", venv), \
              mock.patch.object(launch, "python_path", return_value=Path(sys.executable)), \
              mock.patch.object(launch, "ensure_single_instance", return_value=None), \
-             mock.patch.object(launch.os, "execvpe") as execvpe, \
+             mock.patch.object(launch.subprocess, "call") as spawn, \
+             mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery, \
              mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
-            assert launch.main([]) == 1
-        execvpe.assert_not_called()
+            assert launch.main([]) == 130
+        spawn.assert_not_called()
+        recovery.assert_called_once_with(1)

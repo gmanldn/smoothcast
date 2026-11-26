@@ -465,7 +465,7 @@ def recovery_web(exit_code: int) -> int:
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SmoothCast recovery</title>"
         "<main><h1>SmoothCast recovery mode</h1>"
-        f"<p>The desktop process exited with status {int(exit_code)}.</p>"
+        f"<p>Desktop startup failed or the process exited with status {int(exit_code)}.</p>"
         "<p>The casting engine and shared room are unavailable. "
         "This page is local diagnostics only, not an active room.</p>"
         "<p>Read the terminal error, stop recovery with Ctrl+C, "
@@ -513,7 +513,7 @@ def recovery_web(exit_code: int) -> int:
 def _desktop_exit(code: int) -> int:
     if code in (0, 130, -2, -15):
         return code  # normal exit or operator interrupt/termination
-    print(f"SmoothCast: desktop exited with status {code}.", file=sys.stderr, flush=True)
+    print(f"SmoothCast: desktop failed with status {code}.", file=sys.stderr, flush=True)
     if gui_instances(all_installations=True):
         print("SmoothCast: another primary is still present; not starting recovery.",
               file=sys.stderr, flush=True)
@@ -571,8 +571,8 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
     try:
         installed = target[0] if target is not None else python_path()
     except FileNotFoundError as exc:
-        print(f"SmoothCast: {exc}", file=sys.stderr)
-        return 1
+        print(f"SmoothCast: {exc}", file=sys.stderr, flush=True)
+        return _desktop_exit(1)
     # GTK's process cwd is intentionally ROOT; preserve the caller's media
     # paths before os.chdir/Windows subprocess cwd changes that reference.
     media_args = media_arguments_from_caller(args, Path.cwd())
@@ -586,8 +586,8 @@ def main(argv: list[str] | None = None, *, prechecked: bool = False) -> int:
         # import error or native crash must leave a browser recovery path.
         return _desktop_exit(subprocess.call(command, cwd=ROOT, env=env))
     except (OSError, RuntimeError) as exc:
-        print(f"SmoothCast could not start: {exc}", file=sys.stderr)
-        return 1
+        print(f"SmoothCast could not start: {exc}", file=sys.stderr, flush=True)
+        return _desktop_exit(1)
 
 
 if __name__ == "__main__":

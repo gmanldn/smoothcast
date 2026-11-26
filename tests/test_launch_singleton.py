@@ -203,9 +203,11 @@ class EarlyActivationTests(unittest.TestCase):
              mock.patch.object(launch, "runtime_environment", return_value={}), \
              mock.patch.object(launch, "ensure_single_instance",
                                side_effect=AssertionError("guard must run once")), \
-             mock.patch.object(launch.subprocess, "call", side_effect=OSError("stubbed spawn")):
+             mock.patch.object(launch.subprocess, "call", side_effect=OSError("stubbed spawn")), \
+             mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery:
             with mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": ""}):
-                self.assertEqual(launch.main([], prechecked=True), 1)
+                self.assertEqual(launch.main([], prechecked=True), 130)
+            recovery.assert_called_once_with(1)
 
 
 class AppFailureTests(unittest.TestCase):
@@ -287,3 +289,14 @@ def test_failed_secondary_never_starts_another_recovery_server():
          mock.patch.object(launch, "recovery_web") as recovery:
         assert launch._desktop_exit(1) == 1
         recovery.assert_not_called()
+
+
+def test_missing_interpreter_enters_recovery_without_spawning_desktop():
+    with mock.patch.object(launch, "managed_target", return_value=None), \
+         mock.patch.object(launch, "python_path", side_effect=FileNotFoundError("missing")), \
+         mock.patch.object(launch, "_desktop_exit", return_value=130) as recovery, \
+         mock.patch.object(launch.subprocess, "call") as spawn, \
+         mock.patch.dict(os.environ, {"SMOOTHCAST_TEST_CONTEXT": "0"}):
+        assert launch.main([], prechecked=True) == 130
+        recovery.assert_called_once_with(1)
+        spawn.assert_not_called()
