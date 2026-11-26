@@ -107,6 +107,7 @@ py-modules = [
     "error_banner",
     "error_banner_ui",
     "error_log",
+    "error_tail",
     "errors",
     "failure_boundary",
     "federated_search",
