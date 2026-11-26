@@ -66,8 +66,9 @@ def test_unwritable_cache_falls_back_to_the_live_script(tmp_path, monkeypatch):
 
 
 def test_is_frozen_worker_only_accepts_the_snapshot_shape():
-    assert sg.is_frozen_worker(f"/home/u/.cache/cast-control/{sg.GENERATION_PREFIX}a/server.py")
-    assert sg.is_frozen_worker(r"C:\u\.cache\cast-control\hls-generation-a\server.py")
+    assert sg.is_frozen_worker(f"/home/u/.cache/cast-control/{sg.GENERATION_PREFIX}0123456789ab/server.py")
+    assert sg.is_frozen_worker(r"C:\u\.cache\cast-control\hls-generation-0123456789ab\server.py")
+    assert not sg.is_frozen_worker(f"/home/u/.cache/cast-control/{sg.GENERATION_PREFIX}a/server.py")
     assert not sg.is_frozen_worker("/repo/src/server.py")
     assert not sg.is_frozen_worker(f"/x/{sg.GENERATION_PREFIX}a/other.py")
     assert not sg.is_frozen_worker("server.py")
