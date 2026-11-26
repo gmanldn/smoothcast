@@ -154,3 +154,30 @@ def test_session_helpers_keep_ui_state_in_memory_and_submit_storage_to_worker(mo
     assert stored[0]["encoder"] == "software"
     assert stored[0]["first_playing_ms"] is not None
 
+
+def test_malformed_records_do_not_hide_valid_reliability_samples(tmp_path):
+    path = tmp_path / "reliability.json"
+    wall = datetime(2026, 11, 26, tzinfo=timezone.utc).timestamp()
+    valid = metrics.SessionMetrics("cast", started=10, wall_time=wall).finish(
+        "completed", now=11,
+    )
+    malformed = [
+        dict(valid, protocol=[]),
+        dict(valid, mode={}),
+        dict(valid, outcome=[]),
+        dict(valid, cpu_peak_percent=float("nan")),
+        dict(valid, cpu_peak_percent=float("inf")),
+        dict(valid, seek_latency_ms=[float("nan")]),
+        dict(valid, seek_latency_ms=[float("inf")]),
+    ]
+    repaired = dict(valid, encoder=[], cpu_peak_percent=1.5, seek_latency_ms=[0, 5.2])
+    path.write_text(json.dumps({
+        "schema": metrics.SCHEMA_VERSION, "sessions": [valid, *malformed, repaired],
+    }), encoding="utf-8")
+    rows = metrics.recent(path, now=wall)
+    assert rows == [valid, dict(repaired, encoder="unknown")]
+    assert metrics.dashboard_summary(path, now=wall)["sample_count"] == 2
+    metrics.append(valid, path, now=wall)
+    assert len(json.loads(path.read_text(encoding="utf-8"),
+                          parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value))
+                          )["sessions"]) == 3
