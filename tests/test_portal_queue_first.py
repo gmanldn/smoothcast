@@ -1,4 +1,4 @@
-"""Queue-first portal layout and truthful target/link state (headless)."""
+"""Portal room layout and truthful target/link state (headless)."""
 from html.parser import HTMLParser
 import shutil
 import subprocess
@@ -24,7 +24,8 @@ def test_queue_is_first_and_links_remain_discoverable():
     page = Layout()
     page.feed(html)
     ids = list(page.ids)
-    assert ids.index("queuePanel") < ids.index("playback")
+    # Home pane leads (now playing), then Up Next, then Find (#324).
+    assert ids.index("homePanel") < ids.index("playback") < ids.index("queuePanel")
     assert ids.index("queuePanel") < ids.index("findPanel")
     assert ids.index("queue") < ids.index("linkAcquisition")
     assert page.ids["queueHeading"]["tabindex"] == "-1"
