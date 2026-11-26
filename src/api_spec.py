@@ -61,6 +61,10 @@ PATHS: dict[str, dict] = {
         **_op("Explicit metadata-only YouTube search through an enabled isolated worker",
               csrf=True, method_body="YouTubeSearch", tag="search"),
         "security": [{"session": [], "csrf": []}]}},
+    "/api/search/magnets": {"post": {
+        **_op("Explicit metadata-only archive (magnet) search through the room's link service",
+              csrf=True, method_body="MagnetSearch", tag="search"),
+        "security": [{"session": [], "csrf": []}]}},
     "/api/search/stream": {"get": _op(
         "Same search as server-sent events: results, more, done", params=[_p("q", required=True)],
         content="text/event-stream", tag="search")},
@@ -132,6 +136,8 @@ SCHEMAS = {
         "key": {"type": "string", "pattern": "^qh:[0-9a-f]{32}$"},
         "queue_revision": {"type": "integer"}, "queue_command_id": {"type": "string"}}},
     "YouTubeSearch": {"type": "object", "required": ["q"], "properties": {
+        "q": {"type": "string", "minLength": 1, "maxLength": 200}}},
+    "MagnetSearch": {"type": "object", "required": ["q"], "properties": {
         "q": {"type": "string", "minLength": 1, "maxLength": 200}}},
     "LinkStart": {"type": "object", "required": ["url", "request_id", "authorised"], "properties": {
         "url": {"type": "string", "maxLength": 1500},
