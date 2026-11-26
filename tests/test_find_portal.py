@@ -58,6 +58,7 @@ class Host(PortalQueueMixin):
 
     def _enqueue(self, paths):
         self.enqueued += paths
+        self.queue += paths
 
 
 def test_queue_add_key_resolves_inside_the_library_and_enqueues(tmp_path):
@@ -78,13 +79,13 @@ def test_queue_add_key_refuses_unknown_remote_and_escaped_paths(tmp_path):
     with pytest.raises(portal.PortalRequestError) as escaped:
         host._portal_queue_action("queue_add_key", {"key": host.key})
     assert escaped.value.status == 404 and host.enqueued == []
+    # Up Next edits do not own the receiver: a busy transport still accepts the add (#324).
     host.busy = True
     host._library_indexer._conn.execute(
         "UPDATE entries SET rel_path='Alien (1979).mkv' WHERE content_key=?", (host.key,))
     host._library_indexer._conn.commit()
-    with pytest.raises(portal.PortalRequestError) as busy:
-        host._portal_queue_action("queue_add_key", {"key": host.key})
-    assert busy.value.status == 409
+    assert host._portal_queue_action("queue_add_key", {"key": host.key}) == "Added to the queue."
+    assert host.enqueued == [str((host.lib / "Alien (1979).mkv").resolve())]
 
 
 def test_queue_add_key_over_http_validates_key_and_requires_session():
