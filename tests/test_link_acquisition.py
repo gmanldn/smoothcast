@@ -559,7 +559,7 @@ def test_room_restart_cannot_take_cache_lock_until_old_delivery_exits(tmp_path):
         blocked = acquisition.LinkJobs(tmp_path, FakeProvider(), lambda *args: None, lambda owner: True)
         try:
             assert blocked.capabilities() == {"youtube": False, "magnet": False}
-            with pytest.raises(acquisition.LinkError, match="recovery storage"):
+            with pytest.raises(acquisition.LinkError, match="could not save the download"):
                 blocked.submit("new-owner", MAGNET, "another-request")
         finally:
             blocked.close()
@@ -582,7 +582,7 @@ def test_corrupt_journal_is_preserved_and_blocks_new_downloads(tmp_path):
     jobs = acquisition.LinkJobs(tmp_path, provider, lambda *args: None, lambda owner: True)
     try:
         assert not jobs.storage_available()
-        with pytest.raises(acquisition.LinkError, match="recovery storage"):
+        with pytest.raises(acquisition.LinkError, match="could not save the download"):
             jobs.submit("owner", YOUTUBE, "request")
         assert not provider.calls
         assert journal.read_text() == '{"schema":999,"jobs":[]}'

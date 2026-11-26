@@ -246,7 +246,7 @@ def inspect_torrent(data: bytes, identity: str) -> TorrentMedia:
             seen.add(key)
             total += size
             if total > MAX_BYTES:
-                raise LinkError(413, "Torrent exceeds the 2 GiB acquisition limit.")
+                raise LinkError(413, "That torrent is larger than the 2 GiB download limit.")
             if size and relative.suffix.lower() in MEDIA_SUFFIXES:
                 candidates.append((size, -index, relative))
         pieces = info.get(b"pieces")
@@ -272,11 +272,11 @@ def _tree_bytes(root: Path) -> int:
             path = Path(directory) / name
             info = path.lstat()
             if count > MAX_FILES * 2 or stat.S_ISLNK(info.st_mode):
-                raise LinkError(422, "Unsafe or excessive files in acquisition staging.")
+                raise LinkError(422, "That download contains unsafe or too many files, so it was stopped.")
             if stat.S_ISREG(info.st_mode):
                 total += info.st_size
             elif not stat.S_ISDIR(info.st_mode):
-                raise LinkError(422, "Unsupported file in acquisition staging.")
+                raise LinkError(422, "That download contains a file SmoothCast cannot play.")
     return total
 
 
@@ -630,7 +630,7 @@ class CommandProvider:
             raise LinkError(400, "Enter a search of 3 to 200 characters.")
         text = _search_text(value)
         if not self.magnet_search_available():
-            raise LinkError(503, "Archive search requires a qualified local magnet worker and curl.")
+            raise LinkError(503, "Archive search is unavailable in this room. Try again later.")
         return _archive_search_command(self.launcher, str(self.archive_curl), text, cancelled)
 
     def readiness_text(self, kind: str) -> str:
@@ -642,16 +642,16 @@ class CommandProvider:
 
     def _run(self, executable, args, directory, cancelled, progress, deadline):
         if cancelled():
-            raise LinkError(409, "Acquisition cancelled.")
+            raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
         if shutil.disk_usage(directory).free < FREE_RESERVE + MAX_BYTES:
-            raise LinkError(507, "Not enough host disk space for a bounded acquisition.")
+            raise LinkError(507, "There is not enough space on the SmoothCast computer for that download.")
         command = [self.launcher, str(executable), *args]
         kwargs = {"start_new_session": True} if os.name == "posix" else {}
         try:
             process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
         except OSError:
-            raise LinkError(503, "The configured acquisition worker could not start.") from None
+            raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE) from None
 
         def read_progress():
             assert process.stdout is not None
@@ -671,16 +671,16 @@ class CommandProvider:
         try:
             while process.poll() is None:
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 if time.monotonic() >= deadline:
-                    raise LinkError(504, "The acquisition exceeded its time limit.")
+                    raise LinkError(504, "The download took too long and was stopped.")
                 if _tree_bytes(directory) > MAX_BYTES or shutil.disk_usage(directory).free < FREE_RESERVE:
-                    raise LinkError(507, "The host acquisition storage limit was reached.")
+                    raise LinkError(507, "The SmoothCast computer has reached its download storage limit.")
                 time.sleep(0.25)
             if process.returncode:
-                raise LinkError(502, "The external media worker failed or the source is unavailable.")
+                raise LinkError(502, "The download failed, or the source is unavailable.")
             if _tree_bytes(directory) > MAX_BYTES:
-                raise LinkError(413, "Downloaded media exceeds the acquisition limit.")
+                raise LinkError(413, "The downloaded file is larger than the download limit.")
         finally:
             if process.poll() is None:
                 try:
@@ -697,7 +697,7 @@ class CommandProvider:
 
     def acquire(self, source: Source, directory: Path, stage, progress, cancelled) -> Path:
         if not self.capabilities().get(source.kind):
-            raise LinkError(503, "This host has not enabled an isolated worker for that source.")
+            raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
         deadline = time.monotonic() + MAX_SECONDS
         tool = self.tools[source.kind]
         if source.kind == "youtube":
@@ -753,7 +753,7 @@ class CommandProvider:
                 raise LinkError(422, "Torrent media size does not match verified metadata.")
         stage("verifying")
         if cancelled():
-            raise LinkError(409, "Acquisition cancelled.")
+            raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
         # ffprobe receives a local file, with network protocols disabled.
         try:
             result = subprocess.run(
@@ -799,7 +799,7 @@ def _sha256(path: Path, cancelled: Callable[[], bool]) -> str:
     with open(path, "rb") as stream:
         while chunk := stream.read(1 << 20):
             if cancelled():
-                raise LinkError(409, "Acquisition cancelled.")
+                raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
             digest.update(chunk)
     return digest.hexdigest()
 JOURNAL_BYTES = 64 * 1024
@@ -1012,7 +1012,7 @@ class LinkJobs:
             self._journal_error = True
             for job in self._jobs.values():
                 if job.stage == "pending":
-                    self._change(job, stage="failed", error="Acquisition recovery storage is unavailable.")
+                    self._change(job, stage="failed", error="The SmoothCast computer could not save the download. Try again shortly.")
             self._revision += 1
             return False
 
@@ -1031,9 +1031,9 @@ class LinkJobs:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
             if self._journal_error:
-                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
             if not self.capabilities().get(source.kind):
-                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
+                raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             receipt = self._requests.get((owner, request))
             if receipt is not None:
                 job = self._jobs.get(receipt)
@@ -1055,14 +1055,14 @@ class LinkJobs:
             if self._closed:
                 raise LinkError(503, "The room is shutting down.")
             if self._journal_error:
-                raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
             job = self._jobs.get(job_id) if isinstance(job_id, str) else None
             if job is None or job.owner != owner:
                 raise LinkError(404, "That download is not available to retry.")
             if job.stage not in {"failed", "cancelled"}:
                 raise LinkError(409, "Only a failed or cancelled download can be retried.")
             if not self.capabilities().get(job.source.kind):
-                raise LinkError(503, "The host has not enabled this isolated acquisition worker.")
+                raise LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
             return self._enqueue(owner, job.source, job.request)
 
     def _enqueue(self, owner: str, source: Source, request: str) -> str:
@@ -1079,7 +1079,7 @@ class LinkJobs:
                     self._remember_request(owner, request, job.id)
                     return job.id
         if sum(j.stage not in TERMINAL for j in self._jobs.values()) >= MAX_PENDING:
-            raise LinkError(429, "The room acquisition queue is full. Try again when a job finishes.")
+            raise LinkError(429, "The download queue is full. Try again when one of the current downloads finishes.")
         previous_jobs = self._jobs.copy()
         previous_requests = self._requests.copy()
         while len(self._jobs) >= MAX_RECORDS:
@@ -1087,7 +1087,7 @@ class LinkJobs:
             expired = next((j for j in self._jobs.values()
                             if j.stage in TERMINAL - {"delivery_uncertain"}), None)
             if expired is None:
-                raise LinkError(429, "The room acquisition queue is full.")
+                raise LinkError(429, "The download queue is full.")
             self._jobs.pop(expired.id)
             for key, value in tuple(self._requests.items()):
                 if value == expired.id:
@@ -1100,7 +1100,7 @@ class LinkJobs:
         self._remember_request(owner, request, job.id)
         if not self._save():
             self._jobs, self._requests = previous_jobs, previous_requests
-            raise LinkError(503, "Acquisition receipt could not be saved; no download started.")
+            raise LinkError(503, "The download could not be recorded, so nothing was downloaded. Try again shortly.")
         self._revision += 1
         if self._worker is None:
             self._worker = threading.Thread(target=self._work, name="room-link-acquisition", daemon=True)
@@ -1155,12 +1155,12 @@ class LinkJobs:
 
             def stage(value):
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 self._change(job, stage=value, received=None, total=None, rate=None, measured_at=0.0)
 
             try:
                 if cancelled():
-                    raise LinkError(409, "Acquisition cancelled.")
+                    raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 if job.home:
                     reused = self._verified_retained(job, directory, cancelled)
                 if reused is not None:
@@ -1181,9 +1181,9 @@ class LinkJobs:
                 # owner's live session again when it receives the request.
                 with self._lock:
                     if cancelled() or self._closed:
-                        raise LinkError(409, "Acquisition cancelled.")
+                        raise LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                     if self._journal_error:
-                        raise LinkError(503, "Acquisition recovery storage is unavailable.")
+                        raise LinkError(503, "The SmoothCast computer could not save the download. Try again shortly.")
                     title = "".join(c for c in path.name if c.isprintable())[:120]
                     title = title.replace(job.source.identity, "[source]") or job.source.label
                     self._change(job, stage="queueing", title=title,
@@ -1252,12 +1252,12 @@ class LinkJobs:
         with self._lock:
             job = self._jobs.get(job_id) if isinstance(job_id, str) else None
             if job is None or job.owner != owner:
-                raise LinkError(404, "That acquisition is not available.")
+                raise LinkError(404, "That download is not available.")
             if job.stage in TERMINAL or job.stage == "queueing":
-                raise LinkError(409, "The acquisition has already finished or is entering Up Next.")
+                raise LinkError(409, "That download has already finished or is already in Up Next.")
             job.cancel.set()
             if job.stage == "pending":
-                self._change(job, stage="cancelled", error="Acquisition cancelled.")
+                self._change(job, stage="cancelled", error=guest_messages.DOWNLOAD_CANCELLED)
                 self._save()
 
     def revoke(self, owners):

@@ -78,7 +78,7 @@
   "font_attachments.py": 172,
   "frozen_entry.py": 10,
   "frozen_runtime.py": 86,
-  "guest_messages.py": 36,
+  "guest_messages.py": 38,
   "gui_link_add.py": 182,
   "gui_test_safety.py": 54,
   "hdr_tonemap.py": 62,
@@ -232,6 +232,6 @@
   "video_policy.py": 281,
   "watch_history.py": 208
  },
- "src_lines": 54222,
+ "src_lines": 54224,
  "src_modules": 229
 }
