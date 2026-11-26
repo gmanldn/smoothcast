@@ -173,7 +173,7 @@ class RemoteAcquisition:
                 self._sleep(POLL_SECONDS)
                 reply = bridge.send(node, {"t": "search_poll", "id": request})
         except (ConnectionError, TypeError, ValueError) as exc:
-            raise links.LinkError(502, "The mesh YouTube search worker did not respond.") from exc
+            raise links.LinkError(502, guest_messages.YOUTUBE_OFF) from exc
         finally:
             if not finished:
                 try:
@@ -197,7 +197,7 @@ class RemoteAcquisition:
                     self.store.save(ledger)
             if outcome in {"no_executor", "refused", "duplicate"}:
                 raise links.LinkError(503, guest_messages.LINK_DOWNLOADS_UNAVAILABLE)
-            raise links.LinkError(502, "The worker did not confirm the assignment.")
+            raise links.LinkError(502, "The download could not be started. Try again.")
         deadline, shown, last = self._clock() + MAX_WAIT_SECONDS, "", None
         room_job = Path(directory).name  # LinkJobs names each job's directory by its id
         self.executors[room_job] = selection.node_id
@@ -205,7 +205,7 @@ class RemoteAcquisition:
             while True:
                 if cancelled():
                     host.cancel(job_id)
-                    raise links.LinkError(409, "Acquisition cancelled.")
+                    raise links.LinkError(409, guest_messages.DOWNLOAD_CANCELLED)
                 now = self._clock()
                 with self._lock:
                     ledger.tick(now)
@@ -214,9 +214,9 @@ class RemoteAcquisition:
                     counters = (job.received, job.total)
                     self.store.save(ledger)
                 if ambiguous:
-                    raise links.LinkError(502, "The remote worker stopped answering; not retried.")
+                    raise links.LinkError(502, "The computer sharing the media stopped answering. Try again.")
                 if state in {"failed", "cancelled"}:
-                    raise links.LinkError(502, "The remote worker could not finish the download.")
+                    raise links.LinkError(502, "The computer sharing the media could not finish the download.")
                 mapped = _STAGE.get(state)
                 if mapped and mapped != shown:
                     shown = mapped
@@ -232,7 +232,7 @@ class RemoteAcquisition:
                         raise links.LinkError(502, "The file could not be transferred intact.")
                 if now > deadline:
                     host.cancel(job_id)
-                    raise links.LinkError(504, "The remote acquisition took too long.")
+                    raise links.LinkError(504, "The download from the other computer took too long.")
                 self._sleep(POLL_SECONDS)
         finally:
             self.executors.pop(room_job, None)
