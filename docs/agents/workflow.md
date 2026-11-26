@@ -8,34 +8,31 @@ to `main`. The owner manually decides when (and whether) to merge it.
 
 ## Choose the transport first (P0)
 
-- Hosted ChatGPT execution containers: assume no native internet access. Use
-  the GitHub connector immediately for repository reads, claims and guarded
-  progress shipments. Follow [connector shipment](sandbox-network.md); do not
-  attempt native clone/pull/push, gh, curl or dependency downloads first.
-- Network-enabled developer machines: use the native agent CLI below.
-- Both paths preserve claim arbitration, SHA-pinned changes, non-force develop
-  publication, durable handover and truthful test evidence. Connector progress
-  cannot change SemVer or close tickets. An explicit owner-directed PATCH release
-  uses the separate [guarded release lane](sandbox-network.md#explicit-owner-directed-patch-release).
+- Hosted ChatGPT containers: assume no native internet. Use the GitHub connector
+  from the outset for reads, claims and guarded shipments per
+  [sandbox networking](sandbox-network.md); do not try native clone/pull/push,
+  gh, curl or downloads first.
+- Network-enabled machines: use the native agent CLI below.
+- Both preserve claim arbitration, SHA-pinned changes, non-force develop
+  publication and truthful evidence. Connector progress cannot change SemVer or
+  close tickets; an owner-directed PATCH uses the
+  [guarded release lane](sandbox-network.md#explicit-owner-directed-patch-release).
 
 ## Many agents, one trunk
 
-1. Prefer `python3 scripts/agent.py start [ISSUE]` (auto-picks a free
-   ticket if omitted). It refreshes develop, coordinates the claim, creates
-   a private detached worktree, and writes a bounded source-grounded task
-   brief in that worktree's Git admin directory. Or start with
-   `python3 scripts/agent.py board` and `agent.py next`.
-   These inspect live comment claims and hot files before choosing a P0/P1
-   issue or small fix. Read current issue comments before changing code;
-   `ticket_digest.py` alone cannot see every structured claim.
+1. Prefer `python3 scripts/agent.py start [ISSUE]` (auto-picks a free ticket if
+   omitted). It refreshes develop, coordinates the claim, creates a private
+   detached worktree and writes a bounded, source-grounded task brief there. Or
+   inspect with `python3 scripts/agent.py board` and `agent.py next`, which check
+   live claims and hot files before choosing a P0/P1 issue or small fix. Read
+   current issue comments before editing; `ticket_digest.py` cannot see every claim.
 2. Claim using `python3 scripts/agent.py claim N --files src/file.py`
    (structured comment with a bounded TTL, not an assignee-only claim).
-   Agents commonly share one GitHub user identity, so assignees and stale
-   `in-flight` labels are **not** locks. The earliest active structured claim
-   wins; on exit 3, choose another issue. The default lease is 90 minutes
-   (30–180); renew only during real work with `agent.py heartbeat N`.
-   Release via `agent.py progress N ... --release` or `release N`.
-   Split large issues into separate file-level scopes for concurrency.
+   Agents often share one GitHub identity, so assignees and stale `in-flight`
+   labels are **not** locks; the earliest active structured claim wins. On exit 3
+   choose another issue. The lease defaults to 90 minutes (30–180); renew during
+   real work with `agent.py heartbeat N` and release via `release N`. Split large
+   issues into file-level scopes for concurrency.
 3. Work in one independent detached worktree per task (never the user's
    checkout), stage **named files only**, and make small cohesive commits with
    `Refs #N`. No feature branches or agent PRs.
@@ -71,13 +68,6 @@ python3 scripts/agent.py ship --message "fix: completed behaviour" --next none
 python3 scripts/agent.py finish --done "acceptance met" --next none --verification "actual checks" --checklist "criteria" --close
 ```
 
-## Agent sandbox networking preflight
-
-For a known offline hosted container, skip network diagnostics and select the
-connector directly. On an otherwise network-enabled machine, diagnose a new
-failure once before retrying: [sandbox networking](sandbox-network.md).
-Never bypass ship safeguards; skipped network checks are UNVERIFIED.
-
 ## Concurrency and token efficiency
 
 - Never lock the entire repository for an agent or run a long task in the
@@ -89,13 +79,11 @@ Never bypass ship safeguards; skipped network checks are UNVERIFIED.
 - Prefer completing small independent tickets rather than keeping many broad
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
-- Every coherent `agent.py ship` has an immutable Git commit SHA; `src/version.py`
-  is release SemVer. Owner policy (26 Nov 2026): **make new versions in
-  `develop`**. Merge work and bump SemVer there; the owner promotes `main` later.
-  The old `--assign-patch` flag is an ignored compatibility option. The
-  version-history guard runs regardless of `--skip-checks`; `main` promotion is
-  manual. If targeted checks already ran, use `--skip-checks` to avoid duplicate
-  work and record the actual evidence at finish; do not claim unrun checks passed.
+- Every `agent.py ship` has an immutable commit SHA; `src/version.py` is release
+  SemVer. Owner policy (26 Nov 2026): **make new versions in `develop`**, never
+  `main`. The old `--assign-patch` flag is ignored. The version-history guard runs
+  regardless of `--skip-checks`. If targeted checks already ran, use
+  `--skip-checks` and record the evidence at finish; never claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.
@@ -112,9 +100,9 @@ testing. Always describe actual evidence accurately.
 | --- | --- | --- |
 | Ordinary `develop` push | No full Verify, native packaging or CodeQL | Eliminate redundant work from parallel agents |
 | One nightly deferred run (after owner merges workflow into `main`) | Headless compile, Ruff and a compact security/reliability regression set on latest `develop` | Batch many commits into one bounded check; skip real GUI and native packaging |
-| Security-sensitive portal/auth/room/transfer file push | Headless Portal Security suite only | Catch high-consequence auth/ownership regressions |
-| Explicit Verify dispatch | Fast lane by default; full lane on MINOR/MAJOR | Owner-requested software qualification |
-| Explicit Portal Security dispatch or PR into `develop` | Headless suite plus private Xvfb GTK smoke | Deeper qualification, without touching user desktop |
+| Security-sensitive portal/auth/room/transfer file push | Headless Portal Security suite only | Catch auth/ownership regressions |
+| Explicit Verify dispatch | Fast lane by default; full lane on MINOR/MAJOR | Owner-requested qualification |
+| Explicit Portal Security dispatch or PR into `develop` | Headless suite plus private Xvfb GTK smoke | Deeper qualification, no user desktop |
 | Explicit Package dispatch or `v*` tag | Native Linux/macOS/Windows bundles | Avoid three-platform builds per edit |
 | Weekly CodeQL schedule or manual dispatch | Static security analysis | Detect accumulated issues without per-commit scans |
 
