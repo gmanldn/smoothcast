@@ -15,7 +15,8 @@ to `main`. The owner manually decides when (and whether) to merge it.
 - Network-enabled developer machines: use the native agent CLI below.
 - Both paths preserve claim arbitration, SHA-pinned changes, non-force develop
   publication, durable handover and truthful test evidence. Connector progress
-  cannot change SemVer or close tickets; do not bypass that guard.
+  cannot change SemVer or close tickets. An explicit owner-directed PATCH release
+  uses the separate [guarded release lane](sandbox-network.md#explicit-owner-directed-patch-release).
 
 ## Many agents, one trunk
 

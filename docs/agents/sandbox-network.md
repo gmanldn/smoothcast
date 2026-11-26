@@ -40,9 +40,9 @@ Direct DNS probes may fail even when proxy-backed Git succeeds. Offline tests:
   a connector read does not prove native Git works. Proxy-backed Git may work
   despite direct DNS failures. Inspect actual stderr; do not print credentials.
 - If native Git is unavailable, connector-hosted agents may use the guarded
-  **progress-only** transport in `scripts/connector_ship.mjs` (#598).
-  Do not use separate Contents API writes or force updates; no main,
-  version assignment or issue closure through this path.
+  guarded transport in `scripts/connector_ship.mjs` (#598). Progress is the
+  default; explicit owner release requests may use the separate release lane
+  below. No separate Contents API writes, force updates, main or issue closure.
 - If connectivity failed during shipment, follow the
   [pending-push recovery rules](../COORDINATION.md#recovery-and-exit-statuses)
   in the original worktree. Never create duplicate commits or assume an
@@ -87,8 +87,20 @@ Before preparing, fetch the exact version.py and canonical AST guard
 offline and run its parse_version on the pinned version source. The candidate
 must contain the identical version blob, and have one parent and precisely
 the reviewed changed paths. A normal version-preserving transition is thus
-checked without executing application code. No PATCH allocation, deletion,
-mode change, binary edit or closure is supported here.
+checked without executing application code. No per-ticket PATCH allocation,
+deletion, mode change, binary edit or closure is supported here.
+
+### Explicit owner-directed PATCH release
+
+Only for an explicit owner request, use `kind: "release"`, a live issue lease
+covering `src/version.py`, and exactly one change to that file. Pin `versionBlob`
+to the old blob and `releaseBlob` to the new blob; run the canonical Python AST
+parser on both exact byte sequences offline. The message must be
+`chore(version): release X.Y.Z` (without ticket PATCH attribution); `next` must
+record outstanding qualification, not closure. The guard validates exactly one
+PATCH increment and unchanged non-PATCH bytes before object creation and again
+before publication. Use the identical staged receipt/CAS/ancestry workflow.
+No automatic release, issue closure, main changes, tags or publishing.
 
 The coordinator reads complete global and issue lease feeds, creates an
 immutable Git tree/commit, verifies candidate contents and parent, records a
