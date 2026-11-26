@@ -53,6 +53,7 @@ import preflight
 import queue_metadata
 import reliability_metrics
 
+import cast_failure_code
 import gui_link_add
 import url_control
 
@@ -1250,7 +1251,7 @@ class SessionMixin(AbRepeatUiMixin):
         option = self._recovery_plan.primary if retry and self._recovery_plan else None
         why = f" — {option.reason}" if option is not None and option.kind != "retry" else ""
         self.toast(f"Cast failed: {message}{why}", error=True, **({"action": retry} if retry else {}))
-        self._console(f"Cast failed: {message}")
+        self._console(f"Cast failed [{cast_failure_code.note(message)}]: {message}")
         if self._recovery_plan is not None:
             self._console(cast_recovery.summary_line(self._recovery_plan))
         self._notify("error", message)

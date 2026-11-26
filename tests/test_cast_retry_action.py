@@ -12,6 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cast_failure_code
 import cast_recovery
 from gui_source import main_window_methods
 
@@ -21,7 +22,8 @@ NAMES = ("_cast_failed", "_retry_action", "_retry_cast", "_select_receiver")
 def make_window(*, session=None, busy=False, closing=False, plan_kwargs=None):
     methods = main_window_methods()
     body = "\n".join(textwrap.indent(textwrap.dedent(methods[n]), "    ") for n in NAMES)
-    ns = {"pathlib": pathlib, "cast_recovery": cast_recovery, "LABELS": {
+    ns = {"pathlib": pathlib, "cast_recovery": cast_recovery,
+          "cast_failure_code": cast_failure_code, "LABELS": {
               "retry": "Try again", "alternate_encoding": "Convert and retry"},
           "fmt_time": cast_recovery.format_position,
           "reliability_metrics": SimpleNamespace(fail_attempt=lambda *_a: None,
