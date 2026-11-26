@@ -216,3 +216,30 @@ def test_unknown_code_without_reviewed_copy_still_uses_generic_failure():
     assert failure.code == "internal.unexpected"
     assert failure.title == fb.TITLE
     assert "private details" not in failure.message
+
+
+def test_notifier_serialises_concurrent_duplicate_failures():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    first_read, second_read = Event(), Event()
+
+    class RacingDict(dict):
+        def get(self, key, default=None):
+            value = super().get(key, default)
+            if value is None:
+                if first_read.is_set():
+                    second_read.set()
+                else:
+                    first_read.set()
+                    second_read.wait(1)
+            return value
+
+    notifier = fb.Notifier(clock=lambda: 0.0)
+    notifier._last = RacingDict()
+    failure = fb.UserFailure("Repeated fault", (), "RuntimeError")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(notifier.allow, failure)
+        assert first_read.wait(2)
+        second = pool.submit(notifier.allow, failure)
+        assert [first.result(timeout=3), second.result(timeout=3)] == [True, False]
