@@ -459,3 +459,37 @@ def test_cancel_cannot_remove_progressive_cast_source(tmp_path, accepted):
     uploads.mark_early_cast(upload_id, accepted=False)
     uploads.cancel("owner", upload_id)
     assert not path.exists()
+
+
+
+def test_missing_acknowledged_prefix_is_never_zero_extended(tmp_path):
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    path = uploads.root / f"{upload_id}.partial"
+    path.write_bytes(b"a")
+    for _ in range(2):
+        with pytest.raises(portal_uploads.UploadError, match="restart it") as err:
+            uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+        assert err.value.status == 409
+        assert path.read_bytes() == b"a"
+        assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.close()
+
+
+def test_oversized_source_read_preserves_acknowledged_prefix(tmp_path):
+    class OversizedRead(BytesIO):
+        def read(self, size=-1):
+            return super().read(size + 1)
+
+    uploads = manager(tmp_path)
+    upload_id = uploads.create("owner", "movie.mkv", 6)["id"]
+    uploads.append("owner", upload_id, "bytes 0-2/6", 3, BytesIO(b"abc"))
+    path = uploads.root / f"{upload_id}.partial"
+    with pytest.raises(portal_uploads.UploadError, match="exceeds its declared size"):
+        uploads.append("owner", upload_id, "bytes 3-5/6", 3, OversizedRead(b"defg"))
+    assert path.read_bytes() == b"abc"
+    assert uploads.status("owner", upload_id)["received"] == 3
+    uploads.append("owner", upload_id, "bytes 3-5/6", 3, BytesIO(b"def"))
+    assert path.read_bytes() == b"abcdef"
+    uploads.close()

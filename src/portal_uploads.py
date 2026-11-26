@@ -454,15 +454,21 @@ class UploadManager:
             flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
             fd = os.open(upload.partial_path, flags)
             written = 0
+            rollback_safe = False
             try:
                 info = os.fstat(fd)
                 if not stat.S_ISREG(info.st_mode) or info.st_size < start:
                     raise UploadError(409, "The partial upload is unavailable; restart it")
+                # Never extend a missing acknowledged prefix during rollback.
+                rollback_safe = True
                 if info.st_size != start:
                     os.ftruncate(fd, start)
                 os.lseek(fd, start, os.SEEK_SET)
                 while written < chunk_length:
-                    block = source.read(min(READ_SIZE, chunk_length - written))
+                    limit = min(READ_SIZE, chunk_length - written)
+                    block = source.read(limit)
+                    if len(block) > limit:
+                        raise UploadError(400, "Upload chunk exceeds its declared size")
                     if not block:
                         raise UploadError(400, "Upload chunk ended early; retry from the current offset")
                     view = memoryview(block)
@@ -474,11 +480,14 @@ class UploadManager:
                     written += len(block)
                 os.fsync(fd)
             except BaseException:
-                try:
-                    os.ftruncate(fd, start)
-                    os.fsync(fd)
-                except OSError:
-                    pass
+                if rollback_safe:
+                    try:
+                        # External truncation must not turn lost bytes into zeros.
+                        if os.fstat(fd).st_size >= start:
+                            os.ftruncate(fd, start)
+                            os.fsync(fd)
+                    except OSError:
+                        pass
                 raise
             finally:
                 os.close(fd)
