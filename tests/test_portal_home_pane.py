@@ -54,9 +54,9 @@ def test_home_is_the_default_dashboard_pane_with_unique_ids():
     assert len(page.ids) == len(set(page.ids)), "duplicate ids break DOM binding"
     assert page.tags["homePanel"] == "section"
     assert page.parent["homePanel"] == "dashboard"
-    assert page.parent["playback"] == "dashboard"
+    assert page.parent["playback"] == "homePanel"
     assert page.tags["homeHeading"] == "h2"
-    assert '<a href="#playback">Now Playing</a>' in portal._HTML
+    assert '<a href="#playback">Now Playing</a>' not in portal._HTML
     assert 'id="homeHeading" tabindex="-1"' in portal._HTML
 
 
@@ -121,7 +121,7 @@ const location={hash:""},document={activeElement:null};
 const make=(id,blade=null)=>({id,attrs:{},scrolls:0,focuses:0,closest(){return blade||null},contains(x){return x===this||x?.parent===this},scrollIntoView(){this.scrolls++},focus(){this.focuses++;document.activeElement=this},setAttribute(k,v){this.attrs[k]=v},removeAttribute(k){delete this.attrs[k]},getAttribute(k){return this.attrs[k]??null}});
 const home=make("homePanel"),queue=make("queuePanel"),upload=make("uploadCard"),people=make("peoplePanel"),mesh=make("meshPanel"),find=make("findPanel");
 home.closest=()=>home;queue.closest=()=>queue;upload.closest=()=>upload;people.closest=()=>people;mesh.closest=()=>mesh;find.closest=()=>find;
-const playback=make("playback");playback.closest=()=>playback;playback.parent=home;
+const playback=make("playback");playback.closest=()=>home;playback.parent=home;
 const homeHeading=make("homeHeading");homeHeading.parent=home;
 const elements={homePanel:home,playback,queuePanel:queue,uploadCard:upload,peoplePanel:people,meshPanel:mesh,findPanel:find,homeHeading};
 const $=id=>elements[id]||null;
@@ -135,7 +135,8 @@ for(const id of ["homePanel","queuePanel","uploadCard","peoplePanel","meshPanel"
   location.hash="#"+id;syncRoomBlade(true);
   check(dash.getAttribute("data-room-blade")===id,"blade "+id);
 }
-location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="playback","playback blade opens Now Playing");
+location.hash="#playback";syncRoomBlade(true);check(dash.getAttribute("data-room-blade")==="homePanel","playback deep link opens Home");
+check(links[0].getAttribute("aria-current")==="page","Home selected for playback");
 location.hash="";syncRoomBlade();check(!dash.getAttribute("data-room-blade"),"home clears the blade");
 check(links[0].getAttribute("aria-current")==="page","Home selected by default");
 """

@@ -57,9 +57,17 @@ class PreCastPreviewTests(unittest.TestCase):
     def test_duration_is_cached_without_reprobing_on_reselection(self):
         selection = METHODS["set_selection"]
         self.assertIn("self._media_cache.get(path)", selection)
-        self.assertIn("info.st_mtime_ns", selection)
-        self.assertIn("if cached is None or cached[0] != fingerprint:", selection)
+        self.assertIn("queue_metadata.file_fingerprint(path)", selection)
+        self.assertIn("current_fingerprint != fingerprint", selection)
+        self.assertIn("if not cache_hit:", selection)
         self.assertIn("if self._preview_path == path:", selection)
+
+    def test_preview_uses_shared_media_title_after_probe_and_cache_hit(self):
+        selection = METHODS["set_selection"]
+        self.assertIn("queue_metadata.media_title(path_result, media, name)", selection)
+        self.assertIn("queue_metadata.media_title(path, self.media, display)", selection)
+        self.assertIn("self.np_title.set_text(title)", selection)
+        self.assertNotIn("pretty_title(", selection)
 
     def test_local_preview_can_work_with_offline_cast_device(self):
         # The desktop and the web share one state rule (action_state); the pure
