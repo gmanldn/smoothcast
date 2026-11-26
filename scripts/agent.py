@@ -1569,7 +1569,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--files", default="", help="explicit named paths to stage, including newly created files")
     s.add_argument("--next", default="", help="durable next-action handover after a successful push")
     s.add_argument("--assign-patch", action="store_true",
-                   help="deprecated compatibility flag; ignored (no per-ticket version bump)")
+                   help="deprecated compatibility flag; ignored (make new versions in develop)")
     s.add_argument("--skip-checks", action="store_true",
                    help="fast direct push without running checks (UNVERIFIED)")
     s.set_defaults(fn=cmd_ship)

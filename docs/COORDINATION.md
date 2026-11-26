@@ -92,19 +92,18 @@ ran before pushing.
 | Same files, different tickets | Each claim records the files it will edit (predicted from the ticket text, or `--files`). Another claim on any of them blocks `claim` and hides the ticket from `next`. Shared merge-friendly files (`pyproject.toml`, baselines, `verify.yml`, docs, tests) never block. |
 | Dead agents hold tickets | Leases expire: 90 min default (30–180), refreshed by `heartbeat`. Legacy free-text `Claim:` comments count too (45 min) and end on "Claim released". |
 | Choosing work | `next` scores each open ticket: tier (`now` 300, `next` 200, `later` 100) + priority (P0 150 … P3 0) + `agent-ready` + "already has shipped slices: finish it", minus recent churn (files changed on `develop` in the last 45 min), minus unmet prose dependencies, minus stale `in-flight` labels. Your own live claim always ranks first. `epic`, `icebox`, `needs-human` and `needs-split` are skipped. |
-| Fast direct commits | `ship --message "..."` commits tracked edits privately and fast-forward pushes. Use `--files` for new paths. Version history is mandatory; `--skip-checks` skips only optional focused tests. No default version bump. |
+| Fast direct commits | `ship --message "..."` commits tracked edits privately and fast-forward pushes. Use `--files` for new paths. Version history is mandatory; `--skip-checks` skips only optional focused tests. Bump versions in `develop`. |
 | Push races | On rejection, `ship` verifies actual remote ancestry, fetches/rebases unpublished code and retries up to five times; never force-pushes or touches main. Only explicitly generated, unpublished version-only commits may be discarded during recovery. Real code conflicts stop for handover. |
 | Durable handover | Every successful private-worktree `ship` posts idempotent SHA evidence. `finish` records final work, remaining actions, actual verification and releases the lease. Legacy `progress N --done … --next … --commit SHA --verification … [--files …] [--release]` posts `Progress:`, `Handover:`, `Commit:`, `Verification:` and `Files:` in the issue. `next` previews the latest progress and remaining work on shortlisted tickets. Evidence persists long after the lease expires. |
 | Evidence and closing | Legacy `done N` verifies published develop commits, requires a real `--why` and `--checklist`, posts confirmed evidence and releases **only its own live claim**. It refuses `--close`. Use `finish --close` in the matching agent worktree, with `--verification`, `--checklist` and `--next none`, to close after checking freshness and pending delivery receipts. |
 
 ## Build identity and release-number policy
 
-Development changes are identified by immutable Git SHAs. Ordinary private
-worktree `ship` calls leave `src/version.py` unchanged. Owner policy (25 Nov
-2026): no per-ticket version allocation, including at verified closure.
-The legacy `--assign-patch` flag is accepted but ignored. Release-number
-changes are separate explicit owner-directed commits, guarded by the same
-version-history check. Historical assignments and recovery remain intact.
+Development changes are identified by immutable Git SHAs. New release numbers
+are made in `develop` (owner policy, 26 Nov 2026): merge work and bump SemVer
+there. The legacy `--assign-patch` flag is accepted but ignored. Release-number
+changes are owner-directed commits, guarded by the same version-history check.
+Historical assignments and recovery remain intact.
 `main` remains exclusively owner-controlled.
 
 ## Tiers

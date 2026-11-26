@@ -27,10 +27,9 @@ pushes to `develop`. `--skip-checks` bypasses costly focused tests, **not**
 integrity checks. It posts a durable SHA handover. Do not close untested,
 incomplete or hardware-pending issues.
 
-Normal agent ships **do not change the semantic release version**. The exact
-development identity is the Git SHA (`smoothcast --build-id`). Ticket closure
-does not require a version bump. The legacy `--assign-patch` option is ignored.
-Release changes are separate explicit owner-directed commits.
+New versions are made in `develop` as owner-directed release commits. The exact
+development identity is also the Git SHA (`smoothcast --build-id`). The legacy
+`--assign-patch` option is ignored.
 `main` remains entirely owner-controlled. Raw pushes bypass the local
 preflight, so use the coordinator.
 

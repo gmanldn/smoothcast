@@ -77,13 +77,12 @@ bypass ship safeguards; skipped network checks are UNVERIFIED).
   tickets claimed. Push a minimal commit as soon as a useful self-contained
   change is ready; no artificial batches or waits for unrelated agents.
 - Every coherent `agent.py ship` has an immutable Git commit SHA; `src/version.py`
-  is release SemVer. Owner policy (25 Nov 2026): **no per-ticket version bumps**.
-  Ship and close verified tickets immediately without waiting for a release
-  number. The old `--assign-patch` flag is an ignored compatibility option.
-  Only explicit owner-directed release changes edit SemVer. The version-history
-  guard runs regardless of `--skip-checks`; `main` promotion is manual.
-  If targeted checks already ran, use `--skip-checks` to avoid duplicate work
-  and record the actual evidence at finish; do not claim unrun checks passed.
+  is release SemVer. Owner policy (26 Nov 2026): **make new versions in
+  `develop`**. Merge work and bump SemVer there; the owner promotes `main` later.
+  The old `--assign-patch` flag is an ignored compatibility option. The
+  version-history guard runs regardless of `--skip-checks`; `main` promotion is
+  manual. If targeted checks already ran, use `--skip-checks` to avoid duplicate
+  work and record the actual evidence at finish; do not claim unrun checks passed.
 - Source/module manifests in `pyproject.toml` must remain coherent. When
   adding modules run `python3 scripts/ci/sync_pyproject.py` or make equivalent
   precise updates; do not clobber another agent's additions.

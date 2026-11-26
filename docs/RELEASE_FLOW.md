@@ -7,17 +7,17 @@ automatic release PR or dependency on main's version or CI verdict.
 
 ## Day-to-day versioning
 
-- `src/version.py` is the **canonical release SemVer**, not a counter of
-  commits or completed tickets. Normal agent shipments do not edit it.
-- Every development slice is identified by its Git SHA (`smoothcast
-  --build-id`). `smoothcast --version` remains the semantic baseline.
+- `src/version.py` is the **canonical release SemVer**. New versions are made in
+  `develop` and merged there; no agent, test or CI promotes `main`.
+- Every development slice is also identified by its Git SHA (`smoothcast
+  --build-id`); `smoothcast --version` remains the semantic baseline.
 - `agent.py ship` refreshes `origin/develop`, checks claims and version
   integrity, rebases only unpublished code and fast-forward pushes. It never
   automatically promotes a release or writes to main.
-- Owner policy (25 Nov 2026): no per-ticket PATCH allocation. Closing a ticket
-  never requires a new SemVer. The legacy `ship --assign-patch` option is
-  ignored; release changes are separate explicit owner-directed commits.
-  Historical generated unpublished version-only commits remain recoverable.
+- Owner policy (26 Nov 2026): merging into `develop` and making new versions in
+  `develop` are normal owner-directed release work. The legacy
+  `ship --assign-patch` option is ignored; historical generated unpublished
+  version-only commits remain recoverable.
 - Source checkout, downloaded, installed and running processes can differ;
   changing a file on disk does not activate a running build.
 
