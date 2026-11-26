@@ -215,8 +215,9 @@ class PreferencesWindow(PicturePreferencesMixin, TrackPreferencesMixin, Adw.Pref
         """Offline, read-only: shows the running build and channel, never a check result."""
         try:
             from pathlib import Path
+            import update_facts
             import update_status
-            facts = update_status.facts_for_preferences(cfg, root=Path(__file__).resolve().parent.parent)
+            facts = update_facts.facts_for_preferences(cfg, root=Path(__file__).resolve().parent.parent)
             status = update_status.describe(facts)
             self.update_status_row.set_title(status.running_line)
             self.update_status_row.set_subtitle(

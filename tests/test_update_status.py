@@ -8,6 +8,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import update_facts as uf
 import update_status as us
 
 A, B, C = "a" * 40, "b" * 40, "c" * 40
@@ -217,7 +218,7 @@ def test_updated_build_does_not_offer_rollback_during_playback():
 
 
 def test_preferences_facts_are_offline_and_never_claim_a_phase(tmp_path):
-    facts = us.facts_for_preferences({"update_channel": "main", "check_release_updates": True}, root=tmp_path)
+    facts = uf.facts_for_preferences({"update_channel": "main", "check_release_updates": True}, root=tmp_path)
     assert facts.channel == "main" and facts.checks_enabled and facts.phase == "idle"
     assert facts.running_commit is None and facts.require_signature is True
     status = us.describe(facts)
@@ -232,9 +233,9 @@ def test_managed_install_facts_show_staged_reference_and_corrupt_records_fail_qu
     app.mkdir(parents=True)
     (install / "active.json").write_text(
         '{"current": "%s", "previous": "%s", "seq": 2}' % (new, old))
-    facts = us.facts_for_preferences({"check_release_updates": True}, root=app)
+    facts = uf.facts_for_preferences({"check_release_updates": True}, root=app)
     assert (facts.active_commit, facts.previous_commit) == (new, old)
     (install / "active.json").write_text("{not json")
-    facts = us.facts_for_preferences({}, root=app)
+    facts = uf.facts_for_preferences({}, root=app)
     assert facts.active_commit is None and facts.journal_state is None
-    assert us.facts_for_preferences({}, root=tmp_path).active_commit is None  # checkout: not managed
+    assert uf.facts_for_preferences({}, root=tmp_path).active_commit is None  # checkout: not managed
