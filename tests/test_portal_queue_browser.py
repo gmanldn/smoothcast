@@ -156,3 +156,44 @@ def test_queue_over_the_status_cap_is_disclosed_not_silently_truncated():
             assert page.locator("#queueCount").text_content() == "100 of 130 shown"
         finally:
             browser.close()
+
+
+@pytest.mark.skipif(not OPT_IN, reason="explicit opt-in: installed Playwright Chromium")
+def test_stale_move_is_rejected_explained_and_the_list_catches_up():
+    from playwright.sync_api import sync_playwright
+
+    rig = _RealQueueRig([f"/private/song{i}.mp3" for i in range(4)])
+    origin = f"http://{rig.host}"
+    live = {"on": True}
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True, args=["--disable-background-networking"])
+        page = browser.new_page(viewport={"width": 390, "height": 800}, service_workers="block")
+
+        def gate(route):  # freeze this client's view: no events, no status polls
+            if live["on"] or "/api/action" in route.request.url or "/api/events" not in route.request.url \
+                    and "/api/status" not in route.request.url:
+                route.continue_()
+            else:
+                route.abort()
+
+        page.route("**/*", gate)
+        try:
+            page.goto(origin + "/", wait_until="domcontentloaded")
+            page.locator("#name").fill("Ben")
+            page.locator("#loginForm button").click()
+            page.locator("#queue .queue-item").nth(3).wait_for()
+            live["on"] = False
+            page.wait_for_timeout(500)
+            host = rig.host_obj  # another participant reorders: Ben's revision is now stale
+            host.queue.insert(0, host.queue.pop(3))
+            host._portal_observe_queue()
+            page.locator("#queue .queue-item").nth(1).get_by_role("button", name="later in Up Next").first.click()
+            page.locator("#queueFeedback").filter(has_text="not applied").wait_for(timeout=5000)
+            assert "Up Next changed" in page.locator("#queueFeedback").text_content()
+            assert [p for a, p in rig.calls if a == "queue_move"], "client never sent the stale move"
+            assert host.queue[0].endswith("song3.mp3") and host.queue[1].endswith("song0.mp3")  # not corrupted
+            live["on"] = True
+            page.wait_for_function(
+                "() => document.querySelector('#queue .queue-item').textContent.includes('song3')", timeout=8000)
+        finally:
+            browser.close()
