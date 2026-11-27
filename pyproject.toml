@@ -109,6 +109,7 @@ py-modules = [
     "direct_probe",
     "dlna",
     "entry_name",
+    "equalizer",
     "error_banner",
     "error_banner_ui",
     "error_log",
