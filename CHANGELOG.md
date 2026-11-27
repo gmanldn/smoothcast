@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 15887829be0d5d45e02947d137497556e8bd9a99 -->
+<!-- sc-changelog-through: aee6c1cdc19ad8f1bc3cb96b95f62069830fa25a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:11:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:14:58 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:14:58 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`aee6c1cdc19a`](https://github.com/gmanldn/smoothcast/commit/aee6c1cdc19ad8f1bc3cb96b95f62069830fa25a)
+
+- 🟦 **17:14:50 · Refactor** — refactor(errors): justify 16 boundary catches across five small modules (Refs #694) · [`f4ef2a6e2b28`](https://github.com/gmanldn/smoothcast/commit/f4ef2a6e2b289ea6ff1bbb15b1a8ac78e06aef3c)
 
 - ⬜ **17:11:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`15887829be0d`](https://github.com/gmanldn/smoothcast/commit/15887829be0d5d45e02947d137497556e8bd9a99)
+
+- ⬜ **17:11:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`de83a1486d92`](https://github.com/gmanldn/smoothcast/commit/de83a1486d9254ca7dda989748929448f1bfc627)
 
 - 🟦 **17:11:38 · Refactor** — refactor(errors): justify the 12 boundary catches in pychromecast\_backend (Refs #694) · [`0322ab5aaf0e`](https://github.com/gmanldn/smoothcast/commit/0322ab5aaf0ebcdb7370eaf94bd6e574b3ef06c3)
 
