@@ -64,8 +64,24 @@ def check_media_probe(executable: Path) -> None:
         )
 
 
+def check_project_legal(executable: Path, source_root: Path = ROOT) -> None:
+    """Check the actual frozen package contains the original legal notices."""
+    if executable.parent.parent.name == "Contents":
+        legal = executable.parent.parent / "Resources" / "legal"
+    else:
+        legal = executable.parent / "_internal" / "legal"
+    for name, source in (
+        ("LICENSE", source_root / "LICENSE"),
+        ("SmoothCast-NOTICE.txt", source_root / "packaging" / "SmoothCast-NOTICE.txt"),
+    ):
+        packaged = legal / name
+        if not packaged.is_file() or packaged.read_bytes() != source.read_bytes():
+            raise RuntimeError(f"Missing or modified SmoothCast legal file: {packaged}")
+
+
 def verify(dist: Path) -> None:
     executable = console_executable(dist)
+    check_project_legal(executable)
     # Do not launch the normal GUI or the HLS server. All probes exit promptly.
     check(executable, ["--version"], "SmoothCast v")
     check(executable, ["--_smoothcast-catt", "--help"], "Usage:")

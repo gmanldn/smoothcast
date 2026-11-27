@@ -23,6 +23,8 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=[*catt_binaries, *ytdlp_binaries],
     datas=[
+        (str(ROOT / "LICENSE"), "legal"),
+        (str(ROOT / "packaging" / "SmoothCast-NOTICE.txt"), "legal"),
         (str(ROOT / "src" / "smoothcast_assets" / "local.cast-control.png"), "smoothcast_assets"),
         (str(ROOT / "data" / "cast-control.png"), "data"),
         *catt_datas,
