@@ -20,6 +20,7 @@ import time
 from urllib.parse import urlsplit
 
 import error_log
+import stream_health
 from stream_health import StreamHealth
 
 ROOT = Path.home() / ".cache" / "cast-control"
@@ -206,6 +207,7 @@ _LOGS_LOCK = threading.Lock()
 # Measured segment outcomes for this server process (#49); never inferred.
 STREAM_HEALTH = StreamHealth()
 _HEALTH_LOCK = threading.Lock()
+_health_written = 0.0
 _SEGMENT = re.compile(r"\.(?:ts|m4s|mp4|aac)$", re.IGNORECASE)
 
 
@@ -218,8 +220,16 @@ def record_segment(path: str, code: object) -> None:
         ok = int(code) < 400
     except (TypeError, ValueError):
         ok = False
+    global _health_written
     with _HEALTH_LOCK:
         STREAM_HEALTH.segment(ok, name.rsplit("/", 1)[-1])
+        now = time.monotonic()
+        # Publish at most every 2 s (or at once on a failure) for the GTK process.
+        if ok and now - _health_written < 2.0:
+            return
+        _health_written = now
+        snapshot = STREAM_HEALTH.snapshot()
+    stream_health.write_snapshot(ROOT, snapshot)
 
 
 def stream_health_snapshot() -> dict:

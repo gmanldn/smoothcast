@@ -121,6 +121,13 @@ class PortalRoomMixin:
                 console(f"Could not publish room status: {exc}")
             return
         if isinstance(state, dict):
+            import stream_health
+            import pathlib
+
+            # Tiny bounded file written by the HLS server process (#49).
+            measured = stream_health.read_snapshot(pathlib.Path.home() / ".cache" / "cast-control")
+            if measured is not None:
+                state["stream_health"] = measured
             if self.external:
                 from playback_state import external_details, external_media_labels
 
