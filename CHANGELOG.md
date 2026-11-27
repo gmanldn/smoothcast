@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3f711f42417b7578fa7097cdba33d4c85a632bce -->
+<!-- sc-changelog-through: 8205924d5d0e2cdedfc6a8f8591f9a5452ec4d2a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:26:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:27:54 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:27:54 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`8205924d5d0e`](https://github.com/gmanldn/smoothcast/commit/8205924d5d0e2cdedfc6a8f8591f9a5452ec4d2a)
+
+- 🟦 **07:27:41 · Refactor** — refactor(paths): receiver memory locates its state through paths (Refs #701) (Refs #325) · [`809e2e41aded`](https://github.com/gmanldn/smoothcast/commit/809e2e41aded889beb1b5e609be35fe642a0352f)
+
+- 🟩 **07:27:20 · Feature** — feat(integrations): pure Home Assistant MQTT discovery, state, command gate and backoff (Refs #383) · [`21fd12471472`](https://github.com/gmanldn/smoothcast/commit/21fd1247147242ba84f66a3972b99026ce3b46cc)
 
 - ⬜ **07:26:36 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3f711f42417b`](https://github.com/gmanldn/smoothcast/commit/3f711f42417b7578fa7097cdba33d4c85a632bce)
+
+- ⬜ **07:26:36 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`7c212cfffb17`](https://github.com/gmanldn/smoothcast/commit/7c212cfffb17c4b3760e31e27f367a8b82df88fc)
 
 - ⬜ **07:26:35 · Maintenance** — chore(arch): reviewed complexity baseline (doctor CLI #211, stream-health I/O #49, Store #701); off quarantine (Refs #700) · [`247cf071d9c5`](https://github.com/gmanldn/smoothcast/commit/247cf071d9c5935072b2f30c1d86d87f087d8677)
 
