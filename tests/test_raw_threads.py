@@ -20,7 +20,6 @@ ALLOWED = {
     "jank_ui.py": 1,
     "library_index_v2.py": 1,
     "link_acquisition.py": 2,
-    "link_egress.py": 2,
     "link_sandbox_probe.py": 1,
     "low_end_policy.py": 1,
     "mesh_acquisition_bridge.py": 1,
