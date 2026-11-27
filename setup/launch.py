@@ -364,8 +364,13 @@ def activate_existing(timeout: float = 6.0) -> bool | None:
 RELOAD_SERVICES_ARG = "--reload-services"
 
 
-def ensure_single_instance(args: list[str], target: Path | None = None) -> int | None:
-    """Exit code to stop launching, or None to start a new instance."""
+def ensure_single_instance(args: list[str], target: Path | None = None,
+                           reclaim=None) -> int | None:
+    """Exit code to stop launching, or None to start a new instance.
+
+    `reclaim(pids)` may replace a primary that refuses activation (hung); it
+    must verify identity itself and return True only when they are all gone.
+    """
     pids = gui_instances(all_installations=True)
     if not pids:
         return None
@@ -395,9 +400,11 @@ def ensure_single_instance(args: list[str], target: Path | None = None) -> int |
     # Re-scan instead of leaving a false stale-instance failure behind.
     if not gui_instances(all_installations=True):
         return None
-    # A D-Bus timeout or missing probe is NOT proof of a hung process. In
-    # particular, a PID found in /proc may be reused before SIGTERM/SIGKILL.
-    # Preserve a possibly active cast and refuse to create a competing GUI.
+    # A D-Bus refusal/timeout is only a hint: PIDs can be reused. `reclaim`
+    # re-verifies birth time and argv per process. Without it, or when the
+    # probe itself was unavailable (None), preserve a possibly active cast.
+    if reclaim is not None and activated is False and reclaim(gui_instances(all_installations=True)):
+        return None
     print(
         "SmoothCast is already running but its window could not be activated. "
         "The existing process was left untouched. Close it normally (or use "

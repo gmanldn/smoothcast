@@ -180,14 +180,21 @@ def plan_session(caps: ReceiverCaps, media: MediaFacts, request: Request = Reque
         else:
             subtitles, encode_video = "burn_in", True
             notes.append("Embedded subtitles cannot be sent separately; burning them into the video.")
-    if media.audio_only:
-        encode_video = False
+    # A speaker (video codecs known to be empty) plays video files as audio only.
+    drop_video = (not media.audio_only and caps.video_codecs is not None
+                  and not caps.video_codecs and bool(media.video_codec))
+    if drop_video:
+        notes.append("This receiver is audio-only; sending just the soundtrack.")
+    if media.audio_only or drop_video:
+        encode_video, scale = False, None
         subtitles = "none"
 
     container = _supports(caps.containers, media.container) if media.container else False
     transform = encode_video or encode_audio
     if transform:
         mode: Mode = "transcode"
+    elif drop_video:
+        mode = "remux"
     elif container is True:
         mode = "direct"
     else:
@@ -210,7 +217,7 @@ def plan_session(caps: ReceiverCaps, media: MediaFacts, request: Request = Reque
     seek: SeekPlan = "native" if mode == "direct" else "restart_at_offset"
     return CompatPlan(
         mode=mode,
-        video="none" if media.audio_only else ("encode" if mode == "transcode" and encode_video else "copy"),
+        video="none" if media.audio_only or drop_video else ("encode" if mode == "transcode" and encode_video else "copy"),
         audio=("none" if not media.audio_codec else
                "encode" if mode == "transcode" and encode_audio else "copy"),
         scale_to_height=scale if mode == "transcode" else None,

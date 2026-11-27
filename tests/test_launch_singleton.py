@@ -190,9 +190,9 @@ class EarlyActivationTests(unittest.TestCase):
                   if isinstance(node, ast.FunctionDef) and node.name == "_main")
         body = ast.get_source_segment(source, fn)
         # The demo branch also probes the runtime but never the real singleton.
-        self.assertLess(body.index("launch.ensure_single_instance(args)"),
+        self.assertLess(body.index("launch.ensure_single_instance("),
                         body.rindex("launch.runtime_ready()"))
-        self.assertLess(body.index("launch.ensure_single_instance(args)"),
+        self.assertLess(body.index("launch.ensure_single_instance("),
                         body.index("_bootstrap(target)"))
         self.assertIn("launch.main(args, prechecked=True)", body)
 
