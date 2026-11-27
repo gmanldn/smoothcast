@@ -66,3 +66,25 @@ def test_gtk_popover_describes_every_node_fact():
             edges=(mm.EdgeObservation("node", "z" * 32, 1, 7),))
     text = mesh_ui.NetworkPopover.describe(node_profile.profile(r))
     assert "192.168.1.5" in text and "TV (cast, ready)" in text and "7 ms" in text and "mesh 7001" in text
+
+
+def test_diagram_keeps_asymmetric_observations_in_both_orders():
+    a = rec("a" * 32, "Lounge", edges=(mm.EdgeObservation("node", "b" * 32, 5, 9),))
+    b = rec("b" * 32, "Office", edges=(mm.EdgeObservation("node", "a" * 32, None, None, "timeout"),))
+    for records in ([a, b], [b, a]):
+        root = ET.fromstring(mesh_diagram.render([node_profile.profile(r) for r in records]))
+        lines = root.findall("{*}line")
+        assert len(lines) == 1 and lines[0].get("stroke-dasharray") == "6 4"
+        assert lines[0].get("stroke") == mesh_diagram.COLOURS["bad"]
+        labels = {el.text for el in root.findall("{*}text")}
+        assert {"Lounge → Office: 9 ms", "Office → Lounge: failing: timeout"} <= labels
+
+
+def test_diagram_retains_two_healthy_directional_timings():
+    a = rec("a" * 32, "Lounge", edges=(mm.EdgeObservation("node", "b" * 32, 5, 9),))
+    b = rec("b" * 32, "Office", edges=(mm.EdgeObservation("node", "a" * 32, 5, 14),))
+    root = ET.fromstring(mesh_diagram.render([node_profile.profile(a), node_profile.profile(b)]))
+    lines = root.findall("{*}line")
+    assert len(lines) == 1 and lines[0].get("stroke-dasharray") is None
+    labels = {el.text for el in root.findall("{*}text")}
+    assert {"Lounge → Office: 9 ms", "Office → Lounge: 14 ms"} <= labels

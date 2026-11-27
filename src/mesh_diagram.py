@@ -33,21 +33,26 @@ def render(profiles, *, max_orbit: int = 6) -> str:
         pos[p.node_id] = (cx + radius * math.cos(a), cy + radius * math.sin(a), a)
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" role="img" '
            f'aria-label="Mesh diagram: {len(items)} device{"" if len(items) == 1 else "s"}">']
-    drawn = set()
+    # Reachability is measured independently in each direction. A successful
+    # observation must not hide a failed reverse path when records are reordered.
+    names = {p.node_id: p.name for p in items}
+    observations = {}
     for p in items:
         for link in p.links:
             if link.peer_kind != "node" or link.peer not in pos:
                 continue
             key = tuple(sorted((p.node_id, link.peer)))
-            if key in drawn:
-                continue
-            drawn.add(key)
-            (x1, y1, _), (x2, y2, _) = pos[p.node_id], pos[link.peer]
-            colour = COLOURS["ok"] if link.healthy else COLOURS["bad"]
-            dash = "" if link.healthy else ' stroke-dasharray="6 4"'
-            out.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-                       f'stroke="{colour}" stroke-width="2"{dash}/>')
-            out.append(_t((x1 + x2) / 2, (y1 + y2) / 2 - 4, link.text, 10))
+            observations.setdefault(key, []).append((p.node_id, link))
+    for (left, right), reports in sorted(observations.items()):
+        (x1, y1, _), (x2, y2, _) = pos[left], pos[right]
+        healthy = all(link.healthy for _, link in reports)
+        colour = COLOURS["ok"] if healthy else COLOURS["bad"]
+        dash = "" if healthy else ' stroke-dasharray="6 4"'
+        out.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                   f'stroke="{colour}" stroke-width="2"{dash}/>')
+        for i, (source, link) in enumerate(sorted(reports, key=lambda item: item[0])):
+            label = f"{names[source]} → {names[link.peer]}: {link.text}"
+            out.append(_t((x1 + x2) / 2, (y1 + y2) / 2 - 4 + i * 12, label, 10))
     for p in items:
         x, y, a = pos[p.node_id]
         mine = p.role == "This device"
