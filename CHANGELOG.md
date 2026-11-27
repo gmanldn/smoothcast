@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 7558cb664bd474a28130728eecb9fb6409e6d5ce -->
+<!-- sc-changelog-through: abdc1689985d1dcbf57e11959ea3d0ee000bcbd3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:46:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:47:03 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:47:02 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`abdc1689985d`](https://github.com/gmanldn/smoothcast/commit/abdc1689985d1dcbf57e11959ea3d0ee000bcbd3)
+
+- 🟩 **16:47:02 · Feature** — feat(network): route diagnostic reports a plain VPN warning from address\_policy (Refs #210) (Refs #325) · [`06856f793b24`](https://github.com/gmanldn/smoothcast/commit/06856f793b24a1e6cbeb999e3510bf6afc9380fc)
+
+- ⬜ **16:46:17 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`a6bbd0f719e2`](https://github.com/gmanldn/smoothcast/commit/a6bbd0f719e28aa7ac6a774f0b4a592c4db0a3cc)
 
 - ⬜ **16:46:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`7558cb664bd4`](https://github.com/gmanldn/smoothcast/commit/7558cb664bd474a28130728eecb9fb6409e6d5ce)
 
