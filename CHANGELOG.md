@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 564905802c8c9a61aecd2c2a0f3f1d8cfc3a5af7 -->
+<!-- sc-changelog-through: 84f31d5914416bfd44c6893cb10e410125244dd9 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **15:43:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **15:46:21 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **15:46:21 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`84f31d591441`](https://github.com/gmanldn/smoothcast/commit/84f31d5914416bfd44c6893cb10e410125244dd9)
+
+- 🟩 **15:46:21 · Feature** — feat(diagnose): redacted local diagnostics bundle writer (Refs #698) · [`46df44f5fe95`](https://github.com/gmanldn/smoothcast/commit/46df44f5fe9565495f52ab82959af3556431f664)
+
+- 🟥 **15:44:13 · Fix** — fix(upload): a busy host (409/503) re-arms early cast on the next chunk, up to 6 times, instead of permanently declining it, so large browser uploads start playing before they finish (Refs #686) · [`bc9dc93d8927`](https://github.com/gmanldn/smoothcast/commit/bc9dc93d89277b7b965bc325810273f788e64d1d)
 
 - ⬜ **15:43:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`564905802c8c`](https://github.com/gmanldn/smoothcast/commit/564905802c8c9a61aecd2c2a0f3f1d8cfc3a5af7)
+
+- ⬜ **15:43:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`8bd12ad7a690`](https://github.com/gmanldn/smoothcast/commit/8bd12ad7a690f2006f7168ad7611f7faa37c4846)
 
 - 🟩 **15:43:43 · Feature** — feat(portal): web room chapter jump through the fenced seek envelope; parity row added (Refs #635) · [`ab1e5ec1ed43`](https://github.com/gmanldn/smoothcast/commit/ab1e5ec1ed43591d472de97747e86d86ea342a84)
 
