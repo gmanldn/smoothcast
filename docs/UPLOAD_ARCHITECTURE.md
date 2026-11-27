@@ -1,7 +1,7 @@
 # Browser upload transfer architecture (#568)
 
 Source of truth: `src/portal_uploads.py` (`UploadManager`). Tests:
-`tests/test_portal_upload_durability.py`, `tests/test_portal_uploads.py`.
+`tests/test_portal_uploads.py` and `tests/test_portal_upload_faults.py`.
 
 ## Contract
 
@@ -14,21 +14,39 @@ Source of truth: `src/portal_uploads.py` (`UploadManager`). Tests:
 - **Two offsets.** `received` counts bytes written to the file; `committed`
   counts bytes made durable by `fsync`. Both are reported in status responses.
   Clients that only read `received` keep working unchanged.
-- **Coalesced checkpoint.** `fsync` runs when `received - committed >=
-  CHECKPOINT_BYTES` (16 MiB) or `CHECKPOINT_SECONDS` (5 s) have elapsed, instead
-  of after every chunk. Finalize always fsyncs the file and then the directory
-  entry before the upload is reported complete.
+- **Coalesced checkpoint.** At the end of an accepted chunk, `fsync` runs
+  once the unsynced prefix reaches 16 MiB or 5 s have elapsed since the last
+  checkpoint. Finalization syncs any remaining unsynced bytes. A successful
+  final rename is followed by a directory sync on Linux before finalization
+  returns. A progressive cast can retain the original path.
 - **Retry and rollback.** A failed or disconnected chunk is truncated back to its
   starting offset, so the browser can resend it. A lost acknowledged prefix is
   rejected rather than zero-filled.
-- **Crash recovery.** After a process crash, resume from `committed`, never from
-  `received`: bytes past it were volatile. Network resume without a crash may use
-  `received`.
+- **Resume.** While the host process is running, the browser can resume at
+  `received`. After a restart, the host has no record of the session, even if
+  the partial file and some synced bytes still exist. The browser must start a
+  new upload. Crash-safe resume requires persisting the session owner, file
+  identity and committed offset together, then recovering only that prefix.
+- **Chunk sizing.** The current server limit is fixed at 8 MiB. Adaptive
+  negotiation from measured network and device capacity remains open in #568.
 
-## Trade-offs
+## 100 MiB RAM-backed comparison (27 Nov 2026)
 
-Coalescing trades up to one checkpoint window (16 MiB / 5 s) of re-sent bytes
-after a crash for far fewer fsyncs. Durability is never claimed for volatile
-bytes. Throughput and fsync-count measurements for the old per-chunk policy
-versus coalescing are not yet published (UNVERIFIED); do not cite a speedup
-until a 100 MiB localhost/RAM-backed comparison is recorded here.
+Five runs per policy on Linux tmpfs (`/dev/shm`), with order alternated.
+Both policies used the same `UploadManager.append` and `finalize` code,
+8 MiB chunks, in-memory input, and real counted `os.fsync` calls.
+The per-chunk comparison set the checkpoint threshold to one byte. The
+coalesced runs used the default 16 MiB / 5 s thresholds. The benchmark
+disabled early cast, made no receiver request and verified the final SHA-256
+in each run. Transfer timing includes finalization and excludes the digest
+check. The table reports medians across runs, including the median of each
+run's nearest-rank p95 append time.
+
+| Policy | MiB/s | Process CPU (ms) | fsync calls | p95 append (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Per chunk | 974.20 | 96.63 | 14 | 11.48 |
+| Coalesced | 744.92 | 99.65 | 8 | 17.06 |
+
+Coalescing saved six sync calls per transfer. The RAM-backed runs showed
+lower throughput and higher append latency for coalescing. Disk-backed
+throughput and browser/LAN performance remain unmeasured.
