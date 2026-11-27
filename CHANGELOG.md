@@ -8,11 +8,17 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 70218ff4a4686bac5d288b1d2d71c8ad45e9468c -->
+<!-- sc-changelog-through: 2b4aed75c83c405bbf44b803edc2ddc3b081d191 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:10:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:13:14 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:13:14 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2b4aed75c83c`](https://github.com/gmanldn/smoothcast/commit/2b4aed75c83c405bbf44b803edc2ddc3b081d191)
+
+- 🟥 **16:12:56 · Fix** — fix(web): CSS comment no longer reads as a hard-coded colour; clears the last quarantine entry (Refs #700) (Refs #325) · [`2a60c75eae50`](https://github.com/gmanldn/smoothcast/commit/2a60c75eae50a803b172fc1faa077f225faeaaae)
+
+- ⬜ **16:10:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f7d41c487730`](https://github.com/gmanldn/smoothcast/commit/f7d41c487730a6e7f578d826c112495a8f793d4f)
 
 - ⬜ **16:10:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`70218ff4a468`](https://github.com/gmanldn/smoothcast/commit/70218ff4a4686bac5d288b1d2d71c8ad45e9468c)
 
