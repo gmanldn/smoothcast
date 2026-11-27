@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: dcb9ac8c45359f42af796174a83936aa8ac9eda3 -->
+<!-- sc-changelog-through: 5f787ef9cb3de7820b10d49d38b1bb982b8d4104 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:23:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:24:44 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:24:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5f787ef9cb3d`](https://github.com/gmanldn/smoothcast/commit/5f787ef9cb3de7820b10d49d38b1bb982b8d4104)
+
+- 🟦 **21:24:40 · Refactor** — refactor(portal): serve the public GET routes through the route table (Refs #689) · [`82673d65062c`](https://github.com/gmanldn/smoothcast/commit/82673d65062c8058feee97bacb10835a5ac2b9aa)
+
+- 🟨 **21:23:24 · Documentation** — docs(ports): per-OS evidence table for the platform ports, stating which are not yet wired (Refs #703) · [`93a465723d96`](https://github.com/gmanldn/smoothcast/commit/93a465723d96b12670d8585fdc33d8bb93210f25)
 
 - ⬜ **21:23:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dcb9ac8c4535`](https://github.com/gmanldn/smoothcast/commit/dcb9ac8c45359f42af796174a83936aa8ac9eda3)
+
+- ⬜ **21:23:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`d1ebb3e08e48`](https://github.com/gmanldn/smoothcast/commit/d1ebb3e08e486bd1f0df07b4415a512bd991832e)
 
 - 🟪 **21:22:58 · Tests** — test(portal): pin the anonymous-caller auth gate for every authenticated route (Refs #689) · [`7240539ef1f1`](https://github.com/gmanldn/smoothcast/commit/7240539ef1f1d3ecb8adb5fea9894f942a0eeaef)
 
