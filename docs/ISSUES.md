@@ -27,7 +27,8 @@ pushes to `develop`. `--skip-checks` bypasses costly focused tests, **not**
 integrity checks. It posts a durable SHA handover. Do not close untested,
 incomplete or hardware-pending issues.
 
-Each nonempty agent shipment allocates the next PATCH in `develop`. MINOR and
+Each nonempty agent shipment should allocate the next PATCH in `develop`;
+allocation failure alone does not block a valid unchanged-version shipment. MINOR and
 MAJOR remain owner-directed. The exact development identity is also the Git SHA
 (`smoothcast --build-id`). The legacy `--assign-patch` option is unnecessary.
 `main` remains entirely owner-controlled. Raw pushes bypass the local

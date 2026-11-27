@@ -365,7 +365,11 @@ async function recordHandover(api,p,candidate){
     // the original issue must contain the exact SHA/base delivery intent.
     const prefix="<!-- sc-connector-pending v1 sha="+candidate+" base="+p.base+" agent=";
     check(comments.some(c=>(c.body||"").includes(prefix)),"missing pending receipt for landed candidate");
-    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nFiles: "+[...p.changes.map(x=>x.path),...(p.kind==="release"?[]:["src/version.py"])].join(", ")+"\n"+shipped);
+    const candidateVersion=await api.file(candidate,"src/version.py");
+    const fields=parseVersion(candidateVersion.content);
+    check(fields!==null,"invalid shipped version");
+    const versionChanged=candidateVersion.sha!==p.versionBlob;
+    const id=await api.comment(p.issue,"Progress: connector progress slice\nHandover: "+p.next+"\nCommit: "+candidate+"\nVerification: "+p.verification+"\nVersion: "+[fields.MAJOR,fields.MINOR,fields.PATCH].join(".")+(versionChanged?" (incremented)":" (unchanged; allocation deferred)")+"\nFiles: "+[...p.changes.map(x=>x.path),...(p.kind!=="release"&&versionChanged?["src/version.py"]:[])].join(", ")+"\n"+shipped);
     check(Number.isSafeInteger(id),"handover not acknowledged; retry exact candidate");
     const confirmed=await pages(api,"/issues/"+p.issue+"/comments",10);
     check(confirmed.some(c=>c.id===id&&(c.body||"").includes(shipped)),"handover not visible");

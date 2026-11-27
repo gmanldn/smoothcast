@@ -100,8 +100,8 @@ ran before pushing.
 ## Build identity and release-number policy
 
 Development changes are identified by immutable Git SHAs. New release numbers
-are made in `develop`: every nonempty agent shipment allocates one PATCH against
-its rebased remote tip. The legacy `--assign-patch` flag is unnecessary.
+are made in `develop`: every nonempty agent shipment should allocate one PATCH against
+its rebased remote tip. If allocation alone fails, ship an unchanged valid version. The legacy `--assign-patch` flag is unnecessary.
 MINOR and MAJOR remain owner-directed; the version-history check still applies.
 Historical assignments and recovery remain intact.
 `main` remains exclusively owner-controlled.

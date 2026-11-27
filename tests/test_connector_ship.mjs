@@ -104,6 +104,7 @@ test("prepare and ship verify candidate, persist receipt, and replay without dup
   await ship(t.api,p,c);
   assert.deepEqual(t.counters,{trees:1,commits:1,updates:1});
   assert.equal(t.comments.length,3);
+  assert.match(t.comments.at(-1).body,/Version: 2\.0\.39 \(incremented\)/);
 });
 test("stale base prevents immutable object creation",async()=>{
   const t=transport();t.state.head=id("9");
