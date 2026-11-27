@@ -8,11 +8,13 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3fd7ff997c35fd0abe2073333f3f7f2cec6f2e15 -->
+<!-- sc-changelog-through: 7516b89286ab5cc13805bd4a4108c807f4a7a5ba -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **05:22:53 · Fix** — fix(agents): preserve Markdown punctuation in changelog entries (Refs #715) <!-- sc-changelog-pending -->
+- 🟦 **05:24:37 · Performance** — perf(gui): defer network diagram rendering and keep labels readable (Refs #710) <!-- sc-changelog-pending -->
+
+- 🟥 **05:23:03 · Fix** — fix(agents): preserve Markdown punctuation in changelog entries (Refs #715) · [`7516b89286ab`](https://github.com/gmanldn/smoothcast/commit/7516b89286ab5cc13805bd4a4108c807f4a7a5ba)
 
 - 🟩 **05:14:31 · Feature** — feat(room): add direct desktop rename control (Refs #709) · [`3fd7ff997c35`](https://github.com/gmanldn/smoothcast/commit/3fd7ff997c35fd0abe2073333f3f7f2cec6f2e15)
 

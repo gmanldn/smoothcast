@@ -88,3 +88,52 @@ def test_diagram_retains_two_healthy_directional_timings():
     assert len(lines) == 1 and lines[0].get("stroke-dasharray") is None
     labels = {el.text for el in root.findall("{*}text")}
     assert {"Lounge → Office: 9 ms", "Office → Lounge: 14 ms"} <= labels
+
+
+def test_diagram_has_explicit_light_canvas_for_dark_text():
+    for profiles in ([], [node_profile.profile(rec())]):
+        root = ET.fromstring(mesh_diagram.render(profiles))
+        canvas = root.find("{*}rect")
+        assert canvas is not None and canvas.get("fill") == mesh_diagram.BACKGROUND
+        assert canvas.get("width") == str(mesh_diagram.W)
+
+
+def test_gtk_profiles_render_only_visible_changed_snapshots():
+    # Exercise the actual methods without importing GTK or constructing a window.
+    import ast
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "src/mesh_ui.py").read_text(encoding="utf-8"))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "NetworkPopover")
+    methods = [n for n in cls.body if isinstance(n, ast.FunctionDef)
+               and n.name in {"show_profiles", "_render_profiles"}]
+    ns = {}
+    exec(compile(ast.Module(body=methods, type_ignores=[]), "<mesh profiles>", "exec"), ns)
+    visibility = {"mapped": False, "expanded": False}
+    calls = []
+    owner = SimpleNamespace(
+        _pending_profiles=(), _rendered_profiles=None,
+        _profile_expander=SimpleNamespace(
+            get_mapped=lambda: visibility["mapped"],
+            get_expanded=lambda: visibility["expanded"]),
+        _paint_profiles=calls.append,
+    )
+    owner._render_profiles = lambda *args: ns["_render_profiles"](owner, *args)
+    show = lambda profiles: ns["show_profiles"](owner, profiles)
+    show(["old"])
+    show(["latest"])
+    assert calls == []
+    visibility["mapped"] = True
+    show(["latest"])
+    assert calls == []
+    visibility["expanded"] = True
+    owner._render_profiles()
+    show(["latest"])
+    assert calls == [("latest",)]
+    visibility["mapped"] = False
+    show(["new"])
+    assert len(calls) == 1
+    visibility["mapped"] = True
+    owner._render_profiles()
+    assert calls == [("latest",), ("new",)]
