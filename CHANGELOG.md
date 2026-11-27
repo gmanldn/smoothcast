@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 9ce4286e5969453cba3518adc5560a59ffa242d3 -->
+<!-- sc-changelog-through: b705ba192b7079eabb3e350dec79564e83237a75 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:45:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:46:38 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:46:38 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`b705ba192b70`](https://github.com/gmanldn/smoothcast/commit/b705ba192b7079eabb3e350dec79564e83237a75)
+
+- 🟦 **07:46:37 · Refactor** — refactor(runtime): update check runs on the bounded network pool with a 60s deadline; raw-thread ratchet shrinks (Refs #696) · [`5072309a7cd7`](https://github.com/gmanldn/smoothcast/commit/5072309a7cd7a004b3b0b2e34b229b8600acfd56)
+
+- 🟩 **07:46:12 · Feature** — feat(wol): magic packet, opt-in node record, deduped wake flow with 60 s timeout (Refs #427) · [`eda399e185a9`](https://github.com/gmanldn/smoothcast/commit/eda399e185a90f93a446efb641771bd60a498d0b)
 
 - ⬜ **07:45:15 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`9ce4286e5969`](https://github.com/gmanldn/smoothcast/commit/9ce4286e5969453cba3518adc5560a59ffa242d3)
+
+- ⬜ **07:45:15 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`5d952fd66c77`](https://github.com/gmanldn/smoothcast/commit/5d952fd66c77534afccaaf697d88272bcc8350f3)
 
 - 🟦 **07:45:09 · Refactor** — refactor(settings): portal preferred port reads through PortalSettings so a corrupt value cannot crash start-up (Refs #693) · [`42b48c1b7e8b`](https://github.com/gmanldn/smoothcast/commit/42b48c1b7e8b25c8edea39e36cc70c9a6eee6733)
 
