@@ -1008,6 +1008,12 @@ def commit_private_slice(a: argparse.Namespace) -> int:
     if staged.returncode:
         print("staging failed: " + staged.stderr.strip()[:500])
         return 2
+    loose = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--", "src", "tests", "scripts"],
+                           cwd=ROOT, capture_output=True, text=True).stdout.split()
+    if loose:
+        print("untracked file(s) would be left out of this commit and break importers "
+              f"(#700); name them with --files or delete them: {', '.join(loose)[:400]}")
+        return 2
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
     if diff.returncode == 0:
         print("no changes to commit; shipping any existing unpublished commits")
