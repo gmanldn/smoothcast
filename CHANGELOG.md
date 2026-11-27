@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: e56bbef2aaedb95ba8d4ed17a7a191404531ec1b -->
+<!-- sc-changelog-through: d3374183c9d7b846966916ba218b204be31080bf -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:41:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:43:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:43:44 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`d3374183c9d7`](https://github.com/gmanldn/smoothcast/commit/d3374183c9d7b846966916ba218b204be31080bf)
+
+- 🟩 **16:43:36 · Feature** — feat(sandbox): Sandbox port with bubblewrap and sandbox-exec backends, visible degradation (Refs #703) · [`ffc34fe99fa8`](https://github.com/gmanldn/smoothcast/commit/ffc34fe99fa81310717cb4bcd921efaea77faf57)
 
 - ⬜ **16:41:45 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`e56bbef2aaed`](https://github.com/gmanldn/smoothcast/commit/e56bbef2aaedb95ba8d4ed17a7a191404531ec1b)
+
+- ⬜ **16:41:45 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`96d37cd3f91d`](https://github.com/gmanldn/smoothcast/commit/96d37cd3f91d9ce10ec460ff72d85d28312cba70)
 
 - 🟩 **16:41:44 · Feature** — feat(power): PowerManager port with systemd, caffeinate and Windows backends plus fake (Refs #703) · [`04ff9993d480`](https://github.com/gmanldn/smoothcast/commit/04ff9993d480e02b414c7d6ad204178f32405870)
 
