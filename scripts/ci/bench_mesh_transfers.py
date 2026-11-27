@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import platform
 import random
 import shutil
+import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -35,7 +36,14 @@ def payload(size: int, seed: int) -> bytes:
 class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         time.sleep(self.server.rtt_ms / 1000)
-        self.server.received = self.rfile.read(int(self.headers["Content-Length"]))
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        if self.server.drop_uploads:
+            self.server.drop_uploads -= 1
+            self.close_connection = True
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
+        self.server.received = body
         self.send_response(204)
         self.end_headers()
 
@@ -62,22 +70,24 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def server(rtt_ms: float, bandwidth_mbps: float):
+def server(rtt_ms: float, bandwidth_mbps: float, drop_uploads: int = 0):
     instance = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     instance.received = b""
     instance.rtt_ms = rtt_ms
     instance.bandwidth_mbps = bandwidth_mbps
+    instance.drop_uploads = drop_uploads
     thread = Thread(target=instance.serve_forever, daemon=True)
     thread.start()
     return instance, thread, f"http://127.0.0.1:{instance.server_port}"
 
 
-def run_scenario(name: str, data: bytes, clients: int, rtt_ms: float, bandwidth_mbps: float) -> dict:
-    origin, origin_thread, origin_url = server(rtt_ms, bandwidth_mbps)
-    destination, dest_thread, dest_url = server(rtt_ms, bandwidth_mbps)
+def run_scenario(name: str, data: bytes, clients: int, rtt_ms: float, bandwidth_mbps: float, drop_first: bool) -> dict:
+    origin, origin_thread, origin_url = server(rtt_ms, bandwidth_mbps, int(drop_first))
+    destination, dest_thread, dest_url = server(rtt_ms, bandwidth_mbps, int(drop_first))
     latencies, delivered = [], []
     started = time.perf_counter()
     first_byte = None
+    retries = 0
     try:
         with tempfile.TemporaryDirectory(prefix="smoothcast-bench-") as directory:
             source = Path(directory) / "source"
@@ -95,8 +105,16 @@ def run_scenario(name: str, data: bytes, clients: int, rtt_ms: float, bandwidth_
                     upload_url = dest_url
                 request = urllib.request.Request(upload_url, data=data, method="PUT")
                 begin = time.perf_counter()
-                with urllib.request.urlopen(request, timeout=60) as response:
-                    response.read()
+                retries = 0
+                while True:
+                    try:
+                        with urllib.request.urlopen(request, timeout=60) as response:
+                            response.read()
+                        break
+                    except (OSError, urllib.error.URLError):
+                        if retries >= 1:
+                            raise
+                        retries += 1
                 latencies.append((time.perf_counter() - begin) * 1000)
 
                 if name == "node-range-receiver":
@@ -137,7 +155,7 @@ def run_scenario(name: str, data: bytes, clients: int, rtt_ms: float, bandwidth_
             record = {"bytes": sum(delivered), "elapsed_s": elapsed,
                       "ttfb_s": first_byte, "playable_s": first_byte,
                       "chunk_ms": latencies, "per_client_bytes": delivered,
-                      "corrupt_bytes": corrupt, "stalls": 0,
+                      "corrupt_bytes": corrupt, "retransmitted": len(data) * retries, "stalls": 0,
                       "fds_before": 0, "fds_after": 0}
             summary = transfer_metrics.summarise(record)
             return {"scenario": name, "summary": summary,
@@ -158,6 +176,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=573)
     parser.add_argument("--rtt-ms", type=float, choices=(0, .1, 1, 10, 100), default=0)
     parser.add_argument("--bandwidth-mbps", type=float, default=0, help="0 means unshaped")
+    parser.add_argument("--drop-first-upload", action="store_true", help="inject one deterministic disconnect and retry")
     parser.add_argument("--baseline", type=Path, help="compare against prior JSON report")
     parser.add_argument("--tolerance", type=float, default=.25)
     parser.add_argument("--output", type=Path)
@@ -168,7 +187,7 @@ def main() -> int:
         parser.error("bandwidth must be nonnegative and tolerance in [0, 1)")
     sizes = SIZES if args.size == "all" else {args.size: SIZES[args.size]}
     scenarios = SCENARIOS if args.scenario == "all" else (args.scenario,)
-    runs = [run_scenario(scenario, payload(size, args.seed), args.clients, args.rtt_ms, args.bandwidth_mbps)
+    runs = [run_scenario(scenario, payload(size, args.seed), args.clients, args.rtt_ms, args.bandwidth_mbps, args.drop_first_upload)
             for size in sizes.values() for scenario in scenarios]
     report = {"schema": 1, "machine": platform.platform(), "python": platform.python_version(),
               "seed": args.seed, "size_bytes": sizes, "runs": runs}
