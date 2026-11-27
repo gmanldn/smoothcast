@@ -1186,8 +1186,11 @@ def cmd_ship(a: argparse.Namespace) -> int:
                 if ship_patch.assign_private_patch(ROOT, remote_before):
                     changed = sorted(set(changed) | {ship_patch.VERSION_PATH})
             except ship_patch.PatchAllocationError as exc:
-                print(f"PATCH ALLOCATION REFUSED: {exc}")
-                return 6
+                # A release number is best effort; never bypass the history guard.
+                if git("status", "--porcelain", "--untracked-files=no").strip():
+                    print(f"PATCH allocation left tracked changes; preserve work: {exc}")
+                    return 6
+                print(f"PATCH deferred: {exc}; shipping unchanged valid version if guard passes")
         rebased = git("rev-parse", "HEAD").strip() != before
         # Mandatory even with --skip-checks: a concurrent agent must never
         # regress, skip or silently overwrite a canonical version increment.

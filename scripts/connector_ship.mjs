@@ -174,7 +174,8 @@ function verifyTreeDelta(before,after,changes){
 function shipmentChanges(p,source){
   if(p.kind==="release"||p.kind==="finalise")return p.changes;
   const v=parseVersion(source);
-  check(v!==null&&v.PATCH<2147483647,"invalid or exhausted PATCH");
+  check(v!==null,"invalid canonical version");
+  if(v.PATCH>=2147483647)return p.changes; // valid unchanged version; owner chooses next MINOR
   const content=source.replace(VERSION_PART,(whole,key,eq,num,end)=>key==="PATCH"?key+eq+String(v.PATCH+1)+end:whole);
   validateVersionBump(source,content);
   return [...p.changes,{path:"src/version.py",old:p.versionBlob,content}];
@@ -261,7 +262,7 @@ async function verifyCandidate(api,p,candidate){
     check(v?.mode==="100644"&&v.sha!==p.versionBlob,"finalise must replace the version blob");
   }else{
     const expected=before.changes.find(x=>x.path==="src/version.py");
-    check(v?.sha===blobSha(expected.content)&&v.mode==="100644","candidate PATCH mismatch");
+    check(v?.sha===(expected?blobSha(expected.content):p.versionBlob)&&v.mode==="100644","candidate PATCH mismatch");
   }
   verifyTreeDelta(before.entries,after,before.changes);
   for(const x of before.changes){

@@ -397,6 +397,14 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
         repo = pathlib.Path(__file__).resolve().parents[1]
         disk = version.read_checkout_version(repo / "src" / "version.py")
         disk_revision = version.read_checkout_revision(repo)
+        # The installed copy can remain unchanged after a pull in its source checkout.
+        source = version.registered_checkout(repo)
+        if source is not None:
+            candidate = version.read_checkout_version(source / "src" / "version.py")
+            candidate_revision = version.read_checkout_revision(source)
+            if (candidate is not None and disk is not None and candidate_revision
+                    and tuple(map(int, candidate.split("."))) > tuple(map(int, disk.split(".")))):
+                disk, disk_revision = candidate, candidate_revision
         stale_version = disk is not None and disk != version.__version__
         stale_revision = (self._run_revision is not None
                           and disk_revision is not None
@@ -417,8 +425,8 @@ class CastControlApp(AppLifecycleMixin, jank_ui.JankMonitorMixin,
             return
         self._noticed_runtime_key = key
         if stale_version:
-            notice = (f"Installed SmoothCast v{disk}; running v{version.__version__}. "
-                      "Finish playback, then quit and reopen to use the installed version.")
+            notice = (f"Available local SmoothCast v{disk}; running v{version.__version__}. "
+                      "Finish playback, then quit and reopen to apply the available build.")
         else:
             notice = (f"Installed build updated to {disk_revision[:8]}; this SmoothCast "
                       f"process started at {self._run_revision[:8]}. Finish playback, "

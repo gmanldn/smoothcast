@@ -62,10 +62,12 @@ GitHub Issues ([docs/ISSUES.md](docs/ISSUES.md)) are authoritative; the read-onl
 - **Token discipline:** [Ponytail](.kilo/skills/ponytail/SKILL.md) for the
   smallest complete diff, [Caveman](.kilo/skills/caveman/SKILL.md) for terse
   evidence; see [efficiency](docs/agents/efficiency.md). Correctness wins.
-- Owner policy (27 Nov 2026): **each nonempty agent shipment increments PATCH in `develop`**, never on
+- Owner policy (27 Nov 2026): **strongly prefer one PATCH increment per nonempty agent shipment in `develop`**, never on
   `main`; no per-bump owner approval is required. Allocate the latest canonical
   `src/version.py` PATCH by one per shipment, not per ticket; MINOR and MAJOR
   remain owner-directed. This standing authorisation supersedes any older
-  owner-only PATCH restriction in child documents. Git commit SHA identifies every build; version-history checks
+  owner-only PATCH restriction in child documents. If allocation alone fails,
+  ship coherent work at the unchanged valid version; never block on release
+  qualification or bypass version-history integrity. Git commit SHA identifies every build; version-history checks
   run on every ship, even with `--skip-checks`. No auto main merge/tag/publish.
   Packaging: `packaging/SmoothCast.spec`.

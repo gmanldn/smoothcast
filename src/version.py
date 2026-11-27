@@ -8,6 +8,7 @@ checkout changes asynchronously.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 import re
 
@@ -15,7 +16,7 @@ import commit_identity
 
 MAJOR = 2
 MINOR = 3
-PATCH = 4
+PATCH = 5
 
 __version__ = f"{MAJOR}.{MINOR}.{PATCH}"
 
@@ -163,6 +164,30 @@ def read_checkout_revision(repo: Path) -> str | None:
             if separator and name == ref and _SHA.fullmatch(sha):
                 return sha.lower()
     return None
+
+
+def registered_checkout(repo: Path) -> Path | None:
+    """Locate an installer-recorded checkout for read-only update notices."""
+    marker = repo / "src" / ".smoothcast-source"
+    if marker.is_symlink() or not marker.is_file():
+        return None
+    try:
+        with marker.open("rb") as stream:
+            raw = stream.read(16385)
+        if len(raw) > 16384:
+            return None
+        value = json.loads(raw)
+        if not isinstance(value, str) or not Path(value).is_absolute():
+            return None
+        source = Path(value).resolve()
+        root = repo.resolve()
+        if (source == root or source in root.parents or root in source.parents
+                or not (source / ".git").exists()
+                or not (source / "setup" / "bootstrap.py").is_file()):
+            return None
+        return source
+    except (OSError, ValueError, RuntimeError):
+        return None
 
 
 def read_checkout_commit_date(repo: Path, revision: str | None = None) -> str | None:
