@@ -1948,7 +1948,11 @@ class Session:
         ]
         args += hls_output_args
         with open(FFMPEG_LOG, "w") as log:
-            low_priority = process_priority.enabled()
+            # This encoder feeds the TV in real time; below 1x the receiver
+            # buffers, so it keeps normal priority. At nice 10 a busy host
+            # starved it to 0.5x (#686). Background conversions (DLNA,
+            # previews) keep the #247 lower priority.
+            low_priority = False
             self.ffmpeg = subprocess.Popen(
                 args, cwd=str(ROOT),
                 stdout=subprocess.DEVNULL, stderr=log,
