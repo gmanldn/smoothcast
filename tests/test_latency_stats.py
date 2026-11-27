@@ -73,3 +73,16 @@ def test_save_then_load_round_trips_and_bad_files_give_empty(tmp_path):
 
 def test_shared_is_one_instance():
     assert L.shared() is L.shared()
+
+
+def test_record_shutdown_accumulates_across_runs(tmp_path):
+    report = {"total_ms": 120.0, "steps": [{"name": "portal", "ms": 40.0}, {"name": "Bad Name!", "ms": 5}, "junk"]}
+    assert L.record_shutdown(report, tmp_path)
+    assert L.record_shutdown(report, tmp_path)
+    summary = L.load(tmp_path).summary()
+    assert summary["app.shutdown"]["count"] == 2 and summary["shutdown.portal"]["count"] == 2
+    assert not any("bad" in name for name in summary)
+
+
+def test_record_shutdown_reports_unwritable_directory(tmp_path):
+    assert L.record_shutdown({"total_ms": 1.0}, tmp_path / "missing") is False

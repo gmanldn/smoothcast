@@ -122,3 +122,16 @@ def load(directory) -> Stats:
     except (OSError, ValueError):
         pass
     return stats
+
+
+def record_shutdown(report: dict, directory) -> bool:
+    """Fold one shutdown report into the persisted histograms (``app.shutdown`` plus ``shutdown.<step>``).
+
+    Merges with what earlier runs saved, so the p95 grows across sessions; False when the disk refuses.
+    """
+    stats = load(directory)
+    stats.record("app.shutdown", report.get("total_ms"))
+    for step in report.get("steps") or ():
+        if isinstance(step, dict):
+            stats.record("shutdown." + str(step.get("name", "")), step.get("ms"))
+    return save(stats, directory)
