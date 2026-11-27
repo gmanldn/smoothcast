@@ -316,6 +316,7 @@ py-modules = [
     "pwa_manifest",
     "pychromecast_backend",
     "queue_accessibility",
+    "queue_component",
     "queue_crdt",
     "queue_metadata",
     "queue_prewarm_ui",

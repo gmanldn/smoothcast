@@ -20,6 +20,7 @@ import playback_state
 
 import playlist_control
 import queue_metadata
+from queue_component import QueueComponent
 import room_checkpoint
 from queue_prewarm_ui import QueuePrewarmMixin
 from queue_row_ui import QueueRowMixin
@@ -245,14 +246,12 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
     def _enqueue(self, paths: list[str]) -> None:
         added = 0
-        for path in paths:
-            if path not in self.queue:
-                self.queue.append(path)
-                record = getattr(self, "_portal_record_contribution", None)
-                if callable(record):
-                    record(path, "Host", "local")
-                added += 1
-                fingerprint.KEYS.get(path)         # warm the content key in the background
+        for path in QueueComponent(self.queue).add(paths):
+            record = getattr(self, "_portal_record_contribution", None)
+            if callable(record):
+                record(path, "Host", "local")
+            added += 1
+            fingerprint.KEYS.get(path)         # warm the content key in the background
         if not added:
             return
         self._rebuild_queue()
@@ -277,11 +276,8 @@ class QueueMixin(PlaylistMixin, MusicImportMixin, QueuePrewarmMixin, QueueRowMix
 
 
     def _remove_queue(self, index: int) -> None:
-        if 0 <= index < len(self.queue):
-            removed = self.queue.pop(index)
-            self.selected_index = playlist_control.selection_after_remove(
-                self.selected_index, index, len(self.queue),
-            )
+        removed, self.selected_index = QueueComponent(self.queue).remove(index, self.selected_index)
+        if removed is not None:
             if removed == self.now_playing and not (
                 self.session and self.session.state is not None
             ):
