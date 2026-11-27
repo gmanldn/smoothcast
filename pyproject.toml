@@ -63,6 +63,7 @@ py-modules = [
     "bookmark_ui",
     "bookmarks",
     "buffer_health",
+    "buffering_status",
     "cache_policy",
     "cache_privacy",
     "capability_gate",
