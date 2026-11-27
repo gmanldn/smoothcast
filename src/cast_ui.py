@@ -1283,7 +1283,7 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
 
     def _update_header_subtitle(self) -> None:
         state = state_labels.present(self.device_state).short.lower()
-        if self.external and state not in {"offline", "ready"}:
+        if self.external and state not in {"offline", "ready", "unknown", "error"}:
             state = "playing on TV"
         device = self._device()
         subtitle = f"{device} · {state}" if device else "No receiver selected"
@@ -1441,6 +1441,8 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
             return ("Live" if live else state_labels.present("PLAYING").label), "playing"
         if paused:
             return state_labels.present("PAUSED").label, "paused"
+        if local_playing:
+            return state_labels.present("LOCAL_PLAYING").label, "playing"
         return state_labels.present("IDLE").label, "idle"
 
     def _refresh_direct_note(self) -> None:

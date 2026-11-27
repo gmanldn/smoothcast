@@ -123,6 +123,9 @@ def _main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
+    fresh = "--fresh" in args  # consumed before every other mode sees the args
+    args = [arg for arg in args if arg != "--fresh"]
+
     # Demo runs the app against loopback-only fake receivers in a throwaway
     # profile. Handle it before any installed-copy redirect, single-instance
     # handoff or runtime install so it can never touch a real running SmoothCast.
@@ -155,18 +158,19 @@ def _main(argv: list[str] | None = None) -> int:
 
     import fresh_start
 
-    fresh, args = fresh_start.take_flag(args)
-    if fresh and not _headless(args):
-        # Explicit full reset: stop every window and helper (even a kept cast)
-        # before the install refresh, which refuses to run under a live GUI.
-        fresh_start.reset(launch.gui_instances(all_installations=True), ROOT / "src")
-
     target = _target()
     installed = None
     try:
         import install_location
 
         install_location.check_install_idle(ROOT)
+        if fresh and not _headless(args):
+            # Explicit full reset after the installer-idle check, so a busy
+            # install never costs the user their window. Stops every window and
+            # helper (even a kept cast) before the refresh, which refuses to run
+            # under a live GUI. A process that cannot be stopped aborts the launch.
+            if not fresh_start.reset(launch.gui_instances(all_installations=True), ROOT / "src"):
+                return 1
         if target is not None and not portable and not os.environ.get("SMOOTHCAST_HANDOFF"):
             installed = _installed_root(target)
     except (OSError, ValueError) as exc:

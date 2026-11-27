@@ -51,6 +51,7 @@ def stop_processes(pids: list[int], *, grace: float = 4.0,
     def unchanged(handle, created, argv) -> bool:
         try:
             return (handle.is_running() and handle.create_time() == created
+                    and getattr(handle, "status", lambda: "")() != "zombie"
                     and tuple(handle.cmdline()) == argv)
         except Exception:
             return False
@@ -86,6 +87,9 @@ def reap_helpers(src_dir: Path, *, keep_streaming: bool):
 def reset(pids: list[int], src_dir: Path, *, keep_streaming: bool = False,
           say: Callable[[str], None] = lambda text: print(text, file=sys.stderr)) -> bool:
     """Stop `pids`, then clean helpers. True when no listed process survives."""
+    if pids and psutil is None:
+        say("SmoothCast: cannot verify or stop old processes without psutil; leaving them untouched.")
+        return False
     gone = set(stop_processes(pids))
     survivors = [pid for pid in pids if pid not in gone and _alive(pid)]
     if survivors:
@@ -102,8 +106,11 @@ def reset(pids: list[int], src_dir: Path, *, keep_streaming: bool = False,
 
 def _alive(pid: int) -> bool:
     if psutil is None:
-        return False
+        return True  # cannot inspect: assume it survives (fail closed)
     try:
-        return psutil.Process(pid).is_running()
-    except Exception:
+        process = psutil.Process(pid)
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
         return False
+    except Exception:
+        return True

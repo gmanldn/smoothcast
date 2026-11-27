@@ -69,6 +69,28 @@ class StopProcessTests(unittest.TestCase):
         self.assertEqual(proc.signals, [])
 
 
+class ResetTests(unittest.TestCase):
+    def test_without_psutil_reset_fails_closed(self):
+        with mock.patch.object(fresh_start, "psutil", None):
+            self.assertFalse(fresh_start.reset([5], ROOT / "src", say=lambda _t: None))
+            self.assertTrue(fresh_start._alive(5))
+
+    def test_survivor_blocks_launch_and_skips_cleanup(self):
+        with mock.patch.object(fresh_start, "stop_processes", return_value=[]), \
+                mock.patch.object(fresh_start, "_alive", return_value=True), \
+                mock.patch.object(fresh_start, "reap_helpers") as reap:
+            self.assertFalse(fresh_start.reset([5], ROOT / "src", say=lambda _t: None))
+            reap.assert_not_called()
+
+    def test_clean_stop_reaps_helpers(self):
+        report = mock.Mock(stopped=[], files_removed=0)
+        with mock.patch.object(fresh_start, "stop_processes", return_value=[5]), \
+                mock.patch.object(fresh_start, "psutil", object()), \
+                mock.patch.object(fresh_start, "reap_helpers", return_value=report) as reap:
+            self.assertTrue(fresh_start.reset([5], ROOT / "src", say=lambda _t: None))
+            reap.assert_called_once()
+
+
 class FlagTests(unittest.TestCase):
     def test_take_flag(self):
         self.assertEqual(fresh_start.take_flag(["--fresh", "a.mp4"]), (True, ["a.mp4"]))

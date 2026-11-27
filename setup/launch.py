@@ -403,8 +403,12 @@ def ensure_single_instance(args: list[str], target: Path | None = None,
     # A D-Bus refusal/timeout is only a hint: PIDs can be reused. `reclaim`
     # re-verifies birth time and argv per process. Without it, or when the
     # probe itself was unavailable (None), preserve a possibly active cast.
-    if reclaim is not None and activated is False and reclaim(gui_instances(all_installations=True)):
-        return None
+    if reclaim is not None and activated is False:
+        # One missed 6 s probe can be a busy-but-healthy window or a primary
+        # still starting. Confirm with a longer second probe, and only ever
+        # replace this installation's own instance.
+        if activate_existing(timeout=20.0) is False and reclaim(gui_instances(target=target)):
+            return None
     print(
         "SmoothCast is already running but its window could not be activated. "
         "The existing process was left untouched. Close it normally (or use "
