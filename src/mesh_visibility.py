@@ -158,7 +158,7 @@ class LocalObserver:
                     formats=tuple(f for f in item.formats[:mm.MAX_FORMATS]
                                   if isinstance(f, str)),
                     age_ms=age_ms, owner=item.owner)
-            except Exception:
+            except Exception:  # noqa: BLE001 - skip an unreadable record
                 continue
         return tuple(sorted(found.values(), key=lambda t: t.id))[:mm.MAX_TARGETS]
 

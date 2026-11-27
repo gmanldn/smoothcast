@@ -57,7 +57,7 @@ class UiTimerMixin:
                 "mode": str(getattr(session, "mode", "") or ""),
                 "target": str(self._device() or ""),
             })
-        except Exception:
+        except Exception:  # noqa: BLE001 - a timer tick must never raise into GLib
             pass
         return True
 
@@ -70,7 +70,7 @@ class UiTimerMixin:
             if (self.get_mapped() and stack is not None
                     and stack.get_visible_child_name() == "info"):
                 self._refresh_mesh_heartbeat()
-        except Exception:
+        except Exception:  # noqa: BLE001 - a timer tick must never raise into GLib
             pass
         return True
 

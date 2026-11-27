@@ -43,7 +43,7 @@ class JoinSlateMixin:
         """Called after every receiver status poll; never raises."""
         try:
             self._join_slate_step(info)
-        except Exception:  # an optional extra must never disturb playback
+        except Exception:  # an optional extra must never disturb playback  # noqa: BLE001 - an optional extra must never disturb playback; logged
             error_log.log("Join slate check failed", exc_info=True)
 
     def _join_slate_step(self, info) -> None:

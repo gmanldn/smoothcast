@@ -762,7 +762,7 @@ class AvMixin:
                 self._mon_path, self._mon_chain, offset=max(0.0, offset),
                 audio_track_index=track_index,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - no meter means no meter; playback continues
             self.monitor = None
         self._sync_ui_timers()
 
@@ -775,7 +775,7 @@ class AvMixin:
             def dispose():
                 try:
                     mon.stop()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - meter cleanup failure is reported to stderr
                     print(f"SmoothCast: meter cleanup failed: {exc}", file=sys.stderr)
             threading.Thread(
                 target=dispose, name="smoothcast-meter-stop", daemon=False,

@@ -160,12 +160,12 @@ class MeshLoop:
     def _guard(self, callback: Callable[[], None]) -> None:
         try:
             callback()
-        except Exception as exc:                 # one bad callback never stops the loop
+        except Exception as exc:                 # one bad callback never stops the loop  # noqa: BLE001 - one bad callback never stops the loop; counted
             self.errors += 1
             if self._on_error is not None:
                 try:
                     self._on_error(exc)
-                except Exception:
+                except Exception:  # noqa: BLE001 - an error callback must not raise
                     pass
 
 

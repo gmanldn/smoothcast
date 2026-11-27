@@ -116,7 +116,7 @@ class PrimaryTracker:
                       "lost" if old not in {c.node_id for c in candidates} else "older-node")
             try:
                 self._on_change(PrimaryChanged(old, chosen, reason))
-            except Exception:
+            except Exception:  # noqa: BLE001 - a bad change listener must not stop election
                 pass
         return chosen
 

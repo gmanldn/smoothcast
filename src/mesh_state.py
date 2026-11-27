@@ -251,7 +251,7 @@ class Subscription:
         if self._on_ready is not None:
             try:
                 self._on_ready()
-            except Exception:
+            except Exception:  # noqa: BLE001 - a bad ready callback must not stop the state machine
                 pass
 
     def poll(self) -> list[Delta | Snapshot]:

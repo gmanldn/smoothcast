@@ -11,7 +11,7 @@ def main() -> int:
         return _main()
     except KeyboardInterrupt:
         return 130
-    except Exception as exc:  # SystemExit (argparse, explicit exits) passes through
+    except Exception as exc:  # SystemExit (argparse, explicit exits) passes through  # noqa: BLE001 - last-resort handler: report through failure_boundary and exit non-zero
         import failure_boundary
         failure = failure_boundary.describe(exc)
         logged = False
@@ -19,7 +19,7 @@ def main() -> int:
             import error_log
             error_log.log(f"cli failed: {failure.detail}")
             logged = True
-        except Exception:
+        except Exception:  # noqa: BLE001 - logging must not mask the original failure
             pass
         print(f"smoothcast: {failure.message}", file=sys.stderr)
         if logged:

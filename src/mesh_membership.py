@@ -246,7 +246,7 @@ class Membership:
     def _emit_safe(self, event: MembershipEvent) -> None:
         try:
             self._emit(event)
-        except Exception:
+        except Exception:  # noqa: BLE001 - a bad listener must not stop membership updates
             pass
 
     def _bury(self, member: Member, reason: str) -> None:
@@ -351,7 +351,7 @@ class Membership:
             if regenerate and self._regenerate is not None:
                 try:
                     self._regenerate()
-                except Exception:
+                except Exception:  # noqa: BLE001 - best-effort regenerate
                     pass
         else:
             self._emit_safe(IdentityClash(event.node_id, event.boot_id, False, False))

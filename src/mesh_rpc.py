@@ -123,6 +123,6 @@ class RpcRouter:
                 return None
             return json.dumps(reply, sort_keys=True, separators=(",", ":"),
                               allow_nan=False).encode("utf-8")
-        except Exception:                       # never raise into the transport
+        except Exception:                       # never raise into the transport  # noqa: BLE001 - never raise into the transport; counted
             self.errors += 1
             return None
