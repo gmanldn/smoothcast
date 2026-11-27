@@ -1170,9 +1170,12 @@ class _Handler(BaseHTTPRequestHandler):
                     })
                     if target.get("target_id") != cast_target:
                         raise PortalRequestError(409, "Casting target changed. Confirm the current receiver again.")
+                bi, bt = body.get("batch_index"), body.get("batch_total")
+                batch = (bi, bt) if type(bi) is int and type(bt) is int else None
                 created = self.server.uploads.create(
                     token, body.get("name"), body.get("size"),
-                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None)
+                    self.client_address[0], queue_only=queue_only, cast_target=cast_target if not queue_only else None,
+                    batch=batch)
                 key = self.server._session_key(token)
                 if not self.server.session_key_active(key):
                     self.server.uploads.revoke_owner_keys({key})
@@ -2856,7 +2859,7 @@ function renderRoomTransfers(state){
       previous.delete(id);
       const [title,detail,meter]=li.children;
       const name=row.title||"Incoming media";
-      const description=[mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
+      const description=[row.batch_total>1?"File "+row.batch_index+" of "+row.batch_total:"",mediaKindLabel(row.media_kind),row.intent==="queue"?"Up Next":"Play now",labels[row.stage]||"Receiving",fileUnits(row.received)+" / "+fileUnits(row.size)].filter(Boolean).join(" · ");
       if(title.textContent!==name){title.textContent=name;meter.setAttribute("aria-label","Transfer progress for "+name);}
       if(detail.textContent!==description)detail.textContent=description;
       const total=Math.max(1,Number(row.size)||1),received=Math.max(0,Math.min(total,Number(row.received)||0));
@@ -3718,7 +3721,7 @@ $("uploadButton").addEventListener("click",async()=>{
       }else{
         transferView("prepare",0,file.size,"File "+(batchIndex+1)+" of "+batchFiles.length,queueOnly);
         showError("uploadStatus",`Preparing ${batchIndex+1}/${batchFiles.length}: ${file.name}…`);
-        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget}),json);
+        state=await uploadRequest("POST","/api/uploads",JSON.stringify({name:file.name,size:file.size,queue:queueOnly,cast_target:queueOnly?null:batchCastTarget,batch_index:batchIndex+1,batch_total:batchFiles.length}),json);
         const {id,chunk_size:chunkSize}=state;
         if(typeof id!=="string"||!/^[A-Za-z0-9_-]{32}$/.test(id)||!validUploadChunkSize(chunkSize))
           throw Error("Upload setup returned invalid transfer parameters. Reload and retry.");

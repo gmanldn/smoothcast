@@ -196,6 +196,8 @@ class _Upload:
     queue_only: bool = False
     audio_only: bool = False
     cast_target: str | None = None
+    batch_index: int = 0
+    batch_total: int = 0
     media_validated: bool = False
     # A successful rename and directory fsync are separate steps. If fsync
     # fails, retain the final path and retry durability without re-uploading.
@@ -259,7 +261,7 @@ class UploadManager:
 
     def create(self, owner: str, name_value: object, size_value: object,
                client: str = "", *, queue_only: bool = False,
-               cast_target: str | None = None) -> dict:
+               cast_target: str | None = None, batch: tuple[int, int] | None = None) -> dict:
         name, suffix, audio_only = _safe_name(name_value)
         if type(size_value) is not int or not 0 < size_value <= MAX_UPLOAD_BYTES:
             raise UploadError(413, "The selected file size is invalid or too large")
@@ -308,6 +310,8 @@ class UploadManager:
                              client=str(client or "")[:64], created_at=now, last_at=now,
                              queue_only=bool(queue_only or audio_only),
                              audio_only=audio_only, cast_target=cast_target if not (queue_only or audio_only) else None)
+            if batch and 1 <= batch[0] <= batch[1] <= 500:
+                upload.batch_index, upload.batch_total = batch
             self._uploads[upload_id] = upload
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE, "queue_only": upload.queue_only}
@@ -421,6 +425,8 @@ class UploadManager:
                     "size": upload.size,
                     "intent": "queue" if upload.queue_only else "cast",
                     "stage": stage,
+                    **({"batch_index": upload.batch_index, "batch_total": upload.batch_total}
+                       if upload.batch_total > 1 else {}),
                 })
                 if len(rows) >= 24:
                     break
