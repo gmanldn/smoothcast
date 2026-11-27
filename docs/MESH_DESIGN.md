@@ -54,10 +54,12 @@ any node, including the primary, never blocks the others.
    one writer per record, so there are no conflicts to resolve. The "primary" is
    computed identically by every node from the same membership view; there is no
    election protocol to fail.
-2. **Discovery is a hint, pairing is trust.** Beacons and mDNS carry identity and
-   capabilities only. Anything sensitive (target lists with names, client
-   summaries, media offers) flows only over the pinned, paired transport
-   (#358, `mesh_transport.py`).
+2. **Discovery is a hint; the trusted home LAN is the boundary.** Beacons and mDNS
+   carry identity and capabilities only. A compatible SmoothCast node on the LAN
+   joins the mesh automatically (setting
+   *Join other SmoothCast computers automatically*, default on). Identity is still pinned on first sight
+   (`known_nodes.json`, #418) so a duplicate or replaced node is detected and
+   kept out of the data merge until a person accepts it.
 3. **Observation never acts.** Watching the network may read passive status. It
    never sends commands to a receiver, never changes ownership and never
    restarts a session (#352).
@@ -211,9 +213,9 @@ titles. TTLs: peers 7 days, targets 30 days. **Forget network** wipes it.
 
 | Tier | Who | Gets |
 | --- | --- | --- |
-| Public | any LAN device | node id, protocol version, capability names (as today) |
-| Paired node | explicit host approval (#358) | full records, edges, client summaries, scoped media offers |
-| Web guest | room PIN | room-scoped snapshot only (their host's view) |
+| Public (beacon) | any LAN device | node id, protocol version, capability names (as today) |
+| Mesh member | any compatible SmoothCast node on the LAN (automatic; identity pinned) | full records, edges, client summaries, scoped media offers |
+| Web client | any LAN browser | room-scoped snapshot only (their host's view); a PIN is an optional setting |
 
 All inputs are size-bounded and rate-limited; unknown versions are ignored;
 beacons are never trusted for anything beyond "go and ask over the right tier".
