@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import signal
 from typing import TYPE_CHECKING
 
 import error_banner_ui
@@ -19,6 +20,33 @@ if TYPE_CHECKING:
 
 
 class AppLifecycleMixin:
+    def run(self, argv: list[str]) -> int:
+        if os.name != "posix":
+            return super().run(argv)
+
+        from gi.repository import GLib
+
+        interrupted = False
+
+        def interrupt() -> bool:
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                window = self.window
+                if window is None:
+                    self.quit()
+                elif not window._closing:
+                    window.close()
+            return GLib.SOURCE_CONTINUE  # Let an in-progress close finish on repeated Ctrl+C.
+
+        # Dispatch close on the GTK thread through the same cleanup as window Quit.
+        source = GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, interrupt)
+        try:
+            result = super().run(argv)
+            return result or (130 if interrupted else 0)
+        finally:
+            GLib.source_remove(source)
+
     def _failure_notice_available(self) -> bool:
         window = self.window
         return bool(window is not None and not window._closing and not self.fatal

@@ -1,6 +1,9 @@
 """Headless lifecycle tests: no GTK display or receiver is launched."""
 from __future__ import annotations
 
+import os
+import signal
+import sys
 import textwrap
 import threading
 import time
@@ -8,6 +11,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from cast_app_lifecycle import AppLifecycleMixin
 from entry_name import EntryName
 from gui_source import main_window_methods
 from portal import Portal
@@ -15,6 +19,30 @@ import reliability_metrics
 import shutdown_plan
 
 METHODS = main_window_methods()
+
+
+@unittest.skipUnless(os.name == "posix", "GLib Unix signal source")
+class TerminalInterruptTests(unittest.TestCase):
+    def test_sigint_requests_normal_close_once_and_returns_130(self):
+        glib = mock.Mock(PRIORITY_DEFAULT=0, SOURCE_CONTINUE=True)
+        glib.unix_signal_add.return_value = 42
+        win = mock.Mock(_closing=False)
+
+        class FakeApplication:
+            def run(self, argv):
+                priority, signum, interrupt = glib.unix_signal_add.call_args.args
+                assert (priority, signum) == (0, signal.SIGINT)
+                assert interrupt()
+                assert interrupt()
+                return 0
+
+        class App(AppLifecycleMixin, FakeApplication):
+            window = win
+
+        with mock.patch.dict(sys.modules, {"gi.repository": mock.Mock(GLib=glib)}):
+            self.assertEqual(App().run(["sc.py"]), 130)
+        win.close.assert_called_once_with()
+        glib.source_remove.assert_called_once_with(42)
 
 
 def lifecycle_type():
