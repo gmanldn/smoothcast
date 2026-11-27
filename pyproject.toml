@@ -319,6 +319,7 @@ py-modules = [
     "selftest_hold",
     "series_model",
     "server",
+    "share_target",
     "shortcut_map",
     "shutdown_plan",
     "skip_segments",
