@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ad3ac76ddf7b2f5cf38a74df2a79814a232302ed -->
+<!-- sc-changelog-through: 3a375d32cca42d647528bcec875287fe2c1f151f -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:20:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:21:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:21:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a375d32cca4`](https://github.com/gmanldn/smoothcast/commit/3a375d32cca42d647528bcec875287fe2c1f151f)
+
+- 🟩 **21:21:19 · Feature** — feat(doctor): SSDP self-test check (Refs #211) · [`be44db5dfb80`](https://github.com/gmanldn/smoothcast/commit/be44db5dfb80ec98686a5d9ee3a002ebd86a37f7)
+
+- ⬜ **21:21:04 · Maintenance** — chore(ci): rebaseline complexity for design\_tokens, ffmpeg\_compat, latency\_stats, ui\_tokens (Refs #700) · [`ed530e9cb9d9`](https://github.com/gmanldn/smoothcast/commit/ed530e9cb9d992a18eff208b30961fcfae61e2da)
 
 - ⬜ **21:20:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ad3ac76ddf7b`](https://github.com/gmanldn/smoothcast/commit/ad3ac76ddf7b2f5cf38a74df2a79814a232302ed)
+
+- ⬜ **21:20:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`88cd9a2a9390`](https://github.com/gmanldn/smoothcast/commit/88cd9a2a93906177c01dd0a6fce56cf7a82692c7)
 
 - 🟩 **21:20:13 · Feature** — feat(doctor): run the firewall check in smoothcast doctor (Refs #211) · [`105201d5f863`](https://github.com/gmanldn/smoothcast/commit/105201d5f863b87a8929eb4b1b1febc1cca233ac)
 
