@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 66fdc4695a9a452fdede290ca8b73ada722f9ab3 -->
+<!-- sc-changelog-through: 6cd76f36739ceeca4ea5531e6e554edf79e612dc -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:37:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:38:09 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:38:09 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`6cd76f36739c`](https://github.com/gmanldn/smoothcast/commit/6cd76f36739ceeca4ea5531e6e554edf79e612dc)
+
+- 🟩 **07:38:04 · Feature** — feat(arch): pure service supervisor with bounded stop, health and restart backoff (Refs #692) · [`f4f6efed9d0e`](https://github.com/gmanldn/smoothcast/commit/f4f6efed9d0e028824a084b1c54bc2d25f7757ca)
+
+- 🟩 **07:37:51 · Feature** — feat(rooms): pure movie-night poll with instant-runoff, seeded ties and kids-aware suggestions (Refs #392) · [`089b787b3b45`](https://github.com/gmanldn/smoothcast/commit/089b787b3b45cebd85cff388d8231513621b8e69)
 
 - ⬜ **07:37:04 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`66fdc4695a9a`](https://github.com/gmanldn/smoothcast/commit/66fdc4695a9a452fdede290ca8b73ada722f9ab3)
+
+- ⬜ **07:37:04 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`f3b9b529c531`](https://github.com/gmanldn/smoothcast/commit/f3b9b529c531b3b186bf77cfb7ea8a7154feba0d)
 
 - 🟪 **07:36:58 · Tests** — test(arch): MainWindow base-class ratchet at 17 (Refs #691) · [`18cd3bf830be`](https://github.com/gmanldn/smoothcast/commit/18cd3bf830bec2b9b6def34c76e2ba4c6a3cbc2c)
 
