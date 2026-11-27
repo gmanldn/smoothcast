@@ -49,6 +49,23 @@ def test_upload_path_rejects_parent_traversal_outside_upload_root(tmp_path):
     assert "unavailable" in str(error.value).lower()
 
 
+def test_upload_path_rejects_symlink_escape_outside_upload_root(tmp_path):
+    root = tmp_path / "uploads"
+    root.mkdir()
+    outside = tmp_path / "private.mp4"
+    outside.write_bytes(b"not a guest upload")
+    (root / "link.mp4").symlink_to(outside)
+    host = QueueHost()
+    host._portal = SimpleNamespace(server=SimpleNamespace(
+        uploads=SimpleNamespace(root=root),
+    ))
+
+    with pytest.raises(portal.PortalRequestError) as error:
+        host._portal_upload_path({"path": str(root / "link.mp4")})
+
+    assert error.value.status == 400
+
+
 def test_stale_revision_rejects_queue_edits_before_mutation():
     host = QueueHost()
     host._portal_queue_status()
