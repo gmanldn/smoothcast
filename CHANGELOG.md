@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 736fa00815b902783f74b2835aedd3f9b4303179 -->
+<!-- sc-changelog-through: 99f203f663d90b4d3f131653c6238713fc0a30bf -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:24:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **19:28:40 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **19:28:40 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`99f203f663d9`](https://github.com/gmanldn/smoothcast/commit/99f203f663d90b4d3f131653c6238713fc0a30bf)
+
+- 🟩 **19:28:40 · Feature** — feat: share visual tokens between gtk and web (Refs #708) · [`6deffbec7d29`](https://github.com/gmanldn/smoothcast/commit/6deffbec7d2937323a425ea8a3eee9752dd9e1d0)
 
 - ⬜ **19:24:35 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`736fa00815b9`](https://github.com/gmanldn/smoothcast/commit/736fa00815b902783f74b2835aedd3f9b4303179)
+
+- ⬜ **19:24:35 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`ea5be954f74e`](https://github.com/gmanldn/smoothcast/commit/ea5be954f74e0e68531b85a1840fce98d9f2497e)
 
 - 🟥 **19:24:18 · Fix** — fix: resolve portal media through MediaSource (Refs #702) · [`e65202c14210`](https://github.com/gmanldn/smoothcast/commit/e65202c142101b004ce34cd3caca67e5282a4b10)
 
