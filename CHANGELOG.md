@@ -8,11 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 03e4e93751c24b3c579b33a184ddfc40737e1506 -->
+<!-- sc-changelog-through: c4b45095ac1f09184cd86469a5f447dfce30348b -->
 
 ## 2026-11-27 · UTC
 
-- 🟩 **06:24:00 · Feature** — feat(brand): apply SmoothCast Glacier and Ink web palette (Refs #708) <!-- sc-changelog-pending -->
+- ⬜ **06:26:16 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:26:16 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c4b45095ac1f`](https://github.com/gmanldn/smoothcast/commit/c4b45095ac1f09184cd86469a5f447dfce30348b)
+
+- 🟩 **06:26:15 · Feature** — feat(ui): shared corner-radius token scale; GTK stylesheet snapped to it and a parity test against the web page (Refs #708) (Refs #325) · [`ccbfab324b41`](https://github.com/gmanldn/smoothcast/commit/ccbfab324b4135044d4793a38c070bb86a3e9fd8)
+
+- 🟩 **06:25:30 · Feature** — feat(queue): pure bounded undo log for add/remove/move with revision check (Refs #328) · [`7a54815fd83c`](https://github.com/gmanldn/smoothcast/commit/7a54815fd83c13dc4ae05d5f3023469a2b9d795b)
+
+- 🟩 **06:23:16 · Feature** — feat(brand): apply SmoothCast Glacier and Ink web palette (Refs #708) · [`ac510aa701d2`](https://github.com/gmanldn/smoothcast/commit/ac510aa701d269d21296a0ddeae42be6550971fb)
 
 - ⬜ **06:22:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0f6e51d9e9cd`](https://github.com/gmanldn/smoothcast/commit/0f6e51d9e9cd47dfabf74fa7b34cfd25c093ce3c)
 
