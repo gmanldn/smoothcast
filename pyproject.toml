@@ -153,6 +153,7 @@ py-modules = [
     "house_cli",
     "house_fetch",
     "house_library",
+    "house_rules",
     "hw_encoder_state",
     "idle_chrome",
     "idle_slate",
