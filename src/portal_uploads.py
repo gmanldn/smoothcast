@@ -29,6 +29,8 @@ MAX_AUDIO_DURATION_SECONDS = 24 * 60 * 60
 MAX_ACTIVE_UPLOADS = 3
 MIN_FREE_BYTES = 512 * 1024 * 1024
 PARTIAL_TTL_SECONDS = 24 * 60 * 60
+ANNOUNCE_TTL_SECONDS = 15 * 60
+ANNOUNCE_MAX = 100
 VIDEO_SUFFIXES = frozenset({
     ".mp4", ".m4v", ".mkv", ".mov", ".avi", ".webm", ".ts", ".mpeg", ".mpg", ".wmv",
 })
@@ -221,6 +223,9 @@ class UploadManager:
         self._clock = clock
         self._early_cast_min_bytes = max(0, int(early_cast_min_bytes))
         self._uploads: dict[str, _Upload] = {}
+        # owner key -> (expires_at, [{name,size,audio,queue}]) for files a guest
+        # has chosen but not yet reserved, so the whole batch is visible.
+        self._announced: dict[str, tuple[float, list[dict]]] = {}
         self._lock = threading.RLock()
         self._remove_expired_partials()
 
@@ -313,6 +318,16 @@ class UploadManager:
             if batch and 1 <= batch[0] <= batch[1] <= 500:
                 upload.batch_index, upload.batch_total = batch
             self._uploads[upload_id] = upload
+            held = self._announced.get(owner_key)
+            if held:
+                for index, row in enumerate(held[1]):
+                    if row["name"] == name and row["size"] == size_value:
+                        del held[1][index]
+                        break
+                if not held[1]:
+                    self._announced.pop(owner_key, None)
+                else:
+                    self._announced[owner_key] = (now + ANNOUNCE_TTL_SECONDS, held[1])
         return {"id": upload_id, "name": name, "size": size_value,
                 "received": 0, "chunk_size": CHUNK_SIZE, "queue_only": upload.queue_only}
 
@@ -430,7 +445,50 @@ class UploadManager:
                 })
                 if len(rows) >= 24:
                     break
-        return list(reversed(rows))
+            rows = list(reversed(rows))
+            for owner_key, (expires, held) in list(self._announced.items()):
+                if expires < now:
+                    self._announced.pop(owner_key, None)
+                    continue
+                for index, row in enumerate(held):
+                    if len(rows) >= 24:
+                        break
+                    rows.append({
+                        "id": hashlib.sha256(f"room-wait:{owner_key}:{index}:{row['name']}".encode()).hexdigest()[:24],
+                        "title": row["name"],
+                        "media_kind": "audio" if row["audio"] else "video",
+                        "received": 0,
+                        "size": row["size"],
+                        "intent": "queue" if (row["queue"] or row["audio"]) else "cast",
+                        "stage": "waiting",
+                    })
+            return rows
+
+    def announce(self, owner: str, items: object) -> int:
+        """Record a guest's not-yet-started batch files (names and sizes only)."""
+        if not isinstance(owner, str) or not owner:
+            raise UploadError(401, "Sign in to upload a file")
+        key = hashlib.sha256(owner.encode("utf-8")).hexdigest()
+        rows: list[dict] = []
+        if isinstance(items, list):
+            for item in items[:ANNOUNCE_MAX]:
+                if not isinstance(item, dict):
+                    continue
+                size = item.get("size")
+                if type(size) is not int or not 0 < size <= MAX_UPLOAD_BYTES:
+                    continue
+                try:
+                    name, _suffix, audio = _safe_name(item.get("name"))
+                except UploadError:
+                    continue
+                rows.append({"name": name, "size": size, "audio": audio,
+                             "queue": bool(item.get("queue", True))})
+        with self._lock:
+            if rows:
+                self._announced[key] = (self._clock() + ANNOUNCE_TTL_SECONDS, rows)
+            else:
+                self._announced.pop(key, None)
+        return len(rows)
 
     def mark_early_cast(self, upload_id: str, *, accepted: bool) -> None:
         """Record whether the GUI accepted an early-cast request for an upload."""
@@ -661,6 +719,8 @@ class UploadManager:
         crash/expiry sweep rather than deleting a file still being written.
         """
         with self._lock:
+            for key in owner_keys:
+                self._announced.pop(key, None)
             targets = []
             for upload_id, upload in list(self._uploads.items()):
                 if upload.owner in owner_keys:

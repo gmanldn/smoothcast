@@ -1152,6 +1152,17 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True, **target})
             except PortalRequestError as exc:
                 return self._exception_error(exc)
+        if path == "/api/uploads/announce":
+            if not self._authenticated(csrf=True):
+                return self._error(403, guest_messages.SESSION_ENDED)
+            try:
+                if self.server.uploads is None:
+                    return self._error(503, guest_messages.UPLOAD_STORAGE_UNAVAILABLE)
+                body = self._body()
+                count = self.server.uploads.announce(self._cookie_token() or "", body.get("files"))
+                return self._send(200, {"ok": True, "announced": count})
+            except (PortalRequestError, portal_uploads.UploadError) as exc:
+                return self._exception_error(exc)
         if path == "/api/uploads":
             if not self._authenticated(csrf=True):
                 return self._error(403, guest_messages.SESSION_ENDED)
@@ -2841,7 +2852,7 @@ function renderRoomTransfers(state){
   const rows=Array.isArray(state.room_transfers)?state.room_transfers.slice(0,24):[];
   const signature=JSON.stringify(rows);
   if(signature===roomTransferSignature)return;roomTransferSignature=signature;
-  const labels={receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
+  const labels={waiting:"Waiting in batch",receiving:"Receiving",buffering:"Buffering / playback requested",verifying:"Checking media",submitting:"Submitting room action",awaiting_acceptance:"Awaiting room acceptance"};
   for(const [panelId,listId] of [["queueIncomingPanel","queueIncomingRows"]]){
     const panel=$(panelId),list=$(listId);if(!panel||!list)continue;
     if(panel.hidden!==!rows.length)panel.hidden=!rows.length;
@@ -3643,8 +3654,15 @@ function resetUploadBatch(){
   showError("uploadStatus","");
   updateUploadControls();
 }
+function announceBatch(files,from){
+  // Best effort: lets everyone in the room see the whole batch before each file starts.
+  if(!csrf)return;
+  const rest=(files||[]).slice(from).map((f,i)=>({name:f.name,size:f.size,queue:batchQueueOnly||from+i>0}));
+  uploadRequest("POST","/api/uploads/announce",JSON.stringify({files:rest}),{"Content-Type":"application/json"}).catch(()=>{});
+}
 function finishUpload(){
   uploading=false;
+  if(!batchFiles&&csrf)announceBatch([],0);
   cancelUpload=false;
   if(csrf)updateUploadControls();
   else{
@@ -3705,6 +3723,7 @@ $("uploadButton").addEventListener("click",async()=>{
       batchAdded=0;
       batchTotal=selected.length;
       batchQueueOnly=queueIntent;
+      if(selected.length>1)announceBatch(selected,1);
     }
     while(batchIndex<batchFiles.length&&!cancelUpload){
       const file=batchFiles[batchIndex],audio=/\.(mp3|aac|m4a|flac|ogg|opus|wav|aiff|aif)$/i.test(file.name);

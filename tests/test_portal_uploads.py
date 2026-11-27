@@ -617,3 +617,18 @@ def test_stale_pending_final_dispatch_keeps_cast_lane(tmp_path):
     uploads.finish_dispatch("first", first["id"], accepted=True)
     assert not uploads.create("third", "another.mkv", 3)["queue_only"]
     uploads.close()
+
+
+def test_announced_batch_is_visible_then_consumed(tmp_path):
+    manager = portal_uploads.UploadManager(tmp_path)
+    assert manager.announce("tok", [{"name": "a.mp4", "size": 5}, {"name": "b.mp3", "size": 6},
+                                    {"name": "../x", "size": -1}]) == 2
+    rows = manager.room_transfers()
+    assert [(r["title"], r["stage"], r["intent"]) for r in rows] == [
+        ("a.mp4", "waiting", "queue"), ("b.mp3", "waiting", "queue")]
+    manager.create("tok", "a.mp4", 5)
+    stages = {r["title"]: r["stage"] for r in manager.room_transfers()}
+    assert stages == {"a.mp4": "receiving", "b.mp3": "waiting"}
+    assert manager.announce("tok", []) == 0
+    assert [r["title"] for r in manager.room_transfers()] == ["a.mp4"]
+    manager.close()
