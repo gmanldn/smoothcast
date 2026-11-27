@@ -8,11 +8,27 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 275531ac80f2fa3de803e0f9d7a99955adb6f37d -->
+<!-- sc-changelog-through: 0f6e51d9e9cd47dfabf74fa7b34cfd25c093ce3c -->
 
 ## 2026-11-27 · UTC
 
-- 🟥 **06:10:00 · Fix** — fix(msi): fail closed on incomplete upgrade qualification (Refs #535) <!-- sc-changelog-pending -->
+- ⬜ **06:22:43 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **06:22:43 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`0f6e51d9e9cd`](https://github.com/gmanldn/smoothcast/commit/0f6e51d9e9cd47dfabf74fa7b34cfd25c093ce3c)
+
+- 🟥 **06:22:42 · Fix** — fix(portal): finished portal uploads unused for two weeks are reclaimed at start-up; the private upload folder no longer grows without bound (13 GB seen) (Refs #686) · [`d81dc8c74635`](https://github.com/gmanldn/smoothcast/commit/d81dc8c74635545038d46e38d4f3bc9e9aeeff06)
+
+- 🟩 **06:22:24 · Feature** — feat(room): pure participant panel rows and atomic room policy store (Refs #322) · [`017336378188`](https://github.com/gmanldn/smoothcast/commit/017336378188bae509c7338cad81d1d97d8319ed)
+
+- 🟩 **06:19:32 · Feature** — feat(portal): pure command receipt tracker (accepted/confirmed/failed/uncertain) scoped to generation (Refs #320) · [`63079f2b68c5`](https://github.com/gmanldn/smoothcast/commit/63079f2b68c5b4ce973ac7004fe42a5326617477)
+
+- 🟩 **06:17:02 · Feature** — feat(remote): pure phone-remote link state model with discard-not-replay and capped jittered backoff (Refs #317) · [`08e665a51a56`](https://github.com/gmanldn/smoothcast/commit/08e665a51a56eef13227dcac9e25833d5a3c24ef)
+
+- 🟩 **06:15:22 · Feature** — feat(queue): pure one-vote-per-person ordering that never moves the playing or pinned items (Refs #326) · [`f71443eb92a2`](https://github.com/gmanldn/smoothcast/commit/f71443eb92a2af58f207dff095b92acd7924e087)
+
+- 🟩 **06:12:58 · Feature** — feat(i18n): placeholder-safe pseudo-locale and RTL wrappers for layout smoke tests (Refs #219) · [`abbdccca860f`](https://github.com/gmanldn/smoothcast/commit/abbdccca860fac71af27570bac44f0f569ad645b)
+
+- 🟥 **06:10:23 · Fix** — fix(msi): fail closed on incomplete upgrade qualification (Refs #535) · [`dcad2faa3cb8`](https://github.com/gmanldn/smoothcast/commit/dcad2faa3cb8e9152f88d39cea582b9b6615fa7f)
 
 - 🟦 **06:08:26 · Refactor** — refactor(gui): move runtime version notices into lifecycle mixin (Refs #706) · [`275531ac80f2`](https://github.com/gmanldn/smoothcast/commit/275531ac80f2fa3de803e0f9d7a99955adb6f37d)
 
