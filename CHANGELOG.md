@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: a7d83051a33638e0c517968f905e35f848ae28af -->
+<!-- sc-changelog-through: 5b8e2402001652abac67f2192cc9df1059a296bf -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **07:54:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **07:56:11 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **07:56:11 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`5b8e24020016`](https://github.com/gmanldn/smoothcast/commit/5b8e2402001652abac67f2192cc9df1059a296bf)
+
+- 🟩 **07:56:06 · Feature** — feat(settings): AudioSettings and PlaybackSettings with safe coercion and clamping (Refs #693) · [`fdad33070ed4`](https://github.com/gmanldn/smoothcast/commit/fdad33070ed47d0bafdd0f4eec3e434904a9107d)
+
+- 🟩 **07:55:18 · Feature** — feat(visual): pure tolerant screenshot diff, red diff image and fixed scenario matrix (Refs #455) · [`4fa5f27bdd3f`](https://github.com/gmanldn/smoothcast/commit/4fa5f27bdd3f703620e07174d6d7e6d569e5be59)
 
 - ⬜ **07:54:53 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a7d83051a336`](https://github.com/gmanldn/smoothcast/commit/a7d83051a33638e0c517968f905e35f848ae28af)
+
+- ⬜ **07:54:53 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`63be9ca26245`](https://github.com/gmanldn/smoothcast/commit/63be9ca26245c5a2745ff1e84f839af6a0df42ab)
 
 - 🟦 **07:54:48 · Refactor** — refactor(arch): update\_managed loads setup modules by path, no sys.path mutation; ratchet 3-&gt;2 (Refs #690) · [`e0669995d6f6`](https://github.com/gmanldn/smoothcast/commit/e0669995d6f68829b7fb1d349106061d6168c1be)
 
