@@ -1658,6 +1658,33 @@ def test_cast_upload_keeps_the_guest_filename_in_the_queue(tmp_path):
     assert host._portal_queue_display_names[str(path)] == "Holiday 2024.mp4"
 
 
+def test_slow_host_early_cast_succeeds_on_a_later_chunk_over_http(tmp_path):
+    import portal_uploads
+
+    uploads = portal_uploads.UploadManager(tmp_path / "uploads", early_cast_min_bytes=1)
+    rig = PortalRig(uploads)
+    try:
+        _, guest, cookie = login(rig)
+        auth = {"cookie": cookie, "csrf": guest["csrf"], "origin": f"http://{rig.host}"}
+        status, raw, _ = rig.request("POST", "/api/uploads",
+                                     {"name": "clip.mkv", "size": 9, "queue": False}, **auth)
+        path = "/api/uploads/" + decode(raw)["id"]
+        def put(body, rng):
+            return decode(rig.request(
+                "PUT", path, body, **auth, extra_headers={"Content-Range": rng},
+                content_type="application/octet-stream")[1])
+        with mock.patch.object(rig.server, "dispatch",
+                               side_effect=portal.PortalRequestError(503, "SmoothCast did not respond in time")):
+            first = put(b"abc", "bytes 0-2/9")
+        assert first["ready_to_cast"] is True and first["early_cast_accepted"] is False
+        second = put(b"def", "bytes 3-5/9")
+        assert second["ready_to_cast"] is True and second["early_cast_accepted"] is True
+        assert rig.calls[-1][1]["early"] is True
+        assert uploads.by_id(second["id"])["phase"] == "casting"
+    finally:
+        rig.close()
+
+
 def test_upload_receipt_reports_declined_early_cast_without_leaking_path(tmp_path):
     import portal_uploads
 
