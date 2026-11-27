@@ -35,6 +35,10 @@ class Scope:
     def cancelled(self) -> bool:
         return self._cancel.is_set() or (self._deadline is not None and self._clock() >= self._deadline)
 
+    def wait(self, timeout: float) -> bool:
+        """Sleep up to ``timeout`` s, waking at once on cancel. True when cancelled (loop ``while not scope.wait(n)``)."""
+        return self._cancel.wait(timeout) or self.cancelled
+
     def check(self) -> None:
         """Cooperative cancellation point for long tasks."""
         if self.cancelled:

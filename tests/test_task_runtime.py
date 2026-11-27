@@ -135,3 +135,11 @@ def test_spawn_after_shutdown_or_cancel_is_refused():
     assert rt.spawn_daemon("x", cancelled, lambda s: None) is None
     rt.shutdown(0.1)
     assert rt.spawn_daemon("y", rt.scope(), lambda s: None) is None
+
+
+def test_scope_wait_wakes_at_once_on_cancel_and_times_out_otherwise():
+    scope = tr.Scope()
+    assert scope.wait(0.01) is False
+    threading.Timer(0.02, scope.cancel).start()
+    began = time.monotonic()
+    assert scope.wait(5.0) is True and time.monotonic() - began < 1.0
