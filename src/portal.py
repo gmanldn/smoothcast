@@ -46,6 +46,7 @@ import portal_media
 import portal_mesh_http
 import portal_update_http
 import portal_mesh_panel
+import portal_routing
 import portal_screens_http
 import portal_uploads
 import link_acquisition
@@ -1143,19 +1144,31 @@ class _Handler(BaseHTTPRequestHandler):
         )
         return False
 
+    def _public_page(self) -> None:
+        page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
+        return self._send(200, page, content_type="text/html; charset=utf-8")
+
+    def _public_config(self) -> None:
+        return self._send(200, {"pin_required": self.server.pin_required,
+                                "name": self.server.hostname_label})
+
+    _PUBLIC_GET = {
+        "page": _public_page,
+        "nodes_page": lambda self: self._nodes_page(),
+        "openapi": lambda self: self._send(200, api_spec.spec()),
+        "silence": lambda self: self._send(200, SILENT_WAV, content_type="audio/wav"),
+        "config": _public_config,
+    }
+
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
         if not self._safe_origin(required=False):
             return self._error(400, "Invalid host")
-        if path == "/nodes":
-            return self._nodes_page()
-        if path == "/api/openapi.json":
-            return self._send(200, api_spec.spec())
-        if path == "/silence.wav":
-            return self._send(200, SILENT_WAV, content_type="audio/wav")
-        if path in {"/", "/index.html"}:
-            page = _page(room_name=self.server.room.name, pin_required=self.server.pin_required)
-            return self._send(200, page, content_type="text/html; charset=utf-8")
+        public = portal_routing.match("GET", path)
+        if public is not None and not public.auth and not public.prefix:
+            handler = self._PUBLIC_GET.get(public.handler)
+            if handler is not None:
+                return handler(self)
         if portal_screens_http.route(self, "GET", path):
             return
         if portal_update_http.route(self, "GET", path):
@@ -1172,9 +1185,6 @@ class _Handler(BaseHTTPRequestHandler):
             return self._mesh_library(path)
         if path.startswith("/mesh/file/"):
             return self._mesh_file(path, head=False)
-        if path == "/api/config":
-            return self._send(200, {"pin_required": self.server.pin_required,
-                                    "name": self.server.hostname_label})
         if path == "/api/session":
             resumed = self.server.resume_session(self._cookie_token())
             if resumed is None:
