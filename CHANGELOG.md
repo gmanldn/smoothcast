@@ -8,13 +8,19 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 2c848fe00e9bd7670db176bc46a5c75db6354543 -->
+<!-- sc-changelog-through: 08f1567163d04a1ffd7c7b7149208901cf8fae79 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:59:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **18:01:42 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **18:01:42 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`08f1567163d0`](https://github.com/gmanldn/smoothcast/commit/08f1567163d04a1ffd7c7b7149208901cf8fae79)
+
+- 🟪 **18:01:34 · Tests** — test: restore sparse preview coverage after typed video settings (Refs #40) · [`064cf508c856`](https://github.com/gmanldn/smoothcast/commit/064cf508c856f10ab5ec054fec6a7464d9c69482)
 
 - ⬜ **17:59:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`2c848fe00e9b`](https://github.com/gmanldn/smoothcast/commit/2c848fe00e9bd7670db176bc46a5c75db6354543)
+
+- ⬜ **17:59:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`98afff3d68c8`](https://github.com/gmanldn/smoothcast/commit/98afff3d68c813fd7f2765dde45440c025d6f071)
 
 - 🟪 **17:59:16 · Tests** — test: measure portal quit with overlapping mDNS goodbyes (Refs #705) · [`9dcdf679427a`](https://github.com/gmanldn/smoothcast/commit/9dcdf679427a49dc616583fd39c56b94abcff529)
 
