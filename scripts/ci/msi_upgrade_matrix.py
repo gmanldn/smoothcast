@@ -50,8 +50,10 @@ def fixture_versions(base: str) -> tuple[str, str]:
         nxt = f"{major}.{minor}.{build + 1}"
     elif minor < 255:
         nxt = f"{major}.{minor + 1}.0"
-    else:
+    elif major < 255:
         nxt = f"{major + 1}.0.0"
+    else:
+        raise UpgradeError("no representable higher MSI fixture version")
     return f"{major}.{minor}.{build}", nxt
 
 
@@ -93,7 +95,10 @@ def record(*, commit: str, version: str, os_build: str, runner: str, started: st
     return {"schema": SCHEMA, "commit": commit, "version": version, "os_build": os_build,
             "runner": runner, "started": started, "duration_seconds": round(duration, 3),
             "fixtures": fixtures, "steps": steps,
-            "ok": bool(steps) and all(step["status"] == "pass" for step in steps)}
+            "ok": len(steps) == len(plan()) and all(
+                step["status"] == "pass" and all(step.get(key) == value for key, value in spec.items())
+                for step, spec in zip(steps, plan())
+            )}
 
 
 def _operation(executable: Path, operation: str, msi: Path, log: Path) -> None:
@@ -126,8 +131,12 @@ def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str,
         raise UpgradeError("trusted system msiexec missing")
     if registered_version(run):
         raise UpgradeError("existing SmoothCast registration; target is not clean")
-    digests = {"a": verify_candidate(fixture_a, _sha(fixture_a)),
-               "b": verify_candidate(fixture_b, _sha(fixture_b))}
+    fixture_a, fixture_b = fixture_a.absolute(), fixture_b.absolute()
+    if (version_a, version_b) != fixture_versions(version_a):
+        raise UpgradeError("fixtures must have consecutive canonical MSI versions")
+    digests = {"a": _fixture_digest(fixture_a), "b": _fixture_digest(fixture_b)}
+    if digests["a"] == digests["b"]:
+        raise UpgradeError("upgrade fixtures must have distinct SHA-256 digests")
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     began = time.monotonic()
     steps: list[dict] = []
@@ -167,14 +176,18 @@ def run_matrix(fixture_a: Path, fixture_b: Path, version_a: str, version_b: str,
                   started=started, duration=time.monotonic() - began, fixtures=digests, steps=steps)
 
 
-def _sha(path: Path) -> str:
-    import hashlib
-
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def _fixture_digest(path: Path) -> str:
+    """Require the checksum emitted by the MSI builder, not a self-computed expectation."""
+    checksum = path.with_name(path.name + ".sha256")
+    if checksum.is_symlink() or not checksum.is_file():
+        raise UpgradeError("missing regular MSI fixture checksum")
+    try:
+        fields = checksum.read_text(encoding="ascii").split()
+    except UnicodeError as exc:
+        raise UpgradeError("invalid MSI fixture checksum encoding") from exc
+    if len(fields) != 2 or fields[1] != path.name:
+        raise UpgradeError("MSI fixture checksum filename mismatch")
+    return verify_candidate(path, fields[0])
 
 
 def dry_run(version_a: str, version_b: str, fixtures: dict) -> dict:
