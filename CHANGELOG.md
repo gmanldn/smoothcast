@@ -8,15 +8,23 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: 3a375d32cca42d647528bcec875287fe2c1f151f -->
+<!-- sc-changelog-through: dcb9ac8c45359f42af796174a83936aa8ac9eda3 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **21:21:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:23:01 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:23:01 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`dcb9ac8c4535`](https://github.com/gmanldn/smoothcast/commit/dcb9ac8c45359f42af796174a83936aa8ac9eda3)
+
+- 🟪 **21:22:58 · Tests** — test(portal): pin the anonymous-caller auth gate for every authenticated route (Refs #689) · [`7240539ef1f1`](https://github.com/gmanldn/smoothcast/commit/7240539ef1f1d3ecb8adb5fea9894f942a0eeaef)
+
+- 🟪 **21:22:08 · Tests** — test(room): property tests for replay, retry idempotence, no duplicates, rejoin convergence and gap refusal (Refs #695) · [`796dbb1214a4`](https://github.com/gmanldn/smoothcast/commit/796dbb1214a43c1b23426047c0ad2d4e5c65e637)
 
 - ⬜ **21:21:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`3a375d32cca4`](https://github.com/gmanldn/smoothcast/commit/3a375d32cca42d647528bcec875287fe2c1f151f)
 
 - 🟩 **21:21:19 · Feature** — feat(doctor): SSDP self-test check (Refs #211) · [`be44db5dfb80`](https://github.com/gmanldn/smoothcast/commit/be44db5dfb80ec98686a5d9ee3a002ebd86a37f7)
+
+- ⬜ **21:21:19 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b8045ac4cc30`](https://github.com/gmanldn/smoothcast/commit/b8045ac4cc30d7e2fde47383799f22675909c385)
 
 - ⬜ **21:21:04 · Maintenance** — chore(ci): rebaseline complexity for design\_tokens, ffmpeg\_compat, latency\_stats, ui\_tokens (Refs #700) · [`ed530e9cb9d9`](https://github.com/gmanldn/smoothcast/commit/ed530e9cb9d992a18eff208b30961fcfae61e2da)
 
