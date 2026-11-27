@@ -349,6 +349,17 @@ class UploadManager:
         """Immutable server-side destination consent, including resumed uploads."""
         return self._get(owner, upload_id).cast_target
 
+    def recovery_target(self, upload_id: str, path: str) -> str | None:
+        """Internal retry consent; never expose this token to room status."""
+        with self._lock:
+            upload = self._uploads.get(upload_id)
+            if (upload is None or upload.cancelled or upload.queue_only
+                    or upload.dispatch_pending or upload.dispatch_queue_only is True
+                    or not upload.directory_synced or upload.complete_path is None
+                    or str(upload.complete_path) != path):
+                return None
+            return upload.cast_target
+
     def is_audio_only(self, owner: str, upload_id: str) -> bool:
         """Whether a validated source is audio-only and must never early-cast."""
         return self._get(owner, upload_id).audio_only

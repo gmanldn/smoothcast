@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 import pathlib
 
+import portal
 import portal_uploads
 from gi.repository import GLib
 
@@ -45,6 +46,20 @@ class PortalUploadRecoveryMixin:
             return False
         casting = getattr(self, "_portal_cast_uploads", None)
         if casting is None:
+            return False
+        # The idle callback may run after the host switched receivers, the
+        # guest was revoked, or the portal was replaced. Recheck the original
+        # server-side consent immediately before issuing any playback command.
+        uploads = getattr(getattr(self, "_portal", None), "uploads", None)
+        target = uploads.recovery_target(upload_id, path) if uploads is not None else None
+        if not target:
+            return False
+        try:
+            current = self._portal_upload_target()["target_id"]
+        except portal.PortalRequestError:
+            current = None
+        if current != target:
+            self.toast("Upload saved; playback retry cancelled because the confirmed receiver changed or is unavailable.")
             return False
         casting[upload_id] = (path, time.monotonic())
         accepted = getattr(self, "_portal_accepted_uploads", None)
