@@ -8,11 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c0ce904d649703eb77d1a3862f0e196fa03b2556 -->
+<!-- sc-changelog-through: 573414ba54bbe9bbfda9576bb8b1b6d6d9ad8b95 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:15:26 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:19:31 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:19:31 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`573414ba54bb`](https://github.com/gmanldn/smoothcast/commit/573414ba54bbe9bbfda9576bb8b1b6d6d9ad8b95)
+
+- 🟥 **17:19:31 · Fix** — fix(preferences): split shared-room group into preferences\_room\_ui to restore size budget (Refs #706) · [`2e6ceb1f2ee8`](https://github.com/gmanldn/smoothcast/commit/2e6ceb1f2ee8fc23d1b539313be264ebd0668b40)
+
+- 🟦 **17:18:41 · Refactor** — refactor(runtime): mesh heartbeat runs under spawn\_daemon keeping its thread name; allowance removed (Refs #696) · [`162792480f21`](https://github.com/gmanldn/smoothcast/commit/162792480f214e6553de940f99459feda2341021)
+
+- 🟦 **17:16:06 · Refactor** — refactor(runtime): mesh loop thread runs under spawn\_daemon keeping its smoothcast-mesh name; spawn\_daemon takes thread\_name; allowance removed (Refs #696) · [`bed11997289d`](https://github.com/gmanldn/smoothcast/commit/bed11997289d10de103203c8fcf11b2a72742442)
+
+- ⬜ **17:15:27 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`b7ddc57afc19`](https://github.com/gmanldn/smoothcast/commit/b7ddc57afc19ec1238a1babd9aae429ad2446341)
 
 - ⬜ **17:15:26 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c0ce904d6497`](https://github.com/gmanldn/smoothcast/commit/c0ce904d649703eb77d1a3862f0e196fa03b2556)
 
