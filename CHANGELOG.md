@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: c6b3227d6b14c7512caf33a5a1f5aa5d63d94873 -->
+<!-- sc-changelog-through: a97e6feb27ff2f6027cb3884a7d1d99034130a7a -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **17:01:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **17:03:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **17:03:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`a97e6feb27ff`](https://github.com/gmanldn/smoothcast/commit/a97e6feb27ff2f6027cb3884a7d1d99034130a7a)
+
+- 🟦 **17:03:55 · Refactor** — refactor(errors): justify the five zeroconf boundary catches in entry\_name; ratchet drops (Refs #694) · [`4790db4c2860`](https://github.com/gmanldn/smoothcast/commit/4790db4c286085b48e445182e8766db6aa875bb6)
+
+- 🟥 **17:03:01 · Fix** — fix(room): a rejected playback command key stays rejected on retry, same rule as room\_store (Refs #695) · [`3be92d035431`](https://github.com/gmanldn/smoothcast/commit/3be92d035431123c14cc5ffc0c0c3f3fe267e06e)
 
 - ⬜ **17:01:55 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`c6b3227d6b14`](https://github.com/gmanldn/smoothcast/commit/c6b3227d6b14c7512caf33a5a1f5aa5d63d94873)
+
+- ⬜ **17:01:55 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`df934baf8584`](https://github.com/gmanldn/smoothcast/commit/df934baf8584b6e7fd8fe57d1e18973c36ffa51e)
 
 - 🟨 **17:01:49 · Documentation** — docs(uploads): document received/committed offsets and coalesced checkpoint contract (Refs #568) · [`4b0f53310ff3`](https://github.com/gmanldn/smoothcast/commit/4b0f53310ff3c0da6adc797feccad9845d803ca4)
 
