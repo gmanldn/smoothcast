@@ -8,15 +8,33 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: f0a2d173d275fd962d4ceba6e856758596dd5d6d -->
+<!-- sc-changelog-through: 55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **19:42:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **21:17:50 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **21:17:50 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`55bf2c6ed0a8`](https://github.com/gmanldn/smoothcast/commit/55bf2c6ed0a86411fbd4a792526ad2eddbe0ce50)
+
+- 🟦 **21:17:50 · Performance** — perf(stream): casts start sooner - the first 10 s encode at full speed (-readrate\_initial\_burst, FFmpeg 6.1+) instead of 8 s of real-time reading before the first two segments; guest uploads that may still be arriving keep plain -readrate (Refs #686) · [`0988c0ee3133`](https://github.com/gmanldn/smoothcast/commit/0988c0ee31335b0791cfa8791a84175150240eba)
+
+- 🟩 **21:17:25 · Feature** — feat(ui): mesh joins the shared room layout model with a web/GTK parity check (Refs #708) · [`18cc6a4a2716`](https://github.com/gmanldn/smoothcast/commit/18cc6a4a271685c1ae9f196cd3a5d86691ece512)
+
+- 🟩 **21:16:09 · Feature** — feat(ui): GTK padding and margins snap onto the shared spacing scale, with a parity test (Refs #708) · [`16e210790bfe`](https://github.com/gmanldn/smoothcast/commit/16e210790bfeeff81076762b0a105e98d08c78f5)
+
+- 🟥 **21:15:44 · Fix** — fix(diag): the jank\_watchdog preference was never read (and stripped on load); wire it through so UI stall data can be collected without an env var (Refs #442) · [`4ca5bb23adee`](https://github.com/gmanldn/smoothcast/commit/4ca5bb23adeefccb430c6ef1b8135cefbf6eda1b)
+
+- ⬜ **21:14:19 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`71ec1ab1513f`](https://github.com/gmanldn/smoothcast/commit/71ec1ab1513f5387c455a17fc9d547b2f5eb2570)
+
+- 🟩 **21:14:19 · Feature** — feat(web): one unified queue — uploads, now-playing and queued items share rows with live status chips · [`effdb22384d9`](https://github.com/gmanldn/smoothcast/commit/effdb22384d957e1536bdb3db2c53094499813e9)
+
+- 🟦 **21:11:44 · Refactor** — refactor(arch): GTK-free QueueComponent owns queue add/remove/selection rules; QueueMixin uses it (Refs #691) · [`4f79d8f5eff8`](https://github.com/gmanldn/smoothcast/commit/4f79d8f5eff8fecc3520a65d110e08fb7076a510)
 
 - ⬜ **19:42:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`f0a2d173d275`](https://github.com/gmanldn/smoothcast/commit/f0a2d173d275fd962d4ceba6e856758596dd5d6d)
 
 - 🟥 **19:42:25 · Fix** — fix: publish external cast length labels (Refs #704) · [`15595858c540`](https://github.com/gmanldn/smoothcast/commit/15595858c540de0469be9b7310d060f8a46cecd9)
+
+- ⬜ **19:42:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`c1572cd83883`](https://github.com/gmanldn/smoothcast/commit/c1572cd8388396cca84d1fca3a36160b2a331cea)
 
 - ⬜ **19:40:06 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`13557b1a572e`](https://github.com/gmanldn/smoothcast/commit/13557b1a572eea6c3a78f9b21b37eacca8b74811)
 
