@@ -12,9 +12,11 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import sys
 import threading
+import time
 from urllib.parse import urlsplit
 
 import error_log
@@ -330,6 +332,7 @@ class H(SimpleHTTPRequestHandler):
             if not head:
                 self.wfile.write(HEALTH_BODY)
         elif public_resource(self.path, policy.token):
+            _note_media_request()
             self._serve_media(head, cors=bool(policy.token) and self._cast_origin_allowed())
         else:
             self.send_error(404, "Not found")
@@ -421,6 +424,88 @@ def listen_port(args: list[str]) -> int:
     return port if 1024 <= port <= 65535 else PORT
 
 
+# Kept-stream watchdog. With "keep streaming" the encoder and this server
+# outlive the app; if the receiver then stops fetching (another sender took
+# over, TV off), nothing would ever stop a full-length transcode. Only an
+# orphaned encoder of the current 128-bit generation is ever stopped.
+IDLE_STOP_SECONDS = 600.0
+_last_media_request = time.monotonic()
+
+
+def _note_media_request() -> None:
+    global _last_media_request
+    _last_media_request = time.monotonic()
+
+
+def _orphaned(pid: int, proc: Path = Path("/proc")) -> bool:
+    """True when ``pid`` was reparented to init/systemd, i.e. the app is gone."""
+    try:
+        fields = (proc / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()
+        ppid = int(fields[1])
+        if ppid == 1:
+            return True
+        return (proc / str(ppid) / "comm").read_text().strip() in {"systemd", "init"}
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+_KEPT_PLAYLIST = re.compile(rb"movie-[0-9a-f]{32}(?:-fmp4)?\.m3u8\Z")
+
+
+def kept_encoder_pids(root: Path, proc: Path = Path("/proc")) -> list[int]:
+    """Orphaned FFmpeg processes writing a SmoothCast HLS generation under ``root``."""
+    found = []
+    prefix = os.fsencode(str(root)) + b"/"
+    try:
+        entries = [entry for entry in proc.iterdir() if entry.name.isdigit()]
+    except OSError:
+        return found
+    for entry in entries:
+        try:
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if not argv or not Path(os.fsdecode(argv[0])).name.startswith("ffmpeg"):
+            continue
+        if not any(arg.startswith(prefix) and _KEPT_PLAYLIST.search(arg) for arg in argv):
+            continue
+        pid = int(entry.name)
+        if pid > 1 and _orphaned(pid, proc):
+            found.append(pid)
+    return found
+
+
+def _session_encoder_alive(root: Path) -> bool:
+    try:
+        pid = int(json.loads((root / "session.json").read_text("utf-8")).get("ffmpeg_pid") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    return pid > 1 and Path(f"/proc/{pid}").exists()
+
+
+def _idle_watchdog(servers: list[ThreadingHTTPServer], *, interval: float = 60.0) -> None:
+    while True:
+        time.sleep(interval)
+        if time.monotonic() - _last_media_request < IDLE_STOP_SECONDS:
+            continue
+        stopped = False
+        for pid in kept_encoder_pids(ROOT):
+            try:
+                os.kill(pid, signal.SIGTERM)
+                stopped = True
+                log_event(f"stopped kept encoder {pid}: receiver idle for "
+                          f"{IDLE_STOP_SECONDS:.0f}s after the app exited")
+            except OSError:
+                pass
+        # A server reused by a newer app instance stays while that app's own
+        # encoder is alive; exit only when no saved session encoder remains.
+        if _orphaned(os.getpid()) and (stopped or not _session_encoder_alive(ROOT)):
+            log_event("idle with no app; server exiting")
+            for httpd in servers:
+                threading.Thread(target=httpd.shutdown, daemon=True).start()
+            return
+
+
 def main(argv: list[str] | None = None) -> None:
     global BIND
     args = sys.argv[1:] if argv is None else argv
@@ -444,6 +529,9 @@ def main(argv: list[str] | None = None) -> None:
     try:
         for extra in servers[:-1]:
             threading.Thread(target=extra.serve_forever, daemon=True).start()
+        if sys.platform.startswith("linux"):
+            threading.Thread(target=_idle_watchdog, args=(servers,),
+                             name="hls-idle-watchdog", daemon=True).start()
         servers[-1].serve_forever()
     except Exception:
         log_event("server stopped unexpectedly", exc_info=True)
