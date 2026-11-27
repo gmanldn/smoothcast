@@ -1160,12 +1160,45 @@ class _Handler(BaseHTTPRequestHandler):
         "config": _public_config,
     }
 
+    def _get_session(self) -> None:
+        resumed = self.server.resume_session(self._cookie_token())
+        if resumed is None:
+            return self._error(401, "Session expired")
+        if self._throttle("read"):
+            return
+        csrf, participant = resumed
+        return self._send(200, {
+            "ok": True, "csrf": csrf,
+            "participant": participant.public(self.server.clock()),
+            "room": {"name": self.server.room.name,
+                     "can_rename": self.server.session_is_host(self._cookie_token())},
+            "build": page_build(), "client_schema": CLIENT_SCHEMA,
+        })
+
+    def _get_status(self) -> None:
+        if not self._authorized("/api/status", "GET"):
+            return
+        if self._throttle("read"):
+            return
+        session_token = self._cookie_token()
+        participant_id = self.server.session_participant(session_token)
+        if participant_id is None:
+            return self._error(401, "Session expired")
+        try:
+            payload = self._room_payload(
+                participant_id, host=self.server.session_is_host(session_token))
+        except PortalRequestError as exc:
+            return self._error(exc.status, exc.message)
+        return self._send(200, payload)
+
     _ROUTED_GET = {
         "libraries": lambda self, path: self._libraries(),
         "search_stream": lambda self, path: self._search_stream(),
         "search": lambda self, path: self._search(),
         "mesh_library": lambda self, path: self._mesh_library(path),
         "mesh_file": lambda self, path: self._mesh_file(path, head=False),
+        "session": lambda self, path: self._get_session(),
+        "status": lambda self, path: self._get_status(),
     }
 
     def do_GET(self) -> None:  # noqa: N802
@@ -1187,37 +1220,8 @@ class _Handler(BaseHTTPRequestHandler):
         handler = self._ROUTED_GET.get(route.handler) if route is not None else None
         if handler is not None:
             return handler(self, path)
-        if path == "/api/session":
-            resumed = self.server.resume_session(self._cookie_token())
-            if resumed is None:
-                return self._error(401, "Session expired")
-            if self._throttle("read"):
-                return
-            csrf, participant = resumed
-            return self._send(200, {
-                "ok": True, "csrf": csrf,
-                "participant": participant.public(self.server.clock()),
-                "room": {"name": self.server.room.name,
-                         "can_rename": self.server.session_is_host(self._cookie_token())},
-                "build": page_build(), "client_schema": CLIENT_SCHEMA,
-            })
         if path == "/api/events":
             return self._events()
-        if path == "/api/status":
-            if not self._authorized(path, "GET"):
-                return
-            if self._throttle("read"):
-                return
-            session_token = self._cookie_token()
-            participant_id = self.server.session_participant(session_token)
-            if participant_id is None:
-                return self._error(401, "Session expired")
-            try:
-                payload = self._room_payload(
-                    participant_id, host=self.server.session_is_host(session_token))
-            except PortalRequestError as exc:
-                return self._error(exc.status, exc.message)
-            return self._send(200, payload)
         upload_id = self._upload_route(path)
         if upload_id:
             if not self._authorized(path, "GET"):
