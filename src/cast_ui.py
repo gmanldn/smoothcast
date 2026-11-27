@@ -1126,7 +1126,6 @@ class UiMixin(PanelMixin, BookmarkUiMixin):
                 report += "\n" + "\n".join(rows)
             if thread_label.get_text() != report:
                 thread_label.set_text(report)
-        info = self.device_info
         session = self.session
         media = self.media
         # Reuse the snapshot the seekbar used this tick; neither path touches
