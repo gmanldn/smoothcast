@@ -232,6 +232,7 @@ py-modules = [
     "network_topology",
     "node_media_ids",
     "node_profile",
+    "node_targets",
     "node_trust",
     "notifications",
     "panel_ui",
