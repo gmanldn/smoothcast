@@ -153,6 +153,14 @@ def _main(argv: list[str] | None = None) -> int:
     if "--self-test" in args or os.environ.get("SMOOTHCAST_TEST_CONTEXT") == "1":
         return launch.main(args)
 
+    import fresh_start
+
+    fresh, args = fresh_start.take_flag(args)
+    if fresh and not _headless(args):
+        # Explicit full reset: stop every window and helper (even a kept cast)
+        # before the install refresh, which refuses to run under a live GUI.
+        fresh_start.reset(launch.gui_instances(all_installations=True), ROOT / "src")
+
     target = _target()
     installed = None
     try:
@@ -202,7 +210,8 @@ def _main(argv: list[str] | None = None) -> int:
                 return _launch_installed(ROOT, args)
     # Activating the already-running primary must not wait for dependency
     # probes, bootstrap, installs or desktop registration (#540).
-    guarded = launch.ensure_single_instance(args)
+    guarded = launch.ensure_single_instance(
+        args, reclaim=lambda pids: fresh_start.reset(pids, ROOT / "src", keep_streaming=True))
     if guarded is not None:
         return guarded
     if not launch.runtime_ready():
