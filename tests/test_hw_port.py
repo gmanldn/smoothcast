@@ -29,5 +29,16 @@ def test_nothing_available_gives_software_with_reasons_and_probe_errors_are_cont
 
 
 def test_contract_every_backend_has_the_port_surface():
-    for b in (hp.Vaapi(), hp.Nvenc(), hp.Fake()):
+    for b in (hp.Vaapi(), hp.Nvenc(), hp.Qsv(), hp.VideoToolbox(), hp.Fake()):
         assert isinstance(b.name, str) and isinstance(b.input_args(), list) and b.encoder()
+
+
+def test_qsv_and_videotoolbox_are_platform_gated_and_probe_ffmpeg():
+    has = lambda n: n in ("h264_qsv", "h264_videotoolbox")
+    assert hp.Qsv(has_encoder=has, platform="win32").available()[0]
+    assert "not available on macOS" in hp.Qsv(has_encoder=has, platform="darwin").available()[1]
+    assert "no h264_qsv" in hp.Qsv(platform="linux").available()[1]
+    assert hp.VideoToolbox(has_encoder=has, platform="darwin").available()[0]
+    assert "macOS-only" in hp.VideoToolbox(has_encoder=has, platform="linux").available()[1]
+    sel = hp.select([hp.VideoToolbox(has_encoder=has, platform="linux"), hp.Qsv(has_encoder=has, platform="linux")])
+    assert sel.chosen.name == "qsv" and sel.skipped[0][0] == "videotoolbox"

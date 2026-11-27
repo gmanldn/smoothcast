@@ -62,6 +62,48 @@ class Nvenc:
 
 
 @dataclass
+class Qsv:
+    """Intel Quick Sync via ffmpeg's qsv encoders (Windows and Linux)."""
+    name: str = "qsv"
+    has_encoder: Callable[[str], bool] = lambda _n: False
+    platform: str = sys.platform
+
+    def available(self):
+        if self.platform == "darwin":
+            return False, "QSV is not available on macOS"
+        if self.has_encoder("h264_qsv"):
+            return True, "ffmpeg lists h264_qsv"
+        return False, "ffmpeg has no h264_qsv"
+
+    def input_args(self):
+        return ["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"]
+
+    def encoder(self):
+        return "h264_qsv"
+
+
+@dataclass
+class VideoToolbox:
+    """Apple VideoToolbox (macOS only)."""
+    name: str = "videotoolbox"
+    has_encoder: Callable[[str], bool] = lambda _n: False
+    platform: str = sys.platform
+
+    def available(self):
+        if self.platform != "darwin":
+            return False, f"VideoToolbox is macOS-only (platform {self.platform})"
+        if self.has_encoder("h264_videotoolbox"):
+            return True, "ffmpeg lists h264_videotoolbox"
+        return False, "ffmpeg has no h264_videotoolbox"
+
+    def input_args(self):
+        return ["-hwaccel", "videotoolbox"]
+
+    def encoder(self):
+        return "h264_videotoolbox"
+
+
+@dataclass
 class Fake:
     name: str = "fake"
     ok: bool = True
