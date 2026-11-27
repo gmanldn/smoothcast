@@ -8,13 +8,21 @@ Initial history: 300 recent commits plus intervening changes before this file wa
 
 A provisional entry describes the current publication before its own SHA exists; the next refresh replaces it with the actual committed timestamp and link.
 
-<!-- sc-changelog-through: ba42de094a4b781fc4ae023f8eb4da5bf1565743 -->
+<!-- sc-changelog-through: 58614346f12e36921b40b17b477fbeea8aee7e58 -->
 
 ## 2026-11-27 · UTC
 
-- ⬜ **16:34:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+- ⬜ **16:36:25 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] <!-- sc-changelog-pending -->
+
+- ⬜ **16:36:25 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`58614346f12e`](https://github.com/gmanldn/smoothcast/commit/58614346f12e36921b40b17b477fbeea8aee7e58)
+
+- 🟩 **16:36:25 · Feature** — feat(errors): app.save\_failed code, recorded when a store write fails (Refs #207, #701) (Refs #325) · [`82b6356dfcc6`](https://github.com/gmanldn/smoothcast/commit/82b6356dfcc6ff2cf13ffc14ddfae08242d53f25)
+
+- 🟪 **16:34:18 · Tests** — test(arch): test\_managed\_source reads a staged temp file, not production source; baseline 104 -&gt; 103 (Refs #699) · [`f223f0509ce5`](https://github.com/gmanldn/smoothcast/commit/f223f0509ce5bc90b8f7b7602de26104f6a83891)
 
 - ⬜ **16:34:10 · Maintenance** — chore(version): advance shipment PATCH \[sc-auto-patch\] · [`ba42de094a4b`](https://github.com/gmanldn/smoothcast/commit/ba42de094a4b781fc4ae023f8eb4da5bf1565743)
+
+- ⬜ **16:34:10 · Maintenance** — chore(changelog): record shipment \[sc-auto-changelog\] · [`3b5368476438`](https://github.com/gmanldn/smoothcast/commit/3b53684764380374128d24fa6540ba5643e3eed1)
 
 - 🟩 **16:33:59 · Feature** — feat(cli): smoothcast diagnose writes a redacted support bundle, nothing sent (Refs #698) · [`f62681e7a1a4`](https://github.com/gmanldn/smoothcast/commit/f62681e7a1a44e43cc5a2dfc6ac642bcdd840f23)
 
